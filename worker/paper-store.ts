@@ -215,22 +215,14 @@ const NOTABLE_READ_PER_LANE = 300;
 export const AREA_LANE_AREAS: readonly string[] = ARXIV_FEED_AREAS.filter(area => area !== 'stat');
 export const areaLane = (area: string) => `area:${area}`;
 const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
+// The entities whose lanes hold papers only while a reader follows them: a
+// paper names many, readers follow few, and no page reads the rest. Their
+// unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
+const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
 
-/**
- * The lanes a paper belongs to by its own record, whichever source listed it:
- * its arXiv categories that are categories of the app, and the OpenAlex
- * authors, institutions, topics and concepts it names (what a reader follows).
- * Every reader of them shares these lanes, so a paper is filed under them only
- * inside the corpus window: an older one a reader liked, or a lane that keeps
- * listings kept, stays in the lanes it was asked for.
- */
-export function recordLanes(paper: Partial<Paper>) {
+// The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
+function namedEntityLanes(paper: Partial<Paper>) {
   const lanes = new Set<string>();
-  if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
-    for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
-      if (LEAF_IDS.has(category)) lanes.add(category);
-    }
-  }
   for (const author of paper.authors || []) {
     if (typeof author === 'object') lanes.add(entityLane(author?.id));
   }
@@ -238,6 +230,46 @@ export function recordLanes(paper: Partial<Paper>) {
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
   lanes.delete('');
   return [...lanes];
+}
+const isFollowOnlyLane = (lane: string) => PRUNED_ENTITY_LANE_KINDS.some(kind => lane.startsWith(`${kind}:`));
+/** The lanes a paper names that `recordLanes` files only while followed. */
+const followOnlyLanes = (paper: Partial<Paper>) => namedEntityLanes(paper).filter(isFollowOnlyLane);
+
+/**
+ * Which of `lanes` readers follow, for `recordLanes`. Each write asks only for
+ * the lanes its own papers name, not for the whole table: `followed_lanes`
+ * holds every lane written in the last 14 days, up to about 60k rows at the
+ * app's 4,000 writes a day, and every harvest page, follow run, like lookup
+ * and enrichment step files papers.
+ */
+async function followedLanesAmong(db: D1Database, lanes: Iterable<string>) {
+  const asked = [...new Set(lanes)];
+  const followed = new Set<string>();
+  for (let start = 0; start < asked.length; start += 500) {
+    const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(asked.slice(start, start + 500))).all<{ lane: string }>();
+    results.forEach(row => followed.add(row.lane));
+  }
+  return followed;
+}
+
+/**
+ * The lanes a paper belongs to by its own record, whichever source listed it:
+ * its arXiv categories that are categories of the app, the OpenAlex topics it
+ * names, and the OpenAlex authors, institutions and concepts it names that
+ * are in `followed`. Every reader of them shares these lanes, so a paper is
+ * filed under them only inside the corpus window: an older one a reader liked,
+ * or a lane that keeps listings kept, stays in the lanes it was asked for.
+ */
+export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>) {
+  const lanes = new Set<string>();
+  if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
+    for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
+      if (LEAF_IDS.has(category)) lanes.add(category);
+    }
+  }
+  for (const lane of namedEntityLanes(paper)) lanes.add(lane);
+  return [...lanes].filter(lane => followed.has(lane) || !isFollowOnlyLane(lane));
 }
 
 // ─── Writing ───
@@ -257,8 +289,11 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 }
 
 // Transient fields describe one fetch or one reader, never the paper.
+// `openAlex` is enrichment's copy of OpenAlex's answer, whose fields the app
+// reads are already merged into the paper;
+// `summary` repeats the abstract.
 function storedPaper(paper: Paper): Paper {
-  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw')) as Paper;
+  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex' && key !== 'summary')) as Paper;
   if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
   return stored;
 }
@@ -324,7 +359,7 @@ const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.pri
 function withOwnText(row: Paper, own: Paper | undefined): Paper {
   if (!own) return row;
   return hasUsableAIAbstract(own.abstract)
-    ? { ...row, title: own.title, abstract: own.abstract, summary: own.summary }
+    ? { ...row, title: own.title, abstract: own.abstract }
     : { ...row, title: own.title };
 }
 
@@ -376,6 +411,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
+  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
@@ -406,7 +442,13 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper) : [])])) {
+    filings.push({ id, paper, published, lanes: group.lanes });
+  }
+  // Asked once the records are merged: a stored row names entities, such as
+  // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
+  const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  for (const { id, paper, published, lanes } of filings) {
+    for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
     }
   }
@@ -456,24 +498,25 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
 export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>, now = Date.now()) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
-  const changed = updates
-    .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
-    .map(({ id, before, after }) => {
-      const paper = storedPaper(after);
-      const published = publishedOf(paper, now) || publishedOf(before, now);
-      return {
-        text: { id, paper: JSON.stringify(paper) },
-        filing: {
-          id,
-          published,
-          textChanged: embeddingText(paper) !== embeddingText(before),
-          // A book or book review the enrichment revealed leaves every lane.
-          offered: isFeedPublication(paper),
-          keys: workKeys(paper),
-          lanes: published >= since ? recordLanes(paper) : [],
-        },
-      };
-    });
+  // Compared as stored: every OpenAlex merge adds back the payload a row drops.
+  const updated = updates
+    .map(({ id, before, after }) => ({ id, before, paper: storedPaper(after) }))
+    .filter(({ before, paper }) => JSON.stringify(before) !== JSON.stringify(paper))
+    .map(update => ({ ...update, published: publishedOf(update.paper, now) || publishedOf(update.before, now) }));
+  const followed = await followedLanesAmong(db, updated.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  const changed = updated.map(({ id, before, paper, published }) => ({
+    text: { id, paper: JSON.stringify(paper) },
+    filing: {
+      id,
+      published,
+      textChanged: embeddingText(paper) !== embeddingText(before),
+      // A book, an erratum or another type the feed does not show leaves
+      // every lane once the enrichment reveals it.
+      offered: isFeedPublication(paper),
+      keys: workKeys(paper),
+      lanes: published >= since ? recordLanes(paper, followed) : [],
+    },
+  }));
   // A D1 call carries at most 32 MiB: each chunk is its own batch, and only
   // the first statement is sent the papers' text (2026-10-23: 500 enriched
   // papers bound five times over came to 33.6 MB).
@@ -504,12 +547,15 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  * - a notable lane drops a paper once its `listed_until` has passed, 14 days
  *   after the listing that last returned it: the lane holds the leaf's most
  *   cited, whatever else keeps the paper (a like, its date, another lane);
+ * - a paper leaves the lane of an author, concept or institution nobody
+ *   follows: `recordLanes` files those for followed entities only, and the
+ *   rows filed before it did go here. A later follow of that entity starts
+ *   without those papers, until its own harvest lists them;
  * - a paper past its keeping date, or in no category, notable, working-paper,
  *   area or followed lane, goes, unless readers still rank their feed by it
- *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
- *   nothing: nearly every enriched paper names an author, so it would keep
- *   every paper its category trimmed. A later follow of that entity starts
- *   without those papers, until its own harvest lists them.
+ *   (`liked_until`). A topic lane nobody follows keeps nothing: nearly every
+ *   enriched paper names a topic, so it would keep every paper its category
+ *   trimmed.
  */
 // Each Workflow step scans at most 500 works, without loading their JSON.
 // The cursor is a primary key, so retries and deletions do not shift a page.
@@ -537,8 +583,12 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
   if (scanned.length) {
     const ids = JSON.stringify(scanned.map(row => row.id));
     // Recheck retention inside the transaction: a like or harvest can arrive
-    // after the scan. Remove child rows only for works actually deleted.
+    // after the scan. Every scanned work leaves its unfollowed entity lanes;
+    // other child rows go only for works actually deleted.
     await db.batch([
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))
+        AND substr(lane, 1, instr(lane, ':') - 1) IN (SELECT value FROM json_each(?))
+        AND lane NOT IN (SELECT lane FROM followed_lanes)`).bind(ids, JSON.stringify(PRUNED_ENTITY_LANE_KINDS)),
       db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
         AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
           OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
@@ -553,6 +603,23 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
     ]);
   }
   return scanned.length === 500 ? scanned.at(-1)!.id : null;
+}
+
+// A leaf with fewer papers than this published in the last LEAF_FLOOR_DAYS is
+// to be proposed to the OpenAlex topic-lane gate
+// (scripts/README-openalex-leaf-topics.md) (Nicolás, 2026-10-24).
+const LEAF_FLOOR = 300;
+const LEAF_FLOOR_DAYS = 30;
+
+/** The leaves under LEAF_FLOOR, fewest first, for the nightly run to report. */
+export async function thinLeaves(db: D1Database, now: number): Promise<Array<{ leaf: string; recent: number }>> {
+  const { results } = await db.prepare(`SELECT lane, COUNT(*) AS recent FROM work_lanes
+    WHERE lane IN (SELECT value FROM json_each(?)) AND published >= ? GROUP BY lane`)
+    .bind(JSON.stringify([...LEAF_IDS]), daysFromNow(-LEAF_FLOOR_DAYS, now)).all<{ lane: string; recent: number }>();
+  const recent = new Map(results.map(row => [row.lane, row.recent]));
+  return [...LEAF_IDS].map(leaf => ({ leaf, recent: recent.get(leaf) ?? 0 }))
+    .filter(entry => entry.recent < LEAF_FLOOR)
+    .sort((a, b) => a.recent - b.recent || a.leaf.localeCompare(b.leaf));
 }
 
 // ─── Embedding ───

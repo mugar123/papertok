@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readVector, rewriteWorks,
+  readFeedPage, readVector, rewriteWorks, thinLeaves,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
@@ -161,7 +161,7 @@ test("the source a row came from replaces its title and abstract when it lists t
   db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
   await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
   const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
-  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [arxivRevision.title, arxivRevision.abstract, arxivRevision.abstract]);
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [arxivRevision.title, arxivRevision.abstract]);
   assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
   // Hugging Face still lists the first version's text.
   await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
@@ -796,6 +796,17 @@ test('eviction resumes through bounded batches and removes expired records with 
   }
 });
 
+test('the leaves under 300 papers in 30 days are reported, fewest first', async () => {
+  const { env, db } = corpus();
+  const lane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  for (let id = 1; id <= 300; id += 1) lane.run('mech.fluid', id, daysFromNow(-29, NOW));
+  lane.run('mech.cad', 301, daysFromNow(-1, NOW));
+  lane.run('mech.cad', 302, daysFromNow(-29, NOW));
+  lane.run('eess.telecom', 303, '2009-06-01T00:00:00.000Z');
+  const thin = await thinLeaves(env.PAPER_STORE!, NOW);
+  assert.deepEqual(thin.filter(entry => ['mech.fluid', 'mech.cad', 'eess.telecom'].includes(entry.leaf)), [{ leaf: 'eess.telecom', recent: 0 }, { leaf: 'mech.cad', recent: 2 }]);
+});
+
 test("a vector keeps its leading dimensions, and a cut one compares like a whole one", () => {
   const full = Array.from({ length: 1024 }, (_, index) => Math.sin(index + 1));
   assert.equal(quantize(full).length, 256);
@@ -1228,6 +1239,25 @@ test("an enrichment that names an old paper's topic does not file it under that 
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
+test('an erratum the enrichment reveals leaves every lane; a letter stays', async () => {
+  const { env, db } = corpus();
+  const record = { ...arxivRecord, allCategories: [], categories: [] };
+  await ingestPapers(env, [{ paper: record, lanes: ['cs.LG'] }, { paper: { ...record, id: '2610.99999', arxivId: '2610.99999', title: 'A research letter' }, lanes: ['cs.LG'] }], { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, publicationType: before.arxivId === '2610.99999' ? 'letter' : 'erratum' } })), NOW);
+  assert.equal(rows(db, 'SELECT DISTINCT work_id FROM work_lanes').length, 1);
+  assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'publicationType' = 'letter' AND id IN (SELECT work_id FROM work_lanes)").length, 1);
+});
+
+test('a review or a conference paper the enrichment reveals keeps every lane', async () => {
+  const { env, db } = corpus();
+  const record = { ...arxivRecord, allCategories: [], categories: [] };
+  await ingestPapers(env, [{ paper: record, lanes: ['cs.LG'] }, { paper: { ...record, id: '2610.99999', arxivId: '2610.99999', title: 'A conference paper' }, lanes: ['cs.LG'] }], { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, publicationType: before.arxivId === '2610.99999' ? 'conference-paper' : 'review' } })), NOW);
+  assert.deepEqual(rows(db, "SELECT paper ->> 'publicationType' AS type FROM works WHERE id IN (SELECT work_id FROM work_lanes) ORDER BY type").map(row => row.type), ['conference-paper', 'review']);
+});
+
 test('a paper only an unfollowed entity names leaves; a category, the working-paper series or a follow keeps it', async () => {
   const { env, db } = corpus();
   const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, allCategories: [], categories: [] });
@@ -1241,7 +1271,58 @@ test('a paper only an unfollowed entity names leaves; a category, the working-pa
   db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
   await evictAll(env, NOW);
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
-  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 0, 'the author lane nobody follows no longer names the paper its category keeps');
+});
+
+test('an author, concept or institution lane is filed only while someone follows it; topic lanes always', async () => {
+  const { env, db } = corpus();
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'A. Author' }], concepts: [{ id: 'C20', display_name: 'Graphs' }], institutions: [{ id: 'I30', name: 'Uni' }], topics: [{ id: 'T40', display_name: 'Combinatorics' }] };
+  await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG', 'topic:T40']);
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('concept:C20', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper: { ...paper, title: 'Listed again, v2' }, lanes: ['cs.LG'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['concept:C20', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const [{ id }] = rows(db, 'SELECT id FROM works');
+  for (const lane of ['author:A10', 'concept:C20', 'institution:I30', 'topic:T40', 'author:A11']) {
+    db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)").run(lane, Number(id), arxivRecord.published!);
+  }
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A11', ?)").run(new Date(NOW).toISOString());
+  await evictAll(env, NOW);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['author:A11', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+test('a new follow is served nothing from the corpus until its own harvest files the lane', async () => {
+  const { env, db } = corpus();
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'A. Author' }] };
+  await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW });
+  const follow = { type: 'author', canonicalId: 'A10', displayName: 'A. Author' };
+  const before = await readFeedPage(env, parseFeedRequest({ categories: [], follows: [follow], page: 0, pageSize: 15 }), { now: NOW });
+  assert.equal(before.length, 0);
+  // What the follow's harvest does: lists the lane and files the paper under it.
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper, lanes: ['author:A10'] }], { now: NOW });
+  const after = await readFeedPage(env, parseFeedRequest({ categories: [], follows: [follow], page: 0, pageSize: 15 }), { now: NOW });
+  assert.deepEqual(after.map(entry => entry._followedEntityMatches?.length), [1]);
+});
+
+test('a batch files the followed lanes its papers name, those only its stored row names included, and no other follow', async () => {
+  const { env, db } = corpus();
+  const followLaneNow = (lane: string) => db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)').run(lane, new Date(NOW).toISOString());
+  const entityLanes = () => rows(db, "SELECT lane FROM work_lanes WHERE lane LIKE '%:%' ORDER BY lane").map(row => row.lane);
+  followLaneNow('author:A11');
+  followLaneNow('concept:C99');
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'Ana Pérez' }, { id: 'https://openalex.org/A11', name: 'Li Wei' }] };
+  await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  assert.deepEqual(entityLanes(), ['author:A11']);
+  // arXiv's next version names its authors without ids; the stored row keeps them.
+  followLaneNow('author:A10');
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  assert.deepEqual(entityLanes(), ['author:A10', 'author:A11']);
 });
 
 // Each D1 round trip a request makes, as the statements it sent.
@@ -1308,4 +1389,39 @@ test("an enrichment step's papers are written back however long their text, with
   const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
   await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, citationCount: 7, citationCountKnown: true } })));
   assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'citationCount' = 7").length, 500);
+});
+
+test('a stored row keeps the merged citation count and drops the OpenAlex payload', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const [stored] = rows(db, 'SELECT id, paper FROM works');
+  const before = JSON.parse(String(stored.paper)) as Paper;
+  // Enrichment merges OpenAlex's answer, which keeps its payload under `openAlex`.
+  const openAlex = { citationCount: 7, related_works: ['W1'] };
+  await rewriteWorks(env, [{ id: Number(stored.id), before, after: PaperBuilder.merge(before, openAlex, 'openalex') }], NOW);
+  const [row] = rows(db, "SELECT paper ->> 'openAlex' AS openAlex, paper ->> 'citationCount' AS citations FROM works");
+  assert.equal(row.openAlex, null);
+  assert.equal(Number(row.citations), 7);
+});
+
+test('a stored row carries no summary; a new version replaces the abstract alone', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: { ...arxivRecord, summary: arxivRecord.abstract }, lanes: ['cs.LG'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: { ...arxivRecord, abstract: 'Version two abstract.', summary: 'Version two abstract.' }, lanes: ['cs.LG'] }], { now: NOW });
+  const [row] = rows(db, "SELECT paper ->> 'summary' AS summary, paper ->> 'abstract' AS abstract FROM works");
+  assert.equal(row.summary, null);
+  assert.equal(row.abstract, 'Version two abstract.');
+});
+
+test('a refresh whose OpenAlex answer changes nothing the row stores does not rewrite it', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const openAlex = { citationCount: 7, related_works: ['W1'] };
+  const enrich = async () => {
+    const [stored] = rows(db, 'SELECT id, paper FROM works');
+    const before = JSON.parse(String(stored.paper)) as Paper;
+    return rewriteWorks(env, [{ id: Number(stored.id), before, after: PaperBuilder.merge(before, openAlex, 'openalex') }], NOW);
+  };
+  assert.equal(await enrich(), 1);
+  assert.equal(await enrich(), 0);
 });

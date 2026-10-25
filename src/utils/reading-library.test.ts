@@ -10,7 +10,7 @@ import { mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from './area-accent.ts';
 import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeOpenAlexEnrichment } from './feed-enrichment.ts';
-import { papersToBibTeX, papersToRIS, serializeLibraryPaper } from './reading-library.ts';
+import { abstractExcerpt, papersToBibTeX, papersToRIS, serializeLibraryPaper } from './reading-library.ts';
 import { buildSavedPaperPayload } from './saved-paper-payload.ts';
 
 const works = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as {
@@ -167,6 +167,22 @@ test('does not invent a title when the paper has none', () => {
   const stored = serializeLibraryPaper({ id: 'openalex:W1' });
   assert.equal(stored.title, '');
   assert.equal(stored.id, 'openalex:W1');
+});
+
+test('a library copy takes its summary from the abstract when the row has none', () => {
+  assert.equal(serializeLibraryPaper({ id: 'x', abstract: 'The abstract.' }).summary, 'The abstract.');
+  assert.equal(serializeLibraryPaper({ id: 'x', summary: 'An older copy.' }).summary, 'An older copy.');
+});
+
+test('an interaction excerpt reads the abstract and is cut at 500 characters', () => {
+  assert.equal(abstractExcerpt({ abstract: 'a'.repeat(600) }).length, 500);
+  assert.equal(abstractExcerpt({ summary: 'kept' }), 'kept');
+  assert.equal(abstractExcerpt({}), '');
+});
+
+test('a RIS record carries the abstract of a served card, and no placeholder', () => {
+  assert.match(papersToRIS([{ title: 'A paper', abstract: 'The abstract.' }]), /^AB {2}- The abstract\.$/m);
+  assert.doesNotMatch(papersToRIS([{ title: 'A paper', abstract: 'No abstract available.' }]), /^AB /m);
 });
 
 test('exports valid-looking BibTeX and RIS records', () => {
