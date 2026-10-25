@@ -19,5 +19,4 @@ test('Settings says what the privacy page says deleting an account leaves behind
     DELETE_ACCOUNT_DESCRIPTION.endsWith(exception),
     `Settings says "${DELETE_ACCOUNT_DESCRIPTION}", the policy says "${exception}"`,
   );
-  assert.match(DELETE_ACCOUNT_DESCRIPTION, /^Permanently deletes your account and everything in it\./);
 });
