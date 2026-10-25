@@ -32,6 +32,8 @@ export interface InteractionEvent {
   concepts?: WeightedConcept[]; authorIds?: string[];
   // A view or a skip of a notable card.
   notable?: boolean;
+  // The card's area (areaKeyForPaper), for a card whose category is no leaf.
+  area?: string | null;
 }
 export interface ProfileSignals {
   categoryAffinities: Record<string, number>;
@@ -94,7 +96,8 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * interest that is never touched again fades out instead of lasting forever.
  */
 import { readStoredClassification } from '../models/paper.ts';
-import { areaKeyForCategory } from './area-accent.ts';
+import { areaKeyForCategory, areaKeyForPaper } from './area-accent.ts';
+import { getCategoryArea } from '../data/category-taxonomy.ts';
 import {
   addSeenPaper,
   createSeenFilter,
@@ -367,6 +370,14 @@ function usableAuthorIds(authorIds: unknown): string[] {
   return [...new Set(authorIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
 }
 
+// What a card's exposure and examples count under (ENG-137, R14): its leaf,
+// or its area when its category names no leaf. An area lane's article (all
+// of Chemistry's cards) is filed under no category at all, and would teach
+// nothing. Its category affinity keeps the category it has.
+function learnedUnder(category: string, area: string | null | undefined) {
+  return getCategoryArea(category) || !area ? category : area;
+}
+
 function recordExposure(profile: InteractionProfile, category: string, engaged: boolean) {
   if (!category) return;
   const entry = profile.exposure.get(category) || { shown: 0, engaged: 0 };
@@ -621,6 +632,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   if (!profile || !event || typeof event.paperId !== 'string' || !event.paperId) return profile;
   const timestampMs = toTimestampMs(event.timestamp) ?? now;
   const category = typeof event.category === 'string' ? event.category : '';
+  const learned = learnedUnder(category, event.area);
   // Sampled before the switch: applying the event may add the id to a curated
   // set, which would make it look accounted for when it is not yet.
   const alreadyAccountedFor = isPaperAccountedFor(profile, event.paperId);
@@ -631,7 +643,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   switch (event.kind) {
     case 'like':
       addCurated(profile, 'liked', event.paperId);
-      addPositive(profile, event.paperId, category);
+      addPositive(profile, event.paperId, learned);
       impact = IMPACT_LIKED;
       break;
     case 'unlike':
@@ -641,7 +653,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       break;
     case 'save':
       addCurated(profile, 'saved', event.paperId);
-      addPositive(profile, event.paperId, category);
+      addPositive(profile, event.paperId, learned);
       impact = IMPACT_SAVED;
       break;
     case 'unsave':
@@ -671,7 +683,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'undoNotInterested':
       removeCurated(profile, 'notInterested', event.paperId);
       if (curatedSet(profile, 'liked')!.members.has(event.paperId) || curatedSet(profile, 'saved')!.members.has(event.paperId)) {
-        addPositive(profile, event.paperId, category);
+        addPositive(profile, event.paperId, learned);
       }
       impact = -IMPACT_NOT_INTERESTED;
       categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
@@ -684,7 +696,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       break;
     case 'skip':
       addViewed(profile, event.paperId, event.notable === true);
-      recordExposure(profile, category, false);
+      recordExposure(profile, learned, false);
       impact = IMPACT_SKIP;
       break;
     case 'viewTime': {
@@ -694,9 +706,9 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       // Judged against the median as it stood before this view moved it.
       const median = profile.dwell.median;
       impact = viewTimeImpact(seconds, median);
-      recordExposure(profile, category, seconds >= median);
+      recordExposure(profile, learned, seconds >= median);
       if (seconds >= median * STRONG_READ_RATIO && !curatedSet(profile, 'notInterested')!.members.has(event.paperId)) {
-        addPositive(profile, event.paperId, category);
+        addPositive(profile, event.paperId, learned);
       }
       observeDwell(profile.dwell, seconds);
       break;
@@ -762,6 +774,15 @@ function documentCategory(id: string, data: InteractionDocumentData) {
   return typeof data.paperCategory === 'string' ? data.paperCategory : '';
 }
 
+// The area a document shows: its stored copy's, which only a like or a save
+// keeps, or else its category's. A view or a skip of a card filed under no
+// category shows none, so a rebuild cannot count it under its area.
+function documentArea(id: string, data: InteractionDocumentData) {
+  return areaKeyForPaper(data.paper && typeof data.paper === 'object'
+    ? readStoredClassification({ ...data.paper, id })
+    : { primaryCategory: documentCategory(id, data) });
+}
+
 /**
  * Rebuilds a profile from raw interaction documents. Used by the one-off client
  * fallback and by the offline backfill script, and it is the reference the unit
@@ -787,21 +808,21 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     if (data.notInterested) addCurated(profile, 'notInterested', id);
     if (data.readLater) addCurated(profile, 'readLater', id);
 
-    const category = documentCategory(id, data);
+    const learned = learnedUnder(documentCategory(id, data), documentArea(id, data));
     const seconds = Number(data.viewTime);
     let strongRead = false;
     if (Number.isFinite(seconds) && seconds > 0) {
       const median = profile.dwell.median;
       addViewed(profile, id);
       viewImpacts.set(id, viewTimeImpact(seconds, median));
-      recordExposure(profile, category, seconds >= median);
+      recordExposure(profile, learned, seconds >= median);
       strongRead = seconds >= median * STRONG_READ_RATIO;
       observeDwell(profile.dwell, seconds);
     } else if (data.skip) {
       addViewed(profile, id);
-      recordExposure(profile, category, false);
+      recordExposure(profile, learned, false);
     }
-    if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, category);
+    if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, learned);
   }
 
   documents.forEach(({ id, data }) => {

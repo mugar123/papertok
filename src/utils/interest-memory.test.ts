@@ -368,3 +368,23 @@ test('a subarea added beside one its area learned on its own is a group of weigh
     { categories: ['hep-th'], weight: 1 },
   ]);
 });
+
+// ENG-137, ruling R14: Chemistry's cards name no subarea, so what they teach
+// is recorded under 'chem', and counts for the area.
+test('an added area learns from the cards and examples recorded under its own key', () => {
+  const chemistry = (input: Partial<InterestMemoryInput>) => memory({
+    selected: ['cs.RO', 'chem.org'], added: ['chem.org'], examples: examples('cs.RO', 10), ...input,
+  });
+
+  assert.deepEqual(groupsOf(chemistry({ exposure: shown({ chem: 30 }) })), [
+    { categories: ['cs.RO'], weight: 1 },
+    { categories: ['chem.org'], weight: 1.5 },
+  ]);
+  const shownSixty = chemistry({ exposure: shown({ chem: 60 }) });
+  assert.deepEqual(groupsOf(shownSixty), [{ categories: ['chem.org', 'cs.RO'], weight: 1 }]);
+  assert.equal(interestProgress(shownSixty)['chem.org'], 1);
+
+  const eightExamples = chemistry({ examples: [...examples('chem', 8), ...examples('cs.RO', 10)] });
+  assert.deepEqual(groupsOf(eightExamples), [{ categories: ['chem.org', 'cs.RO'], weight: 1 }]);
+  assert.equal(interestProgress(eightExamples)['chem.org'], 1);
+});

@@ -125,7 +125,8 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
     const retired = chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
     const activeLeaves = [...getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id), ...retired];
     // A retired id has no exposure of its own; its examples count for the area.
-    const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), 0);
+    // A card that names no subarea (an area lane's article) is shown under the area itself.
+    const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), shownIn(area));
     const areaProgress = progressOf(examplesOf(new Set([area])).length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
     const subareas = rankPreferences(chosen.filter(id => areaKeyForCategory(id) === area), affinities);
     const coldGroup = (categories: string[], weight: number, ownSubarea: boolean): PlannedGroup =>

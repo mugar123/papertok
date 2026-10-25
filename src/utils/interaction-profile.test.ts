@@ -1,6 +1,12 @@
 import type { InteractionDocument, InteractionDocumentData } from './interaction-profile.ts';
+import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+import { areaKeyForPaper } from './area-accent.ts';
+import { mapOpenAlexWork } from './open-alex-work.ts';
+import { serializeLibraryPaper } from './reading-library.ts';
 
 import {
   AFFINITY_MAX,
@@ -604,6 +610,49 @@ test('exposure counts every card shown and the ones read past the median', () =>
   recordInteractionEvent(profile, { paperId: 'c', kind: 'viewTime', category: 'math.NT', viewTime: 30 }, NOW);
 
   assert.deepEqual(readProfileSignals(profile, NOW).categoryExposure, { 'math.NT': { shown: 3, engaged: 1 } });
+});
+
+/*
+ * ENG-137, ruling R14. An area lane's article (all of Chemistry's cards) names
+ * no leaf: OpenAlex files it under a topic, and its categories are concept
+ * names. It teaches its area, as the feed sends it with areaKeyForPaper: its
+ * exposure and examples count under the area key. Its affinity keeps the
+ * category it has.
+ */
+function chemistryLaneCard() {
+  const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16')!;
+  return { ...mapOpenAlexWork(work)!, primaryCategory: '' };
+}
+
+test('a card filed under no leaf counts its exposure and long reads under its area', () => {
+  const card = chemistryLaneCard();
+  const event = { paperId: card.id, category: card.primaryCategory, area: areaKeyForPaper(card) };
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { ...event, kind: 'skip' }, NOW);
+  recordInteractionEvent(profile, { ...event, kind: 'viewTime', viewTime: 30 }, NOW);
+
+  const signals = readProfileSignals(profile, NOW);
+  assert.deepEqual(signals.categoryExposure, { chem: { shown: 2, engaged: 1 } });
+  assert.deepEqual(signals.positiveExamples, [{ id: card.id, category: 'chem' }]);
+  assert.deepEqual(signals.categoryAffinities, {});
+});
+
+test('a card with a leaf counts under its leaf, not its area', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'skip', category: 'cs.LG', area: 'ai' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'like', category: 'cs.LG', area: 'ai' }, NOW);
+
+  const signals = readProfileSignals(profile, NOW);
+  assert.deepEqual(signals.categoryExposure, { 'cs.LG': { shown: 1, engaged: 0 } });
+  assert.deepEqual(signals.positiveExamples, [{ id: 'b', category: 'cs.LG' }]);
+});
+
+test("a rebuild counts a liked card filed under no leaf under the area its stored copy shows", () => {
+  const card = chemistryLaneCard();
+  const documents = [{ id: card.id, data: { liked: true, paperCategory: '', timestamp: NOW - 1000, paper: serializeLibraryPaper(card) } }];
+  const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
+  assert.deepEqual([...profile.positives], [{ id: card.id, category: 'chem' }]);
 });
 
 test('concepts and authors decay over thirty days', () => {
