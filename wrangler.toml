@@ -172,7 +172,10 @@ binding = "AI"
 # The paper store (worker/paper-store.ts): every feed source's papers, their
 # lanes and vectors, filled by the harvest Workflow and read by /store/papers.
 # Apply migrations with `npx wrangler d1 migrations apply PAPER_STORE --remote`
-# before deploying.
+# before deploying. The exception was 0011, a one-time data migration applied
+# right after the Worker that lists the notable lanes by year was deployed and
+# before the harvest was triggered (worker/README.md, step 3); it finds nothing
+# to clear on a fresh database.
 [[d1_databases]]
 binding = "PAPER_STORE"
 database_name = "papertok-paper-store"
