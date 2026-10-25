@@ -3633,11 +3633,11 @@ test('a Worker without the Firebase web key answers a notification route 503 EMA
   }));
 
   await assert.rejects(
-    () => handleEmailNotificationRequest(
+    () => withIdentityCache(() => handleEmailNotificationRequest(
       preferencesRequest(),
       emailEnvironment(createMemoryKv()),
       '/notifications/preferences',
-    ),
+    )),
     error => (error as { code?: string }).code === 'EMAIL_NOT_CONFIGURED' && (error as { status?: number }).status === 503,
   );
   assert.equal(lookup.mock.callCount(), 0);
