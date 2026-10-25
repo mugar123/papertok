@@ -270,6 +270,35 @@ returned federated-learning and blockchain surveys; `cs.IR` returned
 language-model papers; `cs.SY` returned machine fault diagnosis. Authorized by
 Nicolás on 2026-10-25 (ENG-138).
 
+### Batch 3: mathematics
+
+The 14 leaves of mathematics without a topic lane (`math.MP` shares its page
+with `math-ph`, `math.ST` with `stat.TH`), labelled by the same agent under
+the same procedure. None passes: `math.NA` at 9 of 15, `math.OC` at 7,
+`math.AP` at 6, the rest at 5 or fewer; nothing is admitted, so no reader
+sees a change and no authorization applies. The head of each subfield's
+citations was mostly other things: optimal-transport papers for `math.DG`,
+Bayesian software (Stan, PyMC, dynesty) for `math.PR`, fixed-point theorems
+in generalized metric spaces for `math.FA`, two-dimensional QFT symmetry
+papers for `math.AG` and `math.GR`, program-verification papers for
+`math.LO`, numerical fractional calculus and time-frequency transforms for
+`math.CA`.
+
+### Batch 4: medicine
+
+The 11 medicine leaves without a topic lane, labelled by the same agent under
+the same procedure. Five pass: `med.endo` at 14 of 15, `med.infect` at 13,
+`med.gen` and `med.cardio` at 12, `med.radio` at 11. Six are rejected:
+`med.immuno` at 9 (basic-immunology reviews doubted), `med.peds` at 7
+(maternal and perinatal epidemiology), `med.tox` at 6 (air-pollution
+epidemiology), `med.pharma` at 4 (pain and obesity epidemiology, genome-mining
+software), `med.path` and `med.surg` at 2 (multiple-sclerosis neurology;
+lipid and coronary guidelines filed under Surgery). The five lanes ask for 22
+topics and spend 50 units a week; with 66 notable lanes the nightly share is
+ten (100 units). `med.infect`'s page is the COVID-19 literature of 2020 and
+`med.gen`'s is nephrology and hepatology; `med.cardio` and `med.endo` are
+guidelines and outcome trials. Authorized by Nicolás on 2026-10-25 (ENG-138).
+
 ## The 2026-10-23 sample (PAP-99)
 
 107 anonymous requests, one per proposed leaf, between 08:04 and 08:05 UTC, all
