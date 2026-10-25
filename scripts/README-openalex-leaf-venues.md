@@ -79,10 +79,15 @@ put its title and abstract back on the row. The two records pair on the title
 and first-author key (`PaperBuilder.identityKeys`), as before, because they
 share no DOI or OpenAlex id; the upgrade now lets that join set the row's DOI,
 landing page, text and date. An arXiv eprint that lists a DOI and no journal
-reference is not journal evidence and never starts the upgrade. The row keeps
-the working paper's id but names the article's OpenAlex work in `openAlexId`,
-which enrichment and its 14-day refresh read first, so both arrival orders end
-up with the article's venue, type, topic and counts. A row stored before
+reference is not journal evidence and never starts the upgrade. An eprint with
+a journal reference but no journal DOI leaves the row unreviewed, so it does
+not upgrade it either. The row keeps the working paper's id. When the journal
+record comes from OpenAlex (the venue, topic and area lanes), the row names the
+article's OpenAlex work in `openAlexId`, which enrichment and its 14-day
+refresh read first, so both arrival orders end up with the article's venue,
+type, topic and counts. When it is an arXiv eprint with a journal reference
+and DOI, enrichment still asks OpenAlex for the working paper's work, while
+the same pair stored eprint first is enriched through arXiv. A row stored before
 ENG-133 that already merged its journal article changes when a lane lists that
 article again (the venue, topic or area lane). No backfill is needed: the
 corpus began on 2026-10-22, so every such row falls inside those lanes'
