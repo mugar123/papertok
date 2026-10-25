@@ -364,6 +364,12 @@ test('exploration for an AI reader stays within AI, and a CS reader explores no 
   assert.ok(nearbyExplorationCategories(['cs.RO']).includes('cs.CR'));
 });
 
+test('exploration skips the subareas the reader removed', () => {
+  const nearby = nearbyExplorationCategories(['quant-ph'], {}, ['hep-th']);
+  assert.equal(nearby.includes('hep-th'), false);
+  assert.ok(['hep-ph', 'cond-mat.str-el', 'astro-ph.CO'].every(id => nearby.includes(id)));
+});
+
 test('diversified shuffle limits consecutive papers from the same category', () => {
   const papers = [
     { id: 'a1', primaryCategory: 'med.onco', _dynamicScore: 100 },

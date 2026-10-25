@@ -121,7 +121,8 @@ import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
-import { rankPreferences } from '../utils/preference-ranking.ts';
+import { MAIN_CATEGORIES } from '../utils/interest-memory.ts';
+import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -133,17 +134,10 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 // instead of riding in the boot graph of every route.
 const loadTopicRetrieval = () => import('../services/topic-retrieval-service.ts');
 
-// How many of the reader's ranked categories a page asks the corpus for.
-const MAIN_CATEGORIES = 10;
 // How long exploration and the follows may hold a page: past it, the page is
 // shown without them.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
-// How long the main query may wait for the followed-topic category ids. The
-// topic module is prewarmed the moment a topic follow is known (see the
-// following effect), so this is normally 0 ms and the budget only ever covers
-// a cold chunk on a slow connection.
-const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
@@ -163,8 +157,6 @@ function feedPreferenceSignature(preferences: string[] | null) {
   return [...(preferences || [])].sort().join('|');
 }
 
-// How many papers the followed entities add to a page.
-const FOLLOWED_PER_PAGE = 6;
 // The exploration cards a page adds from categories near the reader's:
 // FIRST_SCREEN_EXPLORATION on the first screen, up to NEARBY_EXPLORATION_MAX
 // after it, and RANDOM_EXPLORATION more from random ones when the reader is bored.
@@ -179,22 +171,8 @@ const RANDOM_EXPLORATION = 2;
  * topic follow that is one of the app's categories is asked for as those
  * categories, and matched by the categories a paper was found under.
  */
-async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, negativeIds, excludedIds, categoryIdsOf }: {
-  page: number; order: string; positiveIds: string[]; negativeIds: string[]; excludedIds: string[]; categoryIdsOf: (follow: FollowEntity) => string[];
-}) {
-  const categoryFollows = followedEntities
-    .map(follow => ({ follow, categoryIds: follow.type === 'topic' ? categoryIdsOf(follow) : [] }))
-    .filter(entry => entry.categoryIds.length > 0);
-  const papers = await fetchCorpusPage({
-    categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
-    follows: followedEntities,
-    positiveIds,
-    negativeIds,
-    excludedIds,
-    page,
-    pageSize: FOLLOWED_PER_PAGE,
-    order,
-  });
+async function fetchFollowedEntityCandidates({ request, categoryFollows }: ReturnType<typeof followedCorpusRequest>) {
+  const papers = await fetchCorpusPage(request);
   return papers.map(paper => ({
     ...paper,
     _type: 'followed' as const,
@@ -225,7 +203,7 @@ const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, dee
 // measured in production, a signed-in visit to a public page fired the full
 // source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }: PropsWithChildren<{ feedRouteActive?: boolean }>) {
-  const { user, userPreferences, followedAuthors } = useAuth();
+  const { user, userPreferences, deselectedPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
@@ -240,6 +218,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
   const feedCache = useRef<Record<string, FeedSnapshot>>({});
   const feedExcludedIds = useRef<string[]>([]);
+  // The list's plan, made with its first page like the exclusions above
+  // (feedPlanFor): null until a page plans one.
+  const feedPlan = useRef<FeedPlan | null>(null);
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set<string>());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set<string>());
@@ -902,6 +883,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     sessionSeenPapers.current = seenPapersForAccount(userId);
     notableAfterRef.current = null;
     feedExcludedIds.current = [];
+    feedPlan.current = null;
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
@@ -1155,6 +1137,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       ])].slice(0, 200);
     }
     const excludedIds = feedExcludedIds.current;
+    const plan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
+      selected: userPreferences,
+      deselected: deselectedPreferences,
+      examples: profileSignals.current.positiveExamples,
+      exposure: profileSignals.current.categoryExposure,
+      affinities: profileSignals.current.categoryAffinities,
+    });
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1171,35 +1160,21 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // Followed topics widen the main query. The lookup used to be an
-        // unbounded `await loadTopicRetrieval()` in front of every source;
-        // dropping it altogether left a followed topic worth at most six
-        // papers (audit 2026-09-02, A4). It is budgeted now, and normally
-        // served from the module the following effect already warmed.
-        const followedTopicIds = followedEntities.some(entity => entity?.type === 'topic')
-          ? await resolveWithin(
-            loadTopicRetrieval().then(module => module.getFollowedTopicCategoryIds(followedEntities)),
-            FOLLOWED_TOPIC_RANK_BUDGET_MS,
-            [],
-          )
-          : [];
-        // Ties are spread across areas (preference-ranking.ts): on a flat
-        // profile the five slots below used to go to the first five of the
-        // first area, whatever else the account had picked.
-        const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
+        // A followed topic fills only the follows' places (FOLLOWED_PER_PAGE).
+        // The main request asks for the reader's interests alone, so a topic
+        // of an area they removed or never picked takes none of its places
+        // and does not order it (ENG-137); it used to widen the main request
+        // (audit 2026-09-02, A4).
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
         const queryMode = corpusOrder(temporalPreference.current || 0);
-        const positiveIds = selectSemanticProfilePositiveIds(
-          curatedIds(interactionProfile.current, 'liked'),
-          curatedIds(interactionProfile.current, 'saved'),
-        );
         const negativeIds = curatedIds(interactionProfile.current, 'notInterested').slice(0, 24);
+        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
         // harvests, merges and enriches them once a day (worker/paper-store.ts)
-        // and ranks the page by the reader's liked and saved papers. It asks
+        // and ranks each interest group of the plan by its own examples. It asks
         // for the fifteen the page shows: the next page starts after them, so
         // a paper asked for and left out would never come back.
         // The follows are optional: they join the page if they answer in time.
@@ -1210,7 +1185,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // Adjacent categories within the user's parent areas, chosen by what
         // exploring each of them has returned so far.
         const nearbyCats = pickExplorationCategories(
-          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities),
+          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities, deselectedPreferences),
           profileSignals.current.categoryExposure,
         );
 
@@ -1244,7 +1219,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // If highly bored, pull from completely random categories outside user areas
         if (!reset && currentBoredom >= boredomThreshold * 1.5) {
           const randomCats = allCategories
-            .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
+            .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id) && !deselectedPreferences.includes(c.id))
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
@@ -1253,14 +1228,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         const followedCandidatesPromise = followedEntities.length > 0
           ? resolveWithin(
-            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(followedEntities, {
-              page: currentPage,
-              order: queryMode,
-              positiveIds,
-              negativeIds,
-              excludedIds,
-              categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
-            })),
+            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(
+              followedCorpusRequest(plan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
+            )),
             OPTIONAL_SOURCE_RENDER_BUDGET_MS,
             [],
           )
@@ -1269,13 +1239,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         let mainFailed = false;
         try {
           mainPapers = await fetchCorpusPage({
-            categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
-            positiveIds,
-            negativeIds,
-            excludedIds,
-            page: currentPage,
-            pageSize: PAGE_SIZE,
-            order: queryMode,
+            ...mainCorpusRequest(plan, shared),
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);
@@ -1476,7 +1440,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     }
   }, [
-    userPreferences, page, papers, loading, feedMode,
+    userPreferences, deselectedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
   ]);
@@ -1494,6 +1458,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     restoredFeedKeyRef.current = key;
     feedCache.current[mode] = snapshot;
     feedExcludedIds.current = snapshot.excludedIds ?? [];
+    feedPlan.current = null;
     // The restore shows these cards in this session, as a load would: a refresh
     // must not offer them again. Only a card's own report makes one "viewed".
     snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
@@ -1654,6 +1619,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const cached = feedCache.current[newMode];
     if (cached && cached.papers.length > 0) {
       feedExcludedIds.current = cached.excludedIds ?? [];
+      feedPlan.current = null;
       // Re-filter cached papers to ensure newly liked/saved papers are removed
       const refiltered = cached.papers.filter(p => 
         !notInterestedIdsRef.current.has(p.id) && 

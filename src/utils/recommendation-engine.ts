@@ -4,6 +4,7 @@ import type { FollowInput } from './following.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { leavesForOpenAlexTopic } from './area-accent.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { activeCategories } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
@@ -694,15 +695,14 @@ function sampleBeta(alpha: number, beta: number, random: () => number) {
  * offered; one that keeps holding the reader keeps coming back.
  */
 /**
- * The leaves exploration chooses from: the other leaves of the areas the
- * reader's preferences belong to, less any the reader has turned away from.
+ * The leaves exploration chooses from: the reader's active subareas
+ * (activeCategories) they have not picked, less any they have turned away
+ * from. A subarea they removed sleeps, and is not explored either.
  */
-export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}) {
-  const leaves = getAllLeafCategories();
-  const areas = new Set(leaves.filter(leaf => preferences.includes(leaf.id)).map(leaf => leaf.area));
-  return leaves
-    .filter(leaf => areas.has(leaf.area) && !preferences.includes(leaf.id) && (affinities[leaf.id] || 0) >= -2)
-    .map(leaf => leaf.id);
+export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}, deselected: string[] = []) {
+  const leaves = new Set(getAllLeafCategories().map(leaf => leaf.id));
+  return [...activeCategories(preferences, deselected)]
+    .filter(id => leaves.has(id) && !preferences.includes(id) && (affinities[id] || 0) >= -2);
 }
 
 export function pickExplorationCategories(
