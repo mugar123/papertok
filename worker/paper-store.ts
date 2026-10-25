@@ -923,12 +923,12 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * rank holds, walked the same way from `notableWalked`.
  *
  * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
- * likes, rejections and order of lanes (`rankedBy`, a digest, so the entry
- * holds no liked paper's id) serves the next pages as it is. Otherwise a next
- * page keeps the ranks served and the ones walked past, and the notable papers
- * walked past, and ranks the rest again. With the ids the walks read
- * (`paperId`), the entry tells which ranks at the top of the reader's ranking
- * their filter held.
+ * lanes in the same order, `order`, likes and rejections (`rankedBy`, a
+ * digest, so the entry holds no liked paper's id) serves the next pages as it
+ * is. Otherwise a next page keeps the ranks served and the ones walked past,
+ * and the notable papers walked past, and ranks the rest again. With the ids
+ * the walks read (`paperId`), the entry tells which ranks at the top of the
+ * reader's ranking their filter held.
  */
 export interface KeptRanking {
   ranks: Array<RankedCandidate | null>;
@@ -952,9 +952,9 @@ export interface RankingCache {
 // a reading session. The entry lasts as long from the last page that changes it.
 export const RANKING_KEPT_MS = 15 * 60_000;
 
-/** The likes, rejections and order of lanes an order is ranked by, as a digest (`rankedBy`). */
+/** The lanes in their order, `order`, the likes and the rejections an order is ranked by, as a digest (`rankedBy`). */
 async function rankingInputs(lanes: string[], query: FeedQuery) {
-  const inputs = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort() });
+  const inputs = JSON.stringify({ lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort() });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -992,10 +992,19 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
-  // The lanes as a set: their order, like the likes and rejections, changes
-  // the ranking (`rankedBy`) but not which pages it serves, so a change ranks
-  // again after the ranks the session passed rather than from the top.
-  const cacheKey = JSON.stringify({ lanes: [...lanes].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
+  // A page that skips seen papers goes on with its session's walk whatever
+  // categories and `order` it asks for: the app asks for the reader's first ten
+  // categories by their interests, and for older papers past a lean toward
+  // them, both of which a session changes. Those, the order of the lanes, the
+  // likes and the rejections change the ranking (`rankedBy`), not the walk, so
+  // a change ranks again after the ranks the session passed rather than from
+  // the top. Other pages keep an order per set of lanes and `order`.
+  const cacheKey = JSON.stringify({
+    ...(query.skipsSeen ? { follows: [...new Set(query.follows.map(follow => follow.lane))].sort() } : { lanes: [...lanes].sort(), order: query.order }),
+    excluded: [...query.excludedIds].sort(),
+    pageSize: query.pageSize,
+    notable: query.notable > 0,
+  });
   const rankedBy = await rankingInputs(lanes, query);
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
   const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;

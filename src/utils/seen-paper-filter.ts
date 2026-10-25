@@ -33,8 +33,10 @@ export const SEEN_FILTER_HASHES = Math.ceil((Math.LN2 * SEEN_FILTER_BITS) / SEEN
 // passes over an unseen paper; the filter never offers a seen one. Past its
 // capacity the rate climbs fast (about 6% at 3,000 ids, 29% at 5,000), so a
 // request holds only the 2,000 most recent ids (`feedSeenIds`): the last 500
-// viewed, up to 1,200 viewed notable cards and the session's pages. A paper
-// the reader saw before those can be offered again in a very long session.
+// viewed, up to 1,200 viewed notable cards and the session's pages. The corpus
+// sends a paper the reader saw before those as unseen when its walk reaches
+// it: the app passes over it and makes it the newest (`markSeenLatest`), so
+// the next request holds it, and the walks after that start past it.
 const FEED_SEEN_CAPACITY = 2000;
 const FEED_SEEN_BITS = bitsFor(FEED_SEEN_CAPACITY);
 const FEED_SEEN_HASHES = Math.ceil((Math.LN2 * FEED_SEEN_BITS) / FEED_SEEN_CAPACITY);

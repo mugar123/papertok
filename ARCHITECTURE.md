@@ -126,7 +126,8 @@ candidate limits and ranking rules.
 pages. Each page says which papers the reader has seen, as a Bloom filter, and
 asks the Worker to pass over them: [paper-store.ts](worker/paper-store.ts)
 walks the reader's kept ranking past the filter, so a reload is one request
-however many pages the reader saw.
+however many pages the reader saw, and each later page goes on from where the
+last walk stopped.
 [feed-pagination.ts](src/context/feed-pagination.ts) decides when a page the
 feed cannot show goes one page on, and shows the page again when the reader
 has seen their whole ranking.

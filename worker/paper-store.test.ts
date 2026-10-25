@@ -618,7 +618,7 @@ test("reranking retains served ranks and relevance order without repeating paper
   const kept = new Map<string, KeptRanking>();
   const cache: RankingCache = {
     get: async key => kept.get(key) ?? null,
-    put: async (key, ranking) => { kept.set(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false }); },
+    put: async (key, ranking) => { kept.set(key, { ...ranking, ranks: ranking.ranks.slice(0, ranking.served), final: false }); },
   };
   const page = async (number: number) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], page: number }), { now: NOW, cache }))
     .map(item => item.id);
@@ -1090,6 +1090,51 @@ test('a reader who has seen a thousand papers of their ranking costs a few reads
   assert.deepEqual(page.map(paper => paper.id), Array.from({ length: 15 }, (_, index) => paperId(1_001 + index)));
   const idReads = trips.filter(trip => trip.some(sql => sql.includes("paper ->> '$.id'"))).length;
   assert.ok(idReads <= 4, `${idReads} reads of stored ids for 1,015 ranks`);
+});
+
+// The review of ENG-103's cap on the filter (2,000 ids): a page walked the
+// ranking from its top, so the papers seen before the 2,000 newest came back
+// on every page, and a long session ran out of new ones.
+test('a page goes on from where the last walk stopped, so the papers seen before the 2,000 a filter holds are sent once', async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const paperId = (id: number) => `2610.${String(id).padStart(5, '0')}`;
+  db.exec('BEGIN');
+  for (let id = 1; id <= 1_200; id += 1) {
+    const published = new Date(NOW - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: paperId(id), arxivId: paperId(id), title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('cs.LG', id, published);
+  }
+  db.exec('COMMIT');
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => paperId(from + index));
+  // The order as the Worker's cache keeps it for the session.
+  const orders = new Map<string, KeptRanking>();
+  const keep = async (key: string, ranking: KeptRanking) => { orders.set(key, ranking); };
+  const cache: RankingCache = { get: async key => orders.get(key) ?? null, put: keep, update: keep };
+  // The session's seen papers, oldest first: yesterday's views (the top 15 of
+  // today's ranking), then 2,000 later ones (follows, exploration, notable cards).
+  const later = (from: number) => Array.from({ length: 2_000 }, (_, index) => `later-${from + index}`);
+  const seen = new Set([...range(1, 15), ...later(0)]);
+  const page = async (number: number) => {
+    const answer = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: number, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true }), { now: NOW, cache }))
+      .map(paper => paper.id);
+    // The app passes over a paper it has seen and makes it the newest of the
+    // seen papers (markSeenLatest), and shows the others.
+    for (const id of answer) {
+      seen.delete(id);
+      seen.add(id);
+    }
+    return answer;
+  };
+  assert.deepEqual(await page(3), range(1, 15), 'yesterday\'s views, which the filter no longer holds');
+  assert.deepEqual(await page(4), range(16, 30));
+  // 2,000 more cards from the other sources: the filter holds neither page.
+  later(2_000).forEach(id => seen.add(id));
+  assert.deepEqual(await page(5), range(16, 30), 'the papers the last page sent, not the ones the walk before it passed');
+  const sixth = await page(6);
+  assert.equal(sixth[0], paperId(31));
+  assert.deepEqual(sixth.filter(id => id < paperId(31)), [], 'and none of the ones before them again');
 });
 
 test('a page that skips seen papers and has no candidate of its own reads no notable papers', async t => {

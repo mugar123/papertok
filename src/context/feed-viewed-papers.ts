@@ -61,7 +61,11 @@ export function seenPapersForAccount(userId: string | null, storage?: DeviceStor
  * first, because a feed request holds only the last 2,000 of them
  * (`feedSeenIds`). The aggregate lists its papers newest first, so they go in
  * reversed and ahead of the papers it does not list: this browser's latest
- * views, not stored yet, and the pages loaded since.
+ * views, not stored yet, and the pages loaded since. Its notable cards outside
+ * the ring were viewed before every paper of the ring, so its papers keep the
+ * order of their views. The papers it does not list have no view time, and
+ * some are older views of this browser that the ring no longer holds: placed
+ * newest, they stay in the requests longer than their age would keep them.
  */
 export function addViewedPapers(sessionSeen: Set<string>, profile: InteractionProfile) {
   const viewed = viewedIds(profile).reverse();

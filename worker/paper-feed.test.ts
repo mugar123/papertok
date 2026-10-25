@@ -12,8 +12,6 @@ import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
-import { addViewedPapers, markSeenLatest, recordCardView, seenPapersForAccount } from '../src/context/feed-viewed-papers.ts';
-import { createEmptyInteractionProfile, recordInteractionEvent } from '../src/utils/interaction-profile.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -528,6 +526,39 @@ test('an app that sends the filter without asking to skip seen papers keeps page
   assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen, notable: 3 })).papers), ids(papers.slice(15, 30)));
 });
 
+// The same bundles through a session: each card they show joins the filter,
+// they place one notable card a page, and a like goes with every page after it.
+test('an app that sends the filter only for notable papers keeps page numbers through a like, and gets each notable paper until it places it', async t => {
+  rankingCaches(t);
+  const { env, db, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const notable = Array.from({ length: 8 }, (_, index) => `1901.${String(index).padStart(5, '0')}`);
+  notable.forEach((id, index) => {
+    const listed = new Date(Date.UTC(2024, 0, 1) - index * 3_600_000).toISOString();
+    insertWork.run(10_000 + index, JSON.stringify({ id, title: `Notable paper ${index}`, authors: [] }), listed, '2099-01-01T00:00:00.000Z');
+    insertLane.run('notable:cs.CL', 10_000 + index, listed);
+  });
+  const seen = new Set<string>();
+  const pages: string[][] = [];
+  const offers: string[][] = [];
+  for (let page = 0; page < 4; page += 1) {
+    // Filed by the harvest after the second page, newer than any before.
+    if (page === 2) await ingestPapers(env, [{ paper: paper('2610.69999', 'A paper filed during the session', 0.01), lanes: [] }]);
+    const answer = await ask({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), notable: 3, positiveIds: page >= 2 ? ['2610.99999'] : [] });
+    assert.equal('skipsSeen' in answer, false, `page ${page}`);
+    const shown = ids(answer.papers.filter(item => !item._notable));
+    const offered = ids(answer.papers.filter(item => item._notable));
+    [...shown, offered[0]].forEach(id => seen.add(id));
+    pages.push(shown);
+    offers.push(offered);
+  }
+  assert.deepEqual(pages, [ids(papers.slice(0, 15)), ids(papers.slice(15, 30)), ['2610.69999', ...ids(papers.slice(30, 44))], ids(papers.slice(44, 59))]);
+  assert.deepEqual(offers, [notable.slice(0, 3), notable.slice(1, 4), notable.slice(2, 5), notable.slice(3, 6)]);
+});
+
 test('a request with a hundred and twenty follows, the likes and the filter fits the body cap', async t => {
   rankingCaches(t);
   const { env, ask } = store();
@@ -640,21 +671,21 @@ for (const [removed, name] of dropped) {
   });
 }
 
-// A kept order holds the ids of its first 600 ranks; the corpus then drops 400
-// works the reader's filter leaves unseen (an eviction, or folds, within the
-// order's 15 minutes). The request chooses the page size and the filter, so it
-// can make the walk land on exactly those works.
+// A walk past 600 seen papers leaves the ids of the first 1,400 ranks on the
+// kept order; the corpus then drops the 400 works after the ones it sent (an
+// eviction, or folds, within the order's 15 minutes), and the next walk lands
+// on them, whatever the page size.
 for (const pageSize of [1, 15, 30]) {
   test(`a page of ${pageSize} past 400 works the corpus dropped behind the kept order costs a few reads, whatever its size`, async t => {
     rankingCaches(t);
     const { env, db, ask } = store();
-    const papers = recent(700);
+    const papers = recent(1_100);
     await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
     const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize, seen: feedSeenFilter(seen), skipsSeen: true });
     await ask(request(0, []));
-    // A page whose walk leaves the ids of the first 600 ranks on the kept order.
-    await ask(request(1, ids(papers.slice(0, 590))));
-    for (const item of papers.slice(100, 500)) removeWork(db, item.id);
+    const sent = ids((await ask(request(1, ids(papers.slice(0, 600))))).papers);
+    assert.deepEqual(sent, ids(papers.slice(600, 600 + pageSize)));
+    for (const item of papers.slice(600 + pageSize, 1_000 + pageSize)) removeWork(db, item.id);
     const binding = env.PAPER_STORE as D1Database;
     const prepare = binding.prepare.bind(binding);
     const statements: string[] = [];
@@ -662,25 +693,14 @@ for (const pageSize of [1, 15, 30]) {
       statements.push(sql);
       return prepare(sql);
     });
-    const answer = await ask(request(2, ids(papers.slice(0, 100))));
-    assert.deepEqual(ids(answer.papers), ids(papers.slice(500, 500 + pageSize)));
+    const answer = await ask(request(2, ids(papers.slice(0, 600 + pageSize))));
+    assert.deepEqual(ids(answer.papers), ids(papers.slice(1_000 + pageSize, 1_000 + 2 * pageSize)));
     const workReads = statements.filter(sql => sql.startsWith('SELECT id, paper, kept_until')).length;
     assert.ok(workReads <= 2 && statements.length <= 6, `${statements.length} statements, ${workReads} of them reads of works`);
   });
 }
 
 // ─── A long session (ENG-103) ───
-
-function memoryStorage() {
-  const values = new Map<string, string>();
-  return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, value); },
-    removeItem: (key: string) => { values.delete(key); },
-    key: (index: number) => [...values.keys()][index] ?? null,
-    get length() { return values.size; },
-  };
-}
 
 // The reader's ten categories, as many as the app asks for (MAIN_CATEGORIES).
 const SESSION_CATEGORIES = ['cs.AI', 'cs.CL', 'cs.CV', 'cs.LG', 'cs.RO', 'cs.IR', 'cs.NE', 'cs.CR', 'cs.DB', 'cs.HC'];
@@ -695,14 +715,14 @@ const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) 
  * A reader with a full history reads `loads` pages, as the review of ENG-103
  * modelled it. The corpus holds 300 recent and 300 notable papers in each of
  * their categories, which they rank newest first (they like nothing yet). The
- * app passes over a paper it has seen (FeedContext.loadPapers) and shows the
- * rest of the corpus's page, places two of its unseen notable cards, and adds
- * 14 cards of the follows and exploration. `request` changes a load's request,
+ * app passes over a paper it has seen (FeedContext.loadPapers), shows the rest
+ * of the corpus's page, places two of its unseen notable cards, and adds 14
+ * cards of the follows and exploration. `request` changes a load's request,
  * and `minutesPerLoad` moves the clock after each load. With `filing`, the
  * harvest files two recent papers and a notable one after each load, newer
  * than any before: a ranking made after that puts them first.
  */
-async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, filing = false, request = (_load: number) => ({}) } = {}) {
+async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, filing = false, request }: { minutesPerLoad?: number; filing?: boolean; request?: (load: number) => object } = {}) {
   rankingCaches(t);
   if (minutesPerLoad) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const { env, db, ask } = store();
@@ -723,14 +743,11 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
   db.exec('COMMIT');
 
   const uid = 'heavy-reader';
-  const storage = memoryStorage();
-  const aggregate = createEmptyInteractionProfile();
-  const view = (paperId: string, notable: boolean) => recordInteractionEvent(aggregate, { paperId, kind: 'viewTime', category: 'cs.LG', viewTime: 4, notable });
-  viewedRanks(1_200).forEach(rank => view(notablePaper(rank), true));
-  viewedRanks(500).forEach(rank => view(rankedPaper(rank), false));
-  const seen = seenPapersForAccount(uid, storage);
-  addViewedPapers(seen, aggregate);
-  const account = { activeUserId: uid, signedInUid: uid, sessionSeen: seen };
+  // The session's seen papers, oldest first, as the app starts them from the
+  // account's views (addViewedPapers): the notable cards, then the papers.
+  const seen = new Set([...viewedRanks(1_200).map(notablePaper), ...viewedRanks(500).map(rankedPaper)]);
+  // The app moves a paper it passes over to the newest end (markSeenLatest).
+  const passOver = (paperId: string) => { seen.delete(paperId); seen.add(paperId); };
 
   const session: Array<{ main: string[]; shown: string[]; placed: string[]; filed: string[] }> = [];
   let otherCards = 0;
@@ -742,10 +759,9 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     return paperId;
   };
   for (let load = 0; load < loads; load += 1) {
-    const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, notable: 5, ...request(load) }, uid);
+    const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, notable: 5, ...request?.(load) }, uid);
     const known = papers.filter(item => seen.has(item.id));
-    known.filter(item => item._notable).forEach(item => recordCardView(item.id, uid, account, storage));
-    known.forEach(item => markSeenLatest(seen, item.id));
+    known.forEach(item => passOver(item.id));
     const shown = papers.filter(item => !item._notable && !known.includes(item));
     const placed = papers.filter(item => item._notable && !known.includes(item)).slice(0, 2);
     [...shown, ...placed].forEach(item => seen.add(item.id));
@@ -785,31 +801,42 @@ function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
 test('a reader who viewed 1,200 notable cards and 500 papers before gets new papers and notable cards on each of 90 loads', async t => {
   const session = await longSession(t, 90);
   assertSupplied(session);
-  // Every paper ranked before the last one the session got, and neither got
-  // nor viewed before, was passed over as seen: a false positive of the filter.
-  const returned = new Set(session.flatMap(load => load.main));
+  // Every paper ranked before the last one the session got so far, and
+  // neither got nor viewed before, was passed over as seen: a false positive
+  // of the filter, which no later walk goes back to. After every load from the
+  // 20th (300 papers) on, they are about 1% of the unseen papers walked past.
   const viewedBefore = new Set(viewedRanks(500).map(rankedPaper));
-  const last = Math.max(...[...returned].map(id => Number(id.slice(5))));
-  const skipped = Array.from({ length: last }, (_, rank) => rankedPaper(rank)).filter(id => !returned.has(id) && !viewedBefore.has(id));
-  assert.ok(skipped.length / (skipped.length + returned.size) <= 0.012, `${skipped.length} unseen papers passed over, of ${skipped.length + returned.size}`);
+  const rates = session.slice(19).map((_, index) => {
+    const got = new Set(session.slice(0, index + 20).flatMap(load => load.main));
+    const last = Math.max(...[...got].map(id => Number(id.slice(5))));
+    const passed = Array.from({ length: last }, (_, rank) => rankedPaper(rank)).filter(id => !got.has(id) && !viewedBefore.has(id)).length;
+    return passed / (passed + got.size);
+  });
+  const worst = Math.max(...rates);
+  assert.ok(worst <= 0.012, `${(100 * worst).toFixed(2)}% of the unseen papers passed over after ${rates.indexOf(worst) + 20} loads`);
 });
 
 test('a ranking kept for 15 minutes is ranked again after the papers the session passed over, and none comes back', async t => {
   assertSupplied(await longSession(t, 90, { minutesPerLoad: 1, filing: true }));
 });
 
-test('a like, or a new order of the reader\'s categories, ranks again after the papers the session passed over', async t => {
+// The app asks for the reader's first ten categories by their interests, and
+// for older papers past a lean toward them, both of which a session changes.
+test('a like, a new order or set of the reader\'s categories, or a lean toward older papers ranks again after the papers the session passed over', async t => {
   assertSupplied(await longSession(t, 90, {
     filing: true,
-    request: load => ({
+    request: load => {
       // A like every third load, of a paper the corpus does not hold.
-      positiveIds: Array.from({ length: Math.floor(load / 3) }, (_, index) => `liked-${index}`),
-      categories: [...SESSION_CATEGORIES.slice(load % 10), ...SESSION_CATEGORIES.slice(0, load % 10)],
-    }),
+      const positiveIds = Array.from({ length: Math.floor(load / 3) }, (_, index) => `liked-${index}`);
+      const categories = [...SESSION_CATEGORIES.slice(load % 10), ...SESSION_CATEGORIES.slice(0, load % 10)];
+      // An eleventh category takes the last one's place for five loads in twenty.
+      if (load % 20 >= 15) categories[categories.indexOf('cs.HC')] = 'cs.SE';
+      return { positiveIds, categories, order: load % 14 >= 7 ? 'relevance' : 'recent' };
+    },
   }));
 });
 
-const followedAuthor ={ type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
+const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
   rankingCaches(t);
