@@ -102,6 +102,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // in the cascade to win them.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import AbstractSheet from './abstract-sheet.tsx';
+import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
@@ -126,6 +127,7 @@ import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-s
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
+import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
 import { buildPaperTopicTags } from '../../utils/paper-topic-tags.ts';
 
@@ -890,6 +892,7 @@ const PaperCard = memo(function PaperCard({
    * are the same words as before.
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
+  const abstractAttribution = semanticScholarAttribution(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -2117,6 +2120,22 @@ const PaperCard = memo(function PaperCard({
                 {...abstractSwap}
               >
                 <ScientificText>{abstractText}</ScientificText>
+                {/* Inside the words it credits, so it is in the panel from
+                    their first frame and leaves with them: mounted on the
+                    clipped verdict instead, it would be a late line on the
+                    bottom-anchored phone column. Below the fold of a clipped
+                    panel it is inert, so focus never lands on a link no one
+                    can see; "Read full abstract" or the sheet shows it. */}
+                {abstractAttribution && (
+                  <SourceAttribution
+                    as="span"
+                    className="pc-abstract-source"
+                    lead={`${abstractAttribution.label} ·`}
+                    href={abstractAttribution.href}
+                    inert={!expanded && abstractClipped !== false}
+                    onLinkClick={swallowClick}
+                  />
+                )}
               </motion.p>
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.

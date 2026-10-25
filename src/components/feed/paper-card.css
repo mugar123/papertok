@@ -875,6 +875,13 @@ button.pc-topics-pop-item:focus-visible {
   color: var(--text-secondary);
 }
 
+/* The Semantic Scholar credit, set inside the abstract's paragraph (it carries
+   its own mono voice) as a line of its own after the words. */
+.pc-abstract-source {
+  display: block;
+  margin-top: var(--space-2);
+}
+
 /* The bottom fade is always the same mask; what changes is how far down its
    gradient is stretched. Toggling `mask-image` on and off cannot be animated —
    the edge simply blinked — but `mask-size` is a length pair and interpolates,
