@@ -315,9 +315,8 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
       },
       {
         // Chemistry (field 16) is read by its field, not by the topic's name
-        // ("Polymer ..."), which read as Chemical Engineering by keyword
-        // (PAP-60). And an editorial's inverted index is its body, not an
-        // abstract.
+        // ("Polymer ..."). And an editorial's inverted index is its body, not
+        // an abstract.
         id: 'https://openalex.org/WNAMED',
         type: 'editorial',
         display_name: 'Polymer membranes for water',

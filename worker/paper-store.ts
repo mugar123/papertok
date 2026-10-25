@@ -220,11 +220,12 @@ const NOTABLE_READ_PER_YEAR = 25;
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
 // from arXiv, and for chemistry, which no other source lists: PubMed lists
 // journal articles for every leaf of medicine and biology. A paper a leaf of
-// its area holds leaves the area's lane (leaf-filing.ts), so it reaches that leaf's readers and no other's. Not
-// statistics while its label covers OpenAlex's Decision Sciences (field 18):
-// 147 of that field's 200 newest articles on 2026-10-23 were operations
-// research and information systems, and most of the 44 in its statistics
-// subfield bibliometrics and meta-analyses.
+// its area holds leaves the area's lane (leaf-filing.ts), so it reaches that
+// leaf's readers and no other's. Not statistics while its label covers
+// OpenAlex's Decision Sciences (field 18): 147 of that field's 200 newest
+// articles on 2026-10-23 were operations research and information systems,
+// and most of the 44 in its statistics subfield bibliometrics and
+// meta-analyses.
 export const AREA_LANE_AREAS: readonly string[] = [...ARXIV_FEED_AREAS.filter(area => area !== 'stat'), 'chem'];
 export const areaLane = (area: string) => `area:${area}`;
 const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
