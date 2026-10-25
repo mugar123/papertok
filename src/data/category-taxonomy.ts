@@ -291,12 +291,12 @@ export function getArxivArchiveArea(categoryId = '') {
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory: string) {
-  if (Object.hasOwn(CATEGORIES, arxivCategory)) {
+  if (CATEGORIES[arxivCategory]) {
     const area = CATEGORIES[arxivCategory];
     return area.label || area.label;
   }
   for (const area of Object.values(CATEGORIES)) {
-    if (Object.hasOwn(area.subcategories, arxivCategory)) {
+    if (area.subcategories[arxivCategory]) {
       const category = area.subcategories[arxivCategory];
       return category.label || category.label;
     }

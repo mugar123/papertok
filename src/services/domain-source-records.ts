@@ -157,15 +157,15 @@ function safeUrl(value: string | undefined) {
   }
 }
 
-function safeYear(value: string | undefined) {
-  const year = new Date(value!).getUTCFullYear();
+function safeYear(value: string | null | undefined) {
+  if (!value) return undefined;
+  const year = new Date(value).getUTCFullYear();
   return Number.isInteger(year) && year > 1800 ? year : undefined;
 }
 
 function categoryLabel(categoryId: string) {
   for (const area of Object.values(CATEGORIES)) {
-    const category = Object.hasOwn(area.subcategories, categoryId) ? (area.subcategories as Record<string, { label: string }>)[categoryId] : undefined;
-    if (category) return category.label || category.label;
+    if (Object.hasOwn(area.subcategories, categoryId)) return area.subcategories[categoryId].label;
   }
   return categoryId.replace(/[.-]/g, ' ');
 }
@@ -250,7 +250,7 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
       ? record.authors
       : authorObjects(String(raw.authorString || '').split(',')),
     journal: normalizeText(journal?.title),
-    year: scheduled ? undefined : safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
+    year: scheduled ? undefined : safeYear(published || (raw.journalInfo?.yearOfPublication ? `${raw.journalInfo.yearOfPublication}-01-01` : undefined)),
     published,
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
     publicationType: chapter ? 'book-chapter' : 'article',

@@ -1,23 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mapBioRxivPaper as mapUndatedBio, mapOstiRecord as mapUndatedOsti, mapCoreWork as mapUndatedCore, mapAdsPaper as mapUndatedAds, mapInspirePaper as mapUndatedInspire, mapNasaRecord as mapUndatedNasa } from './domain-source-records.ts';
-
-test('records without a publication date keep the year unknown', () => {
-  const papers = [
-    mapUndatedBio({ doi: '10.1101/2024.01.01.000001', title: 'Undated preprint', abstract: 'A.', authors: 'Ada', category: 'neuroscience' }),
-    mapUndatedOsti({ osti_id: '1', title: 'Undated report', description: 'A.', doi: '10.2172/1' }),
-    mapUndatedCore({ id: '1', title: 'Undated core', abstract: 'A.', doi: '10.1000/core' }),
-    mapUndatedAds({ bibcode: '2024xxxx.1A', title: ['Undated ADS'], abstract: 'A.', doi: ['10.1000/ads'] }),
-    mapUndatedInspire({ control_number: 7, titles: [{ title: 'Undated INSPIRE' }], abstracts: [{ value: 'A.' }], dois: [{ value: '10.1000/ins' }] }),
-    mapUndatedNasa({ id: 1, title: 'Undated NASA', abstract: 'A.', doi: '10.1000/nasa' } as never),
-  ];
-  for (const paper of papers) {
-    assert.ok(paper, 'record maps');
-    assert.equal(paper.year, undefined, paper.id);
-    assert.equal(/^\d{4}-01-01$/.test(String(paper.published || '')), false, `${paper.id} has no invented date`);
-  }
-});
 import { isDeepStrictEqual } from 'node:util';
 import type { Paper } from '../models/paper.ts';
 import {
@@ -62,6 +45,23 @@ test('a degraded bioRxiv answer is a source failure, not an empty result', () =>
 // Shared with `fetchWorkerSourceJson`, so it lives in the module both source
 // entry points can import without closing a cycle.
 import { sourceResponseError } from './worker-api-client.ts';
+
+test('records without a publication date keep the year unknown', () => {
+  const papers = [
+    mapBioRxivPaper({ doi: '10.1101/2024.01.01.000001', title: 'Undated preprint', abstract: 'A.', authors: 'Ada', category: 'neuroscience' }),
+    mapOstiRecord({ osti_id: '1', title: 'Undated report', description: 'A.', doi: '10.2172/1' }),
+    mapCoreWork({ id: '1', title: 'Undated core', abstract: 'A.', doi: '10.1000/core' }),
+    mapAdsPaper({ bibcode: '2024xxxx.1A', title: ['Undated ADS'], abstract: 'A.', doi: ['10.1000/ads'] }),
+    mapInspirePaper({ control_number: 7, titles: [{ title: 'Undated INSPIRE' }], abstracts: [{ value: 'A.' }], dois: [{ value: '10.1000/ins' }] }),
+    mapEuropePmcSearchResult({ id: '1', pmid: '1', source: 'MED', title: 'Undated Europe PMC' }),
+    mapNasaRecord({ id: 1, title: 'Undated NASA', abstract: 'A.' }),
+  ];
+  for (const paper of papers) {
+    assert.ok(paper, 'record maps');
+    assert.equal(paper.year, undefined, paper.id);
+    assert.equal(/^\d{4}-01-01$/.test(String(paper.published || '')), false, `${paper.id} has no invented date`);
+  }
+});
 
 test('routes biology and engineering categories only to relevant specialist sources', () => {
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
