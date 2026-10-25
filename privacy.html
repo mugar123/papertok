@@ -323,20 +323,24 @@
         it keeps for up to three days.
       </p>
       <p>
-        When the in-app PDF reader requests a document, that server uses the IP address
+        When the in-app PDF reader requests a document, or a public request looks up
+        papers, open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
         counts. It does not store the original IP address in these counters or attach
         your account or the paper you requested. The identifier changes each minute
         and is not sent to analytics. People sharing a public IP, such as a campus
-        network, share the limit of 30 requests per UTC minute.
+        network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute.
       </p>
       <p>
         These PDF counters are stored in Cloudflare Durable Objects. Their automatic
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
         fails to run that cleanup, but expired counters do not affect later windows.
+        The arXiv and open-access lookup counters use the same cleanup schedule.
+        OpenAlex and shared-page lookup counters are stored with their daily
+        allowance and are scheduled for deletion after three days.
       </p>
       <p>
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
