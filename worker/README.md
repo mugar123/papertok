@@ -506,6 +506,13 @@ variable is set. Nothing is verified here — the signature check stays with `ac
 a string that could not have been issued by Firebase no longer costs an upstream call. The screen
 runs after the identity cache, which only ever holds verified identities.
 
+Notification routes use this same verifier and its 60-second identity cache,
+including the verified display name used in digest greetings. They still require
+an email address whose ownership Firebase proves. Invalid credentials remain
+`401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
+and an unreachable verifier is `503 EMAIL_UNAVAILABLE`. Recipient addresses use
+the shared verifier’s trimmed, lowercase form.
+
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
 allowance (`PUBLIC_LIST_USER_DAILY_LIMIT`, `PUBLIC_LIST_GLOBAL_DAILY_LIMIT`) is reserved, so a
