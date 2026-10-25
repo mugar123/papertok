@@ -502,9 +502,9 @@ variable is set. Nothing is verified here — the signature check stays with `ac
 a string that could not have been issued by Firebase no longer costs an upstream call. The screen
 runs after the identity cache, which only ever holds verified identities. The cache keeps one at the
 edge for 60 s under the SHA-256 of its token: the uid, the lowercased email, whether Firebase marks
-that address verified, whether the account owns it, the sign-in time and the display name (spaces collapsed, at most
-160 characters). Routes
-documented as having no identity cache ask Identity Toolkit on every request.
+that address verified, whether the account owns it, the sign-in time and the display name (spaces
+collapsed, at most 160 characters). Routes documented as having no identity cache ask Identity
+Toolkit on every request.
 
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
