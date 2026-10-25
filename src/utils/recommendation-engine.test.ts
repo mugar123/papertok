@@ -140,12 +140,37 @@ test('learned signals score nothing outside the active subareas, follows still d
   assert.equal(scorePaperForRecommendation(hepTh, context).affinity, 80);
 });
 
-test('a card fetched for a pick is active though it names no category of its own', () => {
-  const card = { id: 'pmid:1', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.EM'], published: '2026-07-05T00:00:00Z' };
-  const score = scorePaperForRecommendation(card, {
-    now: NOW, userPreferences: ['econ.EM'], activeCategories: ['econ.EM'], sessionAffinities: { Nitrogen: 40 },
-  });
-  assert.equal(score.sessionInterest, 30);
+// A card that names no leaf of its own is still the reader's when its area,
+// its topic or the request that fetched it says so.
+test('cards that name no leaf stay active when their area, topic or request is', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    activeCategories: ['econ.EM', 'econ.GN'],
+    categoryAffinities: { econ: 60, Nitrogen: 60, 'econ.GN': 60 },
+    sessionAffinities: { Nitrogen: 40 },
+  };
+  const score = (paper: Parameters<typeof scorePaperForRecommendation>[0]) =>
+    scorePaperForRecommendation({ published, _semanticScore: 0.5, ...paper }, context);
+
+  // A working paper is filed under its area, with no leaf and nothing fetched for.
+  const workingPaper = score({ id: 'wp', primaryCategory: 'econ' });
+  assert.equal(workingPaper.corpusSimilarity, 50);
+  assert.equal(workingPaper.affinity, 60);
+
+  // An area-lane article has no category of the taxonomy, only the request that fetched it.
+  assert.equal(score({ id: 'lane', primaryCategory: '', categories: ['Panel data'], _type: 'exploit' }).corpusSimilarity, 50);
+
+  // A card fetched for a nearby leaf the reader did not pick.
+  const nearby = score({ id: 'nearby', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.GN'] });
+  assert.equal(nearby.corpusSimilarity, 50);
+  assert.equal(nearby.sessionInterest, 30);
+
+  // The same shapes in an area that is not active stay dormant.
+  assert.equal(score({ id: 'other-wp', primaryCategory: 'physics' }).corpusSimilarity, 0);
+  assert.equal(score({ id: 'other-lane', primaryCategory: '', categories: ['Panel data'], _type: 'followed' }).corpusSimilarity, 0);
+  assert.equal(score({ id: 'other-fetched', primaryCategory: 'Nitrogen', _fetchedFor: ['hep-th'] }).sessionInterest, 0);
 });
 
 // The feed's context is rebuilt on every call, and one re-rank's cache

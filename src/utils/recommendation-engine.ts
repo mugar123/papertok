@@ -2,7 +2,7 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
-import { leavesForOpenAlexTopic } from './area-accent.ts';
+import { areaKeyForCategory, leavesForOpenAlexTopic } from './area-accent.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import { activeCategories } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
@@ -304,6 +304,32 @@ const NEUTRAL_RECENT_PROPS = Object.freeze({
   preprint: 0, published: 0, journal: 0, conference: 0,
 });
 
+// The areas with a subarea in the list, per list: a score asks once per paper.
+const activeAreas = new WeakMap<string[], Set<string>>();
+
+function activeAreasOf(activeCategories: string[]) {
+  let areas = activeAreas.get(activeCategories);
+  if (!areas) {
+    areas = new Set(activeCategories.map(category => areaKeyForCategory(category)).filter((area): area is NonNullable<typeof area> => area !== null));
+    activeAreas.set(activeCategories, areas);
+  }
+  return areas;
+}
+
+// Whether a card belongs to one of the reader's active subareas even when it
+// names no leaf of its own: a working paper is filed under its area ('econ'),
+// an area-lane article under OpenAlex concept names, and a specialist
+// source's card carries only the leaf it was fetched for. A card of the main
+// corpus request is active by construction: its lanes are the active ones.
+function isInActiveSubarea(paper: Partial<Paper>, categories: string[], activeCategories: string[]) {
+  const areas = activeAreasOf(activeCategories);
+  return paper._type === 'exploit'
+    || categories.some(category => activeCategories.includes(category)
+      || (areaKeyForCategory(category) === category && areas.has(category)))
+    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => activeCategories.includes(leaf))
+    || Boolean(paper._fetchedFor?.some(category => activeCategories.includes(category)));
+}
+
 // Everything a score needs that does NOT move with the recent window: the
 // followed-entity matching, the topic flattening, affinities, cooldowns,
 // recency. A diversified shuffle asks for the same paper once per remaining
@@ -344,7 +370,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // stored but ranks nothing here. A follow and the card's own signals still do.
   const isActive = !context.activeCategories
     || chosenDirectly.length > 0
-    || categorySignals.some(category => context.activeCategories!.includes(category));
+    || isInActiveSubarea(paper, categorySignals, context.activeCategories);
 
   const rawAffinity = categorySignals.reduce((sum, category, index) => {
     const multiplier = index === 0 ? 1 : 0.35;
