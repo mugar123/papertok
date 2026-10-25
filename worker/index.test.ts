@@ -1224,6 +1224,60 @@ test('anonymous cache-busting arXiv misses leave a seat on the beat for the Work
   assert.ok(statuses.includes(429), `the anonymous misses took every seat: ${statuses.join(', ')}`);
 });
 
+// Runs a request on mocked timers: each wait for a seat ends exactly when it
+// is due, as it would on the real clock, without sleeping for real.
+async function settledOnMockClock<Result>(t: TestContext, pending: Promise<Result>) {
+  let settled = false;
+  pending.then(() => { settled = true; }, () => { settled = true; });
+  for (let turn = 0; !settled; turn += 1) {
+    if (turn > 10_000) throw new Error('the request never settled');
+    // The ledger hashes subjects off the event loop; let it answer first.
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.runAll();
+  }
+  return pending;
+}
+
+// A request from outside the Worker takes only every other seat of the beat,
+// six seconds apart, and waits at most 4 s for one. One tab sends its misses
+// one at a time (the route answers in about 0.3 s, then the lane waits 350 ms),
+// so when its first miss arrives in an odd period and goes at the next even
+// seat, the seat after that is 5.35 s from its second miss: that miss is
+// refused at once with retry-after 4, not held for 6 s, which is as long as
+// the browser waits for /arxiv.
+test('one reader\'s second back-to-back arXiv miss is refused at once when its next public seat is more than 4 s away', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:03.100Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const sent: string[] = [];
+  const ask = (query: string) => settledOnMockClock(t, reportApi.fetch(new Request(
+    `https://papertok-report-api.example/arxiv?search_query=all:${query}`,
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), env));
+  const result = await withWorkerFetchMock(async () => {
+    sent.push(new Date().toISOString());
+    t.mock.timers.tick(300);
+    return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+  }, async () => {
+    const first = await ask('first');
+    t.mock.timers.tick(350);
+    const askedAt = new Date().toISOString();
+    const second = await ask('second');
+    return {
+      first: first.status,
+      second: second.status,
+      retryAfter: second.headers.get('retry-after'),
+      askedAt,
+      answeredAt: new Date().toISOString(),
+    };
+  });
+
+  assert.equal(result.first, 200);
+  assert.equal(result.second, 429);
+  assert.equal(result.retryAfter, '4');
+  assert.equal(result.answeredAt, result.askedAt, 'the refusal costs no wait');
+  assert.deepEqual(sent, ['2026-10-24T12:00:06.000Z']);
+});
+
 // Each figures miss fetches arxiv.org/html and ar5iv, and anyone can ask
 // without an Origin, so misses share a minute ceiling of their own.
 const FIGURES_URL = 'https://papertok-report-api.example/resources/figures?arxiv_id=2401.00001';
