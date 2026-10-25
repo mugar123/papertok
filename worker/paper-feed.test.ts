@@ -872,6 +872,23 @@ for (const [minutes, order] of fallbackOrders) {
   });
 }
 
+// The walk goes on from the papers the last page sent, which the reader has
+// not seen, but the corpus has dropped them and the ranks before them: past
+// them every paper is seen, so the page falls back on the one its number names.
+test('a page that goes on with a walk whose unseen papers the corpus dropped, with the ranks before them, sends the next ones, though the reader has seen those', async t => {
+  rankingCaches(t);
+  const { env, db, ask } = store();
+  const papers = recent(45);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
+  await ask(request(0, []));
+  await ask(request(1, ids(papers.slice(0, 15))));
+  for (const item of papers.slice(0, 30)) removeWork(db, item.id);
+  const seen = ids([...papers.slice(0, 15), ...papers.slice(30)]);
+  assert.deepEqual(ids((await ask(request(0, seen, { continues: true }))).papers), ids(papers.slice(30)));
+  assert.deepEqual(ids((await ask(request(0, seen), 'reader-2')).papers), ids(papers.slice(30)), 'as without the kept order');
+});
+
 // A walk past 600 seen papers leaves the ids of the first 1,400 ranks on the
 // kept order; the corpus then drops the 400 works after the ones it sent (an
 // eviction, or folds, within the order's two hours), and the next walk lands
