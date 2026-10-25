@@ -186,8 +186,12 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   // dominio propio en cuanto se apague el robots.txt gestionado de la zona
   // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
   // de los dos esta contestando.
+  //
+  // Share cards are the exception: a preview bot that honours robots.txt,
+  // Twitterbot among them, fetches a card from here and draws no picture if
+  // it is disallowed. A card costs a lookup only as its page does.
   if (url.pathname === '/robots.txt') {
-    return new Response('User-agent: *\nDisallow: /\n', {
+    return new Response('User-agent: *\nAllow: /share/image/\nDisallow: /\n', {
       status: 200,
       headers: {
         'content-type': 'text/plain; charset=utf-8',
