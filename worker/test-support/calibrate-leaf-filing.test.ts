@@ -61,3 +61,33 @@ test('calibration files clear articles, leaves those between two leaves at area 
   assert.equal(report[2].reason, 'fewer than two leaves with a centroid');
   assert.deepEqual(report[2].labelsPerLeaf, { 'mech.dyn': { on: 1, off: 0, doubt: 0 } });
 });
+
+test('a doubted label is never on target: a filing under a doubted leaf is wrong, and an article only doubted is not a positive', () => {
+  const dataset = {
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: [
+      ...many(40, index => ({ id: `W1${index}`, vector: vector({ 0: 1 }, 1_000 + index), labels: { 'hep-th': 'on' as const } })),
+      ...many(40, index => ({ id: `W2${index}`, vector: vector({ 1: 1 }, 2_000 + index), labels: { 'quant-ph': 'on' as const } })),
+      // Doubted for the leaf they sit with: filed there, and wrong.
+      ...many(2, index => ({ id: `W3${index}`, vector: vector({ 0: 1 }, 3_000 + index), labels: { 'hep-th': 'doubt' as const } })),
+      // Doubted for hep-th, filed under quant-ph: no label decides that filing.
+      ...many(3, index => ({ id: `W4${index}`, vector: vector({ 1: 1 }, 4_000 + index), labels: { 'hep-th': 'doubt' as const } })),
+    ],
+    areaSamples: [],
+  };
+  const [physics] = calibrateLeafFiling(dataset);
+  assert.equal(physics.area, 'physics');
+  assert.ok(physics.calibration && physics.heldOut);
+  // Every article sits clearly with one leaf, so the chosen rule files all of
+  // them; the totals over both halves do not depend on how they were split.
+  const total = (key: 'papers' | 'positives' | 'filed' | 'correct' | 'wrong' | 'unknown') => physics.calibration![key] + physics.heldOut![key];
+  assert.equal(total('papers'), 85);
+  assert.equal(total('filed'), 85);
+  assert.equal(total('positives'), 80, 'only the on-target articles are positives');
+  assert.equal(total('correct'), 80);
+  assert.equal(total('wrong'), 2, 'the two filed under the leaf they are doubted for');
+  assert.equal(total('unknown'), 3, 'the three filed under the other leaf');
+});
