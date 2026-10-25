@@ -3,8 +3,6 @@ import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
   icon: ReactNode; title: string; body: ReactNode;
   action: { label: string; onClick: () => void };
-  // A second answer of equal weight, for a question with two (the consent ask).
-  secondaryAction?: { label: string; onClick: () => void };
   dismissLabel?: string; onDismiss?: () => void;
 }
 import { motion, useReducedMotion } from 'framer-motion';
@@ -13,11 +11,6 @@ import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 import './nudge-panel.css';
 
-// The panel a nudge is shown in. It is deliberately the same object as the
-// analytics banner — same corner, same surface, same arrival — because two
-// panels that appear in one corner and move differently read as two different
-// systems talking over each other.
-//
 // An aside, not a dialog: it takes no focus, traps nothing, and covers no
 // control. Someone reading a paper can ignore it to the end of the page, and
 // the X is the only thing it asks for.
@@ -47,7 +40,6 @@ export default function NudgePanel({
   title,
   body,
   action,
-  secondaryAction,
   dismissLabel,
   onDismiss,
 }: NudgePanelProps) {
@@ -69,9 +61,6 @@ export default function NudgePanel({
       </div>
       <div className="nudge-actions">
         <Button size="sm" onClick={action.onClick}>{action.label}</Button>
-        {secondaryAction && (
-          <Button size="sm" variant="outline" onClick={secondaryAction.onClick}>{secondaryAction.label}</Button>
-        )}
       </div>
       {onDismiss && (
         <button
