@@ -9,8 +9,11 @@ npm run generate:openalex-topics -- --check
 ```
 
 The same command writes the per-leaf coverage report,
-`scripts/data/openalex-leaf-topics-coverage.json`; `--check` fails when either
-file differs from what the inputs produce.
+`scripts/data/openalex-leaf-topics-coverage.json`, and, for the leaves without
+a topic lane, the notable map `src/data/open-alex-notable-leaf-topics.generated.ts`
+and its candidates file `scripts/data/openalex-notable-candidates.json` (see
+[Notable sample](#notable-sample)); `--check` fails when any of the four
+differs from what the inputs produce.
 
 The baseline input preserves the 14 topic lists accepted in
 [PR #236](https://github.com/mugar123/papertok/pull/236), including their order
@@ -134,6 +137,84 @@ is unknown.
 
 The generator tests use synthetic data and run in `npm test`. They verify the
 admission mechanics; they do not establish live precision or feed composition.
+
+## Notable sample
+
+Every leaf with a topic lane also has a notable lane (`openalex-notable` in
+`worker/paper-sources.ts`): the 100 most-cited core journal articles of each of
+the ten completed years before the current one, on the topic lane's topics. The
+other leaves, 110 of 149 on 2026-10-25, get a notable lane through a second
+gate, with the lane's own population and its own candidates
+(`openAlexNotableFilterForLeaf` in `src/utils/area-accent.ts`: the topic lane's
+filter when the leaf has one, else the notable map's, else none). A leaf the
+notable sample admits gets a notable lane and no topic lane; once a later topic
+sample admits it, its notable lane lists the topic lane's topics and the
+generator asks for its notable entries to be removed.
+
+**Candidates.** `scripts/data/openalex-notable-subfields.json` names, for each
+leaf without a topic lane, the OpenAlex subfield IDs whose catalogue topics
+stand for it, and, where OpenAlex files a fitting topic under another subfield
+(quantum information under Artificial Intelligence), that topic's ID. It is
+hand-written from the catalogue's subfield list; `[]` records that nothing
+fits. The candidates are the catalogue topics of those subfields and IDs, not
+label matches: on 2026-10-23 the label selector proposed `T14414` for `cs.AI`,
+which returned 8 of its 15 articles, none on target. The map must name only
+leaves without a topic lane; a leaf it leaves out is reported `not-mapped`.
+OpenAlex ORs at most 100 values in one filter, so a proposal of more topics is
+reported `too-many-candidates` and must name fewer subfields. The candidates
+file records each leaf's status, its proposed topics and, for a proposal, the
+sample query to send:
+
+| Parameter | Value |
+| --- | --- |
+| `filter` | the proposed `primary_topic.id` values sorted and joined by `\|`, `type:article`, `from_publication_date:<year−10>-01-01`, `to_publication_date:<year−1>-12-31`, `has_abstract:true`, `is_retracted:false`, `primary_location.source.is_core:true` |
+| `sort` | `cited_by_count:desc` |
+| `page`, `per-page` | `1`, `15` |
+| `select` | the gate's fields and `cited_by_count` |
+
+The window is the lane's: the ten completed years before the year the file
+records (`year`), which generation sets to the current UTC year and `--check`
+keeps. Regenerate after 1 January to move the proposals on; a review's own
+window comes from its capture date. The sample asks `has_abstract:true`, which
+the lane does not, because the labellers read the abstracts; the lane also
+lists articles without one.
+
+**Procedure.** As for a recent sample: one anonymous request per leaf, one at a
+time, stopping on a quota rejection; a shuffled sheet with opaque row IDs,
+titles and decoded abstracts, and nothing else; `on-target`, `off-target` or
+`uncertain` for every row, joined back to work IDs afterwards. The label is
+`on-target` when a researcher who chose the leaf would recognise the article as
+a notable work of their field. Two leaves with the same proposal (`math-ph` and
+`math.MP`, `math.ST` and `stat.TH`, `cs.SY` and `eess.SY`) share one request
+and one labelled page, recorded under each.
+
+**Evidence and decision.** `scripts/data/openalex-notable-reviews.json` has the
+shape of the recent reviews, keyed by leaf, and each work also keeps
+`cited_by_count`; the generator checks the query is the most-cited notable
+query above for the capture's years, the works are in non-increasing citation
+order and dated within the window, and every work is labelled. The rule is the
+gate's: a full page of 15, at least 10 on target without doubt. A passing
+leaf's lane asks only for the sampled topics with an article on target. The
+sample is the 15 most cited of ten years over the proposed topics, so it is
+evidence about the head of the lane's population, not about the 100th article
+of a year; the check after the lanes deploy covers the rest. The candidates
+file reports `passed`, `rejected` or `insufficient-sample` with the sample's
+`onTarget` and `byTopic`.
+
+Each batch of admitted leaves changes what every reader of those leaves is
+shown and adds ten OpenAlex list calls a week per leaf, inside the category
+lanes' 3,000 nightly units; it is authorized under AGENTS.md before it is
+committed. A night re-lists at most eight due lanes, or a seventh of all the
+notable lanes once there are more than 56, so a batch keeps every lane weekly
+and raises the nightly re-listing units and CPU in step (`notableLanesPerNight`
+in `worker/paper-sources.ts`; 149 lanes would be 22 a night, 220 units). After a
+large batch every lane falls due on the same night and the last of them is
+re-listed 13 days after its first listing, one night before its papers would
+leave the lane; a failed night at that tail lapses the listing until the next
+successful one. A batch's first night also lists and embeds every new lane at
+once: about 1,000 papers a lane against the embedding ceiling of the night
+(`EMBEDDING_DAILY_TOKEN_LIMIT`, `wrangler.toml`), so size the batch against it.
+Leaves are sampled by area, the areas with no notable lane at all first.
 
 ## The 2026-10-23 sample (PAP-99)
 
