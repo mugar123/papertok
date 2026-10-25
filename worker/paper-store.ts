@@ -3,7 +3,7 @@ import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
-import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { PaperBuilder, restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
@@ -369,7 +369,8 @@ async function readWorks(db: D1Database, ids: number[]) {
 
 // A working paper says it was not reviewed; its journal article says it was.
 const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
-const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true;
+// An arXiv record reads reviewed on a DOI alone (`restsOnArxivDoi`), which is no journal evidence.
+const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper);
 
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
