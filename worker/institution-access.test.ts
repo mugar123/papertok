@@ -2,7 +2,7 @@ import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response>; crossref?: () => Response };
+type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response>; crossref?: () => Response; env?: WorkerEnv };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
@@ -16,7 +16,8 @@ import {
   upstreamParams,
 } from './institution-access.ts';
 import reportApi from './index.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), with the
 // performance counters removed: Cell, ISSN 0092-8674, 2020.
@@ -1600,8 +1601,11 @@ const PROJECT_ID = 'papertok-168df';
 const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
-/** The route through the Worker's own dispatch, with the edge cache recorded. */
-async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL), crossref = () => jsonResponse({ message: CELL_WORK }) }: AccessOptions = {}) {
+/**
+ * The route through the Worker's own dispatch, with the edge cache recorded.
+ * Each request has a ledger of its own unless `env` brings one.
+ */
+async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL), crossref = () => jsonResponse({ message: CELL_WORK }), env = {} }: AccessOptions = {}) {
   const calls: string[] = [];
   const puts: Array<{ key: string; response: Response }> = [];
   const originalFetch = globalThis.fetch;
@@ -1625,7 +1629,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     const response = await reportApi.fetch(new Request(`https://api.papertok.test/access?${search}`, {
       method,
       headers: { origin: 'https://papertok.app', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    }), ROUTE_ENV);
+    }), { ...ROUTE_ENV, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ...env });
     const accessPuts = puts.filter(put => put.key.startsWith('https://papertok.internal/cache/access'));
     return { response, body: await response.json(), calls, accessPuts };
   } finally {
@@ -1754,6 +1758,30 @@ test('the route maps validation, unsupported institutions and outages to codes i
   assert.equal(response.status, 405);
 });
 
+test('a reader\'s misses spend an allowance of the route\'s own, and a refused one reaches no provider', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:10Z') });
+  const lookUp = (doi: string, env: WorkerEnv) => requestAccess(`doi=${encodeURIComponent(doi)}&domain=usal.es`, { env });
+  // The allowance related papers and the specialist sources share is not spent.
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ACCESS_USER_MINUTE_LIMIT: '2', PROVIDER_USER_MINUTE_LIMIT: '1' };
+  const answers = [];
+  for (const doi of ['10.1016/j.cell.2020.01.001', '10.1016/j.cell.2020.01.002', '10.1016/j.cell.2020.01.003']) {
+    answers.push(await lookUp(doi, env));
+  }
+  assert.deepEqual(answers.map(({ response }) => response.status), [200, 200, 429]);
+  const refused = answers[2];
+  assert.deepEqual(refused.body, { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(refused.response.headers.get('retry-after'), '60');
+  assert.equal(refused.response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(refused.calls, ['identitytoolkit.googleapis.com']);
+  assert.equal(refused.accessPuts.length, 0);
+  // Everyone's misses together have a ceiling too.
+  const shared = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ACCESS_GLOBAL_MINUTE_LIMIT: '1' };
+  assert.equal((await lookUp('10.1016/j.cell.2020.01.004', shared)).response.status, 200);
+  const closed = await lookUp('10.1016/j.cell.2020.01.005', shared);
+  assert.equal(closed.response.status, 429);
+  assert.deepEqual(closed.calls, ['identitytoolkit.googleapis.com']);
+});
+
 
 test('accepting HTTP entity identifiers does not allow HTTP reading links', () => {
   const answer = parseResolverAnswer(CTO_CELL.replaceAll('https://', 'http://'));
@@ -1820,7 +1848,7 @@ test('a subscription in an SFX library is entitled, its article link through the
   const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` });
   // The login keeps the article whole, its own query included.
-  assert.equal(new URL(result.url!).searchParams.get('qurl'), NATURE_LINK);
+  assert.equal(new URL(result.url).searchParams.get('qurl'), NATURE_LINK);
   const [call, ...more] = stub.sfxCalls();
   assert.equal(more.length, 0);
   assert.equal(call.url.pathname, '/sfx_tum');
@@ -2060,7 +2088,7 @@ test('a closed article without a licence keeps its subscription once Unpaywall h
       unpaywall: () => jsonResponse({ ...UNPAYWALL_RECORDS[SCIENCE_DOI], oa_status: oaStatus }),
     });
     const result = await lookupInstitutionAccess({ doi: SCIENCE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
-    assert.deepEqual(result, { status: 'entitled', collection: 'Jstor Complete Legacy', url: `${TUM_LOGIN}${encodeURIComponent(jstor.url!)}` }, oaStatus);
+    assert.deepEqual(result, { status: 'entitled', collection: 'Jstor Complete Legacy', url: `${TUM_LOGIN}${encodeURIComponent(jstor.url)}` }, oaStatus);
   }
 });
 
@@ -2109,7 +2137,7 @@ test('without Unpaywall\'s word an SFX service not named free proves nothing: un
 test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSCO links go through E-Medien whole', async () => {
   // Gale only: the Springer and Nature packages taken out of LMU's answer.
   const galeOnly = SFX_LMU_NATURE.replace(/ {3}<target>\n {4}<target_name>(?:SPRINGER_LINK_JOURNALS_AUTOLOAD|NATURE)<[\s\S]*?\n {3}<\/target>\n?/g, '');
-  const gale = parseSfxAnswer(galeOnly, '1476-4687')!.services[0].url!;
+  const gale = parseSfxAnswer(galeOnly, '1476-4687')!.services[0].url;
   assert.match(gale, /^https:\/\/find\.gale\.com\/openurl\/openurl\?/);
   let stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(galeOnly) });
   let result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
@@ -2117,7 +2145,7 @@ test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSC
   // EBSCO's link, from LMU's Entropy answer, for a closed article in the same
   // journal (licence and Unpaywall status synthetic): its own query and the %2F
   // inside it reach EBSCO unchanged.
-  const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url!;
+  const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url;
   stub = upstreams({
     crossref: askedAbout({ ...ENTROPY_WORK, license: [] }),
     sfx: () => xml(SFX_LMU_ENTROPY),
@@ -2125,8 +2153,8 @@ test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSC
   });
   result = await lookupInstitutionAccess({ doi: ENTROPY_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
   assert.equal(result.collection, 'EBSCOhost Academic Search Complete');
-  assert.ok(result.url!.startsWith(LMU_LOGIN));
-  assert.equal(new URL(result.url!).searchParams.get('qurl'), ebsco);
+  assert.ok(result.url.startsWith(LMU_LOGIN));
+  assert.equal(new URL(result.url).searchParams.get('qurl'), ebsco);
   assert.match(ebsco, /doi=10\.3390%2Fe23010001&.*authtype=ip%2Cuid/);
 });
 

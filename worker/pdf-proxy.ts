@@ -1,12 +1,14 @@
 import type { WorkerEnv } from './env.ts';
 
 import { fetchPaperPdfBytes } from './ai-explanation.ts';
-import { isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.ts';
+import { isAIReadablePdfUrl } from '../src/utils/ai-explanation-access.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { reserveSharedMinuteQuota, serveCached } from './provider-runtime.ts';
+import { callerSubject } from './caller-quota.ts';
+import { serveCached } from './provider-runtime.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 const DEFAULT_PDF_GLOBAL_MINUTE_LIMIT = 120;
-// The in-app PDF viewer on a touch screen (src/components/PDF/PdfPages.tsx)
+// The in-app PDF viewer on a touch screen (src/components/pdf/pdf-pages.tsx)
 // draws the pages itself with pdf.js, because a framed PDF is crippled on
 // every touch platform. pdf.js needs the bytes, and arXiv and Europe PMC send
 // no CORS headers, so the browser cannot read them directly: this route
@@ -14,13 +16,8 @@ const DEFAULT_PDF_GLOBAL_MINUTE_LIMIT = 120;
 // read (`isAIReadablePdfUrl`) are accepted, every redirect is checked against
 // the same list, the body must be a PDF and is capped at the AI routes' 8 MB
 // (`fetchPaperPdfBytes`), the caller must be the app (Origin required, not
-// optional), and a shared per-minute ceiling bounds what misses can cost the
+// optional), and an atomic per-IP and shared per-minute ceiling bounds what misses can cost the
 // upstream hosts. A hit costs nothing upstream: the edge keeps a PDF for a day.
-const PDF_PROXY_CEILING = Object.freeze({
-  namespace: 'pdf',
-  variable: 'PDF_GLOBAL_MINUTE_LIMIT',
-  fallback: DEFAULT_PDF_GLOBAL_MINUTE_LIMIT,
-});
 const PDF_PROXY_FETCH_BUDGET_MS = 20_000;
 const PDF_PROXY_CACHE_SECONDS = 24 * 60 * 60;
 const PDF_PROXY_FAILURE_STATUS = Object.freeze({ not_pdf: 415, too_large: 413, unreachable: 502 });
@@ -46,10 +43,28 @@ export async function handlePdfProxy(request: Request, env: WorkerEnv) {
     { method: 'GET' },
   );
   const cached = await caches.default.match(cacheKey);
+  const now = Date.now();
+  const minute = new Date(now).toISOString().slice(0, 16);
+  const nextMinute = (Math.floor(now / 60_000) + 1) * 60_000;
+  const subject = await callerSubject(request, env, `pdf:${minute}`);
+  if (!subject) return json({ code: 'PDF_RATE_LIMIT_NOT_CONFIGURED' }, 503, noStore);
+  const configuredLimit = Number.parseInt(env.PDF_GLOBAL_MINUTE_LIMIT || '', 10);
+  const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `pdf:${minute}`,
+    subject,
+    subjectLimit: 30,
+    globalLimit: Number.isFinite(configuredLimit)
+      ? Math.max(1, Math.min(100_000, configuredLimit)) : DEFAULT_PDF_GLOBAL_MINUTE_LIMIT,
+    globalAmount: cached ? 0 : 1,
+    expiresAt: nextMinute + 60_000,
+  });
+  if (!quota.accepted) {
+    return json({ code: quota.code ? 'PROVIDER_QUOTA_NOT_CONFIGURED' : 'PROVIDER_RATE_LIMITED' }, quota.code ? 503 : 429, {
+      ...noStore,
+      'retry-after': String(Math.ceil((nextMinute - now) / 1000)),
+    });
+  }
   if (cached) return serveCached(cached, origin, env);
-
-  const minute = await reserveSharedMinuteQuota(PDF_PROXY_CEILING, env, origin);
-  if (minute.error) return minute.error;
 
   const { bytes, reason } = await fetchPaperPdfBytes(target, PDF_PROXY_FETCH_BUDGET_MS);
   if (!bytes) {

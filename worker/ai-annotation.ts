@@ -1,5 +1,5 @@
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
 import type { NanCompletion } from './nan-client.ts';
 

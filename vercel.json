@@ -51,7 +51,7 @@
       "destination": "https://api.papertok.app/share/paper/:rest*"
     },
     {
-      "source": "/public/:kind(list|user|entity)/:rest*",
+      "source": "/public/:kind(list|entity)/:rest*",
       "has": [
         {
           "type": "header",

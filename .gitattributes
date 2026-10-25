@@ -1,4 +1,7 @@
-# Check text files out with LF on every platform. Several tests read source files
-# and match them line by line, so a Windows checkout with CRLF fails them although
-# CI on Linux passes. Binary files are detected and left alone.
+# Check text files out with LF on every platform. Some tests read checked-in
+# documents and fixtures line by line, so a Windows checkout with CRLF fails them
+# although CI on Linux passes. Binary files are detected and left alone.
 * text=auto eol=lf
+
+# Never splice two lockfiles line by line; resolve a conflict by running npm install.
+package-lock.json merge=binary

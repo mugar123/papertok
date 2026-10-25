@@ -5,7 +5,7 @@ import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import { cn } from '../../lib/utils.ts';
 
 /**
- * One for the whole app (App.jsx). A tooltip appears after the pointer has
+ * One for the whole app (app.tsx). A tooltip appears after the pointer has
  * rested on its trigger for 600ms, never on a quick pass; once one is showing,
  * its neighbours open at once, which only works when they share this group.
  */

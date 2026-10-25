@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { paperLegacyAdapter } from '../src/models/Paper.ts';
-import { seedPaintsWhole } from '../src/utils/paperSeed.ts';
-import { encodePaperKey } from '../src/utils/publicNavigation.ts';
-import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.ts';
+import { paperLegacyAdapter } from '../src/models/paper.ts';
+import { seedPaintsWhole } from '../src/utils/paper-seed.ts';
+import { DEFAULT_SHARE_IMAGE, encodePaperKey, getShareImage } from '../src/utils/public-navigation.ts';
+import { publicPaperMetadata, readShareSeed } from '../src/utils/share-seed.ts';
 import {
   createShareLoader,
   createShellLoader,
@@ -125,11 +125,11 @@ function memoryCache() {
   return {
     stored,
     async match(request: Request<unknown,CfProperties<unknown>>) {
-      const hit = stored.get(String((request as Request).url));
+      const hit = stored.get(String((request).url));
       return hit ? hit.clone() : undefined;
     },
     async put(request: Request<unknown,CfProperties<unknown>>, response: Response) {
-      stored.set(String((request as Request).url), response.clone());
+      stored.set(String((request).url), response.clone());
     },
   };
 }
@@ -148,18 +148,18 @@ function shareRequest(path: string, { method = 'GET', language }: { method?: str
 
 test('a share path names its kind, its identity and the public page it stands for', () => {
   const paper = paperRoute();
-  assert.equal(paper!.kind, 'paper');
-  assert.deepEqual(paper!.identity, { type: 'doi', value: '10.1145/3555174' });
-  assert.equal(paper!.canonicalPath, `/paper/${DOI_KEY}`);
+  assert.equal(paper.kind, 'paper');
+  assert.deepEqual(paper.identity, { type: 'doi', value: '10.1145/3555174' });
+  assert.equal(paper.canonicalPath, `/paper/${DOI_KEY}`);
 
   const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`)) as Extract<ShareRoute, { kind: 'list' }>;
-  assert.equal(list!.kind, 'list');
-  assert.equal(list!.canonicalPath, `/public/list/${SHARE_ID}`);
+  assert.equal(list.kind, 'list');
+  assert.equal(list.canonicalPath, `/public/list/${SHARE_ID}`);
 
   const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931')) as Extract<ShareRoute, { kind: 'entity' }>;
-  assert.equal(author!.kind, 'entity');
-  assert.equal(author!.type, 'author');
-  assert.equal(author!.canonicalPath, '/public/entity/author/A5018713931');
+  assert.equal(author.kind, 'entity');
+  assert.equal(author.type, 'author');
+  assert.equal(author.canonicalPath, '/public/entity/author/A5018713931');
 });
 
 test('a share path that cannot name a page is refused before anything is fetched', () => {
@@ -174,6 +174,25 @@ test('a share path that cannot name a page is refused before anything is fetched
     assert.equal(matchShareRoute(new URL(`https://api.papertok.app${path}`))!.invalid, true, path);
   }
   assert.equal(matchShareRoute(new URL('https://api.papertok.app/openalex/works')), null);
+});
+
+test('a DOI with a dot segment is refused before admission, so it cannot open another record', async () => {
+  for (const doi of ['10.1234/../../works/W2741809807', '10.1234/./abc']) {
+    const key = encodePaperKey('doi', doi)!;
+    assert.equal(matchShareRoute(new URL(`https://api.papertok.app/share/paper/${key}`))!.invalid, true, doi);
+    const asked: string[] = [];
+    let admitted = 0;
+    const { deps } = handlerDeps({
+      loadRecord: createShareLoader({ openAlex: async (path) => { asked.push(path); return OPENALEX_WORK; } }),
+      admit: async () => { admitted += 1; return true; },
+    });
+    const response = await handleSharePage(shareRequest(`/share/paper/${key}`), deps);
+    assert.equal(response.status, 404, doi);
+    assert.deepEqual(asked, [], doi);
+    assert.equal(admitted, 0, doi);
+  }
+  // Dots inside a segment are part of the DOI.
+  assert.deepEqual(paperRoute(encodePaperKey('doi', '10.1234/a..b')).identity, { type: 'doi', value: '10.1234/a..b' });
 });
 
 // -------------------------------------------------------------- language
@@ -261,6 +280,8 @@ test('a list page names the list and links every paper in it', async () => {
     jsonLdOf(html).mainEntity.itemListElement.map((item: { url: string }) => item.url),
     [`https://papertok.app/paper/${DOI_KEY}`, `https://papertok.app/paper/${ARXIV_KEY}`],
   );
+  assert.equal(metaContent(html, 'property', 'og:image'), 'https://papertok.app/og/papertok-share-list-0.3.png');
+  assert.equal(metaContent(html, 'name', 'twitter:image:alt'), getShareImage('list').alt);
 });
 
 test('an entity page names the entity and what kind of entity it is', async () => {
@@ -275,6 +296,8 @@ test('an entity page names the entity and what kind of entity it is', async () =
 
   const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(asked[0].path, 'authors/A5018713931');
+  // Counts only: OpenAlex's last known institution is a guess the card does not print.
+  assert.deepEqual(asked[0].params.select.split(',').sort(), ['cited_by_count', 'display_name', 'id', 'works_count']);
   assert.equal(titleOf(html), 'Yiqing Hua - Author | PaperTok');
   assert.equal(
     metaContent(html, 'name', 'description'),
@@ -282,6 +305,12 @@ test('an entity page names the entity and what kind of entity it is', async () =
   );
   assert.equal(canonicalOf(html), 'https://papertok.app/public/entity/author/A5018713931');
   assert.equal(metaContent(html, 'name', 'robots'), null);
+  // Its own card, drawn by the Worker, which names the author and the count.
+  const image = 'https://api.papertok.app/share/image/entity/author/A5018713931';
+  assert.equal(metaContent(html, 'property', 'og:image'), image);
+  assert.equal(metaContent(html, 'name', 'twitter:image'), image);
+  assert.equal(metaContent(html, 'property', 'og:image:alt'), 'Yiqing Hua, author on PaperTok. 31 works.');
+  assert.equal(jsonLdOf(html).image, image);
 });
 
 // A name-only page takes its name from the URL, so a preview that printed it
@@ -298,6 +327,7 @@ test('an entity known only by a name previews as PaperTok, not indexed, and cost
   assert.equal(metaContent(html, 'property', 'og:title'), 'PaperTok — Discover scientific research');
   assert.equal(metaContent(html, 'name', 'description'), 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.');
   assert.doesNotMatch(headOf(html), /Wei Zhang/, 'the URL\'s text is not the preview');
+  assert.equal(metaContent(html, 'property', 'og:image'), `https://papertok.app${DEFAULT_SHARE_IMAGE.path}`);
   assert.equal(metaContent(html, 'name', 'robots'), 'noindex, nofollow', 'a name can mix several people');
   assert.match(html, /<h1>Wei Zhang<\/h1>/, 'the page itself still says whom it was opened for');
 });
@@ -367,7 +397,7 @@ test('a paper page embeds a seed that parses, names its key and can paint the pa
 
 test('the page reads back the seed the Worker writes, paints from it and indexes it', async () => {
   // Both sides of the contract at once: the element and the key the Worker
-  // writes are the ones src/utils/shareSeed.ts reads, and what it reads goes
+  // writes are the ones src/utils/share-seed.ts reads, and what it reads goes
   // through the same adapter and paint rule as a seed handed over in-app.
   const outcome = await foundPaper();
   const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
@@ -402,6 +432,44 @@ function handlerDeps(overrides = {}) {
   };
   return { deps, loads: () => loads };
 }
+
+test('a looked-up entity previews with its own card, drawn by this Worker', async () => {
+  const asked: Array<{ path: string; params: Record<string, string> }> = [];
+  const { deps } = handlerDeps({
+    loadRecord: createShareLoader({
+      openAlex: async (path, params) => {
+        asked.push({ path, params });
+        return {
+          id: 'https://openalex.org/I136199984',
+          display_name: 'Harvard University',
+          works_count: 972371,
+          cited_by_count: 192037405,
+          geo: { city: 'Cambridge', country: 'United States' },
+          image_thumbnail_url: 'https://commons.wikimedia.org/w/index.php?title=Special:Redirect/file/Harvard%20University%20logo.svg&width=300',
+        };
+      },
+    }),
+  });
+  const html = await (await handleSharePage(shareRequest('/share/entity/institution/I136199984'), deps)).text();
+  assert.deepEqual(asked[0].params.select.split(',').sort(), ['cited_by_count', 'display_name', 'geo', 'id', 'image_thumbnail_url', 'works_count']);
+  const card = 'https://api.papertok.app/share/image/entity/institution/I136199984';
+  assert.equal(metaContent(html, 'property', 'og:image'), card);
+  assert.equal(metaContent(html, 'name', 'twitter:image'), card);
+  assert.equal(metaContent(html, 'property', 'og:image:width'), '1200');
+  assert.equal(metaContent(html, 'property', 'og:image:height'), '630');
+  assert.equal(
+    metaContent(html, 'property', 'og:image:alt'),
+    'Harvard University, institution on PaperTok. Cambridge, United States. 972,371 works, 192,037,405 citations.',
+  );
+  assert.equal(jsonLdOf(html).image, card);
+});
+
+test('a page found by a name alone keeps PaperTok\'s own preview, card or no card', async () => {
+  const { deps } = handlerDeps();
+  const html = await (await handleSharePage(shareRequest('/share/entity/author/Wei%20Zhang'), deps)).text();
+  assert.equal(metaContent(html, 'property', 'og:image'), `https://papertok.app${DEFAULT_SHARE_IMAGE.path}`);
+  assert.equal(metaContent(html, 'property', 'og:image:width'), '2400');
+});
 
 test('a found page answers 200 English HTML even to a Spanish-speaking browser', async () => {
   const { deps } = handlerDeps();

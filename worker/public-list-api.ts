@@ -6,17 +6,13 @@ type ListEntry = NonNullable<ReturnType<typeof sanitizePublicPaper>>;
 type ListPayload = Omit<ReturnType<typeof sanitizePublicList>, 'papers'> & { papers: ListEntry[] };
 type ListBody = Record<string, unknown>;
 type ListAdmin = Pick<FirestoreAdmin, 'name' | 'commit' | 'getDocument'>;
-interface ListCard { shareId: string; title: string; emoji?: string; paperCount: number; publishedAt?: Date }
-interface ListProjection { data: { lists?: ListCard[] }; updateTime?: string }
 interface PrivateList { publicShareId?: unknown; paperIds?: unknown[]; emoji?: unknown }
-interface PinnedListProfile { pinnedLists?: ListCard[]; showPinnedLists?: boolean }
 interface OperationSettings { cryptoApi: ShareIdCrypto; now: () => number }
 interface ListOptions { admin?: ListAdmin; cryptoApi?: ShareIdCrypto; now?: () => number }
 interface PreparedOperations {
   '/lists/publish': ReturnType<typeof validatePublish>;
   '/lists/update': ReturnType<typeof validateUpdate>;
   '/lists/unpublish': ReturnType<typeof validateUnpublish>;
-  '/lists/attribute': ReturnType<typeof validateAttribute>;
 }
 type OperationPath = keyof PreparedOperations;
 type ShareIdCrypto = { getRandomValues(bytes: Uint8Array<ArrayBuffer>): unknown };
@@ -24,7 +20,6 @@ export interface OperationResults {
   '/lists/publish': Awaited<ReturnType<typeof publish>>;
   '/lists/update': Awaited<ReturnType<typeof update>>;
   '/lists/unpublish': Awaited<ReturnType<typeof unpublish>>;
-  '/lists/attribute': Awaited<ReturnType<typeof attribute>>;
 }
 interface ListOperation<Key extends OperationPath> {
   validate(body: ListBody): PreparedOperations[Key];
@@ -44,22 +39,16 @@ interface ListOperation<Key extends OperationPath> {
  * What the Worker checks that the rules used to:
  *  - the caller is signed in, verified against Identity Toolkit with no cache;
  *  - the caller owns the private list the publication is attached to;
- *  - the payload obeys every limit in publicListPayload.js, which the browser
+ *  - the payload obeys every limit in public-list-payload.ts, which the browser
  *    imports too, so there is one definition of a valid public list;
  *  - `createdAt` never moves, enforced with an update mask rather than a read.
  *
  * Firestore stays on the free tier deliberately: a publish costs one read and
  * one atomic commit of three writes, and the daily quotas below cap the whole
  * route far under the Spark allowance of 20k writes and 50k reads a day.
- * Update and unpublish add the pinned-card refresh (refreshPinnedCard below):
- * +1 read always, +1 more only when pins are hidden, +1 write only when the
- * list was actually pinned and the card changed — bounded by the same daily
- * quotas, so the worst day stays far inside the allowance.
  *
  * Publish and update both retry once when they lose a version precondition,
- * reading everything again first: at worst 2 reads and 2 commits for a publish,
- * 7 and 2 for an update, and only for the loser of a race between two of the
- * same owner's tabs. Still far inside the allowance.
+ * reading the list and its content again so a racing edit is not lost.
  */
 import {
   assertPublicListWithinLimits,
@@ -67,7 +56,7 @@ import {
   publicPaperJoinKey,
   sanitizePublicList,
   sanitizePublicPaper,
-} from '../src/services/publicListPayload.ts';
+} from '../src/services/public-list-payload.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import {
   clearFieldsWrite,
@@ -80,21 +69,13 @@ import {
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 export const PUBLIC_LIST_PATHS = new Set([
-  '/lists/publish', '/lists/update', '/lists/unpublish', '/lists/attribute',
+  '/lists/publish', '/lists/update', '/lists/unpublish',
 ]);
 
 const MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_USER_DAILY_LIMIT = 60;
 const DEFAULT_GLOBAL_DAILY_LIMIT = 2_000;
 const SHARE_ID_PATTERN = /^[a-f0-9]{32}$/;
-
-/**
- * How many attributed lists one showcase holds (F12). A product cap, not a
- * technical one — thirty cards is ~8 KB of a document whose hard ceiling is
- * 1 MiB — but the showcase renders as one read and must stay that way.
- * Publishing past it still works with `attributed: false`.
- */
-export const PROFILE_LISTS_LIMIT = 30;
 
 export class PublicListApiError extends Error {
   declare code: string;
@@ -305,39 +286,6 @@ export function mergePreparedPayload({ header, byRawId, requestIds }: ReturnType
   return { payload, listCount: ids.length, skipped };
 }
 
-/**
- * The showcase (F12): `profileLists/{uid}`, the attributed-list cards that
- * public profiles used to show. No client can read or write it any more
- * (`firestore.rules` has no rule for it, so the catch-all denies both). Only
- * this Worker writes it, always inside the same commit as the list operation
- * it mirrors, so a card can never disagree with the list it denormalizes the
- * way the old best-effort pin refresh could. Account deletion removes it.
- */
-function projectionEntries(projection: ListProjection | null) {
-  return Array.isArray(projection?.data?.lists) ? projection.data.lists : [];
-}
-
-/**
- * A concurrent write to the showcase (two publishes racing, say) fails the
- * whole commit with 409 instead of silently dropping a card; the caller
- * retries. `mustExist: false` lets the first attributed publish create it.
- */
-function projectionWrite(admin: ListAdmin, uid: string, lists: ListCard[], timestamp: Date, projection: ListProjection | null) {
-  return mergeWrite(
-    admin.name(['profileLists', uid]),
-    { lists, updatedAt: timestamp },
-    projection ? { updateTime: projection.updateTime } : { mustExist: false },
-  );
-}
-
-function cleanEmoji(value: unknown) {
-  return typeof value === 'string' ? value.trim().slice(0, 40) : '';
-}
-
-function showcaseCard(shareId: string, { title, emoji, paperCount, publishedAt }: Omit<ListCard, 'shareId'>): ListCard {
-  return { shareId, title, ...(emoji ? { emoji } : {}), paperCount, publishedAt };
-}
-
 async function reservePublishQuota(env: WorkerEnv, uid: string) {
   const day = new Date().toISOString().slice(0, 10);
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
@@ -376,80 +324,8 @@ async function requireOwnedShare(admin: ListAdmin, uid: string, shareId: string)
   return owner;
 }
 
-/**
- * Keeps the profile's pinned card in step with the list it denormalizes.
- *
- * The card (`{shareId, title, emoji?, paperCount}` in `userProfiles/{uid}`)
- * used to be a snapshot taken when the owner clicked Pin: grow the list from
- * 12 papers to 19 and the profile kept saying 12 until a manual re-pin. Now
- * `/lists/update` refreshes the card's title and count, and `/lists/unpublish`
- * removes the card outright, so no legacy card points at a share that no
- * longer exists. Clients can no longer write profiles; only the Worker's
- * service account does.
- *
- * Pins hidden by the owner are parked verbatim in
- * `users/{uid}/profileStash/pinnedLists` (F8), so when the profile does not
- * hold the card and says `showPinnedLists: false`, the stash is checked too —
- * otherwise flipping the switch back would resurrect the stale card.
- *
- * Strictly best-effort, and the failure direction is chosen: the list
- * operation has already committed, so nothing here may throw past it. The
- * write carries an `updateTime` precondition — a write to the profile in the
- * same instant wins and the refresh retries once from a fresh read, then
- * gives up as 'skipped', which leaves exactly the staleness we have today,
- * never a clobbered pin. Cost when the list is not pinned: 1 read (+1 with
- * pins hidden), no writes.
- */
-export async function refreshPinnedCard(admin: ListAdmin, uid: string, shareId: string, card: Pick<ListCard, 'title' | 'paperCount'> | null, { now }: Pick<OperationSettings, 'now'>) {
-  try {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const profile = await admin.getDocument<PinnedListProfile, true>(['userProfiles', uid], { withMeta: true });
-      if (!profile) return 'not-pinned';
-
-      let segments = ['userProfiles', uid];
-      let holder = profile;
-      let entries = Array.isArray(profile.data.pinnedLists) ? profile.data.pinnedLists : [];
-      if (!entries.some(entry => entry?.shareId === shareId)) {
-        if (profile.data.showPinnedLists !== false) return 'not-pinned';
-        const stash = await admin.getDocument<PinnedListProfile, true>(['users', uid, 'profileStash', 'pinnedLists'], { withMeta: true });
-        const stashed = Array.isArray(stash?.data?.pinnedLists) ? stash.data.pinnedLists : [];
-        if (!stashed.some(entry => entry?.shareId === shareId)) return 'not-pinned';
-        segments = ['users', uid, 'profileStash', 'pinnedLists'];
-        holder = stash!;
-        entries = stashed;
-      }
-
-      const current = entries.find(entry => entry?.shareId === shareId);
-      if (card && current!.title === card.title && current!.paperCount === card.paperCount) {
-        return 'unchanged';
-      }
-      const next = card
-        ? entries.map(entry => (entry?.shareId === shareId
-          ? { ...entry, title: card.title, paperCount: card.paperCount }
-          : entry))
-        : entries.filter(entry => entry?.shareId !== shareId);
-
-      try {
-        await admin.commit([
-          mergeWrite(admin.name(segments), { pinnedLists: next, updatedAt: new Date(now()) }, {
-            updateTime: holder.updateTime,
-          }),
-        ]);
-        return card ? 'refreshed' : 'removed';
-      } catch (error) {
-        // Lost the race against a concurrent pin toggle: read again and retry
-        // once. Anything else falls through to 'skipped' below.
-        if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
-      }
-    }
-    return 'skipped';
-  } catch {
-    return 'skipped';
-  }
-}
-
 // ---------------------------------------------------------------------------
-// The four operations. Each one is a pure `validate` and an impure `run`, and
+// The three operations. Each one is a pure `validate` and an impure `run`, and
 // the split is load-bearing rather than tidy: the dispatcher settles the syntax
 // of a request before it reserves a unit of the daily quota, so a body that
 // never reaches Firestore cannot spend one.
@@ -457,11 +333,7 @@ export async function refreshPinnedCard(admin: ListAdmin, uid: string, shareId: 
 
 function validatePublish(body: ListBody) {
   const listId = requireListId(body.listId);
-  // Attributed by default (F12): publishing puts the list on your profile,
-  // and the UI says so before the click. `attributed: false` is the per-list
-  // escape hatch that keeps "share by link, no showcase" possible.
-  const attributed = body.attributed !== false;
-  return { listId, attributed, payload: buildPublicListPayload(body) };
+  return { listId, payload: buildPublicListPayload(body) };
 }
 
 /**
@@ -479,7 +351,7 @@ function validatePublish(body: ListBody) {
  * `publicShareId` that is now set means a real double publish and is reported as
  * such; anything else was benign churn and simply commits.
  */
-async function publish(admin: ListAdmin, uid: string, { listId, attributed, payload }: PreparedOperations['/lists/publish'], { cryptoApi, now }: OperationSettings) {
+async function publish(admin: ListAdmin, uid: string, { listId, payload }: PreparedOperations['/lists/publish'], { cryptoApi, now }: OperationSettings) {
   // Minted once: a refused commit is atomic, so it wrote nothing and the id it
   // would have used is still free.
   const shareId = createShareId(cryptoApi);
@@ -496,34 +368,18 @@ async function publish(admin: ListAdmin, uid: string, { listId, attributed, payl
       createWrite(admin.name(['publicLists', shareId]), {
         ...payload, createdAt: timestamp, updatedAt: timestamp,
       }),
-      // `onProfile` mirrors the showcase so Mis listas renders the badge from
-      // the document it already reads; `publicSyncedAt` marks the copy as in
-      // step with the list as of this commit (the dirty check of P25).
+      // The sync mark is committed with the public copy.
       mergeWrite(admin.name(['users', uid, 'lists', listId]), {
-        publicShareId: shareId, onProfile: attributed, publicSyncedAt: timestamp,
+        publicShareId: shareId, publicSyncedAt: timestamp,
       }, { updateTime: list.updateTime }),
     ];
-    if (attributed) {
-      const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
-      const entries = projectionEntries(projection);
-      if (entries.length >= PROFILE_LISTS_LIMIT) {
-        throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
-      }
-      const card = showcaseCard(shareId, {
-        title: payload.title,
-        emoji: cleanEmoji(list.data.emoji),
-        paperCount: payload.paperCount,
-        publishedAt: timestamp,
-      });
-      writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
-    }
     try {
       await admin.commit(writes);
     } catch (error) {
       if (attempt === 0 && error instanceof FirestoreAdminError && error.status === 409) continue;
       throw error;
     }
-    return { shareId, attributed, ...payload };
+    return { shareId, ...payload };
   }
   // Unreachable: the loop returns or throws on every path.
   throw new PublicListApiError('PUBLISH_CONFLICT', 409);
@@ -549,11 +405,6 @@ function validateUpdate(body: ListBody) {
  * it stayed skipped for ever — the client empties its hydration after a
  * successful sync, so every later sync names that paper by id alone and the
  * merge cannot find it either. Only `skipped > 0` in the response ever said so.
- *
- * The re-read has to cover the SHOWCASE as well as the public document. Its
- * write is pinned too, so it can be the one that loses; carrying the first
- * attempt's cards into a write pinned to the new version would delete a card
- * that a concurrent publish had just added — worse than the bug being fixed.
  */
 async function update(admin: ListAdmin, uid: string, { shareId, merge, body }: PreparedOperations['/lists/update'], { now }: OperationSettings) {
   const owner = await requireOwnedShare(admin, uid, shareId);
@@ -605,22 +456,6 @@ async function update(admin: ListAdmin, uid: string, { shareId, merge, body }: P
         publicSyncedAt: timestamp,
       }),
     ];
-    // The showcase card travels in the SAME commit as the list it mirrors —
-    // the atomicity the best-effort pin refresh below never had.
-    const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
-    const entries = projectionEntries(projection);
-    const held = entries.find(entry => entry?.shareId === shareId);
-    if (held && (held.title !== payload.title || held.paperCount !== payload.paperCount)) {
-      writes.push(projectionWrite(
-        admin,
-        uid,
-        entries.map(entry => (entry?.shareId === shareId
-          ? { ...entry, title: payload.title, paperCount: payload.paperCount }
-          : entry)),
-        timestamp,
-        projection,
-      ));
-    }
     try {
       await admin.commit(writes);
     } catch (error) {
@@ -629,16 +464,9 @@ async function update(admin: ListAdmin, uid: string, { shareId, merge, body }: P
       if (attempt === 0 && error instanceof FirestoreAdminError && error.status === 409) continue;
       throw error;
     }
-    // Transitional (F12 migration window): profiles that still hold legacy
-    // pinned CARDS get them refreshed best-effort, exactly as before. Retired
-    // with the Worker's pin and attribution machinery.
-    const pinCard = await refreshPinnedCard(admin, uid, shareId, {
-      title: payload.title, paperCount: payload.paperCount,
-    }, { now });
     return {
       shareId,
       ...payload,
-      pinCard,
       // What the owner needs to understand a count that does not match: how many
       // papers the list holds, and how many of them had nothing to publish.
       ...(listCount === null ? {} : { listCount, skipped }),
@@ -660,10 +488,9 @@ function validateUnpublish(body: ListBody) {
   return { shareId: requireShareId(body.shareId) };
 }
 
-async function unpublish(admin: ListAdmin, uid: string, { shareId }: PreparedOperations['/lists/unpublish'], { now }: OperationSettings) {
+async function unpublish(admin: ListAdmin, uid: string, { shareId }: PreparedOperations['/lists/unpublish']) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
-  const timestamp = new Date(now());
   // The private list loses its pointer in the same commit — and its F12
   // stamps with it: an unpublished list is not on any profile and has no
   // public copy to be in step with. Without the pointer cleanup the owner
@@ -676,90 +503,14 @@ async function unpublish(admin: ListAdmin, uid: string, { shareId }: PreparedOpe
       'publicShareId', 'onProfile', 'publicSyncedAt',
     ]),
   ];
-  const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
-  const entries = projectionEntries(projection);
-  if (entries.some(entry => entry?.shareId === shareId)) {
-    writes.push(projectionWrite(
-      admin,
-      uid,
-      entries.filter(entry => entry?.shareId !== shareId),
-      timestamp,
-      projection,
-    ));
-  }
   await admin.commit(writes);
-  // Transitional, like update's: clients can no longer write profiles
-  // (firestore.rules has no userProfiles rule), so this only removes a legacy
-  // pinned CARD that would otherwise point at a dead share id.
-  const pinCard = await refreshPinnedCard(admin, uid, shareId, null, { now });
-  return { shareId, unpublished: true, pinCard };
-}
-
-/**
- * Turns attribution on or off for an already-published list (F12): the
- * showcase card and the private list's `onProfile` mirror move together, in
- * one commit, without touching the published content. This is also the
- * migration path — a legacy pinned card becomes an attributed list through
- * this exact door, consent having been given by the pin itself.
- */
-function validateAttribute(body: ListBody) {
-  const shareId = requireShareId(body.shareId);
-  if (typeof body.attributed !== 'boolean') throw new PublicListApiError('INVALID_BODY', 400);
-  return { shareId, attributed: body.attributed };
-}
-
-async function attribute(admin: ListAdmin, uid: string, { shareId, attributed }: PreparedOperations['/lists/attribute'], { now }: OperationSettings) {
-  const owner = await requireOwnedShare(admin, uid, shareId);
-
-  const timestamp = new Date(now());
-  const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
-  const entries = projectionEntries(projection);
-  const held = entries.some(entry => entry?.shareId === shareId);
-
-  const mirror = mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
-    onProfile: attributed,
-  });
-
-  // Asking for what is already true is success, not an error — but the
-  // mirror is still stamped, so a missing badge heals on the same call.
-  if (attributed === held) {
-    await admin.commit([mirror]);
-    return { shareId, attributed, unchanged: true };
-  }
-
-  const writes = [mirror];
-  if (attributed) {
-    if (entries.length >= PROFILE_LISTS_LIMIT) {
-      throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
-    }
-    const publicList = await admin.getDocument<ListPayload & { createdAt?: Date }>(['publicLists', shareId]);
-    if (!publicList) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
-    const privateList = await admin.getDocument<PrivateList>(['users', uid, 'lists', owner.listId]);
-    const card = showcaseCard(shareId, {
-      title: publicList.title,
-      emoji: cleanEmoji(privateList?.emoji),
-      paperCount: publicList.paperCount,
-      publishedAt: publicList.createdAt instanceof Date ? publicList.createdAt : timestamp,
-    });
-    writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
-  } else {
-    writes.push(projectionWrite(
-      admin,
-      uid,
-      entries.filter(entry => entry?.shareId !== shareId),
-      timestamp,
-      projection,
-    ));
-  }
-  await admin.commit(writes);
-  return { shareId, attributed };
+  return { shareId, unpublished: true };
 }
 
 const OPERATIONS: { [Key in OperationPath]: ListOperation<Key> } = {
   '/lists/publish': { validate: validatePublish, run: publish },
   '/lists/update': { validate: validateUpdate, run: update },
   '/lists/unpublish': { validate: validateUnpublish, run: unpublish },
-  '/lists/attribute': { validate: validateAttribute, run: attribute },
 };
 
 export function handlePublicListRequest<Path extends OperationPath>(request: Request, env: WorkerEnv, pathname: Path, options?: ListOptions): Promise<OperationResults[Path]>;
@@ -782,8 +533,8 @@ export async function handlePublicListRequest(request: Request, env: WorkerEnv, 
   // — without paying a single Firestore operation for the privilege.
   //
   // What still charges, on purpose: every failure that DID reach Firestore —
-  // LIST_NOT_FOUND, SHARE_NOT_FOUND, NOT_THE_OWNER, ALREADY_PUBLISHED,
-  // PROFILE_LISTS_FULL. Each of those spends a read of the free-tier allowance,
+  // LIST_NOT_FOUND, SHARE_NOT_FOUND, NOT_THE_OWNER, ALREADY_PUBLISHED.
+  // Each of those spends a read of the free-tier allowance,
   // and this cap is the only thing keeping that allowance bounded.
   const prepared = operation.validate(body);
   await reservePublishQuota(env, identity.uid);

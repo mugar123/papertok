@@ -273,7 +273,7 @@ test('a document reads back decoded, with the bearer token attached', async () =
     { status: 200 },
   ));
   assert.deepEqual(await admin.getDocument(['publicListOwners', 'abc']), { ownerId: 'alice' });
-  assert.equal(calls[0].init.headers!.authorization, 'Bearer tok');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
 });
 
 test('withMeta pairs the data with the version a precondition needs', async () => {
@@ -414,8 +414,8 @@ test('a 401 drops the isolate cached token and retries once with a fresh one', a
   // hour, and every request in that window leaves as a 502.
   assert.deepEqual(await admin.getDocument(['publicLists', 'abc']), { title: 'Ok' });
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].init.headers!.authorization, 'Bearer token-1');
-  assert.equal(calls[1].init.headers!.authorization, 'Bearer token-2');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer token-1');
+  assert.equal(calls[1].init.headers.authorization, 'Bearer token-2');
   assert.equal(mints(), 2);
 });
 
