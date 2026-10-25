@@ -951,10 +951,20 @@ async function readVectors(db: D1Database, workIds: number[]) {
 
 export interface FeedFollow { type: PaperFollowMatch['type']; canonicalId: string; displayName?: string; lane: string }
 
+/**
+ * Categories ranked apart by their own likes (ENG-137), and their share of the
+ * page by weight. `exampleCategories` claim the request's likes that no group
+ * names: those whose stored paper is in one of them.
+ */
+export interface FeedGroup { categories: string[]; exampleCategories: string[]; positiveIds: string[]; weight: number }
+
 export interface FeedQuery {
+  // Every group's, for the lanes, notable papers and `_fetchedFor`.
   categories: string[];
   follows: FeedFollow[];
+  // Every group's and the likes no group names, for exclusion, lookups and notable papers.
   positiveIds: string[];
+  groups: FeedGroup[];
   negativeIds: string[];
   excludedIds: string[];
   page: number;
@@ -1014,7 +1024,14 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
-  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
+  // The groups in their order, which decides the group an area's article goes to.
+  const groups = query.groups.map(group => ({
+    categories: [...group.categories].sort(),
+    examples: [...group.exampleCategories].sort(),
+    positives: [...group.positiveIds].sort(),
+    weight: Math.round(group.weight * 100) / 100,
+  }));
+  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0, groups });
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
   let ranking = kept?.final ? kept.ranks : null;
   let notable = kept?.notable ?? [];
@@ -1070,12 +1087,107 @@ async function unseenNotable(db: D1Database, ranked: RankedCandidate[], seen: Bl
   return unseen.slice(0, wanted);
 }
 
+/**
+ * The groups' ranks in one order, by smooth weighted round-robin: each turn
+ * goes to the group most owed one, so a group of twice the weight takes every
+ * other place of the other's, spread over the page rather than in a run. A
+ * paper an earlier turn placed is passed over, and a group with no papers
+ * left gives up its turns.
+ */
+export function interleaveByWeight(lists: RankedCandidate[][], weights: number[]) {
+  const positions = lists.map(() => 0);
+  const owed = lists.map(() => 0);
+  const placed = new Set<number>();
+  const merged: RankedCandidate[] = [];
+  const next = (index: number) => {
+    while (positions[index] < lists[index].length && placed.has(lists[index][positions[index]].workId)) positions[index] += 1;
+    return lists[index][positions[index]];
+  };
+  for (;;) {
+    const open = lists.flatMap((_, index) => (next(index) ? [index] : []));
+    if (open.length === 0) return merged;
+    open.forEach(index => { owed[index] += weights[index]; });
+    const turn = open.reduce((best, index) => (owed[index] > owed[best] ? index : best));
+    owed[turn] -= open.reduce((total, index) => total + weights[index], 0);
+    const candidate = next(turn);
+    positions[turn] += 1;
+    placed.add(candidate.workId);
+    merged.push(candidate);
+  }
+}
+
+const AREAS = new Set(LEAVES.map(leaf => leaf.area));
+const areasOfLeaves = (categories: readonly string[]) => new Set(LEAVES.filter(leaf => categories.includes(leaf.id)).map(leaf => leaf.area));
+
+/**
+ * The groups that rank a candidate: those of the categories it was found
+ * under. One found only in an area's journal lane or the working-paper series
+ * goes to the group asking for most of that area's leaves (an area's group
+ * rather than its new subarea's, in whichever order the app lists them; the
+ * first on a tie), and one found only by a follow to the first group.
+ */
+function groupsOfCandidate(groups: FeedGroup[]) {
+  const ownerOf = (areas: ReadonlySet<string>) => {
+    const leaves = groups.map(group => LEAVES.filter(leaf => areas.has(leaf.area) && group.categories.includes(leaf.id)).length);
+    const owner = leaves.reduce((best, count, index) => (count > leaves[best] ? index : best), 0);
+    return leaves[owner] > 0 ? owner : undefined;
+  };
+  const areaOwners = new Map<string, number>();
+  for (const [lane, areas] of [...[...AREAS].map(area => [areaLane(area), new Set([area])] as const), [WORKING_PAPERS_LANE, WORKING_PAPER_AREAS] as const]) {
+    const owner = ownerOf(areas);
+    if (owner !== undefined) areaOwners.set(lane, owner);
+  }
+  return (candidate: Candidate) => {
+    const byCategory = groups.flatMap((group, index) => (candidate.lanes.some(lane => group.categories.includes(lane)) ? [index] : []));
+    if (byCategory.length) return byCategory;
+    const byArea = [...new Set(candidate.lanes.flatMap(lane => (areaOwners.has(lane) ? [areaOwners.get(lane)!] : [])))];
+    return byArea.length ? byArea : [0];
+  };
+}
+
+/**
+ * The groups a like no group names ranks, by the first evidence of its area:
+ * the app's leaves its stored paper names, matched against each group's
+ * `exampleCategories`; else the area its primary category names (a working
+ * paper's `econ`), or else the areas whose journal lanes list it, matched
+ * against the areas of those categories. A like of a known area no group
+ * holds ranks none. The app's established group holds every leaf but the
+ * ones the reader removed, so that is a like of a removed subarea, or of an
+ * area the reader never picked when every group is an added one. Only a like
+ * with no evidence ranks every group.
+ */
+function groupsOfLike(groups: FeedGroup[]) {
+  const exampleAreas = groups.map(group => areasOfLeaves(group.exampleCategories));
+  return (paper: Partial<Paper> | undefined, laneAreas: string[]) => {
+    const leaves = [paper?.primaryCategory, ...(paper?.categories ?? [])].filter((category): category is string => !!category && LEAF_IDS.has(category));
+    if (leaves.length) return groups.flatMap((group, index) => (leaves.some(leaf => group.exampleCategories.includes(leaf)) ? [index] : []));
+    const areas = paper?.primaryCategory && AREAS.has(paper.primaryCategory) ? [paper.primaryCategory] : laneAreas;
+    if (areas.length) return groups.flatMap((_, index) => (areas.some(area => exampleAreas[index].has(area)) ? [index] : []));
+    return groups.map((_, index) => index);
+  };
+}
+
+// The areas whose journal lanes list each of these works, in one statement:
+// the likes no group names, at most FEED_MAX_POSITIVES.
+async function readAreaLanes(db: D1Database, workIds: number[]) {
+  const areas = new Map<number, string[]>();
+  if (workIds.length === 0) return areas;
+  const { results } = await db.prepare("SELECT work_id, lane FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'area:%'")
+    .bind(JSON.stringify(workIds)).all<{ work_id: number; lane: string }>();
+  for (const row of results) areas.set(row.work_id, [...(areas.get(row.work_id) ?? []), row.lane.slice(areaLane('').length)]);
+  return areas;
+}
+
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
-  const positiveIds = [...new Set(query.positiveIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
-  const negativeIds = [...new Set(query.negativeIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
+  const workIdsOf = (ids: string[]) => [...new Set(ids.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
+  const positiveIds = workIdsOf(query.positiveIds);
+  const negativeIds = workIdsOf(query.negativeIds);
+  // The likes no group names: a profile stored before its examples had a category.
+  const grouped = new Set(workIdsOf(query.groups.flatMap(group => group.positiveIds)));
+  const ungrouped = positiveIds.filter(id => !grouped.has(id));
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
-  const [candidates, notableRead, signals] = await Promise.all([
+  const [candidates, notableRead, signals, ungroupedWorks, ungroupedAreaLanes] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
@@ -1085,9 +1197,21 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     readCandidates(db, lanes),
     notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
+    readWorks(db, ungrouped),
+    readAreaLanes(db, ungrouped),
   ]);
-  const likes = positiveIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
-  const negatives = negativeIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  const vectorsOf = (ids: number[]) => ids.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  const likes = vectorsOf(positiveIds);
+  const negatives = vectorsOf(negativeIds);
+  const groupedLikes = query.groups.map(group => workIdsOf(group.positiveIds));
+  const likeGroups = groupsOfLike(query.groups);
+  for (const id of ungrouped) {
+    // A row evicted since `findWorks` gives no evidence of its area.
+    const row = ungroupedWorks.get(id);
+    const paper = row ? JSON.parse(row.paper) as Partial<Paper> : undefined;
+    likeGroups(paper, ungroupedAreaLanes.get(id) ?? []).forEach(index => groupedLikes[index].push(id));
+  }
+  const groupLikes = groupedLikes.map(vectorsOf);
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
   const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
@@ -1100,9 +1224,13 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     keepLiked(db, positiveIds, now),
   ]);
   const withVector = (candidate: Candidate) => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null });
+  const members: Candidate[][] = query.groups.map(() => []);
+  const groupsOf = groupsOfCandidate(query.groups);
+  for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
   return {
-    ranks: rankBySimilarity(offered.map(withVector), likes, { now, order: query.order, negatives })
-      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore })),
+    // Each group ranked by its own likes, then the page shared by weight.
+    ranks: interleaveByWeight(members.map((rows, index) => rankBySimilarity(rows.map(withVector), groupLikes[index], { now, order: query.order, negatives })
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight)),
     // The closest notable papers first, without recency: they are years old by design.
     notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
@@ -1138,12 +1266,34 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
 
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
-  seen?: unknown; notable?: unknown; waitForLikes?: unknown;
+  seen?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
+}
+
+const categoryIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(text).filter(category => CATEGORY_ID.test(category)))];
+const paperIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(id => text(id).slice(0, 300)).filter(Boolean))];
+
+// A group asks for at least one lane: no more groups than a request has lanes.
+const FEED_MAX_GROUPS = FEED_MAX_CATEGORIES;
+const FEED_MAX_GROUP_WEIGHT = 10;
+
+function parseFeedGroups(value: unknown): FeedGroup[] {
+  return (Array.isArray(value) ? value : []).flatMap((group: Partial<Record<keyof FeedGroup, unknown>> | null) => {
+    const categories = categoryIds(group?.categories).slice(0, FEED_MAX_CATEGORIES);
+    const weight = group?.weight;
+    if (categories.length === 0 || typeof weight !== 'number' || !(weight > 0 && weight <= FEED_MAX_GROUP_WEIGHT)) return [];
+    return [{
+      categories,
+      exampleCategories: categoryIds(group?.exampleCategories).slice(0, LEAF_IDS.size),
+      positiveIds: paperIds(group?.positiveIds).slice(0, FEED_MAX_POSITIVES),
+      weight,
+    }];
+  }).slice(0, FEED_MAX_GROUPS);
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
-  const categories = [...new Set((Array.isArray(body?.categories) ? body.categories : []).map(text).filter(category => CATEGORY_ID.test(category)))]
-    .slice(0, FEED_MAX_CATEGORIES);
+  const asked = parseFeedGroups(body?.groups);
+  // A request without groups, from a bundle published before them, is one group.
+  const categories = (asked.length ? [...new Set(asked.flatMap(group => group.categories))] : categoryIds(body?.categories)).slice(0, FEED_MAX_CATEGORIES);
   const follows = (Array.isArray(body?.follows) ? body.follows : [])
     .map(follow => ({ follow, lane: followLane(follow) }))
     .filter(({ lane }) => lane)
@@ -1154,8 +1304,13 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
       displayName: text(follow.displayName).slice(0, 200),
       lane,
     }));
-  const positiveIds = [...new Set((Array.isArray(body?.positiveIds) ? body.positiveIds : []).map(id => text(id).slice(0, 300)).filter(Boolean))]
-    .slice(0, FEED_MAX_POSITIVES);
+  const positiveIds = [...new Set([...asked.flatMap(group => group.positiveIds), ...paperIds(body?.positiveIds)])].slice(0, FEED_MAX_POSITIVES);
+  // Each group keeps what the union kept, and a group left without a lane goes.
+  const groups = asked.length
+    ? asked
+      .map(group => ({ ...group, categories: group.categories.filter(category => categories.includes(category)), positiveIds: group.positiveIds.filter(id => positiveIds.includes(id)) }))
+      .filter(group => group.categories.length > 0)
+    : [{ categories, exampleCategories: categories, positiveIds, weight: 1 }];
   const negativeIds = [...new Set((Array.isArray(body?.negativeIds) ? body.negativeIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_POSITIVES);
   const excludedIds = [...new Set((Array.isArray(body?.excludedIds) ? body.excludedIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_EXCLUDED);
   const seen = body?.seen === undefined ? null : readFeedSeenFilter(body.seen);
@@ -1164,6 +1319,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     categories,
     follows,
     positiveIds,
+    groups,
     negativeIds,
     excludedIds,
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
