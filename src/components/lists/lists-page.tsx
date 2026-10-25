@@ -214,7 +214,7 @@ function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string
   return paperLegacyAdapter(source === 'saved'
     ? { id: paperId, ...data }
     : data.paper
-      ? { id: paperId, ...data.paper }
+      ? { ...data.paper, id: data.paper.id || paperId }
       // Without a copy, the record kept only the category its card showed,
       // which the adapter cannot trust (PAP-60).
       : {

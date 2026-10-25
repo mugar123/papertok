@@ -90,7 +90,7 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * moved, decayed by the same 30-day exponential with no floor: a narrow
  * interest that is never touched again fades out instead of lasting forever.
  */
-import { readStoredClassification } from '../models/paper.ts';
+import { readRecordCopyClassification } from '../models/paper.ts';
 import { areaKeyForCategory } from './area-accent.ts';
 import {
   addSeenPaper,
@@ -735,10 +735,10 @@ function documentCategoryImpact(data: InteractionDocumentData, viewImpact: numbe
  * The category an interaction document counts under. Beside the flag it kept
  * the category the card showed, which was often the one the feed had asked
  * for; a document that also kept the paper's copy says which value can be
- * trusted (`readStoredClassification`), so the copy decides (PAP-60).
+ * trusted (`readRecordCopyClassification`), so the copy decides (PAP-60).
  */
 function documentCategory(id: string, data: InteractionDocumentData) {
-  if (data.paper && typeof data.paper === 'object') return readStoredClassification({ ...data.paper, id }).primaryCategory;
+  if (data.paper && typeof data.paper === 'object') return readRecordCopyClassification(id, data.paper).primaryCategory;
   return typeof data.paperCategory === 'string' ? data.paperCategory : '';
 }
 

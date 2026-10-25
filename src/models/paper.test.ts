@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { paperLegacyAdapter, readArxivId } from './paper.ts';
+import { paperLegacyAdapter, readArxivId, readRecordCopyClassification } from './paper.ts';
 import { areaKeyForPaper, areaLabelForPaper } from '../utils/area-accent.ts';
 import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { accessTagForPaper } from '../utils/paper-status.ts';
@@ -136,6 +136,24 @@ test('an old copy that cannot show where its category came from has no field', (
     assert.equal(areaKeyForPaper(paper), null, source);
     assert.equal(areaLabelForPaper(paper), null, source);
   }
+});
+
+// The library and My lists read the same record and must agree on its field.
+test("an arXiv card's old copy keeps arXiv's categories when its record sits under the prefixed alias", () => {
+  const copy = { id: '2005.14165', title: 'Language Models are Few-Shot Learners', primaryCategory: 'cs.CL', categories: ['cs.CL'] };
+  assert.deepEqual(readRecordCopyClassification('arxiv:2005.14165', copy).categories, ['cs.CL']);
+  assert.deepEqual(paperLegacyAdapter(copy).categories, ['cs.CL']);
+});
+
+test("a Hugging Face card's old copy has no field, whatever key its record sits under", () => {
+  const copy = { id: 'arxiv:2605.02209', title: 'T', primaryCategory: 'cs.CL', categories: ['cs.CL'] };
+  assert.deepEqual(readRecordCopyClassification('2605.02209', copy).categories, []);
+  assert.deepEqual(readRecordCopyClassification('arxiv:2605.02209', copy).categories, []);
+});
+
+test('an old copy without an id of its own is judged by its record', () => {
+  const copy = { title: 'T', primaryCategory: 'cs.AI', categories: ['cs.AI', 'cs.LG'] };
+  assert.deepEqual(readRecordCopyClassification('2605.02209', copy).categories, ['cs.AI', 'cs.LG']);
 });
 
 // `savedPapers` keeps `published` and no year. A paper the feed showed with no

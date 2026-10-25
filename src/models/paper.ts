@@ -350,6 +350,16 @@ export function readStoredClassification(copy: Omit<StoredPaperInput, 'sources'>
 }
 
 /**
+ * The classification of the copy a library record keeps, judged by the copy's
+ * own id: the id its card had. A legacy record can sit under an alias of it
+ * (`arxiv:2401.12345` for a card stored as `2401.12345`), and the prefixed form
+ * is the one Hugging Face cards used, which the rule for old copies distrusts.
+ */
+export function readRecordCopyClassification(recordId: string, copy: Omit<StoredPaperInput, 'sources'>) {
+  return readStoredClassification({ ...copy, id: copy.id || recordId });
+}
+
+/**
  * Adapts older localStorage/Firebase records. A sources object bypasses
  * normalization, so a partial stored record is not guaranteed to be a Paper.
  */

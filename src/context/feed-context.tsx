@@ -81,7 +81,7 @@ import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnsho
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
-import { readStoredClassification, storedClassification } from '../models/paper.ts';
+import { readRecordCopyClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
@@ -530,7 +530,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // without a copy kept only the category its card showed, which was
         // often the one the feed asked for, so it has no field (PAP-60).
         const paper = data.paper
-          ? { ...data.paper, ...readStoredClassification({ ...data.paper, id }) }
+          ? { ...data.paper, ...readRecordCopyClassification(id, data.paper) }
           : serializeLibraryPaper({
             id,
             title: data.paperTitle || '',
