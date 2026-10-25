@@ -40,7 +40,8 @@ Ranges are Wilson 95% intervals. Precision counts the filings whose outcome
 the labels decide; recall is over the held-out articles labelled on target for
 a leaf of the area. Mathematics misses the bar twice: its 28 decided held-out
 filings are under 30, and 0.86 is under 0.9. Ten more of its 38 held-out
-filings are unknown. In the other areas no rule reached 95% precision over 20
+filings are unknown; were all ten correct, this rule would reach 34 of 38
+(0.89), still under the bar. In the other areas no rule reached 95% precision over 20
 decided filings on the calibration half, so nothing was measured on their
 held-out halves. Half the leaves of q-fin publish under 50 arXiv papers in 90
 days, and four of the seven eess leaves (telecommunications, electronics,
