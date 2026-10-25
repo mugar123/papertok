@@ -370,9 +370,15 @@ const SCOPUS_EGRESS = Object.freeze({
   SCOPUS_PROXY_SECRET: 's'.repeat(48),
 });
 
+// The public cost routes count each caller by the address Cloudflare reports,
+// keyed with this secret (worker/caller-quota.ts).
+const CALLER_SECRET = 'test-only-pdf-rate-limit-key-32-bytes';
+const CALLER = Object.freeze({ 'cf-connecting-ip': '192.0.2.1' });
+
 function openAlexEnv(extra = {}) {
   return {
     OPENALEX_API_KEY: 'worker-key',
+    PDF_RATE_LIMIT_SECRET: CALLER_SECRET,
     REQUEST_QUOTA_LEDGER: {
       idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
       get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],
@@ -391,7 +397,7 @@ test('rebuilds the OpenAlex URL and attaches the key the caller cannot supply', 
     () => reportApi.fetch(new Request(
       // A caller-supplied key and an unknown parameter must not survive.
       'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa&per-page=50&api_key=stolen&callback=evil',
-      { headers: { origin: 'https://mugar123.github.io' } },
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
     ), openAlexEnv()),
   );
 
@@ -418,7 +424,7 @@ test('refuses an entity outside the allowlist and a path that tries to climb out
     for (const pathname of attempts) {
       const response = await reportApi.fetch(new Request(
         `https://papertok-report-api.example${pathname}`,
-        { headers: { origin: 'https://mugar123.github.io' } },
+        { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
       ), openAlexEnv());
       assert.equal(response.status, 400, pathname);
     }
@@ -430,7 +436,7 @@ test('serves a guest without a session, because the guest feed reads OpenAlex', 
     async () => new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 }),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa',
-      { headers: { origin: 'https://mugar123.github.io' } },
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
     ), openAlexEnv()),
   );
 
@@ -446,7 +452,7 @@ test('an OpenAlex 404 is cached for an hour, an OpenAlex outage is not cached', 
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const response = await reportApi.fetch(new Request(
             'https://papertok-report-api.example/openalex/works/doi:10.1/unindexed',
-            { headers: { origin: 'https://mugar123.github.io' } },
+            { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
           ), openAlexEnv());
           assert.equal(response.status, status);
           if (status === 404) assert.equal(maxAgeSeconds(response), 3600);
@@ -474,7 +480,7 @@ test('relays an OpenAlex refusal with its own wait instead of flattening it', as
     ),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa',
-      { headers: { origin: 'https://mugar123.github.io' } },
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
     ), openAlexEnv()),
   );
 
@@ -1092,8 +1098,8 @@ const ATOM_FEED = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom
 const arxivThrough = (t: TestContext, env: WorkerEnv, upstream: typeof fetch) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:00.000Z') });
   return withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
-    ARXIV_URL, { headers: { origin: 'https://mugar123.github.io' } },
-  ), env));
+    ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
 };
 const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
 
@@ -1201,20 +1207,24 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 
 // One anonymous script sending cache-busting queries used to hold every seat
 // a caller could wait for, and the Worker's own lookups (a reader's liked
-// papers, the harvest's arXiv lanes) were refused with it.
+// papers, the harvest's arXiv lanes) were refused with it. The allowance per
+// address does not stop it: each address of one IPv6 /64 is a caller of its own.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
   // four seconds a caller may wait, the next one a millisecond away, so the
   // seats taken here cost almost no real sleep.
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
-  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
   const statuses: number[] = [];
   const papers = await withWorkerFetchMock(async input => {
     const lookup = new URL(String(input)).searchParams.has('id_list');
     return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
   }, async () => {
     for (let miss = 0; miss < 3; miss += 1) {
-      const response = await reportApi.fetch(new Request(`https://papertok-report-api.example/arxiv?search_query=all:x${miss}`), env);
+      const response = await reportApi.fetch(new Request(
+        `https://papertok-report-api.example/arxiv?search_query=all:x${miss}`,
+        { headers: { 'cf-connecting-ip': `2001:db8::${miss + 1}` } },
+      ), env);
       statuses.push(response.status);
     }
     return fetchArxivPapers(env, ['2610.01234']);
@@ -1247,11 +1257,11 @@ async function settledOnMockClock<Result>(t: TestContext, pending: Promise<Resul
 // the browser waits for /arxiv.
 test('one reader\'s second back-to-back arXiv miss is refused at once when its next public seat is more than 4 s away', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:03.100Z') });
-  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
   const sent: string[] = [];
   const ask = (query: string) => settledOnMockClock(t, reportApi.fetch(new Request(
     `https://papertok-report-api.example/arxiv?search_query=all:${query}`,
-    { headers: { origin: 'https://mugar123.github.io' } },
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), env));
   const result = await withWorkerFetchMock(async () => {
     sent.push(new Date().toISOString());
@@ -1489,7 +1499,7 @@ test('answers an OpenAlex stall as a gateway timeout', async () => {
     throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/openalex/works?per-page=1',
-    { headers: { origin: 'https://mugar123.github.io' } },
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), openAlexEnv()));
 
   assert.equal(response.status, 504);
@@ -1502,7 +1512,7 @@ test('answers an OpenAlex network failure with CORS headers instead of throwing'
     throw new TypeError('Network connection lost');
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/openalex/works?per-page=1',
-    { headers: { origin: 'https://mugar123.github.io' } },
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), openAlexEnv()));
 
   assert.equal(response.status, 502);
@@ -1593,7 +1603,7 @@ async function withCountedUpstream<Result>(handler: MockProvider, callback: (cal
   return calls;
 }
 
-const BROWSER = Object.freeze({ origin: 'https://mugar123.github.io' });
+const BROWSER = Object.freeze({ origin: 'https://mugar123.github.io', ...CALLER });
 const SIGNED_IN = Object.freeze({ ...BROWSER, authorization: 'Bearer test-token' });
 // The citation graph is the route that reaches `cacheResponse` with both an
 // identity and a billed OpenAlex spend, so the budget tests below run on it.
@@ -1813,7 +1823,7 @@ test('identical OpenAlex misses in flight share one upstream call and one reserv
     await gate;
     return new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 });
   }, async () => {
-    const pending = origins.map(origin => reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: { origin } }), env));
+    const pending = origins.map(origin => reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: { origin, ...CALLER } }), env));
     await new Promise(resolve => setTimeout(resolve, 10));
     release();
     const settled = await Promise.all(pending);
@@ -1839,7 +1849,7 @@ test('a ledger refusal is not shared: each identical request waiting behind it i
   const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
   const responses = await withWorkerFetchMock(async () => {
     throw new Error('A refused reservation makes no upstream call');
-  }, () => Promise.all([BROWSER, BROWSER, { origin: 'https://papertok.app' }].map(headers => (
+  }, () => Promise.all([BROWSER, BROWSER, { origin: 'https://papertok.app', ...CALLER }].map(headers => (
     reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers }), env)
   ))));
 
@@ -3027,8 +3037,8 @@ test('a refused /openalex relay holds no OpenAlex unit', async () => {
     async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
       RELAY_WORKS_URL,
-      { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) }),
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+    ), { ...OPEN_ROUTE_ENV, PDF_RATE_LIMIT_SECRET: CALLER_SECRET, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) }),
   );
 
   assert.equal(response.status, 429);
@@ -3501,7 +3511,7 @@ test('relays a rewrite refusal with its own status, code and quota', async () =>
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
 
-test('closes the API host to crawlers with its own robots.txt', async () => {
+test('closes the API host to crawlers with its own robots.txt, share cards aside', async () => {
   // Un rastreador no manda `origin`, asi que la ruta tiene que contestar sin el.
   const response = await reportApi.fetch(
     new Request('https://api.papertok.app/robots.txt'),
@@ -3513,7 +3523,8 @@ test('closes the API host to crawlers with its own robots.txt', async () => {
   const body = await response.text();
   assert.match(body, /^User-agent: \*$/m);
   assert.match(body, /^Disallow: \/$/m);
-  assert.doesNotMatch(body, /^Allow: \//m);
+  // A preview bot that honours robots.txt still gets a shared profile's card.
+  assert.deepEqual(body.match(/^Allow: .*$/gm), ['Allow: /share/image/']);
 });
 
 // --- bioRxiv outages are answered once per two minutes, not once per visit ---
@@ -3602,7 +3613,7 @@ function crawlerRequest(path: string, { method = 'GET' } = {}) {
   return new Request(`https://papertok-report-api.example${path}`, {
     method,
     // A Spanish-speaking crawler still gets the English page: PaperTok is English-only.
-    headers: { 'user-agent': 'facebookexternalhit/1.1', 'accept-language': 'es-ES,es;q=0.9' },
+    headers: { 'user-agent': 'facebookexternalhit/1.1', 'accept-language': 'es-ES,es;q=0.9', ...CALLER },
   });
 }
 
@@ -4405,4 +4416,108 @@ test('the KV entry is written even when the edge put throws', async () => {
     if (realCaches === undefined) delete globals.caches;
     else globals.caches = realCaches;
   }
+});
+
+
+test('OpenAlex keeps each IP allowance independent inside the shared minute ceiling', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-25T12:00:00Z') });
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_GLOBAL_MINUTE_LIMIT: '400' });
+  let upstreamCalls = 0;
+  await withWorkerFetchMock(async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ results: [] }));
+  }, async () => {
+    const ask = (ip: string) => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/openalex/works?search=attention',
+      { headers: { 'cf-connecting-ip': ip } },
+    ), env);
+    for (let i = 0; i < 30; i += 1) assert.equal((await ask('192.0.2.1')).status, 200);
+    const refused = await ask('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal((await refused.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
+    assert.equal(upstreamCalls, 30, 'one IP stops before the shared ceiling');
+    for (let i = 0; i < 10; i += 1) assert.equal((await ask('198.51.100.7')).status, 200);
+    assert.equal((await ask('198.51.100.7')).status, 429, 'the existing shared ceiling still bounds both IPs');
+    assert.equal(upstreamCalls, 40);
+    t.mock.timers.setTime(Date.parse('2026-10-25T12:01:00Z'));
+    assert.equal((await ask('192.0.2.1')).status, 200);
+  });
+});
+
+test('share lookups stop one IP before the shared ceiling and leave other IPs room', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-25T12:00:00Z') });
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding });
+  const urls: Array<{ address: string; authorization: string | null }> = [];
+  await withWorkerFetchMock(shareUpstream(urls), async () => {
+    const ask = async (ip: string) => {
+      const request = crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`);
+      request.headers.set('cf-connecting-ip', ip);
+      const response = await reportApi.fetch(request, env);
+      assert.equal(response.status, 200);
+      return response.text();
+    };
+    const title = /<title>Characterizing Alternative Monetization Strategies on YouTube<\/title>/;
+    for (let i = 0; i < 20; i += 1) assert.match(await ask('192.0.2.1'), title);
+    assert.match(await ask('192.0.2.1'), /<title>PaperTok — Discover scientific research<\/title>/);
+    assert.equal(urls.filter(row => row.address.startsWith('https://api.openalex.org/')).length, 20);
+    for (const ip of ['198.51.100.7', '203.0.113.8']) {
+      for (let i = 0; i < 20; i += 1) assert.match(await ask(ip), title);
+    }
+    assert.match(await ask('203.0.113.9'), /<title>PaperTok — Discover scientific research<\/title>/);
+    assert.equal(urls.filter(row => row.address.startsWith('https://api.openalex.org/')).length, 60, 'the shared minute still bounds all IPs');
+  });
+});
+
+test('arXiv stops one IP at ten misses while another IP can take the next paced seat', async t => {
+  const start = Date.parse('2026-10-25T12:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
+  let upstreamCalls = 0;
+  await withWorkerFetchMock(async () => {
+    upstreamCalls += 1;
+    return new Response('<feed></feed>');
+  }, async () => {
+    const ask = (ip: string) => reportApi.fetch(new Request(ARXIV_URL, { headers: { 'cf-connecting-ip': ip } }), env);
+    // A request from outside the Worker takes only every other seat, six
+    // seconds apart: these ten are every such seat of the minute.
+    for (let i = 0; i < 10; i += 1) {
+      t.mock.timers.setTime(start + i * 6000);
+      assert.equal((await ask('192.0.2.1')).status, 200);
+    }
+    // The minute's last millisecond: the next such seat, the next minute's
+    // first, is a millisecond away, but this IP's allowance is spent.
+    t.mock.timers.setTime(start + 59_999);
+    const refused = await ask('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '1', 'refused by the allowance until the minute ends, not by the beat');
+    assert.equal(upstreamCalls, 10);
+    assert.equal((await ask('198.51.100.7')).status, 200);
+    assert.equal(upstreamCalls, 11);
+  });
+});
+
+
+test('share image lookups spend the same per-IP allowance as share pages', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-25T12:00:00Z') });
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding });
+  let lookups = 0;
+  await withWorkerFetchMock(async url => {
+    assert.match(String(url), /^https:\/\/api\.openalex\.org\/authors\/A5018713931/);
+    lookups += 1;
+    return new Response('{}', { status: 404 });
+  }, async () => {
+    const ask = async (ip: string) => {
+      const request = crawlerRequest('/share/image/entity/author/A5018713931');
+      request.headers.set('cf-connecting-ip', ip);
+      const response = await reportApi.fetch(request, env);
+      assert.equal(response.status, 302);
+      assert.match(response.headers.get('location')!, /^https:\/\/papertok\.app\/og\//);
+    };
+    for (let i = 0; i < 20; i += 1) await ask('192.0.2.1');
+    assert.equal(lookups, 20);
+    await ask('192.0.2.1');
+    assert.equal(lookups, 20, 'a refused image lookup spends nothing upstream');
+    await ask('198.51.100.7');
+    assert.equal(lookups, 21, 'another IP retains its share allowance');
+  });
 });

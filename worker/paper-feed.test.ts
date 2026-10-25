@@ -8,7 +8,7 @@ import type { WorkerEnv } from './env.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
+import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleHarvestArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
@@ -304,7 +304,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
   // Two in-process arXiv searches take this period's seat and the next one:
   // the first goes to arXiv, the second waits for its seat.
-  const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env, null));
+  const searches = ['all:attention', 'all:sparsity'].map(query => handleHarvestArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
   await flush();
   t.mock.timers.tick(cacheReadMs);
   for (let turn = 0; arxivAsked < 1; turn += 1) {

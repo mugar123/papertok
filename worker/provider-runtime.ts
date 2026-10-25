@@ -26,8 +26,9 @@ export interface OpenAlexBudget {
   units: number;
   tier: OpenAlexTier;
   kind: OpenAlexKind;
-  // `feed` only: the part of the nightly run's share this miss spends, such as
-  // the followed lanes' (paper-sources.ts).
+  // A second subject this miss spends: for `feed`, the part of the nightly
+  // run's share, such as the followed lanes' (paper-sources.ts); for a reader,
+  // the caller's allowance for the minute (openalex-api.ts).
   part?: QuotaPart;
   // `feed` only: a miss of a run a new follow started, which spends the new
   // follows' share (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) rather than the nightly run's.
@@ -54,10 +55,14 @@ interface CacheOptions {
   // The answer belongs to one reader: its key must name them, and the browser
   // is told not to store or share it.
   personal?: boolean;
+  // A public route's allowance per caller address and UTC minute, for a route
+  // with no shared reservation to carry the caller.
+  callerMinute?: { namespace: string; limit: number };
 }
 
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
 
+import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { observeRequestQuota, peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
@@ -350,6 +355,26 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
   return { reservation: ledgerRequest };
 }
 
+// The caller's allowance, first of the reserving gates: a caller past it takes
+// nothing from the shared gates after it. A missing identity fails closed like
+// a missing ledger.
+async function reserveCallerGate(request: Request, quota: CacheOptions['callerMinute'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+  if (!quota) return {};
+  const caller = await reserveCallerMinute(request, env, quota.namespace, quota.limit);
+  if (caller.reading.accepted) return { reservation: caller.reservation };
+  if (caller.reading.code) {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    }) };
+  }
+  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': caller.retryAfter,
+  }) };
+}
+
 // The beat under the ceiling, for the providers that count per second. It runs
 // last of the reserving gates because it is the only one that costs wall-clock:
 // a caller the minute ceiling or the identity quota is about to turn away must
@@ -412,8 +437,11 @@ export async function releaseHeld(env: WorkerEnv, held: QuotaRequest[]) {
 // earlier ones already spent. The fetcher is deliberately not inside this: a
 // fetch that fails may still have reached the provider, and the ledger counts
 // provider calls, not answers.
-async function reserveGates(origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
+async function reserveGates(request: Request, origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
   try {
+    const caller = await reserveCallerGate(request, options.callerMinute, env, origin);
+    if (caller.error) return caller.error;
+    if (caller.reservation) held.push(caller.reservation);
     const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
     if (minute.error) return minute.error;
     if (minute.reservation) held.push(minute.reservation);
@@ -448,7 +476,7 @@ export async function cacheResponse<T>(request: Request, origin: string, env: Wo
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
   const held: QuotaRequest[] = [];
-  const refusal = await reserveGates(origin, env, options, ceiling, held);
+  const refusal = await reserveGates(request, origin, env, options, ceiling, held);
   if (refusal) {
     await releaseHeld(env, held);
     return refusal;
@@ -599,7 +627,9 @@ export function boundedText(value: unknown, maxLength: number) {
 // transaction: one Durable Object request per miss instead of two, and no object
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
-// owns the refund can name it. The harvest's reservations (`feed`) check its
+// owns the refund can name it. A reader's miss names its address's minute
+// allowance as the part, so one caller cannot spend the minute for everyone
+// (openalex-api.ts). The harvest's reservations (`feed`) check its
 // day's share as the subject instead of the minute: the new follows' share for
 // a run a new follow started, otherwise the nightly run's, with the part of it
 // a lane spends when it names one.
@@ -613,6 +643,7 @@ function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAl
       ...day,
       subject: `openalex:minute:${now.slice(0, 16)}`,
       subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+      ...(budget?.part ? { part: budget.part } : {}),
     };
   }
   return budget.newFollow
