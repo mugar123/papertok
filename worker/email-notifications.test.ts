@@ -3904,6 +3904,27 @@ test('a test email the exploration tier refuses fails whole when OpenAlex stands
   assert.equal(h.calls.resend, 0);
 });
 
+test('a test email stops asking the ledger and OpenAlex once the tier has refused it', async t => {
+  // Five searches of ten units cannot fit under the tier's 60 with 55 spent, but
+  // four one-unit lists after them would. The test fails whole on the first
+  // refusal, so those lists must neither be billed nor sent: the day keeps its
+  // 55 units for the readers who still need them, and only the searches that
+  // had already asked can be counted as refused.
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  const namedAuthors = ['Grace Hopper', 'Alan Turing', 'Ada Lovelace', 'Kurt Godel', 'John Neumann']
+    .map((name, index) => digestFollow(`0000-0002-1825-009${index}`, name));
+  await h.subscribe([...namedAuthors, ...['A11', 'A12', 'A13', 'A14'].map(id => digestFollow(id))]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+  const day = await openAlexDay(h);
+  assert.equal(day.tiers.exploration.used, 55);
+  assert.equal(day.used, 55);
+  assert.ok(day.tiers.exploration.refused < 5 * 10, 'the last search asked the ledger after the first refusal');
+});
+
 test('test emails stop at the exploration tier and leave the feed its share of the day', async t => {
   const h = testEmailHarness(t);
   h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';

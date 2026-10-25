@@ -1456,7 +1456,20 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
-  const reserve: OpenAlexReservation | null = test ? url => reserveOpenAlexForTest(env, url, now) : null;
+  // A test fails whole on its first refusal and the ledger remembers none: a
+  // one-unit list asked after a ten-unit search was refused would be accepted,
+  // billing readers' share and calling OpenAlex for an email that is never sent.
+  // Requests already waiting on the ledger keep their own answer.
+  let testRefusal: unknown = null;
+  const reserve: OpenAlexReservation | null = test ? async (url) => {
+    if (testRefusal) throw testRefusal;
+    try {
+      await reserveOpenAlexForTest(env, url, now);
+    } catch (error) {
+      testRefusal ??= error;
+      throw error;
+    }
+  } : null;
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
     follow.type === 'project'
       ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests, reserve)
