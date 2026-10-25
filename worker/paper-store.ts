@@ -1115,26 +1115,64 @@ export function interleaveByWeight(lists: RankedCandidate[][], weights: number[]
   }
 }
 
+const AREAS = new Set(LEAVES.map(leaf => leaf.area));
+const areasOfLeaves = (categories: readonly string[]) => new Set(LEAVES.filter(leaf => categories.includes(leaf.id)).map(leaf => leaf.area));
+
 /**
  * The groups that rank a candidate: those of the categories it was found
  * under. One found only in an area's journal lane or the working-paper series
- * goes to the first group with a category of that area, and one found only by
- * a follow to the first group.
+ * goes to the group asking for most of that area's leaves (an area's group
+ * rather than its new subarea's, in whichever order the app lists them; the
+ * first on a tie), and one found only by a follow to the first group.
  */
 function groupsOfCandidate(groups: FeedGroup[]) {
+  const ownerOf = (areas: ReadonlySet<string>) => {
+    const leaves = groups.map(group => LEAVES.filter(leaf => areas.has(leaf.area) && group.categories.includes(leaf.id)).length);
+    const owner = leaves.reduce((best, count, index) => (count > leaves[best] ? index : best), 0);
+    return leaves[owner] > 0 ? owner : undefined;
+  };
   const areaOwners = new Map<string, number>();
-  groups.forEach((group, index) => {
-    for (const leaf of LEAVES.filter(leaf => group.categories.includes(leaf.id))) {
-      if (!areaOwners.has(areaLane(leaf.area))) areaOwners.set(areaLane(leaf.area), index);
-      if (WORKING_PAPER_AREAS.has(leaf.area) && !areaOwners.has(WORKING_PAPERS_LANE)) areaOwners.set(WORKING_PAPERS_LANE, index);
-    }
-  });
+  for (const [lane, areas] of [...[...AREAS].map(area => [areaLane(area), new Set([area])] as const), [WORKING_PAPERS_LANE, WORKING_PAPER_AREAS] as const]) {
+    const owner = ownerOf(areas);
+    if (owner !== undefined) areaOwners.set(lane, owner);
+  }
   return (candidate: Candidate) => {
     const byCategory = groups.flatMap((group, index) => (candidate.lanes.some(lane => group.categories.includes(lane)) ? [index] : []));
     if (byCategory.length) return byCategory;
     const byArea = [...new Set(candidate.lanes.flatMap(lane => (areaOwners.has(lane) ? [areaOwners.get(lane)!] : [])))];
     return byArea.length ? byArea : [0];
   };
+}
+
+/**
+ * The groups a like no group names ranks, by the first evidence of its area:
+ * the app's leaves its stored paper names, matched against each group's
+ * `exampleCategories`; else the area its primary category names (a working
+ * paper's `econ`), or else the areas whose journal lanes list it, matched
+ * against the areas of those categories. A like of a known area no group
+ * holds ranks none: the reader left that area, and its likes sleep. Only a
+ * like with no evidence ranks every group.
+ */
+function groupsOfLike(groups: FeedGroup[]) {
+  const exampleAreas = groups.map(group => areasOfLeaves(group.exampleCategories));
+  return (paper: Partial<Paper> | undefined, laneAreas: string[]) => {
+    const leaves = [paper?.primaryCategory, ...(paper?.categories ?? [])].filter((category): category is string => !!category && LEAF_IDS.has(category));
+    if (leaves.length) return groups.flatMap((group, index) => (leaves.some(leaf => group.exampleCategories.includes(leaf)) ? [index] : []));
+    const areas = paper?.primaryCategory && AREAS.has(paper.primaryCategory) ? [paper.primaryCategory] : laneAreas;
+    if (areas.length) return groups.flatMap((_, index) => (areas.some(area => exampleAreas[index].has(area)) ? [index] : []));
+    return groups.map((_, index) => index);
+  };
+}
+
+// The areas whose journal lanes list each of these works, in one statement:
+// the likes no group names, at most FEED_MAX_POSITIVES.
+async function readAreaLanes(db: D1Database, workIds: number[]) {
+  const areas = new Map<number, string[]>();
+  if (workIds.length === 0) return areas;
+  const { results } = await db.prepare("SELECT work_id, lane FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'area:%'")
+    .bind(JSON.stringify(workIds)).all<{ work_id: number; lane: string }>();
+  for (const row of results) areas.set(row.work_id, [...(areas.get(row.work_id) ?? []), row.lane.slice(areaLane('').length)]);
+  return areas;
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
@@ -1146,7 +1184,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const grouped = new Set(workIdsOf(query.groups.flatMap(group => group.positiveIds)));
   const ungrouped = positiveIds.filter(id => !grouped.has(id));
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
-  const [candidates, notableRead, signals, ungroupedWorks] = await Promise.all([
+  const [candidates, notableRead, signals, ungroupedWorks, ungroupedAreaLanes] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
@@ -1157,21 +1195,20 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
     readWorks(db, ungrouped),
+    readAreaLanes(db, ungrouped),
   ]);
   const vectorsOf = (ids: number[]) => ids.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
   const likes = vectorsOf(positiveIds);
   const negatives = vectorsOf(negativeIds);
-  // A row evicted since `findWorks` names no category.
-  const ungroupedCategories = ungrouped.flatMap(id => {
+  const groupedLikes = query.groups.map(group => workIdsOf(group.positiveIds));
+  const likeGroups = groupsOfLike(query.groups);
+  for (const id of ungrouped) {
+    // A row evicted since `findWorks` gives no evidence of its area.
     const row = ungroupedWorks.get(id);
-    if (!row) return [];
-    const paper = JSON.parse(row.paper) as Partial<Paper>;
-    return [{ id, categories: [paper.primaryCategory, ...(paper.categories ?? [])] }];
-  });
-  const groupLikes = query.groups.map(group => vectorsOf([
-    ...workIdsOf(group.positiveIds),
-    ...ungroupedCategories.filter(({ categories }) => categories.some(category => category && group.exampleCategories.includes(category))).map(({ id }) => id),
-  ]));
+    const paper = row ? JSON.parse(row.paper) as Partial<Paper> : undefined;
+    likeGroups(paper, ungroupedAreaLanes.get(id) ?? []).forEach(index => groupedLikes[index].push(id));
+  }
+  const groupLikes = groupedLikes.map(vectorsOf);
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
   const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);

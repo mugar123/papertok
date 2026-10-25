@@ -971,7 +971,7 @@ async function physicsAndEconomics() {
   embed(liked.id, direction(0, 1));
   physics.forEach((paper, index) => embed(paper.id, direction(index + 1, 0.44 + 0.06 * index)));
   economics.forEach((paper, index) => embed(paper.id, direction(index + 10, index === economics.length - 1 ? 1 : 0)));
-  return { ...store, liked: liked.id, physics: physics.map(paper => paper.id), economics: economics.map(paper => paper.id) };
+  return { ...store, liked: liked.id, physics: physics.map(paper => paper.id), economics: economics.map(paper => paper.id), embed, direction };
 }
 
 const interestGroups = (physicsPositives: string[], weights = [1, 2]) => [
@@ -999,6 +999,69 @@ test("a like in no group ranks the groups whose example categories hold its stor
   const served = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [liked], groups: interestGroups([]) }, physics, economics);
   assert.deepEqual(served.physics, [...physics].reverse().slice(0, served.physics.length), 'closest to the like first');
   assert.deepEqual(served.economics, economics.slice(0, served.economics.length), 'newest first');
+});
+
+// A journal article of an area's lane names none of the app's leaves, only
+// OpenAlex's concepts; a working paper names its area. Like the physics like,
+// either is a copy of the oldest economics preprint.
+test("a like in no group whose paper names no leaf ranks the group of the area its primary category names or whose journal lane lists it", async () => {
+  const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
+  const article = { ...mapOpenAlexWork({ ...physicsWork, id: 'https://openalex.org/W8200001', doi: 'https://doi.org/10.7566/jpsj.97.1', publication_date: '2026-09-01' })!, primaryCategory: '', categories: ['Physics', 'Optics'] };
+  const workingPaper = {
+    ...arxivRecord, id: 'repec:wp-2026-01', arxivId: undefined, doi: undefined, title: 'A working paper on bank capital', allCategories: [], categories: ['econ'], primaryCategory: 'econ',
+    published: '2026-09-01T00:00:00.000Z',
+  };
+  await ingestPapers(env, [{ paper: article, lanes: ['area:physics'] }, { paper: workingPaper, lanes: ['series:working-papers'] }], { now: NOW });
+  embed(article.id, direction(0, 1));
+  embed(workingPaper.id, direction(0, 1));
+  // The fixture's physics like, a copy of these, is not a like here: out of the way.
+  const groups = interestGroups([]);
+  const byArticle = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [article.id], excludedIds: [liked], groups }, physics, economics);
+  assert.deepEqual(byArticle.physics, [...physics].reverse().slice(0, byArticle.physics.length), 'the article orders physics');
+  assert.deepEqual(byArticle.economics, economics.slice(0, byArticle.economics.length), 'and not economics');
+  const byWorkingPaper = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [workingPaper.id], excludedIds: [liked], groups }, physics, economics);
+  assert.equal(byWorkingPaper.economics[0], economics.at(-1), 'the working paper orders economics');
+  assert.deepEqual(byWorkingPaper.physics, physics.slice(0, byWorkingPaper.physics.length), 'and not physics');
+});
+
+test('a like in no group of an area no group holds ranks none, and one of no known area ranks every group', async () => {
+  const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
+  const paper = (id: string, primaryCategory: string, categories: string[]) => ({
+    ...arxivRecord, id, arxivId: undefined, doi: undefined, title: `A liked paper, ${id}`, allCategories: [], categories, primaryCategory, published: '2026-09-01T00:00:00.000Z',
+  });
+  const left = paper('pmid:41000101', 'math.AG', ['math.AG']);
+  const unknown = paper('pmid:41000102', '', ['Some concept']);
+  await ingestPapers(env, [{ paper: left, lanes: ['topic:T99901'] }, { paper: unknown, lanes: ['topic:T99902'] }], { now: NOW });
+  embed(left.id, direction(0, 1));
+  embed(unknown.id, direction(0, 1));
+  const groups = interestGroups([]);
+  const byLeft = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [left.id], excludedIds: [liked], groups }, physics, economics);
+  assert.deepEqual(byLeft.physics, physics.slice(0, byLeft.physics.length), 'an area the reader left orders neither group');
+  assert.deepEqual(byLeft.economics, economics.slice(0, byLeft.economics.length));
+  const byUnknown = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [unknown.id], excludedIds: [liked], groups }, physics, economics);
+  assert.deepEqual(byUnknown.physics, [...physics].reverse().slice(0, byUnknown.physics.length), 'an unknown area orders physics');
+  assert.equal(byUnknown.economics[0], economics.at(-1), 'and economics');
+});
+
+// R6: a new subarea's group sits beside its area's group, in either order.
+test("an area's journal article goes to the group asking for most of the area's leaves, whichever the app lists first", async () => {
+  const { env, db } = corpus();
+  const liked = { ...arxivRecord, id: '2610.62000', arxivId: '2610.62000', title: 'A liked particle physics preprint', allCategories: ['hep-ph'], categories: ['hep-ph'], primaryCategory: 'hep-ph', published: '2026-10-01T00:00:00.000Z' };
+  const articles = Array.from({ length: 4 }, (_, index) => mapOpenAlexWork({
+    ...physicsWork, id: `https://openalex.org/W820010${index}`, doi: `https://doi.org/10.7566/jpsj.98.${index}`, title: `A physics journal article, part ${index + 1}`, publication_date: `2026-10-${21 - index}`,
+  })!);
+  await ingestPapers(env, [{ paper: liked, lanes: [] }, ...articles.map(paper => ({ paper, lanes: ['area:physics'] }))], { now: NOW });
+  const embed = (id: string, values: number[]) => db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+    .run(Buffer.from(quantize(values).buffer), `id:${id.toLowerCase()}`);
+  // The subarea's like is a copy of the oldest article: ranked by it, that article would lead.
+  embed(liked.id, [1, 0, 0, 0, 0]);
+  articles.forEach((paper, index) => embed(paper.id, index === articles.length - 1 ? [1, 0, 0, 0, 0] : [0, ...Array.from({ length: 4 }, (_, dimension) => (dimension === index ? 1 : 0))]));
+  const area = { categories: ['quant-ph', 'hep-th', 'gr-qc'], exampleCategories: ['quant-ph', 'hep-th', 'gr-qc', 'hep-ph'], positiveIds: [], weight: 1 };
+  const subarea = { categories: ['hep-ph'], exampleCategories: ['quant-ph', 'hep-th', 'gr-qc', 'hep-ph'], positiveIds: [liked.id], weight: 1 };
+  for (const groups of [[area, subarea], [subarea, area]]) {
+    const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph', 'hep-th', 'gr-qc', 'hep-ph'], positiveIds: [liked.id], groups }), { now: NOW });
+    assert.deepEqual(page.map(paper => paper.id), articles.map(paper => paper.id), 'newest first, as the area group without likes ranks them');
+  }
 });
 
 // Focus 3: a subarea with almost nothing in the corpus.
