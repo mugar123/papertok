@@ -1,12 +1,18 @@
-import type { PropsWithChildren } from 'react';
-import { useMemo, useState } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { peekAuthReturn } from '../../utils/auth-return.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import Petri from '../onboarding/petri.tsx';
+import BootScreen from './boot-screen.tsx';
+import { BootScreenProvider } from './boot-screen-context.ts';
 
-export default function ProtectedRoute({ children, requireOnboarding = true }: PropsWithChildren<{ requireOnboarding?: boolean }>) {
+export default function ProtectedRoute({ children, requireOnboarding = true, holdBootScreen = false }: PropsWithChildren<{
+  requireOnboarding?: boolean;
+  /** Keep the loader over the page a reload opened on until it calls `useReleaseBootScreen`. */
+  holdBootScreen?: boolean;
+}>) {
   const location = useLocation();
   const {
     user,
@@ -30,6 +36,18 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
   const [carriedDestination] = useState(peekAuthReturn);
   const onboardingReturnTo = carriedDestination ?? requestedPath;
   const onboardingState = useMemo(() => ({ returnTo: onboardingReturnTo }), [onboardingReturnTo]);
+  // A route that booted under the loader mounts its page under the same loader
+  // element, so the mascot does not rise a second time. The loader stays until
+  // the page releases it, which a page whose chunk is still downloading cannot.
+  const [bootRoute] = useState(() => holdBootScreen && loading);
+  const [bootScreenUp, setBootScreenUp] = useState(bootRoute);
+  const releaseBootScreen = useCallback(() => setBootScreenUp(false), []);
+  const bootFrame = (page: ReactNode) => (
+    <>
+      {page}
+      {bootScreenUp && <BootScreen />}
+    </>
+  );
 
   if (loading) {
     // The feed route brings its own wait. FeedContainer lays an atom veil over
@@ -47,33 +65,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
       return children;
     }
 
-    return (
-      <div className="loading-screen">
-        <Petri pose="flask" className="petri-loader loading-atom" />
-        <p className="loading-text" aria-hidden="true">PaperTok</p>
-        <style>{`
-          .loading-screen {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            min-height: 100dvh;
-            background: var(--bg-primary);
-            gap: var(--space-4);
-          }
-          .petri.loading-atom {
-            width: 80px;
-            height: 80px;
-            margin: 0;
-          }
-          .loading-text {
-            color: var(--text-secondary);
-            font-size: var(--fs-sm);
-          }
-        `}</style>
-      </div>
-    );
+    return bootScreenUp ? bootFrame(null) : <BootScreen />;
   }
 
   if (!user) {
@@ -145,6 +137,12 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
 
   if (requireOnboarding && !onboardingComplete) {
     return <Navigate to="/onboarding" replace state={onboardingState} />;
+  }
+
+  if (bootRoute) {
+    return bootFrame(
+      <BootScreenProvider value={releaseBootScreen}>{children}</BootScreenProvider>,
+    );
   }
 
   return children;
