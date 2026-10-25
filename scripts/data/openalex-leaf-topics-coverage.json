@@ -506,94 +506,6 @@
     }
   },
   {
-    "leaf": "cs.AI",
-    "label": "Artificial Intelligence",
-    "topicIds": [
-      "T10456",
-      "T11349",
-      "T11574",
-      "T12026",
-      "T12128",
-      "T12260",
-      "T12797",
-      "T13904",
-      "T14174",
-      "T14414"
-    ],
-    "status": "rejected",
-    "sampleSize": 15,
-    "onTarget": 0,
-    "precision": 0,
-    "byTopic": {
-      "T10456": "0/0",
-      "T11349": "0/0",
-      "T11574": "0/0",
-      "T12026": "0/3",
-      "T12128": "0/1",
-      "T12260": "0/0",
-      "T12797": "0/0",
-      "T13904": "0/3",
-      "T14174": "0/0",
-      "T14414": "0/8"
-    }
-  },
-  {
-    "leaf": "cs.LG",
-    "label": "Machine Learning",
-    "topicIds": [
-      "T10028",
-      "T11122",
-      "T11689",
-      "T11714",
-      "T12072",
-      "T12535",
-      "T12676",
-      "T13373",
-      "T13693",
-      "T13702"
-    ],
-    "status": "rejected",
-    "sampleSize": 15,
-    "onTarget": 3,
-    "precision": 0.2,
-    "byTopic": {
-      "T10028": "1/6",
-      "T11122": "0/2",
-      "T11689": "1/4",
-      "T11714": "0/0",
-      "T12072": "0/0",
-      "T12535": "1/1",
-      "T12676": "0/0",
-      "T13373": "0/0",
-      "T13693": "0/0",
-      "T13702": "0/2"
-    }
-  },
-  {
-    "leaf": "cs.CV",
-    "label": "Computer Vision",
-    "topicIds": [
-      "T10036",
-      "T12549",
-      "T13674"
-    ],
-    "status": "passed",
-    "sampleSize": 15,
-    "onTarget": 15,
-    "precision": 1,
-    "byTopic": {
-      "T10036": "15/15",
-      "T12549": "0/0",
-      "T13674": "0/0"
-    }
-  },
-  {
-    "leaf": "cs.CL",
-    "label": "Computation and Language",
-    "topicIds": [],
-    "status": "no-candidates"
-  },
-  {
     "leaf": "cs.RO",
     "label": "Robotics",
     "topicIds": [
@@ -747,24 +659,6 @@
       "T11181": "1/4",
       "T12203": "0/0",
       "T12292": "1/3"
-    }
-  },
-  {
-    "leaf": "cs.NE",
-    "label": "Neural and Evolutionary Computing",
-    "topicIds": [
-      "T12611",
-      "T13062",
-      "T13935"
-    ],
-    "status": "rejected",
-    "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4,
-    "byTopic": {
-      "T12611": "6/15",
-      "T13062": "0/0",
-      "T13935": "0/0"
     }
   },
   {
@@ -992,6 +886,112 @@
       "T12794": "2/3",
       "T13541": "0/0",
       "T13615": "0/0",
+      "T13935": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.AI",
+    "label": "Artificial Intelligence",
+    "topicIds": [
+      "T10456",
+      "T11349",
+      "T11574",
+      "T12026",
+      "T12128",
+      "T12260",
+      "T12797",
+      "T13904",
+      "T14174",
+      "T14414"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10456": "0/0",
+      "T11349": "0/0",
+      "T11574": "0/0",
+      "T12026": "0/3",
+      "T12128": "0/1",
+      "T12260": "0/0",
+      "T12797": "0/0",
+      "T13904": "0/3",
+      "T14174": "0/0",
+      "T14414": "0/8"
+    }
+  },
+  {
+    "leaf": "cs.LG",
+    "label": "Machine Learning",
+    "topicIds": [
+      "T10028",
+      "T11122",
+      "T11689",
+      "T11714",
+      "T12072",
+      "T12535",
+      "T12676",
+      "T13373",
+      "T13693",
+      "T13702"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10028": "1/6",
+      "T11122": "0/2",
+      "T11689": "1/4",
+      "T11714": "0/0",
+      "T12072": "0/0",
+      "T12535": "1/1",
+      "T12676": "0/0",
+      "T13373": "0/0",
+      "T13693": "0/0",
+      "T13702": "0/2"
+    }
+  },
+  {
+    "leaf": "cs.CV",
+    "label": "Computer Vision",
+    "topicIds": [
+      "T10036",
+      "T12549",
+      "T13674"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "byTopic": {
+      "T10036": "15/15",
+      "T12549": "0/0",
+      "T13674": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.CL",
+    "label": "Computation and Language",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "cs.NE",
+    "label": "Neural and Evolutionary Computing",
+    "topicIds": [
+      "T12611",
+      "T13062",
+      "T13935"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T12611": "6/15",
+      "T13062": "0/0",
       "T13935": "0/0"
     }
   },
@@ -2831,5 +2831,73 @@
       "T12929": "1/1",
       "T14018": "0/0"
     }
+  },
+  {
+    "leaf": "chem.anal",
+    "label": "Analytical Chemistry",
+    "topicIds": [
+      "T10180",
+      "T10908",
+      "T11460"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.electro",
+    "label": "Electrochemistry",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "chem.inorg",
+    "label": "Inorganic Chemistry",
+    "topicIds": [
+      "T11746",
+      "T11790",
+      "T12557",
+      "T10807",
+      "T12646"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.org",
+    "label": "Organic Chemistry",
+    "topicIds": [
+      "T11549",
+      "T11790",
+      "T11989",
+      "T12893",
+      "T13649",
+      "T13859",
+      "T10578",
+      "T11746",
+      "T12527",
+      "T12653"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.phys",
+    "label": "Physical & Theoretical Chemistry",
+    "topicIds": [
+      "T12044"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.spectro",
+    "label": "Spectroscopy",
+    "topicIds": [
+      "T10640",
+      "T11111",
+      "T12748",
+      "T12967",
+      "T11746",
+      "T11809",
+      "T12646",
+      "T13675"
+    ],
+    "status": "not-reviewed"
   }
 ]

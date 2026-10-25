@@ -262,6 +262,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     trackViewTime,
     trackSkip,
     personalLibrary,
+    personalLibraryReady,
     ensurePersonalLibrary,
     libraryPapers,
     toggleReadLater,
@@ -1462,6 +1463,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // then the wait is already known to be long.
   const showListPlaceholders = placeholdersDue && loading && lists.length === 0;
 
+  // The folders wait for the owner's lists and for the paper on each one's
+  // front sheet, so they arrive with it rather than filling in afterwards. Never past the threshold under
+  // which a wait reads as instantaneous, and never again once they are shown.
+  const previewsReady = personalLibraryReady && !(loading && lists.length === 0) && displayLists.every((list) => {
+    const front = list.paperIds?.[0];
+    return !front || Boolean(getPaper(front)?.title);
+  });
+  const [foldersReleased, setFoldersReleased] = useState(previewsReady);
+  if (previewsReady && !foldersReleased) setFoldersReleased(true);
+  useEffect(() => {
+    if (foldersReleased) return undefined;
+    const timer = setTimeout(() => setFoldersReleased(true), LIST_PLACEHOLDER_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [foldersReleased]);
+  const shownLists = foldersReleased ? displayLists : [];
+
   const targetOpenId = location.state?.openListId;
   const pendingOpen = Boolean(
     targetOpenId
@@ -1878,7 +1895,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           </header>
           <div className="lists-grid">
             <AnimatePresence initial={false} mode="popLayout">
-            {displayLists.map((list, index) => {
+            {shownLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               const behindIds = (list.paperIds || []).slice(0, 2).reverse();

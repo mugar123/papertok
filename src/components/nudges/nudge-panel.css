@@ -49,23 +49,6 @@
   gap: 8px;
 }
 
-.nudge-actions:has(> :nth-child(2)) {
-  grid-column: 1 / -1;
-  justify-content: flex-end;
-}
-
-.nudge-status:not(:empty) {
-  display: block;
-  margin-top: 4px;
-  color: var(--tint-red-fg);
-}
-
-.nudge-copy a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .nudge-dismiss {
   display: grid;
   width: 28px;
