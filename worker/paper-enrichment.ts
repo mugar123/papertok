@@ -129,15 +129,28 @@ interface CrossrefRecord { type?: string; abstract?: string }
 
 // Crossref's abstracts are JATS: one `<jats:abstract>` per language when a
 // publisher deposits several, a heading ("Abstract") the card does not show,
-// each formula twice inside `<jats:alternatives>` (TeX and MathML), and XML
-// entities. The text keeps the first abstract, no headings, the TeX spelling.
+// a structured abstract's sections each opening with a title, each formula
+// twice inside `<jats:alternatives>` (TeX and MathML), and XML entities. The
+// text keeps the first abstract, a section's title as its label ("Background:
+// "), as PubMed's and Europe PMC's records keep theirs, no heading, the TeX
+// spelling.
 const JATS_ABSTRACT = /<(?:[a-z][\w.-]*:)?abstract(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w.-]*:)?abstract\s*>/i;
+const JATS_SECTION_TITLE = /<(?:[a-z][\w.-]*:)?sec(?:\s[^<>]*)?>\s*<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>([\s\S]*?)<\/(?:[a-z][\w.-]*:)?title\s*>/gi;
 const JATS_TITLE = /<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w.-]*:)?title\s*>/gi;
+
+// A publisher may wrap the abstract's own heading in a section too.
+const JATS_HEADINGS = new Set(['abstract', 'summary']);
+
+function sectionLabel(_match: string, title: string) {
+  const label = stripMarkup(preferTexAlternatives(title));
+  if (!label || JATS_HEADINGS.has(label.replace(/[:.]$/, '').toLowerCase())) return ' ';
+  return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
+}
 
 function crossrefAbstractText(jats: unknown) {
   const deposit = String(jats || '');
   const first = JATS_ABSTRACT.exec(deposit)?.[0] ?? deposit;
-  return decodeHtmlEntities(stripMarkup(preferTexAlternatives(first.replace(JATS_TITLE, ' ')))).replace(/\s+/g, ' ').trim();
+  return decodeHtmlEntities(stripMarkup(preferTexAlternatives(first.replace(JATS_SECTION_TITLE, sectionLabel).replace(JATS_TITLE, ' ')))).replace(/\s+/g, ' ').trim();
 }
 
 /** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */
