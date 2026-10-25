@@ -14,7 +14,7 @@ import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
-import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
@@ -759,7 +759,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     return paperId;
   };
   for (let load = 0; load < loads; load += 1) {
-    const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, notable: 5, ...request?.(load) }, uid);
+    const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(feedSeenIds(seen, true)), skipsSeen: true, notable: 5, ...request?.(load) }, uid);
     const known = papers.filter(item => seen.has(item.id));
     known.forEach(item => passOver(item.id));
     const shown = papers.filter(item => !item._notable && !known.includes(item));

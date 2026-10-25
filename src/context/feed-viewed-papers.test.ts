@@ -99,8 +99,8 @@ test('a notable card the reader viewed is in the seen set the next load starts f
   assert.equal(seen.has('notable-viewed'), true, 'the corpus is told the reader saw it');
 });
 
-// A feed request tells the corpus about the 2,000 papers the set lists last
-// (feedSeenFilter), so the set has to list them oldest first.
+// A feed request to a Worker that skips seen papers tells it about the 2,000
+// papers the set lists last (feedSeenIds), so the set has to list them oldest first.
 test('the papers an account viewed on any device join the seen set oldest first, ahead of the pages loaded since', () => {
   const storage = memoryStorage();
   const account = { activeUserId: 'test-user', signedInUid: 'test-user', sessionSeen: new Set<string>() };
@@ -123,7 +123,7 @@ test('the papers an account viewed on any device join the seen set oldest first,
 
   // A long session then fills the filter past what it holds: the oldest views leave it, the newest stay.
   session.slice(1).forEach(paperId => seen.add(paperId));
-  const filter = readFeedSeenFilter(feedSeenFilter(seen));
+  const filter = readFeedSeenFilter(feedSeenFilter(feedSeenIds(seen, true)));
   assert.ok([...recent, ...session].every(paperId => hasSeenPaper(filter, paperId)), 'the newest views and the session are held');
   assert.ok(earlier.slice(300).every(paperId => hasSeenPaper(filter, paperId)), 'so are the notable cards after the 300 oldest');
   const forgotten = earlier.slice(0, 300).filter(paperId => hasSeenPaper(filter, paperId)).length;
@@ -136,12 +136,12 @@ test('the papers an account viewed on any device join the seen set oldest first,
 test('a paper seen before the 2,000 most recent that a page brings back is held by the next request', () => {
   const later = Array.from({ length: 2_000 }, (_, index) => `later-${index}`);
   const sessionSeen = new Set(['passed-over', 'notable-viewed', ...later]);
-  assert.equal(feedSeenIds(sessionSeen).includes('passed-over'), false, 'the request left it out');
+  assert.equal(feedSeenIds(sessionSeen, true).includes('passed-over'), false, 'the request left it out');
 
   markSeenLatest(sessionSeen, 'passed-over');
   recordCardView('notable-viewed', 'test-user', { activeUserId: 'test-user', signedInUid: 'test-user', sessionSeen }, memoryStorage());
-  assert.deepEqual(feedSeenIds(sessionSeen).slice(-2), ['passed-over', 'notable-viewed']);
-  const filter = readFeedSeenFilter(feedSeenFilter(sessionSeen));
+  assert.deepEqual(feedSeenIds(sessionSeen, true).slice(-2), ['passed-over', 'notable-viewed']);
+  const filter = readFeedSeenFilter(feedSeenFilter(feedSeenIds(sessionSeen, true)));
   assert.ok(hasSeenPaper(filter, 'passed-over') && hasSeenPaper(filter, 'notable-viewed'));
   assert.equal(sessionSeen.size, 2_002, 'each paper is listed once');
 });

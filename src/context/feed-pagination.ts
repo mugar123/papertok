@@ -1,7 +1,5 @@
 import type { Paper } from '../models/paper.ts';
 
-import { feedSeenIds } from '../utils/seen-paper-filter.ts';
-
 /** A page of papers shown before, carried by a load that skipped past it. */
 type SeenFallback = { page: number; papers: Paper[] };
 
@@ -35,14 +33,12 @@ export function showsNoPaper(available: Paper[]) {
  * seen ones only when the ranking has no other, so no later page has a paper
  * the reader has not seen. A notable card says nothing of the ranking: the
  * corpus sends them unseen. From a Worker that pages by number, the app
- * cannot know, and goes one page on as before. `seen` lists the papers the
- * request was sent oldest first; its filter holds only the 2,000 most recent
- * (`feedSeenIds`), so the Worker sends an older one as unseen.
+ * cannot know, and goes one page on as before. `held` is the ids the
+ * request's filter held (`feedSeenIds`), not every paper the reader has seen:
+ * the Worker sends a paper the filter left out as unseen.
  */
-export function hasSeenRanking({ papers, skipsSeen }: { papers: Paper[]; skipsSeen: boolean }, seen: ReadonlySet<string>) {
-  if (!skipsSeen) return false;
-  const held = new Set(feedSeenIds(seen));
-  return papers.some(paper => !paper._notable && held.has(paper.id));
+export function hasSeenRanking({ papers, skipsSeen }: { papers: Paper[]; skipsSeen: boolean }, held: ReadonlySet<string>) {
+  return skipsSeen && papers.some(paper => !paper._notable && held.has(paper.id));
 }
 
 /**

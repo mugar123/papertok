@@ -34,11 +34,12 @@ export function recordCardView(
 
 /**
  * Makes a paper the newest of the seen set, which lists papers oldest first. A
- * feed request holds only the 2,000 newest (`feedSeenIds`), and the corpus
- * sends a paper the request does not hold as unseen; the app then passes it
- * over, and moving it here puts it in the next request, so the corpus's walk
- * goes past it (worker/paper-store.ts `readFeedPage`). `Set.add` alone would
- * leave it where it was, out of every later request.
+ * feed request to a Worker that skips seen papers holds only the 2,000 newest
+ * (`feedSeenIds`), and it sends a paper the request does not hold as unseen;
+ * the app then passes it over, and moving it here puts it in the next
+ * request, so the corpus's walk goes past it (worker/paper-store.ts
+ * `readFeedPage`). `Set.add` alone would leave it where it was, out of every
+ * later request.
  */
 export function markSeenLatest(sessionSeen: Set<string>, paperId: string) {
   sessionSeen.delete(paperId);
@@ -58,14 +59,15 @@ export function seenPapersForAccount(userId: string | null, storage?: DeviceStor
 /**
  * What an account viewed on any device, as its aggregate has it, is passed
  * over on load like what this browser viewed. The seen set lists papers oldest
- * first, because a feed request holds only the last 2,000 of them
- * (`feedSeenIds`). The aggregate lists its papers newest first, so they go in
- * reversed and ahead of the papers it does not list: this browser's latest
- * views, not stored yet, and the pages loaded since. Its notable cards outside
- * the ring were viewed before every paper of the ring, so its papers keep the
- * order of their views. The papers it does not list have no view time, and
- * some are older views of this browser that the ring no longer holds: placed
- * newest, they stay in the requests longer than their age would keep them.
+ * first, because a feed request to a Worker that skips seen papers holds only
+ * the last 2,000 of them (`feedSeenIds`). The aggregate lists its papers
+ * newest first, so they go in reversed and ahead of the papers it does not
+ * list: this browser's latest views, not stored yet, and the pages loaded
+ * since. Its notable cards outside the ring were viewed before every paper of
+ * the ring, so its papers keep the order of their views. The papers it does
+ * not list have no view time, and some are older views of this browser that
+ * the ring no longer holds: placed newest, they stay in the requests longer
+ * than their age would keep them.
  */
 export function addViewedPapers(sessionSeen: Set<string>, profile: InteractionProfile) {
   const viewed = viewedIds(profile).reverse();

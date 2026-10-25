@@ -17,11 +17,11 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
-  // The papers the reader has seen, sent with `skipsSeen`: a Worker that skips
-  // them answers with the next papers of the reader's ranking they have not
-  // seen, whatever `page` says, and says `skipsSeen` too. With it, how many
-  // notable papers of its categories the page may add after its own: only
-  // unseen ones, for the app to place (placeNotableCards).
+  // The papers the reader has seen (`feedSeenIds`), sent with `skipsSeen`: a
+  // Worker that skips them answers with the next papers of the reader's
+  // ranking they have not seen, whatever `page` says, and says `skipsSeen`
+  // too. With it, how many notable papers of its categories the page may add
+  // after its own: only unseen ones, for the app to place (placeNotableCards).
   seen?: Iterable<string>;
   notable?: number;
   /**

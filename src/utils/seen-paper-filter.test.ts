@@ -129,10 +129,11 @@ function seededIds(count: number, seed: number) {
   });
 }
 
-test('a feed request holds the 2,000 most recent seen papers however many the reader has seen, so it passes over about 1% of unseen ones', () => {
+test('a feed request to a Worker that skips seen papers holds the 2,000 most recent however many the reader has seen, so it passes over about 1% of unseen ones', () => {
   // Oldest first, the way the session's Set of seen papers lists them.
   const seen = seededIds(3_000, 20261024);
-  const read = readFeedSeenFilter(feedSeenFilter(new Set(seen)));
+  const sent = feedSeenIds(new Set(seen), true);
+  const read = readFeedSeenFilter(feedSeenFilter(sent));
 
   assert.ok(seen.slice(-2_000).every(id => hasSeenPaper(read, id)), 'every one of the 2,000 most recent reads as seen');
   const oldest = seen.slice(0, 1_000);
@@ -145,8 +146,16 @@ test('a feed request holds the 2,000 most recent seen papers however many the re
   assert.ok(passedOver / unseen.length <= 0.012, `${((100 * passedOver) / unseen.length).toFixed(2)}% of unseen papers read as seen`);
 
   // What judges the answer against what was sent lists the same 2,000.
-  const sent = feedSeenIds(new Set(seen));
   assert.deepEqual(sent, seen.slice(-2_000));
-  assert.equal(feedSeenFilter(sent), feedSeenFilter(new Set(seen)));
-  assert.deepEqual(feedSeenIds(['a', 'b']), ['a', 'b'], 'fewer than 2,000 are all held');
+  assert.deepEqual(feedSeenIds(['a', 'b'], true), ['a', 'b'], 'fewer than 2,000 are all held');
+});
+
+// A Worker from before PAP-103 walks the notable papers from the top on every
+// page. Told only of the 2,000 most recent, it would send again on every page
+// each notable card the reader viewed before them, and the app, moving those
+// to the newest end, would push other viewed notable cards out of the next request.
+test('until a Worker says it skips seen papers, a feed request holds every paper the reader has seen, as before', () => {
+  const seen = seededIds(3_000, 20261024);
+  const read = readFeedSeenFilter(feedSeenFilter(feedSeenIds(new Set(seen), false)));
+  assert.ok(seen.every(id => hasSeenPaper(read, id)), 'the oldest seen papers read as seen too');
 });

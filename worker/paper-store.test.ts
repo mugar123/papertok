@@ -15,7 +15,7 @@ import { mapAdsPaper } from '../src/services/domain-source-records.ts';
 import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
@@ -1117,7 +1117,7 @@ test('a page goes on from where the last walk stopped, so the papers seen before
   const later = (from: number) => Array.from({ length: 2_000 }, (_, index) => `later-${from + index}`);
   const seen = new Set([...range(1, 15), ...later(0)]);
   const page = async (number: number) => {
-    const answer = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: number, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true }), { now: NOW, cache }))
+    const answer = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: number, pageSize: 15, seen: feedSeenFilter(feedSeenIds(seen, true)), skipsSeen: true }), { now: NOW, cache }))
       .map(paper => paper.id);
     // The app passes over a paper it has seen and makes it the newest of the
     // seen papers (markSeenLatest), and shows the others.

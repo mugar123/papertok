@@ -73,6 +73,7 @@ import {
   readSeenPaperIds,
   saveProfileDriftCheckedAt,
 } from '../utils/user-scoped-storage.ts';
+import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
@@ -232,6 +233,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // would evaluate them each time only to discard them.
   const [initialSeenPapers] = useState(() => readSeenPaperIds(user?.uid));
   const sessionSeenPapers = useRef(initialSeenPapers);
+  // Whether the Worker's last main page said it skips seen papers: the
+  // requests after it hold only the most recent of them (`feedSeenIds`).
+  const workerSkipsSeen = useRef(false);
   // The derived aggregate that replaced the full interactions scan. Kept in a
   // ref because every interaction mutates it synchronously while the durable
   // write is coalesced behind it.
@@ -1141,6 +1145,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             [],
           )
           : [];
+        // The seen papers the main page and the follows' page send. A profile
+        // that arrives late (applyInteractionProfile) or More like this adds
+        // to the session's while the requests run, and a paper the Worker sent
+        // as unseen does not then say that the reader has seen their ranking.
+        const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
         // Ties are spread across areas (preference-ranking.ts): on a flat
         // profile the five slots below used to go to the first five of the
         // first area, whatever else the account had picked.
@@ -1229,7 +1238,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               positiveIds,
               negativeIds,
               excludedIds,
-              seen: sessionSeenPapers.current,
+              seen: seenSent,
               categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
             })),
             OPTIONAL_SOURCE_RENDER_BUDGET_MS,
@@ -1238,11 +1247,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
         let mainFailed = false;
-        // The seen papers as the main page sends them. A profile that arrives
-        // late (applyInteractionProfile) or More like this adds to the
-        // session's while the request runs, and a paper the Worker sent as
-        // unseen does not then say that the reader has seen their ranking.
-        const seenSent = new Set(sessionSeenPapers.current);
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
@@ -1261,6 +1265,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
           }));
           rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, seenSent);
+          workerSkipsSeen.current = skipsSeen;
         } catch (e) {
           console.error('Error fetching main papers:', e);
           mainFailed = true;
