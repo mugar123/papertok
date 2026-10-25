@@ -99,6 +99,10 @@ test('an opening that says what supported or funded the work is front matter unl
     'This study is supported by  data from the Health and Retirement Study and examines retirement timing across cohorts.',
     'This study is supported by\n data from the Health and Retirement Study and examines retirement timing across cohorts.',
     'Funded by venture capital, the startup market in this study grew twice as fast as the rest of the economy over the decade.',
+    // A participle that names its funder still opens a real abstract.
+    'Funded by Medicaid, community health centers expanded dental services to adults, and we measure the effect on emergency room visits using claims from 2010 to 2019.',
+    'Funded by China\'s Belt and Road Initiative, new ports in East Africa changed regional trade flows, which we trace through customs records from 2013 to 2022.',
+    'Co-funded by the European Union, cross-border rail projects reduced travel times between regional capitals, and we estimate the effect on commuting from census data.',
   ]) {
     assert.equal(isPlausibleAbstract(text), true, text);
   }
@@ -125,10 +129,9 @@ test('an opening that says what supported or funded the work is front matter unl
     // The opening is matched whatever its case; only the data or evidence exception is case-sensitive.
     'THIS WORK WAS SUPPORTED BY THE NATIONAL INSTITUTES OF HEALTH UNDER GRANT R01 HL123456.',
     'This Work Was Supported By The National Science Foundation Under Grant No. 1234567.',
-    // Any funder named with a capital after "(Co-)funded by".
-    'Funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) – Project-ID 123456789 – SFB 1234.',
+    // The EU's disclaimer sentence, in any case.
     'Co-funded by the European Union. Views and opinions expressed are however those of the author(s) only.',
-    'Funded by NIHR under programme grant RP-PG-0000-00000 for a cohort of 10,000 adults.',
+    'FUNDED BY THE EUROPEAN UNION. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union.',
     // "Has received funding from" for any subject a supported-by note has, and FP7's.
     'This paper has received funding from the European Union\'s Horizon 2020 research and innovation programme under grant agreement No 123456.',
     'This publication has received funding from the European Research Council under grant agreement No 123456.',

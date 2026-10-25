@@ -60,8 +60,9 @@ const FRONT_MATTER_OPENINGS = [
   // Case-sensitive, so "the Data Science Institute" stays a funder.
   /^(?:[Tt]h(?:is|e)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|[Rr]esearch\s+reported\s+in\s+this\s+(?:publication|article|paper))\s+(?:was|is|has\s+been)\s+(?:\w+ly\s+)?(?:supported|funded)(?:,?\s+in\s+(?:whole\s*,?\s+or\s+in\s+)?part\s*,?)?\s+by\b(?!\s+(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/,
   /^(?:(?:this|the)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|the\s+research\s+leading\s+to\s+these\s+results)\s+(?:has\s+)?received\s+funding\s+from\b/i,
-  // Case-sensitive: a capitalized funder name, so "Funded by venture capital" stays an abstract.
-  /^(?:Co-?)?[Ff]unded\s+by\s+(?:the\s+)?\p{Lu}/u,
+  // The EU's own disclaimer sentence. It needs the full stop: "Co-funded by the
+  // European Union, cross-border rail projects reduced travel times" is an abstract.
+  /^(?:co-?)?funded\s+by\s+the\s+european\s+union\./i,
   /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
   /^the views expressed (?:herein|here|in this)/i,
 ];
