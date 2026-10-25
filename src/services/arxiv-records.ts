@@ -7,7 +7,7 @@ import { arxivCommentSaysPublished } from '../utils/publication-status.ts';
 // The areas whose categories arXiv answers: by `cat:` for its own, by a phrase
 // search of the label for the app's engineering leaves.
 export const ARXIV_FEED_AREAS = Object.freeze([
-  'physics', 'math', 'cs', 'q-fin', 'eess', 'stat', 'econ', 'mech', 'civil', 'chemeng',
+  'physics', 'math', 'cs', 'ai', 'q-fin', 'eess', 'stat', 'econ', 'mech', 'civil', 'chemeng',
 ]);
 
 const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];

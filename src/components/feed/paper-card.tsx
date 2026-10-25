@@ -74,6 +74,7 @@ import {
   Prohibit,
   Quotes,
   Sigma,
+  TestTube,
   Intersect,
   Sparkle,
   TrendUp,
@@ -206,6 +207,7 @@ const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: string; weight?: IconWeight }> = {
   physics: { Icon: Planet, ink: '8 32 240 192' },
   cs: { Icon: Cpu, ink: '16 16 224 224' },
+  ai: { Icon: Brain, ink: '12 28 232 196' },
   math: { Icon: Sigma, ink: '52 36 152 184', weight: 'bold' },
   stat: { Icon: ChartBar, ink: '24 32 208 184' },
   econ: { Icon: TrendUp, ink: '16 48 224 144' },
@@ -216,6 +218,7 @@ const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: s
   chemeng: { Icon: Flask, ink: '32 24 192 200' },
   med: { Icon: Heartbeat, ink: '16 40 224 192' },
   bio: { Icon: Dna, ink: '56 16 144 224' },
+  chem: { Icon: TestTube, ink: '24 24 216 208' },
 };
 
 const RESOURCE_KIND_CONFIG = {

@@ -149,6 +149,10 @@ answered 200 at 1 credit each. The coverage report records each leaf's
 | `no-candidates` | 22 |
 | `inherited` | 14 |
 
+The six Chemistry leaves (ENG-114) were added after this sample, so the
+report has 149 rows: `chem.electro` has no candidates and the other five are
+`not-reviewed`.
+
 The 25 passing samples asked for 117 topics. Their lanes ask for the 60 with
 an article on target and not marked uncertain. Of the 57 left out, the samples
 never returned 47 and returned 10 only off target or marked uncertain. Later

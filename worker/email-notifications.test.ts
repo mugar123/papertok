@@ -314,10 +314,9 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
         abstract_inverted_index: invertedIndex(abstract),
       },
       {
-        // Chemistry (field 16) has no area of its own, and the topic's name
-        // ("Polymer ...") does not stand in for one: it read as Chemical
-        // Engineering by keyword (PAP-60). And an editorial's inverted index
-        // is its body, not an abstract.
+        // Chemistry (field 16) is read by its field, not by the topic's name
+        // ("Polymer ..."). And an editorial's inverted index is its body, not
+        // an abstract.
         id: 'https://openalex.org/WNAMED',
         type: 'editorial',
         display_name: 'Polymer membranes for water',
@@ -338,7 +337,7 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
     const byId = Object.fromEntries(papers.map(paper => [paper!.id, paper]));
     assert.equal(byId.WFIELD!.area, 'cs');
     assert.equal(byId.WFIELD!.abstract, abstract);
-    assert.equal(byId.WNAMED!.area, undefined);
+    assert.equal(byId.WNAMED!.area, 'chem');
     assert.equal('abstract' in byId.WNAMED!, false);
   } finally {
     restore();
@@ -584,6 +583,17 @@ test('maps native arXiv categories to their exact followed topics', () => {
   assert.equal(papers[0]!.url, 'https://arxiv.org/abs/2607.26058v1');
 });
 
+// ENG-113. A Computer Science follow stored while the area still held the AI leaves.
+test('a followed area reads its arXiv categories from the taxonomy, not from what the follow stored', () => {
+  const stored = { type: 'topic' as const, canonicalId: 'cs', displayName: 'Computer Science', metadata: { categoryIds: ['cs.AI', 'cs.LG', 'cs.RO'] } };
+  const categories = arxivCategoriesForFollow(stored);
+  assert.equal(categories.includes('cs.RO'), true);
+  assert.equal(categories.includes('cs.SE'), true);
+  assert.deepEqual(categories.filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
+  const leaf = { type: 'topic' as const, canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: { categoryIds: ['cs.LG'] } };
+  assert.deepEqual(arxivCategoriesForFollow(leaf), ['cs.LG']);
+});
+
 test('an arXiv entry carries its primary field and its summary into the digest', () => {
   const follows = [
     { type: 'topic' as const, canonicalId: 'math-ph', displayName: 'Mathematical Physics', metadata: { categoryIds: ['math-ph'] } },
@@ -620,7 +630,7 @@ test('an arXiv entry carries its primary field and its summary into the digest',
   assert.equal(byId['2608.00001']!.area, 'physics');
   assert.equal(byId['2608.00001']!.abstract, 'Integrable spin chains admit exact solutions.');
   // The primary category decides, not the cross-list that happens to come first.
-  assert.equal(byId['2608.00002']!.area, 'cs');
+  assert.equal(byId['2608.00002']!.area, 'ai');
   assert.equal('abstract' in byId['2608.00002']!, false);
 });
 
@@ -2434,6 +2444,31 @@ test('a preview or label sync keeps held papers, while changing followed IDs cle
 
   await save([digestFollow('A3', 'Other author')], []);
   assert.equal((await storedSubscriptionWithState(kv, key))!.heldDigest, null);
+});
+
+// ENG-113. A held selection is keyed by the categories a followed area has
+// now, so the ids the follow stored when the area held other leaves do not
+// decide whether it is reused.
+test('a held digest follows an area by its current leaves, not by the ids the follow stored', async () => {
+  const area = (categoryIds: string[]): Follow => ({ type: 'topic', canonicalId: 'cs', displayName: 'Computer Science', externalIds: {}, metadata: { categoryIds } });
+  const { upstream, run, kv } = digestScheduleHarness({ follows: [digestFollow(), area(['cs.AI', 'cs.LG', 'cs.RO'])] });
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'daily_quota_exceeded' });
+  const key = 'notification:subscription:schedule-reader';
+  await run('2026-07-27T07:00:00Z');
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'the outage holds the selection');
+
+  const save = (follows: Follow[]) => saveSubscription(
+    new Request('https://example.com/notifications/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sync: true, enabled: true, follows, previewItems: [] }),
+    }),
+    { NOTIFICATION_STORE: kv },
+    { uid: 'schedule-reader', email: 'reader@example.com', displayName: 'Reader' },
+  );
+  await save([digestFollow(), area(['cs.RO', 'cs.CR'])]);
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'other stored ids for the same area keep it');
 });
 
 test('a held Tuesday digest retries a short Resend rate limit after 40 minutes', async () => {
