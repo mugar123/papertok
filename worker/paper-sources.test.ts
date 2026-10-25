@@ -1267,6 +1267,31 @@ test("a notable lane's listing renews only the papers it returned, though the co
   });
 });
 
+test("a notable lane's listing does not renew a paper without an abstract, so the refresh still asks for one", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // A synthetic variant of the recorded work that OpenAlex lists without an abstract.
+  const withoutAbstract = { ...plsiWork, id: 'https://openalex.org/W1000000004', doi: 'https://doi.org/10.5555/cited-without-abstract', title: 'A most-cited article OpenAlex lists without its abstract', abstract_inverted_index: null };
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: [plsiWork, withoutAbstract] } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  // That night's enrichment, which found no abstract.
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000004': enriched,
+  });
+});
+
 test("a notable lane's listing renews the row a record merged into, and not one whose record it turned away", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-23T03:00:00Z');

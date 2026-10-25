@@ -722,9 +722,14 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // show) filed nothing, and one the listing no longer returns keeps its
   // enrichment date however long the corpus keeps it (a recent paper, a liked
   // one), so the refresh still comes for both. One never enriched still gets
-  // its first enrichment, which also asks Crossref its type.
+  // its first enrichment, which also asks Crossref its type. The listing does
+  // not renew a paper without an abstract either (the placeholder is shorter
+  // than the 40 characters of `isPlausibleAbstract`): the refresh is what asks
+  // for its abstract again, at about one OpenAlex refresh call per 50 such
+  // papers every 14 days.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
+      AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40
       AND id IN (SELECT work_id FROM work_lanes WHERE lane = ? AND listed_until >= ?)`).bind(new Date(now).toISOString(), lane, keepUntil).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
