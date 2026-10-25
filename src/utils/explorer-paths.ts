@@ -83,8 +83,8 @@ function withQuery(path: string, query: string) {
  * Where a card's project chip opens when signed in: the OpenAIRE project, with
  * the paper it was opened from so the explorer can list that paper first. Each
  * value is encoded because a paper id can hold `&`, `#` or `+` (an ADS bibcode
- * such as `ads:2019A&A...623A..72B`), which would end the value or start a
- * fragment.
+ * such as `ads:2019A&A...623A..72B`). Unencoded, `&` would end the value and
+ * add a query key, `#` would start a fragment and `+` would read back as a space.
  */
 export function projectExplorerPath({ id, name, funder }: { id: string; name: string; funder: string; }, paperId: string): string {
   return `/explorer/project/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}&funder=${encodeURIComponent(funder)}&arxivId=${encodeURIComponent(paperId)}`;

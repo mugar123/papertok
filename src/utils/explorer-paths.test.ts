@@ -69,8 +69,8 @@ test('signed out, the name-only door keeps the paper too', () => {
   );
 });
 
-// `&`, `#` and `+` in a paper id must not end the value, add a query key or
-// start a fragment.
+// Unencoded, `&` in a paper id would end the value and add a query key, `#`
+// would start a fragment and `+` would read back as a space.
 test('the project link carries any paper id whole, whatever characters it holds', () => {
   const project = { id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' };
   const open = (paperId: string) => new URL(projectExplorerPath(project, paperId), 'https://papertok.app');
