@@ -59,6 +59,17 @@ export function activeCategories(selected: string[], deselected: string[]) {
   ]);
 }
 
+/**
+ * The subareas a reader has removed from their interests: the ones already
+ * removed plus the ones this edit drops, less any selected again. Earlier
+ * removals come first so the stored list only grows at its end.
+ */
+export function nextDeselected(previousSelected: string[], nextSelected: string[], previousDeselected: string[]) {
+  const selected = new Set(nextSelected);
+  const removedNow = previousSelected.filter(id => !selected.has(id));
+  return [...new Set([...previousDeselected, ...removedNow])].filter(id => !selected.has(id));
+}
+
 const progressOf = (examples: number, shown: number, learnedExamples: number, learnedShown: number) =>
   Math.min(1, Math.max(examples / learnedExamples, shown / learnedShown));
 

@@ -336,6 +336,20 @@ test('a preference list is capped at 100, and the cap is where the client says i
   await assertFails(setDoc(ref, { preferences: list(USER_PREFERENCES_MAX + 1) }, { merge: true }));
 });
 
+test('the owner writes the subjects they removed, up to 150, and nobody else does', async () => {
+  // ENG-137: users/{uid}.deselectedPreferences. The taxonomy has 149 subareas,
+  // so 150 leaves room for one id retired from it.
+  await reset();
+  await seedLegacyUserDoc();
+  const ref = doc(asAlice(), 'users', ALICE);
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `cat.${i}`);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG'], deselectedPreferences: ['hep-th'] }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { deselectedPreferences: list(150) }, { merge: true }));
+  await assertFails(setDoc(ref, { deselectedPreferences: list(151) }, { merge: true }));
+  await assertFails(setDoc(ref, { deselectedPreferences: 'hep-th' }, { merge: true }));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE), { deselectedPreferences: ['hep-th'] }, { merge: true }));
+});
+
 test('a legacy field cannot be given a new value', async () => {
   // The reason the four keys are frozen rather than simply allowlisted: this
   // document is owner-only, but `email` in it reads like identity, and an

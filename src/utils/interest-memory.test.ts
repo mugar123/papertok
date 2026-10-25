@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
 import type { CategoryExposure, PositiveExample } from './interaction-profile.ts';
-import { activeCategories, interestProgress, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
+import { activeCategories, interestProgress, nextDeselected, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
 
 const leaves = (area: string) => Object.keys(CATEGORIES[area].subcategories);
 
@@ -195,4 +195,19 @@ test('an id with no area is left out', () => {
   const plan = planInterestGroups(memory({ selected: ['nonsense.XX', 'quant-ph'] }));
   assert.deepEqual(plan.groups.map(group => group.categories), [['quant-ph']]);
   assert.deepEqual(interestProgress(memory({ selected: ['nonsense.XX'] })), {});
+});
+
+test('nextDeselected keeps what the reader removes now', () => {
+  assert.deepEqual(nextDeselected(['hep-th', 'gr-qc'], ['gr-qc', 'econ.EM'], []), ['hep-th']);
+});
+
+test('nextDeselected forgets a subarea the reader selects again', () => {
+  assert.deepEqual(nextDeselected(['econ.EM'], ['econ.EM', 'hep-th'], ['hep-th']), []);
+});
+
+test('nextDeselected keeps earlier removals first and never repeats one', () => {
+  assert.deepEqual(
+    nextDeselected(['a', 'b', 'c'], ['c'], ['z', 'b']),
+    ['z', 'b', 'a'],
+  );
 });
