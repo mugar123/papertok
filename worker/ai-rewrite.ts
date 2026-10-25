@@ -996,14 +996,15 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
+        // The key names the model that was asked first. What the fallback wrote
+        // carries its own name and is kept only as long as an outage, so readers
+        // get the primary model again once it recovers.
+        const fellBack = activeModel !== model;
         // A regenerate skipped the cache read, so the entry it would overwrite may
-        // be complete. Only a complete result is worth replacing it with.
-        cachedWrite = regenerate ? finish === 'complete' : finish !== null;
+        // be complete. Only a complete result from the primary model is worth
+        // replacing it with; the lighter model's text does not displace it.
+        cachedWrite = regenerate ? finish === 'complete' && !fellBack : finish !== null;
         if (cachedWrite) {
-          // The key names the model that was asked first. What the fallback wrote
-          // carries its own name and is kept only as long as an outage, so readers
-          // get the primary model again once it recovers.
-          const fellBack = activeModel !== model;
           await writeCachedRewrite(env, cacheKey, {
             meta: fellBack ? { ...meta, model: activeModel } : meta,
             sections,
