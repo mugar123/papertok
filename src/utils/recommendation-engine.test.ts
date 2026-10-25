@@ -268,6 +268,21 @@ test('a category with no leaf of its own sleeps only with an area the reader lef
   assert.deepEqual([lattice.corpusSimilarity, lattice.affinity], [0, 0]);
 });
 
+// ENG-137 (I-B): a card cross-listed in a subarea the reader removed and in
+// one they never picked is awake, but the removed subarea's affinity is not
+// counted on it.
+test("a removed subarea's affinity scores nothing on an awake card cross-listed in it", () => {
+  const card = { id: 'cross', primaryCategory: 'hep-th', allCategories: ['hep-th', 'gr-qc'], published: '2026-07-05T00:00:00Z', _semanticScore: 0.5, _type: 'followed' as const };
+  const score = (dormant: string[]) => scorePaperForRecommendation(card, {
+    now: NOW, userPreferences: ['econ.EM'], categoryAffinities: { 'hep-th': 80, 'gr-qc': 20 }, dormantCategories: dormant,
+  });
+
+  const removed = score(dormantCategories(['econ.EM'], ['hep-th']));
+  assertClose(removed.affinity, 0.35 * 20, 'only gr-qc, as a secondary category:');
+  assert.equal(removed.corpusSimilarity, 50);
+  assertClose(score([]).affinity, 80 + 0.35 * 20);
+});
+
 // The feed's context is rebuilt on every call, and one re-rank's cache
 // validates it by the references it holds, so memory that changes after the
 // first pass must not be read back as the old one.

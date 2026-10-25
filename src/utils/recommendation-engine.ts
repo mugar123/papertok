@@ -376,7 +376,12 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     || chosenDirectly.length > 0
     || !isDormant(paper, categorySignals, context.dormantCategories);
 
+  // A card awake through a category the reader kept or never picked keeps
+  // its own signals (corpus similarity, concepts, authors), but what the
+  // reader learned of a subarea they removed is not counted on it.
+  const dormant = context.dormantCategories || [];
   const rawAffinity = categorySignals.reduce((sum, category, index) => {
+    if (dormant.length > 0 && isDormantCategory(category, dormant)) return sum;
     const multiplier = index === 0 ? 1 : 0.35;
     return sum + (categoryAffinities[category] || 0) * multiplier;
   }, 0);
