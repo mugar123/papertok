@@ -192,7 +192,7 @@ test('a DOI with a dot segment is refused before admission, so it cannot open an
     assert.equal(admitted, 0, doi);
   }
   // Dots inside a segment are part of the DOI.
-  assert.deepEqual(paperRoute(encodePaperKey('doi', '10.1234/a..b')!).identity, { type: 'doi', value: '10.1234/a..b' });
+  assert.deepEqual(paperRoute(encodePaperKey('doi', '10.1234/a..b')).identity, { type: 'doi', value: '10.1234/a..b' });
 });
 
 // -------------------------------------------------------------- language
