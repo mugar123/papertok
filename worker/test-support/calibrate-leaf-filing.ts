@@ -7,10 +7,14 @@
 // The dataset holds vectors in the stored form (paper-store.ts `quantize`, as
 // base64), embedded from the text the corpus embeds:
 //   { "arxiv": [{ "id", "leaf", "vector" }],          recent arXiv papers whose primary category is the leaf
-//     "labelled": [{ "id", "vector", "labels": { "<leaf>": "on" | "off" | "doubt" } }],
+//     "labelled": [{ "id", "vector", "labels": { "<leaf>": "on" | "off" | "doubt" }, "arxivIds"? }],
 //     "areaSamples": [{ "id", "area", "vector" }] }   recent articles of each area lane
 // Each leaf with at least 50 arXiv papers gets a centroid, as storeLeafCentroids
-// gives one. Each area's labelled articles are split in two with a fixed seed.
+// gives one. A labelled article whose OpenAlex record names one of those arXiv
+// papers as its preprint (`arxivIds`) is left out: its own preprint would be in
+// the centroid it is scored against, and in the corpus that preprint's leaf
+// already holds it, so similarity never files it. Each area's other labelled
+// articles are split in two with a fixed seed.
 // On the calibration half, the chosen rule is the one that files the most
 // articles correctly at CALIBRATION_PRECISION or more; the held-out half then
 // measures it once. An area gets a rule only when its held-out precision
@@ -30,7 +34,7 @@ import { type FilingRule, areaCentroids, closestLeaf, leafCentroids, ruleFiles }
 import { AREA_LANE_AREAS } from '../paper-store.ts';
 
 type Label = 'on' | 'off' | 'doubt';
-interface LabelledArticle { id: string; vector: string; labels: Record<string, Label> }
+interface LabelledArticle { id: string; vector: string; labels: Record<string, Label>; arxivIds?: string[] }
 interface CalibrationDataset {
   arxiv: Array<{ id: string; leaf: string; vector: string }>;
   labelled: LabelledArticle[];
@@ -81,6 +85,12 @@ export function wilson(successes: number, trials: number) {
   return [round(Math.max(0, centre - half)), round(Math.min(1, centre + half))];
 }
 
+/** The labelled articles, without those whose preprint is one of the arXiv papers. */
+function scoredArticles(dataset: CalibrationDataset) {
+  const sampled = new Set(dataset.arxiv.map(paper => paper.id));
+  return dataset.labelled.filter(article => !article.arxivIds?.some(id => sampled.has(id)));
+}
+
 /** The articles with a label on a leaf of the area, with only those labels. */
 function areaArticles(labelled: LabelledArticle[], area: string) {
   const leafArea = new Map(getAllLeafCategories().map(leaf => [leaf.id, leaf.area]));
@@ -122,6 +132,7 @@ interface AreaCalibration {
   area: string;
   centroids: string[];
   labelledArticles: number;
+  leftOutWithCentroidPreprint: number;
   labelsPerLeaf: Record<string, Record<Label, number>>;
   split?: { calibration: number; heldOut: number };
   rule?: FilingRule;
@@ -138,9 +149,10 @@ interface AreaCalibration {
 
 export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibration[] {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
+  const scored = scoredArticles(dataset);
   return AREA_LANE_AREAS.flatMap((area): AreaCalibration[] => {
     const own = areaCentroids(area, centroids);
-    const articles = areaArticles(dataset.labelled, area);
+    const articles = areaArticles(scored, area);
     if (articles.length === 0) return [];
     const labelsPerLeaf: Record<string, Record<Label, number>> = {};
     for (const article of articles) {
@@ -149,7 +161,8 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
         labelsPerLeaf[leaf][label] += 1;
       }
     }
-    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, labelsPerLeaf };
+    const leftOutWithCentroidPreprint = areaArticles(dataset.labelled, area).length - articles.length;
+    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, leftOutWithCentroidPreprint, labelsPerLeaf };
     if (own.size < 2) return [{ ...summary, enabled: false, reason: 'fewer than two leaves with a centroid' }];
 
     const [calibration, heldOut] = calibrationSplit(articles).map(half => half.map(article => ({
@@ -202,7 +215,7 @@ function heldOutFixture(dataset: CalibrationDataset, areas: string[]) {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
   const entries = areas.map(area => {
     const own = Object.fromEntries([...areaCentroids(area, centroids)].map(([leaf, vector]) => [leaf, Buffer.from(vector.buffer).toString('base64')]));
-    const [, heldOut] = calibrationSplit(areaArticles(dataset.labelled, area));
+    const [, heldOut] = calibrationSplit(areaArticles(scoredArticles(dataset), area));
     const articles = heldOut.sort((a, b) => a.id.localeCompare(b.id)).map(({ id, labels, vector }) => JSON.stringify({ id, labels, vector }));
     return `${JSON.stringify(area)}: {\n"centroids": ${JSON.stringify(own)},\n"articles": [\n${articles.join(',\n')}\n]}`;
   });

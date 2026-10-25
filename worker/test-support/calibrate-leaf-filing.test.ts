@@ -92,6 +92,28 @@ test('a doubted label is never on target: a filing under a doubted leaf is wrong
   assert.equal(total('unknown'), 3, 'the three filed under the other leaf');
 });
 
+test('a labelled article whose preprint is one of the centroid papers is left out before the split', () => {
+  const dataset = {
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: [
+      ...many(40, index => ({ id: `W1${index}`, vector: vector({ 0: 1 }, 1_000 + index), labels: { 'hep-th': 'on' as const } })),
+      ...many(40, index => ({ id: `W2${index}`, vector: vector({ 1: 1 }, 2_000 + index), labels: { 'quant-ph': 'on' as const } })),
+      // The published version of the hep-th centroid's first paper.
+      { id: 'W3', vector: vector({ 0: 1 }, 0), labels: { 'hep-th': 'on' as const }, arxivIds: ['2610.10'] },
+      // A preprint outside the sample does not matter.
+      { id: 'W4', vector: vector({ 1: 1 }, 4_000), labels: { 'quant-ph': 'on' as const }, arxivIds: ['2611.00001'] },
+    ],
+    areaSamples: [],
+  };
+  const [physics] = calibrateLeafFiling(dataset);
+  assert.equal(physics.labelledArticles, 81);
+  assert.equal(physics.leftOutWithCentroidPreprint, 1);
+  assert.deepEqual(physics.split, { calibration: 41, heldOut: 40 });
+});
+
 test('an area just under the required precision on its held-out half gets no rule, though the precision rounds to it', () => {
   // The fixed split puts 21 of these off-target articles in the held-out half and 10 in the calibration half.
   const offTarget = new Set([...many(23, index => index), 24, 26, 32, 34, 36, 40, 45, 46]);
