@@ -77,7 +77,7 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
@@ -703,13 +703,8 @@ function isArxivCategory(value: unknown) {
   ));
 }
 
-// A followed area reads its leaves from the taxonomy, not from the ids the
-// follow stored when the area held other leaves.
 function followCategoryIds(follow: FollowInput = {}) {
-  if (typeof follow.canonicalId === 'string' && Object.hasOwn(CATEGORIES, follow.canonicalId)) {
-    return Object.keys(CATEGORIES[follow.canonicalId].subcategories);
-  }
-  return Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : [];
+  return getAreaLeaves(follow.canonicalId) ?? (Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : []);
 }
 
 function arxivCategoriesForFollow(follow: FollowInput = {}) {

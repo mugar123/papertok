@@ -47,6 +47,7 @@ export const CATEGORIES = Object.fromEntries(
 
 export {
   getAllLeafCategories,
+  getAreaLeaves,
   getCategoryArea,
   getCategoryLabel,
 } from './category-taxonomy.ts';

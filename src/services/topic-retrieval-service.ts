@@ -19,7 +19,7 @@ export interface TopicRetrievalOptions {
   timeoutMs?: number; excludeProviders?: string[];
 }
 
-import { CATEGORIES, getCategoryLabel } from '../data/categories.ts';
+import { getAreaLeaves, getCategoryLabel } from '../data/categories.ts';
 import { filterRelevantQueryTopicPapers } from '../utils/query-topic-search.ts';
 import {
   createQueryTopic,
@@ -64,25 +64,18 @@ function nativeArxivCategory(value: string) {
   ));
 }
 
-function categoryIdsFromCanonical(canonicalId: string) {
-  if (CATEGORIES[canonicalId as keyof typeof CATEGORIES]) return Object.keys(CATEGORIES[canonicalId as keyof typeof CATEGORIES].subcategories || {});
-  return isScientificCategoryId(canonicalId) ? [canonicalId] : [];
-}
-
 function categorySearchQuery(categoryIds: string[], canonicalId: string) {
-  if (CATEGORIES[canonicalId as keyof typeof CATEGORIES]) return getCategoryLabel(canonicalId);
+  if (getAreaLeaves(canonicalId)) return getCategoryLabel(canonicalId);
   return categoryIds.length ? getCategoryLabel(categoryIds[0]) : '';
 }
 
-// An area's leaves come from the taxonomy, not from the ids a follow stored:
-// those are the area as it was when it was followed.
 function normalizedCategoryIds(topic: RetrievalTopic, canonicalId: string) {
-  const isArea = Object.hasOwn(CATEGORIES, canonicalId);
-  return [...new Set([
-    ...(!isArea && Array.isArray(topic?.metadata?.categoryIds) ? topic.metadata.categoryIds : []),
-    ...(!isArea && Array.isArray(topic?.categoryIds) ? topic.categoryIds : []),
-    ...categoryIdsFromCanonical(canonicalId),
-  ].map(categoryId => cleanText(categoryId, 80)).filter(isScientificCategoryId))].slice(0, 12);
+  const categoryIds = getAreaLeaves(canonicalId) ?? [
+    ...(Array.isArray(topic?.metadata?.categoryIds) ? topic.metadata.categoryIds : []),
+    ...(Array.isArray(topic?.categoryIds) ? topic.categoryIds : []),
+    canonicalId,
+  ];
+  return [...new Set(categoryIds.map(categoryId => cleanText(categoryId, 80)).filter(isScientificCategoryId))].slice(0, 12);
 }
 
 function displayNameForTopic(topic: RetrievalTopic) {

@@ -296,6 +296,15 @@ export function getCategoryLabel(arxivCategory: string) {
 }
 
 /**
+ * The leaves an area has now, or null when the id names no area. A followed
+ * area reads them here rather than from the ids it stored when it was
+ * followed, which are the area as it was then.
+ */
+export function getAreaLeaves(id: unknown) {
+  return typeof id === 'string' && Object.hasOwn(CATEGORIES, id) ? Object.keys(CATEGORIES[id].subcategories) : null;
+}
+
+/**
  * Get the area key for a given arXiv category.
  */
 export function getCategoryArea(arxivCategory: string) {
