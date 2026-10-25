@@ -281,6 +281,15 @@ export const OPENALEX_LEAF_VENUES: Readonly<Record<string, { readonly sources: r
     ],
     filters: ['type:article'],
   },
+  'econ.GN': {
+    sources: [
+      'S180061323', // The Review of Economics and Statistics (The MIT Press)
+      'S203860005', // The Quarterly Journal of Economics (Oxford University Press)
+      'S23254222', // American Economic Review (American Economic Association)
+      'S45992627', // The Economic Journal (Oxford University Press)
+    ],
+    filters: ['type:article'],
+  },
   'econ.TH': {
     sources: [
       'S149131268', // Journal of Economic Theory (Elsevier BV)

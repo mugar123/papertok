@@ -537,9 +537,15 @@ test('a leaf the venue gate admitted asks OpenAlex for the sources its sample fo
   // Sorted. cs.AI leaves out the AAAI, IJCAI and AAMAS proceedings and
   // cond-mat.supr-con three journals, none with an article among the sample's
   // 15 newest; q-fin.GN leaves out the Journal of Financial and Quantitative
-  // Analysis, which they did not reach either.
+  // Analysis, which they did not reach either. econ.GN asks for four of its 15
+  // curated journals: three with an article on target among its sample's 15
+  // newest (Review of Economics and Statistics, Quarterly Journal of Economics
+  // and Economic Journal) and the American Economic Review, whose own sample
+  // passed. Its sample asked has_abstract:true, as the other areas' did; the
+  // lane does not.
   const asked = {
     'econ.EM': [['S127742747', 'S18095783', 'S33519306', 'S49389958'], ['type:article']],
+    'econ.GN': [['S180061323', 'S203860005', 'S23254222', 'S45992627'], ['type:article']],
     'q-fin.GN': [['S131117787', 'S149240962', 'S170137484', 'S5353659'], ['type:article']],
     'cs.AI': [['S139930977', 'S196139623'], ['type:article|conference-paper']],
     'cond-mat.supr-con': [['S24807848', 'S4210237713', 'S93909106'], ['type:article', 'primary_topic.id:T10037']],
@@ -561,20 +567,17 @@ test('a leaf the venue gate admitted asks OpenAlex for the sources its sample fo
 });
 
 test('a leaf whose venue sample fell short of the gate, or that has none, sends no venue request', () => {
-  const coverage = gateFile('openalex-leaf-venues-coverage.json') as Array<{ leaf: string; status: string; sampleSize: number; onTarget: number }>;
+  const coverage = gateFile('openalex-leaf-venues-coverage.json') as Array<{ leaf: string; status: string }>;
   const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf);
-  // econ.GN's 15 newest articles, asked as the lane asks, without
-  // has_abstract, were 9 on target: two Journal of Political Economy articles
-  // without an abstract were doubted. cs.DS's sources held 13 recent articles
-  // with an abstract, cs.GT's 11. q-fin.RM's two insurance journals were 10 of
-  // 15 on target, but its curator excluded both.
-  const short = [['econ.GN', 'rejected'], ['math.AG', 'rejected'], ['math.GR', 'rejected'], ['q-fin.PM', 'rejected'], ['cs.DS', 'insufficient-sample'], ['cs.GT', 'insufficient-sample'], ['q-fin.PR', 'insufficient-sample'], ['q-fin.TR', 'insufficient-sample'], ['q-fin.RM', 'not-curated']];
+  // cs.DS's sources held 13 recent articles with an abstract, cs.GT's 11.
+  // q-fin.RM's two insurance journals were 10 of 15 on target, but its curator
+  // excluded both.
+  const short = [['math.AG', 'rejected'], ['math.GR', 'rejected'], ['q-fin.PM', 'rejected'], ['cs.DS', 'insufficient-sample'], ['cs.GT', 'insufficient-sample'], ['q-fin.PR', 'insufficient-sample'], ['q-fin.TR', 'insufficient-sample'], ['q-fin.RM', 'not-curated']];
   for (const [leaf, status] of short) {
     assert.equal(statusOf(leaf)?.status, status, leaf);
     assert.equal(openAlexVenueFilterForLeaf(leaf), null, leaf);
     assert.ok(!venueLanes().includes(leaf), leaf);
   }
-  assert.deepEqual([statusOf('econ.GN')?.onTarget, statusOf('econ.GN')?.sampleSize], [9, 15]);
   for (const leaf of ['q-fin.ST', 'med.onco', 'constructor']) assert.equal(openAlexVenueFilterForLeaf(leaf), null, `${leaf} was never sampled`);
   assert.deepEqual(venueLanes().sort(), coverage.filter(row => row.status === 'passed').map(row => row.leaf).sort());
 });
@@ -604,14 +607,14 @@ test("a venue lane's articles reach the readers of its leaf alone, a paywalled o
   assert.equal(hasUsableAIAbstract(page[0].abstract), false, 'its abstract stays unknown');
   assert.equal(page[0].abstract, 'No abstract available.');
   assert.equal(hasUsableAIAbstract(page[1].abstract), true);
-  // A reader of a leaf without a venue lane gets neither.
+  // A reader of another leaf of the area gets neither.
   assert.deepEqual(await readFeedPage(store, parseFeedRequest({ categories: ['econ.GN'] })), []);
 });
 
 // leaf-filing.ts takes a paper a leaf of its area holds out of the area's lane,
-// as it does a topic lane's: the readers of the area's leaves without a lane
-// of their own, who got it from the area lane, no longer do.
-test("a venue lane's article leaves its area's lane, so readers of the area's leaves without a lane no longer get it", async t => {
+// as it does a topic lane's: the readers of the area's other leaves, who got it
+// from the area lane, no longer do.
+test("a venue lane's article leaves its area's lane, so readers of the area's other leaves no longer get it", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
   const econometrics = {
     id: 'https://openalex.org/T10000', display_name: 'Asset pricing',

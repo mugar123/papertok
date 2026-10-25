@@ -1897,43 +1897,83 @@
     },
     "econ.GN": {
       "sample": {
-        "capturedAt": "2026-10-23T19:20:45Z",
-        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S158011328|S165087003|S170166683|S180061323|S198098467|S203860005|S23254222|S4210174288|S42893225|S45992627|S6711363|S88935262|S95323914|S95464858|S96919139,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,publication_year,language,abstract_inverted_index,primary_location,open_access,primary_topic",
+        "capturedAt": "2026-10-23T19:20:48Z",
+        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S158011328|S165087003|S170166683|S180061323|S198098467|S203860005|S23254222|S4210174288|S42893225|S45992627|S6711363|S88935262|S95323914|S95464858|S96919139,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false,has_abstract:true&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,publication_year,language,abstract_inverted_index,primary_location,open_access,primary_topic",
         "works": [
           {"id":"https://openalex.org/W7223229860","type":"article","title":"Cognitive ability, risk preferences and errors","publication_date":"2026-10-22","source":"S45992627"},
           {"id":"https://openalex.org/W3170157234","type":"article","title":"Robust Aggregation of Correlated Information","publication_date":"2026-10-20","source":"S88935262"},
-          {"id":"https://openalex.org/W7222999573","type":"article","title":"Welfare and the Act of Choosing","publication_date":"2026-10-20","source":"S95323914"},
-          {"id":"https://openalex.org/W7223016064","type":"article","title":"Implementing an Optimal Tax Plan with Short Term Debt","publication_date":"2026-10-20","source":"S95323914"},
           {"id":"https://openalex.org/W7223094727","type":"article","title":"When Should We (Not) Interpret Linear IV Estimands as LATE?","publication_date":"2026-10-20","source":"S88935262"},
           {"id":"https://openalex.org/W7223240599","type":"article","title":"Optimal Flood Insurance in a Second-Best World: Fiscal Spillovers, Reclassification Risk, and Moral Hazard","publication_date":"2026-10-20","source":"S203860005"},
           {"id":"https://openalex.org/W7223242374","type":"article","title":"How New Products Enter Markets: Social Networks, Consumer Imports, and Retailer Learning","publication_date":"2026-10-20","source":"S203860005"},
           {"id":"https://openalex.org/W7167858598","type":"article","title":"The Immigration Surplus Revisited","publication_date":"2026-10-19","source":"S45992627"},
           {"id":"https://openalex.org/W7222941261","type":"article","title":"National Wage Contracts, Monopsony, and Welfare in a North-South Economy,","publication_date":"2026-10-19","source":"S165087003"},
-          {"id":"https://openalex.org/W7222788557","type":"article","title":"Does trade exposure explain anti-globalization votes?","publication_date":"2026-10-17","source":"S198098467"},
           {"id":"https://openalex.org/W7216752796","type":"article","title":"How Credible Are the Findings from Online Experiments?","publication_date":"2026-10-16","source":"S180061323"},
           {"id":"https://openalex.org/W7223211476","type":"article","title":"Is American Soft Power a Casualty of the Trade War? Evidence from U.S. Movie Viewership in China","publication_date":"2026-10-16","source":"S180061323"},
           {"id":"https://openalex.org/W7223216461","type":"article","title":"Parental Response to Fetal Shocks and Macroeconomic Volatility","publication_date":"2026-10-16","source":"S180061323"},
           {"id":"https://openalex.org/W7223225134","type":"article","title":"The Equilibrium Effect of Information in Consumer Credit Markets: Public Records and Credit Redistribution","publication_date":"2026-10-16","source":"S180061323"},
-          {"id":"https://openalex.org/W7223226814","type":"article","title":"The Female Sensitivity Hypothesis: Evidence From Experimental Economics","publication_date":"2026-10-16","source":"S180061323"}
+          {"id":"https://openalex.org/W7223226814","type":"article","title":"The Female Sensitivity Hypothesis: Evidence From Experimental Economics","publication_date":"2026-10-16","source":"S180061323"},
+          {"id":"https://openalex.org/W7223238241","type":"article","title":"Hostility, Population Sorting, and Backwardness: Quasi-Experimental Evidence from the Red Army after WWII","publication_date":"2026-10-16","source":"S180061323"},
+          {"id":"https://openalex.org/W7223238535","type":"article","title":"Structuring Cash Transfers: Cash Flow Preferences, Seasonality, and Financial Decisions in Rural Kenya","publication_date":"2026-10-16","source":"S180061323"},
+          {"id":"https://openalex.org/W7223250037","type":"article","title":"Contracting Structures in Public Procurement: Evidence from Donor-Funded Electrification in Kenya","publication_date":"2026-10-16","source":"S180061323"}
         ],
         "labels": [
           {"workId":"https://openalex.org/W7223229860","label":"on-target"},
           {"workId":"https://openalex.org/W3170157234","label":"off-target"},
-          {"workId":"https://openalex.org/W7222999573","uncertain":true},
-          {"workId":"https://openalex.org/W7223016064","uncertain":true},
           {"workId":"https://openalex.org/W7223094727","label":"off-target"},
           {"workId":"https://openalex.org/W7223240599","label":"on-target"},
           {"workId":"https://openalex.org/W7223242374","label":"on-target"},
           {"workId":"https://openalex.org/W7167858598","label":"off-target"},
           {"workId":"https://openalex.org/W7222941261","uncertain":true},
-          {"workId":"https://openalex.org/W7222788557","label":"on-target"},
           {"workId":"https://openalex.org/W7216752796","label":"on-target"},
           {"workId":"https://openalex.org/W7223211476","label":"on-target"},
           {"workId":"https://openalex.org/W7223216461","label":"on-target"},
           {"workId":"https://openalex.org/W7223225134","label":"on-target"},
-          {"workId":"https://openalex.org/W7223226814","label":"on-target"}
+          {"workId":"https://openalex.org/W7223226814","label":"on-target"},
+          {"workId":"https://openalex.org/W7223238241","label":"on-target"},
+          {"workId":"https://openalex.org/W7223238535","label":"on-target"},
+          {"workId":"https://openalex.org/W7223250037","label":"on-target"}
         ]
-      }
+      },
+      "sourceSamples": [
+        {
+          "capturedAt": "2026-10-23T19:26:21Z",
+          "query": "https://api.openalex.org/works?filter=primary_location.source.id:S23254222,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false,has_abstract:true&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,publication_year,language,abstract_inverted_index,primary_location,open_access,primary_topic",
+          "works": [
+            {"id":"https://openalex.org/W4391211972","type":"article","title":"Screening and Segmenting: A Consumer Surplus Perspective","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7197123006","type":"article","title":"Truth Elicitation in a Nonstrategic Environment","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215029994","type":"article","title":"Racial Promotion Gaps","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215030703","type":"article","title":"Taxing Top Wealth: Migration Responses and Their Aggregate Economic Implications","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215055798","type":"article","title":"Knowledge Spillovers, Competition, and Individual Careers","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215059693","type":"article","title":"A Model of the Attention Economy: Data, Platforms, and Discovery","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215078931","type":"article","title":"Who Marries Whom? The Role of Segregation by Race and Class","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W7215118420","type":"article","title":"Social Push and the Direction of Innovation","publication_date":"2026-10-01","source":"S23254222"},
+            {"id":"https://openalex.org/W4381166596","type":"article","title":"Optimal Public Transportation Networks: Evidence from the World's Largest Bus Rapid Transit System in Jakarta","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7130692893","type":"article","title":"Defying Distance? The Provision of Medical Services in the Digital Age","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7203931050","type":"article","title":"Corporate Tax Cuts, Firm Growth, and Workers' Earnings","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7204519381","type":"article","title":"Presidential Address: Neighborhood Effects and Missing Markets for Opportunity","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7204529233","type":"article","title":"Rationing by Race","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7204534117","type":"article","title":"Manipulation-Robust Prediction","publication_date":"2026-08-28","source":"S23254222"},
+            {"id":"https://openalex.org/W7204599840","type":"article","title":"The Environmental Bias of Corporate Income Taxation","publication_date":"2026-08-28","source":"S23254222"}
+          ],
+          "labels": [
+            {"workId":"https://openalex.org/W4391211972","label":"off-target"},
+            {"workId":"https://openalex.org/W7197123006","label":"off-target"},
+            {"workId":"https://openalex.org/W7215029994","label":"on-target"},
+            {"workId":"https://openalex.org/W7215030703","label":"on-target"},
+            {"workId":"https://openalex.org/W7215055798","label":"on-target"},
+            {"workId":"https://openalex.org/W7215059693","label":"off-target"},
+            {"workId":"https://openalex.org/W7215078931","label":"on-target"},
+            {"workId":"https://openalex.org/W7215118420","label":"on-target"},
+            {"workId":"https://openalex.org/W4381166596","label":"on-target"},
+            {"workId":"https://openalex.org/W7130692893","label":"on-target"},
+            {"workId":"https://openalex.org/W7203931050","label":"on-target"},
+            {"workId":"https://openalex.org/W7204519381","label":"on-target"},
+            {"workId":"https://openalex.org/W7204529233","label":"on-target"},
+            {"workId":"https://openalex.org/W7204534117","uncertain":true},
+            {"workId":"https://openalex.org/W7204599840","label":"on-target"}
+          ]
+        }
+      ]
     },
     "econ.TH": {
       "sample": {
