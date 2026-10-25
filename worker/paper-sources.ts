@@ -24,7 +24,7 @@ import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, notableSince, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES } from './openalex-leaf-venues.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
@@ -354,6 +354,9 @@ interface SourceSpec {
   // them: a followed entity's, and the specialist sources', whose first pages
   // the feed showed as they came (NASA's reports, CORE's repositories).
   keepsOld?: boolean;
+  // Each page is a listing of its own, such as one year; a short page does not
+  // end the lane.
+  separateListings?: boolean;
   // Lanes whose listing is OpenAlex's current record of each paper it returns
   // (the notable lanes' weekly one): it brings their counts, so the
   // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over the
@@ -429,14 +432,21 @@ async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPag
   return pageOf(filed(works.map(map), lane), perPage);
 }
 
-// Notable papers (Pablo, 2026-10-23): each admitted leaf's most-cited articles
-// of the notable window (paper-store.ts `notableSince`), asked once a week.
-// One page of NOTABLE_PER_LANE is one list call a lane a week, reserved from
-// the harvest's OpenAlex share.
-const NOTABLE_PER_LANE = 100;
+// Notable papers (Pablo, 2026-10-23; ENG-129): each admitted leaf's 100
+// most-cited articles of each of the NOTABLE_YEARS completed years before the
+// current UTC year, asked once a week, one list call a year, reserved from the
+// harvest's OpenAlex share. The current year is left out: its papers are the
+// 90-day lanes' too, `rankCandidates` (paper-store.ts) takes a notable lane's
+// papers out of the regular ranks, and a reader without likes would be offered
+// this year's notable cards first.
+export const NOTABLE_PER_YEAR = 100;
 const NOTABLE_LANE_DAYS = 7;
+export const NOTABLE_LANES_PER_NIGHT = 8;
 
-const notableWindowFilter = (now = Date.now()) => `from_publication_date:${notableSince(now)},to_publication_date:${day(new Date(now).toISOString())}`;
+/** The year a notable lane's page lists: page 1 is the oldest of the NOTABLE_YEARS, page NOTABLE_YEARS the last completed one. */
+export function notableListedYear(page: number, now = Date.now()): number {
+  return new Date(now).getUTCFullYear() - NOTABLE_YEARS - 1 + page;
+}
 
 // Followed OpenAlex entities, by the filter that names their works.
 const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
@@ -511,8 +521,16 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
+      // With or without an abstract (ENG-129). PubMed lists editorials, letters
+      // and comments as journal records; one with an abstract was always
+      // admitted, as a letter, and one without is left out here. esearch has
+      // no unary NOT (it drops the operator and warns), so the exclusion is a
+      // binary NOT. The other non-research types (errata, retraction notices,
+      // news, obituaries and the like) are dropped at ingestion by the type
+      // `PUBTYPE_MAP` gives them.
       const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
-        q: `(${pubmedCategoryQuery([lane])}) AND hasabstract${added}`, page, limit: 50,
+        q: `(${pubmedCategoryQuery([lane])}) NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)${added}`,
+        page, limit: 50,
       }, env));
       const payload = await response.json<Parameters<typeof readPubmedPayload>[0]>();
       const papers = readPubmedPayload(payload, { internalCategories: [lane], parseXml: parseXmlDocument });
@@ -525,7 +543,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane),
       windowFilter(),
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
@@ -556,25 +573,29 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // lane when they do, even when a like or its date keeps it in the corpus
   // (paper-store.ts `evictExpired`).
   'openalex-notable': {
-    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true,
-    fetchPage: (env, { lane, page }) => openAlexLane(env, [
-      openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
-      notableWindowFilter(),
-      'has_abstract:true',
-      'is_retracted:false',
-      'primary_location.source.is_core:true',
-    ].join(','), { page, lane, perPage: NOTABLE_PER_LANE, sort: 'cited_by_count:desc', part: 'categories' }),
+    firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true, separateListings: true,
+    // The lane's page picks the year; OpenAlex is asked the first page of it.
+    fetchPage: (env, { lane, page }) => {
+      const year = notableListedYear(page);
+      return openAlexLane(env, [
+        openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
+        `from_publication_date:${year}-01-01`,
+        `to_publication_date:${year}-12-31`,
+        'is_retracted:false',
+        'primary_location.source.is_core:true',
+      ].join(','), { page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories' });
+    },
   },
   // The newest journal articles of a whole area, filed under the area. On
   // 2026-10-23 a page of 200 with an abstract held the last one or two days of
   // each area but finance's nine: about 22 (finance) to 370 (electrical
   // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
   // 39 % (mechanical engineering) of the articles had none. So a night reads
-  // one page, the newest 200: one list call an area. Unlike the topic lanes,
-  // the area lanes take an article without an abstract (PAP-107); its card
-  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
-  // working papers as core journal articles; their cards say Working paper,
-  // so the lane leaves out the review rule's series.
+  // one page, the newest 200: one list call an area. The area lanes take an
+  // article without an abstract (PAP-107), as the topic and notable lanes do
+  // (ENG-129); its card says it has none. OpenAlex lists IMF, Federal Reserve
+  // Board and Fed bank working papers as core journal articles; their cards
+  // say Working paper, so the lane leaves out the review rule's series.
   'openalex-areas': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -657,16 +678,28 @@ export function categoryLaneJobs(): LaneJob[] {
 }
 
 /**
- * The notable lane of each leaf with a topic lane, unless it was harvested in
- * the last NOTABLE_LANE_DAYS days. Counted in UTC days, so a lane is due a
- * week on even when this run reaches it earlier in the night than last week's.
+ * The notable lanes a night lists, of the leaves with a topic lane: every lane
+ * never harvested, by lane id, then at most NOTABLE_LANES_PER_NIGHT not
+ * harvested in the last NOTABLE_LANE_DAYS days, the oldest harvest first.
+ * Every new lane runs at once so that a lane's first listing does not wait
+ * behind others' (the first cycle fills in one night). Re-listings are capped
+ * because a lane re-ingests up to 1,000 rows a step and CPU accumulates across
+ * an invocation (`wrangler.toml` `[limits]`). Counted in UTC days, so a lane
+ * is due a week on even when this run reaches it earlier in the night than
+ * last week's.
  */
 export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise<LaneJob[]> {
-  const { results } = await db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-notable' AND harvested_through >= ?")
-    .bind(day(daysFromNow(1 - NOTABLE_LANE_DAYS, now))).all<{ lane: string }>();
-  const recent = new Set(results.map(row => row.lane));
-  return TOPIC_LEAVES.map(leaf => ({ source: 'openalex-notable' as const, lane: `${NOTABLE_LANE_PREFIX}${leaf.id}` }))
-    .filter(job => !recent.has(job.lane));
+  const { results } = await db.prepare("SELECT lane, harvested_through FROM lane_state WHERE source = 'openalex-notable'")
+    .all<{ lane: string; harvested_through: string }>();
+  const harvested = new Map(results.map(row => [row.lane, row.harvested_through]));
+  const dueBefore = day(daysFromNow(1 - NOTABLE_LANE_DAYS, now));
+  const lanes = TOPIC_LEAVES.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
+  const due = lanes.flatMap(lane => {
+    const through = harvested.get(lane);
+    return through !== undefined && through < dueBefore ? [{ lane, through }] : [];
+  }).sort((a, b) => a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
+  return [...lanes.filter(lane => !harvested.has(lane)), ...due.slice(0, NOTABLE_LANES_PER_NIGHT).map(({ lane }) => lane)]
+    .map(lane => ({ source: 'openalex-notable' as const, lane }));
 }
 
 // The source that serves each kind of followed lane (`followLane` in src/utils/follow-lanes.ts).
@@ -709,7 +742,7 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
-    if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
+    if (!spec.separateListings && (!result.full || (spec.dated && result.newest && result.newest < since))) break;
   }
   // Only the papers this run's pages filed in the lane carry OpenAlex's counts
   // of today: their lane rows hold this run's keeping date (paper-store.ts
@@ -718,9 +751,14 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // show) filed nothing, and one the listing no longer returns keeps its
   // enrichment date however long the corpus keeps it (a recent paper, a liked
   // one), so the refresh still comes for both. One never enriched still gets
-  // its first enrichment, which also asks Crossref its type.
+  // its first enrichment, which also asks Crossref its type. The listing does
+  // not renew a paper without an abstract either (the placeholder is shorter
+  // than the 40 characters of `isPlausibleAbstract`): the refresh is what asks
+  // for its abstract again, at about one OpenAlex refresh call per 50 such
+  // papers every 14 days.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
+      AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40
       AND id IN (SELECT work_id FROM work_lanes WHERE lane = ? AND listed_until >= ?)`).bind(new Date(now).toISOString(), lane, keepUntil).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)

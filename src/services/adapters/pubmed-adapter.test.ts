@@ -33,6 +33,21 @@ test('a pubtype nobody recognises leaves the type unknown rather than guessing p
   assert.equal(PaperBuilder.create(raw).publicationType, undefined);
 });
 
+test("PubMed's errata, retraction notices, expressions of concern and front matter leave the feed, a letter does not", () => {
+  const typeOf = (pubtype: string[]) => PaperBuilder.create(adapter.mapToStandard({ uid: '4', title: 'T', pubtype, source: 'J' }));
+  for (const pubtype of [
+    ['Published Erratum'], ['Journal Article', 'Published Erratum'],
+    ['Retraction of Publication'], ['Journal Article', 'Expression of Concern'],
+    ['News'], ['Obituary', 'Journal Article'], ['Biography', 'Historical Article', 'Portrait'], ['Interview'], ['Introductory Journal Article'],
+  ]) {
+    assert.equal(isFeedPublication(typeOf(pubtype)), false, pubtype.join(', '));
+  }
+  // The retracted article itself is a research record.
+  assert.equal(typeOf(['Journal Article', 'Retracted Publication']).publicationType, 'article');
+  assert.equal(typeOf(['Letter', 'Comment']).publicationType, 'letter');
+  assert.equal(isFeedPublication(typeOf(['Letter', 'Comment'])), true);
+});
+
 test('arXiv keeps the preprint default the builder used to hand everyone', () => {
   // arXiv is the one source whose silence really does mean preprint.
   const paper = PaperBuilder.create({ id: 'arxiv:1', sources: { primary: 'arxiv', enrichedBy: [] } });

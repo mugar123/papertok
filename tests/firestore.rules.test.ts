@@ -1358,7 +1358,8 @@ test('another account cannot read or write the classification of a saved paper',
  * Both writers of savedPapers merge into the stored document. One saved
  * before PAP-60 kept only the category its card showed: the tester's AI
  * survey was saved as hep-th. A new save of the same card has to be accepted
- * as an update of that document and leave it reading Computer Science.
+ * as an update of that document and leave it reading Artificial Intelligence,
+ * as its card does.
  */
 test('a save over a savedPapers document from before PAP-60 replaces its category', async () => {
   await reset();
@@ -1383,7 +1384,7 @@ test('a save over a savedPapers document from before PAP-60 replaces its categor
 
   const stored = (await getDoc(ref)).data()!;
   assert.equal(stored.primaryCategory, '');
-  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Computer Science');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Artificial Intelligence');
 });
 
 /*

@@ -307,7 +307,7 @@ export default function EntityExplorer({
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
-  const handleSaveToList = useQuickSave(onSaveToList);
+  const handleSaveToList = useQuickSave(onSaveToList, 'explorer');
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,

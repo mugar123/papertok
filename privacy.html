@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 24 October 2026.</p>
+      <p class="lp-updated">Last updated 25 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -59,8 +59,8 @@
       <section class="lp-short" aria-labelledby="in-short">
         <h2 id="in-short">In short</h2>
         <ul>
-          <li>You can use PaperTok without an account. The feed, search and the public pages work signed out, and nothing that identifies you is stored.</li>
-          <li>By default, analytics uses no cookies and never records which paper you read or what you searched for. If you have an account and allow detailed analytics, what you do in PaperTok is linked to your account and your sessions are recorded. You can change either in Settings or, without an account, with the Privacy button at the top of the screen.</li>
+          <li>You can use PaperTok without an account. The feed, search and the public pages work signed out. Usage analytics uses a persistent browser identifier unless you turn it off.</li>
+          <li>Usage analytics is on by default. It uses cookies and local storage to connect visits across days and links product activity to your account when you sign in. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen. Sessions are not recorded.</li>
           <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
           <li>You can delete your account, and everything in it, from Settings → Account → Delete account.</li>
           <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
@@ -77,8 +77,8 @@
       <h2>You can use PaperTok without an account</h2>
       <p>
         The paper feed, search and the public pages work without signing in. Without an
-        account no profile is created, and the only record of your visit is the anonymous
-        measurement described under Analytics.
+        account no account profile is created. Usage analytics can still connect visits from
+        the same browser, as described under Analytics.
       </p>
 
       <h2>What is collected if you create an account</h2>
@@ -218,94 +218,54 @@
 
       <h2>Analytics</h2>
       <p>
-        PaperTok measures how the application is used with two services:
-        <strong>Vercel Web Analytics</strong> and <strong>PostHog</strong>, on PostHog's
-        servers in the European Union (Frankfurt). There are two levels. Anonymous analytics
-        is on for everybody unless they turn it off. Detailed analytics is off until you
-        allow it.
-      </p>
-
-      <h3>Anonymous analytics</h3>
-      <p>
-        <strong>Neither service uses cookies at this level.</strong> Vercel Web Analytics
-        counts page views and the country a visit comes from: to tell visits apart, Vercel
-        derives an identifier from the browser itself that expires every day and cannot
-        follow you from one day to the next or across sites. PostHog counts what is done in
-        the application. It keeps nothing about you in your browser: to tell visits apart,
-        it combines your IP address and your browser's user agent with a random value that
-        changes every day, keeps only the result and discards the IP address and the user
-        agent, and it derives no location from them. Neither identifier is linked to your
-        account.
+        Usage analytics is enabled by default. PaperTok uses <strong>PostHog</strong>,
+        hosted in the European Union (Frankfurt), to understand repeat visits and product
+        use. PostHog keeps a random identifier in a first-party cookie and local storage
+        on papertok.app. This identifier connects activity from the same browser across
+        days. When you sign in, PaperTok links that activity to your account identifier.
+        Signing out or switching accounts starts a new browser identity.
       </p>
       <p>
-        What is sent is the page you are on, with the path stripped of identifiers, to both
-        services, and to PostHog a fixed list of actions, each with a few fixed values.
-        Reading a specific paper is recorded as <code>/public/paper/:id</code>, and visiting
-        an author's profile as <code>/explorer/author/:id</code>: which one never travels. A
-        search is recorded as a search, with its type and how many results it returned,
-        never with what you searched for. Each event also carries the type of device, the
-        browser and the operating system. Nothing from your account is sent.
+        Product events record the papers you view, open, like, save, highlight or annotate
+        by their identifier, how long cards and the reader stay on screen, the authors,
+        topics or institutions you follow by their identifier, search types and result
+        counts, and the outcome of sign-in and AI explanation requests. Events include
+        browser, operating system, device type and session identifiers.
       </p>
       <p>
-        The legal basis is PaperTok's legitimate interest in knowing which parts of the
-        application are used, so they can be improved. That is why you are not asked for
-        permission before measuring. You can <strong>object whenever you like</strong> by
-        turning it off in Settings → Privacy or, without an account, with the Privacy
-        button at the top of the welcome screens and the feed. The choice is kept in this
-        browser and turns off both services: from then on nothing new is recorded from it,
-        and from your next visit neither library is even loaded.
-      </p>
-
-      <h3>Detailed analytics</h3>
-      <p>
-        When you are signed in, PaperTok asks whether you allow detailed analytics. If you
-        choose <strong>Accept</strong>, or turn on <strong>Detailed analytics</strong> in Settings → Privacy,
-        PostHog links what you do in the application to your account, so that PaperTok can
-        see how each person uses it over time. It then records:
-      </p>
-      <ul>
-        <li>your account identifier, your email address, your name and how you sign in;</li>
-        <li>the full address of each page, including which paper or profile it shows and what you typed into search;</li>
-        <li>the papers you see, open, like, save, highlight or annotate, with their identifier and title, and what you search for;</li>
-        <li>how long each paper stays on screen and how long you spend in the reader;</li>
-        <li>the buttons and links you click, with their text, and where you click and scroll on a page;</li>
-        <li>recordings of your sessions: what the page shows, and your mouse movements, clicks and scrolling. Text typed into fields is hidden in the recordings;</li>
-        <li>errors the application runs into and how fast pages load;</li>
-        <li>an approximate location, the country and city, which PostHog derives from the IP address of each request.</li>
-      </ul>
-      <p>
-        At this level PostHog keeps an identifier in a first-party cookie and in your
-        browser's local storage on papertok.app, so it can recognise the same browser from
-        one visit to the next. PostHog may also show you a short survey inside the
-        application.
+        PaperTok does not send your name, email address, search text, notes, paper titles
+        or full page addresses to product analytics. Page addresses have query strings,
+        fragments and individual paper, list and profile identifiers removed. PaperTok
+        does not record sessions or automatically capture clicks or heatmaps.
       </p>
       <p>
-        The legal basis is your consent. You can withdraw it whenever you like in
-        Settings → Privacy, by turning detailed analytics off: from then on PostHog goes
-        back to anonymous analytics and nothing new is linked to your account. Signing out
-        also ends the link for that browser. To have what was already recorded deleted,
-        write to the address below.
+        <strong>Vercel Web Analytics</strong> separately counts page views and countries.
+        It uses no cookies and its visitor identifier expires each day. Page addresses
+        sent to Vercel are stripped of identifiers and query strings too.
       </p>
       <p>
-        We also record whether the reader opens, whether a rewrite completes, its
-        duration and whether it came from a saved version, and whether a sign-in
-        attempt succeeds, fails or is cancelled.
+        You can turn off both services in <strong>Settings → Privacy</strong> or, without
+        an account, with the <strong>Privacy</strong> button on the welcome screens and
+        feed. The choice is kept in this browser. Turning analytics off stops new browser
+        events and removes PostHog's stored browser identity; previously queued events
+        may still be delivered. On subsequent visits neither analytics library loads.
+        A previous rejection of detailed tracking remains disabled until you turn
+        analytics on. To request deletion of previously collected data, write to the
+        contact address below.
       </p>
       <p>
-        <strong>Error reports</strong> from the browser and from our backend also go to
-        PostHog. With anonymous analytics, a browser report contains a standard error type,
-        the places in PaperTok's code where the error happened, the software version and a
-        few fixed labels, with the stripped page address and device details described above.
-        Error messages, paper content, notes, search text and account details are removed
-        before sending. With detailed analytics, reports also include the error message and
-        the full page address. Turning analytics off stops new browser error reports.
-        Backend reports contain only the error type, code locations, software version and
-        fixed labels, carry nothing about the reader and continue whatever the analytics
-        choice, to help us operate and repair the service.
+        <strong>Error reports</strong> from the browser and backend also go to PostHog.
+        Reports contain a standard error type, code locations, software version and fixed
+        labels. Browser reports use the same identity and stripped page addresses as
+        product events. Error messages, paper content, notes and account profile details
+        are removed. Turning analytics off stops new browser error reports. Backend
+        reports contain no reader identity and continue independently of this choice.
       </p>
       <p>
         PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
-        PostHog keeps events for one year, and session recordings for at most as long.
+        PostHog keeps events for one year. Your browser sends its IP address to connect to
+        these services; removing it from an event payload does not hide the connection's
+        IP address from the receiving service.
       </p>
 
       <h2>Scientific sources and AI features</h2>
@@ -375,7 +335,7 @@
       <ul>
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
-        <li><strong>PostHog</strong> — analytics of what is done in the application, error reports and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
+        <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
       </ul>
@@ -413,9 +373,9 @@
         you had already liked, saved, read or dismissed them, so a reload skips them, and the
         marks analytics
         uses to count a first visit per session, a first real use and a return a week later
-        once each, without knowing who you are. They are cleared when you clear the site's
+        once each. They are cleared when you clear the site's
         data, the viewed papers also when you sign out, and the analytics marks also when
-        you turn analytics off. If you allow detailed analytics, PostHog also keeps an
+        you turn analytics off. While usage analytics is enabled, PostHog also keeps an
         identifier and your choice in a cookie and in local storage, as described under
         Analytics.
       </p>

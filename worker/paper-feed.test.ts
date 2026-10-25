@@ -763,6 +763,9 @@ const SESSION_CATEGORIES = ['cs.AI', 'cs.CL', 'cs.CV', 'cs.LG', 'cs.RO', 'cs.IR'
 const SESSION_RANKS = 3_000;
 const rankedPaper = (rank: number) => `2610.${String(rank).padStart(5, '0')}`;
 const notablePaper = (rank: number) => `1901.${String(rank).padStart(5, '0')}`;
+// The last year a notable lane reads (readNotableCandidates): the session's
+// notable papers are older, and the ones the harvest files are of this year.
+const lastNotableYear = new Date().getUTCFullYear() - 1;
 // On another device: 1,200 notable cards, then 500 papers, every other one at
 // the top of each order.
 const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) => 2 * index);
@@ -771,10 +774,12 @@ const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) 
  * A reader with a full history reads `loads` pages, as the review of ENG-103
  * modelled it. The corpus holds 300 recent and 300 notable papers in each of
  * their categories, which they rank newest first (they like nothing yet). The
- * app passes over a paper it has seen (FeedContext.loadPapers), shows the rest
- * of the corpus's page, places two of its unseen notable cards, and adds 14
- * cards of the follows and exploration. `request` changes a load's request,
- * and `minutesPerLoad` moves the clock after each load. With `filing`, the
+ * notable ones are ten days apart over the years before `lastNotableYear`,
+ * about 36 a year, of which a day's read takes 25. The app passes over a
+ * paper it has seen (FeedContext.loadPapers), shows the rest of the corpus's
+ * page, places two of its unseen notable cards, and adds 14 cards of the
+ * follows and exploration. `request` changes a load's request, and
+ * `minutesPerLoad` moves the clock after each load. With `filing`, the
  * harvest files two recent papers and a notable one after each load, newer
  * than any before: a ranking made after that puts them first.
  */
@@ -792,7 +797,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     const published = new Date(Date.now() - (rank + 1) * 60_000).toISOString();
     insertWork.run(rank + 1, JSON.stringify({ id: rankedPaper(rank), arxivId: rankedPaper(rank), title: `Paper ${rank}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
     insertLane.run(category, rank + 1, published);
-    const listed = new Date(Date.UTC(2024, 0, 1) - rank * 3_600_000).toISOString();
+    const listed = new Date(Date.UTC(lastNotableYear - 1, 11, 31) - rank * DAY_MS).toISOString();
     insertWork.run(SESSION_RANKS + rank + 1, JSON.stringify({ id: notablePaper(rank), title: `Notable paper ${rank}`, authors: [] }), listed, '2099-01-01T00:00:00.000Z');
     insertLane.run(`notable:${category}`, SESSION_RANKS + rank + 1, listed);
   }
@@ -826,7 +831,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     const filed = filing ? [
       file(`2611.${String(2 * load).padStart(5, '0')}`, category, new Date().toISOString()),
       file(`2611.${String(2 * load + 1).padStart(5, '0')}`, category, new Date().toISOString()),
-      file(`1902.${String(load).padStart(5, '0')}`, `notable:${category}`, new Date(Date.UTC(2024, 5, 1) + load * 3_600_000).toISOString()),
+      file(`1902.${String(load).padStart(5, '0')}`, `notable:${category}`, new Date(Date.UTC(lastNotableYear, 5, 1) + load * 3_600_000).toISOString()),
     ] : [];
     session.push({ main: ids(papers.filter(item => !item._notable)), shown: ids(shown), placed: ids(placed), filed });
     if (minutesPerLoad) t.mock.timers.tick(minutesPerLoad * 60_000);
@@ -909,7 +914,8 @@ test('a filter that holds every paper, with another category on each page, does 
   db.exec('BEGIN');
   categories.forEach((category, index) => {
     for (let rank = 0; rank < 1_000; rank += 1) file(`p${index}.${rank}`, category, new Date(Date.now() - (rank + 1) * 60_000).toISOString());
-    for (let rank = 0; rank < 300; rank += 1) file(`n${index}.${rank}`, `notable:${category}`, new Date(Date.UTC(2024, 0, 1) - rank * 3_600_000).toISOString());
+    // 30 in each of the ten years a notable lane reads, of which a day's read takes 25.
+    for (let rank = 0; rank < 300; rank += 1) file(`n${index}.${rank}`, `notable:${category}`, new Date(Date.UTC(lastNotableYear - (rank % 10), 0, 1 + Math.floor(rank / 10))).toISOString());
   });
   db.exec('COMMIT');
   const everySeen = Buffer.alloc(2_400, 0xff).toString('base64');

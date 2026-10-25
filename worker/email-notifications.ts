@@ -77,7 +77,7 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
@@ -703,11 +703,13 @@ function isArxivCategory(value: unknown) {
   ));
 }
 
+function followCategoryIds(follow: FollowInput = {}) {
+  return getAreaLeaves(follow.canonicalId) ?? (Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : []);
+}
+
 function arxivCategoriesForFollow(follow: FollowInput = {}) {
-  const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
-    ? follow.metadata.categoryIds
-    : [];
-  const candidates = metadataCategories.length ? metadataCategories : [follow.canonicalId];
+  const categoryIds = followCategoryIds(follow);
+  const candidates = categoryIds.length ? categoryIds : [follow.canonicalId];
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 
@@ -854,7 +856,7 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
     follow.canonicalId,
     follow.externalIds?.ror || '',
     follow.metadata?.query || '',
-    [...new Set(follow.metadata?.categoryIds || [])].sort(),
+    [...new Set(followCategoryIds(follow))].sort(),
   ])).sort();
   return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
 }

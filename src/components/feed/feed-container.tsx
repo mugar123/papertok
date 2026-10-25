@@ -933,7 +933,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     onOpenPdf!(paper);
   }, [onOpenPdf, trackPdfOpened]);
 
-  const handleSaveToList = useQuickSave(onSaveToList!);
+  const handleSaveToList = useQuickSave(onSaveToList!, analyticsSurface);
 
   // Marking a paper read means the reader is done with it, so the feed moves
   // on to the next one. The paper itself stays where it was: scrolling back
