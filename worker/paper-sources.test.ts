@@ -1052,7 +1052,10 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   // harvest's tier goes elsewhere.
   await spendElsewhere(share('feed') - readers - 12);
   await assert.rejects(follows('author:A5000000001'), SourceRefused);
-  const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1'), env);
+  Object.assign(env, { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes' });
+  const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1', {
+    headers: { 'cf-connecting-ip': '192.0.2.1' },
+  }), env);
   assert.equal(opened.status, 200, 'a paper being opened still has the rest of the ceiling');
 });
 
