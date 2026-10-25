@@ -244,8 +244,9 @@ Five pass at exactly 10 of 15 (`cond-mat.str-el`, `hep-th`, `hep-ph`, `hep-ex`,
 `T10037`, `T10048` and `T11090` serve two lanes each) and spend 170 units a
 week; with 56 notable lanes the nightly share stays at eight. Their first
 night lists and embeds about 17,000 papers against the 7.5M-token embedding
-ceiling (about 5,000 papers a day), so the first embedding spreads over about
-three nights behind the day's new papers. The most-cited articles of a
+ceiling (a paper is at most about 670 estimated tokens, so about 11,000 a day,
+of which the day's about 5,000 new papers go first), so the first embedding
+spreads over about three nights behind the day's new papers. The most-cited articles of a
 subfield are often its tools and reference works: `quant-ph` returned
 quantum-chemistry codes and `physics.comp-ph` scientific-software papers
 (SciPy, NumPy, Astropy beside those codes), the statistics leaves
@@ -305,8 +306,8 @@ The seven finance leaves without a topic lane, labelled by the same agent
 under the same procedure. None passes: `q-fin.PM` at 8 of 15, the rest at 6
 or fewer, with 4 to 8 doubted calls each; nothing is admitted. The Finance
 subfield's most-cited articles of the decade are connectedness and spillover
-econometrics, COVID-19 and cryptocurrency market studies and news-based
-uncertainty indices, which appear on five to seven of the seven pages; the
+econometrics, COVID-19 and cryptocurrency market studies, which appear on five
+to seven of the seven pages, and news-based uncertainty indices on two; the
 leaves' own matter (option pricing, portfolio theory, microstructure) is a
 minority on each.
 
