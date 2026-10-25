@@ -151,8 +151,10 @@ export function hasSignInProvider(user: { providerData?: Array<Pick<User['provid
  * Google sign-up takes.
  *
  * The popup comes first everywhere. When the browser blocks its window, as
- * Mobile Safari often does, this tab goes to the provider instead
- * (continueInThisTab) and the promise never settles: the page leaves.
+ * Mobile Safari often does and a desktop popup blocker can, this tab goes to
+ * the provider instead (continueInThisTab) and the promise never settles: the
+ * page leaves. On desktop that replaces the error "The browser blocked the
+ * sign-in window."; a popup that opens is unchanged.
  * `surface` names the place that asked, for the analytics the page it comes
  * back to sends (completeRedirectSignIn).
  */
@@ -208,7 +210,10 @@ function sessionTripStorage(): TripStorage | null {
  * popup cannot block it. This tab goes to the provider through `authDomain`
  * (papertok.app, proxied to Firebase by vercel.json) and comes back to the
  * same address. Rejects when the redirect could not start; on success the
- * page leaves, so there is nothing to resolve with.
+ * page leaves, so there is nothing to resolve with. Only on papertok.app is
+ * that return same-origin with `authDomain`: from a preview deployment or a
+ * local server it crosses sites, where the storage Firebase keeps the redirect
+ * in can be partitioned and the sign-in can come back with no result.
  */
 async function continueInThisTab(api: ReturnType<typeof operations>, provider: unknown, trip: RedirectTrip, blocked: unknown): Promise<never> {
   // Firebase keeps its own redirect state in the same storage, so without it
@@ -269,8 +274,9 @@ export type RedirectSignInOutcome = RedirectTrip & (
  *
  * The carried destination is offered back before the first `await`: the
  * session can arrive as soon as Auth has started, and app.tsx takes the
- * destination then. A reader who comes back without signing in, from the
- * provider's own Back or Cancel, is `cancelled`, as a closed popup is.
+ * destination then. Coming back with no result, as from the browser's Back,
+ * is `cancelled`, as a closed popup is. An error Firebase reports is an
+ * `error`, as it is for a popup.
  */
 export async function completeRedirectSignIn(overrides?: IdentityOperations): Promise<RedirectSignInOutcome | null> {
   const api = operations(overrides);
