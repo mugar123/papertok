@@ -78,23 +78,49 @@ test('an established pick gives way to learned behaviour as interactions accumul
 });
 
 // An interest the reader added weighs by how much the app has learned of that
-// subarea or area, not by how many cards the reader has touched in all.
+// subarea or area, from full weight down to what an established pick weighs
+// for this reader (ENG-137, R23).
 test('an added interest weighs fully while new and gives way as the app learns it', () => {
   const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
-  const preferenceAt = (progress: number) => scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress }, coldAdded: ['econ.EM'], interactionCount: 5000,
+  const preferenceAt = (progress: number, interactionCount: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress }, coldAdded: ['econ.EM'], interactionCount,
   }).preference;
 
-  assert.equal(preferenceAt(0), 100);
-  assertClose(preferenceAt(0.5), 65);
-  assertClose(preferenceAt(1), 30, 'never below a third of the original weight');
+  for (const interactionCount of [300, 5000]) {
+    assert.equal(preferenceAt(0, interactionCount), 100);
+    assertClose(preferenceAt(0.5, interactionCount), 65);
+    assertClose(preferenceAt(1, interactionCount), 30, 'never below a third of the original weight');
+  }
+});
+
+// ENG-137, ruling R23: a reader with few interactions still weighs established
+// picks heavily, and an added pick never weighs less than they do: it reaches
+// their share as it is learned, so joining the established group moves nothing.
+test('an added interest never weighs less than an established pick of the same reader', () => {
+  const card = (primaryCategory: string) => ({ id: primaryCategory, primaryCategory, published: '2026-07-05T00:00:00Z' });
+  const preference = (primaryCategory: string, progress: number) => scorePaperForRecommendation(card(primaryCategory), {
+    now: NOW,
+    userPreferences: ['cs.LG', 'econ.GN'],
+    interestProgress: { 'cs.LG': 1, 'econ.GN': progress },
+    coldAdded: progress < 1 ? ['econ.GN'] : [],
+    interactionCount: 40,
+  }).preference;
+
+  const established = preference('cs.LG', 1);
+  assertClose(established, 100 * (1 - 40 / 300));
+  assert.ok(preference('econ.GN', 0.375) > established, `cold at 0.375: ${preference('econ.GN', 0.375)}`);
+  assertClose(scorePaperForRecommendation(card('econ.GN'), {
+    now: NOW, userPreferences: ['cs.LG', 'econ.GN'], interestProgress: { 'econ.GN': 1 }, coldAdded: ['econ.GN'], interactionCount: 40,
+  }).preference, established, 'learned but not yet joined:');
+  assertClose(preference('econ.GN', 1), established, 'joined:');
 });
 
 test('a card weighs by the most-learned added subarea it matches, however it matches', () => {
   const progress = { 'econ.EM': 1, 'econ.GN': 0 };
   const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0]) => scorePaperForRecommendation(
     { published: '2026-07-05T00:00:00Z', ...paper },
-    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress, coldAdded: ['econ.EM', 'econ.GN'] },
+    // A reader past the fade, so a learned pick and a new one weigh apart.
+    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress, coldAdded: ['econ.EM', 'econ.GN'], interactionCount: 300 },
   ).preference;
 
   assertClose(preference({ id: 'a', primaryCategory: 'econ.EM' }), 30);
@@ -324,8 +350,8 @@ function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'late
 
 test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
   const memory = {
-    first: { interestProgress: { 'econ.EM': 0 }, coldAdded: ['econ.EM'] },
-    later: { interestProgress: { 'econ.EM': 1 }, coldAdded: ['econ.EM'] },
+    first: { interestProgress: { 'econ.EM': 0 }, coldAdded: ['econ.EM'], interactionCount: 300 },
+    later: { interestProgress: { 'econ.EM': 1 }, coldAdded: ['econ.EM'], interactionCount: 300 },
   };
   assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
 });

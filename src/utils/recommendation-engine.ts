@@ -362,16 +362,18 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const chosenDirectly = [...chosenAsPrimary, ...(paper._fetchedFor || []).filter(picked)];
   const chosenAsRelated = allCategories.filter(picked);
   const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
-  // An added pick the app is still learning keeps the share its progress
-  // leaves; any other pick fades with the reader's interactions. A card
-  // weighs as the pick its primary category is; one that is none of them
-  // weighs by the most-learned it matches.
+  // An established pick fades with the reader's interactions. An added pick
+  // the app is still learning fades with its progress, from the whole weight
+  // to the established share, so it never weighs less than an established
+  // pick and keeps its weight when it joins them. A card weighs as the pick
+  // its primary category is; one that is none of them weighs by the
+  // most-learned it matches.
   const establishedShare = Math.max(
     weights.minPreferenceShare,
     1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
   );
   const shareOf = (category: string) => (coldAdded.includes(category)
-    ? Math.max(weights.minPreferenceShare, 1 - (interestProgress[category] || 0) * (1 - weights.minPreferenceShare))
+    ? establishedShare + (1 - (interestProgress[category] || 0)) * (1 - establishedShare)
     : establishedShare);
   const preferenceShare = Math.min(1, ...(chosenAsPrimary.length > 0 ? chosenAsPrimary : matched).map(shareOf));
   // What the reader learned about a subject they removed stays stored but
