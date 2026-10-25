@@ -8,6 +8,7 @@ import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichme
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
 import { stripMarkup } from '../src/services/crossref-institution-service.ts';
+import { decodeHtmlEntities, preferTexAlternatives } from '../src/utils/latex.ts';
 import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
@@ -22,8 +23,8 @@ import { fetchArxivPapers } from './paper-sources.ts';
 // What the feed used to add to every page it showed, added once to each stored
 // paper instead: OpenAlex's citations, topics, authors and access; iCite's and
 // Europe PMC's for PubMed papers; Crossref's type for OpenAlex's own records,
-// which drops books; the abstracts OpenAlex lacks. The same mappers and merges
-// the browser ran.
+// which drops books; the abstracts OpenAlex's and PubMed's records lack. The
+// same mappers and merges the browser ran.
 
 const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
 const DAY_MS = 86_400_000;
@@ -126,6 +127,19 @@ async function europePmcRecords(pmids: string[]) {
 
 interface CrossrefRecord { type?: string; abstract?: string }
 
+// Crossref's abstracts are JATS: one `<jats:abstract>` per language when a
+// publisher deposits several, a heading ("Abstract") the card does not show,
+// each formula twice inside `<jats:alternatives>` (TeX and MathML), and XML
+// entities. The text keeps the first abstract, no headings, the TeX spelling.
+const JATS_ABSTRACT = /<(?:[a-z][\w.-]*:)?abstract(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w.-]*:)?abstract\s*>/i;
+const JATS_TITLE = /<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w.-]*:)?title\s*>/gi;
+
+function crossrefAbstractText(jats: unknown) {
+  const deposit = String(jats || '');
+  const first = JATS_ABSTRACT.exec(deposit)?.[0] ?? deposit;
+  return decodeHtmlEntities(stripMarkup(preferTexAlternatives(first.replace(JATS_TITLE, ' ')))).replace(/\s+/g, ' ').trim();
+}
+
 /** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */
 async function crossrefRecords(dois: string[]) {
   const records = new Map<string, CrossrefRecord>();
@@ -144,7 +158,7 @@ async function crossrefRecords(dois: string[]) {
       const doi = normalizeDoi(work?.DOI);
       if (!chunk.includes(doi)) continue;
       const type = typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type) ? work.type : undefined;
-      const abstract = stripMarkup(work?.abstract);
+      const abstract = crossrefAbstractText(work?.abstract);
       records.set(doi, { type, abstract: hasUsableAIAbstract(abstract) ? abstract : undefined });
     }
   }
@@ -234,10 +248,10 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
   enriched = mergeICiteEnrichment(enriched, iCite);
   enriched = mergeEuropePmcEnrichment(enriched, europePmc);
-  // The abstract of an OpenAlex paper listed without one, from the first
-  // source that has it: arXiv's own text for a paper on arXiv, INSPIRE's by
-  // DOI for a physics paper, then Crossref's publisher record, which the type
-  // call below brings, and last Semantic Scholar's. Semantic Scholar is one
+  // The abstract of an OpenAlex or PubMed paper listed without one, from the
+  // first source that has it: arXiv's own text for an OpenAlex paper on arXiv,
+  // INSPIRE's by DOI for an OpenAlex physics paper, then Crossref's publisher
+  // record, which the type call below brings, and last Semantic Scholar's. Semantic Scholar is one
   // batch call a step: it shares a one-a-second allowance with readers'
   // related papers. A source that fails recovers nothing; the paper keeps no
   // abstract and the refresh asks again.
@@ -248,12 +262,15 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     ...(missingDois.length ? await fetchInspireAbstracts(missingDois).catch(() => []) : []),
   ];
   if (recovered.length) enriched = mergeFeedAbstracts(enriched, recovered);
-  const crossrefDois = [...new Set(enriched
+  // Crossref is asked for every OpenAlex paper's type, and for the abstract of
+  // any other paper that awaits one (a PubMed paper's); only an OpenAlex
+  // paper takes the type.
+  const crossrefDois = [...new Set([...enriched
     .filter(paper => paper.sources?.primary === 'openalex')
-    .map(paper => normalizeDoi(paper.doi))
+    .map(paper => normalizeDoi(paper.doi)), ...recoverableAbstractDois(enriched)]
     .filter(doi => doi && !doi.includes(',') && doi.length <= 240))];
   const crossref = crossrefDois.length ? await crossrefRecords(crossrefDois).catch(() => new Map<string, CrossrefRecord>()) : new Map<string, CrossrefRecord>();
-  enriched = enriched.map(paper => withCrossrefType(paper, crossref.get(normalizeDoi(paper.doi))?.type));
+  enriched = enriched.map(paper => withCrossrefType(paper, paper.sources?.primary === 'openalex' ? crossref.get(normalizeDoi(paper.doi))?.type : undefined));
   enriched = mergeFeedAbstracts(enriched, [...crossref].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
   const stillMissing = recoverableAbstractDois(enriched);
   if (stillMissing.length) enriched = mergeFeedAbstracts(enriched, await semanticScholarAbstracts(env, stillMissing).catch(() => []));

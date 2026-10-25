@@ -3,6 +3,7 @@ import type { Paper } from '../models/paper.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { areaKeyForPaper } from './area-accent.ts';
+import { isPlausibleAbstract, typeHasAbstract } from './open-alex-abstract.ts';
 import { normalizeArxivId, normalizeDoi } from './public-navigation.ts';
 
 export function getMissingArxivAbstractIds(papers: Paper[]) {
@@ -22,12 +23,17 @@ export function getMissingAbstractDois(papers: Paper[]) {
     .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
 }
 
+// A paper whose abstract a recovered record may fill: an OpenAlex or PubMed
+// paper without one, unless its type has none (`typeHasAbstract`). Europe PMC
+// mirrors PubMed, so for a PubMed paper the publisher's record is the next source.
+const RECOVERED_PRIMARIES = new Set(['openalex', 'pubmed']);
+const awaitsAbstract = (paper: Paper) => RECOVERED_PRIMARIES.has(paper.sources.primary)
+  && !hasUsableAIAbstract(paper.abstract) && typeHasAbstract(paper.publicationType);
+
 // Crossref and Semantic Scholar hold publisher abstracts in every area, so any
-// OpenAlex paper with a DOI and no abstract can be asked of them.
+// paper awaiting an abstract that has a DOI can be asked of them.
 export function recoverableAbstractDois(papers: Paper[]) {
-  return [...new Set(papers
-    .filter(paper => paper.sources.primary === 'openalex' && !hasUsableAIAbstract(paper.abstract))
-    .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
+  return [...new Set(papers.filter(awaitsAbstract).map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
 }
 
 /**
@@ -54,21 +60,24 @@ const ABSTRACT_SOURCES = [
 ];
 
 /**
- * Recovered abstracts for OpenAlex papers without one: arXiv's by arXiv ID,
- * then INSPIRE's, Crossref's and Semantic Scholar's by DOI. The first source
- * with a usable abstract for a paper gives it, and is recorded in `enrichedBy`.
+ * Recovered abstracts for papers awaiting one: arXiv's by arXiv ID, then
+ * INSPIRE's, Crossref's and Semantic Scholar's by DOI. The first source with
+ * a usable abstract for a paper gives it, and is recorded in `enrichedBy`.
+ * Text that is a placeholder, or too short or too long to be an abstract
+ * (`isPlausibleAbstract`), is not one.
  */
 export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
   const sources = ABSTRACT_SOURCES.map(({ source, key }) => ({
     source,
     key,
     abstracts: new Map(records
-      .filter(record => record.sources?.primary === source && hasUsableAIAbstract(record.abstract))
+      .filter(record => record.sources?.primary === source
+        && hasUsableAIAbstract(record.abstract) && isPlausibleAbstract(record.abstract))
       .map(record => [key(record), record.abstract])),
   }));
   let changed = false;
   const merged = papers.map(paper => {
-    if (paper.sources.primary !== 'openalex' || hasUsableAIAbstract(paper.abstract)) return paper;
+    if (!awaitsAbstract(paper)) return paper;
     const recovered = sources
       .map(({ source, key, abstracts }) => ({ source, abstract: key(paper) ? abstracts.get(key(paper)) : undefined }))
       .find(({ abstract }) => abstract);

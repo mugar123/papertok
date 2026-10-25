@@ -8,6 +8,7 @@ import { enrichPending } from './paper-enrichment.ts';
 import { embedWorks, ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -133,9 +134,12 @@ for (const status of [429, 502]) {
 // ENG-129: a paper OpenAlex lists without an abstract is admitted, and its text
 // is recovered from Crossref's record and then from Semantic Scholar's.
 const NO_ABSTRACT = 'No abstract available.';
+// Long enough to be an abstract (40 to 6,000 characters).
+const FROM_CROSSREF = 'The abstract Crossref holds for this paper, in full.';
+const FROM_S2 = 'The abstract Semantic Scholar holds for this paper, in full.';
 const DAY_MS = 86_400_000;
-const awaitingAbstract = (workId: string, doi: string) => mapOpenAlexWork({
-  id: `https://openalex.org/${workId}`, doi: `https://doi.org/${doi}`, title: `A journal article OpenAlex lists without its abstract (${doi})`, type: 'article', publication_date: '2026-10-01',
+const awaitingAbstract = (workId: string, doi: string, type = 'article') => mapOpenAlexWork({
+  id: `https://openalex.org/${workId}`, doi: `https://doi.org/${doi}`, title: `A journal article OpenAlex lists without its abstract (${doi})`, type, publication_date: '2026-10-01',
 })!;
 
 interface Asked { url: URL; method: string; body: string; apiKey: string | null }
@@ -185,14 +189,14 @@ const semanticScholarCalls = (asked: Asked[]) => asked.filter(request => request
 
 test("a paper without an abstract gets Crossref's, stripped of JATS markup, from the same call that brings its type; its vector is dropped and re-embedded", async t => {
   const asked = recoveryProviders(t, {
-    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/Recovered', type: 'journal-article', abstract: '<jats:p>Real <i>text</i>.</jats:p>' }] } }),
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/Recovered', type: 'journal-article', abstract: '<jats:p>The <i>publisher</i> deposited this abstract with Crossref.</jats:p>' }] } }),
   });
   const { env, db, ids } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/recovered')]);
   const id = ids['openalex:W4410000001'];
   assert.ok(vectorOf(db, id));
   const { workIds } = await enrichPending(env, 50, NOW);
   const { paper } = stored(db)['openalex:W4410000001'];
-  assert.equal(paper.abstract, 'Real text .');
+  assert.equal(paper.abstract, 'The publisher deposited this abstract with Crossref.');
   assert.ok(paper.sources.enrichedBy.includes('crossref'));
   assert.equal(vectorOf(db, id), undefined, 'the title-only vector is dropped');
   assert.equal(await embedWorks(env, workIds, undefined), 1);
@@ -201,17 +205,32 @@ test("a paper without an abstract gets Crossref's, stripped of JATS markup, from
   assert.deepEqual(semanticScholarCalls(asked), []);
 });
 
+test("Crossref's JATS loses its heading and a formula's MathML twin, keeps the first of its languages, and decodes its entities", async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [
+      // Springer's shape.
+      { DOI: '10.5555/springer', type: 'journal-article', abstract: '<jats:title>Abstract</jats:title><jats:p>A measurement at <jats:alternatives><jats:tex-math>$$\\sqrt{s}=13$$</jats:tex-math><mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msqrt><mml:mi>s</mml:mi></mml:msqrt><mml:mo>=</mml:mo><mml:mn>13</mml:mn></mml:math></jats:alternatives> TeV with p &lt; 0.05.</jats:p>' },
+      { DOI: '10.5555/bilingual', type: 'journal-article', abstract: '<jats:abstract xml:lang="en"><jats:title>Abstract</jats:title><jats:p>An English abstract of the &#946; decay, deposited first.</jats:p></jats:abstract><jats:abstract xml:lang="de"><jats:title>Zusammenfassung</jats:title><jats:p>Eine deutsche Zusammenfassung des Beta-Zerfalls, als zweite hinterlegt.</jats:p></jats:abstract>' },
+    ] } }),
+  });
+  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/springer'), awaitingAbstract('W4410000002', '10.5555/bilingual')]);
+  await enrichPending(env, 50, NOW);
+  const works = stored(db);
+  assert.equal(works['openalex:W4410000001'].paper.abstract, 'A measurement at $$\\sqrt{s}=13$$ TeV with p < 0.05.');
+  assert.equal(works['openalex:W4410000002'].paper.abstract, 'An English abstract of the β decay, deposited first.');
+});
+
 test('what Crossref has no abstract for is asked of Semantic Scholar in one batch per step, matched by DOI', async t => {
   const asked = recoveryProviders(t, {
     crossref: () => Response.json({ message: { items: [
-      { DOI: '10.5555/c', type: 'journal-article', abstract: '<jats:p>From Crossref.</jats:p>' },
+      { DOI: '10.5555/c', type: 'journal-article', abstract: `<jats:p>${FROM_CROSSREF}</jats:p>` },
       { DOI: '10.5555/a', type: 'journal-article' },
       { DOI: '10.5555/b', type: 'journal-article' },
     ] } }),
     // In the order asked: the answer for a is another paper's record.
     semanticScholar: () => Response.json([
-      { paperId: 'f1', externalIds: { DOI: '10.9999/another-paper' }, abstract: 'The abstract of another paper.' },
-      { paperId: 'f2', externalIds: { DOI: '10.5555/B' }, abstract: 'From Semantic Scholar.' },
+      { paperId: 'f1', externalIds: { DOI: '10.9999/another-paper' }, abstract: 'The abstract Semantic Scholar holds for another paper.' },
+      { paperId: 'f2', externalIds: { DOI: '10.5555/B' }, abstract: FROM_S2 },
     ]),
   });
   const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/a'), awaitingAbstract('W4410000002', '10.5555/b'), awaitingAbstract('W4410000003', '10.5555/c')]);
@@ -223,8 +242,8 @@ test('what Crossref has no abstract for is asked of Semantic Scholar in one batc
   assert.deepEqual(JSON.parse(batch.body), { ids: ['DOI:10.5555/a', 'DOI:10.5555/b'] });
   assert.equal(batch.apiKey, 's2-test-key');
   const works = stored(db);
-  assert.equal(works['openalex:W4410000003'].paper.abstract, 'From Crossref.');
-  assert.equal(works['openalex:W4410000002'].paper.abstract, 'From Semantic Scholar.');
+  assert.equal(works['openalex:W4410000003'].paper.abstract, FROM_CROSSREF);
+  assert.equal(works['openalex:W4410000002'].paper.abstract, FROM_S2);
   assert.ok(works['openalex:W4410000002'].paper.sources.enrichedBy.includes('semanticscholar'));
   assert.equal(works['openalex:W4410000001'].paper.abstract, NO_ABSTRACT, "another paper's record is not this paper's abstract");
   assert.ok(!works['openalex:W4410000001'].paper.sources.enrichedBy.includes('semanticscholar'));
@@ -267,4 +286,57 @@ test('a spent Semantic Scholar bucket sends nothing and costs nothing', async t 
   assert.equal(work.paper.abstract, NO_ABSTRACT);
   assert.equal(work.enrichedAt, new Date(NOW).toISOString());
   assert.equal(work.misses, 0);
+});
+
+test("a PubMed paper without an abstract gets Crossref's by its DOI", async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/PubMed', type: 'journal-article', abstract: `<jats:p>${FROM_CROSSREF}</jats:p>` }] } }),
+  });
+  const pubmed = mapPubmedSummary({ uid: '42000001', title: 'A journal article PubMed lists without its abstract', articleids: [{ idtype: 'doi', value: '10.5555/PubMed' }], pubdate: '2026 Oct 1', pubtype: ['Journal Article'] });
+  const { env, db } = await recoveryCorpus([pubmed]);
+  await enrichPending(env, 50, NOW);
+  const { paper } = stored(db)['pmid:42000001'];
+  assert.equal(paper.abstract, FROM_CROSSREF);
+  assert.ok(paper.sources.enrichedBy.includes('crossref'));
+});
+
+test('a recovered text too short to be an abstract is not stored, and the paper is still asked of the next source', async t => {
+  const asked = recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/a', type: 'journal-article', abstract: '<jats:p>Graphical abstract</jats:p>' }] } }),
+  });
+  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/a')]);
+  await enrichPending(env, 50, NOW);
+  const { paper } = stored(db)['openalex:W4410000001'];
+  assert.equal(paper.abstract, NO_ABSTRACT);
+  assert.ok(!paper.sources.enrichedBy.includes('crossref'));
+  assert.deepEqual(semanticScholarCalls(asked).map(request => JSON.parse(request.body)), [{ ids: ['DOI:10.5555/a'] }]);
+});
+
+test('a recovered text too long to be an abstract is not stored', async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/a', type: 'journal-article' }] } }),
+    semanticScholar: () => Response.json([{ externalIds: { DOI: '10.5555/a' }, abstract: 'x'.repeat(6001) }]),
+  });
+  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/a')]);
+  await enrichPending(env, 50, NOW);
+  const { paper } = stored(db)['openalex:W4410000001'];
+  assert.equal(paper.abstract, NO_ABSTRACT);
+  assert.ok(!paper.sources.enrichedBy.includes('semanticscholar'));
+});
+
+test('an editorial has no abstract: it is not asked for one, and none it is offered is stored', async t => {
+  const asked = recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [
+      { DOI: '10.5555/editorial', type: 'journal-article', abstract: `<jats:p>${FROM_CROSSREF}</jats:p>` },
+      { DOI: '10.5555/article', type: 'journal-article' },
+    ] } }),
+    semanticScholar: () => Response.json([{ externalIds: { DOI: '10.5555/editorial' }, abstract: FROM_S2 }, null]),
+  });
+  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/editorial', 'editorial'), awaitingAbstract('W4410000002', '10.5555/article')]);
+  await enrichPending(env, 50, NOW);
+  assert.deepEqual(semanticScholarCalls(asked).map(request => JSON.parse(request.body)), [{ ids: ['DOI:10.5555/article'] }]);
+  const { paper } = stored(db)['openalex:W4410000001'];
+  assert.equal(paper.publicationType, 'editorial');
+  assert.equal(paper.abstract, NO_ABSTRACT);
+  assert.deepEqual(paper.sources.enrichedBy.filter(source => source === 'crossref' || source === 'semanticscholar'), []);
 });
