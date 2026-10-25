@@ -231,7 +231,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://uk.search.yahoo.com/': 'organic_search',
     'https://search.yahoo.co.jp/': 'organic_search',
     'https://search.brave.com/': 'organic_search',
-    // Social networks, short links and the YouTube app included.
+    // Social networks, short links and the YouTube and YouTube Music apps included.
     'https://t.co/abc': 'organic_social',
     'https://x.com/': 'organic_social',
     'https://www.x.com/': 'organic_social',
@@ -240,6 +240,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://old.reddit.com/': 'organic_social',
     'https://m.youtube.com/': 'organic_social',
     'android-app://com.google.android.youtube/': 'organic_social',
+    'android-app://com.google.android.apps.youtube.music/': 'organic_social',
     // Other Google products and sites whose name only contains a search or social host.
     'https://docs.google.com/': 'referral',
     'https://mail.google.com/': 'referral',
