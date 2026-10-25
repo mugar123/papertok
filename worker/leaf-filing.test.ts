@@ -191,7 +191,7 @@ test('the shipped rules file the held-out labelled mathematics articles as calib
   const tally = { areaLevel: 0, correct: 0, wrong: 0, unknown: 0 };
   for (const article of articles) {
     const lanes = (store.db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(store.workOf(`id:openalex:${article.id.toLowerCase()}`)) as Array<{ lane: string }>)
-      .map(row => row.lane).filter(lane => lane === 'area:math' || lane in centroids);
+      .map(row => row.lane).filter(lane => lane === 'area:math' || Object.hasOwn(centroids, lane));
     assert.equal(lanes.length, 1, `${article.id} is in the area lane or one leaf, not ${lanes.join(', ')}`);
     const [lane] = lanes;
     const label = article.labels[lane];
