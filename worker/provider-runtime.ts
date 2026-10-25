@@ -34,8 +34,21 @@ export interface OpenAlexBudget {
   newFollow?: boolean;
 }
 
+// A per-account and app-wide allowance per UTC minute, spent by a signed-in
+// reader's cache misses. `namespace` names the ledger object and the subject,
+// so routes with their own allowance do not spend each other's.
+export interface IdentityMinuteQuota {
+  namespace: string;
+  userVariable: keyof WorkerEnv;
+  userFallback: number;
+  globalVariable: keyof WorkerEnv;
+  globalFallback: number;
+}
+
 interface CacheOptions {
   identity?: Pick<VerifiedIdentity, 'uid'> | null;
+  // The allowance `identity` is charged to; absent is the provider routes' own.
+  identityQuota?: IdentityMinuteQuota;
   canonicalParams?: Record<string, unknown>;
   openAlexBudget?: OpenAlexBudget;
   // The answer belongs to one reader: its key must name them, and the browser
@@ -168,8 +181,13 @@ export const SOURCE_CACHE_SECONDS = {
   icite: 24 * 60 * 60,
   huggingFaceResources: 7 * 24 * 60 * 60,
 };
-const DEFAULT_PROVIDER_USER_MINUTE_LIMIT = 60;
-const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
+const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
+  namespace: 'provider',
+  userVariable: 'PROVIDER_USER_MINUTE_LIMIT',
+  userFallback: 60,
+  globalVariable: 'PROVIDER_GLOBAL_MINUTE_LIMIT',
+  globalFallback: 2_000,
+});
 
 // Ceilings for routes whose upstream limit is per provider rather than per user,
 // and which the guest feed reads, so they cannot be gated behind an identity the
@@ -255,22 +273,14 @@ function boundedLimit(value: unknown, fallback: number, maximum: number) {
 // Returns the ledger request it reserved with, not just a verdict: a later gate
 // may refuse this caller after this unit is spent, and the refund has to name
 // this unit -- this minute, this user -- rather than one recomputed later.
-async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], quota: IdentityMinuteQuota, env: WorkerEnv, origin: string): Promise<QuotaGate> {
   if (!identity) return {};
   const minute = new Date().toISOString().slice(0, 16);
   const ledgerRequest = {
-    periodKey: `provider:${minute}`,
-    subject: `provider:${identity.uid}`,
-    subjectLimit: boundedLimit(
-      env.PROVIDER_USER_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_USER_MINUTE_LIMIT,
-      500,
-    ),
-    globalLimit: boundedLimit(
-      env.PROVIDER_GLOBAL_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT,
-      100_000,
-    ),
+    periodKey: `${quota.namespace}:${minute}`,
+    subject: `${quota.namespace}:${identity.uid}`,
+    subjectLimit: boundedLimit(env[quota.userVariable], quota.userFallback, 500),
+    globalLimit: boundedLimit(env[quota.globalVariable], quota.globalFallback, 100_000),
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
@@ -399,7 +409,7 @@ async function reserveGates(origin: string, env: WorkerEnv, options: CacheOption
     const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
     if (minute.error) return minute.error;
     if (minute.reservation) held.push(minute.reservation);
-    const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+    const identity = await reserveProtectedProviderQuota(options.identity || null, options.identityQuota || PROVIDER_IDENTITY_QUOTA, env, origin);
     if (identity.error) return identity.error;
     if (identity.reservation) held.push(identity.reservation);
     const paceError = await awaitSharedPace(ceiling, env, origin);
