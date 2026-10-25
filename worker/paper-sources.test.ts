@@ -808,7 +808,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
   for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
-  assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
+  // With or without an abstract, less PubMed's non-research types, the backfill's day last.
+  const notResearch = ' NOT (editorial[pt] OR letter[pt] OR comment[pt] OR news[pt] OR "published erratum"[pt] OR "retraction of publication"[pt])';
+  assert.ok(terms.every(term => !term.includes('hasabstract') && term.endsWith(`)${notResearch} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
 
   t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
@@ -962,6 +964,8 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  const firstPage = urls.find(url => url.pathname.endsWith('/esearch.fcgi'))!.searchParams.get('term')!;
+  assert.equal(firstPage.includes('hasabstract'), false, 'a record without an abstract is listed too');
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
