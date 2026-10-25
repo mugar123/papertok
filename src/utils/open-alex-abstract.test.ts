@@ -92,6 +92,9 @@ test('an opening that says what supported or funded the work is front matter unl
   for (const text of [
     'This study is supported by data from the Health and Retirement Study and examines retirement timing across cohorts.',
     'This paper is supported by new evidence from 40 field experiments on how households respond to price changes.',
+    // Semantic Scholar text reaches the check without its whitespace collapsed.
+    'This study is supported by  data from the Health and Retirement Study and examines retirement timing across cohorts.',
+    'This study is supported by\n data from the Health and Retirement Study and examines retirement timing across cohorts.',
   ]) {
     assert.equal(isPlausibleAbstract(text), true, text);
   }
@@ -102,6 +105,9 @@ test('an opening that says what supported or funded the work is front matter unl
     'This research was supported by the Intramural Research Program of the National Institutes of Health, National Institute on Aging.',
     'This study was funded by the Wellcome Trust (215123/Z/19/Z).',
     'This research was supported by the U.S. Department of Energy, Office of Science, Basic Energy Sciences.',
+    // A funder whose name starts with Data or Evidence is still a funder.
+    'This work was supported by the Data Science Institute at Columbia University and by NSF grant 1234.',
+    'This research was funded by Evidence Action and the Global Innovation Fund.',
     'The project was funded by the EU and built a cohort of 10,000 children, whom we follow from birth to age 12.',
     // The wordings funders ask grantees to use (NIH, Wellcome, NSF, Horizon 2020, Horizon Europe).
     'Research reported in this publication was supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number R01GM123456.',

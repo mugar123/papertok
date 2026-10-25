@@ -57,7 +57,8 @@ const FRONT_MATTER_OPENINGS = [
   /^(?:\S+\s+){0,12}gratefully acknowledg(?:es?|ed)\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
   /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thanks?|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
-  /^(?:(?:this|the)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|research\s+reported\s+in\s+this\s+(?:publication|article|paper))\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)(?:,?\s+in\s+(?:whole\s*,?\s+or\s+in\s+)?part\s*,?)?\s+by\s+(?!(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/i,
+  // Case-sensitive, so "the Data Science Institute" stays a funder.
+  /^(?:[Tt]h(?:is|e)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|[Rr]esearch\s+reported\s+in\s+this\s+(?:publication|article|paper))\s+(?:was|is|has\s+been)\s+(?:\w+ly\s+)?(?:supported|funded)(?:,?\s+in\s+(?:whole\s*,?\s+or\s+in\s+)?part\s*,?)?\s+by\b(?!\s+(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/,
   /^(?:this|the)\s+(?:work|research|project|study)\s+has\s+received\s+funding\s+from\b/i,
   /^funded\s+by\s+the\s+european\s+union\b/i,
   /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
