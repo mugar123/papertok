@@ -40,13 +40,16 @@ OpenAlex's own classifier repository at a pinned commit:
 
 To try another catalogue, supply an OpenAlex topic array, or a `/topics`
 response with a `results` array collected by `subfield.id` with `mailto`,
-following pagination, and write the outputs elsewhere:
+following pagination, and write all four outputs elsewhere, or the run
+replaces the checked-in notable candidates too:
 
 ```bash
 node scripts/generate-openalex-leaf-topics.ts \
   --catalogue /path/topics.json \
   --out /path/proposed-map.ts \
-  --report /path/coverage.json
+  --report /path/coverage.json \
+  --notable-out /path/proposed-notable-map.ts \
+  --candidates /path/notable-candidates.json
 ```
 
 The report includes every leaf in `category-taxonomy.ts`. For each leaf with
