@@ -1128,6 +1128,30 @@ test("one reader's lookups embed a small share of the day, and the harvest and o
   assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
 });
 
+test("many readers together embed a capped share of the day, and the daily run keeps the rest", async () => {
+  const { binding, db } = testD1();
+  const { AI } = embeddingModel();
+  // 2M estimated tokens a day; each paper below is about 670. A reader's lookups
+  // stop at 50,000 of them, and 41 readers at that share would be 2.05M.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '2000000' } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 3_200 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.3${String(index).padStart(4, '0')}`, arxivId: `2610.3${String(index).padStart(4, '0')}`,
+      title: `Liked paper ${index}`, abstract: `A long abstract of paper ${index}. `.repeat(100), allCategories: [], categories: [],
+    },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const ids = (db.prepare('SELECT id FROM works ORDER BY id').all() as Array<{ id: number }>).map(row => row.id);
+  // Each reader asks for ten new liked papers at a time until the ledger refuses them.
+  let asked = 0;
+  for (let reader = 0; reader < 41; reader += 1) {
+    while (await embedWorks(env, ids.slice(asked, asked + 10), `reader-${reader}`) > 0) asked += 10;
+  }
+  assert.ok(asked > 0 && asked < ids.length - 64, `readers embedded ${asked} of ${ids.length}`);
+  assert.equal(await embedWorks(env, ids.slice(asked, asked + 10), 'reader-late'), 0, "past the readers' share, nobody's likes are embedded");
+  assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
+});
+
 test("runs for new follows embed within their own share of the day, and the daily run keeps the rest", async () => {
   const { binding } = testD1();
   const { AI } = embeddingModel();
