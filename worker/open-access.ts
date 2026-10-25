@@ -10,6 +10,12 @@ const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 // that showed it asked again on every visit; a week would hide the paper's
 // access for days after Unpaywall indexes it, which is usually within one or two.
 const OA_UNRESOLVED_CACHE_SECONDS = 6 * 60 * 60;
+// The misses one caller may send in a UTC minute. The route has no shared
+// ceiling: Unpaywall and Crossref are free, but both throttle by our contact
+// address, so one script could close them for every reader. A feed card asks
+// once per DOI and the browser keeps the answer, so a reader scrolling fast or
+// opening a citation graph stays well under it.
+const OA_CALLER_MINUTE = Object.freeze({ namespace: 'oa', limit: 120 });
 
 /** Unpaywall's record of a DOI, as `/oa` asks for it and `/access` reads it for SFX libraries. */
 export function unpaywallUrl(doi: string, env: WorkerEnv) {
@@ -38,7 +44,7 @@ export async function handleOpenAccess(request: Request, env: WorkerEnv) {
       if ((error as UpstreamError)?.status !== 404) throw error;
     }
     return openAccessFromCrossref(doi);
-  }, { canonicalParams: { doi } });
+  }, { canonicalParams: { doi }, callerMinute: OA_CALLER_MINUTE });
 }
 
 // Unpaywall's shape, so every client already reads it: a Crossref licence on

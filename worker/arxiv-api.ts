@@ -1,8 +1,10 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
+import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { canonicalCacheKey, fetchWithDeadline, serveCached } from './provider-runtime.ts';
+import { releaseRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, paceRetryAfterSeconds } from './upstream-pace.ts';
 
 export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
@@ -21,6 +23,10 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // fresh as one fetched twice -- and with one upstream call every three seconds
 // for the whole app, every call the cache saves is a seat somebody else gets.
 const ARXIV_CACHE_SECONDS = 60 * 60;
+// The misses one caller may send in a UTC minute: half of the twenty seats the
+// beat has, so one address cannot hold every seat. The paper harvest asks
+// in-process (`handleHarvestArxiv`) and spends no caller's allowance.
+const ARXIV_CALLER_MINUTE_LIMIT = 10;
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function safeArxivParam(name: string, rawValue: unknown) {
@@ -40,7 +46,16 @@ function safeArxivParam(name: string, rawValue: unknown) {
   return value;
 }
 
-export async function handleArxiv(request: Request, env: WorkerEnv) {
+export function handleArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, true);
+}
+
+// The route as the paper harvest asks it in-process: no caller to count.
+export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, false);
+}
+
+async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -64,12 +79,34 @@ export async function handleArxiv(request: Request, env: WorkerEnv) {
   // beat: the seat is courtesy towards arXiv, not the protection of a key,
   // and a ledger that is down must not take the source down with it.
   if (env.REQUEST_QUOTA_LEDGER) {
+    // The caller's allowance comes before the beat, so a caller past it takes
+    // no seat. A missing identity fails closed; a ledger that cannot answer is
+    // treated as it is for the beat.
+    const caller = perCaller ? await reserveCallerMinute(request, env, 'arxiv', ARXIV_CALLER_MINUTE_LIMIT) : null;
+    if (caller?.reading.code === 'CALLER_IDENTITY_NOT_CONFIGURED') {
+      return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+      });
+    }
+    if (caller && !caller.reading.accepted && !caller.reading.code) {
+      return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        'retry-after': caller.retryAfter,
+      });
+    }
+    if (caller?.reading.code) console.warn(`arXiv caller allowance unavailable (${caller.reading.code}); not counted`);
     const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
     });
     if (!seat.accepted && !seat.code) {
+      // No seat, no call: the caller's unit goes back.
+      if (caller?.reading.accepted && caller.reservation) {
+        await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
+      }
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
