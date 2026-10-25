@@ -85,9 +85,10 @@ test("the page says the server counts a signed-in reader's requests per account,
   assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
 });
 
-test('the page promises the in-app announcement and says how a dismissal is remembered', () => {
+test('the page promises the in-app announcement to signed-in accounts and says how a dismissal is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  assert.match(html, /the change will be announced in the application itself/);
+  // Guests and accounts created on or after the policy date are not told (nudges.ts privacyNoticeOwed).
+  assert.match(html, /the change will be announced in the application to signed-in accounts created before that date/);
   assert.match(html, /remembers that version, separately for each account/);
 });
 

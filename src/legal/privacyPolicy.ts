@@ -1,8 +1,9 @@
 /**
  * The privacy policy version the app announces. privacy.html promises that a
  * meaningful change updates its "Last updated" date and is announced in the
- * app; NudgeHost shows PRIVACY_POLICY_CHANGE to each reader until they dismiss
- * this PRIVACY_POLICY_VERSION.
+ * app to signed-in accounts created before that date; NudgeHost shows
+ * PRIVACY_POLICY_CHANGE to each of them until they dismiss this
+ * PRIVACY_POLICY_VERSION.
  *
  * Whoever makes such a change to privacy.html sets the version to its new date
  * and rewrites the change to say what changed since the previous version, in

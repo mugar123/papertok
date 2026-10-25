@@ -125,8 +125,8 @@ a session can finish, lints the files changed on the branch and in the working t
 - Explain any API quota, caching, privacy, or fallback implications.
 - When a change to `privacy.html` needs announcing, update its "Last updated" date and set
   `PRIVACY_POLICY_VERSION` and the one-sentence summary in `src/legal/privacyPolicy.ts`. The
-  app shows that summary to each reader until they dismiss it; accounts created after that
-  date do not see it.
+  app shows that summary to each signed-in account until it dismisses it. Guests and accounts
+  created on or after that date do not see it.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.
