@@ -15,8 +15,8 @@ export interface VerifiedIdentity {
 interface LookupUser {
   localId?: string;
   email?: unknown;
-  emailVerified?: unknown;
   displayName?: unknown;
+  emailVerified?: unknown;
   providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
 }
 

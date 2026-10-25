@@ -1,11 +1,11 @@
 type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { html: string; text: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
-import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
-import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -59,6 +59,7 @@ function jsonResponse(status: number, body: unknown) {
     status,
     ok: status >= 200 && status < 300,
     json: async <T>() => body as T,
+    text: async () => JSON.stringify(body),
   } as Response;
 }
 
@@ -3416,6 +3417,20 @@ test('the test email is the same edition, says it is a test, and keeps its own s
 
 const PROJECT_ID = 'papertok-168df';
 
+async function withIdentityCache<Result>(run: () => Promise<Result>): Promise<Result> {
+  const original = (globalThis as TestGlobals).caches;
+  const entries = new Map<string, Response>();
+  (globalThis as TestGlobals).caches = { default: {
+    match: async request => entries.get(String(request instanceof Request ? request.url : request))?.clone(),
+    put: async (request, response) => { entries.set(String(request instanceof Request ? request.url : request), response.clone()); },
+  } };
+  try { return await run(); }
+  finally {
+    if (original === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = original;
+  }
+}
+
 function identityEnvironment(kv: KVNamespace) {
   return { ...emailEnvironment(kv), FIREBASE_WEB_API_KEY: 'firebase-web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 }
@@ -3458,11 +3473,11 @@ async function readPreferencesAs(account: { localId: string; email: string; emai
   const restoreCache = stubIdentityCache();
   const restore = stubFetch(lookupResponse(account));
   try {
-    return await handleEmailNotificationRequest(
+    return await withIdentityCache(() => handleEmailNotificationRequest(
       preferencesRequest(),
       identityEnvironment(createMemoryKv()),
       '/notifications/preferences',
-    );
+    ));
   } finally {
     restore();
     restoreCache();
@@ -3516,11 +3531,11 @@ test('reports a subscription saved as daily as weekly', async () => {
   const restoreCache = stubIdentityCache();
   const restore = stubFetch(lookupResponse({ localId: 'reader', email: 'reader@example.com', emailVerified: true }));
   try {
-    const { preferences } = await handleEmailNotificationRequest(
+    const { preferences } = await withIdentityCache(() => handleEmailNotificationRequest(
       preferencesRequest(),
       identityEnvironment(kv),
       '/notifications/preferences',
-    );
+    ));
     assert.equal(preferences.enabled, true);
     assert.equal(preferences.frequency, 'weekly');
   } finally {
@@ -3570,11 +3585,11 @@ test('gives the identity lookup and both provider probes a deadline', async () =
   };
 
   try {
-    await handleEmailNotificationRequest(
+    await withIdentityCache(() => handleEmailNotificationRequest(
       preferencesRequest(),
       identityEnvironment(createMemoryKv()),
       '/notifications/preferences',
-    );
+    ));
     await checkEmailProviderHealth(emailEnvironment(createMemoryKv()));
     await checkEmailProviderHealth({ RESEND_API_KEY: 're_test-key', RESEND_FROM_EMAIL: 'hello@papertok.app' });
 
@@ -3872,4 +3887,29 @@ test('a source that runs out of deadline is still reported as a TIMEOUT', async 
     fetchDigestSource('https://upstream.example/', {}, { source: 'openalex', timeoutMs: 25 }),
     error => (error as Error & { code?: string; status?: number }).code === 'EMAIL_SOURCE_OPENALEX_TIMEOUT',
   ));
+});
+
+
+test('notification authentication screens junk locally and reuses a verified identity for repeated requests', async () => {
+  let lookups = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    lookups += 1;
+    return new Response(JSON.stringify({ users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true, displayName: 'Reader' }] }));
+  };
+  try {
+    await withIdentityCache(async () => {
+      const env = identityEnvironment(createMemoryKv());
+      await assert.rejects(() => handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
+        headers: { authorization: 'Bearer junk' },
+      }), env, '/notifications/preferences'), error => (error as { code: string; status: number }).code === 'EMAIL_AUTH_REQUIRED' && (error as { status: number }).status === 401);
+      assert.equal(lookups, 0);
+      const request = preferencesRequest();
+      const first = await handleEmailNotificationRequest(request, env, '/notifications/preferences');
+      const second = await handleEmailNotificationRequest(request, env, '/notifications/preferences');
+      assert.equal(first.preferences.email, 'reader@example.com');
+      assert.equal(second.preferences.email, 'reader@example.com');
+      assert.equal(lookups, 1);
+    });
+  } finally { globalThis.fetch = originalFetch; }
 });

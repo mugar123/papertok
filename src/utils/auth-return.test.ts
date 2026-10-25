@@ -31,7 +31,12 @@ test('a new door forgets the destination a bounced guest left behind', () => {
 });
 
 test('only an in-app path is honoured as a destination', () => {
-  for (const unsafe of ['//evil.example', 'https://evil.example/x', 'search?q=x', '/login', '/login?returnTo=/lists', '/onboarding', null, undefined, 42]) {
+  for (const unsafe of [
+    '//evil.example', 'https://evil.example/x', 'search?q=x', '/login', '/login?returnTo=/lists', '/onboarding', null, undefined, 42,
+    // The browser drops the tab or newline, or reads the backslash as a slash,
+    // and resolves each of these to //evil.example.
+    '/\t/evil.example', '/\n/evil.example', '/\r\\evil.example', '/\\evil.example',
+  ]) {
     offerAuthReturn(unsafe);
     assert.equal(takeAuthReturn(), null, String(unsafe));
     assert.equal(isInAppPath(unsafe), false, String(unsafe));
