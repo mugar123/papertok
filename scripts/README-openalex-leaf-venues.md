@@ -82,11 +82,10 @@ A venue lane's article reaches its leaf's readers. When its area's lane
 takes it out of the area lane, as it does a topic lane's, and the readers of
 the area's other leaves, who got it there, no longer see it. That costs most
 the leaves of an area with an area lane and no topic or venue lane of their
-own: econ.GN loses the econ.EM and econ.TH journals' articles; q-fin.PM,
-q-fin.PR, q-fin.RM, q-fin.TR, q-fin.ST and q-fin.CP lose those of the Journal
-of Finance, the Journal of Financial Economics, the Review of Financial
-Studies and the Review of Finance (q-fin.GN) and of the q-fin.MF journals;
-cs.DS, cs.GT, math.AG and math.GR lose their areas' venue journals'.
+own: q-fin.PM, q-fin.PR, q-fin.RM, q-fin.TR, q-fin.ST and q-fin.CP lose those
+of the Journal of Finance, the Journal of Financial Economics, the Review of
+Financial Studies and the Review of Finance (q-fin.GN) and of the q-fin.MF
+journals; cs.DS, cs.GT, math.AG and math.GR lose their areas' venue journals'.
 
 Each night a lane reads up to 3 pages of 200, newest first, and stops after a
 page that is not full; its first night reads up to 5. Unlike a topic lane, it
@@ -95,21 +94,21 @@ of Fluids article of a month's issue, about 390, by the issue's first day and
 lists a tied date oldest record first, so an article indexed late in the month
 comes after the rest of its issue. A lane with under 200 articles in 90 days
 asks once a night, one with under 400 twice. From the curators' 90-day counts,
-the 79 lanes ask about 132 list calls a night, 237 at most, and 151 on their
+the 80 lanes ask about 133 list calls a night, 240 at most, and 152 on their
 first night. cs.SY and eess.SY send the same request, which the relay answers
 from its store the second time. The lanes spend from the 3,000 of the
 harvest's 4,000 units a day that the category lanes share with the weekly
 notable lanes: with the topic lanes (195 at most), the area lanes (9) and the
-working-paper series (4), a night's category calls are at most 445, and the
+working-paper series (4), a night's category calls are at most 448, and the
 notable lanes add 39 one night a week.
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
 which spend what the lanes leave of the nightly run's 3,700 units. Every 14
 days the refresh asks OpenAlex again for a stored paper's counts, 50 papers a
-call: the lanes' about 274 new articles a day, kept 90 days, come to about 33
+call: the lanes' about 275 new articles a day, kept 90 days, come to about 33
 calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
-Crossref for its DOI's type, 20 DOIs a call: about 95 calls a night, and about
-1,080 for the about 21,600 articles of the lanes' first night, which the
+Crossref for its DOI's type, 20 DOIs a call: about 96 calls a night, and about
+1,080 for the about 21,700 articles of the lanes' first night, which the
 embedding passes also take.
 
 ## The 2026-10-23 and 2026-10-24 samples
@@ -128,9 +127,14 @@ request held every work in the window. q-fin.PM, q-fin.PR, q-fin.RM and
 q-fin.TR have no curated list: their samples asked for the candidate journals
 the curator weighed and did not recommend, and record why those leaves have no
 lane.
-Economics and finance were sampled with and without `has_abstract:true`; their
-evidence is the sample asked as the lane asks. Every other sample asked
-`has_abstract:true`, so its labeller saw only articles with an abstract; the
+Economics and finance were sampled with and without `has_abstract:true`. The
+evidence of econ.EM, econ.TH, q-fin.GN and q-fin.MF is the sample asked as the
+lane asks. econ.GN's is the sample with `has_abstract:true`, as the other areas'
+were (Pablo, 2026-10-24): asked as its lane asks, its 15 newest were 9 on
+target, three doubted (two of them Journal of Political Economy articles
+without an abstract), and the leaf failed; with `has_abstract:true` they were
+11 on target, one doubted. The other areas' samples and econ.GN's asked
+`has_abstract:true`, so their labellers saw only articles with an abstract; the
 report marks those leaves `withAbstractOnly`.
 
 One labeller per group of areas (economics and finance; physics; mathematics;
@@ -142,7 +146,7 @@ labels are blind to the curators' calls, not to the venue.
 
 | Area | Leaves with a lane | Leaves sampled without one |
 | --- | --- | --- |
-| Economics and finance | econ.EM, econ.TH, q-fin.GN, q-fin.MF | econ.GN 9 of 15 (11 of 15 with `has_abstract:true`; two articles without an abstract were doubted), q-fin.RM 10 of 15 from the Journal of Risk and Insurance and Insurance: Mathematics and Economics, which its curator excluded as insurance and actuarial journals, q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
+| Economics and finance | econ.EM, econ.GN, econ.TH, q-fin.GN, q-fin.MF | q-fin.RM 10 of 15 from the Journal of Risk and Insurance and Insurance: Mathematics and Economics, which its curator excluded as insurance and actuarial journals, q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
 | Physics | all 24 sampled | none |
 | Mathematics | 12 | math.AG 9 of 15, math.GR 7 of 15 |
 | Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles with an abstract in 90 days, all on target (14 in all), cs.GT 11 with an abstract, 9 on target (24 in all): their samples asked `has_abstract:true`, which their lanes would not |
@@ -159,8 +163,8 @@ curator chose: it leaves out the 43 results of large experimental
 collaborations JHEP published in the 90 days, and its 15 newest were the same
 with and without it.
 
-The passing leaves' samples asked for 433 sources. Their lanes ask for 242;
-the other 191 had no article on target among their leaf's 15 newest. 37 of
+The passing leaves' samples asked for 448 sources. Their lanes ask for 246;
+the other 202 had no article on target among their leaf's 15 newest. 37 of
 them are conferences. 32 of those had no work in the 90 days, since they
 publish their proceedings once a year (AAAI, ACL, NeurIPS, CHI and SIGIR among
 them); none can enter a lane before a new sample reaches its proceedings. Four
@@ -169,13 +173,27 @@ of their articles was labelled: IJCAI (cs.AI, 957 articles), KDD (cs.LG,
 1,216), ICIP (eess.IV, 629) and RecSys (cs.IR, 284). The Design Automation
 Conference (eess.electro, 307) had one, off target. The lanes ask for three
 conferences: ICPP (cs.DC), SPLASH (cs.PL) and PIMRC, eess.telecom's only
-source. Two journals entered on a
-sample of their own: Physics of Fluids (14 of 15) and Nonlinear Dynamics (11
-of 15). The Journal of the Acoustical Society of America (9 of 15) did not.
+source. Three journals entered on a
+sample of their own: Physics of Fluids (14 of 15), Nonlinear Dynamics (11 of
+15) and the American Economic Review (11 of 15). The Journal of the Acoustical
+Society of America (9 of 15) did not.
 Nor did the Journal of Financial and Quantitative Analysis, absent from
 q-fin.GN's 15 newest: it published 8 articles in the 90 days, too few for a
 sample of its own, and the one its curator took (6 of 8 on target) asked
 `has_abstract:true` where q-fin.GN's sample did not, so it is not recorded.
+
+econ.GN's lane asks for four of its curator's 15 journals: the Review of
+Economics and Statistics, The Quarterly Journal of Economics and The Economic
+Journal, each with an article on target among its 15 newest, and the American
+Economic Review. The Journal of the European Economic Association and The
+Review of Economic Studies were among the 15 newest with none on target. The
+other nine were not reached. Six of them had a sample of their own, none a full
+page: the four American Economic Journals, American Economic Review: Insights
+and the Journal of Monetary Economics held 4 to 14 articles with an abstract in
+the 90 days, and those samples are not recorded. The Journal of Political
+Economy and the Journal of International Economics, whose articles mostly have
+no abstract in OpenAlex, had none, and OpenAlex has no Econometrica work since
+March.
 
 Without `has_abstract:true`, a lane also brings the articles its labeller
 could not see. From the curators' counts, more than half of the 90-day
