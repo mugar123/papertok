@@ -6,27 +6,15 @@ type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
 interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => Promise<unknown> }
 
-// Two transports with different jobs. Vercel Web Analytics counts visits,
-// pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
-// page views. PostHog's EU cloud, loaded on the first event, receives the
-// product events below and the app's error reports. This file's actual subject
-// is what both share: the consent gate, the event registry, and the path
-// normalizer that keeps an identifier out of an anonymous report.
-//
-// Three levels since 2026-10-20. Anonymous is the default and needs nobody's
-// permission: no cookies, a daily hash, identifiers stripped. Detailed is
-// opt-in from the consent banner or Settings: PostHog keeps an identity in the
-// browser, links it to the account, and records sessions, clicks and errors,
-// so what each person does can be followed over time. Anonymous error reports
-// keep the error type, code locations and fixed labels, never the message.
-// Denied sends nothing.
+// Vercel counts page views; PostHog measures repeat product use with a
+// persistent browser identifier, linked to the account on sign-in. Both
+// respect the browser's analytics preference. The event allowlist keeps
+// account details, free text and raw URLs out of product analytics.
 
 export const ANALYTICS_CONSENT_KEY = 'papertok_analytics_consent';
 export const ANALYTICS_CONSENT_COOKIE_KEY = 'papertok_analytics_decision';
 export const ANALYTICS_CONSENT = Object.freeze({
-  DETAILED: 'detailed',
-  // Stored as 'granted' since before there was a detailed level.
-  ANONYMOUS: 'granted',
+  ENABLED: 'enabled',
   DENIED: 'denied',
 });
 
@@ -145,9 +133,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
 });
 
-// A `detail` field names the paper, search or entity. It travels only for a
-// reader who opted in to detailed analytics, and is dropped otherwise.
-const PAPER_DETAIL = { paper_id: 'detail', paper_title: 'detail' };
+const PAPER_DETAIL = { paper_id: 'identifier' };
 
 // The registry of product events: an event name the app emits must be a key
 // here. `trackProductEvent` only accepts these keys, so an unregistered name
@@ -159,8 +145,8 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   acquisition_view: { acquisition_channel: 'acquisition_channel', language: 'language', activation_age: 'activation_age' },
   paper_view: { surface: 'surface', position: 'boundedNumber', ...PAPER_DETAIL },
   paper_open: { surface: 'surface', destination: 'destination', position: 'boundedNumber', ...PAPER_DETAIL },
-  search_performed: { search_type: 'search_type', result_count: 'boundedNumber', has_results: 'boolean', query: 'detail' },
-  follow_change: { entity_type: 'entity_type', action: 'action', surface: 'surface', entity_id: 'detail', entity_name: 'detail' },
+  search_performed: { search_type: 'search_type', result_count: 'boundedNumber', has_results: 'boolean' },
+  follow_change: { entity_type: 'entity_type', action: 'action', surface: 'surface', entity_id: 'identifier' },
   save_change: { action: 'action', surface: 'surface', ...PAPER_DETAIL },
   share: { method: 'method', content_type: 'content_type', surface: 'surface' },
   login: { method: 'method' },
@@ -244,7 +230,7 @@ function readAnalyticsConsentCookie() {
     const entry = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
     if (!entry) return null;
     const value = decodeURIComponent(entry.slice(prefix.length));
-    return Object.values(ANALYTICS_CONSENT).includes(value as Consent) ? value : null;
+    return normalizeStoredConsent(value);
   } catch {
     return null;
   }
@@ -261,26 +247,28 @@ function persistAnalyticsConsentCookie(value: string) {
   }
 }
 
-// The choice somebody made, or null when nobody has: that is what puts the
-// consent banner up.
-export function readStoredAnalyticsConsent(storage?: AnalyticsStorage | null) {
+function normalizeStoredConsent(value: string | null): Consent | null {
+  if (value === 'granted' || value === ANALYTICS_CONSENT.DENIED) return ANALYTICS_CONSENT.DENIED;
+  if (value === 'detailed' || value === ANALYTICS_CONSENT.ENABLED) return ANALYTICS_CONSENT.ENABLED;
+  return null;
+}
+
+function readStoredAnalyticsConsent(storage?: AnalyticsStorage | null) {
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   try {
     const value = targetStorage?.getItem(ANALYTICS_CONSENT_KEY);
-    if (Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return value as Consent;
+    const consent = normalizeStoredConsent(value ?? null);
+    if (consent) return consent;
   } catch {
     // The cookie below preserves the choice when browser storage is unavailable.
   }
-  return storage === undefined ? readAnalyticsConsentCookie() as Consent | null : null;
+  return storage === undefined ? readAnalyticsConsentCookie() : null;
 }
 
-// Anonymous unless the reader has said otherwise: neither transport sets
-// cookies or identifies anybody at that level (Vercel Web Analytics by design,
-// PostHog in cookieless mode, see POSTHOG_OPTIONS). The default is never
-// written down -- a stored value means somebody chose it, and an empty store
-// IS the default.
+// A previous anonymous-only choice did not permit persistent tracking.
+// Preserve it as disabled rather than upgrading it to identified analytics.
 export function readAnalyticsConsent(storage?: AnalyticsStorage | null): Consent {
-  return readStoredAnalyticsConsent(storage) ?? ANALYTICS_CONSENT.ANONYMOUS;
+  return readStoredAnalyticsConsent(storage) ?? ANALYTICS_CONSENT.ENABLED;
 }
 
 export function persistAnalyticsConsent(value: string, storage?: AnalyticsStorage | null) {
@@ -377,8 +365,7 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     if (type === 'seconds' && Number.isFinite(value)) {
       safeParams[key] = Math.min(MAX_TRACKED_SECONDS, Math.max(0, Math.round(value as number)));
     }
-    // Which paper, which search: only for a reader who opted in to detailed analytics.
-    if (type === 'detail' && consent === ANALYTICS_CONSENT.DETAILED && typeof value === 'string' && value.trim()) {
+    if (type === 'identifier' && consent === ANALYTICS_CONSENT.ENABLED && typeof value === 'string' && value.trim()) {
       safeParams[key] = value.trim().slice(0, 300);
     }
     if (CATEGORIES[type]?.has(value as string)) safeParams[key] = value;
@@ -386,14 +373,8 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
   }, {});
 }
 
-/**
- * Anyone who granted consent before the move to Vercel is carrying `_ga` and
- * `_ga_<id>` cookies with a two-year expiry, set by a measurement library this
- * app no longer loads. Nothing reads them any more and nothing else will ever
- * clear them, so they would sit in the browser until 2028 as the only remaining
- * trace of GA4. Neither current transport sets cookies of its own, which is why
- * this is a one-off cleanup on mount rather than part of withdrawing consent.
- */
+// The removed GA4 client left long-lived cookies behind. No active SDK owns
+// them now, so remove them on mount independently of the analytics preference.
 export function removeLegacyGoogleAnalyticsCookies() {
   if (typeof document === 'undefined') return;
   document.cookie.split(';').forEach(cookie => {
@@ -439,59 +420,50 @@ const POSTHOG_PROJECT_TOKEN = 'phc_BNGdTudnBx4BoLJFLChGGbCzsBtNLagJJ5vgiVNha9yy'
 // that share vercel.json, and a local server has nothing behind the proxy.
 const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
 
-/**
- * One configuration for both levels; consent decides which one runs.
- * `on_reject` with `opt_out_capturing_by_default` keeps PostHog cookieless
- * until `opt_in_capturing()`: no cookies or storage, and PostHog's servers tell
- * visits apart with a hash of IP and browser whose salt changes every day. It
- * needs "Cookieless server hash mode" on in the project settings, or PostHog
- * drops every anonymous event. Opting in gives it a persistent identity, and
- * starts session replay, which PostHog only runs outside cookieless mode.
- * Autocapture, heatmaps, page leaves, exceptions and web vitals run at both
- * levels. `sanitizeAnalyticsCapture` drops all but exceptions from anonymous
- * traffic, and reduces those to the error type, code locations and fixed labels.
- * Requests and PostHog's lazily loaded scripts go to our own origin, which
- * vercel.json rewrites to PostHog's EU hosts.
- */
+// Start opted out so init cannot emit anything before our stored preference
+// is applied. Persistence then lets repeat visits retain the same identity.
 const POSTHOG_OPTIONS: Partial<PostHogConfig> = {
   api_host: '/ingest',
   ui_host: 'https://eu.posthog.com',
-  cookieless_mode: 'on_reject',
+  persistence: 'localStorage+cookie',
   opt_out_capturing_by_default: true,
+  opt_out_persistence_by_default: true,
+  advanced_disable_flags: true,
+  disable_surveys: true,
+  disable_product_tours: true,
+  disable_conversations: true,
+  save_campaign_params: false,
+  save_referrer: false,
   person_profiles: 'identified_only',
   // Page views are sent by `trackPageView`, one per pathname. PostHog's own
   // would read the address bar on every history change.
   capture_pageview: false,
-  capture_pageleave: true,
-  autocapture: true,
-  capture_heatmaps: true,
-  capture_dead_clicks: true,
+  capture_pageleave: false,
+  autocapture: false,
+  capture_heatmaps: false,
+  capture_dead_clicks: false,
   capture_exceptions: true,
-  capture_performance: { web_vitals: true },
-  // Fields are masked in replays: they hold searches, notes and emails.
-  session_recording: { maskAllInputs: true },
+  capture_performance: false,
+  disable_session_recording: true,
   before_send: sanitizeAnalyticsCapture,
 };
 
 /**
- * What survives of PostHog's own properties: the ones it needs to accept and
- * hash a cookieless event (the server drops one without `$raw_user_agent` or
- * `$host`, and deletes the user agent once hashed), and a coarse picture of the
- * device. The rest of what the SDK attaches is dropped, and some of it would
- * carry the person or the paper: `title` is a paper's title or a person's name
- * on public pages, `$pathname` and `$prev_pageview_pathname` are raw paths,
- * `ph_keyword` is what the reader typed into a search engine, and `$timezone`
- * says roughly where they are (without it, PostHog's daily hash turns over at
- * the project's midnight instead of the reader's). An allowlist, so a property
- * a future SDK version adds stays home until someone decides otherwise.
+ * Keep the SDK's identity and session fields so identify can join guest use
+ * to an account. Strip automatic page metadata and person properties: these
+ * may contain searches, credentials or names.
  */
 const POSTHOG_PROPERTIES = new Set([
   'token',
   'distinct_id',
   '$cookieless_mode',
   '$process_person_profile',
-  '$raw_user_agent',
   '$host',
+  '$device_id',
+  '$user_id',
+  '$anon_distinct_id',
+  '$session_id',
+  '$window_id',
   '$insert_id',
   '$time',
   '$lib',
@@ -504,19 +476,14 @@ const POSTHOG_PROPERTIES = new Set([
 ]);
 
 /**
- * The last step before an event leaves (`before_send`). A reader who opted in
- * to detailed analytics sends the event as PostHog built it. Otherwise it is
- * rebuilt from the allowlist above, the event's own parameter schema (or, for an
- * error report, `sanitizeExceptionProperties`) and the normalized URL, and
- * dropped when it is neither a page view, an error nor a registered event, or
- * when the reader has turned analytics off.
+ * Apply the event and property allowlists to every capture, including SDK
+ * identity events. Error messages and raw URLs can contain private content.
  */
 export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()): CaptureResult | null {
   if (!capture || consent === ANALYTICS_CONSENT.DENIED) return null;
-  if (consent === ANALYTICS_CONSENT.DETAILED) return capture;
   const { event, properties = {} } = capture;
   const exception = event === '$exception' ? sanitizeExceptionProperties(properties) : null;
-  if (event !== '$pageview' && !exception && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
+  if (event !== '$pageview' && event !== '$identify' && !exception && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
 
   const currentUrl = sanitizeAnalyticsEventUrl(properties.$current_url);
   const kept = Object.fromEntries(
@@ -559,6 +526,7 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
  * while the browser says it is offline: a failure there would only reload.
  */
 function loadAnalyticsClient() {
+  if (!analyticsClient && globalThis.navigator?.onLine === false) return Promise.resolve(null);
   analyticsClient ??= import('posthog-js')
     .then(({ posthog }) => {
       startAnalyticsClient(posthog, readAnalyticsConsent());
@@ -568,37 +536,36 @@ function loadAnalyticsClient() {
   return analyticsClient;
 }
 
-type ConsentControls = Pick<PostHog, 'has_opted_in_capturing' | 'opt_in_capturing' | 'opt_out_capturing'>;
+type ConsentControls = Pick<PostHog, 'has_opted_in_capturing' | 'opt_in_capturing' | 'opt_out_capturing' | 'reset'>;
 
-// Starts a freshly loaded PostHog: cookieless and anonymous, then opted in only
-// when the reader chose detailed analytics. The client arrives from the lazy
-// import above, like the one `applyConsent` receives.
 export function startAnalyticsClient(client: ConsentControls & { init(token: string, config: Partial<PostHogConfig>): unknown }, consent: Consent) {
   client.init(POSTHOG_PROJECT_TOKEN, POSTHOG_OPTIONS);
   applyConsent(client, consent);
 }
 
-// PostHog keeps its own copy of the choice; this keeps it equal to ours. Both
-// transitions reset PostHog's identity (posthog-js does it on the switch), so
-// nothing recorded at one level is linked to the other.
+// Do not opt in again on reload: the SDK must retain its browser identity.
 function applyConsent(client: ConsentControls, consent: Consent) {
-  const detailed = consent === ANALYTICS_CONSENT.DETAILED;
-  if (detailed === client.has_opted_in_capturing()) return;
-  if (detailed) client.opt_in_capturing({ captureEventName: false });
-  else client.opt_out_capturing();
+  const enabled = consent === ANALYTICS_CONSENT.ENABLED;
+  if (enabled === client.has_opted_in_capturing()) return;
+  if (enabled) client.opt_in_capturing({ captureEventName: false });
+  else {
+    client.reset(true);
+    client.opt_out_capturing();
+  }
 }
 
-export interface AnalyticsUser { uid: string; email?: string | null; name?: string | null; signInProviders?: string[] }
+export interface AnalyticsUser { uid: string }
+let identityVersion = 0;
 
 /**
- * Links a detailed-analytics session to the account, and unlinks it on sign
- * out so the next person on this browser starts as somebody new. Anonymous
- * analytics never sees the account: this returns before loading anything.
+ * Reset on sign-out and account switches so one account cannot inherit
+ * another account's activity. The SDK owns the persistent browser identity.
  */
 export async function identifyAnalyticsUser(user: AnalyticsUser | null) {
-  if (readAnalyticsConsent() !== ANALYTICS_CONSENT.DETAILED || !canSendAnalytics()) return;
+  const version = ++identityVersion;
+  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
   const client = await loadAnalyticsClient();
-  if (!client || !client.has_opted_in_capturing()) return;
+  if (version !== identityVersion || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !client || !client.has_opted_in_capturing()) return;
   // PostHog's own persisted state, so a sign-out in another tab counts too.
   const identifiedAs = client.get_property('$user_state') === 'identified' ? client.get_distinct_id() : null;
   if (identifiedAs && identifiedAs !== user?.uid) {
@@ -607,11 +574,7 @@ export async function identifyAnalyticsUser(user: AnalyticsUser | null) {
     client.opt_in_capturing({ captureEventName: false });
   }
   if (!user || identifiedAs === user.uid) return;
-  client.identify(user.uid, {
-    email: user.email ?? undefined,
-    name: user.name ?? undefined,
-    sign_in_providers: user.signInProviders,
-  });
+  client.identify(user.uid);
 }
 
 function canSendAnalytics() {
@@ -624,7 +587,6 @@ function canSendAnalytics() {
 // for an event that was dropped.
 async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
   if (!canSendAnalytics()) return false;
-  if (!analyticsClient && globalThis.navigator?.onLine === false) return false;
   const client = await loadAnalyticsClient();
   return Boolean(client?.capture(eventName, properties));
 }
@@ -640,7 +602,7 @@ export async function trackPageView(pathname: string) {
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
   // Read now: by the time the library has loaded, the address may be the next page's.
-  const url = consent === ANALYTICS_CONSENT.DETAILED ? globalThis.location?.href : sanitizeAnalyticsLocation(pathname);
+  const url = sanitizeAnalyticsLocation(pathname);
   return sendAnalyticsEvent('$pageview', { $current_url: url });
 }
 

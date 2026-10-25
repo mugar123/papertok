@@ -8,7 +8,7 @@ import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 
 // Synthetic catalogue and article samples; these do not establish live precision.
 const catalogue = [
-  { id: 'T19001', display_name: 'Artificial Intelligence Planning', keywords: ['Artificial Intelligence'], field: { id: '17' } },
+  { id: 'T19001', display_name: 'Artificial Intelligence Planning', keywords: ['Artificial Intelligence'], field: { id: '17' }, subfield: { id: '1702' } },
   { id: 'T19002', display_name: 'Cosmology', keywords: ['Cosmology'], field: { id: '31' } },
   { id: 'T19003', display_name: 'Economic Theory', keywords: ['Economics'], field: { id: '20' } },
   { id: 'T19004', display_name: 'Artificial Intelligence in Medicine', keywords: ['Artificial Intelligence'], field: { id: '27' } },
