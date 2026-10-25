@@ -851,11 +851,14 @@ for (const [minutes, order] of fallbackOrders) {
     const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
     await ask(request(0, []));
     await ask(request(1, ids(papers.slice(0, 15))));
+    // A follow change before the corpus drops any work walks the order to its
+    // end, so the page after the drop changes only the ids the order keeps.
+    const continued = request(0, ids(papers), { continues: true });
+    await ask(continued);
     const workId = (arxivId: string) => (db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number }).work_id;
     const gone = new Set(papers.slice(0, 15).map(item => workId(item.id)));
     for (const item of papers.slice(0, 15)) removeWork(db, item.id);
     t.mock.timers.tick(minutes * 60_000);
-    const continued = request(0, ids(papers), { continues: true });
     assert.deepEqual(ids((await ask(continued)).papers), ids(papers.slice(15, 30)));
     assert.deepEqual(ids((await ask(request(0, ids(papers)), 'reader-2')).papers), ids(papers.slice(15, 30)), 'as without the kept order');
     // The works whose rows the next page reads: the kept order no longer names the dropped ones.
