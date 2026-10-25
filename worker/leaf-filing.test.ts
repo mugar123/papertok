@@ -1,8 +1,9 @@
 import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { evaluateLeafFiling, fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
+import { LEAF_FILING_RULES, evaluateLeafFiling, fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 import { ingestPapers, parseFeedRequest, quantize, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
@@ -94,7 +95,7 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   await ingestPapers(store.env, stray.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
   stray.forEach((paper, index) => store.setVector(`id:${paper.id.toLowerCase()}`, vector({ 5: 1 }, 300 + index)));
 
-  // Only filing reads them, and only in an area with a rule: the shipped rules have none.
+  // Only filing reads them, and only in an area with a rule: the shipped rules have none for physics.
   assert.equal(await storeLeafCentroids(store.env, NOW), 0);
   assert.deepEqual(store.db.prepare('SELECT leaf FROM leaf_centroids').all(), []);
   assert.equal(await storeLeafCentroids(store.env, NOW, PHYSICS_RULE), 2);
@@ -107,7 +108,7 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   assert.ok(cosine(centroids.get('hep-th')!.vector, vector({ 0: 1 }, 1)) > 0.95);
 });
 
-test('an area lane holds only what no leaf of the area holds: shipped rules file nothing under a leaf, a calibrated rule files only clear matches', async () => {
+test('an area lane holds only what no leaf of the area holds: without a rule nothing is filed under a leaf, a rule files only clear matches', async () => {
   const store = corpus();
   await arxivPapers(store, 'hep-th', 60, 0, 0);
   await arxivPapers(store, 'quant-ph', 60, 1, 100);
@@ -127,7 +128,7 @@ test('an area lane holds only what no leaf of the area holds: shipped rules file
   await fileAreaPapers(store.env);
   assert.ok(store.lane('quant-ph').includes(w4));
   assert.deepEqual(store.lane('area:physics'), [w1, w2, w3].sort((a, b) => a - b), 'the preprint\'s leaf holds the published version');
-  assert.ok(!store.lane('hep-th').includes(w1), 'uncalibrated: nothing is filed under a leaf');
+  assert.ok(!store.lane('hep-th').includes(w1), 'physics has no shipped rule: nothing is filed under a leaf');
 
   await fileAreaPapers(store.env, PHYSICS_RULE);
   assert.deepEqual(store.lane('area:physics'), [w2, w3].sort((a, b) => a - b), 'between two leaves, or close to none, it stays at area level');
@@ -162,4 +163,42 @@ test('the evaluation files held-out arXiv papers against centroids of the others
   assert.equal(strict.correct, strict.filed);
   assert.ok(loose.filed > strict.filed, 'a narrower margin files more');
   assert.ok(loose.correct < loose.filed, 'and mixes up the alike leaves');
+});
+
+// For each area with a shipped rule: its leaves' centroids and the held-out
+// half of its labelled journal articles, written by
+// test-support/calibrate-leaf-filing.ts (leaf-filing-calibration.md).
+// Vectors are in the stored form, as base64.
+const HELD_OUT = JSON.parse(readFileSync(new URL('./test-support/leaf-filing-held-out.json', import.meta.url), 'utf8')) as Record<string, {
+  centroids: Record<string, string>;
+  articles: Array<{ id: string; labels: Record<string, 'on' | 'off' | 'doubt'>; vector: string }>;
+}>;
+
+test('the shipped rules file the held-out labelled mathematics articles as calibrated: 48 of 49 decided filings correct', async () => {
+  assert.deepEqual(Object.keys(LEAF_FILING_RULES), Object.keys(HELD_OUT), 'each shipped rule has its held-out articles');
+  const store = corpus();
+  const { centroids, articles } = HELD_OUT.math;
+  await ingestPapers(store.env, articles.map(article => ({ paper: journalArticle(article.id), lanes: ['area:math'] })), { now: NOW });
+  for (const article of articles) store.setVector(`id:openalex:${article.id.toLowerCase()}`, new Int8Array(Buffer.from(article.vector, 'base64')));
+  for (const [leaf, vector] of Object.entries(centroids)) {
+    store.db.prepare('INSERT INTO leaf_centroids (leaf, embedding, papers, computed_at) VALUES (?, ?, 60, ?)').run(leaf, Buffer.from(vector, 'base64'), new Date(NOW).toISOString());
+  }
+
+  await fileAreaPapers(store.env);
+
+  // Correct under a leaf labelled on target; wrong under one labelled off
+  // target or doubted, or unlabelled while another leaf is on target; else unknown.
+  const tally = { areaLevel: 0, correct: 0, wrong: 0, unknown: 0 };
+  for (const article of articles) {
+    const lanes = (store.db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(store.workOf(`id:openalex:${article.id.toLowerCase()}`)) as Array<{ lane: string }>)
+      .map(row => row.lane).filter(lane => lane === 'area:math' || lane in centroids);
+    assert.equal(lanes.length, 1, `${article.id} is in the area lane or one leaf, not ${lanes.join(', ')}`);
+    const [lane] = lanes;
+    const label = article.labels[lane];
+    if (lane === 'area:math') tally.areaLevel += 1;
+    else if (label === 'on') tally.correct += 1;
+    else if (label || Object.values(article.labels).includes('on')) tally.wrong += 1;
+    else tally.unknown += 1;
+  }
+  assert.deepEqual(tally, { areaLevel: 112, correct: 48, wrong: 1, unknown: 10 });
 });

@@ -17,11 +17,14 @@ import { AREA_LANE_AREAS, areaLane, cosine, database, quantize, readVector, unit
 export interface FilingRule { similarity: number; margin: number }
 
 /**
- * Each area's rule, set by calibration (test-support/evaluate-leaf-filing.ts).
- * None has been calibrated: no area has a rule, so no journal article is
- * filed under a leaf and every one stays at area level.
+ * Each area's rule, set by calibration on labelled journal articles
+ * (test-support/calibrate-leaf-filing.ts). An area has one only where the
+ * filed held-out articles were at least 90% correct (leaf-filing-calibration.md);
+ * every other area's journal articles stay at area level.
  */
-export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.freeze({});
+export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.freeze({
+  math: { similarity: 0.58, margin: 0.065 },
+});
 
 // A leaf's centroid is the mean of its newest arXiv papers with a vector. A
 // leaf with fewer than MIN_CENTROID_PAPERS has none, and nothing is filed
