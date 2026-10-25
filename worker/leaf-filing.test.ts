@@ -174,31 +174,42 @@ const HELD_OUT = JSON.parse(readFileSync(new URL('./test-support/leaf-filing-hel
   articles: Array<{ id: string; labels: Record<string, 'on' | 'off' | 'doubt'>; vector: string }>;
 }>;
 
-test('the shipped rules file the held-out labelled mathematics articles as calibrated: 48 of 49 decided filings correct', async () => {
+// The calibration's held-out outcome of each shipped rule. An area added to
+// the fixture needs its own line here.
+const HELD_OUT_TALLIES: Record<string, { areaLevel: number; correct: number; wrong: number; unknown: number }> = {
+  math: { areaLevel: 112, correct: 48, wrong: 1, unknown: 10 },
+};
+
+test('the shipped rules file the held-out labelled articles as calibrated: in mathematics, 48 of 49 decided filings correct', async () => {
   assert.deepEqual(Object.keys(LEAF_FILING_RULES), Object.keys(HELD_OUT), 'each shipped rule has its held-out articles');
-  const store = corpus();
-  const { centroids, articles } = HELD_OUT.math;
-  await ingestPapers(store.env, articles.map(article => ({ paper: journalArticle(article.id), lanes: ['area:math'] })), { now: NOW });
-  for (const article of articles) store.setVector(`id:openalex:${article.id.toLowerCase()}`, new Int8Array(Buffer.from(article.vector, 'base64')));
-  for (const [leaf, vector] of Object.entries(centroids)) {
-    store.db.prepare('INSERT INTO leaf_centroids (leaf, embedding, papers, computed_at) VALUES (?, ?, 60, ?)').run(leaf, Buffer.from(vector, 'base64'), new Date(NOW).toISOString());
-  }
+  for (const [area, { centroids, articles }] of Object.entries(HELD_OUT)) {
+    const store = corpus();
+    const areaLane = `area:${area}`;
+    await ingestPapers(store.env, articles.map(article => ({ paper: journalArticle(article.id), lanes: [areaLane] })), { now: NOW });
+    for (const article of articles) store.setVector(`id:openalex:${article.id.toLowerCase()}`, new Int8Array(Buffer.from(article.vector, 'base64')));
+    for (const [leaf, vector] of Object.entries(centroids)) {
+      store.db.prepare('INSERT INTO leaf_centroids (leaf, embedding, papers, computed_at) VALUES (?, ?, 60, ?)').run(leaf, Buffer.from(vector, 'base64'), new Date(NOW).toISOString());
+    }
 
-  await fileAreaPapers(store.env);
+    await fileAreaPapers(store.env);
 
-  // Correct under a leaf labelled on target; wrong under one labelled off
-  // target or doubted, or unlabelled while another leaf is on target; else unknown.
-  const tally = { areaLevel: 0, correct: 0, wrong: 0, unknown: 0 };
-  for (const article of articles) {
-    const lanes = (store.db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(store.workOf(`id:openalex:${article.id.toLowerCase()}`)) as Array<{ lane: string }>)
-      .map(row => row.lane).filter(lane => lane === 'area:math' || Object.hasOwn(centroids, lane));
-    assert.equal(lanes.length, 1, `${article.id} is in the area lane or one leaf, not ${lanes.join(', ')}`);
-    const [lane] = lanes;
-    const label = article.labels[lane];
-    if (lane === 'area:math') tally.areaLevel += 1;
-    else if (label === 'on') tally.correct += 1;
-    else if (label || Object.values(article.labels).includes('on')) tally.wrong += 1;
-    else tally.unknown += 1;
+    // Correct under a leaf labelled on target; wrong under one labelled off
+    // target or doubted, or unlabelled while another leaf is on target; else unknown.
+    const tally = { areaLevel: 0, correct: 0, wrong: 0, unknown: 0 };
+    for (const article of articles) {
+      const lanes = (store.db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(store.workOf(`id:openalex:${article.id.toLowerCase()}`)) as Array<{ lane: string }>)
+        .map(row => row.lane).filter(lane => lane === areaLane || Object.hasOwn(centroids, lane));
+      assert.equal(lanes.length, 1, `${article.id} is in the area lane or one leaf, not ${lanes.join(', ')}`);
+      const [lane] = lanes;
+      const label = article.labels[lane];
+      if (lane === areaLane) tally.areaLevel += 1;
+      else if (label === 'on') tally.correct += 1;
+      else if (label || Object.values(article.labels).includes('on')) tally.wrong += 1;
+      else tally.unknown += 1;
+    }
+    // The product bar: at least 90% of 30 or more decided filings correct.
+    const decided = tally.correct + tally.wrong;
+    assert.ok(decided >= 30 && tally.correct / decided >= 0.9, `${area}: ${tally.correct} of ${decided} decided filings correct`);
+    assert.deepEqual(tally, HELD_OUT_TALLIES[area], area);
   }
-  assert.deepEqual(tally, { areaLevel: 112, correct: 48, wrong: 1, unknown: 10 });
 });
