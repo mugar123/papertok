@@ -220,11 +220,21 @@ test('a slow OpenAlex cannot discard an available arXiv paper and is cancelled',
 });
 
 
-test('title filtering preserves provider matches for identifiers and non-Latin queries', async () => {
-  for (const query of ['hep-th/9901001', 'doi:10.1000/example', 'W12345', '神经网络']) {
+test('title filtering preserves provider matches for identifiers', async () => {
+  for (const query of ['hep-th/9901001', 'doi:10.1000/example', 'W12345']) {
     const papers = await searchPapersAcrossSources(query, {
       providers: providersWith({ openAlex: [openAlexPaper('W12345', 'A provider-identified work')], arxiv: [] }),
     });
     assert.equal(papers.length, 1, query);
   }
+});
+
+test('a query in another script is filtered by its titles like a Latin one', async () => {
+  const papers = await searchPapersAcrossSources('深度学习', {
+    providers: providersWith({ openAlex: [
+      openAlexPaper('W1', 'A provider-identified work'),
+      openAlexPaper('W2', '基于深度学习的图像识别技术研究'),
+    ], arxiv: [] }),
+  });
+  assert.deepEqual(papers.map(paper => paper.id), ['openalex:W2']);
 });
