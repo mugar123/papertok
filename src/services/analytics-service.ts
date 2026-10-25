@@ -507,6 +507,7 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
  * while the browser says it is offline: a failure there would only reload.
  */
 function loadAnalyticsClient() {
+  if (!analyticsClient && globalThis.navigator?.onLine === false) return Promise.resolve(null);
   analyticsClient ??= import('posthog-js')
     .then(({ posthog }) => {
       startAnalyticsClient(posthog, readAnalyticsConsent());
@@ -567,7 +568,6 @@ function canSendAnalytics() {
 // for an event that was dropped.
 async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
   if (!canSendAnalytics()) return false;
-  if (!analyticsClient && globalThis.navigator?.onLine === false) return false;
   const client = await loadAnalyticsClient();
   return Boolean(client?.capture(eventName, properties));
 }

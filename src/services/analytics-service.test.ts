@@ -658,12 +658,15 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const previousLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let online = false;
   const storage = memoryStorage();
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
   Object.defineProperty(globalThis, 'location', { configurable: true, value: { hostname: 'papertok.app' } });
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { get onLine() { return online; } } });
   t.after(() => {
-    for (const [name, previous] of [['window', previousWindow], ['location', previousLocation], ['localStorage', previousStorage]] as const) {
+    for (const [name, previous] of [['window', previousWindow], ['location', previousLocation], ['localStorage', previousStorage], ['navigator', previousNavigator]] as const) {
       if (previous) Object.defineProperty(globalThis, name, previous);
       else Reflect.deleteProperty(globalThis, name);
     }
@@ -672,7 +675,7 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   const changes: unknown[] = [];
   let identifiedAs: string | null = null;
   let enabled = false;
-  t.mock.method(posthog, 'init', () => posthog);
+  const init = t.mock.method(posthog, 'init', () => posthog);
   t.mock.method(posthog, 'has_opted_in_capturing', () => enabled);
   t.mock.method(posthog, 'opt_in_capturing', () => { enabled = true; });
   t.mock.method(posthog, 'get_property', () => identifiedAs ? 'identified' : 'anonymous');
@@ -688,6 +691,13 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   });
 
   await identifyAnalyticsUser(null);
+  await identifyAnalyticsUser({ uid: 'offline-account' });
+  assert.equal(init.mock.callCount(), 0, 'an offline identity update must not initialize the uncached SDK');
+  assert.deepEqual(changes, []);
+
+  online = true;
+  await identifyAnalyticsUser(null);
+  assert.equal(init.mock.callCount(), 1, 'initialization must still work after connectivity returns');
   await identifyAnalyticsUser({ uid: 'account-a' });
   await identifyAnalyticsUser({ uid: 'account-a' });
   assert.deepEqual(changes, [['identify', 'account-a']]);

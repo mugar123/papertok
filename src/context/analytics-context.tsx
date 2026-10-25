@@ -42,7 +42,10 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   // recording this visit, so reloads keep the same signed-in identity.
   useEffect(() => {
     if (authLoading && !user) return;
-    void identifyAnalyticsUser(user && { uid: user.uid });
+    const identify = () => { void identifyAnalyticsUser(user && { uid: user.uid }); };
+    identify();
+    window.addEventListener('online', identify);
+    return () => window.removeEventListener('online', identify);
   }, [authLoading, consent, user]);
 
   // Runs for everyone, consent or not: these are leftovers from GA4, and the
