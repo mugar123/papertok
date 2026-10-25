@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Ref } from 'react';
-import { AnimatePresence, MotionConfig, animate, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, animate, motion, useIsPresent, usePresenceData, useReducedMotion } from 'framer-motion';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, MOTION_SHEET_S } from '../../utils/motion-curves.ts';
 import type { CareerStop, LineSlot } from './career-stops.ts';
 import { foldYears, isCurrent, lineStops, stopWidth, stopYears } from './career-stops.ts';
@@ -100,14 +100,18 @@ function Fold({ ref, hidden, side, column }: {
 // scaleX rather than a transform string: the layout projection composes it.
 function Segment({ dashed, column }: { dashed: boolean; column: number }) {
   const reduce = useReducedMotion();
+  // A rail folded away has no column in the shorter line, so it would stretch across it.
+  const present = useIsPresent();
+  const open = usePresenceData();
+  const folded = !present && open === false;
   const hidden = reduce ? { opacity: 0 } : { scaleX: 0 };
   const shown = reduce ? { opacity: 1 } : { scaleX: 1 };
   return (
     <motion.span
-      layout
+      layout={!folded}
       className={`career-rail${dashed ? ' is-dashed' : ''}`}
       aria-hidden="true"
-      style={{ gridColumn: column, originX: 0 }}
+      style={{ gridColumn: `${column} / span 1`, originX: 0, display: folded ? 'none' : undefined }}
       initial={hidden}
       animate={{ ...shown, transition: { duration: MOTION_BASE_S, ease: EASE_OUT, delay: reduce ? 0 : MOTION_SHEET_S } }}
       exit={{ ...hidden, transition: { duration: MOTION_BASE_S / 2, ease: EASE_OUT } }}
@@ -220,7 +224,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
           <motion.ol layoutScroll ref={listRef} id={`${id}-line`} className="career-line" data-foldable={tooLong || undefined} data-opened={(expanded && unfolded) || undefined} style={openStop === null ? undefined : { '--career-stop': `${openStop}px` }}>
             {capacity !== Infinity && (
               <>
-                <AnimatePresence initial={false}>
+                <AnimatePresence initial={false} custom={expanded}>
                   {shown.slice(0, -1).map((at, i) => (
                     <Segment key={`seg-${at}`} dashed={at === 'fold'} column={i + 1} />
                   ))}
