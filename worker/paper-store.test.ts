@@ -1024,7 +1024,7 @@ const LISTED_UNTIL = '2027-01-15T03:00:00.000Z';
 // The notable candidates of `lanes` at `now`, by paper id.
 async function notableRead({ env, db }: ReturnType<typeof corpus>, lanes: string[], now: number) {
   const paperIds = new Map(rows(db, "SELECT id, paper ->> '$.id' AS paper_id FROM works").map(row => [row.id, String(row.paper_id)]));
-  return (await readNotableCandidates(env.PAPER_STORE!, lanes, now)).map(({ workId, ...candidate }) => ({ id: paperIds.get(workId)!, ...candidate }));
+  return (await readNotableCandidates(env.PAPER_STORE!, lanes, now)).candidates.map(({ workId, ...candidate }) => ({ id: paperIds.get(workId)!, ...candidate }));
 }
 const yearOf = (id: string) => id.slice('openalex:W'.length, 'openalex:W'.length + 4);
 const DAY = 86_400_000;
@@ -1091,6 +1091,35 @@ test('a notable older than the window is not read after 1 January', async () => 
   await ingestPapers(store.env, [{ paper: notableWork('W2016999', 'A highly cited study of June 2016', '2016-06-01', 8000, true), lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: LISTED_UNTIL });
   assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2026-12-31T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2016999']);
   assert.deepEqual(await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z')), []);
+});
+
+test('a notable of the current year is not read until that year is over', async () => {
+  const store = corpus();
+  // A row the listing before the by-year one left, or a merge whose date is this year.
+  await ingestPapers(store.env, [{ paper: notableWork('W2026999', 'A highly cited study of March 2026', '2026-03-01', 8000, true), lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: LISTED_UNTIL });
+  assert.deepEqual(await notableRead(store, ['notable:cs.LG'], NOW), []);
+  assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2026999'], 'the last completed year');
+});
+
+test("a notable paper one of the reader's own lanes also holds comes as a notable card on the day of its slice, and as no rank on the other days", async () => {
+  const { env } = corpus();
+  await ingestPapers(env, recentPapers(5), { now: NOW });
+  const year = notableYear(2020, 100);
+  await ingestPapers(env, year.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: LISTED_UNTIL });
+  // The oldest of the year, the last of its 100 rows: the slice reaches it on
+  // the day after NOW. cs.LG's own lane holds it too, as a lane that keeps
+  // old papers would.
+  const [paper] = year;
+  await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW, keepUntil: LISTED_UNTIL });
+  // The reader has seen the year's other papers, so only this one can be a notable card.
+  const seen = feedSeenFilter(year.slice(1).map(other => other.id));
+  const notableByDay: string[][] = [];
+  for (let day = 0; day < 4; day += 1) {
+    const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen, notable: 5 }), { now: NOW + day * DAY });
+    assert.deepEqual(page.filter(card => !card._notable).map(card => card.id), recentIds(0, 5), `day ${day}: the ranks are the lane's recent papers only`);
+    notableByDay.push(page.filter(card => card._notable).map(card => card.id));
+  }
+  assert.deepEqual(notableByDay, [[], [paper.id], [], []]);
 });
 
 test('the app shows one card in fifteen notable from corpus pages of fifteen and the cards the follows and exploration add', async () => {

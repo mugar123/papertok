@@ -209,11 +209,12 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // that moves on by that many rows each UTC day, taken modulo the year's own
 // count n, so every row of a year is read within ceil(n / 25) days: four
 // disjoint slices for a year of 100, overlapping ones for a year of 40 and
-// every day for a year of two. That is 250 candidates a lane
-// at most, so the candidates and vectors ranked per request stay within the 300
-// a lane the newest-first read took; numbering the years reads every row of the
-// lane's window from its index (about 1,000). How many of them a reader sees
-// is ENG-128's.
+// every day for a year of two. The candidates and vectors ranked per request
+// are 250 a lane at most. Numbering the years reads every row of the lane's
+// window from its index (about 1,000), and the read returns each work id with
+// whether the day's slice holds it, so that a paper of the lane outside the
+// slice is not ranked from the reader's other lanes either. How many of them
+// a reader sees is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
@@ -888,20 +889,27 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
 }
 
 /**
- * The notable lanes' candidates at `now`: of each year of the window, the
- * NOTABLE_READ_PER_YEAR rows of the day's slice, newest
- * first, in one statement per lane. A notable lane keeps a paper two weeks past
- * its last listing; from 1 January, the year that left the window is not read.
+ * The notable lanes at `now`, in one statement per lane: `candidates` are, of
+ * each year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
+ * newest first; `inLanes` is every work the lanes hold in the window, slice
+ * or not. A notable lane keeps a paper two weeks past its last listing; from
+ * 1 January, the year that left the window is not read, and a row of the
+ * current year (a listing before the by-year one, a merge dated this year) is
+ * not read until that year is over.
  */
-export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<Candidate[]> {
+export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
   const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
-  const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(`SELECT work_id, published FROM (
+  const perLane = await db.batch<{ work_id: number; published: string; in_slice: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
+      ((rn - 1 + ?) % n < ?) AS in_slice FROM (
       SELECT work_id, published,
              ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
              COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
-      FROM work_lanes WHERE lane = ? AND published >= ?
-    ) WHERE (rn - 1 + ?) % n < ? ORDER BY published DESC, work_id`).bind(lane, notableSince(now), offset, NOTABLE_READ_PER_YEAR)));
-  return mergeLaneRows(lanes, perLane);
+      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
+    ) ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  return {
+    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.in_slice) }))),
+    inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
+  };
 }
 
 // The lanes' rows in turns, each lane's in its own order: a work listed by
@@ -1065,7 +1073,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const positiveIds = [...new Set(query.positiveIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const negativeIds = [...new Set(query.negativeIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
-  const [candidates, notableCandidates, signals] = await Promise.all([
+  const [candidates, notableRead, signals] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
@@ -1073,7 +1081,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
     // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
-    notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve([]),
+    notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
   ]);
   const likes = positiveIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
@@ -1081,11 +1089,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
   const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
-  // A paper of the day's notable read comes only as a notable card; the rest
-  // of a notable lane can still come as a rank of the reader's own lanes.
-  const inNotableLanes = new Set(notableCandidates.map(candidate => candidate.workId));
-  const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !inNotableLanes.has(candidate.workId));
-  const offeredNotable = notableCandidates.filter(candidate => !excluded.has(candidate.workId));
+  // A paper of the reader's notable lanes comes only as a notable card.
+  const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
+  const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
   const [vectors] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
     likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
