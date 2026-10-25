@@ -643,6 +643,20 @@ test("a reader's next pages from the kept order read each stored id once, howeve
   assert.ok(idReads <= 3, `${idReads} reads of stored ids for thirty pages`);
 });
 
+// The app asks for one page more on every load, the follows' page included.
+test('a session past its hundredth load still gets the next papers of its ranking, while a page asked by number stops at page 100', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(45);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true });
+  assert.deepEqual(ids((await ask(request(0, []))).papers), ids(papers.slice(0, 15)));
+  const past = await ask(request(101, ids(papers.slice(0, 15))));
+  assert.deepEqual([ids(past.papers), past.skipsSeen], [ids(papers.slice(15, 30)), true]);
+  assert.deepEqual(ids((await ask(request(250, ids(papers.slice(0, 30))))).papers), ids(papers.slice(30, 45)));
+  assert.deepEqual(await ask({ categories: ['cs.CL'], page: 101, pageSize: 15 }), { papers: [] });
+});
+
 // What a fold (ingestPapers' `folded`) or an eviction does to a work's row.
 function removeWork(db: ReturnType<typeof store>['db'], arxivId: string) {
   const { work_id: workId } = db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number };

@@ -1265,17 +1265,22 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
   const excludedIds = [...new Set((Array.isArray(body?.excludedIds) ? body.excludedIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_EXCLUDED);
   const seen = body?.seen === undefined ? null : readFeedSeenFilter(body.seen);
   if (body?.seen !== undefined && !seen) throw new PaperStoreError('SEEN_INVALID', 400);
+  const skipsSeen = seen !== null && body?.skipsSeen === true;
+  const page = Math.max(0, Math.floor(Number(body?.page) || 0));
   return {
     categories,
     follows,
     positiveIds,
     negativeIds,
     excludedIds,
-    page: Math.max(0, Math.floor(Number(body?.page) || 0)),
+    // A page that skips seen papers walks on whatever its number, which the
+    // app raises on every load; past the last page, its number names the last
+    // page, the one it serves when its ranking holds no unseen paper.
+    page: skipsSeen ? Math.min(page, FEED_MAX_PAGE) : page,
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
     seen,
-    skipsSeen: seen !== null && body?.skipsSeen === true,
+    skipsSeen,
     notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
     // Not for the follows' request, even when no follow has a lane of its own
     // (a category topic): there the categories stand for followed topics
