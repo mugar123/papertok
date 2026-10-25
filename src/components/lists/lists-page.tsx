@@ -262,6 +262,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     trackViewTime,
     trackSkip,
     personalLibrary,
+    personalLibraryReady,
     ensurePersonalLibrary,
     libraryPapers,
     toggleReadLater,
@@ -1482,6 +1483,25 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // then the wait is already known to be long.
   const showListPlaceholders = placeholdersDue && loading && lists.length === 0;
 
+  // The index waits for the owner's lists and for the paper on each folder's
+  // front sheet, so the header, the folders and their sheets arrive together.
+  // Never past the threshold under which a wait reads as instantaneous, and
+  // never again once they are shown.
+  const previewsReady = personalLibraryReady && !(loading && lists.length === 0) && displayLists.every((list) => {
+    const front = list.paperIds?.[0];
+    return !front || Boolean(getPaper(front)?.title);
+  });
+  const [foldersReleased, setFoldersReleased] = useState(previewsReady);
+  // Ready at mount, the index rides the page's own arrival; held, it makes one
+  // arrival of its own when it is let go, header and folders as one block.
+  const [startedHeld] = useState(!previewsReady);
+  if (previewsReady && !foldersReleased) setFoldersReleased(true);
+  useEffect(() => {
+    if (foldersReleased) return undefined;
+    const timer = setTimeout(() => setFoldersReleased(true), LIST_PLACEHOLDER_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [foldersReleased]);
+
   const targetOpenId = location.state?.openListId;
   const pendingOpen = Boolean(
     targetOpenId
@@ -1886,6 +1906,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         </motion.div>
       ) : (
         <motion.div key="index" ref={returnToIndex} {...listViewMotion}>
+          {foldersReleased && (
+          <div className={startedHeld && !foldersArrived ? 'lists-index-arrive' : undefined}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -1898,7 +1920,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           </header>
           <div className="lists-grid">
             <AnimatePresence initial={false} mode="popLayout">
-            {displayLists.map((list, index) => {
+            {displayLists.map((list) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               const behindIds = (list.paperIds || []).slice(0, 2).reverse();
@@ -1910,9 +1932,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                 animate={{ opacity: 1, transform: 'scale(1)' }}
                 transition={isNew ? { ...cardMotion.transition, delay: 0.14 } : cardMotion.transition}
                 key={list.id}
-                className={`list-card${accent ? '' : ' list-card--uncoloured'}${foldersArrived || isNew ? '' : ' list-card--arrive'}`}
+                className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
                 onClick={() => enterList(list)}
-                style={{ ...(accent && { '--list-accent': accent }), '--arrive-index': Math.min(index, 3) }}
+                style={accent ? { '--list-accent': accent } : undefined}
               >
                 <div className="list-card-preview">
                   <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>
@@ -1995,6 +2017,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </div>
             ))}
           </div>
+          </div>
+          )}
         </motion.div>
       )}
       </AnimatePresence>

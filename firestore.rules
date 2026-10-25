@@ -59,6 +59,10 @@ service cloud.firestore {
         'onboardingComplete',
         'preferences',
         'selectedCategories',
+        // Subareas the reader removed from their interests; the feed keeps them out.
+        'deselectedPreferences',
+        // Subareas the reader added after onboarding; the feed gives them a head start.
+        'addedPreferences',
         'followedAuthors',
         'followingMigratedAt',
         'readingPreferences',
@@ -138,6 +142,13 @@ service cloud.firestore {
         && (!('selectedCategories' in request.resource.data)
           || request.resource.data.selectedCategories is list
             && request.resource.data.selectedCategories.size() <= 100)
+        // The taxonomy has 149 subareas; 150 leaves room for one retired id.
+        && (!('deselectedPreferences' in request.resource.data)
+          || request.resource.data.deselectedPreferences is list
+            && request.resource.data.deselectedPreferences.size() <= 150)
+        && (!('addedPreferences' in request.resource.data)
+          || request.resource.data.addedPreferences is list
+            && request.resource.data.addedPreferences.size() <= 150)
         && (!('followedAuthors' in request.resource.data)
           || request.resource.data.followedAuthors is list
             && request.resource.data.followedAuthors.size() <= 100)

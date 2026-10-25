@@ -151,9 +151,8 @@
   gap: var(--space-8);
 }
 
-.list-card--arrive {
+.lists-index-arrive {
   animation: listCardArrive 200ms var(--ease-out) both;
-  animation-delay: calc(var(--arrive-index, 0) * 30ms);
 }
 
 @keyframes listCardArrive {
@@ -170,7 +169,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .list-card--arrive {
+  .lists-index-arrive {
     animation-name: listCardFade;
   }
 }
