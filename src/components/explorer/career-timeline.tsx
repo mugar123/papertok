@@ -107,7 +107,7 @@ function Segment({ dashed, column }: { dashed: boolean; column: number }) {
       layout
       className={`career-rail${dashed ? ' is-dashed' : ''}`}
       aria-hidden="true"
-      style={{ gridColumn: column, originX: 0 }}
+      style={{ gridColumn: `${column} / span 1`, originX: 0 }}
       initial={hidden}
       animate={{ ...shown, transition: { duration: MOTION_BASE_S, ease: EASE_OUT, delay: reduce ? 0 : MOTION_SHEET_S } }}
       exit={{ ...hidden, transition: { duration: MOTION_BASE_S / 2, ease: EASE_OUT } }}
