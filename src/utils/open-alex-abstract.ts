@@ -44,7 +44,7 @@ const MIN_ABSTRACT_LENGTH = 40;
 // "Semyon Malamud gratefully acknowledges the financial" as its abstract
 // (ENG-105). Text that opens this way is front matter, not an abstract.
 const FRONT_MATTER_OPENINGS = [
-  /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*[:.-]/i,
+  /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.]|[-–—](?=\s))/i,
   /^(?:\S+\s+){0,6}gratefully acknowledges?\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
   /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thank|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,

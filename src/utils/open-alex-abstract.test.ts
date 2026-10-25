@@ -64,6 +64,19 @@ test('an abstract that mentions support or thanks later on is still an abstract'
   assert.equal(isPlausibleAbstract('Acknowledging uncertainty in climate projections changes how planners weigh adaptation options.'), true);
 });
 
+// A dash joins a compound ("Funding-liquidity"); it separates a heading from
+// its text only with a space after it.
+test('an abstract that opens with a compound starting like a heading word is still an abstract', () => {
+  for (const text of [
+    'Funding-liquidity spirals amplify shocks to dealer balance sheets; we document this channel using repo data from 2008 to 2020.',
+    'Funding-constrained banks cut lending to small firms, and we trace the effect through loan-level data from 2010 to 2019.',
+    'Disclaimer-style warnings on food labels barely change what shoppers buy, according to a field experiment in 40 stores.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), true, text);
+  }
+  assert.equal(isPlausibleAbstract('Funding - the authors gratefully thank the Swiss National Science Foundation for support.'), false);
+});
+
 test('a work with no index, or no work, has no abstract', () => {
   assert.equal(usableOpenAlexAbstract({ type: 'article' }), '');
   assert.equal(usableOpenAlexAbstract(null), '');
