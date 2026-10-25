@@ -31,6 +31,7 @@ import { useLanguage } from '../../context/language-context.tsx';
 import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
+import { removePaperFromList } from './remove-paper-from-list.ts';
 import { writeNewList } from './write-new-list.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
@@ -1166,33 +1167,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     }));
   };
 
-  const handleRemoveFromCustomList = async (listId: string, paperId: string) => {
-    // Only a write the server accepted may claim an edit time. Stamping the
-    // local copy after a failed write would tell the freshness check that a
-    // removal happened, and the sync would publish a list the account never
-    // agreed to.
-    let editedAt: Date | null = null;
-    try {
-      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-      await updateDoc(listRef, {
-        paperIds: arrayRemove(paperId),
-        // The mark the background sync looks for (P25). Every edit leaves
-        // it; nothing else here decides when the public copy is rebuilt.
-        updatedAt: serverTimestamp(),
-      });
-      editedAt = new Date();
-    } catch (err) {
-      console.error('Error removing paper from custom list:', err);
-    }
-    setLists((prev) => prev.map((list) => {
-      if (list.id !== listId) return list;
-      return {
-        ...list,
-        paperIds: list.paperIds!.filter((id) => id !== paperId),
-        ...(editedAt ? { updatedAt: editedAt } : {}),
-      };
-    }));
-  };
+  const handleRemoveFromCustomList = (listId: string, paperId: string) => removePaperFromList(listId, paperId, {
+    write: () => updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
+      paperIds: arrayRemove(paperId),
+      // The mark the background sync looks for (P25). Every edit leaves
+      // it; nothing else here decides when the public copy is rebuilt.
+      updatedAt: serverTimestamp(),
+    }),
+    apply: setLists,
+    onFailed: (removeError) => {
+      console.error('Error removing paper from custom list:', removeError);
+      toastError('The paper could not be removed', { description: 'Try again.' });
+    },
+  });
 
   const switchRowSheetStep = (step: 'menu' | 'remove' | 'edit') => {
     rowSheetFrom.current = rowSheetStepRef.current?.closest<HTMLElement>('[data-slot="drawer-content"]')?.offsetHeight ?? null;
