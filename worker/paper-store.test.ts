@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
   readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -893,6 +893,134 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+// ─── Interest groups (ENG-137) ───
+
+test('a request without interest groups is one group; with groups, its categories and likes are their union', () => {
+  assert.deepEqual(parseFeedRequest({ categories: ['quant-ph', 'econ.GN'], positiveIds: ['a', 'b'] }).groups, [
+    { categories: ['quant-ph', 'econ.GN'], exampleCategories: ['quant-ph', 'econ.GN'], positiveIds: ['a', 'b'], weight: 1 },
+  ]);
+  const groups = [
+    { categories: ['quant-ph', 'hep-th'], exampleCategories: ['quant-ph', 'hep-th'], positiveIds: ['a'], weight: 1 },
+    { categories: ['econ.GN', 'quant-ph'], exampleCategories: ['econ.GN'], positiveIds: ['b', 'a'], weight: 2 },
+  ];
+  // The app also sends the union, and the likes no group holds, at the top level.
+  const query = parseFeedRequest({ categories: ['quant-ph', 'econ.GN'], positiveIds: ['a', 'b', 'c'], groups });
+  assert.deepEqual(query.categories, ['quant-ph', 'hep-th', 'econ.GN']);
+  assert.deepEqual(query.positiveIds, ['a', 'b', 'c']);
+  assert.deepEqual(query.groups, groups);
+});
+
+test('an interest group without a valid category or with a weight outside (0, 10] is left out, and a request ranks at most 12', () => {
+  const valid = { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: [], weight: 1 };
+  const kept = parseFeedRequest({
+    groups: [
+      { ...valid, categories: ['not a category!', null] },
+      ...[Number.NaN, Infinity, 0, -1, 10.5, '2', null].map(weight => ({ ...valid, weight })),
+      { ...valid, categories: ['math.AG'], weight: 10 },
+    ],
+  });
+  assert.deepEqual(kept.groups, [{ ...valid, categories: ['math.AG'], weight: 10 }]);
+  assert.equal(parseFeedRequest({ groups: Array.from({ length: 13 }, () => valid) }).groups.length, 12);
+});
+
+test("interest groups' union keeps a request's 12 categories and 24 likes, and each group keeps only what the union holds", () => {
+  const leaves = getAllLeafCategories().map(leaf => leaf.id);
+  const query = parseFeedRequest({
+    groups: Array.from({ length: 3 }, (_, group) => ({
+      categories: leaves.slice(group * 5, group * 5 + 5),
+      exampleCategories: leaves.slice(group * 5, group * 5 + 5),
+      positiveIds: Array.from({ length: 10 }, (_, index) => `paper-${group}-${index}`),
+      weight: 1,
+    })),
+  });
+  assert.deepEqual(query.categories, leaves.slice(0, 12));
+  assert.equal(query.positiveIds.length, 24);
+  assert.deepEqual(query.groups.map(group => group.categories.length), [5, 5, 2]);
+  assert.deepEqual(query.groups.map(group => group.positiveIds.length), [10, 10, 4]);
+});
+
+test('interest groups take turns on the page by weight, and a paper two groups ranked comes once', () => {
+  const ranks = (...ids: number[]) => ids.map(workId => ({ workId, lanes: [] }));
+  const ids = (lists: ReturnType<typeof ranks>[], weights: number[]) => interleaveByWeight(lists, weights).map(candidate => candidate.workId);
+  assert.deepEqual(ids([ranks(1, 2, 3, 4), ranks(11, 12)], [2, 1]), [1, 11, 2, 3, 12, 4]);
+  assert.deepEqual(ids([ranks(1, 2), ranks(1, 3)], [1, 1]), [1, 3, 2], 'the second group gives its next paper instead');
+  assert.deepEqual(ids([ranks(), ranks(1), ranks(11, 12, 13)], [3, 5, 1]), [1, 11, 12, 13], 'a group without papers left gives up its turns');
+});
+
+// A reader of quantum physics, who liked a physics paper, and of general
+// economics, who has liked nothing there yet. The newest physics preprint is
+// the least like the liked paper, and the oldest economics preprint is a copy
+// of it: ranked by that like, it would lead.
+async function physicsAndEconomics() {
+  const store = corpus();
+  const preprint = (id: string, category: string, published: number) => ({
+    ...arxivRecord, id, arxivId: id, title: `A ${category} preprint, ${id}`, allCategories: [category], categories: [category], primaryCategory: category,
+    published: new Date(published).toISOString(),
+  });
+  const liked = preprint('2610.60000', 'quant-ph', NOW - 20 * 86_400_000);
+  const physics = Array.from({ length: 8 }, (_, index) => preprint(`2610.${60001 + index}`, 'quant-ph', NOW - (index + 1) * 3_600_000));
+  const economics = Array.from({ length: 12 }, (_, index) => preprint(`2610.${61001 + index}`, 'econ.GN', NOW - (index + 1) * 3_600_000 - 1_800_000));
+  await ingestPapers(store.env, [liked, ...physics, ...economics].map(paper => ({ paper, lanes: [] })), { now: NOW });
+  // `share` of the liked paper's direction and the rest on a dimension of its own:
+  // two physics preprints are never close enough for the diversity pass to reorder them.
+  const direction = (dimension: number, share: number) => Array.from({ length: 32 }, (_, index) => (index === 0 ? share : index === dimension ? Math.sqrt(1 - share ** 2) : 0));
+  const embed = (id: string, values: number[]) => store.db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+    .run(Buffer.from(quantize(values).buffer), `id:${id.toLowerCase()}`);
+  embed(liked.id, direction(0, 1));
+  physics.forEach((paper, index) => embed(paper.id, direction(index + 1, 0.44 + 0.06 * index)));
+  economics.forEach((paper, index) => embed(paper.id, direction(index + 10, index === economics.length - 1 ? 1 : 0)));
+  return { ...store, liked: liked.id, physics: physics.map(paper => paper.id), economics: economics.map(paper => paper.id) };
+}
+
+const interestGroups = (physicsPositives: string[], weights = [1, 2]) => [
+  { categories: ['quant-ph'], exampleCategories: ['quant-ph'], positiveIds: physicsPositives, weight: weights[0] },
+  { categories: ['econ.GN'], exampleCategories: ['econ.GN'], positiveIds: [], weight: weights[1] },
+];
+
+async function servedByGroup(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0], physics: string[], economics: string[]) {
+  const ids = (await readFeedPage(env, parseFeedRequest(body), { now: NOW })).map(paper => paper.id);
+  return { ids, physics: ids.filter(id => physics.includes(id)), economics: ids.filter(id => economics.includes(id)) };
+}
+
+test('each interest group ranks its own candidates by its own likes, and a group of twice the weight takes about twice the places', async () => {
+  const { env, liked, physics, economics } = await physicsAndEconomics();
+  const served = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [liked], groups: interestGroups([liked]) }, physics, economics);
+  assert.equal(served.ids.length, 15);
+  assert.ok(Math.abs(served.economics.length - 10) <= 1, `${served.economics.length} of 15 are economics`);
+  assert.deepEqual(served.physics, [...physics].reverse().slice(0, served.physics.length), 'closest to the physics like first');
+  assert.deepEqual(served.economics, economics.slice(0, served.economics.length), 'newest first: the physics like does not rank economics');
+});
+
+// Focus 1: a profile stored before examples had a category sends them in no group.
+test("a like in no group ranks the groups whose example categories hold its stored paper's categories, and no other", async () => {
+  const { env, liked, physics, economics } = await physicsAndEconomics();
+  const served = await servedByGroup(env, { categories: ['quant-ph', 'econ.GN'], positiveIds: [liked], groups: interestGroups([]) }, physics, economics);
+  assert.deepEqual(served.physics, [...physics].reverse().slice(0, served.physics.length), 'closest to the like first');
+  assert.deepEqual(served.economics, economics.slice(0, served.economics.length), 'newest first');
+});
+
+// Focus 3: a subarea with almost nothing in the corpus.
+test('a group without candidates leaves the page to the other groups, which fill it', async () => {
+  const { env, liked, physics, economics } = await physicsAndEconomics();
+  const groups = [{ categories: ['math.AG'], exampleCategories: ['math.AG'], positiveIds: [], weight: 5 }, ...interestGroups([liked])];
+  const served = await servedByGroup(env, { categories: ['math.AG', 'quant-ph', 'econ.GN'], positiveIds: [liked], groups }, physics, economics);
+  assert.equal(served.ids.length, 15);
+  assert.equal(served.physics.length + served.economics.length, 15);
+});
+
+test("a later page with the same interest groups reads the first page's order, and one with another weight ranks again", async () => {
+  const { env, db, liked } = await physicsAndEconomics();
+  const stored = new Map<string, KeptRanking>();
+  const cache: RankingCache = { get: async key => stored.get(key) ?? null, put: async (key, ranking) => { stored.set(key, ranking); } };
+  const request = (page: number, weights: number[]) => parseFeedRequest({ categories: ['quant-ph', 'econ.GN'], positiveIds: [liked], groups: interestGroups([liked], weights), page, pageSize: 4 });
+  const first = (await readFeedPage(env, request(0, [1, 2]), { now: NOW, cache })).map(paper => paper.id);
+  db.exec('DELETE FROM work_lanes');
+  const second = (await readFeedPage(env, request(1, [1, 2]), { now: NOW, cache })).map(paper => paper.id);
+  assert.equal(second.length, 4);
+  assert.deepEqual(second.filter(id => first.includes(id)), []);
+  assert.deepEqual(await readFeedPage(env, request(1, [1, 3]), { now: NOW, cache }), [], 'another weight is another order');
 });
 
 test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
