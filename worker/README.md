@@ -316,8 +316,9 @@ answer can be served.
 pages are public, so demanding a session would make those branches run, fail locally and be
 swallowed. They take the same trade `/openalex/*` does — origin gate, edge
 cache, and a **global** per-minute ceiling reserved only after a cache miss
-(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` shares
-the Semantic Scholar ceiling with `/sources/s2` because both spend the same provider allowance;
+(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` and `/enrich/s2` (the
+enrichment's abstract batch) share the Semantic Scholar ceiling with `/sources/s2` because all
+three spend the same provider allowance;
 the browser's old per-tab limiter counted per caller, so N tabs were N times the limit.
 
 `/share/{paper,list,entity}/…` answers HTML: the page a crawler reads for a shared link
@@ -381,8 +382,8 @@ does this now, not only Scopus.
 
 The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it per second: of
 five requests in one second, one is answered and four refused at once, with no `retry-after`
-(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`)
-is the same average and no say over which second, so both routes
+(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2`, `/related` and `/enrich/s2`, the
+enrichment's abstract batch) is the same average and no say over which second, so all three
 keep a one-a-second beat
 (`worker/upstream-pace.ts`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —

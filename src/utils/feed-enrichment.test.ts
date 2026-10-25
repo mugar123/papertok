@@ -258,7 +258,7 @@ test('the DOIs whose abstract a publisher record can supply: OpenAlex papers wit
 test('recovered abstracts apply in the order arXiv, INSPIRE, Crossref, Semantic Scholar, and only to the paper they name', () => {
   const paper = { id: 'W7', arxivId: '2601.00001', doi: '10.1000/shared', title: 'Synthetic paper W7', authors: [], abstract: 'No abstract available.', sources: { primary: 'openalex', enrichedBy: [] } } as Paper;
   const record = (primary: string, abstract: string) => ({ arxivId: '2601.00001', doi: 'https://doi.org/10.1000/SHARED', abstract, sources: { primary, enrichedBy: [] } });
-  const records = [record('semantic-scholar', 'From Semantic Scholar.'), record('crossref', 'From Crossref.'), record('inspire', 'From INSPIRE.'), record('arxiv', 'From arXiv.')];
+  const records = [record('semanticscholar', 'From Semantic Scholar.'), record('crossref', 'From Crossref.'), record('inspire', 'From INSPIRE.'), record('arxiv', 'From arXiv.')];
   const merged = (kept: Partial<Paper>[]) => mergeFeedAbstracts([paper], kept)[0];
   assert.equal(merged(records).abstract, 'From arXiv.');
   assert.deepEqual(merged(records).sources.enrichedBy, ['arxiv']);
@@ -266,9 +266,9 @@ test('recovered abstracts apply in the order arXiv, INSPIRE, Crossref, Semantic 
   assert.equal(merged(records.slice(0, 2)).abstract, 'From Crossref.');
   assert.deepEqual(merged(records.slice(0, 2)).sources.enrichedBy, ['crossref']);
   assert.equal(merged(records.slice(0, 1)).abstract, 'From Semantic Scholar.');
-  assert.deepEqual(merged(records.slice(0, 1)).sources.enrichedBy, ['semantic-scholar']);
+  assert.deepEqual(merged(records.slice(0, 1)).sources.enrichedBy, ['semanticscholar']);
   // A placeholder is not a usable abstract, and a record for another DOI is not this paper's.
-  assert.equal(merged([record('crossref', 'No abstract available.'), record('semantic-scholar', 'From Semantic Scholar.')]).abstract, 'From Semantic Scholar.');
+  assert.equal(merged([record('crossref', 'No abstract available.'), record('semanticscholar', 'From Semantic Scholar.')]).abstract, 'From Semantic Scholar.');
   const unrelated = [{ doi: '10.1000/other', abstract: 'Another paper.', sources: { primary: 'crossref', enrichedBy: [] } }];
   assert.equal(mergeFeedAbstracts([{ ...paper, arxivId: undefined }], unrelated)[0].abstract, 'No abstract available.');
 });

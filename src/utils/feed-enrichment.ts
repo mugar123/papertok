@@ -50,7 +50,7 @@ const ABSTRACT_SOURCES = [
   { source: 'arxiv', key: arxivKey },
   { source: 'inspire', key: doiKey },
   { source: 'crossref', key: doiKey },
-  { source: 'semantic-scholar', key: doiKey },
+  { source: 'semanticscholar', key: doiKey },
 ];
 
 /**

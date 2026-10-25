@@ -225,9 +225,9 @@ test('what Crossref has no abstract for is asked of Semantic Scholar in one batc
   const works = stored(db);
   assert.equal(works['openalex:W4410000003'].paper.abstract, 'From Crossref.');
   assert.equal(works['openalex:W4410000002'].paper.abstract, 'From Semantic Scholar.');
-  assert.ok(works['openalex:W4410000002'].paper.sources.enrichedBy.includes('semantic-scholar'));
+  assert.ok(works['openalex:W4410000002'].paper.sources.enrichedBy.includes('semanticscholar'));
   assert.equal(works['openalex:W4410000001'].paper.abstract, NO_ABSTRACT, "another paper's record is not this paper's abstract");
-  assert.ok(!works['openalex:W4410000001'].paper.sources.enrichedBy.includes('semantic-scholar'));
+  assert.ok(!works['openalex:W4410000001'].paper.sources.enrichedBy.includes('semanticscholar'));
 });
 
 test('a recovery that fails leaves the paper admitted, enriched and asked again at the refresh', async t => {

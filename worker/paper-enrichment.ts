@@ -175,7 +175,7 @@ async function semanticScholarAbstracts(env: EnrichEnv, dois: string[]): Promise
   return (Array.isArray(payload) ? payload : []).flatMap(record => {
     const doi = normalizeDoi(record?.externalIds?.DOI);
     if (!asked.includes(doi) || typeof record?.abstract !== 'string') return [];
-    return [{ doi, abstract: record.abstract, sources: { primary: 'semantic-scholar', enrichedBy: [] } }];
+    return [{ doi, abstract: record.abstract, sources: { primary: 'semanticscholar', enrichedBy: [] } }];
   });
 }
 

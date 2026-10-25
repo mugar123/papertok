@@ -459,8 +459,10 @@ async function reserveGates(request: Request, origin: string, env: WorkerEnv, op
 
 // The gates of `path`'s shared ceiling for a call the Worker sends for itself,
 // with no reader to charge and nothing to cache: the minute ceiling and, for a
-// paced provider, the beat. True when the call may go; on a refusal every unit
-// taken goes back, and a ledger that cannot be reached throws.
+// paced provider, the beat. True when the call may go. False on a refusal,
+// and also when the ledger answers that it is not configured: either way
+// nothing is sent and every unit taken goes back. A ledger that cannot be
+// reached throws.
 export async function reserveInternalCall(path: string, env: WorkerEnv) {
   const ceiling = SHARED_MINUTE_CEILINGS[path];
   if (!ceiling) throw new Error(`No shared ceiling for ${path}`);
