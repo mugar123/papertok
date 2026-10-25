@@ -3364,7 +3364,7 @@ test('relays a rewrite refusal with its own status, code and quota', async () =>
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
 
-test('closes the API host to crawlers with its own robots.txt', async () => {
+test('closes the API host to crawlers with its own robots.txt, share cards aside', async () => {
   // Un rastreador no manda `origin`, asi que la ruta tiene que contestar sin el.
   const response = await reportApi.fetch(
     new Request('https://api.papertok.app/robots.txt'),
@@ -3376,7 +3376,8 @@ test('closes the API host to crawlers with its own robots.txt', async () => {
   const body = await response.text();
   assert.match(body, /^User-agent: \*$/m);
   assert.match(body, /^Disallow: \/$/m);
-  assert.doesNotMatch(body, /^Allow: \//m);
+  // A preview bot that honours robots.txt still gets a shared profile's card.
+  assert.deepEqual(body.match(/^Allow: .*$/gm), ['Allow: /share/image/']);
 });
 
 // --- bioRxiv outages are answered once per two minutes, not once per visit ---

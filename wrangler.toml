@@ -16,6 +16,19 @@ workers_dev = true
 [limits]
 cpu_ms = 120_000
 
+# The share card's renderer (worker/share-card-render.ts): its two
+# WebAssembly engines travel compiled, the only way a Worker may run them, and
+# its fonts and etchings as bytes. `wrangler types` declares these modules.
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = false
+
+[[rules]]
+type = "Data"
+globs = ["**/share-card-assets/*.ttf", "**/share-card-assets/*.png"]
+fallthrough = false
+
 # El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
 # certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
 # la cuenta: un deploy antes de mover los nameservers falla con "zone not

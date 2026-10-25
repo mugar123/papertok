@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
+  DEFAULT_SHARE_IMAGE,
+  PUBLIC_ENTITY_TYPES,
   decodePaperKey,
   getAbsoluteShareUrl,
   getPublicEntityPath,
@@ -10,6 +12,7 @@ import {
   getPublicPaperUrl,
   getPublicListPath,
   getPublicListUrl,
+  getShareImage,
   getSiteRootUrl,
   getViteBasePath,
   parsePaperKey,
@@ -229,4 +232,14 @@ test('the root document is the app itself, with no gate left to hop through', ()
   assert.match(html, /<script type="module" src="\/src\/main\.tsx"><\/script>/, 'index.html must boot the app');
   assert.doesNotMatch(html, /papertok_signed_in/, 'the landing gate is gone; nothing may read the session mark before the app boots');
   assert.doesNotMatch(html, /location\.replace/, 'no pre-React redirect may sit in the app\'s own document');
+});
+
+test('every kind of public page previews with an image that ships in public/', () => {
+  for (const kind of [...PUBLIC_ENTITY_TYPES, 'list', 'paper']) {
+    const { path } = getShareImage(kind);
+    assert.ok(existsSync(new URL(`../../public${path}`, import.meta.url)), `${kind} previews with ${path}, which is not in public/`);
+  }
+  assert.equal(getShareImage('concept').path, '/og/papertok-share-topic-0.3.png', 'a concept is a research topic');
+  assert.equal(getShareImage('paper'), DEFAULT_SHARE_IMAGE);
+  assert.equal(getShareImage('toString'), DEFAULT_SHARE_IMAGE, 'a kind is looked up, not read off the prototype');
 });
