@@ -80,9 +80,11 @@ filings are under the 30 the bar asks for.
 - Centroids: `leaf_centroids` was empty in production, as no area had a rule.
   They were computed with `leafCentroids` from up to 60 of each arXiv leaf's
   65 newest papers with that primary category, submitted in the 90 days before
-  2026-10-24 (arXiv API). Each leaf's 60 span 2 days (math.AP) to 15 days
-  (math.LO). The harvest averages the newest 500, which cover weeks, so
-  production centroids point somewhat differently.
+  2026-10-24 (arXiv API). A leaf's papers span from under half a day (cs.LG,
+  cs.CV) to 86 days (q-fin.CP, q-fin.RM); mathematics leaves span 1 day
+  (math.AP) to 14 days (math.LO). The harvest averages the newest 500, which
+  cover a different time in each leaf, so production centroids point somewhat
+  differently.
 - Left out before the split: an article whose OpenAlex record names one of
   those arXiv papers as its preprint, matched by arXiv id, because that
   preprint's leaf already holds it in the corpus and the preprint is part of
