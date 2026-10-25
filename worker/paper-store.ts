@@ -376,10 +376,12 @@ const sourceRecordKey = (source: string | undefined, id: string) => `${source}|$
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
 // arXiv, so arXiv's listing carries a new version to a row Hugging Face
-// started, and Hugging Face's copy never replaces it.
+// started, and Hugging Face's copy never replaces it. An OpenAlex row that
+// became its journal article keeps the working paper's id and follows the
+// article's own listing (`openAlexId`), never the working paper's.
 const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
   ? listed.get(sourceRecordKey('arxiv', row.arxivId))
-  : listed.get(sourceRecordKey(row.sources?.primary, row.id)));
+  : listed.get(sourceRecordKey(row.sources?.primary, (row.sources?.primary === 'openalex' && row.openAlexId) || row.id)));
 
 // A row's title and abstract are those of the source it was built from, and
 // that source listing it again (a new arXiv version) replaces them, where

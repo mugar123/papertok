@@ -728,6 +728,37 @@ test('a journal article a venue lane lists a night after its working paper makes
   assert.match(again.abstract, /^Even though a multifactor/);
 });
 
+// The row keeps the working paper's id, yet its text is the article's, so the
+// article's corrected title and abstract reach it in either order of arrival.
+test('OpenAlex listing a journal article again with a corrected title and abstract updates its row whichever of the article and its working paper arrived first', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const corrected = { ...gmmArticle, title: 'The Efficiency and Pricing Accuracy Trade-Off in GMM Estimation of Linear Asset Pricing Models', abstract_inverted_index: invertedIndex('A corrected abstract: the two representations of a multifactor linear asset pricing model need not deliver the same inferential properties.') };
+  let article: typeof gmmArticle = gmmArticle;
+  const { env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [article] : [] }));
+  const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
+  const venue = categoryLaneJobs().find(job => job.source === 'openalex-venues' && job.lane === 'econ.EM')!;
+  const texts: unknown[] = [];
+  for (const order of [[series, venue], [venue, series]]) {
+    const { binding, db } = testD1();
+    const store = { ...env, PAPER_STORE: binding };
+    article = gmmArticle;
+    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
+    await harvestLane(store, order[0]);
+    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+    await harvestLane(store, order[1]);
+    article = corrected;
+    t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
+    await harvestLane(store, venue);
+    const works = db.prepare('SELECT paper FROM works').all().map(row => JSON.parse(String((row as { paper: string }).paper)));
+    assert.equal(works.length, 1);
+    assert.equal(works[0].peerReviewed, true);
+    texts.push([works[0].title, works[0].abstract]);
+  }
+  assert.deepEqual(texts[0], [corrected.title, 'A corrected abstract: the two representations of a multifactor linear asset pricing model need not deliver the same inferential properties.']);
+  assert.deepEqual(texts[1], texts[0]);
+});
+
 test("the enrichment of a working-paper row that became its journal article asks OpenAlex for the article's work", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-23T03:00:00Z');
