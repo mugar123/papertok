@@ -1030,14 +1030,14 @@ export interface RankingCache {
 // (`rankedAt`); after that a page ranks it again after the ranks already
 // passed, so papers filed since come next. An order paged by number is kept
 // as long from the last page that changed it.
-export const RANKING_KEPT_MS = 15 * 60_000;
+const RANKING_KEPT_MS = 15 * 60_000;
 // How long a walk's order (pages that skip seen papers) is kept from the last
 // page that changed it. A walk whose order is gone starts again from the top
 // of the ranking and sends again, 15 a page, every paper the session was shown
 // that the reader's filter no longer holds: past about 65 loads, for about as
 // many loads as the session had. Two hours cover breaks of 20, 45 and 90
 // minutes (ENG-103); privacy.html states this lifetime.
-export const WALK_KEPT_MS = 2 * 60 * 60_000;
+const WALK_KEPT_MS = 2 * 60 * 60_000;
 
 /** The lanes in their order, `order`, the likes and the rejections an order is ranked by, as a digest (`rankedBy`). */
 async function rankingInputs(lanes: string[], query: FeedQuery) {
