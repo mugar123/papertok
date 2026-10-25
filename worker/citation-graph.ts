@@ -1,6 +1,6 @@
-import type { CitationRow } from '../src/utils/citationGraph.ts';
+import type { CitationRow } from '../src/utils/citation-graph.ts';
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -14,9 +14,9 @@ import {
   extractCitationOpenAlexId,
   normalizeCitationDoi,
   normalizeCitationRows,
-} from '../src/utils/citationGraph.ts';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
+} from '../src/utils/citation-graph.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publication-status.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';
@@ -94,7 +94,6 @@ function mapOpenCitationsMetaWork(work: Record<string, string> | null): Paper | 
     publicationType,
     publicationStatus: publicationType === 'preprint' ? 'preprint' : 'published',
     peerReviewed: publicationType !== 'preprint',
-    openAccess: false,
     landingPageUrl: `https://doi.org/${doi}`,
     citationCount: 0,
     citationCountKnown: false,
@@ -313,7 +312,9 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
     };
   }, {
     identity,
-    openAlexCalls: OPENALEX_CALLS.citationGraph,
+    // Exploration: the graph is a reader looking further from a paper, and it
+    // spends six units where a feed page spends one.
+    openAlexBudget: { units: OPENALEX_CALLS.citationGraph, tier: 'exploration', kind: 'graph' },
     // The DOI reaching upstream is the normalized one -- lowercased, stripped of
     // its `doi.org` prefix and of trailing punctuation -- so keying on the raw one
     // made every capitalisation of the same DOI a separate miss worth up to six

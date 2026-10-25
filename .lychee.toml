@@ -1,0 +1,3 @@
+# CI checks repository files and Markdown heading fragments without network calls.
+offline = true
+include_fragments = "anchor-only"

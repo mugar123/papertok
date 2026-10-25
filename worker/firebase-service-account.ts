@@ -122,7 +122,7 @@ export async function getAccessToken(env: WorkerEnv, { fetchImpl = fetch, now = 
       assertion,
     }).toString(),
   });
-  const payload = await response.json<{ access_token?: string; expires_in?: unknown; error?: string }>().catch(() => ({} as { access_token?: string; expires_in?: unknown; error?: string }));
+  const payload = await response.json<{ access_token?: string; expires_in?: unknown; error?: string }>().catch((): { access_token?: string; expires_in?: unknown; error?: string } => ({}));
   if (!response.ok || !payload?.access_token) {
     throw new FirebaseServiceAccountError('SERVICE_TOKEN_REFUSED', 502, payload?.error || '');
   }

@@ -1,12 +1,12 @@
 import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
 
 type RewriteLevel = keyof typeof REWRITE_LEVELS;
 type ExplanationContext = ReturnType<typeof normalizePaperForExplanation>;
-import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/Rewrite.ts';
-export type { RewriteSection } from '../src/models/Rewrite.ts';
+import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/rewrite.ts';
+export type { RewriteSection } from '../src/models/rewrite.ts';
 interface CachedRewrite { meta: RewriteMeta; sections: RewriteSection[]; truncated?: boolean }
 type RewriteSource = { text: string; truncated: boolean; textReason: string; pdfBase64?: never }
   | { pdfBase64: string; textReason?: string; text?: never; truncated?: never };
@@ -73,6 +73,7 @@ import {
   nanPdfPart,
 } from './nan-client.ts';
 import { extractPaperText, formatPaperTextForPrompt } from './paper-text.ts';
+import { DEGRADED_CACHE_SECONDS } from './provider-runtime.ts';
 
 // Bump when the prompt or output budget changes so cached rewrites use that policy.
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
@@ -573,12 +574,12 @@ export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   return null;
 }
 
-async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite) {
+async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite, ttlSeconds: number) {
   const target = rewriteStore(env);
   if (!target) return;
   try {
     await target.store.put(`${target.prefix}${key}`, JSON.stringify(value), {
-      expirationTtl: REWRITE_CACHE_TTL_SECONDS,
+      expirationTtl: ttlSeconds,
     });
   } catch {
     // A missed cache write only costs a future regeneration.
@@ -657,7 +658,7 @@ function streamRequestFailed(error: unknown) {
  * PDF's, so "the attached paper" is still what it rewrites.
  */
 async function requestNanStream({ env, paper, level, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   const prompt = buildRewritePrompt(paper, level);
   const content = source.text
     ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
@@ -691,7 +692,7 @@ async function requestNanStream({ env, paper, level, source, model, signal }: Mo
 }
 
 async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   let upstream;
   try {
     upstream = await fetch(
@@ -782,9 +783,9 @@ async function paperSourceFor(provider: string, env: WorkerEnv, pdfData: Uint8Ar
  * on: every throw below becomes an `error` line instead, refunding the day's use
  * through the same predicate the pre-commit path used.
  */
-function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }: {
+function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate, quota, extraHeaders }: {
   env: WorkerEnv; paper: ExplanationContext; level: RewriteLevel; language: string;
-  meta: RewriteMeta; cacheKey: string; quota: Awaited<ReturnType<typeof reserveAIQuota>>;
+  meta: RewriteMeta; cacheKey: string; regenerate: boolean; quota: Awaited<ReturnType<typeof reserveAIQuota>>;
   extraHeaders: Record<string, string>;
 }) {
   const model = meta.model;
@@ -995,13 +996,20 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
-        cachedWrite = finish !== null;
+        // The key names the model that was asked first. What the fallback wrote
+        // carries its own name and is kept only as long as an outage, so readers
+        // get the primary model again once it recovers.
+        const fellBack = activeModel !== model;
+        // A regenerate skipped the cache read, so the entry it would overwrite may
+        // be complete. Only a complete result from the primary model is worth
+        // replacing it with; the lighter model's text does not displace it.
+        cachedWrite = regenerate ? finish === 'complete' && !fellBack : finish !== null;
         if (cachedWrite) {
           await writeCachedRewrite(env, cacheKey, {
-            meta,
+            meta: fellBack ? { ...meta, model: activeModel } : meta,
             sections,
             truncated: finish === 'truncated',
-          });
+          }, fellBack ? DEGRADED_CACHE_SECONDS : REWRITE_CACHE_TTL_SECONDS);
         }
         await send({
           type: 'done',
@@ -1036,7 +1044,8 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         upstreamStatus,
         refunded,
         // A rewrite that succeeded but was not stored is the truncation guard
-        // firing, and it is the only way to see it happening from the logs.
+        // firing (or a regenerate cut short), and it is the only way to see it
+        // happening from the logs.
         cached: cachedWrite,
         outcome: sections.length === 0
           ? (rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE')
@@ -1121,7 +1130,7 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; retryIncomplete?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; retryIncomplete?: unknown; regenerate?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
@@ -1139,7 +1148,10 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
     : cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100) || DEFAULT_REWRITE_MODEL;
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
-  const cached = await readCachedRewrite(env, cacheKey);
+  // A reader who asks to regenerate has a copy of this rewrite saved already and
+  // wants a new one, so replaying the shared entry would hand back the same text.
+  const regenerate = payload.regenerate === true;
+  const cached = regenerate ? null : await readCachedRewrite(env, cacheKey);
   if (cached && !(cached.truncated === true && payload.retryIncomplete === true)) {
     return replayCachedRewrite(cached, level, language, extraHeaders);
   }
@@ -1163,7 +1175,7 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
 
     // Returns immediately: the download and the model both run behind the 200,
     // under a heartbeat, and refund the reservation from inside the stream.
-    return streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders });
+    return streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate, quota, extraHeaders });
   } catch (error) {
     // Nothing between the reservation and the response is expected to throw, but
     // a use reserved for a rewrite that never started is still owed back.

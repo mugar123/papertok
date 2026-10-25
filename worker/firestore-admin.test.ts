@@ -273,7 +273,7 @@ test('a document reads back decoded, with the bearer token attached', async () =
     { status: 200 },
   ));
   assert.deepEqual(await admin.getDocument(['publicListOwners', 'abc']), { ownerId: 'alice' });
-  assert.equal(calls[0].init.headers!.authorization, 'Bearer tok');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
 });
 
 test('withMeta pairs the data with the version a precondition needs', async () => {
@@ -375,6 +375,21 @@ test('runQuery sends a field filter and collection-group descendants', async () 
   assert.equal(body!.structuredQuery.limit, 80);
 });
 
+test('runQuery can ask for document names without their fields', async () => {
+  const bodies: Array<{ structuredQuery: Record<string, unknown> }> = [];
+  const { admin } = adminWith(async (_url, init) => {
+    bodies.push(JSON.parse(init.body as string));
+    return new Response(JSON.stringify([
+      { document: { name: 'projects/p/databases/(default)/documents/users/u/summaries/s1' } },
+    ]), { status: 200 });
+  });
+  const rows = await admin.runQuery({ parentSegments: ['users', 'u'], collectionId: 'summaries', select: ['__name__'] });
+  await admin.runQuery({ parentSegments: ['users', 'u'], collectionId: 'lists' });
+  assert.deepEqual(bodies[0].structuredQuery.select, { fields: [{ fieldPath: '__name__' }] });
+  assert.equal('select' in bodies[1].structuredQuery, false);
+  assert.deepEqual(rows, [{ id: 's1', data: {}, path: ['users', 'u', 'summaries', 's1'] }]);
+});
+
 test('countQuery reads the integer aggregation alias', async () => {
   const { admin } = adminWith(async () => new Response(JSON.stringify([
     { result: { aggregateFields: { count: { integerValue: '7' } } } },
@@ -399,8 +414,8 @@ test('a 401 drops the isolate cached token and retries once with a fresh one', a
   // hour, and every request in that window leaves as a 502.
   assert.deepEqual(await admin.getDocument(['publicLists', 'abc']), { title: 'Ok' });
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].init.headers!.authorization, 'Bearer token-1');
-  assert.equal(calls[1].init.headers!.authorization, 'Bearer token-2');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer token-1');
+  assert.equal(calls[1].init.headers.authorization, 'Bearer token-2');
   assert.equal(mints(), 2);
 });
 

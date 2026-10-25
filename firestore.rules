@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     // OpenAlex's primary topic as a stored copy keeps it (`storedClassification`
-    // in src/models/Paper.ts): the topic, its subfield, field and domain, each
+    // in src/models/paper.ts): the topic, its subfield, field and domain, each
     // by id and name, and nothing else.
     function storedSubjectReference(value) {
       return value is map
@@ -45,13 +45,11 @@ service cloud.firestore {
     // These documents used to be validated here, per paper, from the client.
     // They cannot be: the rules engine stops at 1000 evaluated expressions per
     // request and ONE realistic paper already exceeded that budget, so
-    // publishing was refused outright in production. Measured in
-    // tests/p18-measure.test.js, with the ceiling for every trimmed variant —
-    // no honest trim left the product cap above six papers.
+    // publishing was refused outright in production.
     //
     // So the write moved to the Worker, which validates in real code with the
-    // service identity (`worker/public-list-api.js`) and holds the single
-    // definition of a valid public list in `src/services/publicListPayload.js`,
+    // service identity (`worker/public-list-api.ts`) and holds the single
+    // definition of a valid public list in `src/services/public-list-payload.ts`,
     // the same module the browser imports. Here, only two things remain true:
     // anyone may read a share link, and nobody may write one.
     //
@@ -301,7 +299,7 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'emoji', 'color', 'paperIds', 'createdAt', 'publicShareId',
-            // F12: `onProfile` and `publicSyncedAt` are stamped by the Worker
+            // `onProfile` is accepted for legacy lists; the Worker stamps `publicSyncedAt`
             // (attribution mirror and last-sync marker); `updatedAt` by the
             // client on each edit. They are tolerated rather than protected:
             // faking any of them only miscolors the owner's own badges and
@@ -466,6 +464,54 @@ service cloud.firestore {
               && validNonEmptyString(request.resource.data.endQuote, 400)))
           && (!('endQuote' in request.resource.data)
             || 'endParagraphIndex' in request.resource.data);
+      }
+
+      // The reader's own plain-words summaries (src/services/saved-summary-service.ts):
+      // one per paper and level, keyed `<paperKey>.<level>`, written together
+      // with the history row below in one batch. The client writes them only
+      // for its own account and reads them back so that reopening a paper does
+      // not spend another AI use; nothing here is shared between accounts.
+      //
+      // The text is fetched one document at a time and never listed: a page of
+      // summaries would download whole papers' worth of text, and the history
+      // below is the list. The rules cannot walk the sections, so a section's
+      // own size is bounded only by Firestore's 1 MiB document limit; the count
+      // is capped at the client's ceiling (MAX_SECTIONS).
+      match /summaries/{summaryId} {
+        allow get, delete: if ownsUserTree(userId);
+        allow list: if false;
+        allow create, update: if ownsUserTree(userId)
+          && summaryId.size() <= 620
+          && summaryId.matches('^[A-Za-z0-9_-]+[.](beginner|university|researcher)$')
+          && request.resource.data.keys().hasOnly(['sections', 'model', 'sourceBasis', 'promptVersion'])
+          && request.resource.data.sections is list
+          && request.resource.data.sections.size() > 0
+          && request.resource.data.sections.size() <= 24
+          && validString(request.resource.data.model, 100)
+          && validString(request.resource.data.sourceBasis, 40)
+          && validString(request.resource.data.promptVersion, 40);
+      }
+
+      // One row per saved summary, which is all the history ever pages
+      // through: newest first, SUMMARY_HISTORY_PAGE_SIZE rows plus one that
+      // says whether another page exists. The id has to be the row's own paper
+      // key and level, so a row always names the summary it reopens.
+      match /summaryHistory/{summaryId} {
+        allow get, delete: if ownsUserTree(userId);
+        allow list: if ownsUserTree(userId) && request.query.limit <= 21;
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'paperKey', 'paperId', 'level', 'title', 'pdfUrl', 'updatedAt'
+          ])
+          && validNonEmptyString(request.resource.data.paperKey, 600)
+          && request.resource.data.paperKey.matches('^[A-Za-z0-9_-]+$')
+          && request.resource.data.level in ['beginner', 'university', 'researcher']
+          && summaryId == request.resource.data.paperKey + '.' + request.resource.data.level
+          && validNonEmptyString(request.resource.data.paperId, 400)
+          && validNonEmptyString(request.resource.data.title, 1000)
+          && validString(request.resource.data.pdfUrl, 2000)
+          && request.resource.data.pdfUrl.matches('^https://.+')
+          && request.resource.data.updatedAt == request.time;
       }
 
       match /{document=**} {
