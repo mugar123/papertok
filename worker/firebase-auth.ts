@@ -3,13 +3,12 @@ import type { WorkerEnv } from './env.ts';
 export interface VerifiedIdentity {
   uid: string;
   email: string;
+  displayName?: string;
   /** Firebase's own flag, set only by sign-ins through a provider that verifies the address itself. */
   emailVerified: boolean;
   /** `emailVerified`, or a Google or GitHub identity carrying the same address (`accountOwnsEmail`). */
   ownsEmail: boolean;
   authTime: number | null;
-  /** The account's name, or '' when it has none. The email digest greets the reader with it. */
-  displayName: string;
 }
 
 interface LookupUser {
@@ -37,7 +36,7 @@ const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
  * the app to turn it on (#267). An identity provider that vouched for the same
  * address is the proof of possession in that case.
  */
-function accountOwnsEmail(account: Pick<LookupUser, 'email' | 'emailVerified' | 'providerUserInfo'> | null | undefined) {
+export function accountOwnsEmail(account: Pick<LookupUser, 'email' | 'emailVerified' | 'providerUserInfo'> | null | undefined) {
   if (account?.emailVerified === true) return true;
   const email = String(account?.email || '').trim().toLowerCase();
   return email !== '' && (account?.providerUserInfo || []).some(provider => (
@@ -207,10 +206,12 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
     ? {
       uid: user.localId,
       email: String(user.email || '').trim().toLowerCase(),
+      ...(typeof user.displayName === 'string'
+        ? { displayName: user.displayName.replace(/\s+/g, ' ').trim().slice(0, MAX_DISPLAY_NAME_LENGTH) }
+        : {}),
       emailVerified: user.emailVerified === true,
       ownsEmail: accountOwnsEmail(user),
       authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
-      displayName: String(user.displayName || '').replace(/\s+/g, ' ').trim().slice(0, MAX_DISPLAY_NAME_LENGTH),
     }
     : null;
   if (!lookup.ok || !identity) throw new WorkerAuthError('AUTH_REQUIRED', 401);

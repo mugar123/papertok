@@ -37,7 +37,7 @@ export interface Subscription extends Partial<Preferences>, DeliveryState {
   uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
 }
-type EmailIdentity = Awaited<ReturnType<typeof verifyEmailIdentity>>;
+type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
   id?: unknown; title?: unknown; summary?: unknown; doi?: unknown; published?: unknown; updated?: unknown; journal_ref?: unknown;
   category?: { '@_term'?: unknown } | Array<{ '@_term'?: unknown }>;
@@ -792,38 +792,6 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
     });
     return parseArxivDigestFeed(await response.text(), follows);
   });
-}
-
-/**
- * The shared verifier, so these routes get its junk-token screen and length
- * cap, with its failures in the codes the email settings already show.
- * Identity Toolkit being unreachable is an outage, not a signed-out reader, so
- * it stays a 503 the reader can retry.
- *
- * Only the settings read may use the 60 s identity cache. A write stores the
- * reader's address and name and sends mail, and account deletion purges the
- * subscription before it deletes Auth, so a cached identity would let a deleted
- * account's token create the subscription again (institution-link.ts: a write
- * asks every time).
- */
-async function verifyEmailIdentity(request: Request, env: WorkerEnv) {
-  let identity;
-  try {
-    identity = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
-  } catch (error) {
-    if (!(error instanceof WorkerAuthError)) throw error;
-    const code = error.status !== 503
-      ? 'EMAIL_AUTH_REQUIRED'
-      : error.code === 'AUTH_NOT_CONFIGURED' ? 'EMAIL_NOT_CONFIGURED' : 'EMAIL_UNAVAILABLE';
-    throw new EmailNotificationError(code, error.status);
-  }
-  if (!identity.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
-  if (!identity.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
-  return {
-    uid: identity.uid,
-    email: identity.email,
-    displayName: identity.displayName,
-  };
 }
 
 function publicSubscription(subscription: Subscription | null, email: string) {
@@ -2329,7 +2297,22 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
 }
 
 export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
-  const identity = await verifyEmailIdentity(request, env);
+  let verified;
+  try {
+    // Only the settings read may use the 60 s identity cache. A write stores the
+    // reader's address and name or sends mail, and account deletion purges the
+    // subscription before it deletes Auth, so a cached identity would let a
+    // deleted account's token create the subscription again.
+    verified = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
+  } catch (error) {
+    if (!(error instanceof WorkerAuthError)) throw error;
+    const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
+      : error.code === 'AUTH_NOT_CONFIGURED' ? 'EMAIL_NOT_CONFIGURED' : 'EMAIL_UNAVAILABLE';
+    throw new EmailNotificationError(code, error.status);
+  }
+  if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
+  const identity = { uid: verified.uid, email: verified.email, displayName: cleanText(verified.displayName, 160) };
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
