@@ -8,6 +8,7 @@ import {
   handleAccountDeletionRequest,
   runAccountDeletionSlice,
 } from './account-deletion.ts';
+import { handleEmailNotificationRequest } from './email-notifications.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
 const UID = 'alice-uid';
@@ -384,6 +385,47 @@ test('a write that lands between the sweep and the Auth delete is swept too', as
   assert.ok(result);
   assert.equal(result.complete, true);
   assert.equal(admin.documents[`users/${UID}/highlights/late`], undefined);
+});
+
+test('a digest turned on while the Auth delete is in flight is purged too', async () => {
+  // Identity Toolkit still knows the account until accounts:delete returns, so
+  // the notification route accepts a settings save that lands after the purge.
+  const restore = stubIdentityLookup();
+  const store = kvStore();
+  const env = {
+    ...SERVICE,
+    NOTIFICATION_STORE: store as typeof store & KVNamespace,
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
+    EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
+  };
+
+  try {
+    let saved = false;
+    const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
+      idToken: TOKEN,
+      fetchImpl: async () => {
+        await handleEmailNotificationRequest(new Request('https://worker.test/notifications/preferences', {
+          method: 'PUT',
+          headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            maxPapers: 5,
+            follows: [{ type: 'author', canonicalId: 'A1', displayName: 'Ada', externalIds: {}, metadata: { categoryIds: [] } }],
+            previewItems: [],
+          }),
+        }), env, '/notifications/preferences');
+        saved = store.data.has(`notification:subscription:${UID}`);
+        return new Response('{}', { status: 200 });
+      },
+    });
+
+    assert.equal(saved, true);
+    assert.equal(result.complete, true);
+    assert.equal(store.data.has(`notification:subscription:${UID}`), false);
+  } finally {
+    restore();
+  }
 });
 
 test('paper stubs lose their createdBy attribution', async () => {

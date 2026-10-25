@@ -332,7 +332,10 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   await deleteAuthAccount(env, idToken, { fetchImpl });
   // The session stays valid until the line above returns, so anything the client
   // wrote after the sweep walked past it is an orphan nobody — not even its own
-  // author, now that Auth is gone — can ever remove. Sweep once more.
+  // author, now that Auth is gone — can ever remove. Sweep once more, the
+  // subscription included: a digest turned on in another tab meanwhile passed
+  // Identity Toolkit because the account still existed.
+  await purgeEmailSubscription(env, uid);
   await deleteUserTree(admin, uid);
   return { complete: true, stage: 'auth' };
 }
