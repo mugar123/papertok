@@ -3,7 +3,7 @@ import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { areaKeyForCategory, leavesForOpenAlexTopic } from './area-accent.ts';
-import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { getAllLeafCategories, getCategoryArea } from '../data/category-taxonomy.ts';
 import { activeCategories } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
@@ -320,8 +320,10 @@ function activeAreasOf(activeCategories: string[]) {
 
 // Whether a card belongs to one of the reader's active subareas even when it
 // names no leaf of its own: a working paper is filed under its area ('econ'),
-// an area-lane article under OpenAlex concept names, and a specialist
-// source's card carries only the leaf it was fetched for. A card of the main
+// an arXiv paper under a category the taxonomy has no leaf for ('math.AC',
+// active with its archive's area), an area-lane article under OpenAlex
+// concept names, and a specialist source's card carries only the leaf it was
+// fetched for. A card of the main
 // corpus request is active by construction: its lanes are the active ones.
 // Only evidence of an area makes a card dormant: one that says nothing of its
 // area (a followed author's article filed under concept names) stays active,
@@ -333,7 +335,7 @@ function isInActiveSubarea(paper: Partial<Paper>, categories: string[], activeCa
   const fetchedFor = paper._fetchedFor ?? [];
   return paper._type === 'exploit'
     || areaCategories.some(category => activeCategories.includes(category)
-      || (areaKeyForCategory(category) === category && areas.has(category)))
+      || (!getCategoryArea(category) && areas.has(areaKeyForCategory(category)!)))
     || topicLeaves.some(leaf => activeCategories.includes(leaf))
     || fetchedFor.some(category => activeCategories.includes(category))
     || (areaCategories.length === 0 && topicLeaves.length === 0 && fetchedFor.length === 0);

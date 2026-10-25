@@ -12,6 +12,7 @@ import {
 } from './recommendation-engine.ts';
 import type { Paper } from '../models/paper.ts';
 import type { RecommendationContext } from './recommendation-engine.ts';
+import { activeCategories } from './interest-memory.ts';
 import {
   createEmptyInteractionProfile,
   readProfileSignals,
@@ -212,6 +213,36 @@ test('a card is dormant only when every piece of area evidence it carries is ina
 
   // A leaf of an area the reader left, and nothing else.
   assert.equal(similarity({ id: 'hep-th-1', primaryCategory: 'hep-th', _type: 'followed' }), 0);
+});
+
+// ENG-137, ruling R16: an arXiv category the taxonomy has no leaf for
+// (math.AC, cond-mat.dis-nn, hep-lat) belongs to its archive's area, and is
+// active when that area is. A reader who never edited keeps its signals.
+test('a category with no leaf of its own is active when its area is', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const score = (paper: Parameters<typeof scorePaperForRecommendation>[0], selected: string[]) => scorePaperForRecommendation(
+    { published, _semanticScore: 0.5, _type: 'followed', ...paper },
+    {
+      now: NOW,
+      userPreferences: selected,
+      activeCategories: [...activeCategories(selected, [])],
+      categoryAffinities: { 'math.AC': 40, 'cond-mat.dis-nn': 40, 'hep-lat': 40 },
+    },
+  );
+
+  // A followed author's commutative algebra, for a reader of algebraic geometry and number theory.
+  const commutativeAlgebra = score({ id: 'ac', primaryCategory: 'math.AC' }, ['math.AG', 'math.NT']);
+  assert.deepEqual([commutativeAlgebra.corpusSimilarity, commutativeAlgebra.affinity], [50, 40]);
+
+  // Physics active: a leaf of it, and a category it has no leaf for.
+  assert.equal(score({ id: 'str-el', primaryCategory: 'cond-mat.str-el' }, ['quant-ph']).corpusSimilarity, 50);
+  const disorderedSystems = score({ id: 'dis-nn', primaryCategory: 'cond-mat.dis-nn' }, ['quant-ph']);
+  assert.deepEqual([disorderedSystems.corpusSimilarity, disorderedSystems.affinity], [50, 40]);
+
+  // Physics inactive: both stay dormant.
+  assert.equal(score({ id: 'hep-th', primaryCategory: 'hep-th' }, ['math.AG']).corpusSimilarity, 0);
+  const lattice = score({ id: 'hep-lat', primaryCategory: 'hep-lat' }, ['math.AG']);
+  assert.deepEqual([lattice.corpusSimilarity, lattice.affinity], [0, 0]);
 });
 
 // The feed's context is rebuilt on every call, and one re-rank's cache
