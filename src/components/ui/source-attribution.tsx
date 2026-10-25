@@ -4,7 +4,8 @@ import './source-attribution.css';
 
 /**
  * The credit Semantic Scholar's API licence asks for wherever its data is
- * shown: `lead` says what came from it, and the link goes back to it with
+ * shown: `lead` leads into the linked name ("From", "With data from",
+ * "Recommended by"), and the link goes back to it with
  * `utm_source=api` (utils/semantic-scholar-attribution.ts builds the href).
  * A plain line of text, not a live region: it arrives with the data it credits.
  * `as="span"` sets it inside the paragraph it credits, so it arrives and leaves

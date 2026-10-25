@@ -2130,7 +2130,7 @@ const PaperCard = memo(function PaperCard({
                   <SourceAttribution
                     as="span"
                     className="pc-abstract-source"
-                    lead={`${abstractAttribution.label} ·`}
+                    lead={abstractAttribution.label}
                     href={abstractAttribution.href}
                     inert={!expanded && abstractClipped !== false}
                     onLinkClick={swallowClick}

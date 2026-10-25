@@ -225,7 +225,8 @@
 }
 
 /* The title over the credit for the recommendations, both inside the band's
-   40px: one line each, the credit at the kicker's size. */
+   40px: one line each, the credit at the kicker's size. Not clipped, so the
+   link's focus ring shows whole. */
 .similar-heading {
   min-width: 0;
   display: flex;
@@ -236,8 +237,6 @@
   font-size: 0.6875rem;
   line-height: 1.4;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Wider than a phone, the band's line stands in the middle, over the feed's

@@ -48,7 +48,7 @@ export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClos
         </header>
         <DrawerBody className="abstract-sheet-body" data-base-ui-swipe-ignore>
           <p className="abstract-sheet-text"><ScientificText>{paper.abstract}</ScientificText></p>
-          {attribution && <SourceAttribution className="abstract-sheet-source" lead={`${attribution.label} ·`} href={attribution.href} />}
+          {attribution && <SourceAttribution className="abstract-sheet-source" lead={attribution.label} href={attribution.href} />}
         </DrawerBody>
       </DrawerContent>
     </Drawer>
