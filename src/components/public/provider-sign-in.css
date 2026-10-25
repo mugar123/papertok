@@ -24,7 +24,13 @@
 }
 
 /* Inline, so the note follows the surface's own text-align; Try again sits on
-   the text's line and wraps below it on a narrow screen. */
-.provider-preparing > button {
-  margin-inline-start: var(--space-2);
+   the text's line and wraps below it on a narrow screen. The word space
+   between them, widened here, separates them on one line and drops at a wrap,
+   where a margin would push the wrapped button off-centre. */
+.provider-preparing {
+  word-spacing: var(--space-1);
+}
+
+.provider-preparing > * {
+  word-spacing: normal;
 }

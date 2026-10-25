@@ -50,7 +50,10 @@ export function PreparingNote({ id, state, onRetry, keepLine = true }: { id: str
         {state === 'ready' && waited && <span className="sr-only">Sign-in ready.</span>}
       </span>
       {state === 'failed' && (
-        <Button variant="outline" size="sm" onClick={retry} {...retryFocus}>Try again</Button>
+        <>
+          {' '}
+          <Button variant="outline" size="sm" onClick={retry} {...retryFocus}>Try again</Button>
+        </>
       )}
     </p>
   );
