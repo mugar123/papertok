@@ -903,6 +903,9 @@ export interface FeedQuery {
   // The page passes over the papers `seen` holds (PAP-103). Without it, `page`
   // names the page: apps that send `seen` only for notable papers page by number.
   skipsSeen: boolean;
+  // A page that skips seen papers, asked for past the last page (`page` then
+  // holds the last): when its walk finds no unseen paper, it has no papers.
+  pastLastPage: boolean;
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
@@ -992,7 +995,8 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * pages the reader saw before (PAP-103); a false positive passes over a paper
  * the reader has not seen. A later page walks on from the first paper the
  * last walk sent, not from the top. When the order holds none, the page is
- * the one `page` names, papers the reader has seen, rather than none. The
+ * the one `page` names, papers the reader has seen, rather than none; past
+ * the last page it is none, as for a page asked by number there. The
  * paper ids the walk reads stay in the kept order, so a later page reads only
  * the ones no page has read.
  */
@@ -1040,7 +1044,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
     notable = [...notablePassed.ranks, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
-  const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
+  const named = query.pastLastPage ? [] : ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   const [own, unseen] = await Promise.all([
     query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize, { from: walked }) : null,
     // After the page's own papers, for the app to place: one it leaves out is
@@ -1274,13 +1278,13 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     negativeIds,
     excludedIds,
     // A page that skips seen papers walks on whatever its number, which the
-    // app raises on every load; past the last page, its number names the last
-    // page, the one it serves when its ranking holds no unseen paper.
+    // app raises on every load; past the last page, it counts as the last.
     page: skipsSeen ? Math.min(page, FEED_MAX_PAGE) : page,
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
     seen,
     skipsSeen,
+    pastLastPage: skipsSeen && page > FEED_MAX_PAGE,
     notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
     // Not for the follows' request, even when no follow has a lane of its own
     // (a category topic): there the categories stand for followed topics

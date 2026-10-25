@@ -660,6 +660,45 @@ test('a session past its hundredth load still gets the next papers of its rankin
   assert.deepEqual(await ask({ categories: ['cs.CL'], page: 101, pageSize: 15 }), { papers: [] });
 });
 
+// Past page 100, a page with nothing unseen to send has no papers: the end of
+// the feed (pageAfterLoad). Had it sent page 100's ranks 1,500 to 1,514, every
+// later load would get those 15 seen papers again, and the app, which lists
+// none twice, would go on asking.
+test('a session that walks past the last unseen paper of its ranking after its hundredth load gets no papers, while a page asked by number keeps its page', async t => {
+  rankingCaches(t);
+  const { db, ask } = store();
+  const ranking = Array.from({ length: 1_530 }, (_, rank) => `2610.${String(rank).padStart(5, '0')}`);
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  ranking.forEach((paperId, rank) => {
+    const published = new Date(Date.now() - (rank + 1) * 60_000).toISOString();
+    insertWork.run(rank + 1, JSON.stringify({ id: paperId, title: `Paper ${rank}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run('cs.CL', rank + 1, published);
+  });
+  db.exec('COMMIT');
+  // Seen in earlier sessions: all but the last 30.
+  const seen = ranking.slice(0, 1_500);
+  const answers = [];
+  for (const page of [101, 102, 103, 104]) {
+    const answer = await ask({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true });
+    answers.push({ papers: ids(answer.papers), skipsSeen: answer.skipsSeen });
+    seen.push(...ids(answer.papers));
+  }
+  assert.deepEqual(answers, [
+    { papers: ranking.slice(1_500, 1_515), skipsSeen: true },
+    { papers: ranking.slice(1_515), skipsSeen: true },
+    { papers: [], skipsSeen: true },
+    { papers: [], skipsSeen: true },
+  ]);
+  // Up to page 100, the page the request names, seen papers shown again.
+  const atLast = await ask({ categories: ['cs.CL'], page: 100, pageSize: 15, seen: feedSeenFilter(ranking), skipsSeen: true }, 'reader-2');
+  assert.deepEqual(ids(atLast.papers), ranking.slice(1_500, 1_515));
+  // Bundles that page by number.
+  assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 100, pageSize: 15 }, 'reader-3')).papers), ranking.slice(1_500, 1_515));
+  assert.deepEqual(await ask({ categories: ['cs.CL'], page: 101, pageSize: 15 }, 'reader-3'), { papers: [] });
+});
+
 // What a fold (ingestPapers' `folded`) or an eviction does to a work's row.
 function removeWork(db: ReturnType<typeof store>['db'], arxivId: string) {
   const { work_id: workId } = db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number };
