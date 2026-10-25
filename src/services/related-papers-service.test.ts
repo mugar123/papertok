@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { clearRelatedPapersCache, getRelatedPapers, getSemanticScholarPaperId } from './related-papers-service.ts';
 import { SemanticScholarAdapter } from './adapters/semantic-scholar-adapter.ts';
 import { PaperBuilder } from './paper-builder.ts';
+import { accessStatusForPaper } from '../utils/paper-status.ts';
 
 test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.1000/TEST', arxivId: '1234.5' }), 'DOI:10.1000/TEST');
@@ -39,6 +40,23 @@ test('loads recommendations for a normalized Semantic Scholar paper without exte
   assert.deepEqual(asked, [seedId]);
   assert.deepEqual(related.map(paper => paper.title), ['Related paper']);
   assert.equal(getSemanticScholarPaperId(related[0]), nextId);
+});
+
+test('a related paper keeps the open-access answer Semantic Scholar gives, and no answer is not a paywall', async () => {
+  clearRelatedPapersCache();
+  // Synthetic records: no arXiv id, so the chip depends on the flag and the PDF alone.
+  const record = (hex: string, title: string, extra: object) => ({ paperId: hex.repeat(40), title, externalIds: {}, ...extra });
+  const fetchWorker = async () => new Response(JSON.stringify({ recommendedPapers: [
+    record('a', 'Silent', {}),
+    record('b', 'Closed', { isOpenAccess: false }),
+    record('c', 'Open', { isOpenAccess: true }),
+    record('d', 'Has a PDF', { openAccessPdf: { url: 'https://example.org/d.pdf' } }),
+  ] }));
+
+  const related = await getRelatedPapers({ id: 'arxiv:2607.12345', arxivId: '2607.12345' }, 8, { fetchWorker, apiBase: WORKER });
+  const chip = Object.fromEntries(related.map(paper => [paper.title, accessStatusForPaper(paper)]));
+
+  assert.deepEqual(chip, { Silent: null, Closed: 'subscription', Open: 'open', 'Has a PDF': 'open' });
 });
 
 test('does not interpret another provider id or a malformed hash as a Semantic Scholar id', () => {
