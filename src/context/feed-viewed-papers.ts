@@ -24,12 +24,25 @@ export function recordCardView(
   storage?: DeviceStorage,
 ) {
   if ((viewerId || null) !== activeUserId) return;
-  sessionSeen.add(paperId);
+  markSeenLatest(sessionSeen, paperId);
   if (signedInUid !== activeUserId) return;
   const viewed = readSeenPaperIds(activeUserId, storage);
   viewed.delete(paperId);
   viewed.add(paperId);
   saveSeenPaperIds(activeUserId, viewed, storage);
+}
+
+/**
+ * Makes a paper the newest of the seen set, which lists papers oldest first. A
+ * feed request holds only the 2,000 newest (`feedSeenIds`), and the corpus
+ * sends a paper the request does not hold as unseen; the app then passes it
+ * over, and moving it here puts it in the next request, so the corpus's walk
+ * goes past it (worker/paper-store.ts `readFeedPage`). `Set.add` alone would
+ * leave it where it was, out of every later request.
+ */
+export function markSeenLatest(sessionSeen: Set<string>, paperId: string) {
+  sessionSeen.delete(paperId);
+  sessionSeen.add(paperId);
 }
 
 /**

@@ -5,7 +5,7 @@ import type { FeedRequestBody, KeptRanking, RankingCache, StoreEnv } from './pap
 import type { QuotaRequest } from './request-quota-ledger.ts';
 
 import {
-  FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
+  FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, RANKING_KEPT_MS, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
 import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
@@ -174,25 +174,23 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
   return true;
 }
 
-// How long a reader's ranked candidates serve the pages after the first: about
-// a reading session. A like changes the request, and so the ranking.
-const RANKING_CACHE_SECONDS = 15 * 60;
-
 /**
  * The reader's ranking in this location's cache, under a key built from the
- * verified uid and the request: one reader's order is never another's.
+ * verified uid and the request: one reader's order is never another's. Each
+ * write keeps it for RANKING_KEPT_MS.
  *
  * The path names the entry's shape. Workers before KeptRanking keep a plain
  * list under `store-ranking/` and slice whatever they find there, so a
  * rollback reading this shape would throw; under its own path, neither
  * version reads the other's entries, and the next page is ranked again.
+ * `store-ranking-v4/` holds the shape before `walked` and `rankedBy`.
  */
 function rankingCache(uid: string): RankingCache | undefined {
   if (typeof caches === 'undefined') return undefined;
   const keyFor = async (key: string) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${key}`));
     const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return new Request(`https://papertok.internal/cache/store-ranking-v4/${hex}`);
+    return new Request(`https://papertok.internal/cache/store-ranking-v5/${hex}`);
   };
   return {
     async get(key) {
@@ -201,7 +199,7 @@ function rankingCache(uid: string): RankingCache | undefined {
     },
     async put(key, ranking) {
       await caches.default.put(await keyFor(key), new Response(JSON.stringify(ranking), {
-        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${RANKING_CACHE_SECONDS}` },
+        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${RANKING_KEPT_MS / 1_000}` },
       }));
     },
   };
@@ -299,11 +297,17 @@ export async function handleCorpusFeed(
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
-      // The ranks served, at once, so that a next page asked before the work
-      // below ends goes on after them.
+      // The ranks served and walked past, and the notable papers walked past,
+      // at once, so that a next page asked before the work below ends goes on
+      // after them.
       put: async (key, ranking) => {
         kept = [key, ranking];
-        await cache.put(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false });
+        await cache.put(key, {
+          ...ranking,
+          ranks: ranking.ranks.slice(0, Math.max(ranking.served, ranking.walked)),
+          notable: ranking.notable.slice(0, ranking.notableWalked),
+          final: false,
+        });
       },
       update: (key, ranking) => cache.put(key, ranking),
     },

@@ -73,7 +73,7 @@ import {
   readSeenPaperIds,
   saveProfileDriftCheckedAt,
 } from '../utils/user-scoped-storage.ts';
-import { addViewedPapers, leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -1307,9 +1307,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // A notable paper the feed does not show counts as viewed.
       notablePassedOver(newPapers, isAvailablePaper).forEach(paper => markPaperViewed(paper.id, activeUserId.current));
       // A paper the feed does not show (one the reader saw, liked, saved, read
-      // or dismissed, or a book) joins the seen papers, so a Worker that skips
-      // seen papers does not send it again on every page.
-      newPapers.forEach(paper => { if (!isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id); });
+      // or dismissed, or a book) becomes the newest of the seen papers, so the
+      // next request holds it even when it had left the 2,000 a request holds,
+      // and a Worker that skips seen papers walks past it.
+      newPapers.forEach(paper => { if (!isAvailablePaper(paper)) markSeenLatest(sessionSeenPapers.current, paper.id); });
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again, unless the reader has seen their whole ranking.

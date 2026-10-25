@@ -909,26 +909,54 @@ export interface FeedQuery {
  */
 export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
 /**
- * The order a reader's pages were served from. `served` counts the ranks of
- * the pages served by their numbers, including the empty ones of a page the
- * order ran out on, which `ranks` holds as null. It leaves out how far a walk
- * passed over seen papers, but the ids a walk read (`paperId`) still say so in
- * its read steps (200, 600, 1,400 ranks and so on), and an order whose walk
- * found papers up to its last rank is not final: together they tell roughly how much of the
- * top of the ranking the reader had seen, in an entry of the reader's alone,
- * kept for 15 minutes from the last page that read ids. A `final` order
- * serves the next pages as it is; otherwise a next page keeps only the ranks
- * served and ranks the rest again. `notable` is the asked
- * categories' notable papers, closest first, which no rank holds: each page
- * reads the ones its reader has not seen.
+ * The order a reader's pages were served from, in an entry of the reader's
+ * alone, kept for 15 minutes from the last page that changed it. `served`
+ * counts the ranks of the pages served by their numbers, including the empty
+ * ones of a page the order ran out on, which `ranks` holds as null.
+ *
+ * A page that skips seen papers walks the order from `walked`, the rank of the
+ * first paper the last walk sent: that walk's filter held every rank before
+ * it, or the corpus had dropped the work. A filter holds only the reader's
+ * 2,000 most recent papers, so a walk from the top would send again the ones
+ * seen before those; one that a page sent and the app never got is sent again.
+ * `notable` is the asked categories' notable papers, closest first, which no
+ * rank holds, walked the same way from `notableWalked`.
+ *
+ * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
+ * likes, rejections and order of lanes (`rankedBy`, a digest, so the entry
+ * holds no liked paper's id) serves the next pages as it is. Otherwise a next
+ * page keeps the ranks served and the ones walked past, and the notable papers
+ * walked past, and ranks the rest again. With the ids the walks read
+ * (`paperId`), the entry tells which ranks at the top of the reader's ranking
+ * their filter held.
  */
-export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean; notable?: RankedCandidate[] }
+export interface KeptRanking {
+  ranks: Array<RankedCandidate | null>;
+  served: number;
+  final: boolean;
+  notable: RankedCandidate[];
+  walked: number;
+  notableWalked: number;
+  rankedAt: number;
+  rankedBy: string;
+}
 export interface RankingCache {
   get(key: string): Promise<KeptRanking | null>;
   /** An order just ranked. */
   put(key: string, ranking: KeptRanking): Promise<void>;
-  /** A final order read from the cache, with the paper ids a page read since: kept as it is. */
+  /** An order read from the cache, with what its page changed: the pages served, the ids read, where the walks stopped. */
   update?(key: string, ranking: KeptRanking): Promise<void>;
+}
+
+// How long a reader's ranked candidates serve the pages after the first: about
+// a reading session. The entry lasts as long from the last page that changes it.
+export const RANKING_KEPT_MS = 15 * 60_000;
+
+/** The likes, rejections and order of lanes an order is ranked by, as a digest (`rankedBy`). */
+async function rankingInputs(lanes: string[], query: FeedQuery) {
+  const inputs = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort() });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -939,18 +967,19 @@ export interface RankingCache {
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
  * later page of the same request reads only its own papers from a final
- * order. Otherwise it ranks again, after the ranks already served: a paper
- * that arrived since starts on this page, and none served comes back. An
- * order with nothing left to serve is not final: the lanes may be about to
- * fill.
+ * order. Otherwise it ranks again, after the ranks already served or walked
+ * past (KeptRanking): a paper that arrived since starts on this page, and
+ * none served comes back. An order with nothing left to serve is not final:
+ * the lanes may be about to fill.
  *
  * With `skipsSeen`, the page is the first papers of the order the filter does
  * not hold, whatever `page` says, so a reload needs one request however many
  * pages the reader saw before (PAP-103); a false positive passes over a paper
- * the reader has not seen. When the order holds none, the page is the one
- * `page` names, papers the reader has seen, rather than none. The paper ids
- * the walk reads stay in the kept order, so a later page reads only the ones
- * no page has read.
+ * the reader has not seen. A later page walks on from the first paper the
+ * last walk sent, not from the top. When the order holds none, the page is
+ * the one `page` names, papers the reader has seen, rather than none. The
+ * paper ids the walk reads stay in the kept order, so a later page reads only
+ * the ones no page has read.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -963,26 +992,35 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
-  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
+  // The lanes as a set: their order, like the likes and rejections, changes
+  // the ranking (`rankedBy`) but not which pages it serves, so a change ranks
+  // again after the ranks the session passed rather than from the top.
+  const cacheKey = JSON.stringify({ lanes: [...lanes].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
+  const rankedBy = await rankingInputs(lanes, query);
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
-  let ranking = kept?.final ? kept.ranks : null;
+  const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
+  let ranking = kept?.ranks ?? [];
   let notable = kept?.notable ?? [];
-  const rankedAgain = !ranking;
-  if (!ranking) {
-    const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
+  const walked = kept?.walked ?? 0;
+  const notableWalked = kept?.notableWalked ?? 0;
+  if (rankedAgain) {
+    const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
+    const served = Array.from({ length: passed }, (_, index) => kept!.ranks[index] ?? null);
     const shown = new Set(served.map(candidate => candidate?.workId));
+    const notablePassed = notable.slice(0, notableWalked);
+    const notableShown = new Set(notablePassed.map(candidate => candidate.workId));
     const ranked = await rankCandidates(db, lanes, query, now);
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
-    notable = ranked.notable;
+    notable = [...notablePassed, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
   const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   const [own, unseen] = await Promise.all([
-    query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize) : null,
+    query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize, { from: walked }) : null,
     // After the page's own papers, for the app to place: one it leaves out is
     // still unseen, so a later page offers it again. Read beside the walk; a
     // page that can have no paper of its own reads none.
     query.seen && query.notable > 0 && (query.skipsSeen ? ranking.some(candidate => candidate !== null) : named.length > 0)
-      ? unseenRanks(db, notable, query.seen, query.notable)
+      ? unseenRanks(db, notable, query.seen, query.notable, { from: notableWalked })
       : null,
   ]);
   let ranked = own?.unseen.length ? own.unseen : named;
@@ -997,13 +1035,20 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ranked = own.unseen.length ? own.unseen : named;
   }
   if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
+  const walks = {
+    walked: own ? passedFirst(ranking, walked, own) : walked,
+    notableWalked: unseen ? passedFirst(notable, notableWalked, unseen) : notableWalked,
+  };
   const through = own?.unseen.length ? own.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable })
+    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy })
       .catch(error => console.warn('Feed ranking not cached', error));
-  } else if (kept && (own?.read || unseen?.read)) {
-    await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable })
-      .catch(error => console.warn('Feed ranking not cached', error));
+  } else if (kept) {
+    const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
+    if (own?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
+      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks })
+        .catch(error => console.warn('Feed ranking not cached', error));
+    }
   }
   if (ranked.length === 0) return [];
   const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
@@ -1026,21 +1071,39 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
 }
 
 /**
+ * Moves the ranks a walk from `from` passed over ahead of the papers it found,
+ * and returns where the next walk starts: past every rank the walk's filter
+ * held (or that names a work the corpus dropped, or none), and at the papers
+ * found, so one the app never got or did not place is found again. A later
+ * filter that no longer holds the passed ones does not bring them back, and a
+ * paper that a ranking after this one puts first stays ahead of the found
+ * ones without holding the next walk back.
+ */
+function passedFirst(ranks: Array<RankedCandidate | null>, from: number, walk: Awaited<ReturnType<typeof unseenRanks>>) {
+  const found = new Set(walk.unseen);
+  const passed = ranks.slice(from, walk.end).filter(candidate => !candidate || !found.has(candidate));
+  ranks.splice(from, walk.end - from, ...passed, ...walk.unseen);
+  return from + passed.length;
+}
+
+/**
  * The first `wanted` of `ranks` from `from` whose papers the reader has not
  * seen, in order, how many ranks the walk took to find them (`end`), and
  * whether it read paper ids (`read`). The filter holds the ids the app was
  * served, so a candidate's is read from its row, unless a walk already left
- * it on the candidate (`paperId`) and the walk trusts it (not `recheck`):
- * 200 ranks the first time and twice as many each time after, so a reader
- * who has seen a few thousand papers costs a few reads, and a whole ranking
- * at most six.
+ * it on the candidate (`paperId`) and the walk trusts it (not `recheck`): up
+ * to rank 200, then 600, 1,400, 3,000 and so on, wherever the walk starts, so
+ * a reader who has seen a few thousand papers costs a few reads, a whole
+ * ranking at most six, and pages that each walk on from the last read each id
+ * once.
  */
 async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, { from = 0, recheck = false } = {}) {
   const unseen: RankedCandidate[] = [];
   let end = from;
   let read = false;
-  for (let size = 200; end < ranks.length && unseen.length < wanted; size *= 2) {
-    const chunk = ranks.slice(end, end + size);
+  for (let bound = 200; end < ranks.length && unseen.length < wanted; bound = 2 * bound + 200) {
+    if (bound <= end) continue;
+    const chunk = ranks.slice(end, bound);
     const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && (recheck ? candidate.paperId !== '' : candidate.paperId === undefined));
     if (unread.length) {
       const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")

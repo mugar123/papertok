@@ -12,6 +12,8 @@ import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
+import { addViewedPapers, markSeenLatest, recordCardView, seenPapersForAccount } from '../src/context/feed-viewed-papers.ts';
+import { createEmptyInteractionProfile, recordInteractionEvent } from '../src/utils/interaction-profile.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -667,7 +669,147 @@ for (const pageSize of [1, 15, 30]) {
   });
 }
 
-const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
+// ─── A long session (ENG-103) ───
+
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() { return values.size; },
+  };
+}
+
+// The reader's ten categories, as many as the app asks for (MAIN_CATEGORIES).
+const SESSION_CATEGORIES = ['cs.AI', 'cs.CL', 'cs.CV', 'cs.LG', 'cs.RO', 'cs.IR', 'cs.NE', 'cs.CR', 'cs.DB', 'cs.HC'];
+const SESSION_RANKS = 3_000;
+const rankedPaper = (rank: number) => `2610.${String(rank).padStart(5, '0')}`;
+const notablePaper = (rank: number) => `1901.${String(rank).padStart(5, '0')}`;
+// On another device: 1,200 notable cards, then 500 papers, every other one at
+// the top of each order.
+const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) => 2 * index);
+
+/**
+ * A reader with a full history reads `loads` pages, as the review of ENG-103
+ * modelled it. The corpus holds 300 recent and 300 notable papers in each of
+ * their categories, which they rank newest first (they like nothing yet). The
+ * app passes over a paper it has seen (FeedContext.loadPapers) and shows the
+ * rest of the corpus's page, places two of its unseen notable cards, and adds
+ * 14 cards of the follows and exploration. `request` changes a load's request,
+ * and `minutesPerLoad` moves the clock after each load. With `filing`, the
+ * harvest files two recent papers and a notable one after each load, newer
+ * than any before: a ranking made after that puts them first.
+ */
+async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, filing = false, request = (_load: number) => ({}) } = {}) {
+  rankingCaches(t);
+  if (minutesPerLoad) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { env, db, ask } = store();
+  // The loads come seconds apart, past the ceiling of a reader's pages a minute.
+  Object.assign(env, { PROVIDER_USER_MINUTE_LIMIT: '1000' });
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let rank = 0; rank < SESSION_RANKS; rank += 1) {
+    const category = SESSION_CATEGORIES[rank % SESSION_CATEGORIES.length];
+    const published = new Date(Date.now() - (rank + 1) * 60_000).toISOString();
+    insertWork.run(rank + 1, JSON.stringify({ id: rankedPaper(rank), arxivId: rankedPaper(rank), title: `Paper ${rank}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run(category, rank + 1, published);
+    const listed = new Date(Date.UTC(2024, 0, 1) - rank * 3_600_000).toISOString();
+    insertWork.run(SESSION_RANKS + rank + 1, JSON.stringify({ id: notablePaper(rank), title: `Notable paper ${rank}`, authors: [] }), listed, '2099-01-01T00:00:00.000Z');
+    insertLane.run(`notable:${category}`, SESSION_RANKS + rank + 1, listed);
+  }
+  db.exec('COMMIT');
+
+  const uid = 'heavy-reader';
+  const storage = memoryStorage();
+  const aggregate = createEmptyInteractionProfile();
+  const view = (paperId: string, notable: boolean) => recordInteractionEvent(aggregate, { paperId, kind: 'viewTime', category: 'cs.LG', viewTime: 4, notable });
+  viewedRanks(1_200).forEach(rank => view(notablePaper(rank), true));
+  viewedRanks(500).forEach(rank => view(rankedPaper(rank), false));
+  const seen = seenPapersForAccount(uid, storage);
+  addViewedPapers(seen, aggregate);
+  const account = { activeUserId: uid, signedInUid: uid, sessionSeen: seen };
+
+  const session: Array<{ main: string[]; shown: string[]; placed: string[]; filed: string[] }> = [];
+  let otherCards = 0;
+  let workId = 2 * SESSION_RANKS;
+  const file = (paperId: string, lane: string, published: string) => {
+    workId += 1;
+    insertWork.run(workId, JSON.stringify({ id: paperId, title: `Paper ${paperId}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run(lane, workId, published);
+    return paperId;
+  };
+  for (let load = 0; load < loads; load += 1) {
+    const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, notable: 5, ...request(load) }, uid);
+    const known = papers.filter(item => seen.has(item.id));
+    known.filter(item => item._notable).forEach(item => recordCardView(item.id, uid, account, storage));
+    known.forEach(item => markSeenLatest(seen, item.id));
+    const shown = papers.filter(item => !item._notable && !known.includes(item));
+    const placed = papers.filter(item => item._notable && !known.includes(item)).slice(0, 2);
+    [...shown, ...placed].forEach(item => seen.add(item.id));
+    for (let card = 0; card < 14; card += 1) seen.add(`other-${otherCards++}`);
+    const category = SESSION_CATEGORIES[load % SESSION_CATEGORIES.length];
+    const filed = filing ? [
+      file(`2611.${String(2 * load).padStart(5, '0')}`, category, new Date().toISOString()),
+      file(`2611.${String(2 * load + 1).padStart(5, '0')}`, category, new Date().toISOString()),
+      file(`1902.${String(load).padStart(5, '0')}`, `notable:${category}`, new Date(Date.UTC(2024, 5, 1) + load * 3_600_000).toISOString()),
+    ] : [];
+    session.push({ main: ids(papers.filter(item => !item._notable)), shown: ids(shown), placed: ids(placed), filed });
+    if (minutesPerLoad) t.mock.timers.tick(minutesPerLoad * 60_000);
+  }
+  return session;
+}
+
+// What a session got: 15 papers of the ranking each load and two notable
+// cards, no paper of the ranking twice, so none the walks passed over came
+// back, and the papers filed before its last 20 loads, which a ranking after
+// their filing puts right after the ones passed over. A false positive of the
+// filter passes over one of those too (2611.00052 here, from the first load).
+function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
+  const short = session.flatMap(({ shown, placed }, load) => (shown.length < 15 || placed.length < 2 ? [`load ${load}: ${shown.length} papers, ${placed.length} notable`] : []));
+  assert.deepEqual(short, [], 'loads short of 15 new papers of the ranking or 2 notable cards');
+  const returned = session.flatMap(load => load.main);
+  const viewedBefore = new Set(viewedRanks(500).map(rankedPaper));
+  assert.deepEqual(returned.filter((id, index) => viewedBefore.has(id) || returned.indexOf(id) !== index), [], 'no paper the reader had seen comes back');
+  const got = new Set(session.flatMap(load => [...load.shown, ...load.placed]));
+  const filed = session.slice(0, -20).flatMap(load => load.filed);
+  const missed = filed.filter(id => !got.has(id));
+  assert.ok(missed.length <= 0.02 * filed.length, `${missed.length} of ${filed.length} papers filed during the session never came: ${missed.slice(0, 5)}`);
+}
+
+// On 52d08080 every page walked from the top of the ranking, and the app could
+// not put back into the filter a paper that had left its 2,000 newest ids: the
+// notable cards stopped after about 12 loads, the ranking after about 60.
+test('a reader who viewed 1,200 notable cards and 500 papers before gets new papers and notable cards on each of 90 loads', async t => {
+  const session = await longSession(t, 90);
+  assertSupplied(session);
+  // Every paper ranked before the last one the session got, and neither got
+  // nor viewed before, was passed over as seen: a false positive of the filter.
+  const returned = new Set(session.flatMap(load => load.main));
+  const viewedBefore = new Set(viewedRanks(500).map(rankedPaper));
+  const last = Math.max(...[...returned].map(id => Number(id.slice(5))));
+  const skipped = Array.from({ length: last }, (_, rank) => rankedPaper(rank)).filter(id => !returned.has(id) && !viewedBefore.has(id));
+  assert.ok(skipped.length / (skipped.length + returned.size) <= 0.012, `${skipped.length} unseen papers passed over, of ${skipped.length + returned.size}`);
+});
+
+test('a ranking kept for 15 minutes is ranked again after the papers the session passed over, and none comes back', async t => {
+  assertSupplied(await longSession(t, 90, { minutesPerLoad: 1, filing: true }));
+});
+
+test('a like, or a new order of the reader\'s categories, ranks again after the papers the session passed over', async t => {
+  assertSupplied(await longSession(t, 90, {
+    filing: true,
+    request: load => ({
+      // A like every third load, of a paper the corpus does not hold.
+      positiveIds: Array.from({ length: Math.floor(load / 3) }, (_, index) => `liked-${index}`),
+      categories: [...SESSION_CATEGORIES.slice(load % 10), ...SESSION_CATEGORIES.slice(0, load % 10)],
+    }),
+  }));
+});
+
+const followedAuthor ={ type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
   rankingCaches(t);

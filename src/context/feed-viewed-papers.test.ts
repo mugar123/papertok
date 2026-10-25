@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addViewedPapers, leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/user-scoped-storage.ts';
 import { MAX_VIEWED_IDS, createEmptyInteractionProfile, deserializeInteractionProfile, recordInteractionEvent, serializeInteractionProfile } from '../utils/interaction-profile.ts';
-import { feedSeenFilter, hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { feedSeenFilter, feedSeenIds, hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -24,7 +24,7 @@ test('a card viewed by the signed-in account joins its viewed list, last viewed 
   recordCardView('p2', 'account-a', account, storage);
   recordCardView('p1', 'account-a', account, storage);
   assert.deepEqual([...readSeenPaperIds('account-a', storage)], ['p2', 'p1']);
-  assert.deepEqual([...sessionSeen], ['p1', 'p2']);
+  assert.deepEqual([...sessionSeen], ['p2', 'p1']);
 });
 
 test('a card that reports after the feed switched to another account counts for neither', () => {
@@ -128,6 +128,22 @@ test('the papers an account viewed on any device join the seen set oldest first,
   assert.ok(earlier.slice(300).every(paperId => hasSeenPaper(filter, paperId)), 'so are the notable cards after the 300 oldest');
   const forgotten = earlier.slice(0, 300).filter(paperId => hasSeenPaper(filter, paperId)).length;
   assert.ok(forgotten <= 9, `${forgotten} of the 300 oldest notable cards are still held; only false positives may be`);
+});
+
+// The corpus sends a paper the request does not hold as unseen. The app passes
+// it over (FeedContext.loadPapers), or views it when it is a notable card, and
+// the next request must hold it, or the corpus sends it again on every page.
+test('a paper seen before the 2,000 most recent that a page brings back is held by the next request', () => {
+  const later = Array.from({ length: 2_000 }, (_, index) => `later-${index}`);
+  const sessionSeen = new Set(['passed-over', 'notable-viewed', ...later]);
+  assert.equal(feedSeenIds(sessionSeen).includes('passed-over'), false, 'the request left it out');
+
+  markSeenLatest(sessionSeen, 'passed-over');
+  recordCardView('notable-viewed', 'test-user', { activeUserId: 'test-user', signedInUid: 'test-user', sessionSeen }, memoryStorage());
+  assert.deepEqual(feedSeenIds(sessionSeen).slice(-2), ['passed-over', 'notable-viewed']);
+  const filter = readFeedSeenFilter(feedSeenFilter(sessionSeen));
+  assert.ok(hasSeenPaper(filter, 'passed-over') && hasSeenPaper(filter, 'notable-viewed'));
+  assert.equal(sessionSeen.size, 2_002, 'each paper is listed once');
 });
 
 test('the previous account\'s papers are cleared on a switch or a sign-out, not on a reload of the same account', () => {
