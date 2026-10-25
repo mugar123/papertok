@@ -17,6 +17,7 @@ import type { CATEGORIES } from './category-taxonomy.ts';
 export const OPENALEX_FIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = Object.freeze({
   11: 'bio', 13: 'bio',
   15: 'chemeng', 25: 'chemeng',
+  16: 'chem',
   17: 'cs',
   18: 'stat',
   20: 'econ',

@@ -74,6 +74,7 @@ import {
   Prohibit,
   Quotes,
   Sigma,
+  TestTube,
   Intersect,
   Sparkle,
   TrendUp,
@@ -216,6 +217,7 @@ const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: s
   chemeng: { Icon: Flask, ink: '32 24 192 200' },
   med: { Icon: Heartbeat, ink: '16 40 224 192' },
   bio: { Icon: Dna, ink: '56 16 144 224' },
+  chem: { Icon: TestTube, ink: '24 24 216 208' },
 };
 
 const RESOURCE_KIND_CONFIG = {

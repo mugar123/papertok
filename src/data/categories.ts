@@ -21,6 +21,7 @@ import {
   Heartbeat,
   Lightning,
   Monitor,
+  TestTube,
   TrendUp,
 } from '@phosphor-icons/react';
 import { CATEGORIES as AREAS } from './category-taxonomy.ts';
@@ -38,6 +39,7 @@ const AREA_ICONS: Record<string, typeof Atom> = {
   chemeng: Flask,
   med: Heartbeat,
   bio: Dna,
+  chem: TestTube,
 };
 
 export const CATEGORIES = Object.fromEntries(

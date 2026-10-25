@@ -2831,5 +2831,73 @@
       "T12929": "1/1",
       "T14018": "0/0"
     }
+  },
+  {
+    "leaf": "chem.anal",
+    "label": "Analytical Chemistry",
+    "topicIds": [
+      "T10180",
+      "T10908",
+      "T11460"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.electro",
+    "label": "Electrochemistry",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "chem.inorg",
+    "label": "Inorganic Chemistry",
+    "topicIds": [
+      "T11746",
+      "T11790",
+      "T12557",
+      "T10807",
+      "T12646"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.org",
+    "label": "Organic Chemistry",
+    "topicIds": [
+      "T11549",
+      "T11790",
+      "T11989",
+      "T12893",
+      "T13649",
+      "T13859",
+      "T10578",
+      "T11746",
+      "T12527",
+      "T12653"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.phys",
+    "label": "Physical & Theoretical Chemistry",
+    "topicIds": [
+      "T12044"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.spectro",
+    "label": "Spectroscopy",
+    "topicIds": [
+      "T10640",
+      "T11111",
+      "T12748",
+      "T12967",
+      "T11746",
+      "T11809",
+      "T12646",
+      "T13675"
+    ],
+    "status": "not-reviewed"
   }
 ]
