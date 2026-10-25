@@ -224,6 +224,21 @@
   color: var(--text-primary);
 }
 
+/* The title over the credit for the recommendations, both inside the band's
+   40px: one line each, the credit at the kicker's size. Not clipped, so the
+   link's focus ring shows whole. */
+.similar-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.similar-context .similar-source {
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 /* Wider than a phone, the band's line stands in the middle, over the feed's
    centred column; a long title still ellipsises inside the band. */
 @media (min-width: 769px) {
@@ -259,7 +274,8 @@
     padding: 0 var(--space-4);
   }
 
-  .similar-kicker {
+  .similar-kicker,
+  .similar-context .similar-source {
     font-size: 0.625rem;
   }
 
