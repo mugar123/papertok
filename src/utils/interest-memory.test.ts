@@ -317,3 +317,17 @@ test('nextAdded keeps earlier additions still selected, first, and drops removed
 test('nextAdded never repeats an id', () => {
   assert.deepEqual(nextAdded(['a'], ['a', 'b', 'b'], ['a']), ['a', 'b']);
 });
+
+// ENG-137, ruling R11: an old bundle or the onboarding can leave a subarea
+// both selected and deselected; the selection is the later intent.
+test('a subarea both selected and deselected stays in a group and active', () => {
+  const input = memory({ selected: ['quant-ph', 'hep-th'], deselected: ['hep-th'] });
+  assert.ok(planInterestGroups(input).groups.some(group => group.categories.includes('hep-th')));
+  assert.ok(activeCategories(input.selected, input.deselected).has('hep-th'));
+  assert.ok('hep-th' in interestProgress(input));
+});
+
+test("a subarea both selected and deselected teaches its area with its examples", () => {
+  const input = memory({ selected: ['quant-ph', 'hep-th'], deselected: ['hep-th'], examples: examples('hep-th', 8) });
+  assert.deepEqual(interestProgress(input), { 'quant-ph': 1, 'hep-th': 1 });
+});

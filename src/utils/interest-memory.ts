@@ -42,7 +42,14 @@ export interface InterestGroup { categories: string[]; exampleCategories: string
 
 interface PlannedGroup extends InterestGroup { ownSubarea: boolean }
 
-// The selected ids that place in an area, less the deselected ones. An id
+// The deselected ids that sleep. An old bundle or the onboarding can leave an
+// id both selected and deselected; the selection is the later intent and wins.
+function dormantIds(selected: string[], deselected: string[]) {
+  const chosen = new Set(selected);
+  return new Set(deselected.filter(id => !chosen.has(id)));
+}
+
+// The selected ids that place in an area, less the dormant ones. An id
 // retired from the taxonomy (q-bio.NC, eess.AS) is still stored by accounts
 // that picked it, and places by its archive.
 function chosenIds(selected: string[], dormant: Set<string>) {
@@ -55,7 +62,7 @@ function chosenIds(selected: string[], dormant: Set<string>) {
  * sleeps: it keeps its examples but leaves the feed, its exploration included.
  */
 export function activeCategories(selected: string[], deselected: string[]) {
-  const dormant = new Set(deselected);
+  const dormant = dormantIds(selected, deselected);
   const chosen = chosenIds(selected, dormant);
   const areas = new Set<string | null>(chosen.map(areaKeyForCategory));
   return new Set([
@@ -94,9 +101,9 @@ const progressOf = (examples: number, shown: number, learnedExamples: number, le
  * each selected subarea and the ones still cold-added (a group of their own).
  */
 function readInterests({ selected, deselected, added, examples, exposure, affinities }: InterestMemoryInput) {
-  const dormant = new Set(deselected);
+  const dormant = dormantIds(selected, deselected);
   const chosen = chosenIds(selected, dormant);
-  const active = activeCategories(chosen, deselected);
+  const active = activeCategories(chosen, [...dormant]);
   const addedIds = new Set(added);
   const areaKeys = [...new Set(chosen.map(id => areaKeyForCategory(id)!))];
   const shownIn = (category: string) => exposure[category]?.shown ?? 0;
