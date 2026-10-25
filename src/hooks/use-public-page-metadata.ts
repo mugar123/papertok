@@ -1,7 +1,7 @@
-import type { ShareOptions } from '../utils/public-navigation.ts';
+import type { ShareImage, ShareOptions } from '../utils/public-navigation.ts';
 type LocalizedText = string | Record<string, string | undefined> | null;
 interface MetadataOptions extends ShareOptions {
-  title?: LocalizedText; description?: LocalizedText; imageAlt?: LocalizedText; url?: string; route?: string | null; image?: string;
+  title?: LocalizedText; description?: LocalizedText; url?: string; route?: string | null; image?: ShareImage;
   ogType?: string; type?: string; jsonLd?: unknown; structuredData?: unknown; noIndex?: boolean; robots?: string;
 }
 interface NodeRecord { node: Element; existed: boolean; content: string | null; href: string | null; textContent: string | null; }
@@ -9,7 +9,7 @@ interface NodeRecord { node: Element; existed: boolean; content: string | null; 
 import { useEffect, useMemo } from 'react';
 import { useLanguage } from '../context/language-context.tsx';
 import {
-  DEFAULT_SHARE_IMAGE_PATH,
+  DEFAULT_SHARE_IMAGE,
   getAbsoluteShareUrl,
   getSiteRootUrl,
 } from '../utils/public-navigation.ts';
@@ -20,9 +20,6 @@ const ROOT_METADATA = {
   },
   description: {
     en: 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.',
-  },
-  imageAlt: {
-    en: 'A scientific paper view in PaperTok',
   },
 };
 
@@ -185,9 +182,9 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
     const rootUrl = getSiteRootUrl(navigationOptions);
     const title = resolveLocalized(config.title, language, ROOT_METADATA.title[language as keyof typeof ROOT_METADATA.title]);
     const description = resolveLocalized(config.description, language, ROOT_METADATA.description[language as keyof typeof ROOT_METADATA.description]);
-    const imageAlt = resolveLocalized(config.imageAlt, language, ROOT_METADATA.imageAlt[language as keyof typeof ROOT_METADATA.imageAlt]);
     const pageUrl = resolvePageUrl(config.url || config.route, navigationOptions, rootUrl);
-    const imageUrl = resolveAbsoluteHttpUrl(config.image || DEFAULT_SHARE_IMAGE_PATH, rootUrl);
+    const image = config.image || DEFAULT_SHARE_IMAGE;
+    const imageUrl = resolveAbsoluteHttpUrl(image.path, rootUrl);
     const ogType = cleanText(config.ogType || config.type) || 'website';
     const jsonLd = buildStructuredData({
       title,
@@ -202,9 +199,9 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
     return {
       title,
       description,
-      imageAlt,
       pageUrl,
       imageUrl,
+      imageAlt: image.alt,
       ogType,
       robots: config.noIndex ? 'noindex, nofollow' : cleanText(config.robots) || 'index, follow',
       locale: 'en_US',

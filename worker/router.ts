@@ -180,14 +180,14 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
   // contesta antes que nada porque un rastreador no manda `origin`.
   //
-  // Medido el 2026-09-01: en `api.papertok.app` Cloudflare intercepta
-  // /robots.txt ANTES que el Worker, asi que esta ruta solo se ve hoy en
-  // `papertok-report-api.*.workers.dev`. No esta rota: entra en vigor en el
-  // dominio propio en cuanto se apague el robots.txt gestionado de la zona
-  // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
-  // de los dos esta contestando.
+  // Cloudflare's managed robots.txt may answer before this handler on the
+  // custom domain. Check AI Crawl Control before changing this response.
+  //
+  // Share cards are the exception: a preview bot that honours robots.txt,
+  // Twitterbot among them, fetches a card from here and draws no picture if
+  // it is disallowed. A card costs a lookup only as its page does.
   if (url.pathname === '/robots.txt') {
-    return new Response('User-agent: *\nDisallow: /\n', {
+    return new Response('User-agent: *\nAllow: /share/image/\nDisallow: /\n', {
       status: 200,
       headers: {
         'content-type': 'text/plain; charset=utf-8',
@@ -270,9 +270,10 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
       // Before the cache: the answer is the institution's and shared, but
-      // only a signed-in reader may draw on the resolvers behind it.
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionAccess(request, env);
+      // only a signed-in reader may draw on the resolvers behind it, and a
+      // miss is charged to that reader.
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionAccess(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
@@ -287,8 +288,8 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (request.method !== 'GET') return json({ code: 'METHOD_NOT_ALLOWED' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionServices(request, env);
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionServices(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;

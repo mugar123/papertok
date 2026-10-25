@@ -28,6 +28,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
+import { emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/auth-identity-service.ts';
@@ -182,23 +183,26 @@ function emailStatus(preferences: ReturnType<typeof useEmailNotifications>['pref
       tone: 'neutral',
     };
   }
-  if (!health.available) {
+  const service = emailServiceState(health);
+  if (service === 'down') {
     return {
       label: 'Unavailable',
       description: 'The email service is not responding right now',
       tone: 'warning',
     };
   }
+  // An unchecked service still shows the reader's own choice.
+  const unknown = service === 'unknown' ? 'PaperTok could not check the email service just now' : null;
   if (!preferences.enabled) {
     return {
       label: 'Off',
-      description: `Updates will not be sent to ${preferences.email || 'your email'}`,
+      description: unknown || `Updates will not be sent to ${preferences.email || 'your email'}`,
       tone: 'neutral',
     };
   }
   return {
     label: 'On',
-    description: `Every Monday · up to ${preferences.maxPapers || 5} papers`,
+    description: unknown || `Every Monday · up to ${preferences.maxPapers || 5} papers`,
     tone: 'success',
   };
 }

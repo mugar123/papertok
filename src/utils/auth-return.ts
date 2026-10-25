@@ -17,11 +17,14 @@ let pending: string | null = null;
 
 // Only an in-app absolute path is honoured as a destination: `//evil.com` is
 // a protocol-relative URL the browser would follow off-site, and bouncing
-// back to /login or /onboarding would loop.
+// back to /login or /onboarding would loop. The URL parser reads a backslash
+// as `/` and drops tabs and newlines, so `/\t/evil.com` is `//evil.com` too:
+// React Router hands it to `replaceState` unchanged, and the browser throws.
 export function isInAppPath(path: unknown): path is string {
   return typeof path === 'string'
     && path.startsWith('/')
     && !path.startsWith('//')
+    && !/[\\\p{Cc}]/u.test(path)
     && !['/login', '/onboarding'].includes(path.split('?')[0]);
 }
 

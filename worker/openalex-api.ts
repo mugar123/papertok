@@ -4,6 +4,7 @@ import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-run
 export type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 
 import { sha256 } from './ai-explanation.ts';
+import { callerSubject } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   boundedText,
@@ -37,6 +38,11 @@ const OPENALEX_NOT_FOUND_CACHE_SECONDS = 60 * 60;
 // `ai-rewrite.ts` does, because no namespace of its own exists yet.
 const OPENALEX_SHARED_CACHE_SECONDS = 24 * 60 * 60;
 const OPENALEX_SHARED_PREFIX = 'openalex:v1:';
+// The units one caller's misses may reserve in a UTC minute: a tenth of the
+// minute's ceiling (OPENALEX_GLOBAL_MINUTE_LIMIT, 3000), so one address cannot
+// spend the minute for every other reader. Thirty searches, or 300 card
+// batches; people behind one NAT share it.
+const OPENALEX_CALLER_MINUTE_UNITS = 300;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -304,7 +310,7 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
-async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null): Promise<RelayedAnswer> {
+async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
   if (shared) {
@@ -324,6 +330,16 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
     cost.tier = 'feed';
     cost.part = harvest.part;
     cost.newFollow = harvest.newFollow;
+  }
+  if (cost.units > 0 && !harvest) {
+    // A reader's miss also spends the caller's own allowance for the minute,
+    // checked in the same transaction as the minute and the day.
+    const subject = await callerSubject(request, env, `openalex:${now.slice(0, 16)}`);
+    if (!subject) {
+      const refusal = json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' });
+      return { status: refusal.status, body: await refusal.text(), headers: refusal.headers, budgetRefusal: true };
+    }
+    cost.part = { subject, limit: OPENALEX_CALLER_MINUTE_UNITS };
   }
   if (cost.units > 0) {
     // A ledger the harvest cannot reach answers it as one that cannot answer,
@@ -390,7 +406,14 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
   const target = openAlexTargetUrl(requestUrl.pathname, requestUrl.searchParams);
   if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
 
-  const cacheKey = canonicalCacheKey(request, Object.fromEntries(target.searchParams));
+  // The key's path and query are both read off the rebuilt target, before the
+  // credentials are added. `/openalex/works/?q` sends the same upstream URL as
+  // `/openalex/works?q`; keyed by the raw path, it bought a second entry, a
+  // second reservation and a second call.
+  const cacheKey = canonicalCacheKey(
+    { url: `https://papertok.internal/openalex${target.pathname}` },
+    Object.fromEntries(target.searchParams),
+  );
   const cached = await matchAtEdge(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
@@ -408,7 +431,7 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
     const answer = await pending;
     if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
   }
-  const pending = relayMiss(target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
+  const pending = relayMiss(request, target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
   inFlight.set(cacheKey.url, pending);
   return forOrigin(await pending, origin, env);
 }

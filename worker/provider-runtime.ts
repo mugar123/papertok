@@ -26,25 +26,43 @@ export interface OpenAlexBudget {
   units: number;
   tier: OpenAlexTier;
   kind: OpenAlexKind;
-  // `feed` only: the part of the nightly run's share this miss spends, such as
-  // the followed lanes' (paper-sources.ts).
+  // A second subject this miss spends: for `feed`, the part of the nightly
+  // run's share, such as the followed lanes' (paper-sources.ts); for a reader,
+  // the caller's allowance for the minute (openalex-api.ts).
   part?: QuotaPart;
   // `feed` only: a miss of a run a new follow started, which spends the new
   // follows' share (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) rather than the nightly run's.
   newFollow?: boolean;
 }
 
+// A per-account and app-wide allowance per UTC minute, spent by a signed-in
+// reader's cache misses. `namespace` names the ledger object and the subject,
+// so routes with their own allowance do not spend each other's.
+export interface IdentityMinuteQuota {
+  namespace: string;
+  userVariable: keyof WorkerEnv;
+  userFallback: number;
+  globalVariable: keyof WorkerEnv;
+  globalFallback: number;
+}
+
 interface CacheOptions {
   identity?: Pick<VerifiedIdentity, 'uid'> | null;
+  // The allowance `identity` is charged to; absent is the provider routes' own.
+  identityQuota?: IdentityMinuteQuota;
   canonicalParams?: Record<string, unknown>;
   openAlexBudget?: OpenAlexBudget;
   // The answer belongs to one reader: its key must name them, and the browser
   // is told not to store or share it.
   personal?: boolean;
+  // A public route's allowance per caller address and UTC minute, for a route
+  // with no shared reservation to carry the caller.
+  callerMinute?: { namespace: string; limit: number };
 }
 
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
 
+import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { observeRequestQuota, peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
@@ -168,8 +186,13 @@ export const SOURCE_CACHE_SECONDS = {
   icite: 24 * 60 * 60,
   huggingFaceResources: 7 * 24 * 60 * 60,
 };
-const DEFAULT_PROVIDER_USER_MINUTE_LIMIT = 60;
-const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
+const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
+  namespace: 'provider',
+  userVariable: 'PROVIDER_USER_MINUTE_LIMIT',
+  userFallback: 60,
+  globalVariable: 'PROVIDER_GLOBAL_MINUTE_LIMIT',
+  globalFallback: 2_000,
+});
 
 // Ceilings for routes whose upstream limit is per provider rather than per user,
 // and which the guest feed reads, so they cannot be gated behind an identity the
@@ -255,22 +278,14 @@ function boundedLimit(value: unknown, fallback: number, maximum: number) {
 // Returns the ledger request it reserved with, not just a verdict: a later gate
 // may refuse this caller after this unit is spent, and the refund has to name
 // this unit -- this minute, this user -- rather than one recomputed later.
-async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], quota: IdentityMinuteQuota, env: WorkerEnv, origin: string): Promise<QuotaGate> {
   if (!identity) return {};
   const minute = new Date().toISOString().slice(0, 16);
   const ledgerRequest = {
-    periodKey: `provider:${minute}`,
-    subject: `provider:${identity.uid}`,
-    subjectLimit: boundedLimit(
-      env.PROVIDER_USER_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_USER_MINUTE_LIMIT,
-      500,
-    ),
-    globalLimit: boundedLimit(
-      env.PROVIDER_GLOBAL_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT,
-      100_000,
-    ),
+    periodKey: `${quota.namespace}:${minute}`,
+    subject: `${quota.namespace}:${identity.uid}`,
+    subjectLimit: boundedLimit(env[quota.userVariable], quota.userFallback, 500),
+    globalLimit: boundedLimit(env[quota.globalVariable], quota.globalFallback, 100_000),
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
@@ -330,6 +345,26 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
     }) };
   }
   return { reservation: ledgerRequest };
+}
+
+// The caller's allowance, first of the reserving gates: a caller past it takes
+// nothing from the shared gates after it. A missing identity fails closed like
+// a missing ledger.
+async function reserveCallerGate(request: Request, quota: CacheOptions['callerMinute'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+  if (!quota) return {};
+  const caller = await reserveCallerMinute(request, env, quota.namespace, quota.limit);
+  if (caller.reading.accepted) return { reservation: caller.reservation };
+  if (caller.reading.code) {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    }) };
+  }
+  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': caller.retryAfter,
+  }) };
 }
 
 // The beat under the ceiling, for the providers that count per second. It runs
@@ -394,12 +429,15 @@ export async function releaseHeld(env: WorkerEnv, held: QuotaRequest[]) {
 // earlier ones already spent. The fetcher is deliberately not inside this: a
 // fetch that fails may still have reached the provider, and the ledger counts
 // provider calls, not answers.
-async function reserveGates(origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
+async function reserveGates(request: Request, origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
   try {
+    const caller = await reserveCallerGate(request, options.callerMinute, env, origin);
+    if (caller.error) return caller.error;
+    if (caller.reservation) held.push(caller.reservation);
     const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
     if (minute.error) return minute.error;
     if (minute.reservation) held.push(minute.reservation);
-    const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+    const identity = await reserveProtectedProviderQuota(options.identity || null, options.identityQuota || PROVIDER_IDENTITY_QUOTA, env, origin);
     if (identity.error) return identity.error;
     if (identity.reservation) held.push(identity.reservation);
     const paceError = await awaitSharedPace(ceiling, env, origin);
@@ -430,7 +468,7 @@ export async function cacheResponse<T>(request: Request, origin: string, env: Wo
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
   const held: QuotaRequest[] = [];
-  const refusal = await reserveGates(origin, env, options, ceiling, held);
+  const refusal = await reserveGates(request, origin, env, options, ceiling, held);
   if (refusal) {
     await releaseHeld(env, held);
     return refusal;
@@ -581,7 +619,9 @@ export function boundedText(value: unknown, maxLength: number) {
 // transaction: one Durable Object request per miss instead of two, and no object
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
-// owns the refund can name it. The harvest's reservations (`feed`) check its
+// owns the refund can name it. A reader's miss names its address's minute
+// allowance as the part, so one caller cannot spend the minute for everyone
+// (openalex-api.ts). The harvest's reservations (`feed`) check its
 // day's share as the subject instead of the minute: the new follows' share for
 // a run a new follow started, otherwise the nightly run's, with the part of it
 // a lane spends when it names one.
@@ -595,6 +635,7 @@ function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAl
       ...day,
       subject: `openalex:minute:${now.slice(0, 16)}`,
       subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+      ...(budget?.part ? { part: budget.part } : {}),
     };
   }
   return budget.newFollow
