@@ -525,7 +525,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane),
       windowFilter(),
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
@@ -560,7 +559,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
       notableWindowFilter(),
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: NOTABLE_PER_LANE, sort: 'cited_by_count:desc', part: 'categories' }),
@@ -570,11 +568,11 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // each area but finance's nine: about 22 (finance) to 370 (electrical
   // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
   // 39 % (mechanical engineering) of the articles had none. So a night reads
-  // one page, the newest 200: one list call an area. Unlike the topic lanes,
-  // the area lanes take an article without an abstract (PAP-107); its card
-  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
-  // working papers as core journal articles; their cards say Working paper,
-  // so the lane leaves out the review rule's series.
+  // one page, the newest 200: one list call an area. The area lanes take an
+  // article without an abstract (PAP-107), as the topic and notable lanes do
+  // (ENG-129); its card says it has none. OpenAlex lists IMF, Federal Reserve
+  // Board and Fed bank working papers as core journal articles; their cards
+  // say Working paper, so the lane leaves out the review rule's series.
   'openalex-areas': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
