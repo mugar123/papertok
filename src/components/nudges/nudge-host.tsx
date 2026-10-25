@@ -15,7 +15,6 @@ import {
   rememberNudgeDismissal,
   rememberPrivacyNotice,
 } from '../../utils/nudges.ts';
-import { isPublicRoute } from '../../utils/public-navigation.ts';
 import NudgePanel from './nudge-panel.tsx';
 
 // The one place that decides whether anybody is asked anything, and when.
@@ -26,10 +25,9 @@ import NudgePanel from './nudge-panel.tsx';
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
 //
-// A privacy policy change takes the visit's turn before any nudge, and it is
-// the only panel guests see: on a public page they are reading, never in the
-// welcome, which is a sign-up rather than reading. It returns on later visits
-// until it is dismissed; utils/nudges.ts decides who is owed it. A change of
+// A privacy policy change takes the visit's turn before any nudge. Only
+// signed-in accounts are told, and it returns on later visits until it is
+// dismissed; utils/nudges.ts decides who is owed it. A change of
 // account remounts this component, which clears what was picked for the
 // previous reader.
 const PRIVACY_NOTICE = 'privacy-change';
@@ -74,31 +72,30 @@ export default function NudgeHost() {
   const [choiceMade, setChoiceMade] = useState(false);
 
   const signedIn = Boolean(user) && !authLoading && onboardingComplete;
-  const guestReading = !user && !authLoading && isPublicRoute(location.pathname);
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
 
   useEffect(() => {
-    if (!(signedIn || guestReading) || dwellDone) return undefined;
+    if (!signedIn || dwellDone) return undefined;
     const timer = window.setTimeout(() => setDwellDone(true), NUDGE_DWELL_MS);
     return () => window.clearTimeout(timer);
-  }, [signedIn, guestReading, dwellDone]);
+  }, [signedIn, dwellDone]);
 
   const openable = dwellDone
     && signedIn
     && location.pathname === '/feed';
-  const guestOpenable = dwellDone && guestReading;
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
   // linter says so, twice. Same shape the guest interests sheet uses.
-  if ((openable || guestOpenable) && !choiceMade) {
+  if (openable && user && !choiceMade) {
     setChoiceMade(true);
     const privacyOwed = privacyNoticeOwed({
       version: PRIVACY_POLICY_VERSION,
-      acknowledged: readPrivacyNoticeAck(user?.uid),
-      accountCreated: user?.metadata?.creationTime,
+      acknowledged: readPrivacyNoticeAck(user.uid),
+      accountCreated: user.metadata?.creationTime,
+      signedIn,
     });
-    const id = privacyOwed ? PRIVACY_NOTICE : openable && pickNudge({
+    const id = privacyOwed ? PRIVACY_NOTICE : pickNudge({
       eligible: emailProblem ? ['email-down'] : [],
       dismissed,
     });
@@ -112,15 +109,13 @@ export default function NudgeHost() {
 
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
-    rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
+    if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
     setPicked(null);
     // The button that had focus leaves with the panel.
     document.getElementById('main-content')?.focus({ preventScroll: true });
   }, [uid]);
 
-  // Only where it was meant to be seen: a guest who moves on to the welcome,
-  // a sign-up, no longer has it over the form.
-  const privacyShown = picked === PRIVACY_NOTICE && (signedIn || guestReading);
+  const privacyShown = picked === PRIVACY_NOTICE && signedIn;
 
   // Escape puts it away for this visit and does not count as reading it, so it
   // returns next time. On a phone the panel covers the bottom of the card, and

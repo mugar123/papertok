@@ -64,15 +64,14 @@ export function rememberNudgeDismissal<T>(id: T, storage?: NudgeStorage | null) 
 const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
 
 // Unlike the nudges above, kept per reader: each account that signs in on this
-// device, and a visitor without one, has to be told separately. It is not
-// swept at sign-out, so signing in again does not repeat a notice already
-// dismissed.
-function privacyNoticeKey(uid: string | null | undefined) {
-  return uid ? `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}` : PRIVACY_NOTICE_KEY;
+// device has to be told separately. It is not swept at sign-out, so signing in
+// again does not repeat a notice already dismissed.
+function privacyNoticeKey(uid: string) {
+  return `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}`;
 }
 
 /** The policy version this reader last dismissed on this device, if any. */
-export function readPrivacyNoticeAck(uid: string | null | undefined, storage?: NudgeStorage | null) {
+export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null) {
   try {
     return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
   } catch {
@@ -80,7 +79,7 @@ export function readPrivacyNoticeAck(uid: string | null | undefined, storage?: N
   }
 }
 
-export function rememberPrivacyNotice(uid: string | null | undefined, version: string, storage?: NudgeStorage | null) {
+export function rememberPrivacyNotice(uid: string, version: string, storage?: NudgeStorage | null) {
   try {
     resolveStorage(storage)?.setItem(privacyNoticeKey(uid), version);
   } catch {
@@ -89,13 +88,16 @@ export function rememberPrivacyNotice(uid: string | null | undefined, version: s
 }
 
 /**
- * Whether a reader still has to hear about policy `version`. An account
+ * Whether a reader still has to hear about policy `version`. Only signed-in
+ * accounts are told: a guest has no creation date, so a first-time visitor
+ * could not be told apart from someone who read the old policy. An account
  * created on or after the day of the change started under the policy as it is
- * and has nothing to be told. A visitor without an account, or an account whose
- * creation date is unknown, is told, since nothing shows they arrived later.
+ * and has nothing to be told; one whose creation date is unknown is told. The
+ * policy date has no time zone, so the creation day is read in UTC; an account
+ * opened close to midnight may land on either side of it.
  */
-export function privacyNoticeOwed({ version, acknowledged, accountCreated }: { version: string; acknowledged: string | null; accountCreated?: string | null }) {
-  if (acknowledged === version) return false;
+export function privacyNoticeOwed({ version, acknowledged, accountCreated, signedIn }: { version: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
+  if (!signedIn || acknowledged === version) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
   if (!created || Number.isNaN(created.getTime())) return true;
   return created.toISOString().slice(0, 10) < version.slice(0, 10);

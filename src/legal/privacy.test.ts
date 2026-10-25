@@ -88,7 +88,7 @@ test("the page says the server counts a signed-in reader's requests per account,
 test('the page promises the in-app announcement and says how a dismissal is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /the change will be announced in the application itself/);
-  assert.match(html, /remembers that version, separately for each account and for visits without one/);
+  assert.match(html, /remembers that version, separately for each account/);
 });
 
 test('the in-app notice announces the version this page is dated', () => {
