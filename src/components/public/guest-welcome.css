@@ -477,14 +477,16 @@
    of the stage, and the landing clips what overflows: the stack's offset
    (.gw-providers top), its two lg buttons (h-11) and their gaps, then the
    "Preparing sign-in…" line under them (PreparingNote). Once the load failed
-   that line is as tall as its Try again, an sm Button (h-8). */
+   that line can wrap at large text sizes, so Try again (an sm Button, h-8)
+   sits under it: reserve the text line, the button and the keyboard focus
+   ring's reach below it. */
 .gw--landing .gw-stage {
   --gw-provider-note: calc(var(--fs-xs) * var(--lh-normal));
   padding-bottom: calc(var(--space-4) + 2 * 2.75rem + 2 * var(--space-2) + var(--gw-provider-note));
 }
 
 .gw--landing .gw-stage:has(.provider-preparing > button) {
-  --gw-provider-note: 2rem;
+  --gw-provider-note: calc(var(--fs-xs) * var(--lh-normal) + 2rem + var(--space-1));
 }
 
 .gw-step--welcome {
