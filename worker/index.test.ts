@@ -4348,3 +4348,29 @@ test('arXiv stops one IP at ten misses while another IP can take the next paced 
     assert.equal(upstreamCalls, 11);
   });
 });
+
+
+test('share image lookups spend the same per-IP allowance as share pages', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-25T12:00:00Z') });
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding });
+  let lookups = 0;
+  await withWorkerFetchMock(async url => {
+    assert.match(String(url), /^https:\/\/api\.openalex\.org\/authors\/A5018713931/);
+    lookups += 1;
+    return new Response('{}', { status: 404 });
+  }, async () => {
+    const ask = async (ip: string) => {
+      const request = crawlerRequest('/share/image/entity/author/A5018713931');
+      request.headers.set('cf-connecting-ip', ip);
+      const response = await reportApi.fetch(request, env);
+      assert.equal(response.status, 302);
+      assert.match(response.headers.get('location')!, /^https:\/\/papertok\.app\/og\//);
+    };
+    for (let i = 0; i < 20; i += 1) await ask('192.0.2.1');
+    assert.equal(lookups, 20);
+    await ask('192.0.2.1');
+    assert.equal(lookups, 20, 'a refused image lookup spends nothing upstream');
+    await ask('198.51.100.7');
+    assert.equal(lookups, 21, 'another IP retains its share allowance');
+  });
+});

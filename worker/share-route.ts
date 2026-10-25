@@ -140,7 +140,7 @@ export async function handleShareRoute(request: Request, env: WorkerEnv) {
     if (new URL(request.url).pathname.startsWith('/share/image/')) {
       return await handleShareImage(request, {
         loadRecord: createShareLoader(shareProviders(env)),
-        admit: () => admitShareLookup(env),
+        admit: () => admitShareLookup(request, env),
         loadPhoto: createPhotoLoader(),
         // Evaluated on the first card, so no other route starts the renderer,
         // and a Node test, which cannot load its WebAssembly, never does.
