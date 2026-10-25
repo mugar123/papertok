@@ -897,6 +897,44 @@ test('a page that goes on with a walk whose unseen papers the corpus dropped, wi
   assert.deepEqual(ids((await ask(request(0, seen), 'reader-2')).papers), ids(papers.slice(30)), 'as without the kept order');
 });
 
+// The notable cards a page offers after its own papers walk the notable lane's
+// kept order, which holds ids too. The corpus drops works of the lane after a
+// page read their ids: the walk goes on past them to the next unseen ones.
+const notableDrops: Array<[string, boolean]> = [['the next page', false], ['a continued first page whose ranked papers the corpus dropped too', true]];
+for (const [page, rankedDropped] of notableDrops) {
+  test(`${page} offers the next notable papers past the ones the corpus dropped from the lane`, async t => {
+    rankingCaches(t);
+    const { env, db, ask } = store();
+    const papers = recent(45);
+    await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+    const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+    const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+    const notable = Array.from({ length: 8 }, (_, index) => `1901.${String(index).padStart(5, '0')}`);
+    notable.forEach((id, index) => {
+      const listed = new Date(Date.UTC(2024, 0, 1) - index * 3_600_000).toISOString();
+      insertWork.run(10_000 + index, JSON.stringify({ id, title: `Notable paper ${index}`, authors: [] }), listed, '2099-01-01T00:00:00.000Z');
+      insertLane.run('notable:cs.CL', 10_000 + index, listed);
+    });
+    const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, notable: 3, ...extra });
+    const split = (answer: Awaited<ReturnType<typeof ask>>) => ({ main: ids(answer.papers.filter(item => !item._notable)), cards: ids(answer.papers.filter(item => item._notable)) });
+    const first = split(await ask(request(0, [])));
+    assert.deepEqual(first, { main: ids(papers.slice(0, 15)), cards: notable.slice(0, 3) });
+    // The app marks a page's papers and its first card seen.
+    let sent = request(1, [...first.main, notable[0]]);
+    if (rankedDropped) {
+      // The second page reads the ids of cards 1 to 3 onto the kept order.
+      await ask(sent);
+      for (const item of papers.slice(0, 30)) removeWork(db, item.id);
+      sent = request(0, [...ids(papers.slice(0, 15)), ...ids(papers.slice(30)), notable[0], notable[1]], { continues: true });
+    }
+    // Works 1 to 4 of the lane.
+    db.exec('DELETE FROM work_lanes WHERE work_id BETWEEN 10001 AND 10004; DELETE FROM works WHERE id BETWEEN 10001 AND 10004;');
+    const expected = { main: ids(rankedDropped ? papers.slice(30) : papers.slice(15, 30)), cards: notable.slice(5, 8) };
+    assert.deepEqual(split(await ask(sent)), expected);
+    assert.deepEqual(split(await ask(sent, 'reader-2')), expected, 'as without the kept order');
+  });
+}
+
 // A walk past 600 seen papers leaves the ids of the first 1,400 ranks on the
 // kept order; the corpus then drops the 400 works after the ones it sent (an
 // eviction, or folds, within the order's two hours), and the next walk lands
