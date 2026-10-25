@@ -10,8 +10,21 @@ workers_dev = false
 # A harvest invocation can execute many persisted steps before it yields.
 # Its accumulated CPU exceeded the default 30 seconds in both ingestion and
 # embedding. This script-wide ceiling also applies to HTTP invocations.
+#
+# Its subrequests accumulate the same way: fetches, D1 calls (a batch is one),
+# Workers AI calls, the quota ledger and the cache, until a wait longer than the
+# Workflows engine's 5-minute grace period moves the run to a new invocation.
+# On 2026-10-25 the first by-year run reached the 10,000 default after its lane
+# phases (about 6,000) and 38 enrichment batches (about 100 each): the step
+# failed on its first attempt and on the retries at 1, 2 and 4 minutes, all in
+# the same invocation, and ran on the fifth attempt, after 8 minutes, in a fresh
+# one. The longest run the code allows comes to about 50,000 (worker/README.md,
+# step 5); the enrichment phase alone is kept within half of this value by a
+# test. Subrequests are not billed themselves; each provider's calls stay
+# bounded by its budget.
 [limits]
 cpu_ms = 120_000
+subrequests = 100_000
 
 # The share card's renderer (worker/share-card-render.ts): its two
 # WebAssembly engines travel compiled, the only way a Worker may run them, and
@@ -108,7 +121,8 @@ OPENALEX_GLOBAL_DAILY_LIMIT = "10000"
 # 60 is a deliberate margin, not the anonymous 3 req/s it once mirrored, and it
 # has never been the binding limit (151/151 reservations accepted, 2026-09-01).
 # Sixty is also roughly the 1 req/s Semantic Scholar allows, shared by
-# /sources/s2 and /related, which spend the same allowance.
+# /sources/s2, /related and /enrich/s2 (the enrichment's abstract batch), which
+# spend the same allowance.
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
 # /resources/figures misses a minute, app-wide; each one fetches arxiv.org/html
@@ -117,16 +131,18 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 FIGURES_GLOBAL_MINUTE_LIMIT = "60"
 
 # Estimated input tokens the paper store may embed per UTC day (worker/paper-store.ts).
-# 60M estimated (~45M real) is about 48,000 neurons, ~$0.40 a day past the free
-# 10,000 at $0.011 per 1,000: it drains the corpus's first backlog (~200,000
-# papers, ~$1 in all) in two nights. A day's new papers (~5,000) stay inside the
-# free allocation, so the ceiling spends nothing once the backlog is gone.
-# Plan: on 2026-10-25, after the runs of 10-23 and 10-24, count the works
-# without a vector in D1. Under a day's new papers (~5,000), set this back to
-# "7500000", the free allocation, and deploy: past the backlog, 60M only lets a
-# fault or many readers' lookups spend ~$0.40 a day. Otherwise keep it one more
-# night and count again.
-EMBEDDING_DAILY_TOKEN_LIMIT = "60000000"
+# 7.5M estimated is the free allocation of 10,000 neurons a day; a day's new
+# papers (~5,000) stay inside it, so the ceiling spends nothing. It was "60000000"
+# (~$0.40 a day past the free allocation at $0.011 per 1,000 neurons) while the
+# corpus's first backlog (~200,000 papers) and then the notable lanes' first
+# by-year listing (ENG-129, migration 0011: ~60,000 papers enriched and embedded
+# on 2026-10-25) were embedded; with no work left without a vector that evening,
+# the free allocation is enough again. A re-listing adds only the papers new to a
+# year's 100. Past the backlog, a higher value only lets a fault or many readers'
+# lookups spend money. Raise it again for a backlog, and count the works without a
+# vector before returning here:
+#   SELECT COUNT(*) FROM works w WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
+EMBEDDING_DAILY_TOKEN_LIMIT = "7500000"
 
 # Also holds the OpenAlex relay's shared answers under the `openalex:v1:` prefix
 # (worker/openalex-api.ts), global where the edge cache is per location, and the
@@ -160,7 +176,10 @@ binding = "AI"
 # The paper store (worker/paper-store.ts): every feed source's papers, their
 # lanes and vectors, filled by the harvest Workflow and read by /store/papers.
 # Apply migrations with `npx wrangler d1 migrations apply PAPER_STORE --remote`
-# before deploying.
+# before deploying. The exception was 0011, a one-time data migration applied
+# right after the Worker that lists the notable lanes by year was deployed and
+# before the harvest was triggered (worker/README.md, step 3); it finds nothing
+# to clear on a fresh database.
 [[d1_databases]]
 binding = "PAPER_STORE"
 database_name = "papertok-paper-store"

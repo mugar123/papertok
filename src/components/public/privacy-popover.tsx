@@ -17,7 +17,7 @@ import './privacy-popover.css';
 
 const COPY = {
   name: 'Privacy',
-  lede: 'Without an account, PaperTok counts pages and actions anonymously, without cookies. Never your searches, the papers you read or your interests.',
+  lede: 'PaperTok measures repeat visits, papers viewed and opened, and reading time. A persistent browser identifier connects visits across days and is linked to your account when you sign in.',
   toggle: 'Allow usage analytics',
   kept: 'Your choice is kept in this browser.',
   saveFailed: 'Not saved: this browser is blocking site storage, so analytics is unchanged.',
@@ -43,7 +43,7 @@ export default function PrivacyPopover({ className = '' }) {
   // second refusal would otherwise go unheard.
   const choose = async (checked: boolean) => {
     setSaveFailed(false);
-    const saved = await updateConsent(checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED);
+    const saved = await updateConsent(checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED);
     setSaveFailed(!saved);
   };
 
