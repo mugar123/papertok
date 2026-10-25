@@ -299,6 +299,33 @@ ten (100 units). `med.infect`'s page is the COVID-19 literature of 2020 and
 `med.gen`'s is nephrology and hepatology; `med.cardio` and `med.endo` are
 guidelines and outcome trials. Authorized by Nicolás on 2026-10-25 (ENG-138).
 
+### Batch 5: quantitative finance
+
+The seven finance leaves without a topic lane, labelled by the same agent
+under the same procedure. None passes: `q-fin.PM` at 8 of 15, the rest at 6
+or fewer, with 4 to 8 doubted calls each; nothing is admitted. The Finance
+subfield's most-cited articles of the decade are connectedness and spillover
+econometrics, COVID-19 and cryptocurrency market studies and news-based
+uncertainty indices, which appear on five to seven of the seven pages; the
+leaves' own matter (option pricing, portfolio theory, microstructure) is a
+minority on each.
+
+### Batch 6: mechanical, electrical and chemical engineering
+
+The 16 leaves of the three areas without a topic lane (`eess.SY` shares its
+page with `cs.SY`), labelled by the same agent under the same procedure.
+Nine pass: `mech.solid`, `eess.IV` and `eess.telecom` at 15 of 15,
+`chemeng.energy` at 14, `mech.dyn` at 12, `eess.electro`, `chemeng.metal` and
+`chemeng.nano` at 11, `mech.thermo` at 10. Seven are rejected: `eess.SP` at
+8 (medical-image denoising doubted between signal and image processing),
+`chemeng.sep` at 7 (MOF chemistry beside the separations), `mech.acoustics`
+and `chemeng.bio` at 6 (cavity magnomechanics and quantum optics; drug
+delivery beside wearables and biochar), `mech.auto` at 3 (battery science
+and additive manufacturing), `eess.SY` at 2 and `mech.cad` at 0 (neural
+rendering and point-cloud learning). The nine lanes ask for 39 topics and
+spend 90 units a week; with 75 notable lanes the nightly share is eleven
+(110 units). Authorized by Nicolás on 2026-10-25 (ENG-138).
+
 ## The 2026-10-23 sample (PAP-99)
 
 107 anonymous requests, one per proposed leaf, between 08:04 and 08:05 UTC, all

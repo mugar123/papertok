@@ -2192,6 +2192,1104 @@
       }
     ]
   },
+  "chemeng.bio": {
+    "capturedAt": "2026-10-25T16:54:04.415Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10059%7CT10063%7CT10088%7CT10104%7CT10171%7CT10295%7CT10323%7CT10338%7CT10402%7CT10412%7CT10488%7CT10507%7CT10530%7CT10610%7CT10661%7CT10675%7CT10729%7CT10782%7CT10784%7CT10822%7CT10864%7CT10868%7CT10879%7CT10958%7CT11009%7CT11018%7CT11023%7CT11073%7CT11160%7CT11190%7CT11196%7CT11208%7CT11255%7CT11272%7CT11278%7CT11301%7CT11366%7CT11393%7CT11407%7CT11419%7CT11517%7CT11569%7CT11582%7CT11608%7CT11667%7CT11739%7CT11788%7CT11802%7CT11808%7CT11852%7CT11932%7CT11966%7CT11984%7CT12012%7CT12015%7CT12050%7CT12074%7CT12078%7CT12085%7CT12224%7CT12285%7CT12386%7CT12391%7CT12405%7CT12466%7CT12627%7CT12642%7CT12677%7CT12706%7CT12740%7CT13052%7CT13185%7CT13232%7CT13267%7CT13280%7CT13362%7CT13418%7CT13552%7CT13722%7CT13752%7CT13820%7CT13928%7CT14089%7CT14189%7CT14510%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2890167612",
+        "type": "article",
+        "title": "Nano based drug delivery systems: recent developments and future prospects",
+        "publication_date": "2018-09-19",
+        "cited_by_count": 6709,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2804846127",
+        "type": "article",
+        "title": "Impact of Particle Size and Polydispersity Index on the Clinical Applications of Lipidic Nanocarrier Systems",
+        "publication_date": "2018-05-18",
+        "cited_by_count": 4861,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2285847257",
+        "type": "article",
+        "title": "Stretchable, Skin‐Mountable, and Wearable Strain Sensors and Their Potential Applications: A Review",
+        "publication_date": "2016-02-17",
+        "cited_by_count": 3199,
+        "primary_topic": {
+          "id": "https://openalex.org/T10338"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3004850069",
+        "type": "article",
+        "title": "Biochar physicochemical properties: pyrolysis temperature and feedstock kind effects",
+        "publication_date": "2020-02-05",
+        "cited_by_count": 2926,
+        "primary_topic": {
+          "id": "https://openalex.org/T10088"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2552835525",
+        "type": "article",
+        "title": "Optically resonant dielectric nanostructures",
+        "publication_date": "2016-11-17",
+        "cited_by_count": 2896,
+        "primary_topic": {
+          "id": "https://openalex.org/T10295"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2785904295",
+        "type": "article",
+        "title": "Multiplexed and portable nucleic acid detection platform with Cas13, Cas12a, and Csm6",
+        "publication_date": "2018-02-15",
+        "cited_by_count": 2660,
+        "primary_topic": {
+          "id": "https://openalex.org/T11393"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2796781998",
+        "type": "article",
+        "title": "Progress and challenges towards targeted delivery of cancer therapeutics",
+        "publication_date": "2018-04-11",
+        "cited_by_count": 2216,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3176970273",
+        "type": "article",
+        "title": "Lipid NanoparticlesFrom Liposomes to mRNA Vaccine Delivery, a Landscape of Research Diversity and Advancement",
+        "publication_date": "2021-06-28",
+        "cited_by_count": 2210,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2599276599",
+        "type": "article",
+        "title": "Liposomal Formulations in Clinical Use: An Updated Review",
+        "publication_date": "2017-03-27",
+        "cited_by_count": 2170,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2807410315",
+        "type": "article",
+        "title": "Controlled drug delivery vehicles for cancer treatment and their performance",
+        "publication_date": "2018-03-14",
+        "cited_by_count": 2165,
+        "primary_topic": {
+          "id": "https://openalex.org/T10063"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2260960995",
+        "type": "article",
+        "title": "Flexible and Stretchable Physical Sensor Integrated Platforms for Wearable Human‐Activity Monitoringand Personal Healthcare",
+        "publication_date": "2016-02-03",
+        "cited_by_count": 2154,
+        "primary_topic": {
+          "id": "https://openalex.org/T10338"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2441647337",
+        "type": "article",
+        "title": "Paving the Way for Lignin Valorisation: Recent Advances in Bioengineering, Biorefining and Catalysis",
+        "publication_date": "2016-06-17",
+        "cited_by_count": 2146,
+        "primary_topic": {
+          "id": "https://openalex.org/T11208"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2567728595",
+        "type": "article",
+        "title": "On Maxwell's displacement current for energy and sensors: the origin of nanogenerators",
+        "publication_date": "2017-01-07",
+        "cited_by_count": 2089,
+        "primary_topic": {
+          "id": "https://openalex.org/T10338"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2615990324",
+        "type": "article",
+        "title": "Fundamentals and advances in magnesium alloy corrosion",
+        "publication_date": "2017-05-15",
+        "cited_by_count": 2083,
+        "primary_topic": {
+          "id": "https://openalex.org/T10530"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2997242469",
+        "type": "article",
+        "title": "The History of Nanoscience and Nanotechnology: From Chemical–Physical Applications to Nanomedicine",
+        "publication_date": "2019-12-27",
+        "cited_by_count": 2023,
+        "primary_topic": {
+          "id": "https://openalex.org/T14089"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2890167612",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2804846127",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2285847257",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3004850069",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2552835525",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2785904295",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2796781998",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3176970273",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2599276599",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2807410315",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2260960995",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2441647337",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2567728595",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2615990324",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2997242469",
+        "label": "off-target"
+      }
+    ]
+  },
+  "chemeng.energy": {
+    "capturedAt": "2026-10-25T16:54:02.384Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10018%7CT10024%7CT10030%7CT10045%7CT10078%7CT10179%7CT10247%7CT10281%7CT10311%7CT10409%7CT10624%7CT10663%7CT10811%7CT11690%7CT11784%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2573377826",
+        "type": "article",
+        "title": "Combining theory and experiment in electrocatalysis: Insights into materials design",
+        "publication_date": "2017-01-12",
+        "cited_by_count": 12090,
+        "primary_topic": {
+          "id": "https://openalex.org/T10030"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2808025896",
+        "type": "article",
+        "title": "30 Years of Lithium‐Ion Batteries",
+        "publication_date": "2018-06-14",
+        "cited_by_count": 6052,
+        "primary_topic": {
+          "id": "https://openalex.org/T10018"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2729523528",
+        "type": "article",
+        "title": "Iodide management in formamidinium-lead-halide–based perovskite layers for efficient solar cells",
+        "publication_date": "2017-06-30",
+        "cited_by_count": 5449,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2301656337",
+        "type": "article",
+        "title": "Cesium-containing triple cation perovskite solar cells: improved stability, reproducibility and high efficiency",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 5449,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4211152862",
+        "type": "article",
+        "title": "Heterojunction Photocatalysts",
+        "publication_date": "2017-02-21",
+        "cited_by_count": 5050,
+        "primary_topic": {
+          "id": "https://openalex.org/T10078"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2272252865",
+        "type": "article",
+        "title": "Active sites of nitrogen-doped carbon materials for oxygen reduction reaction clarified using model catalysts",
+        "publication_date": "2016-01-21",
+        "cited_by_count": 4237,
+        "primary_topic": {
+          "id": "https://openalex.org/T10030"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2527042386",
+        "type": "article",
+        "title": "Incorporation of rubidium cations into perovskite solar cells improves photovoltaic performance",
+        "publication_date": "2016-09-29",
+        "cited_by_count": 3708,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2234054032",
+        "type": "article",
+        "title": "A mixed-cation lead mixed-halide perovskite absorber for tandem solar cells",
+        "publication_date": "2016-01-07",
+        "cited_by_count": 3072,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2941803205",
+        "type": "article",
+        "title": "What would it take for renewably powered electrosynthesis to displace petrochemical processes?",
+        "publication_date": "2019-04-25",
+        "cited_by_count": 3048,
+        "primary_topic": {
+          "id": "https://openalex.org/T11784"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3013252775",
+        "type": "article",
+        "title": "A reflection on lithium-ion battery cathode chemistry",
+        "publication_date": "2020-03-25",
+        "cited_by_count": 2814,
+        "primary_topic": {
+          "id": "https://openalex.org/T10018"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2527913842",
+        "type": "article",
+        "title": "Quantum dot–induced phase stabilization of α-CsPbI 3 perovskite for high-efficiency photovoltaics",
+        "publication_date": "2016-10-06",
+        "cited_by_count": 2795,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2615203216",
+        "type": "article",
+        "title": "Molecular Optimization Enables over 13% Efficiency in Organic Solar Cells",
+        "publication_date": "2017-05-17",
+        "cited_by_count": 2791,
+        "primary_topic": {
+          "id": "https://openalex.org/T10045"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2636773388",
+        "type": "article",
+        "title": "From Lithium‐Ion to Sodium‐Ion Batteries: Advantages, Challenges, and Surprises",
+        "publication_date": "2017-06-19",
+        "cited_by_count": 2687,
+        "primary_topic": {
+          "id": "https://openalex.org/T10018"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2767767460",
+        "type": "article",
+        "title": "Properties and potential optoelectronic applications of lead halide perovskite nanocrystals",
+        "publication_date": "2017-11-09",
+        "cited_by_count": 2643,
+        "primary_topic": {
+          "id": "https://openalex.org/T10247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2759147296",
+        "type": "article",
+        "title": "g‐C 3 N 4 ‐Based Heterostructured Photocatalysts",
+        "publication_date": "2017-09-21",
+        "cited_by_count": 2570,
+        "primary_topic": {
+          "id": "https://openalex.org/T10078"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2573377826",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2808025896",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2729523528",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2301656337",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4211152862",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2272252865",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2527042386",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2234054032",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2941803205",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3013252775",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2527913842",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2615203216",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2636773388",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2767767460",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2759147296",
+        "label": "on-target"
+      }
+    ]
+  },
+  "chemeng.metal": {
+    "capturedAt": "2026-10-25T16:54:06.074Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10386%7CT10530%7CT10633%7CT10700%7CT10717%7CT10723%7CT10736%7CT10834%7CT10840%7CT10865%7CT11100%7CT11126%7CT11143%7CT11201%7CT11442%7CT11837%7CT12427%7CT12932%7CT13645%7CT14128%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2534691303",
+        "type": "article",
+        "title": "A critical review of high entropy alloys and related concepts",
+        "publication_date": "2016-10-21",
+        "cited_by_count": 9033,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2795185600",
+        "type": "article",
+        "title": "Carbothermal shock synthesis of high-entropy-alloy nanoparticles",
+        "publication_date": "2018-03-29",
+        "cited_by_count": 2111,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2615990324",
+        "type": "article",
+        "title": "Fundamentals and advances in magnesium alloy corrosion",
+        "publication_date": "2017-05-15",
+        "cited_by_count": 2083,
+        "primary_topic": {
+          "id": "https://openalex.org/T10530"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2410711035",
+        "type": "article",
+        "title": "FactSage thermochemical software and databases, 2010–2016",
+        "publication_date": "2016-06-09",
+        "cited_by_count": 2065,
+        "primary_topic": {
+          "id": "https://openalex.org/T11126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2299593614",
+        "type": "article",
+        "title": "Exceptional damage-tolerance of a medium-entropy alloy CrCoNi at cryogenic temperatures",
+        "publication_date": "2016-02-02",
+        "cited_by_count": 1943,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2900812253",
+        "type": "article",
+        "title": "Multicomponent intermetallic nanoparticles and superb mechanical behaviors of complex alloys",
+        "publication_date": "2018-11-22",
+        "cited_by_count": 1690,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2321217820",
+        "type": "article",
+        "title": "Back stress strengthening and strain hardening in gradient structure",
+        "publication_date": "2016-03-02",
+        "cited_by_count": 1602,
+        "primary_topic": {
+          "id": "https://openalex.org/T10386"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3011961763",
+        "type": "article",
+        "title": "Latest research advances on magnesium and magnesium alloys worldwide",
+        "publication_date": "2020-03-01",
+        "cited_by_count": 1374,
+        "primary_topic": {
+          "id": "https://openalex.org/T10530"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2588581688",
+        "type": "article",
+        "title": "Reasons for the superior mechanical properties of medium-entropy CrCoNi compared to high-entropy CrMnFeCoNi",
+        "publication_date": "2017-02-14",
+        "cited_by_count": 1368,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2557627013",
+        "type": "article",
+        "title": "High-Entropy Metal Diborides: A New Class of High-Entropy Materials and a New Type of Ultrahigh Temperature Ceramics",
+        "publication_date": "2016-11-29",
+        "cited_by_count": 1248,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2922252406",
+        "type": "article",
+        "title": "High‐Entropy Oxides: Fundamental Aspects and Electrochemical Properties",
+        "publication_date": "2019-03-06",
+        "cited_by_count": 1240,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2750250259",
+        "type": "article",
+        "title": "High dislocation density–induced large ductility in deformed and partitioned steels",
+        "publication_date": "2017-08-24",
+        "cited_by_count": 1228,
+        "primary_topic": {
+          "id": "https://openalex.org/T10386"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2483357472",
+        "type": "article",
+        "title": "Microstructure evolution and critical stress for twinning in the CrMnFeCoNi high-entropy alloy",
+        "publication_date": "2016-07-31",
+        "cited_by_count": 1205,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3152601855",
+        "type": "article",
+        "title": "High-entropy ceramics: Present status, challenges, and a look forward",
+        "publication_date": "2021-04-16",
+        "cited_by_count": 1116,
+        "primary_topic": {
+          "id": "https://openalex.org/T11143"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2922549505",
+        "type": "article",
+        "title": "A Review on Biomedical Titanium Alloys: Recent Progress and Prospect",
+        "publication_date": "2019-03-20",
+        "cited_by_count": 1105,
+        "primary_topic": {
+          "id": "https://openalex.org/T11442"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2534691303",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2795185600",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2615990324",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2410711035",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2299593614",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2900812253",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2321217820",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3011961763",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2588581688",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2557627013",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2922252406",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2750250259",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2483357472",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3152601855",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2922549505",
+        "label": "on-target"
+      }
+    ]
+  },
+  "chemeng.nano": {
+    "capturedAt": "2026-10-25T16:54:00.777Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10074%7CT10079%7CT10083%7CT10131%7CT10275%7CT10321%7CT10461%7CT11272%7CT11341%7CT11342%7CT11907%7CT12149%7CT12224%7CT12302%7CT12405%7CT12627%7CT14089%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2498106012",
+        "type": "article",
+        "title": "2D materials and van der Waals heterostructures",
+        "publication_date": "2016-07-28",
+        "cited_by_count": 7451,
+        "primary_topic": {
+          "id": "https://openalex.org/T10275"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2616129231",
+        "type": "article",
+        "title": "Nanoparticles: Properties, applications and toxicities",
+        "publication_date": "2017-05-18",
+        "cited_by_count": 7047,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2589067428",
+        "type": "article",
+        "title": "The antimicrobial activity of nanoparticles: present situation and prospects for the future",
+        "publication_date": "2017-02-01",
+        "cited_by_count": 4059,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2971763914",
+        "type": "article",
+        "title": "Present and Future of Surface-Enhanced Raman Scattering",
+        "publication_date": "2019-09-03",
+        "cited_by_count": 3915,
+        "primary_topic": {
+          "id": "https://openalex.org/T10131"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2796277309",
+        "type": "article",
+        "title": "Review on nanoparticles and nanostructured materials: history, sources, toxicity and regulations",
+        "publication_date": "2018-04-03",
+        "cited_by_count": 3307,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2519678626",
+        "type": "article",
+        "title": "Silver Nanoparticles: Synthesis, Characterization, Properties, Applications, and Therapeutic Approaches",
+        "publication_date": "2016-09-13",
+        "cited_by_count": 3232,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2570166109",
+        "type": "article",
+        "title": "Recent development of two-dimensional transition metal dichalcogenides and their applications",
+        "publication_date": "2017-01-09",
+        "cited_by_count": 2776,
+        "primary_topic": {
+          "id": "https://openalex.org/T10275"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2899246795",
+        "type": "article",
+        "title": "‘Green’ synthesis of metals and their oxide nanoparticles: applications for environmental remediation",
+        "publication_date": "2018-10-29",
+        "cited_by_count": 2711,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2760892774",
+        "type": "article",
+        "title": "Metal nanoparticles: understanding the mechanisms behind antibacterial activity",
+        "publication_date": "2017-10-03",
+        "cited_by_count": 2586,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2736441330",
+        "type": "article",
+        "title": "Mechanical properties of graphene and graphene-based nanocomposites",
+        "publication_date": "2017-07-21",
+        "cited_by_count": 2585,
+        "primary_topic": {
+          "id": "https://openalex.org/T10083"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2888688700",
+        "type": "article",
+        "title": "Tuning superconductivity in twisted bilayer graphene",
+        "publication_date": "2019-01-24",
+        "cited_by_count": 2283,
+        "primary_topic": {
+          "id": "https://openalex.org/T10083"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2549644565",
+        "type": "article",
+        "title": "Mechanistic Basis of Antimicrobial Actions of Silver Nanoparticles",
+        "publication_date": "2016-11-15",
+        "cited_by_count": 2147,
+        "primary_topic": {
+          "id": "https://openalex.org/T10079"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1980451122",
+        "type": "article",
+        "title": "Colloquium : Excitons in atomically thin transition metal dichalcogenides",
+        "publication_date": "2018-04-04",
+        "cited_by_count": 2137,
+        "primary_topic": {
+          "id": "https://openalex.org/T10275"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2997242469",
+        "type": "article",
+        "title": "The History of Nanoscience and Nanotechnology: From Chemical–Physical Applications to Nanomedicine",
+        "publication_date": "2019-12-27",
+        "cited_by_count": 2023,
+        "primary_topic": {
+          "id": "https://openalex.org/T14089"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3191171424",
+        "type": "article",
+        "title": "Semiconductor quantum dots: Technological progress and future challenges",
+        "publication_date": "2021-08-05",
+        "cited_by_count": 1976,
+        "primary_topic": {
+          "id": "https://openalex.org/T10321"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2498106012",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2616129231",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2589067428",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2971763914",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2796277309",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2519678626",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2570166109",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2899246795",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2760892774",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2736441330",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2888688700",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2549644565",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1980451122",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2997242469",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3191171424",
+        "label": "on-target"
+      }
+    ]
+  },
+  "chemeng.sep": {
+    "capturedAt": "2026-10-25T16:54:07.684Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10016%7CT10096%7CT10197%7CT10353%7CT10967%7CT11091%7CT11362%7CT11401%7CT12074%7CT12540%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2784350055",
+        "type": "article",
+        "title": "Carbon capture and storage (CCS): the way forward",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 4360,
+        "primary_topic": {
+          "id": "https://openalex.org/T10967"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4205627251",
+        "type": "article",
+        "title": "A critical review on the treatment of dye-containing wastewater: Ecotoxicological and health concerns of textile dyes and possible remediation approaches for environmental safety",
+        "publication_date": "2022-01-10",
+        "cited_by_count": 3464,
+        "primary_topic": {
+          "id": "https://openalex.org/T10016"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2625153997",
+        "type": "article",
+        "title": "Maximizing the right stuff: The trade-off between membrane permeability and selectivity",
+        "publication_date": "2017-06-16",
+        "cited_by_count": 3365,
+        "primary_topic": {
+          "id": "https://openalex.org/T11362"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2790308498",
+        "type": "article",
+        "title": "Stable Metal–Organic Frameworks: Design, Synthesis, and Applications",
+        "publication_date": "2018-02-12",
+        "cited_by_count": 2994,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2752698709",
+        "type": "article",
+        "title": "Modelling and Interpretation of Adsorption Isotherms",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 2951,
+        "primary_topic": {
+          "id": "https://openalex.org/T10016"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2604084092",
+        "type": "article",
+        "title": "Metal–Organic Framework (MOF)‐Based Drug/Cargo Delivery and Cancer Therapy",
+        "publication_date": "2017-03-29",
+        "cited_by_count": 2293,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3180677679",
+        "type": "article",
+        "title": "Removal of heavy metal ions from wastewater: a comprehensive and critical review",
+        "publication_date": "2021-07-08",
+        "cited_by_count": 2220,
+        "primary_topic": {
+          "id": "https://openalex.org/T10016"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2921571282",
+        "type": "article",
+        "title": "Rare earth elements: A review of applications, occurrence, exploration, analysis, recycling, and environmental impact",
+        "publication_date": "2019-03-12",
+        "cited_by_count": 2188,
+        "primary_topic": {
+          "id": "https://openalex.org/T11091"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2806520197",
+        "type": "article",
+        "title": "A Process for Capturing CO2 from the Atmosphere",
+        "publication_date": "2018-06-07",
+        "cited_by_count": 1906,
+        "primary_topic": {
+          "id": "https://openalex.org/T10967"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2230127221",
+        "type": "article",
+        "title": "Electrically Conductive Porous Metal–Organic Frameworks",
+        "publication_date": "2016-01-08",
+        "cited_by_count": 1906,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2770720622",
+        "type": "article",
+        "title": "Metal–Organic Frameworks as Platforms for Catalytic Applications",
+        "publication_date": "2017-11-27",
+        "cited_by_count": 1722,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2276886307",
+        "type": "article",
+        "title": "Metal–Organic Frameworks as Platforms for Functional Materials",
+        "publication_date": "2016-02-15",
+        "cited_by_count": 1700,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2977837898",
+        "type": "article",
+        "title": "Improving MOF stability: approaches and applications",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 1676,
+        "primary_topic": {
+          "id": "https://openalex.org/T10096"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2505574534",
+        "type": "article",
+        "title": "Characteristics and adsorption capacities of low-cost sorbents for wastewater treatment: A review",
+        "publication_date": "2016-06-26",
+        "cited_by_count": 1675,
+        "primary_topic": {
+          "id": "https://openalex.org/T10016"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803058542",
+        "type": "article",
+        "title": "Polyamide membranes with nanoscale Turing structures for water purification",
+        "publication_date": "2018-05-03",
+        "cited_by_count": 1666,
+        "primary_topic": {
+          "id": "https://openalex.org/T10197"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2784350055",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4205627251",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2625153997",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2790308498",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2752698709",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2604084092",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3180677679",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2921571282",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2806520197",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2230127221",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2770720622",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2276886307",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2977837898",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2505574534",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2803058542",
+        "label": "on-target"
+      }
+    ]
+  },
   "cond-mat.mes-hall": {
     "capturedAt": "2026-10-25T16:51:56.842Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10022%7CT10049%7CT10083%7CT10275%7CT10321%7CT10382%7CT10657%7CT10913%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
@@ -7905,6 +9003,1099 @@
       }
     ]
   },
+  "eess.IV": {
+    "capturedAt": "2026-10-25T16:53:40.544Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10052%7CT10522%7CT10688%7CT10741%7CT11019%7CT11105%7CT11165%7CT11659%7CT12923%7CT13114%7CT13579%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2508457857",
+        "type": "article",
+        "title": "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising",
+        "publication_date": "2017-02-01",
+        "cited_by_count": 8972,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2996290406",
+        "type": "article",
+        "title": "UNet++: Redesigning Skip Connections to Exploit Multiscale Features in Image Segmentation",
+        "publication_date": "2019-12-13",
+        "cited_by_count": 4453,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2301358467",
+        "type": "article",
+        "title": "Efficient multi-scale 3D CNN with fully connected CRF for accurate brain lesion segmentation",
+        "publication_date": "2016-10-29",
+        "cited_by_count": 3495,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2256362396",
+        "type": "article",
+        "title": "DehazeNet: An End-to-End System for Single Image Haze Removal",
+        "publication_date": "2016-08-10",
+        "cited_by_count": 3359,
+        "primary_topic": {
+          "id": "https://openalex.org/T11019"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4391109864",
+        "type": "article",
+        "title": "Segment anything in medical images",
+        "publication_date": "2024-01-22",
+        "cited_by_count": 3054,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2566376500",
+        "type": "article",
+        "title": "LIME: Low-Light Image Enhancement via Illumination Map Estimation",
+        "publication_date": "2016-12-14",
+        "cited_by_count": 2987,
+        "primary_topic": {
+          "id": "https://openalex.org/T11019"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3121661546",
+        "type": "article",
+        "title": "EnlightenGAN: Deep Light Enhancement Without Paired Supervision",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 2740,
+        "primary_topic": {
+          "id": "https://openalex.org/T11019"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2764207251",
+        "type": "article",
+        "title": "FFDNet: Toward a Fast and Flexible Solution for CNN-Based Image Denoising",
+        "publication_date": "2018-05-25",
+        "cited_by_count": 2728,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2562637781",
+        "type": "article",
+        "title": "Loss Functions for Image Restoration With Neural Networks",
+        "publication_date": "2016-12-24",
+        "cited_by_count": 2655,
+        "primary_topic": {
+          "id": "https://openalex.org/T11105"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964227007",
+        "type": "article",
+        "title": "H-DenseUNet: Hybrid Densely Connected UNet for Liver and Tumor Segmentation From CT Volumes",
+        "publication_date": "2018-06-11",
+        "cited_by_count": 2480,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2804047627",
+        "type": "article",
+        "title": "Deep Learning Techniques for Automatic MRI Cardiac Multi-Structures Segmentation and Diagnosis: Is the Problem Solved?",
+        "publication_date": "2018-05-17",
+        "cited_by_count": 2417,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2909208433",
+        "type": "article",
+        "title": "An Underwater Image Enhancement Benchmark Dataset and Beyond",
+        "publication_date": "2019-11-28",
+        "cited_by_count": 2414,
+        "primary_topic": {
+          "id": "https://openalex.org/T11019"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2921406441",
+        "type": "article",
+        "title": "CE-Net: Context Encoder Network for 2D Medical Image Segmentation",
+        "publication_date": "2019-03-07",
+        "cited_by_count": 2399,
+        "primary_topic": {
+          "id": "https://openalex.org/T10052"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2963928582",
+        "type": "article",
+        "title": "Benchmarking Single-Image Dehazing and Beyond",
+        "publication_date": "2018-08-30",
+        "cited_by_count": 2336,
+        "primary_topic": {
+          "id": "https://openalex.org/T11019"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3046194589",
+        "type": "article",
+        "title": "U2Fusion: A Unified Unsupervised Image Fusion Network",
+        "publication_date": "2020-07-28",
+        "cited_by_count": 2301,
+        "primary_topic": {
+          "id": "https://openalex.org/T11659"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2508457857",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2996290406",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2301358467",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2256362396",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4391109864",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2566376500",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3121661546",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2764207251",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2562637781",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2964227007",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2804047627",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2909208433",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2921406441",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2963928582",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3046194589",
+        "label": "on-target"
+      }
+    ]
+  },
+  "eess.SP": {
+    "capturedAt": "2026-10-25T16:53:38.731Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10500%7CT10688%7CT10741%7CT10828%7CT10860%7CT10931%7CT11034%7CT11106%7CT11233%7CT11241%7CT11309%7CT11447%7CT12205%7CT13816%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2508457857",
+        "type": "article",
+        "title": "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising",
+        "publication_date": "2017-02-01",
+        "cited_by_count": 8972,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2996331899",
+        "type": "article",
+        "title": "Temporal Fusion Transformers for interpretable multi-horizon time series forecasting",
+        "publication_date": "2021-06-16",
+        "cited_by_count": 3222,
+        "primary_topic": {
+          "id": "https://openalex.org/T12205"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2740924709",
+        "type": "article",
+        "title": "DBSCAN Revisited, Revisited",
+        "publication_date": "2017-07-31",
+        "cited_by_count": 2747,
+        "primary_topic": {
+          "id": "https://openalex.org/T11106"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2764207251",
+        "type": "article",
+        "title": "FFDNet: Toward a Fast and Flexible Solution for CNN-Based Image Denoising",
+        "publication_date": "2018-05-25",
+        "cited_by_count": 2728,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964010366",
+        "type": "article",
+        "title": "Recurrent Neural Networks for Multivariate Time Series with Missing Values",
+        "publication_date": "2018-04-11",
+        "cited_by_count": 2328,
+        "primary_topic": {
+          "id": "https://openalex.org/T12205"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952218014",
+        "type": "article",
+        "title": "Conv-TasNet: Surpassing Ideal Time–Frequency Magnitude Masking for Speech Separation",
+        "publication_date": "2019-05-07",
+        "cited_by_count": 2056,
+        "primary_topic": {
+          "id": "https://openalex.org/T10860"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2584483805",
+        "type": "article",
+        "title": "Low-Dose CT With a Residual Encoder-Decoder Convolutional Neural Network",
+        "publication_date": "2017-06-13",
+        "cited_by_count": 1899,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3022643593",
+        "type": "article",
+        "title": "Time-series forecasting with deep learning: a survey",
+        "publication_date": "2021-02-15",
+        "cited_by_count": 1840,
+        "primary_topic": {
+          "id": "https://openalex.org/T12205"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3202918664",
+        "type": "article",
+        "title": "Overview of the Versatile Video Coding (VVC) Standard and its Applications",
+        "publication_date": "2021-08-02",
+        "cited_by_count": 1820,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2508393166",
+        "type": "article",
+        "title": "Majorization-Minimization Algorithms in Signal Processing, Communications, and Machine Learning",
+        "publication_date": "2016-08-18",
+        "cited_by_count": 1815,
+        "primary_topic": {
+          "id": "https://openalex.org/T10500"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2743780012",
+        "type": "article",
+        "title": "Low-Dose CT Image Denoising Using a Generative Adversarial Network With Wasserstein Distance and Perceptual Loss",
+        "publication_date": "2018-04-17",
+        "cited_by_count": 1629,
+        "primary_topic": {
+          "id": "https://openalex.org/T10688"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2509065397",
+        "type": "article",
+        "title": "Deep Convolutional Neural Networks and Data Augmentation for Environmental Sound Classification",
+        "publication_date": "2017-01-23",
+        "cited_by_count": 1600,
+        "primary_topic": {
+          "id": "https://openalex.org/T11309"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2962866211",
+        "type": "article",
+        "title": "Supervised Speech Separation Based on Deep Learning: An Overview",
+        "publication_date": "2018-05-30",
+        "cited_by_count": 1528,
+        "primary_topic": {
+          "id": "https://openalex.org/T10860"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754051771",
+        "type": "article",
+        "title": "LSTM Fully Convolutional Networks for Time Series Classification",
+        "publication_date": "2017-12-04",
+        "cited_by_count": 1470,
+        "primary_topic": {
+          "id": "https://openalex.org/T12205"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2995038946",
+        "type": "article",
+        "title": "Algorithm Unrolling: Interpretable, Efficient Deep Learning for Signal and Image Processing",
+        "publication_date": "2021-02-25",
+        "cited_by_count": 1443,
+        "primary_topic": {
+          "id": "https://openalex.org/T10500"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2508457857",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2996331899",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2740924709",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2764207251",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2964010366",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2952218014",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2584483805",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3022643593",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3202918664",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2508393166",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2743780012",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2509065397",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2962866211",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2754051771",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2995038946",
+        "label": "on-target"
+      }
+    ]
+  },
+  "eess.SY": {
+    "capturedAt": "2026-10-25T16:52:48.534Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10040%7CT10046%7CT10220%7CT10223%7CT10524%7CT10571%7CT10653%7CT10791%7CT10876%7CT10917%7CT10972%7CT11053%7CT11081%7CT11110%7CT11236%7CT11394%7CT11525%7CT11602%7CT11615%7CT11749%7CT11920%7CT12000%7CT12206%7CT12290%7CT12709%7CT12772%7CT12804%7CT12810%7CT12888%7CT12941%7CT13065%7CT13293%7CT13344%7CT13382%7CT13535%7CT13717%7CT13954%7CT14011%7CT14083%7CT14225%7CT14270%7CT14420%7CT14470%7CT14474%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2560504659",
+        "type": "article",
+        "title": "Control Barrier Function Based Quadratic Programs for Safety Critical Systems",
+        "publication_date": "2016-12-13",
+        "cited_by_count": 2665,
+        "primary_topic": {
+          "id": "https://openalex.org/T10791"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2768753204",
+        "type": "article",
+        "title": "A New Convolutional Neural Network-Based Data-Driven Fault Diagnosis Method",
+        "publication_date": "2017-11-17",
+        "cited_by_count": 2217,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2293467699",
+        "type": "article",
+        "title": "Learning hand-eye coordination for robotic grasping with deep learning and large-scale data collection",
+        "publication_date": "2017-06-12",
+        "cited_by_count": 1970,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2904460913",
+        "type": "article",
+        "title": "A Hybrid Prognostics Approach for Estimating Remaining Useful Life of Rolling Element Bearings",
+        "publication_date": "2018-12-14",
+        "cited_by_count": 1929,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2584994008",
+        "type": "article",
+        "title": "A New Deep Learning Model for Fault Diagnosis with Good Anti-Noise and Domain Adaptation Ability on Raw Vibration Signals",
+        "publication_date": "2017-02-22",
+        "cited_by_count": 1916,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2887782657",
+        "type": "article",
+        "title": "Highly Accurate Machine Fault Diagnosis Using Deep Transfer Learning",
+        "publication_date": "2018-08-10",
+        "cited_by_count": 1645,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2479280896",
+        "type": "article",
+        "title": "Event-Triggered Adaptive Control for a Class of Uncertain Nonlinear Systems",
+        "publication_date": "2016-07-27",
+        "cited_by_count": 1586,
+        "primary_topic": {
+          "id": "https://openalex.org/T10040"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4280571816",
+        "type": "article",
+        "title": "Robot Operating System 2: Design, architecture, and uses in the wild",
+        "publication_date": "2022-05-11",
+        "cited_by_count": 1579,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2796210679",
+        "type": "article",
+        "title": "Microgrids: A review of technologies, key drivers, and outstanding issues",
+        "publication_date": "2018-04-03",
+        "cited_by_count": 1505,
+        "primary_topic": {
+          "id": "https://openalex.org/T10223"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2977117446",
+        "type": "article",
+        "title": "Deep Residual Shrinkage Networks for Fault Diagnosis",
+        "publication_date": "2019-09-26",
+        "cited_by_count": 1439,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2461729787",
+        "type": "article",
+        "title": "Real-Time Motor Fault Detection by 1-D Convolutional Neural Networks",
+        "publication_date": "2016-06-29",
+        "cited_by_count": 1414,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2550453031",
+        "type": "article",
+        "title": "The 2015 Ukraine Blackout: Implications for False Data Injection Attacks",
+        "publication_date": "2016-11-22",
+        "cited_by_count": 1246,
+        "primary_topic": {
+          "id": "https://openalex.org/T10917"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898375427",
+        "type": "article",
+        "title": "Deep Convolutional Transfer Learning Network: A New Method for Intelligent Fault Diagnosis of Machines With Unlabeled Data",
+        "publication_date": "2018-10-26",
+        "cited_by_count": 1233,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3154122279",
+        "type": "article",
+        "title": "Grid-Forming Converters: Control Approaches, Grid-Synchronization, and Future Trends—A Review",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 1203,
+        "primary_topic": {
+          "id": "https://openalex.org/T10223"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2317595875",
+        "type": "article",
+        "title": "An Intelligent Fault Diagnosis Method Using Unsupervised Feature Learning Towards Mechanical Big Data",
+        "publication_date": "2016-01-19",
+        "cited_by_count": 1189,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2560504659",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2768753204",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2293467699",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2904460913",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2584994008",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2887782657",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2479280896",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4280571816",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2796210679",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2977117446",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2461729787",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2550453031",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2898375427",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3154122279",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2317595875",
+        "uncertain": true
+      }
+    ]
+  },
+  "eess.electro": {
+    "capturedAt": "2026-10-25T16:53:43.721Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10099%7CT10175%7CT10187%7CT10228%7CT10323%7CT10361%7CT10363%7CT10369%7CT10460%7CT10472%7CT10502%7CT10558%7CT10623%7CT10904%7CT11032%7CT11338%7CT11417%7CT11522%7CT14117%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2783525259",
+        "type": "article",
+        "title": "Loihi: A Neuromorphic Manycore Processor with On-Chip Learning",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 3926,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2593065393",
+        "type": "article",
+        "title": "Step-Up DC–DC Converters: A Comprehensive Review of Voltage-Boosting Techniques, Topologies, and Applications",
+        "publication_date": "2017-03-06",
+        "cited_by_count": 2122,
+        "primary_topic": {
+          "id": "https://openalex.org/T10175"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2548618581",
+        "type": "article",
+        "title": "Model Predictive Control for Power Converters and Drives: Advances and Trends",
+        "publication_date": "2016-11-03",
+        "cited_by_count": 1864,
+        "primary_topic": {
+          "id": "https://openalex.org/T10228"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2577976329",
+        "type": "article",
+        "title": "Review of Silicon Carbide Power Devices and Their Applications",
+        "publication_date": "2017-01-16",
+        "cited_by_count": 1769,
+        "primary_topic": {
+          "id": "https://openalex.org/T10361"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2593495332",
+        "type": "article",
+        "title": "GaN-on-Si Power Technology: Devices and Applications",
+        "publication_date": "2017-02-27",
+        "cited_by_count": 1719,
+        "primary_topic": {
+          "id": "https://openalex.org/T10099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2772829183",
+        "type": "article",
+        "title": "Ultrawide‐Bandgap Semiconductors: Research Opportunities and Challenges",
+        "publication_date": "2017-12-04",
+        "cited_by_count": 1599,
+        "primary_topic": {
+          "id": "https://openalex.org/T10099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2984844508",
+        "type": "article",
+        "title": "Surrogate Gradient Learning in Spiking Neural Networks: Bringing the Power of Gradient-Based Optimization to Spiking Neural Networks",
+        "publication_date": "2019-11-01",
+        "cited_by_count": 1563,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2518281301",
+        "type": "article",
+        "title": "ISAAC",
+        "publication_date": "2016-06-18",
+        "cited_by_count": 1541,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2900872097",
+        "type": "article",
+        "title": "SLIM: Simultaneous Logic-in-Memory Computing Exploiting Bilayer Analog OxRAM Devices",
+        "publication_date": "2020-02-13",
+        "cited_by_count": 1445,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3036700343",
+        "type": "article",
+        "title": "Mini-LED, Micro-LED and OLED displays: present status and future perspectives",
+        "publication_date": "2020-06-18",
+        "cited_by_count": 1403,
+        "primary_topic": {
+          "id": "https://openalex.org/T10099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2788013722",
+        "type": "article",
+        "title": "The 2018 GaN power electronics roadmap",
+        "publication_date": "2018-03-26",
+        "cited_by_count": 1317,
+        "primary_topic": {
+          "id": "https://openalex.org/T10099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2461874365",
+        "type": "article",
+        "title": "Review of Commercial GaN Power Devices and GaN-Based Converter Design Challenges",
+        "publication_date": "2016-06-22",
+        "cited_by_count": 1259,
+        "primary_topic": {
+          "id": "https://openalex.org/T10099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2508602506",
+        "type": "article",
+        "title": "PRIME",
+        "publication_date": "2016-06-18",
+        "cited_by_count": 1234,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2786965798",
+        "type": "article",
+        "title": "Going Deeper in Spiking Neural Networks: VGG and Residual Architectures",
+        "publication_date": "2019-03-07",
+        "cited_by_count": 1213,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2621826044",
+        "type": "article",
+        "title": "Spatio-Temporal Backpropagation for Training High-Performance Spiking Neural Networks",
+        "publication_date": "2018-05-23",
+        "cited_by_count": 1203,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2783525259",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2593065393",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2548618581",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2577976329",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2593495332",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2772829183",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2984844508",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2518281301",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2900872097",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3036700343",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2788013722",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2461874365",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2508602506",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2786965798",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2621826044",
+        "uncertain": true
+      }
+    ]
+  },
+  "eess.telecom": {
+    "capturedAt": "2026-10-25T16:53:42.144Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10125%7CT10148%7CT10232%7CT10262%7CT10575%7CT10579%7CT10714%7CT10767%7CT10796%7CT10847%7CT10851%7CT10936%7CT10964%7CT11392%7CT11409%7CT11458%7CT11873%7CT12024%7CT12042%7CT12791%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2981096252",
+        "type": "article",
+        "title": "A Vision of 6G Wireless Systems: Applications, Trends, Technologies, and Open Research Problems",
+        "publication_date": "2019-10-15",
+        "cited_by_count": 4973,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2969424089",
+        "type": "article",
+        "title": "Intelligent Reflecting Surface Enhanced Wireless Network via Joint Active and Passive Beamforming",
+        "publication_date": "2019-08-23",
+        "cited_by_count": 4582,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2990747873",
+        "type": "article",
+        "title": "Towards Smart and Reconfigurable Environment: Intelligent Reflecting Surface Aided Wireless Network",
+        "publication_date": "2019-11-22",
+        "cited_by_count": 4327,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2343448572",
+        "type": "article",
+        "title": "Next Generation 5G Wireless Networks: A Comprehensive Survey",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 3441,
+        "primary_topic": {
+          "id": "https://openalex.org/T10148"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2968810373",
+        "type": "article",
+        "title": "Wireless Communications Through Reconfigurable Intelligent Surfaces",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 3376,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3129486236",
+        "type": "article",
+        "title": "Intelligent Reflecting Surface-Aided Wireless Communications: A Tutorial",
+        "publication_date": "2021-02-25",
+        "cited_by_count": 3021,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2195693430",
+        "type": "article",
+        "title": "An Overview of Signal Processing Techniques for Millimeter Wave MIMO Systems",
+        "publication_date": "2016-02-08",
+        "cited_by_count": 2913,
+        "primary_topic": {
+          "id": "https://openalex.org/T10936"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2286275639",
+        "type": "article",
+        "title": "Cell-Free Massive MIMO Versus Small Cells",
+        "publication_date": "2017-01-19",
+        "cited_by_count": 2787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10148"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2955897898",
+        "type": "article",
+        "title": "Wireless Communications and Applications Above 100 GHz: Opportunities and Challenges for 6G and Beyond",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 2614,
+        "primary_topic": {
+          "id": "https://openalex.org/T10936"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964005248",
+        "type": "article",
+        "title": "6G Wireless Networks: Vision, Requirements, Architecture, and Key Technologies",
+        "publication_date": "2019-07-18",
+        "cited_by_count": 2565,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2522847968",
+        "type": "article",
+        "title": "Power-Domain Non-Orthogonal Multiple Access (NOMA) in 5G Systems: Potentials and Challenges",
+        "publication_date": "2016-10-25",
+        "cited_by_count": 2458,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2963336322",
+        "type": "article",
+        "title": "A Survey on Non-Orthogonal Multiple Access for 5G Networks: Research Challenges and Future Trends",
+        "publication_date": "2017-07-11",
+        "cited_by_count": 2391,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4322576964",
+        "type": "article",
+        "title": "On the Road to 6G: Visions, Requirements, Key Technologies, and Testbeds",
+        "publication_date": "2023-01-01",
+        "cited_by_count": 2354,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3011830499",
+        "type": "article",
+        "title": "Toward 6G Networks: Use Cases and Technologies",
+        "publication_date": "2020-03-01",
+        "cited_by_count": 2234,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2941088479",
+        "type": "article",
+        "title": "The Roadmap to 6G: AI Empowered Wireless Networks",
+        "publication_date": "2019-08-01",
+        "cited_by_count": 2203,
+        "primary_topic": {
+          "id": "https://openalex.org/T11458"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2981096252",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2969424089",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2990747873",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2343448572",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2968810373",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3129486236",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2195693430",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2286275639",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2955897898",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2964005248",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2522847968",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2963336322",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4322576964",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3011830499",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2941088479",
+        "label": "on-target"
+      }
+    ]
+  },
   "gr-qc": {
     "capturedAt": "2026-10-25T16:52:12.474Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10025%7CT10095%7CT10463%7CT11960%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
@@ -12083,6 +14274,1324 @@
       }
     ]
   },
+  "mech.acoustics": {
+    "capturedAt": "2026-10-25T16:53:53.513Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10662%7CT10690%7CT10822%7CT11096%7CT11254%7CT11449%7CT11698%7CT12206%7CT12435%7CT12759%7CT12907%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2279573609",
+        "type": "article",
+        "title": "Acoustic metamaterials: From local resonances to broad horizons",
+        "publication_date": "2016-02-05",
+        "cited_by_count": 1605,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2320998174",
+        "type": "article",
+        "title": "Guided wave based structural health monitoring: A review",
+        "publication_date": "2016-03-30",
+        "cited_by_count": 1053,
+        "primary_topic": {
+          "id": "https://openalex.org/T10662"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2301471013",
+        "type": "article",
+        "title": "Acoustic metasurface-based perfect absorber with deep subwavelength thickness",
+        "publication_date": "2016-02-08",
+        "cited_by_count": 818,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2913069042",
+        "type": "article",
+        "title": "Hybrid quantum systems based on magnonics",
+        "publication_date": "2019-05-24",
+        "cited_by_count": 778,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3037156726",
+        "type": "article",
+        "title": "Cavity magnomechanics",
+        "publication_date": "2016-03-04",
+        "cited_by_count": 725,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2894382669",
+        "type": "article",
+        "title": "Magnon-Photon-Phonon Entanglement in Cavity Magnomechanics",
+        "publication_date": "2018-11-14",
+        "cited_by_count": 708,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3003563372",
+        "type": "article",
+        "title": "Cooling of a levitated nanoparticle to the motional quantum ground state",
+        "publication_date": "2020-01-30",
+        "cited_by_count": 647,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3217066553",
+        "type": "article",
+        "title": "Quantum magnonics: When magnon spintronics meets quantum information science",
+        "publication_date": "2022-04-25",
+        "cited_by_count": 615,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3016094611",
+        "type": "article",
+        "title": "Non-destructive testing and evaluation of composite materials/structures: A state-of-the-art review",
+        "publication_date": "2020-04-01",
+        "cited_by_count": 588,
+        "primary_topic": {
+          "id": "https://openalex.org/T10662"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2527712612",
+        "type": "article",
+        "title": "Optimal sound-absorbing structures",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 584,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4210445796",
+        "type": "article",
+        "title": "Acoustic Metamaterials for Noise Reduction: A Review",
+        "publication_date": "2022-01-29",
+        "cited_by_count": 559,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2790313440",
+        "type": "article",
+        "title": "The Nippon Foundation—GEBCO Seabed 2030 Project: The Quest to See the World’s Oceans Completely Mapped by 2030",
+        "publication_date": "2018-02-08",
+        "cited_by_count": 532,
+        "primary_topic": {
+          "id": "https://openalex.org/T11698"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3007570775",
+        "type": "article",
+        "title": "Tunable and Active Phononic Crystals and Metamaterials",
+        "publication_date": "2020-02-26",
+        "cited_by_count": 503,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2920860444",
+        "type": "article",
+        "title": "Non-reciprocal robotic metamaterials",
+        "publication_date": "2019-10-10",
+        "cited_by_count": 501,
+        "primary_topic": {
+          "id": "https://openalex.org/T10822"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884029756",
+        "type": "article",
+        "title": "Nonreciprocal Photon Blockade",
+        "publication_date": "2018-10-12",
+        "cited_by_count": 494,
+        "primary_topic": {
+          "id": "https://openalex.org/T11449"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2279573609",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2320998174",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2301471013",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2913069042",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3037156726",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2894382669",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3003563372",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3217066553",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3016094611",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2527712612",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4210445796",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2790313440",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3007570775",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2920860444",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2884029756",
+        "label": "off-target"
+      }
+    ]
+  },
+  "mech.auto": {
+    "capturedAt": "2026-10-25T16:53:51.481Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10663%7CT10783%7CT10805%7CT10808%7CT11099%7CT11904%7CT11942%7CT12095%7CT12197%7CT12759%7CT13858%7CT13990%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3127891378",
+        "type": "article",
+        "title": "A review of lithium-ion battery safety concerns: The issues, strategies, and testing standards",
+        "publication_date": "2020-11-02",
+        "cited_by_count": 2170,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2741574707",
+        "type": "article",
+        "title": "Additive manufacturing: scientific and technological challenges, market uptake and opportunities",
+        "publication_date": "2017-07-29",
+        "cited_by_count": 2147,
+        "primary_topic": {
+          "id": "https://openalex.org/T10783"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2967464127",
+        "type": "article",
+        "title": "An Overview on 3D Printing Technology: Technological, Materials, and Applications",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 2057,
+        "primary_topic": {
+          "id": "https://openalex.org/T10783"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2563343938",
+        "type": "article",
+        "title": "Degradation diagnostics for lithium ion cells",
+        "publication_date": "2016-12-12",
+        "cited_by_count": 1939,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2388726286",
+        "type": "article",
+        "title": "Additive manufacturing and sustainability: an exploratory study of the advantages and challenges",
+        "publication_date": "2016-05-10",
+        "cited_by_count": 1894,
+        "primary_topic": {
+          "id": "https://openalex.org/T10783"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2953303875",
+        "type": "article",
+        "title": "A Survey of Autonomous Driving: Common Practices and Emerging Technologies",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 1882,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2981207549",
+        "type": "article",
+        "title": "A survey of deep learning techniques for autonomous driving",
+        "publication_date": "2019-11-14",
+        "cited_by_count": 1801,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2903223816",
+        "type": "article",
+        "title": "Temperature effect and thermal impact in lithium-ion batteries: A review",
+        "publication_date": "2018-11-28",
+        "cited_by_count": 1665,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2967686386",
+        "type": "article",
+        "title": "Lithium-ion battery fast charging: A review",
+        "publication_date": "2019-08-01",
+        "cited_by_count": 1588,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008115128",
+        "type": "article",
+        "title": "Deep Multi-Modal Object Detection and Semantic Segmentation for Autonomous Driving: Datasets, Methods, and Challenges",
+        "publication_date": "2020-02-17",
+        "cited_by_count": 1417,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221095855",
+        "type": "article",
+        "title": "Direct Ink Writing: A 3D Printing Technology for Diverse Materials",
+        "publication_date": "2022-03-05",
+        "cited_by_count": 1343,
+        "primary_topic": {
+          "id": "https://openalex.org/T10783"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2790625295",
+        "type": "article",
+        "title": "Long Short-Term Memory Recurrent Neural Network for Remaining Useful Life Prediction of Lithium-Ion Batteries",
+        "publication_date": "2018-02-12",
+        "cited_by_count": 1324,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008891024",
+        "type": "article",
+        "title": "Modeling and Applications of Electrochemical Impedance Spectroscopy (EIS) for Lithium-ion Batteries",
+        "publication_date": "2020-02-26",
+        "cited_by_count": 1215,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3139510216",
+        "type": "article",
+        "title": "Lithium ion battery degradation: what you need to know",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 1201,
+        "primary_topic": {
+          "id": "https://openalex.org/T10663"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2565919573",
+        "type": "article",
+        "title": "On-demand high-capacity ride-sharing via dynamic trip-vehicle assignment",
+        "publication_date": "2017-01-03",
+        "cited_by_count": 1191,
+        "primary_topic": {
+          "id": "https://openalex.org/T11942"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3127891378",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2741574707",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2967464127",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2563343938",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2388726286",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2953303875",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2981207549",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2903223816",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2967686386",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3008115128",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221095855",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2790625295",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3008891024",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3139510216",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2565919573",
+        "uncertain": true
+      }
+    ]
+  },
+  "mech.cad": {
+    "capturedAt": "2026-10-25T16:53:49.936Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10481%7CT10514%7CT10672%7CT10700%7CT10719%7CT10996%7CT11006%7CT12086%7CT12581%7CT13213%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2979750740",
+        "type": "article",
+        "title": "Dynamic Graph CNN for Learning on Point Clouds",
+        "publication_date": "2019-10-10",
+        "cited_by_count": 7128,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4200150166",
+        "type": "article",
+        "title": "NeRF",
+        "publication_date": "2021-12-17",
+        "cited_by_count": 6814,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4385318467",
+        "type": "article",
+        "title": "3D Gaussian Splatting for Real-Time Radiance Field Rendering",
+        "publication_date": "2023-07-26",
+        "cited_by_count": 5985,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221151978",
+        "type": "article",
+        "title": "Instant neural graphics primitives with a multiresolution hash encoding",
+        "publication_date": "2022-07-01",
+        "cited_by_count": 4148,
+        "primary_topic": {
+          "id": "https://openalex.org/T10481"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3039448353",
+        "type": "article",
+        "title": "Deep Learning for 3D Point Clouds: A Survey",
+        "publication_date": "2020-06-29",
+        "cited_by_count": 2411,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3111535274",
+        "type": "article",
+        "title": "PCT: Point cloud transformer",
+        "publication_date": "2021-04-09",
+        "cited_by_count": 2100,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2942074357",
+        "type": "article",
+        "title": "Deferred neural rendering",
+        "publication_date": "2019-07-12",
+        "cited_by_count": 1356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3013120860",
+        "type": "article",
+        "title": "Towards a semantic Construction Digital Twin: Directions for future research",
+        "publication_date": "2020-03-27",
+        "cited_by_count": 1347,
+        "primary_topic": {
+          "id": "https://openalex.org/T11006"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2553307952",
+        "type": "article",
+        "title": "A scalable active framework for region annotation in 3D shape collections",
+        "publication_date": "2016-11-11",
+        "cited_by_count": 1234,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2768683308",
+        "type": "article",
+        "title": "Embodied hands",
+        "publication_date": "2017-11-20",
+        "cited_by_count": 1056,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2737234477",
+        "type": "article",
+        "title": "O-CNN",
+        "publication_date": "2017-07-20",
+        "cited_by_count": 1037,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3203241482",
+        "type": "article",
+        "title": "Artificial intelligence in the construction industry: A review of present status, opportunities and future challenges",
+        "publication_date": "2021-10-06",
+        "cited_by_count": 1008,
+        "primary_topic": {
+          "id": "https://openalex.org/T11006"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4283392904",
+        "type": "article",
+        "title": "Artificial intelligence and smart vision for building and construction 4.0: Machine and deep learning methods and applications",
+        "publication_date": "2022-06-24",
+        "cited_by_count": 1003,
+        "primary_topic": {
+          "id": "https://openalex.org/T11006"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3111598592",
+        "type": "article",
+        "title": "TEASER: Fast and Certifiable Point Cloud Registration",
+        "publication_date": "2020-12-08",
+        "cited_by_count": 901,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3011186445",
+        "type": "article",
+        "title": "Innovation and Design in the Age of Artificial Intelligence",
+        "publication_date": "2020-03-19",
+        "cited_by_count": 850,
+        "primary_topic": {
+          "id": "https://openalex.org/T10672"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2979750740",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4200150166",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4385318467",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221151978",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3039448353",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3111535274",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2942074357",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3013120860",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2553307952",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2768683308",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2737234477",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3203241482",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4283392904",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3111598592",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3011186445",
+        "label": "off-target"
+      }
+    ]
+  },
+  "mech.dyn": {
+    "capturedAt": "2026-10-25T16:53:45.299Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10571%7CT10653%7CT10805%7CT11062%7CT11394%7CT11615%7CT11687%7CT12206%7CT12784%7CT13382%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2293467699",
+        "type": "article",
+        "title": "Learning hand-eye coordination for robotic grasping with deep learning and large-scale data collection",
+        "publication_date": "2017-06-12",
+        "cited_by_count": 1970,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4280571816",
+        "type": "article",
+        "title": "Robot Operating System 2: Design, architecture, and uses in the wild",
+        "publication_date": "2022-05-11",
+        "cited_by_count": 1579,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2775635818",
+        "type": "article",
+        "title": "GelSight: High-Resolution Robot Tactile Sensors for Estimating Geometry and Force",
+        "publication_date": "2017-11-29",
+        "cited_by_count": 1179,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2787690100",
+        "type": "article",
+        "title": "The grand challenges of Science Robotics",
+        "publication_date": "2018-01-31",
+        "cited_by_count": 1153,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4362663195",
+        "type": "article",
+        "title": "Artificial intelligence, machine learning and deep learning in advanced robotics, a review",
+        "publication_date": "2023-01-01",
+        "cited_by_count": 1125,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2950069298",
+        "type": "article",
+        "title": "Trends and challenges in robot manipulation",
+        "publication_date": "2019-06-20",
+        "cited_by_count": 1005,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2762248135",
+        "type": "article",
+        "title": "Robot Collisions: A Survey on Detection, Isolation, and Identification",
+        "publication_date": "2017-10-05",
+        "cited_by_count": 795,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2940265767",
+        "type": "article",
+        "title": "A review of mobile robots: Concepts, methods, theoretical framework, and applications",
+        "publication_date": "2019-03-01",
+        "cited_by_count": 759,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2294511912",
+        "type": "article",
+        "title": "5G-Enabled Tactile Internet",
+        "publication_date": "2016-02-10",
+        "cited_by_count": 753,
+        "primary_topic": {
+          "id": "https://openalex.org/T11687"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2993247505",
+        "type": "article",
+        "title": "Human–Robot Collaboration in Manufacturing Applications: A Review",
+        "publication_date": "2019-12-06",
+        "cited_by_count": 656,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2745090846",
+        "type": "article",
+        "title": "Driving Style Recognition for Intelligent Vehicle Control and Advanced Driver Assistance: A Survey",
+        "publication_date": "2017-08-04",
+        "cited_by_count": 620,
+        "primary_topic": {
+          "id": "https://openalex.org/T10805"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2732791507",
+        "type": "article",
+        "title": "Grasp Pose Detection in Point Clouds",
+        "publication_date": "2017-10-30",
+        "cited_by_count": 608,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2768174095",
+        "type": "article",
+        "title": "Working Together: A Review on Safe Human-Robot Collaboration in Industrial Environments",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 590,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008303301",
+        "type": "article",
+        "title": "DIGIT: A Novel Design for a Low-Cost Compact High-Resolution Tactile Sensor With Application to In-Hand Manipulation",
+        "publication_date": "2020-02-28",
+        "cited_by_count": 580,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2910474428",
+        "type": "article",
+        "title": "Learning ambidextrous robot grasping policies",
+        "publication_date": "2019-01-16",
+        "cited_by_count": 569,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2293467699",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4280571816",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2775635818",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2787690100",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4362663195",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2950069298",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2762248135",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2940265767",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2294511912",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2993247505",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2745090846",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2732791507",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2768174095",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3008303301",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2910474428",
+        "label": "on-target"
+      }
+    ]
+  },
+  "mech.solid": {
+    "capturedAt": "2026-10-25T16:53:48.391Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10219%7CT10221%7CT10377%7CT10396%7CT10514%7CT10707%7CT11366%7CT11558%7CT11565%7CT11646%7CT12252%7CT12581%7CT12809%7CT12897%7CT13261%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2969778829",
+        "type": "article",
+        "title": "SLM lattice structures: Properties, performance, applications and challenges",
+        "publication_date": "2019-08-19",
+        "cited_by_count": 1494,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2783713542",
+        "type": "article",
+        "title": "Auxetic metamaterials and structures: a review",
+        "publication_date": "2018-01-09",
+        "cited_by_count": 1284,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2901703718",
+        "type": "article",
+        "title": "Voids in fiber-reinforced polymer composites: A review on their formation, characteristics, and effects on mechanical performance",
+        "publication_date": "2018-11-20",
+        "cited_by_count": 1049,
+        "primary_topic": {
+          "id": "https://openalex.org/T10219"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2908367391",
+        "type": "article",
+        "title": "Mechanical Metamaterials and Their Engineering Applications",
+        "publication_date": "2019-01-04",
+        "cited_by_count": 986,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2961886349",
+        "type": "article",
+        "title": "Multifunctional Mechanical Metamaterials Based on Triply Periodic Minimal Surface Lattices",
+        "publication_date": "2019-07-12",
+        "cited_by_count": 899,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2789517172",
+        "type": "article",
+        "title": "Review Article: Stress in thin films and coatings: Current status, challenges, and prospects",
+        "publication_date": "2018-03-01",
+        "cited_by_count": 861,
+        "primary_topic": {
+          "id": "https://openalex.org/T10377"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4220660116",
+        "type": "article",
+        "title": "Triply periodic minimal surface (TPMS) porous structures: from multi-scale design, precise additive manufacturing to multidisciplinary applications",
+        "publication_date": "2022-03-09",
+        "cited_by_count": 828,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2574398678",
+        "type": "article",
+        "title": "Auxetic mechanical metamaterials",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 792,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3120338085",
+        "type": "article",
+        "title": "Architected cellular materials: A review on their mechanical properties towards fatigue-tolerant design and fabrication",
+        "publication_date": "2021-01-15",
+        "cited_by_count": 786,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952953259",
+        "type": "article",
+        "title": "Mechanical design and multifunctional applications of chiral mechanical metamaterials: A review",
+        "publication_date": "2019-06-17",
+        "cited_by_count": 735,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2775354423",
+        "type": "article",
+        "title": "Insights into the mechanical properties of several triply periodic minimal surface lattice structures made by polymer additive manufacturing",
+        "publication_date": "2017-12-15",
+        "cited_by_count": 732,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3126126937",
+        "type": "article",
+        "title": "Dual‐horizon peridynamics",
+        "publication_date": "2016-04-10",
+        "cited_by_count": 719,
+        "primary_topic": {
+          "id": "https://openalex.org/T10514"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803651004",
+        "type": "article",
+        "title": "Development of an ABAQUS plugin tool for periodic RVE homogenisation",
+        "publication_date": "2018-05-21",
+        "cited_by_count": 663,
+        "primary_topic": {
+          "id": "https://openalex.org/T11558"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3085684807",
+        "type": "article",
+        "title": "Design and Optimization of Lattice Structures: A Review",
+        "publication_date": "2020-09-13",
+        "cited_by_count": 647,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4200565706",
+        "type": "article",
+        "title": "Properties and applications of additively manufactured metallic cellular materials: A review",
+        "publication_date": "2021-12-29",
+        "cited_by_count": 630,
+        "primary_topic": {
+          "id": "https://openalex.org/T10707"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2969778829",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2783713542",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2901703718",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2908367391",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2961886349",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2789517172",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4220660116",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2574398678",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3120338085",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2952953259",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2775354423",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3126126937",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2803651004",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3085684807",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4200565706",
+        "label": "on-target"
+      }
+    ]
+  },
+  "mech.thermo": {
+    "capturedAt": "2026-10-25T16:53:46.815Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10104%7CT10117%7CT10553%7CT10568%7CT10850%7CT10938%7CT10998%7CT11382%7CT11529%7CT11774%7CT11945%7CT12063%7CT12139%7CT12304%7CT12567%7CT13020%7CT13116%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2892230460",
+        "type": "article",
+        "title": "Ammonia for power",
+        "publication_date": "2018-09-11",
+        "cited_by_count": 2771,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2900226406",
+        "type": "article",
+        "title": "Science and technology of ammonia combustion",
+        "publication_date": "2018-11-09",
+        "cited_by_count": 2564,
+        "primary_topic": {
+          "id": "https://openalex.org/T10553"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2786385826",
+        "type": "article",
+        "title": "A Comprehensive Review of Thermal Energy Storage",
+        "publication_date": "2018-01-14",
+        "cited_by_count": 1308,
+        "primary_topic": {
+          "id": "https://openalex.org/T10938"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2801934545",
+        "type": "article",
+        "title": "Waste heat recovery technologies and applications",
+        "publication_date": "2018-04-27",
+        "cited_by_count": 1215,
+        "primary_topic": {
+          "id": "https://openalex.org/T10568"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2277091242",
+        "type": "article",
+        "title": "Reaction Mechanism Generator: Automatic construction of chemical kinetic mechanisms",
+        "publication_date": "2016-02-25",
+        "cited_by_count": 804,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008574334",
+        "type": "article",
+        "title": "An experimental, theoretical and kinetic-modeling study of the gas-phase oxidation of ammonia",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 748,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2610196414",
+        "type": "article",
+        "title": "Knocking combustion in spark-ignition engines",
+        "publication_date": "2017-05-04",
+        "cited_by_count": 720,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2496185330",
+        "type": "article",
+        "title": "Numerical Investigation of Hydromagnetic Hybrid Cu – Al 2 O 3 /Water Nanofluid Flow over a Permeable Stretching Sheet with Suction",
+        "publication_date": "2016-07-19",
+        "cited_by_count": 687,
+        "primary_topic": {
+          "id": "https://openalex.org/T10104"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2892060029",
+        "type": "article",
+        "title": "Resonance-stabilized hydrocarbon-radical chain reactions may explain soot inception and growth",
+        "publication_date": "2018-09-06",
+        "cited_by_count": 674,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4210300998",
+        "type": "article",
+        "title": "Review on the recent advances on ammonia combustion from the fundamentals to the applications",
+        "publication_date": "2022-02-03",
+        "cited_by_count": 649,
+        "primary_topic": {
+          "id": "https://openalex.org/T10117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2794518548",
+        "type": "article",
+        "title": "Nanoconfined phase change materials for thermal energy applications",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 646,
+        "primary_topic": {
+          "id": "https://openalex.org/T10938"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2607073583",
+        "type": "article",
+        "title": "Heat pipe based systems - Advances and applications",
+        "publication_date": "2017-04-22",
+        "cited_by_count": 614,
+        "primary_topic": {
+          "id": "https://openalex.org/T10850"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2732479548",
+        "type": "article",
+        "title": "Heat transfer enhancement with Ag–CuO/water hybrid nanofluid",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 613,
+        "primary_topic": {
+          "id": "https://openalex.org/T10104"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2509117982",
+        "type": "article",
+        "title": "Flow boiling in microchannels: Fundamentals and applications",
+        "publication_date": "2016-08-22",
+        "cited_by_count": 594,
+        "primary_topic": {
+          "id": "https://openalex.org/T10850"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2981301832",
+        "type": "article",
+        "title": "High‐Performance Thermally Conductive Phase Change Composites by Large‐Size Oriented Graphite Sheets for Scalable Thermal Energy Harvesting",
+        "publication_date": "2019-10-17",
+        "cited_by_count": 546,
+        "primary_topic": {
+          "id": "https://openalex.org/T10938"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2892230460",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2900226406",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2786385826",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2801934545",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2277091242",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3008574334",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2610196414",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2496185330",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2892060029",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4210300998",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2794518548",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2607073583",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2732479548",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2509117982",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2981301832",
+        "label": "on-target"
+      }
+    ]
+  },
   "med.cardio": {
     "capturedAt": "2026-10-25T16:54:10.852Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10065%7CT10144%7CT10172%7CT10198%7CT10217%7CT10292%7CT10598%7CT10745%7CT10821%7CT10882%7CT10924%7CT11001%7CT11021%7CT11064%7CT11083%7CT11112%7CT11217%7CT11535%7CT11638%7CT11922%7CT11930%7CT11962%7CT12082%7CT12230%7CT12291%7CT12979%7CT13381%7CT13430%7CT13522%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
@@ -16256,6 +19765,1545 @@
       },
       {
         "workId": "https://openalex.org/W3085849249",
+        "label": "on-target"
+      }
+    ]
+  },
+  "q-fin.CP": {
+    "capturedAt": "2026-10-25T16:53:29.287Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10067%7CT10282%7CT11326%7CT11413%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2949333925",
+        "type": "article",
+        "title": "Measuring the Frequency Dynamics of Financial Connectedness and Systemic Risk*",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017452399",
+        "type": "article",
+        "title": "Refined Measures of Dynamic Connectedness based on Time-Varying Parameter Vector Autoregressions",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 1583,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2734777338",
+        "type": "article",
+        "title": "A deep learning framework for financial time series using stacked autoencoders and long-short term memory",
+        "publication_date": "2017-07-14",
+        "cited_by_count": 1130,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3019724901",
+        "type": "article",
+        "title": "The contagion effects of the COVID-19 pandemic: Evidence from gold and cryptocurrencies",
+        "publication_date": "2020-05-14",
+        "cited_by_count": 879,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159199231",
+        "type": "article",
+        "title": "Quantile Connectedness: Modeling Tail Behavior in the Topology of Financial Networks",
+        "publication_date": "2022-02-15",
+        "cited_by_count": 830,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2766820687",
+        "type": "article",
+        "title": "Smart “Predict, then Optimize”",
+        "publication_date": "2021-03-12",
+        "cited_by_count": 826,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2344786740",
+        "type": "article",
+        "title": "Deep Direct Reinforcement Learning for Financial Signal Representation and Trading",
+        "publication_date": "2016-02-15",
+        "cited_by_count": 821,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949695413",
+        "type": "article",
+        "title": "Volatility Is Rough",
+        "publication_date": "2018-03-16",
+        "cited_by_count": 792,
+        "primary_topic": {
+          "id": "https://openalex.org/T10067"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2336156739",
+        "type": "article",
+        "title": "Distributionally Robust Stochastic Optimization with Wasserstein Distance",
+        "publication_date": "2022-08-05",
+        "cited_by_count": 634,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3110420963",
+        "type": "article",
+        "title": "A CNN-LSTM-Based Model to Forecast Stock Prices",
+        "publication_date": "2020-11-23",
+        "cited_by_count": 564,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3044693676",
+        "type": "article",
+        "title": "COVID-19 and the United States financial markets’ volatility",
+        "publication_date": "2020-07-25",
+        "cited_by_count": 562,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159427954",
+        "type": "article",
+        "title": "Is non-fungible token pricing driven by cryptocurrencies?",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 550,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4212791338",
+        "type": "article",
+        "title": "Machine learning techniques and data for stock market forecasting: A literature review",
+        "publication_date": "2022-02-19",
+        "cited_by_count": 540,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2618613105",
+        "type": "article",
+        "title": "A framework for sensitivity analysis of decision trees",
+        "publication_date": "2017-05-24",
+        "cited_by_count": 527,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2968009374",
+        "type": "article",
+        "title": "Frameworks and Results in Distributionally Robust Optimization",
+        "publication_date": "2022-07-27",
+        "cited_by_count": 505,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2949333925",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3017452399",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2734777338",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3019724901",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3159199231",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2766820687",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2344786740",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2949695413",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2336156739",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3110420963",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3044693676",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3159427954",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4212791338",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2618613105",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2968009374",
+        "uncertain": true
+      }
+    ]
+  },
+  "q-fin.MF": {
+    "capturedAt": "2026-10-25T16:53:34.007Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10067%7CT10282%7CT11413%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2949333925",
+        "type": "article",
+        "title": "Measuring the Frequency Dynamics of Financial Connectedness and Systemic Risk*",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017452399",
+        "type": "article",
+        "title": "Refined Measures of Dynamic Connectedness based on Time-Varying Parameter Vector Autoregressions",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 1583,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3019724901",
+        "type": "article",
+        "title": "The contagion effects of the COVID-19 pandemic: Evidence from gold and cryptocurrencies",
+        "publication_date": "2020-05-14",
+        "cited_by_count": 879,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159199231",
+        "type": "article",
+        "title": "Quantile Connectedness: Modeling Tail Behavior in the Topology of Financial Networks",
+        "publication_date": "2022-02-15",
+        "cited_by_count": 830,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2766820687",
+        "type": "article",
+        "title": "Smart “Predict, then Optimize”",
+        "publication_date": "2021-03-12",
+        "cited_by_count": 826,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949695413",
+        "type": "article",
+        "title": "Volatility Is Rough",
+        "publication_date": "2018-03-16",
+        "cited_by_count": 792,
+        "primary_topic": {
+          "id": "https://openalex.org/T10067"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2336156739",
+        "type": "article",
+        "title": "Distributionally Robust Stochastic Optimization with Wasserstein Distance",
+        "publication_date": "2022-08-05",
+        "cited_by_count": 634,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3044693676",
+        "type": "article",
+        "title": "COVID-19 and the United States financial markets’ volatility",
+        "publication_date": "2020-07-25",
+        "cited_by_count": 562,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159427954",
+        "type": "article",
+        "title": "Is non-fungible token pricing driven by cryptocurrencies?",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 550,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2618613105",
+        "type": "article",
+        "title": "A framework for sensitivity analysis of decision trees",
+        "publication_date": "2017-05-24",
+        "cited_by_count": 527,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2968009374",
+        "type": "article",
+        "title": "Frameworks and Results in Distributionally Robust Optimization",
+        "publication_date": "2022-07-27",
+        "cited_by_count": 505,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3121512573",
+        "type": "article",
+        "title": "Risk Everywhere: Modeling and Managing Volatility",
+        "publication_date": "2018-05-18",
+        "cited_by_count": 357,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2326271485",
+        "type": "article",
+        "title": "Testing for Granger-causality in quantiles",
+        "publication_date": "2016-04-08",
+        "cited_by_count": 357,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2759609844",
+        "type": "article",
+        "title": "GARCH Modelling of Cryptocurrencies",
+        "publication_date": "2017-10-01",
+        "cited_by_count": 356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2340212920",
+        "type": "article",
+        "title": "Quantifying Distributional Model Risk via Optimal Transport",
+        "publication_date": "2019-04-10",
+        "cited_by_count": 352,
+        "primary_topic": {
+          "id": "https://openalex.org/T10067"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2949333925",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3017452399",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3019724901",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3159199231",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2766820687",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2949695413",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2336156739",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3044693676",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3159427954",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2618613105",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2968009374",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3121512573",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2326271485",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2759609844",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2340212920",
+        "label": "on-target"
+      }
+    ]
+  },
+  "q-fin.PM": {
+    "capturedAt": "2026-10-25T16:53:30.875Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10047%7CT11413%7CT11976%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W4205539948",
+        "type": "article",
+        "title": "Empirical Asset Pricing via Machine Learning",
+        "publication_date": "2020-02-20",
+        "cited_by_count": 2521,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754962058",
+        "type": "article",
+        "title": "Why Do Investors Hold Socially Responsible Mutual Funds?",
+        "publication_date": "2017-08-01",
+        "cited_by_count": 1377,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884202799",
+        "type": "article",
+        "title": "Attention to Global Warming",
+        "publication_date": "2019-08-01",
+        "cited_by_count": 1122,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4211134865",
+        "type": "article",
+        "title": "Replicating Anomalies",
+        "publication_date": "2018-12-07",
+        "cited_by_count": 1066,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124611303",
+        "type": "article",
+        "title": "Risks and Returns of Cryptocurrency",
+        "publication_date": "2020-09-12",
+        "cited_by_count": 961,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4243760387",
+        "type": "article",
+        "title": "Mispricing Factors",
+        "publication_date": "2016-12-17",
+        "cited_by_count": 920,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4250762315",
+        "type": "article",
+        "title": "Momentum crashes",
+        "publication_date": "2016-09-09",
+        "cited_by_count": 882,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123671626",
+        "type": "article",
+        "title": "Size and value in China",
+        "publication_date": "2019-03-15",
+        "cited_by_count": 865,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2766820687",
+        "type": "article",
+        "title": "Smart “Predict, then Optimize”",
+        "publication_date": "2021-03-12",
+        "cited_by_count": 826,
+        "primary_topic": {
+          "id": "https://openalex.org/T11413"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2987434780",
+        "type": "article",
+        "title": "The Flash Crash: High‐Frequency Trading in an Electronic Market",
+        "publication_date": "2017-01-25",
+        "cited_by_count": 794,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W188326880",
+        "type": "article",
+        "title": "Information: Hard and Soft",
+        "publication_date": "2018-11-28",
+        "cited_by_count": 785,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2609300041",
+        "type": "article",
+        "title": "Taming the Factor Zoo: A Test of New Factors",
+        "publication_date": "2020-01-24",
+        "cited_by_count": 744,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123892291",
+        "type": "article",
+        "title": "Deviations from Covered Interest Rate Parity",
+        "publication_date": "2018-02-21",
+        "cited_by_count": 720,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124283099",
+        "type": "article",
+        "title": "It Depends on Where You Search: Institutional Investor Attention and Underreaction to News",
+        "publication_date": "2017-04-20",
+        "cited_by_count": 717,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3023486457",
+        "type": "article",
+        "title": "A Demand System Approach to Asset Pricing",
+        "publication_date": "2018-11-14",
+        "cited_by_count": 683,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W4205539948",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2754962058",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2884202799",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4211134865",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3124611303",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4243760387",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4250762315",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3123671626",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2766820687",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2987434780",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W188326880",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2609300041",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3123892291",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3124283099",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3023486457",
+        "label": "on-target"
+      }
+    ]
+  },
+  "q-fin.PR": {
+    "capturedAt": "2026-10-25T16:53:35.581Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10047%7CT10067%7CT10282%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W4205539948",
+        "type": "article",
+        "title": "Empirical Asset Pricing via Machine Learning",
+        "publication_date": "2020-02-20",
+        "cited_by_count": 2521,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949333925",
+        "type": "article",
+        "title": "Measuring the Frequency Dynamics of Financial Connectedness and Systemic Risk*",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017452399",
+        "type": "article",
+        "title": "Refined Measures of Dynamic Connectedness based on Time-Varying Parameter Vector Autoregressions",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 1583,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754962058",
+        "type": "article",
+        "title": "Why Do Investors Hold Socially Responsible Mutual Funds?",
+        "publication_date": "2017-08-01",
+        "cited_by_count": 1377,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884202799",
+        "type": "article",
+        "title": "Attention to Global Warming",
+        "publication_date": "2019-08-01",
+        "cited_by_count": 1122,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4211134865",
+        "type": "article",
+        "title": "Replicating Anomalies",
+        "publication_date": "2018-12-07",
+        "cited_by_count": 1066,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124611303",
+        "type": "article",
+        "title": "Risks and Returns of Cryptocurrency",
+        "publication_date": "2020-09-12",
+        "cited_by_count": 961,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4243760387",
+        "type": "article",
+        "title": "Mispricing Factors",
+        "publication_date": "2016-12-17",
+        "cited_by_count": 920,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4250762315",
+        "type": "article",
+        "title": "Momentum crashes",
+        "publication_date": "2016-09-09",
+        "cited_by_count": 882,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3019724901",
+        "type": "article",
+        "title": "The contagion effects of the COVID-19 pandemic: Evidence from gold and cryptocurrencies",
+        "publication_date": "2020-05-14",
+        "cited_by_count": 879,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123671626",
+        "type": "article",
+        "title": "Size and value in China",
+        "publication_date": "2019-03-15",
+        "cited_by_count": 865,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159199231",
+        "type": "article",
+        "title": "Quantile Connectedness: Modeling Tail Behavior in the Topology of Financial Networks",
+        "publication_date": "2022-02-15",
+        "cited_by_count": 830,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2987434780",
+        "type": "article",
+        "title": "The Flash Crash: High‐Frequency Trading in an Electronic Market",
+        "publication_date": "2017-01-25",
+        "cited_by_count": 794,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949695413",
+        "type": "article",
+        "title": "Volatility Is Rough",
+        "publication_date": "2018-03-16",
+        "cited_by_count": 792,
+        "primary_topic": {
+          "id": "https://openalex.org/T10067"
+        }
+      },
+      {
+        "id": "https://openalex.org/W188326880",
+        "type": "article",
+        "title": "Information: Hard and Soft",
+        "publication_date": "2018-11-28",
+        "cited_by_count": 785,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W4205539948",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2949333925",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3017452399",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2754962058",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2884202799",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4211134865",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3124611303",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4243760387",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4250762315",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3019724901",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3123671626",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3159199231",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2987434780",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2949695413",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W188326880",
+        "label": "off-target"
+      }
+    ]
+  },
+  "q-fin.RM": {
+    "capturedAt": "2026-10-25T16:53:32.446Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10282%7CT11496%7CT11653%7CT11720%7CT12276%7CT12394%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2949333925",
+        "type": "article",
+        "title": "Measuring the Frequency Dynamics of Financial Connectedness and Systemic Risk*",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017452399",
+        "type": "article",
+        "title": "Refined Measures of Dynamic Connectedness based on Time-Varying Parameter Vector Autoregressions",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 1583,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3019724901",
+        "type": "article",
+        "title": "The contagion effects of the COVID-19 pandemic: Evidence from gold and cryptocurrencies",
+        "publication_date": "2020-05-14",
+        "cited_by_count": 879,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2318977435",
+        "type": "article",
+        "title": "Financial Distress Prediction in an International Context: A Review and Empirical Analysis of Altman's Z‐ Score Model",
+        "publication_date": "2016-04-05",
+        "cited_by_count": 843,
+        "primary_topic": {
+          "id": "https://openalex.org/T11653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159199231",
+        "type": "article",
+        "title": "Quantile Connectedness: Modeling Tail Behavior in the Topology of Financial Networks",
+        "publication_date": "2022-02-15",
+        "cited_by_count": 830,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2294838456",
+        "type": "article",
+        "title": "Diagnostic Expectations and Credit Cycles",
+        "publication_date": "2017-09-26",
+        "cited_by_count": 626,
+        "primary_topic": {
+          "id": "https://openalex.org/T11496"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3044693676",
+        "type": "article",
+        "title": "COVID-19 and the United States financial markets’ volatility",
+        "publication_date": "2020-07-25",
+        "cited_by_count": 562,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124804337",
+        "type": "article",
+        "title": "Social Capital and Debt Contracting: Evidence from Bank Loans and Public Bonds",
+        "publication_date": "2017-05-03",
+        "cited_by_count": 559,
+        "primary_topic": {
+          "id": "https://openalex.org/T11496"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159427954",
+        "type": "article",
+        "title": "Is non-fungible token pricing driven by cryptocurrencies?",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 550,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3096808766",
+        "type": "article",
+        "title": "Bankruptcy prediction for SMEs using transactional data and two-stage multiobjective feature selection",
+        "publication_date": "2020-11-03",
+        "cited_by_count": 381,
+        "primary_topic": {
+          "id": "https://openalex.org/T11653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3121512573",
+        "type": "article",
+        "title": "Risk Everywhere: Modeling and Managing Volatility",
+        "publication_date": "2018-05-18",
+        "cited_by_count": 357,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2326271485",
+        "type": "article",
+        "title": "Testing for Granger-causality in quantiles",
+        "publication_date": "2016-04-08",
+        "cited_by_count": 357,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2759609844",
+        "type": "article",
+        "title": "GARCH Modelling of Cryptocurrencies",
+        "publication_date": "2017-10-01",
+        "cited_by_count": 356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123460634",
+        "type": "article",
+        "title": "The Real Effects of Credit Ratings: The Sovereign Ceiling Channel",
+        "publication_date": "2016-06-02",
+        "cited_by_count": 338,
+        "primary_topic": {
+          "id": "https://openalex.org/T11496"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2788025656",
+        "type": "article",
+        "title": "Credit Risk Analysis Using Machine and Deep Learning Models",
+        "publication_date": "2018-04-16",
+        "cited_by_count": 318,
+        "primary_topic": {
+          "id": "https://openalex.org/T11653"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2949333925",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3017452399",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3019724901",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2318977435",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3159199231",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2294838456",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3044693676",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3124804337",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3159427954",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3096808766",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3121512573",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2326271485",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2759609844",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3123460634",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2788025656",
+        "label": "on-target"
+      }
+    ]
+  },
+  "q-fin.ST": {
+    "capturedAt": "2026-10-25T16:53:27.723Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10282%7CT11059%7CT11270%7CT11326%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3126081245",
+        "type": "article",
+        "title": "Measuring Economic Policy Uncertainty*",
+        "publication_date": "2016-07-11",
+        "cited_by_count": 12297,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221040930",
+        "type": "article",
+        "title": "Measuring Geopolitical Risk",
+        "publication_date": "2022-03-31",
+        "cited_by_count": 3779,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949333925",
+        "type": "article",
+        "title": "Measuring the Frequency Dynamics of Financial Connectedness and Systemic Risk*",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1787,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017452399",
+        "type": "article",
+        "title": "Refined Measures of Dynamic Connectedness based on Time-Varying Parameter Vector Autoregressions",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 1583,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2734777338",
+        "type": "article",
+        "title": "A deep learning framework for financial time series using stacked autoencoders and long-short term memory",
+        "publication_date": "2017-07-14",
+        "cited_by_count": 1130,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2780094620",
+        "type": "article",
+        "title": "Structural Interpretation of Vector Autoregressions with Incomplete Identification: Revisiting the Role of Oil Supply and Demand Shocks",
+        "publication_date": "2019-05-01",
+        "cited_by_count": 917,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3019724901",
+        "type": "article",
+        "title": "The contagion effects of the COVID-19 pandemic: Evidence from gold and cryptocurrencies",
+        "publication_date": "2020-05-14",
+        "cited_by_count": 879,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3022908605",
+        "type": "article",
+        "title": "Safe haven or risky hazard? Bitcoin during the Covid-19 bear market",
+        "publication_date": "2020-05-24",
+        "cited_by_count": 832,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3159199231",
+        "type": "article",
+        "title": "Quantile Connectedness: Modeling Tail Behavior in the Topology of Financial Networks",
+        "publication_date": "2022-02-15",
+        "cited_by_count": 830,
+        "primary_topic": {
+          "id": "https://openalex.org/T10282"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2344786740",
+        "type": "article",
+        "title": "Deep Direct Reinforcement Learning for Financial Signal Representation and Trading",
+        "publication_date": "2016-02-15",
+        "cited_by_count": 821,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2333775360",
+        "type": "article",
+        "title": "Dispersion Entropy: A Measure for Time-Series Analysis",
+        "publication_date": "2016-03-16",
+        "cited_by_count": 816,
+        "primary_topic": {
+          "id": "https://openalex.org/T11270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3035434105",
+        "type": "article",
+        "title": "The Price of Political Uncertainty: Theory and Evidence from the Option Market",
+        "publication_date": "2016-03-01",
+        "cited_by_count": 768,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3033445019",
+        "type": "article",
+        "title": "Are cryptocurrencies a safe haven for equity markets? An international perspective from the COVID-19 pandemic",
+        "publication_date": "2020-06-04",
+        "cited_by_count": 603,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2792967692",
+        "type": "article",
+        "title": "Measuring Geopolitical Risk",
+        "publication_date": "2018-02-01",
+        "cited_by_count": 596,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008273182",
+        "type": "article",
+        "title": "A Model of Financialization of Commodities",
+        "publication_date": "2016-07-13",
+        "cited_by_count": 594,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3126081245",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4221040930",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2949333925",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3017452399",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2734777338",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2780094620",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3019724901",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3022908605",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3159199231",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2344786740",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2333775360",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3035434105",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3033445019",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2792967692",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3008273182",
+        "label": "on-target",
+        "uncertain": true
+      }
+    ]
+  },
+  "q-fin.TR": {
+    "capturedAt": "2026-10-25T16:53:37.155Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10047%7CT11059%7CT11326%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3126081245",
+        "type": "article",
+        "title": "Measuring Economic Policy Uncertainty*",
+        "publication_date": "2016-07-11",
+        "cited_by_count": 12297,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221040930",
+        "type": "article",
+        "title": "Measuring Geopolitical Risk",
+        "publication_date": "2022-03-31",
+        "cited_by_count": 3779,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4205539948",
+        "type": "article",
+        "title": "Empirical Asset Pricing via Machine Learning",
+        "publication_date": "2020-02-20",
+        "cited_by_count": 2521,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754962058",
+        "type": "article",
+        "title": "Why Do Investors Hold Socially Responsible Mutual Funds?",
+        "publication_date": "2017-08-01",
+        "cited_by_count": 1377,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2734777338",
+        "type": "article",
+        "title": "A deep learning framework for financial time series using stacked autoencoders and long-short term memory",
+        "publication_date": "2017-07-14",
+        "cited_by_count": 1130,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884202799",
+        "type": "article",
+        "title": "Attention to Global Warming",
+        "publication_date": "2019-08-01",
+        "cited_by_count": 1122,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4211134865",
+        "type": "article",
+        "title": "Replicating Anomalies",
+        "publication_date": "2018-12-07",
+        "cited_by_count": 1066,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124611303",
+        "type": "article",
+        "title": "Risks and Returns of Cryptocurrency",
+        "publication_date": "2020-09-12",
+        "cited_by_count": 961,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4243760387",
+        "type": "article",
+        "title": "Mispricing Factors",
+        "publication_date": "2016-12-17",
+        "cited_by_count": 920,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2780094620",
+        "type": "article",
+        "title": "Structural Interpretation of Vector Autoregressions with Incomplete Identification: Revisiting the Role of Oil Supply and Demand Shocks",
+        "publication_date": "2019-05-01",
+        "cited_by_count": 917,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4250762315",
+        "type": "article",
+        "title": "Momentum crashes",
+        "publication_date": "2016-09-09",
+        "cited_by_count": 882,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123671626",
+        "type": "article",
+        "title": "Size and value in China",
+        "publication_date": "2019-03-15",
+        "cited_by_count": 865,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3022908605",
+        "type": "article",
+        "title": "Safe haven or risky hazard? Bitcoin during the Covid-19 bear market",
+        "publication_date": "2020-05-24",
+        "cited_by_count": 832,
+        "primary_topic": {
+          "id": "https://openalex.org/T11059"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2344786740",
+        "type": "article",
+        "title": "Deep Direct Reinforcement Learning for Financial Signal Representation and Trading",
+        "publication_date": "2016-02-15",
+        "cited_by_count": 821,
+        "primary_topic": {
+          "id": "https://openalex.org/T11326"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2987434780",
+        "type": "article",
+        "title": "The Flash Crash: High‐Frequency Trading in an Electronic Market",
+        "publication_date": "2017-01-25",
+        "cited_by_count": 794,
+        "primary_topic": {
+          "id": "https://openalex.org/T10047"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3126081245",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221040930",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4205539948",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2754962058",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2734777338",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2884202799",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4211134865",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3124611303",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4243760387",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2780094620",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4250762315",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3123671626",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3022908605",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2344786740",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2987434780",
         "label": "on-target"
       }
     ]
