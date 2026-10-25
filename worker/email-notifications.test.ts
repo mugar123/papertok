@@ -5,6 +5,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -3713,9 +3714,11 @@ function testEmailHarness(t: TestContext) {
     ...identityEnvironment(createMemoryKv()),
     REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
   };
-  const calls = { sources: 0, resend: 0 };
+  const calls = { sources: 0, openAlex: 0, resend: 0 };
   let uid = 'tester';
   let clock = Date.UTC(2026, 9, 26, 9, 0, 30);
+  let openAlexFailures = 0;
+  let arxivDown = false;
   t.mock.method(Date, 'now', () => clock);
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -3727,6 +3730,14 @@ function testEmailHarness(t: TestContext) {
       return Response.json({ id: `resend-${calls.resend}` });
     }
     calls.sources += 1;
+    if (arxivDown && url.hostname === 'export.arxiv.org') return new Response('', { status: 503 });
+    if (url.hostname === 'api.openalex.org') {
+      calls.openAlex += 1;
+      if (openAlexFailures > 0) {
+        openAlexFailures -= 1;
+        return new Response('', { status: 503 });
+      }
+    }
     return url.hostname === 'export.arxiv.org'
       ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
       : Response.json({ results: [], meta: { count: 0 } });
@@ -3744,9 +3755,13 @@ function testEmailHarness(t: TestContext) {
   return {
     env,
     calls,
+    arxivTopic,
     setAccount: (value: string) => { uid = value; },
     advanceMinutes: (minutes: number) => { clock += minutes * 60_000; },
-    subscribe: () => call('PUT', '/notifications/preferences', { enabled: true, maxPapers: 5, follows: [digestFollow(), arxivTopic], previewItems: [] }),
+    failOpenAlexTimes: (times: number) => { openAlexFailures = times; },
+    takeArxivDown: () => { arxivDown = true; },
+    now: () => new Date(clock).toISOString(),
+    subscribe: (follows: unknown[] = [digestFollow(), arxivTopic]) => call('PUT', '/notifications/preferences', { enabled: true, maxPapers: 5, follows, previewItems: [] }),
     unsubscribe: () => call('PUT', '/notifications/preferences', { enabled: false }),
     sendTest: async () => {
       const result = await call('POST', '/notifications/test');
@@ -3834,3 +3849,97 @@ test('a test email without its quota ledger fails closed before reading a source
   assert.equal(h.calls.sources, 0);
   assert.equal(h.calls.resend, 0);
 });
+
+// The OpenAlex calls a test email makes are counted in the day's OpenAlex ledger
+// at the exploration tier, which closes at 60 % of the day's ceiling. With the
+// ceiling at 100 units that is 60 units; a search is ten and a list one.
+const searchedAuthor = digestFollow('0000-0002-1825-0097', 'Grace Hopper');
+
+async function openAlexDay(h: ReturnType<typeof testEmailHarness>) {
+  const { report } = await readOpenAlexBudget(h.env, h.now());
+  assert.ok(report);
+  return report;
+}
+
+test('a test email reserves each OpenAlex request in the day\'s ledger at the exploration tier', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe([digestFollow('A1'), searchedAuthor, h.arxivTopic]);
+  await h.sendTest();
+  assert.equal(h.calls.openAlex, 2);
+  const day = await openAlexDay(h);
+  assert.deepEqual(
+    { used: day.used, exploration: day.tiers.exploration.used, feed: day.tiers.feed.used, search: day.kinds.search.used, list: day.kinds.list.used },
+    { used: 11, exploration: 11, feed: 0, search: 10, list: 1 },
+  );
+});
+
+test('a test email reserves a retried OpenAlex request again', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe([searchedAuthor]);
+  h.failOpenAlexTimes(1);
+  await h.sendTest();
+  assert.equal(h.calls.openAlex, 2);
+  assert.equal((await openAlexDay(h)).used, 20);
+});
+
+test('a test email the exploration tier refuses sends nothing and does not call OpenAlex', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  await h.subscribe([searchedAuthor, h.arxivTopic]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+  assert.equal((await openAlexDay(h)).used, 55);
+});
+
+test('a test email the exploration tier refuses fails whole when OpenAlex stands in for arXiv', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  h.takeArxivDown();
+  await h.subscribe([h.arxivTopic]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+});
+
+test('test emails stop at the exploration tier and leave the feed its share of the day', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  for (let account = 0; account < 6; account += 1) {
+    h.setAccount(`reader-${account}`);
+    await h.subscribe([searchedAuthor]);
+    await h.sendTest();
+  }
+  h.setAccount('reader-6');
+  await h.subscribe([searchedAuthor]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 6);
+  const harvest = await reserveOpenAlexBudget(h.env, '', { units: 30, tier: 'feed', kind: 'list' }, h.now());
+  assert.equal(harvest.error, undefined);
+  const day = await openAlexDay(h);
+  assert.deepEqual(
+    { used: day.used, exploration: day.tiers.exploration.used, feed: day.tiers.feed.used },
+    { used: 90, exploration: 60, feed: 30 },
+  );
+});
+
+const ledgerOutages = {
+  'answers with an error': async () => new Response('', { status: 500 }),
+  'cannot be reached': async (): Promise<Response> => { throw new Error('ledger unreachable'); },
+};
+for (const [outage, answer] of Object.entries(ledgerOutages)) {
+  test(`a test email fails closed when the OpenAlex ledger ${outage}`, async t => {
+    const h = testEmailHarness(t);
+    const ledger = h.env.REQUEST_QUOTA_LEDGER!;
+    h.env.REQUEST_QUOTA_LEDGER = {
+      idFromName: (name: string) => ledger.idFromName(name),
+      get: (id: unknown) => (String(id).startsWith('openalex:') ? { fetch: answer } : ledger.get(id as DurableObjectId)),
+    } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+    await h.subscribe([searchedAuthor, h.arxivTopic]);
+    await assert.rejects(h.sendTest(), refusedWith('EMAIL_UNAVAILABLE', 503));
+    assert.equal(h.calls.openAlex, 0);
+    assert.equal(h.calls.resend, 0);
+  });
+}
