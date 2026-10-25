@@ -77,19 +77,25 @@ test('an abstract that opens with a compound starting like a heading word is sti
   assert.equal(isPlausibleAbstract('Funding - the authors gratefully thank the Swiss National Science Foundation for support.'), false);
 });
 
-// "Supported by" opens a funding note when a funder follows; a study supported
-// by data, or a project that the EU funded and that built a cohort, describes
-// the research.
-test('an opening that says what supported or funded the work is front matter only when a funder follows', () => {
+// "Supported by" or "funded by" opens a funding note, whoever the funder is; a
+// study supported by data describes the research. A project that opens by
+// naming its funder reads as a funding note too, even when it goes on to
+// describe the work.
+test('an opening that says what supported or funded the work is front matter unless data or evidence follows', () => {
   for (const text of [
     'This study is supported by data from the Health and Retirement Study and examines retirement timing across cohorts.',
-    'The project was funded by the EU and built a cohort of 10,000 children, whom we follow from birth to age 12.',
+    'This paper is supported by new evidence from 40 field experiments on how households respond to price changes.',
   ]) {
     assert.equal(isPlausibleAbstract(text), true, text);
   }
   for (const text of [
     'This paper was funded by a grant from the Swiss National Science Foundation.',
     'This work is supported by the European Research Council (ERC) under the Horizon 2020 programme.',
+    'This work was supported by the National Institutes of Health (R01 HL123456 to J.S.).',
+    'This research was supported by the Intramural Research Program of the National Institutes of Health, National Institute on Aging.',
+    'This study was funded by the Wellcome Trust (215123/Z/19/Z).',
+    'This research was supported by the U.S. Department of Energy, Office of Science, Basic Energy Sciences.',
+    'The project was funded by the EU and built a cohort of 10,000 children, whom we follow from birth to age 12.',
   ]) {
     assert.equal(isPlausibleAbstract(text), false, text);
   }

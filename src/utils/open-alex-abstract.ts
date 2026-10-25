@@ -44,8 +44,9 @@ const MIN_ABSTRACT_LENGTH = 40;
 // "Semyon Malamud gratefully acknowledges the financial" as its abstract
 // (ENG-105). Text that opens this way is front matter, not an abstract.
 // A footnote marker ahead of it (`*`, `1`) is not part of the opening. "Supported
-// by" counts only before a funder, so a study "supported by data from" a survey
-// stays an abstract.
+// by" or "funded by" counts whoever the funder is (NIH, Wellcome Trust, a
+// ministry), except before data or evidence, so a study "supported by data
+// from" a survey stays an abstract.
 const FOOTNOTE_MARKER = /^(?:[*†‡§]+|\d{1,2}(?=\s))\s*/;
 const FRONT_MATTER_OPENINGS = [
   /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.]|[-–—](?=\s))/i,
@@ -53,7 +54,7 @@ const FRONT_MATTER_OPENINGS = [
   /^(?:\S+\s+){0,12}gratefully acknowledg(?:es?|ed)\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
   /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thanks?|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
-  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\s+(?=(?:\S+\s+){0,11}?(?:grants?|awards?|funds?|funding|foundation|council|agency|ministry|commission|programme?|fellowships?|contracts?)\b)/i,
+  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\s+(?!(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/i,
   /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
   /^the views expressed (?:herein|here|in this)/i,
 ];
