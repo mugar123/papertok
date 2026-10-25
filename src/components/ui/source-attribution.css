@@ -1,0 +1,15 @@
+/* A source's name is machine data, so the line is mono (design.md, the Three
+   Voices Rule), in the supporting ink. The link sits beside text of nearly the
+   same lightness, so it is underlined: colour alone would not mark it. */
+.source-attribution {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-tertiary);
+}
+
+.source-attribution a {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
