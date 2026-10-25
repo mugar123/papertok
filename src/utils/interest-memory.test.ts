@@ -358,15 +358,15 @@ test('an added area one example short of learned is still one group of its own',
   ]);
 });
 
-test('a subarea added beside one its area learned on its own is a group of weight 1', () => {
-  assert.deepEqual(groupsOf(memory({
-    selected: ['quant-ph', 'hep-th'],
-    added: ['quant-ph', 'hep-th'],
-    examples: [...examples('quant-ph', 3), ...examples('physics', 8)],
-  })), [
-    { categories: ['quant-ph'], weight: 1 },
-    { categories: ['hep-th'], weight: 1 },
-  ]);
+// ENG-137, ruling R20: only a selected subarea the reader did not add (or a
+// retired one) splits an added area. One added subarea learning first does not.
+test('an added area learned while one of its subareas learned first joins the established group whole', () => {
+  const physics = { selected: ['quant-ph', ...economics], added: economics };
+  const whole = [{ categories: [...economics, 'quant-ph'].sort(), weight: 1 }];
+  // Three likes of econ.EM and five working papers.
+  assert.deepEqual(groupsOf(memory({ ...physics, examples: [...examples('econ.EM', 3), ...examples('econ', 5), ...examples('quant-ph', 10)] })), whole);
+  // econ.EM shown 20 times, and 40 cards filed under the area.
+  assert.deepEqual(groupsOf(memory({ ...physics, examples: examples('quant-ph', 10), exposure: shown({ 'econ.EM': 20, econ: 40 }) })), whole);
 });
 
 // ENG-137, ruling R14: Chemistry's cards name no subarea, so what they teach
