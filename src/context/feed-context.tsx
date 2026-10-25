@@ -20,6 +20,8 @@ export interface FeedContextValue {
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
   personalLibrary: Record<string, LibraryEntry>; libraryPapers: Record<string, Partial<Paper>>;
+  /** Whether the library has answered for this account and profile. */
+  personalLibraryReady: boolean;
   ensurePersonalLibrary: () => Promise<void>;
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
@@ -291,6 +293,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on it so they retry once the ids they need actually exist.
   const [interactionProfileGeneration, setInteractionProfileGeneration] = useState(0);
   const personalLibraryStatus = useRef<{ userId: string | null; generation: number; state: 'idle' | 'loading' | 'ready' }>({ userId: null, generation: -1, state: 'idle' });
+  // Which account and profile generation the library last answered for, so
+  // screens can tell a library still loading from one that is empty.
+  const [personalLibraryReadyFor, setPersonalLibraryReadyFor] = useState<string | null>(null);
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -566,6 +571,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         generation: fromCache ? -1 : interactionProfileGeneration,
         state: fromCache ? 'idle' : 'ready',
       };
+      if (!fromCache) setPersonalLibraryReadyFor(`${userId}:${interactionProfileGeneration}`);
     } catch (error) {
       console.error('Error loading reading library:', error);
       personalLibraryStatus.current = { userId, generation: -1, state: 'idle' };
@@ -2324,10 +2330,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // `userId` as its first statement (see `toggleLike` for the pattern) and
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
+  // Generation 0 is before the profile arrived, when the library has no ids to ask for.
+  const personalLibraryReady = interactionProfileGeneration > 0
+    && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
+
   const value = useMemo(() => ({
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
@@ -2340,7 +2350,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }), [
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,

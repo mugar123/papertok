@@ -137,10 +137,9 @@ export default function AccountMenu() {
   const isPhone = useIsPhone();
   const { user, signOut } = useAuth();
   const { preference, setPreference } = useTheme();
+  // My lists waits for the library before it shows its folders. Asked for
+  // when the menu that leads there opens, it is usually in hand by then.
   const { ensurePersonalLibrary } = useFeed();
-  // My lists draws its folder previews from the library. Asked for when the
-  // menu that leads there opens, the previews are in hand when the page is.
-  const prefetchLists = () => { void ensurePersonalLibrary(); };
 
   const handleSignOut = async () => {
     await signOut();
@@ -156,14 +155,14 @@ export default function AccountMenu() {
         photo={photo}
         preference={preference}
         setPreference={setPreference}
-        onOpen={prefetchLists}
+        onOpen={() => { void ensurePersonalLibrary(); }}
         onSignOut={() => { void handleSignOut(); }}
       />
     );
   }
 
   return (
-    <Menu.Root onOpenChange={(open) => { if (open) prefetchLists(); }}>
+    <Menu.Root onOpenChange={(open) => { if (open) void ensurePersonalLibrary(); }}>
       <Menu.Trigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
         <Avatar photo={photo} user={user!} />
       </Menu.Trigger>

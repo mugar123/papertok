@@ -52,12 +52,16 @@ const rewriteCache = new Map<string, RewriteResult>();
 // previous one cannot land in the memory the next one reads.
 let rewriteCacheAccount = 0;
 
+export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean };
+const lastAIUses = new Map<string, AIUses>();
+
 /**
- * Forgets the rewrites held in memory. They are the signed-in account's, and
- * would otherwise stand in front of the next account's own saved summaries.
+ * Forgets the rewrites and uses counts held in memory. They are the signed-in
+ * account's, and would otherwise stand in front of the next account's own.
  */
 export function clearRewriteCache() {
   rewriteCache.clear();
+  lastAIUses.clear();
   rewriteCacheAccount += 1;
 }
 
@@ -148,25 +152,30 @@ export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } 
   }
 }
 
-export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean };
-let lastAIUses: { uid: string; uses: AIUses } | null = null;
 
 /**
  * The count this tab last heard for the account, so the reader opens with its
  * pill instead of growing it a round trip later. The reader still asks again.
  */
 export function lastKnownAIUses(uid: string | null | undefined) {
-  return uid && lastAIUses?.uid === uid ? lastAIUses.uses : null;
+  return (uid && lastAIUses.get(uid)) || null;
 }
 
 export function rememberAIUses(uid: string, uses: AIUses) {
-  lastAIUses = { uid, uses };
+  lastAIUses.set(uid, uses);
 }
 
-/** Asks once per account and tab, ahead of the first reader. */
+/**
+ * Asks once per account and tab, ahead of the first reader. An answer that
+ * lands after the account changed carried whichever token was current, so it
+ * is dropped.
+ */
 export function primeAIUses(uid: string) {
   if (lastKnownAIUses(uid)) return;
-  void fetchRemainingAIUses().then(uses => { if (uses && !lastKnownAIUses(uid)) rememberAIUses(uid, uses); });
+  const account = rewriteCacheAccount;
+  void fetchRemainingAIUses().then(uses => {
+    if (uses && account === rewriteCacheAccount && !lastKnownAIUses(uid)) rememberAIUses(uid, uses);
+  });
 }
 
 export function canRewritePaper(paper: RewritePaperInput | null | undefined) {

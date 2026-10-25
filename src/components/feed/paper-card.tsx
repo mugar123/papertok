@@ -108,7 +108,7 @@ import { downloadCitationFile } from '../../utils/reading-library.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
-import { lazyWithPreload } from '../../utils/lazy-preload.ts';
+import { connectionIsFrugal, lazyWithPreload } from '../../utils/lazy-preload.ts';
 
 // Preloaded once the card settles on a wider screen, so the map can stand in
 // the slot on the very frame it is asked for (see the slot's height morph).
@@ -510,7 +510,7 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution } = useAuth();
+  const { institution, user } = useAuth();
   const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -689,12 +689,25 @@ const PaperCard = memo(function PaperCard({
   const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
-  // `load` arrives before an async-decoded picture can paint, and the entrance
-  // then ran on an empty plate with the figure popping in partway. `decode()`
-  // waits for the frame that has it; a refusal still shows what loaded.
-  const revealFigure = useCallback((image: HTMLImageElement, url: string) => {
-    void image.decode().catch(() => {}).then(() => markFigureLoaded(url));
-  }, [markFigureLoaded]);
+  // `load` can fire before an async-decoded picture is ready to paint;
+  // `decode()` resolves once it is. A refusal still shows what loaded.
+  // A cached image can finish before React attaches `onLoad`, and then the
+  // event never comes: the ref catches the ones already done on mount.
+  const figureImageProps = (url: string) => ({
+    ref: (node: HTMLImageElement | null) => {
+      if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(url)) revealFigure(node, url);
+    },
+    onLoad: (event: SyntheticEvent<HTMLImageElement>) => revealFigure(event.currentTarget, url),
+  });
+  const decodingFigures = useRef(new Set<string>());
+  function revealFigure(image: HTMLImageElement, url: string) {
+    if (decodingFigures.current.has(url)) return;
+    decodingFigures.current.add(url);
+    void image.decode().catch(() => {}).then(() => {
+      decodingFigures.current.delete(url);
+      markFigureLoaded(url);
+    });
+  }
 
   // A clipping comes back WITH its page, not on a clock of its own.
   //
@@ -1401,10 +1414,12 @@ const PaperCard = memo(function PaperCard({
   // the panel changes the column's height (see pinSheet).
   useEffect(() => {
     // A failed preload is retried by the lazy render that opens the sheet.
-    // Phones too: their drawer suspended on the first open and React held the
-    // empty fallback before the sheet could start rising.
-    if (isCardIdle && hasRelated && !publicMode) RelatedPapersSheet.preload().catch(() => {});
-  }, [isCardIdle, hasRelated, publicMode]);
+    // Unloaded, the phone drawer's first open suspends behind an empty
+    // fallback; desktop needs the chunk whatever the connection, for the swap.
+    if (isCardIdle && hasRelated && !publicMode && (!isPhone || !connectionIsFrugal())) {
+      RelatedPapersSheet.preload().catch(() => {});
+    }
+  }, [isCardIdle, hasRelated, isPhone, publicMode]);
 
   const toggleRelated = (next: boolean) => {
     if (!isPhone && !publicMode) {
@@ -1871,12 +1886,7 @@ const PaperCard = memo(function PaperCard({
                 // tooling that flags images with no width/height at all.
                 width="256"
                 height="200"
-                // A cached image can finish before React attaches `onLoad`, and
-                // then the event never comes and the clipping never appears. The
-                // ref catches the ones that were already done on mount; `onLoad`
-                // catches the rest.
-                ref={(node) => { if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(item.url)) revealFigure(node, item.url); }}
-                onLoad={(event) => revealFigure(event.currentTarget, item.url)}
+                {...figureImageProps(item.url)}
               />
             </figure>
           ))}
@@ -1902,8 +1912,7 @@ const PaperCard = memo(function PaperCard({
               alt=""
               loading="lazy"
               decoding="async"
-              ref={(node) => { if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(figures[0].url)) revealFigure(node, figures[0].url); }}
-              onLoad={(event) => revealFigure(event.currentTarget, figures[0].url)}
+              {...figureImageProps(figures[0].url)}
             />
           )}
         </div>
@@ -2297,6 +2306,8 @@ const PaperCard = memo(function PaperCard({
             className="pc-side-btn pc-side-btn--connections"
             pressed={showRelated}
             onPressedChange={toggleRelated}
+            // A tap that beats the idle preload still gets the press's head start.
+            onPointerDown={() => { if (!publicMode) RelatedPapersSheet.preload().catch(() => {}); }}
             onClick={swallowClick}
             title={'Connections'}
           >
@@ -2467,6 +2478,7 @@ const PaperCard = memo(function PaperCard({
         // while the chunk downloads (a first open only; the browser caches it).
         <Suspense fallback={null}>
           <PaperReader
+            key={user?.uid}
             paper={readablePaper}
             originRect={readerOrigin}
             closeRef={readerCloseRef}

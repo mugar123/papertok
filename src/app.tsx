@@ -36,7 +36,7 @@ import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath } from './utils/public-navigation.ts'
-import { lazyWithPreload } from './utils/lazy-preload.ts'
+import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 import './app.css'
 
@@ -244,11 +244,8 @@ function AppContent() {
   const sessionUid = user?.uid ?? null
   useEffect(() => {
     if (!sessionUid) return
-    let cancelled = false
     const prefetch = () => {
-      const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
-      const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
-      if (frugal) return
+      if (connectionIsFrugal()) return
       // Everything goes through `preload()`, not a bare `import()`: the
       // import warms the module cache, but the first render of a `lazy`
       // component still suspends on it (see utils/lazy-preload.ts), and React
@@ -272,17 +269,17 @@ function AppContent() {
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
       import('./components/reader/paper-reader.tsx').catch(() => {})
-      // The reader's uses pill, so it is there when the reader opens. Not after
-      // the session changed: the request would carry the next account's token.
-      if (!cancelled) primeAIUses(sessionUid)
       SearchCommand.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
+    return () => clearTimeout(timer)
+  }, [sessionUid])
+
+  // Not held for the idle prefetch above: a reader opened in the first seconds
+  // would still grow its uses pill late. One small request per session.
+  useEffect(() => {
+    if (sessionUid) primeAIUses(sessionUid)
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather

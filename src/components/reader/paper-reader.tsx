@@ -408,12 +408,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const [seededQuota] = useState(() => lastKnownAIUses(uid));
   const [quota, setQuota] = useState<AIUses | null>(seededQuota);
-  // Another account's count must not be shown, or remembered, as this one's.
-  const [quotaUid, setQuotaUid] = useState(uid);
-  if (quotaUid !== uid) {
-    setQuotaUid(uid);
-    setQuota(null);
-  }
   const [stage, setStage] = useState('source');
   const abortRef = useRef<AbortController | null>(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
@@ -694,10 +688,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     if (!uid) return undefined;
     const controller = new AbortController();
     void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
-      // Only over the seed, which an unanswered request also takes away: a
-      // rewrite that started while this was in flight already reported a
-      // newer number on its `meta` line.
-      setQuota(current => (current === null || current === seededQuota ? fresh : current));
+      // Only over the seed: a rewrite that started while this was in flight
+      // already reported a newer number on its `meta` line.
+      if (fresh) setQuota(current => (current === null || current === seededQuota ? fresh : current));
     });
     return () => controller.abort();
   }, [seededQuota, uid]);
@@ -1063,9 +1056,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     : '50% 62%';
 
   const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
-  // The seed is for the pill only: an allowance spent yesterday must not
-  // refuse a use before the worker has said what is left today.
-  const canSpendUse = quota && quota !== seededQuota ? Boolean(quota.unlimited) || quota.remainingUses > 0 : true;
+  // The seed draws the pill but never refuses a use: it may be yesterday's.
+  const quotaConfirmed = quota !== null && quota !== seededQuota;
+  const canSpendUse = quotaConfirmed ? Boolean(quota.unlimited) || quota.remainingUses > 0 : true;
   // Only a signed-in reader can ask the worker at all, and their copy is the one
   // a new rewrite replaces. `error` here is a failed attempt to write it again,
   // which left the reused summary on screen.
