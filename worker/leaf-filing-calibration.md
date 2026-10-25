@@ -118,14 +118,16 @@ A rule shipped by a later calibration would also change how far back a reader
 of many leaves gets the articles it files. The category feed reads the newest
 `floor(800 / area lanes asked)` papers of an area lane: all 373 articles of
 the mathematics lane (published 2026-10-06 to 2026-10-24) for a reader whose
-leaves are all mathematics. It reads the newest `ceil(4,000 / leaf lanes
-asked)` papers of a leaf lane, where a filed article competes by date with the
-leaf's preprints. In the 30 days to 2026-10-22, the arXiv API counts from 185
-(math.LO) to 1,409 (math.CO) papers in each mathematics leaf with a centroid,
-cross-lists included. A reader of 12 leaves (334 papers a leaf) therefore
-reaches back about 7 days in math.CO and math.AP and 54 days in math.LO. A
-reader of 4 leaves (1,000) reaches back 21 to 162 days, and a reader of one
-leaf (4,000) about the whole 90-day corpus. Leaf lanes also take papers from
+leaves are all mathematics. It reads the newest `ceil(4,000 / other lanes
+asked)` papers of a leaf lane, the other lanes being the reader's leaves,
+follows and the working-paper series, and there a filed article competes by
+date with the leaf's preprints. In the 30 days to 2026-10-22, the arXiv API
+counts from 185 (math.LO) to 1,409 (math.CO) papers in each mathematics leaf
+with a centroid, cross-lists included. A reader of 12 leaves and no follows
+(334 papers a leaf) therefore reaches back about 7 days in math.CO and math.AP
+and 54 days in math.LO. A reader of 4 leaves (1,000) reaches back 21 to 162
+days, and a reader of one leaf (4,000) about the whole 90-day corpus. Each
+follow shortens these spans. Leaf lanes also take papers from
 other sources, venue lanes among them, so these spans are upper bounds. A
 filed article older than its reader's span is no longer a candidate for that
 reader, though at area level it was. A local probe with 400 newer math.CO
