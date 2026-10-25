@@ -135,9 +135,9 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 # on 2026-10-25) were embedded; with no work left without a vector that evening,
 # the free allocation is enough again. A re-listing adds only the papers new to a
 # year's 100. Past the backlog, a higher value only lets a fault, or a day of many
-# new follows (the nightly run embeds what their own runs leave), spend money.
-# Raise it again for a backlog, and count the works without a vector before
-# returning here:
+# new follows or readers' lookups (the nightly run embeds the papers they leave
+# without a vector), spend money. Raise it again for a backlog, and count the
+# works without a vector before returning here:
 #   SELECT COUNT(*) FROM works w WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
 EMBEDDING_DAILY_TOKEN_LIMIT = "7500000"
 
