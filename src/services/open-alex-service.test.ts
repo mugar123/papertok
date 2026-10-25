@@ -1412,47 +1412,65 @@ test('an institution page gets Crossref before the screen budget runs out', asyn
 });
 
 
-test('author suggestions retrieve exact names before highly cited fuzzy matches can displace them', async t => {
+const fromAuthorIndex = (url: string | URL) => new URL(url).pathname.endsWith('/authors');
+
+test('author suggestions find a namesake the most cited bylines and the provider order both leave behind', async t => {
   const requests: string[] = [];
-  // Synthetic pages: broad matching fills all 25 slots before Mario's work.
-  const broadWorks = Array.from({ length: 25 }, (_, index) => ({
+  // Synthetic pages shaped like the live answers for "Raúl Muñoz" (ENG-130):
+  // the most cited works all belong to other Raúl Muñoz, and the author index
+  // ranks longer names above the exact one.
+  const citedNamesakes = Array.from({ length: 25 }, (_, index) => ({
     id: `https://openalex.org/W${index}`,
-    authorships: [{ author: { id: `https://openalex.org/A${index}`, display_name: 'Mario Amados' } }],
+    authorships: [{ author: { id: `https://openalex.org/A${index}`, display_name: 'Raúl Muñoz' } }],
+  }));
+  const longerNames = Array.from({ length: 30 }, (_, index) => ({
+    id: `https://openalex.org/A${100 + index}`, display_name: `Raúl Muñoz Surname${index}`, works_count: 500, cited_by_count: 9000,
   }));
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
     requests.push(String(url));
-    const filter = new URL(url).searchParams.get('filter')!;
-    return Response.json({ results: filter.includes(' OR ') ? broadWorks : [{
-      id: 'https://openalex.org/W100',
-      authorships: [{ author: { id: 'https://openalex.org/A5034580028', display_name: 'Mario Amado' } }],
-    }] });
+    const params = new URL(url).searchParams;
+    if (!fromAuthorIndex(url)) return Response.json({ results: citedNamesakes });
+    // OpenAlex returns only the selected fields, and at most a page of them.
+    const selected = params.get('select')!.split(',');
+    const authors: Array<Record<string, unknown>> = [...longerNames, {
+      id: 'https://openalex.org/A5056145540', display_name: 'Raúl Muñoz', works_count: 21, cited_by_count: 928,
+      orcid: 'https://orcid.org/0000-0002-0000-0000',
+      last_known_institutions: [{ id: 'https://openalex.org/I184999862', ror: 'https://ror.org/02f40zc51', display_name: 'Universidad de Salamanca' }],
+    }];
+    return Response.json({ results: authors.slice(0, Number(params.get('per-page')))
+      .map(author => Object.fromEntries(Object.entries(author).filter(([field]) => selected.includes(field)))) });
   });
 
-  const results = await searchAuthors('Mario Amado', { typeahead: true, throwOnError: true });
+  const results = await searchAuthors('Raúl Muñoz', { typeahead: true, throwOnError: true });
 
-  assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A5034580028']);
-  assert.equal(requests.length, 1, 'an exact match needs no approximate search');
-  assert.equal(new URL(requests[0]).searchParams.get('filter'), 'raw_author_name.search:"mario amado"');
+  assert.equal(results[0].id, 'https://openalex.org/A5056145540');
+  assert.equal(results[0].works_count, 21);
+  assert.equal(results[0].institution, 'Universidad de Salamanca');
+  assert.ok('institutionData' in results[0]);
+  assert.equal(results[0].institutionData?.ror, 'https://ror.org/02f40zc51');
+  assert.equal(results[0].orcid, undefined, 'the row links to the profile the reader chose, not an ORCID lookup');
+  assert.equal(requests.length, 1, 'a name the index knows needs no byline search');
 });
 
-test('author suggestions keep a typed pipe from splitting the exact byline search', async t => {
-  const filters: string[] = [];
+test('author suggestions keep a typed pipe from widening the author search', async t => {
+  const searches: Array<string | null> = [];
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
-    filters.push(new URL(url).searchParams.get('filter')!);
+    searches.push(new URL(url).searchParams.get('search'));
     return Response.json({ results: [] });
   });
 
   await searchAuthors('José | Amado', { typeahead: true, throwOnError: true });
 
-  assert.equal(filters[0], 'raw_author_name.search:"josé amado"');
+  assert.doesNotMatch(searches[0]!, /\|/);
+  assert.match(searches[0]!, /josé\s+amado/i);
 });
 
-test('author suggestions recover a typo plus surname prefix after an empty exact search without inventing metrics', async t => {
+test('author suggestions recover a typo plus surname prefix from bylines without inventing metrics', async t => {
   const requests: string[] = [];
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
     requests.push(String(url));
     assert.equal(options.retries, 0);
-    if (!new URL(url).searchParams.get('filter')!.includes(' OR ')) return Response.json({ results: [] });
+    if (fromAuthorIndex(url)) return Response.json({ results: [] });
     return Response.json({ results: [{ id: 'https://openalex.org/W123', authorships: [
       { author: { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' }, institutions: [{ display_name: 'University of Toronto' }] },
       { author: { id: 'https://openalex.org/A2', display_name: 'Unrelated Coauthor' } },
@@ -1460,7 +1478,7 @@ test('author suggestions recover a typo plus surname prefix after an empty exact
   });
   const results = await searchAuthors('Geofrey Hin', { typeahead: true, throwOnError: true });
   assert.equal(requests.length, 2);
-  assert.deepEqual(requests.map(url => new URL(url).searchParams.get('sort')), ['cited_by_count:desc', 'cited_by_count:desc']);
+  assert.equal(new URL(requests[1]).searchParams.get('sort'), 'cited_by_count:desc');
   assert.match(new URL(requests[1]).searchParams.get('filter')!, /raw_author_name.search:.*geofrey~1 AND hin\*/);
   assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A1']);
   assert.equal(results[0].display_name, 'Geoffrey E. Hinton');
@@ -1469,15 +1487,13 @@ test('author suggestions recover a typo plus surname prefix after an empty exact
   assert.equal(results[0].institution, 'University of Toronto');
 });
 
-test('author suggestions recover an unfinished surname when exact bylines have no relevant canonical names', async t => {
+test('author suggestions recover an unfinished surname when the author index has no relevant names', async t => {
   let requests = 0;
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
     requests += 1;
-    const approximate = new URL(url).searchParams.get('filter')!.includes(' OR ');
-    return Response.json({ results: [{ authorships: [{ author: approximate
-      ? { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' }
-      : { id: 'https://openalex.org/A2', display_name: 'Unrelated Coauthor' },
-    }] }] });
+    return Response.json({ results: fromAuthorIndex(url)
+      ? [{ id: 'https://openalex.org/A2', display_name: 'Unrelated Person' }]
+      : [{ authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' } }] }] });
   });
 
   const results = await searchAuthors('Geoffrey Hin', { typeahead: true, throwOnError: true });
@@ -1486,17 +1502,21 @@ test('author suggestions recover an unfinished surname when exact bylines have n
   assert.equal(requests, 2);
 });
 
-test('author suggestions finish an empty search after at most two requests and do not repeat literal-only queries', async t => {
+test('author suggestions finish an empty search after at most two requests', async t => {
   const requests: string[] = [];
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
     requests.push(String(url));
     return Response.json({ results: [] });
   });
 
-  assert.deepEqual(await searchAuthors('Missing Researcher', { typeahead: true, throwOnError: true }), []);
-  assert.equal(requests.length, 2);
+  for (const query of ['Missing Researcher', 'Li']) {
+    requests.length = 0;
+    assert.deepEqual(await searchAuthors(query, { typeahead: true, throwOnError: true }), []);
+    assert.equal(requests.length, 2, query);
+  }
+  // No byline expression exists for a script the operators cannot read.
   requests.length = 0;
-  assert.deepEqual(await searchAuthors('Li', { typeahead: true, throwOnError: true }), []);
+  assert.deepEqual(await searchAuthors('محبوبه سلیمانی', { typeahead: true, throwOnError: true }), []);
   assert.equal(requests.length, 1);
 });
 
@@ -1518,7 +1538,7 @@ test('author suggestions propagate either request failure instead of treating it
   }
 });
 
-test('author suggestions do not start a fallback after the reader cancels the exact request', async t => {
+test('author suggestions do not start a fallback after the reader cancels the first request', async t => {
   const controller = new AbortController();
   let requests = 0;
   t.mock.method(openAlexClient, 'fetch', async () => {

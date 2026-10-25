@@ -75,7 +75,7 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
  * first GUEST_SEED_PER_AREA subcategories of each area, interleaved across
  * areas — physics[0], eess[0], mech[0], physics[1], … — so that a ranking
  * with nothing to go on still spreads its window over every area picked.
- * All thirteen areas make 63, well under the rules' cap of 100.
+ * All fourteen areas make 68, well under the rules' cap of 100.
  */
 export const GUEST_SEED_PER_AREA = 5;
 

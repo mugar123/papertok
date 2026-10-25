@@ -126,7 +126,7 @@
      Flat, print-ink colors. The variables keep the `gradient-*` names the
      components already reference, but they resolve to solid colors so a
      category can tint a rule, a dot or a label without a haze. */
-  /* Thirteen fields, thirteen separated hues. They were colliding before —
+  /* Fourteen fields, fourteen separated hues. They were colliding before —
      econ and chemeng were the same value, and physics/math/mech were three
      shades of violet — so cards looked identical across unrelated subjects.
      Every value is dark enough to be legible as text on white. */
@@ -143,6 +143,7 @@
   --gradient-chemeng: #4d7c0f;  /* olive */
   --gradient-med: #be123c;      /* rose */
   --gradient-bio: #15803d;      /* green */
+  --gradient-chem: #a13170;     /* raspberry */
 
   --gradient-brand: #1d2b53;
 
@@ -334,7 +335,7 @@
    same hue, as much of the original chroma as sRGB holds, at one shared
    lightness per family — field inks at oklch L 0.70, list colours at 0.68,
    action accents at 0.72, tint foregrounds at 0.76 over backgrounds at 0.235.
-   Lifting the whole family at once is what keeps thirteen fields telling
+   Lifting the whole family at once is what keeps fourteen fields telling
    themselves apart on ink (min 6.0:1 against the page), and it is why a light
    foreground on a coloured surface becomes a dark one here: on this side every
    accent is the light half of the pair. Regenerate the same way the list
@@ -437,7 +438,7 @@
   --grain: 0.18;
 
   /* ── Category accents ──
-     The thirteen field inks at oklch L 0.70. Hue and chroma are the light
+     The fourteen field inks at oklch L 0.70. Hue and chroma are the light
      value's; only the lightness is the family's. */
   --gradient-physics: #8792ff;  /* indigo */
   --gradient-cs: #f67145;       /* burnt orange */
@@ -452,6 +453,7 @@
   --gradient-chemeng: #7eb04d;  /* olive */
   --gradient-med: #ff6173;      /* rose */
   --gradient-bio: #57b66f;      /* green */
+  --gradient-chem: #e570ad;     /* raspberry */
 
   --gradient-brand: #f4ecd8;
 

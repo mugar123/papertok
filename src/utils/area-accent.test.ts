@@ -7,7 +7,10 @@ import {
   areaKeyForPaper,
   areaAccentForPaper,
   areaLabelForPaper,
+  openAlexNotableFilterForLeaf,
+  openAlexTopicFilterForLeaf,
 } from './area-accent.ts';
+import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../data/open-alex-notable-leaf-topics.generated.ts';
 import { openAlexFilterForArea } from '../data/open-alex-areas.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { CATEGORIES, getCategoryLabel } from '../data/category-taxonomy.ts';
@@ -129,6 +132,19 @@ test('every area has an OpenAlex filter built from the tables that label its row
   assert.equal(openAlexFilterForArea('nonsense'), null);
 });
 
+/* ENG-129. A leaf's notable lane lists the topics its topic lane asks for;
+   a leaf without one lists the topics its own blind sample found on target,
+   articles only. Neither map holds a leaf of the other. */
+test("a leaf's notable filter is its topic lane's, else its notable sample's, else none", () => {
+  assert.equal(openAlexNotableFilterForLeaf('cs.CV'), openAlexTopicFilterForLeaf('cs.CV'));
+  assert.equal(openAlexNotableFilterForLeaf('mech.aero'), openAlexTopicFilterForLeaf('mech.aero'), 'the conference papers too');
+  for (const [leaf, topics] of Object.entries(OPENALEX_NOTABLE_LEAF_TOPICS)) {
+    assert.equal(openAlexTopicFilterForLeaf(leaf), null, `${leaf} has no topic lane`);
+    assert.equal(openAlexNotableFilterForLeaf(leaf), `primary_topic.id:${[...topics].sort().join('|')},type:article`);
+  }
+  assert.equal(openAlexNotableFilterForLeaf('nlin.CD'), null);
+});
+
 /* PAP-60. A name says what a topic is about, not which field filed it: read
    for keywords, "Somatic cell nuclear transfer" made a Genetics paper
    Physics, and a Chemistry paper took the field of whichever concept name
@@ -140,18 +156,31 @@ test("a topic's or a concept's name alone is not a field", () => {
   }
 });
 
-// D3: OpenAlex fields this app has no area for (Chemistry, Social Sciences,
+// D3: OpenAlex fields this app has no area for (Social Sciences,
 // Psychology...) read as OpenAlex names them, with no field's ink.
 test('a field the app has no area for reads as OpenAlex names it, without an ink', () => {
   const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
-  const unmapped = sample.filter(work => ['16', '33'].includes(String(work.primary_topic?.field?.id).split('/').pop()!));
-  assert.equal(unmapped.length, 4);
+  const unmapped = sample.filter(work => String(work.primary_topic?.field?.id).split('/').pop() === '33');
+  assert.equal(unmapped.length, 2);
   for (const work of unmapped) {
     const paper = PaperBuilder.deduplicate([new OpenAlexAdapter().mapToStandard(work)])[0];
     assert.equal(areaKeyForPaper(paper), null, work.id);
     assert.equal(areaLabelForPaper(paper), work.primary_topic?.field?.display_name, work.id);
     assert.equal(areaAccentForPaper(paper), 'var(--gradient-brand)', work.id);
   }
+});
+
+test('a work OpenAlex files under Chemistry reads as Chemistry, with its ink', () => {
+  const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const chemistry = sample.filter(work => String(work.primary_topic?.field?.id).split('/').pop() === '16');
+  assert.equal(chemistry.length, 2);
+  for (const work of chemistry) {
+    const paper = PaperBuilder.deduplicate([new OpenAlexAdapter().mapToStandard(work)])[0];
+    assert.equal(areaKeyForPaper(paper), 'chem', work.id);
+    assert.equal(areaLabelForPaper(paper), 'Chemistry', work.id);
+    assert.equal(areaAccentForPaper(paper), 'var(--gradient-chem)', work.id);
+  }
+  assert.equal(openAlexFilterForArea('chem'), 'primary_topic.field.id:16');
 });
 
 test('an arXiv category still wins over the topic name', () => {
