@@ -156,6 +156,44 @@
   }
 }
 
+.navbar-search-slot {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.navbar-page-picker {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.navbar-page-picker[data-popup-open] {
+  background: var(--bg-sunken);
+}
+
+.navbar-page-picker svg {
+  color: var(--text-secondary);
+}
+
+.navbar-page-row[aria-current='page'] {
+  font-weight: var(--fw-semibold);
+}
+
+.navbar-page-check {
+  margin-left: auto;
+}
+
 /* ── Primary links ── */
 .navbar-links {
   display: flex;
@@ -460,6 +498,18 @@
   .navbar-right {
     justify-self: end;
     margin-left: 0;
+  }
+
+  .navbar-inner--search {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+
+  .navbar-page-picker {
+    display: inline-flex;
+  }
+
+  .navbar-inner--search .navbar-links {
+    display: none;
   }
 }
 

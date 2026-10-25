@@ -80,6 +80,7 @@ const stored = (db: ReturnType<typeof testD1>['db']): Record<string, { paper: Pa
 test('stored papers get what the feed used to add to every page, once; an unknown one waits for a retry, a book leaves its lanes', async t => {
   providers(t);
   const { env, db } = await corpus();
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5023888391', ?)").run(new Date(NOW).toISOString());
   assert.equal((await enrichPending(env, 50, NOW)).workIds.length, 3);
   const works = stored(db);
   assert.equal(works['2610.11111'].paper.citationCount, 7);
