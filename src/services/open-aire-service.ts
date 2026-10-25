@@ -22,7 +22,7 @@ export interface Project {
   websiteUrl?: string | null; subjects?: string[]; participants?: ProjectParticipant[];
   openAccess?: boolean;
 }
-// `total` is null for a page that was never requested: its size is not known.
+// `total` is null for a page past Graph's window: the project's size is not known.
 interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number | null; }
 
 import { deduplicateProjectParticipants } from '../utils/entity-metadata.ts';
