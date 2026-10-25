@@ -174,3 +174,27 @@ test('an area just under the required precision on its held-out half gets no rul
   assert.equal(physics.enabled, false);
   assert.match(physics.reason, /188\/209, under 0\.9$/);
 });
+
+test('an area whose held-out half decides fewer than 30 filings gets no rule, however precise they are', () => {
+  // Every article sits clearly with its leaf, so the rule chosen on the
+  // calibration half files all of them and each half holds half the articles.
+  const calibrate = (articles: number) => calibrateLeafFiling({
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: many(articles, index => ({ id: `W${index}`, vector: vector({ [index % 2]: 1 }, 1_000 + index), labels: { [index % 2 ? 'quant-ph' : 'hep-th']: 'on' as const } })),
+    areaSamples: [],
+  })[0];
+
+  const short = calibrate(58);
+  assert.ok(short.heldOut);
+  assert.deepEqual([short.heldOut.correct, short.heldOut.wrong, short.heldOut.precision], [29, 0, 1]);
+  assert.equal(short.enabled, false);
+  assert.equal(short.reason, '29 decided held-out filings, under 30');
+
+  const enough = calibrate(60);
+  assert.ok(enough.heldOut);
+  assert.deepEqual([enough.heldOut.correct, enough.heldOut.wrong], [30, 0]);
+  assert.equal(enough.enabled, true);
+});
