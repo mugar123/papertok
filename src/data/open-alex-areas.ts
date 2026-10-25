@@ -31,20 +31,24 @@ export const OPENALEX_FIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORI
  * files mechanical, aerospace and civil work under Engineering (22) and
  * finance under Economics, Econometrics and Finance (20), so by field alone
  * they read as Electrical & Electronic Engineering and Economics, and the
- * Explorer's filter for their own area could never find them.
+ * Explorer's filter for their own area could never find them. Artificial
+ * Intelligence (1702) and Computer Vision and Pattern Recognition (1707) are
+ * subfields of Computer Science (17) there; here they are the AI area, whose
+ * leaves include `cs.CV`.
  */
 export const OPENALEX_SUBFIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = Object.freeze({
   2202: 'mech', 2203: 'mech', 2206: 'mech', 2210: 'mech', 2211: 'mech',
   2205: 'civil', 2212: 'civil', 2215: 'civil',
   2003: 'q-fin',
+  1702: 'ai', 1707: 'ai',
 });
 
 /**
  * The OpenAlex works filter for one area, read from the same tables that name
- * a paper's area, so what the Explorer asks OpenAlex for is what its rows will
- * be labelled. A field filter is a superset when some of its subfields belong
- * elsewhere (Engineering includes mechanical work); the list trims those rows
- * by their label. Null for an area OpenAlex has no field or subfield for.
+ * a paper's area. A field filter is a superset when some of its subfields
+ * belong elsewhere (Engineering includes mechanical work); the leaf-topic
+ * generator proposes candidates within it. Null for an area OpenAlex has no
+ * field or subfield for.
  */
 export function openAlexFilterForArea(areaKey: string | null) {
   const ids = (table: Readonly<Record<string, keyof typeof CATEGORIES>>) => Object.keys(table).filter(id => table[id] === areaKey);
@@ -61,7 +65,9 @@ export function openAlexFilterForArea(areaKey: string | null) {
  * claims within its fields. OpenAlex ANDs a repeated key, so each excluded
  * subfield is a `!` clause of its own. For the paper harvest's area lanes
  * (worker/paper-sources.ts), where a paper of another area would be served
- * to the wrong readers rather than trimmed from a list by its label.
+ * to the wrong readers, and the Explorer's area filter, whose pages would
+ * otherwise arrive full of rows its label check drops (most of Computer
+ * Science's are AI).
  */
 export function openAlexLabelFilterForArea(areaKey: string) {
   const filter = openAlexFilterForArea(areaKey);

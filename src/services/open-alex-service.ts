@@ -26,7 +26,7 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
 import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
-import { openAlexFilterForArea } from '../data/open-alex-areas.ts';
+import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
 import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
 import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
@@ -1404,7 +1404,8 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
     filterParams += `,primary_location.is_published:true,${OPENALEX_PEER_REVIEWED_FILTER}`;
   }
   if (filters.category) {
-    const areaFilter = openAlexFilterForArea(areaKeyForCategory(filters.category));
+    const areaKey = areaKeyForCategory(filters.category);
+    const areaFilter = areaKey && openAlexLabelFilterForArea(areaKey);
     if (areaFilter) filterParams += `,${areaFilter}`;
   }
   if (filters.dateRange) {

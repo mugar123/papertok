@@ -29,7 +29,7 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
-import { INTEREST_AREAS } from '../../data/categories.ts';
+import { CATEGORIES } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';
 import GoogleMark from '../public/google-mark.tsx';
@@ -412,7 +412,7 @@ function DiscoveryPage() {
 
   const selectedAreas = useMemo(() => {
     const selected = new Set(userPreferences || []);
-    return Object.entries(INTEREST_AREAS)
+    return Object.entries(CATEGORIES)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
         return count > 0 ? { id, label: area.label, accent: area.gradient, count } : null;

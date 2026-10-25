@@ -708,11 +708,16 @@ function isArxivCategory(value: unknown) {
   ));
 }
 
+// A followed area reads its leaves from the taxonomy, not from the ids the
+// follow stored when the area held other leaves.
 function arxivCategoriesForFollow(follow: FollowInput = {}) {
+  const area = typeof follow.canonicalId === 'string' && Object.hasOwn(CATEGORIES, follow.canonicalId)
+    ? CATEGORIES[follow.canonicalId]
+    : null;
   const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
     ? follow.metadata.categoryIds
     : [];
-  const candidates = metadataCategories.length ? metadataCategories : [follow.canonicalId];
+  const candidates = area ? Object.keys(area.subcategories) : metadataCategories.length ? metadataCategories : [follow.canonicalId];
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 

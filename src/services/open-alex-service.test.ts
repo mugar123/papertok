@@ -1049,6 +1049,11 @@ test('an entity page filtered by area asks OpenAlex for the fields that label th
     assert.ok(works, `asked for works, got ${urls.join(' ')}`);
     assert.match(works, /filter=author\.id:A123,primary_topic\.field\.id:24\|27\|28\|29\|30\|35\|36(&|$)/);
     assert.doesNotMatch(works, /concepts\.id/);
+
+    // Computer Science leaves out the subfields that label a row as AI.
+    urls.length = 0;
+    await getWorksByEntity('author', 'A123', 'cited_by_count:desc', 1, '', { category: 'cs' }, 'Ada Lovelace');
+    assert.match(urls.find(url => url.includes('/works?'))!, /filter=author\.id:A123,primary_topic\.field\.id:17,primary_topic\.subfield\.id:!1702,primary_topic\.subfield\.id:!1707(&|$)/);
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }

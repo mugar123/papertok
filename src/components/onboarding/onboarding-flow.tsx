@@ -5,7 +5,7 @@ import { useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { INTEREST_AREAS } from '../../data/categories.ts';
+import { CATEGORIES } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import InstitutionLink from '../institution/institution-link.tsx';
 import { needsUniversityProof, sendInstitutionVerification } from '../../services/institution-service.ts';
@@ -149,7 +149,7 @@ export default function OnboardingFlow() {
     // An area let go takes its topics with it, so ticking it again starts
     // from the whole area rather than from a narrowing nobody can see.
     if (removing) {
-      const ofArea = new Set(Object.keys(INTEREST_AREAS[key].subcategories));
+      const ofArea = new Set(Object.keys(CATEGORIES[key].subcategories));
       setSelectedTopics(previous => new Set([...previous].filter(id => !ofArea.has(id))));
     }
   };

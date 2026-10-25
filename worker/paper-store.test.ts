@@ -658,25 +658,25 @@ test("equally recent articles take turns across areas after newer candidates", a
       allCategories: [category], categories: [category], primaryCategory: category, published: new Date(NOW - (index + 1) * 1_800_000).toISOString(),
     };
   });
-  const article = (area: 'cs' | 'math', index: number) => ({
+  const article = (area: 'ai' | 'math', index: number) => ({
     paper: mapOpenAlexWork({
-      ...physicsWork, id: `https://openalex.org/W9${area === 'cs' ? 3 : 4}000${index + 1}`, doi: `https://doi.org/10.1000/${area}.${index + 1}`,
+      ...physicsWork, id: `https://openalex.org/W9${area === 'ai' ? 3 : 4}000${index + 1}`, doi: `https://doi.org/10.1000/${area}.${index + 1}`,
       title: `A journal article of the ${area} area, number ${index + 1}`, publication_date: '2026-10-21',
     })!,
     lanes: [`area:${area}`],
   });
   await ingestPapers(env, [
     ...preprints.map(paper => ({ paper, lanes: [] })),
-    ...Array.from({ length: 6 }, (_, index) => article('cs', index)),
+    ...Array.from({ length: 6 }, (_, index) => article('ai', index)),
     ...Array.from({ length: 6 }, (_, index) => article('math', index)),
   ], { now: NOW });
   const areasOn = async (page: number) => {
     const ids = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'math.OC'], page }), { now: NOW })).map(item => item.id);
-    return { cs: ids.filter(id => id.startsWith('openalex:W93')).length, math: ids.filter(id => id.startsWith('openalex:W94')).length };
+    return { ai: ids.filter(id => id.startsWith('openalex:W93')).length, math: ids.filter(id => id.startsWith('openalex:W94')).length };
   };
   const [first, second] = [await areasOn(2), await areasOn(3)];
-  assert.ok(first.cs > 0 && first.math > 0, `the first page holds both areas' articles: ${JSON.stringify(first)}`);
-  assert.deepEqual({ cs: first.cs + second.cs, math: first.math + second.math }, { cs: 6, math: 6 });
+  assert.ok(first.ai > 0 && first.math > 0, `the first page holds both areas' articles: ${JSON.stringify(first)}`);
+  assert.deepEqual({ ai: first.ai + second.ai, math: first.math + second.math }, { ai: 6, math: 6 });
 });
 
 test("an area's journal lane is read beside a reader's own lanes, not out of their candidates: a like still finds a preprint 17 days back in a busy category", async () => {
@@ -700,7 +700,7 @@ test("an area's journal lane is read beside a reader's own lanes, not out of the
   add(2_601, '2609.99999', new Date(NOW - 3 * 86_400_000).toISOString(), null, [0, 0, 1]);
   // The area's journal lane, as full as a few weeks of nights make it: 200 articles a night.
   for (let index = 0; index < 2_000; index += 1) {
-    add(3_000 + index, `openalex:W95${String(index).padStart(5, '0')}`, `2026-10-${21 - Math.floor(index / 200)}T00:00:00.000Z`, 'area:cs', [0, 1, 0]);
+    add(3_000 + index, `openalex:W95${String(index).padStart(5, '0')}`, `2026-10-${21 - Math.floor(index / 200)}T00:00:00.000Z`, 'area:ai', [0, 1, 0]);
   }
   db.exec('COMMIT');
   const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], positiveIds: ['2609.99999'] }), { now: NOW });
@@ -711,7 +711,7 @@ test('the area lanes a request reads give at most 800 candidates together, in eq
   const { env, db } = corpus();
   const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
   const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
-  const areas = ['cs', 'math', 'physics'];
+  const areas = ['ai', 'math', 'physics'];
   db.exec('BEGIN');
   // Three nights of 100 articles in each of three areas.
   areas.forEach((area, areaIndex) => {

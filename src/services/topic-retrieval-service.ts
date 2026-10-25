@@ -74,10 +74,13 @@ function categorySearchQuery(categoryIds: string[], canonicalId: string) {
   return categoryIds.length ? getCategoryLabel(categoryIds[0]) : '';
 }
 
+// An area's leaves come from the taxonomy, not from the ids a follow stored:
+// those are the area as it was when it was followed.
 function normalizedCategoryIds(topic: RetrievalTopic, canonicalId: string) {
+  const isArea = Object.hasOwn(CATEGORIES, canonicalId);
   return [...new Set([
-    ...(Array.isArray(topic?.metadata?.categoryIds) ? topic.metadata.categoryIds : []),
-    ...(Array.isArray(topic?.categoryIds) ? topic.categoryIds : []),
+    ...(!isArea && Array.isArray(topic?.metadata?.categoryIds) ? topic.metadata.categoryIds : []),
+    ...(!isArea && Array.isArray(topic?.categoryIds) ? topic.categoryIds : []),
     ...categoryIdsFromCanonical(canonicalId),
   ].map(categoryId => cleanText(categoryId, 80)).filter(isScientificCategoryId))].slice(0, 12);
 }

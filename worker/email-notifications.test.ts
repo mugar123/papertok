@@ -581,6 +581,17 @@ test('maps native arXiv categories to their exact followed topics', () => {
   assert.equal(papers[0]!.url, 'https://arxiv.org/abs/2607.26058v1');
 });
 
+// ENG-113. A Computer Science follow stored while the area still held the AI leaves.
+test('a followed area reads its arXiv categories from the taxonomy, not from what the follow stored', () => {
+  const stored = { type: 'topic' as const, canonicalId: 'cs', displayName: 'Computer Science', metadata: { categoryIds: ['cs.AI', 'cs.LG', 'cs.RO'] } };
+  const categories = arxivCategoriesForFollow(stored);
+  assert.equal(categories.includes('cs.RO'), true);
+  assert.equal(categories.includes('cs.SE'), true);
+  assert.deepEqual(categories.filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
+  const leaf = { type: 'topic' as const, canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: { categoryIds: ['cs.LG'] } };
+  assert.deepEqual(arxivCategoriesForFollow(leaf), ['cs.LG']);
+});
+
 test('an arXiv entry carries its primary field and its summary into the digest', () => {
   const follows = [
     { type: 'topic' as const, canonicalId: 'math-ph', displayName: 'Mathematical Physics', metadata: { categoryIds: ['math-ph'] } },
@@ -617,7 +628,7 @@ test('an arXiv entry carries its primary field and its summary into the digest',
   assert.equal(byId['2608.00001']!.area, 'physics');
   assert.equal(byId['2608.00001']!.abstract, 'Integrable spin chains admit exact solutions.');
   // The primary category decides, not the cross-list that happens to come first.
-  assert.equal(byId['2608.00002']!.area, 'cs');
+  assert.equal(byId['2608.00002']!.area, 'ai');
   assert.equal('abstract' in byId['2608.00002']!, false);
 });
 

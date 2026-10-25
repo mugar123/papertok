@@ -20,6 +20,12 @@ test('maps an OpenAlex concept name to the local taxonomy when possible', () => 
   assert.equal(topic!.reliable, true);
 });
 
+test('a concept named like both an area and its leaf opens the leaf; the area id opens the area', () => {
+  const concept = resolvePaperTopic({ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence' });
+  assert.equal(concept!.id, 'cs.AI');
+  assert.equal(resolvePaperTopic('ai')!.id, 'ai');
+});
+
 test('keeps a stable external OpenAlex concept navigable', () => {
   const external = resolvePaperTopic({ id: 'https://openalex.org/C987', display_name: 'Emergent topic' });
   assert.deepEqual(external, { id: 'C987', label: 'Emergent topic', type: 'concept', reliable: false });
@@ -152,14 +158,16 @@ function findLocalTopicTheOldWay(value: string|null|undefined) {
     return { id: value, label: area.label, type: 'topic', reliable: true };
   }
   const normalized = normalizeLabel(value);
-  for (const [areaId, area] of Object.entries(CATEGORIES)) {
-    if (normalizeLabel(area.label) === normalized) {
-      return { id: areaId, label: area.label, type: 'topic', reliable: true };
-    }
+  for (const area of Object.values(CATEGORIES)) {
     for (const [categoryId, category] of Object.entries(area.subcategories || {})) {
       if (categoryId === value || normalizeLabel(category.label) === normalized) {
         return { id: categoryId, label: category.label, type: 'topic', reliable: true };
       }
+    }
+  }
+  for (const [areaId, area] of Object.entries(CATEGORIES)) {
+    if (normalizeLabel(area.label) === normalized) {
+      return { id: areaId, label: area.label, type: 'topic', reliable: true };
     }
   }
   return null;

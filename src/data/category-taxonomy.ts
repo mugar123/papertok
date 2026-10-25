@@ -50,19 +50,14 @@ export const CATEGORIES: Record<string, CategoryArea> = {
   cs: {
     label: 'Computer Science',
     gradient: 'var(--gradient-cs)',
-    description: 'AI, algorithms, networks, and more',
+    description: 'Algorithms, systems, security, and more',
     subcategories: {
-      'cs.AI': { label: 'Artificial Intelligence' },
-      'cs.LG': { label: 'Machine Learning' },
-      'cs.CV': { label: 'Computer Vision' },
-      'cs.CL': { label: 'Computation and Language' },
       'cs.RO': { label: 'Robotics' },
       'cs.CR': { label: 'Cryptography and Security' },
       'cs.SE': { label: 'Software Engineering' },
       'cs.DS': { label: 'Data Structures and Algorithms' },
       'cs.DB': { label: 'Databases' },
       'cs.DC': { label: 'Distributed Computing' },
-      'cs.NE': { label: 'Neural and Evolutionary Computing' },
       'cs.IR': { label: 'Information Retrieval' },
       'cs.HC': { label: 'Human-Computer Interaction' },
       'cs.PL': { label: 'Programming Languages' },
@@ -73,6 +68,21 @@ export const CATEGORIES: Record<string, CategoryArea> = {
       'cs.SD': { label: 'Sound' },
       'cs.MM': { label: 'Multimedia' },
       'cs.SY': { label: 'Systems and Control' },
+    },
+  },
+  // arXiv files these under Computer Science, and their ids stay arXiv's: the
+  // area groups them, it does not reclassify a paper. An unlisted `cs.*`
+  // category still takes Computer Science from its archive.
+  ai: {
+    label: 'Artificial Intelligence',
+    gradient: 'var(--gradient-ai)',
+    description: 'Machine learning, language, and vision',
+    subcategories: {
+      'cs.AI': { label: 'Artificial Intelligence' },
+      'cs.LG': { label: 'Machine Learning' },
+      'cs.CV': { label: 'Computer Vision' },
+      'cs.CL': { label: 'Computation and Language' },
+      'cs.NE': { label: 'Neural and Evolutionary Computing' },
     },
   },
   math: {
