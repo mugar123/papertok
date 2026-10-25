@@ -1,6 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 
-export const SEMANTIC_SCHOLAR_HOME = 'https://www.semanticscholar.org/?utm_source=api';
+const SEMANTIC_SCHOLAR_HOME = 'https://www.semanticscholar.org/?utm_source=api';
 
 type SemanticScholarAttribution = {
   label: 'From' | 'With data from';
@@ -13,8 +13,10 @@ const SEMANTIC_SCHOLAR_HASH = /^[a-f0-9]{40}$/i;
 
 /**
  * Semantic Scholar's API licence asks for a visible credit, linked back with
- * `utm_source=api`, wherever its data is shown. This decides whether a paper
- * carries any, and the words that lead into the linked name: "From" for its
+ * `utm_source=api`, wherever its data is shown. The card and the abstract
+ * sheet carry it; the similar-papers layer, whose list is Semantic Scholar's
+ * recommendations, carries none for now (Nicolás, 2026-10-25; ENG-129). This
+ * decides whether a paper carries any, and the words that lead into the linked name: "From" for its
  * own record (`sources.primary`), "With data from" when something of it was
  * merged in (`sources.enrichedBy`, written `semanticscholar`). The second
  * does not name a field: a merge tags the source whether or not its abstract
