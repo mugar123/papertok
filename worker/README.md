@@ -177,8 +177,9 @@ request that arrives in a period it may not take waits for the next one, up to 3
 nobody else is asking. Its seats are 6 s apart and it waits at most 4 s, so one tab's
 back-to-back misses are not all answered. The tab's lane sends its arXiv requests one at a
 time (`src/services/arxiv-request-queue.ts`); a miss that follows one that took a seat often
-has none within 4 s. About 70% of such misses are refused with 429 while nobody else is
-asking, and the lane then refuses its own queued arXiv requests for the 4 s of that
+has none within 4 s. Up to about 70% of such misses (when arXiv answers in about 0.3 s;
+fewer when it is slower, none once it takes about 1.7 s) are refused with 429 while nobody
+else is asking, and the lane then refuses its own queued arXiv requests for the 4 s of that
 `retry-after`. This rate is accepted. The Worker's own callers (liked-paper lookups and the
 harvest's arXiv lanes, which ask the route in-process) and share pages may take any seat, so
 no anonymous caller can hold the other half. A signed-in reader can: the liked-paper lookups
