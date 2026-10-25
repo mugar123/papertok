@@ -251,6 +251,19 @@ export const CATEGORIES: Record<string, CategoryArea> = {
       'bio.biotech': { label: 'Biotechnology' },
     },
   },
+  chem: {
+    label: 'Chemistry',
+    gradient: 'var(--gradient-chem)',
+    description: 'Molecules, reactions, and spectroscopy',
+    subcategories: {
+      'chem.anal': { label: 'Analytical Chemistry' },
+      'chem.electro': { label: 'Electrochemistry' },
+      'chem.inorg': { label: 'Inorganic Chemistry' },
+      'chem.org': { label: 'Organic Chemistry' },
+      'chem.phys': { label: 'Physical & Theoretical Chemistry' },
+      'chem.spectro': { label: 'Spectroscopy' },
+    },
+  },
 };
 
 /*

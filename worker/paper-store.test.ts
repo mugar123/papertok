@@ -531,6 +531,30 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
 });
 
+test("a Chemistry reader is served Chemistry's journal articles, which keep OpenAlex's classification, and a Chemical Engineering reader is not", async () => {
+  const { env } = corpus();
+  const chemistryArticle = mapOpenAlexWork({
+    ...physicsWork,
+    id: 'https://openalex.org/W7223244691',
+    doi: 'https://doi.org/10.1021/example.chem.1',
+    title: 'A Divergent Strategy for the Synthesis of Iridoid Glycosides',
+    primary_topic: {
+      id: 'https://openalex.org/T10215',
+      display_name: 'Synthetic Organic Chemistry Methods',
+      subfield: { id: 'https://openalex.org/subfields/1605', display_name: 'Organic Chemistry' },
+      field: { id: 'https://openalex.org/fields/16', display_name: 'Chemistry' },
+    },
+  })!;
+  await ingestPapers(env, [{ paper: chemistryArticle, lanes: ['area:chem'] }], { now: NOW });
+  const served = async (categories: string[]) => readFeedPage(env, parseFeedRequest({ categories }), { now: NOW });
+  const [paper] = await served(['chem.org']);
+  assert.equal(paper.id, 'openalex:W7223244691');
+  assert.equal(paper.primaryTopic?.subfield?.display_name, 'Organic Chemistry');
+  assert.deepEqual(paper.categories, chemistryArticle.categories);
+  assert.deepEqual((await served(['chem.spectro'])).map(item => item.id), ['openalex:W7223244691'], 'any chemistry leaf');
+  assert.deepEqual(await served(['chemeng.process']), [], 'Chemical Engineering is another area');
+});
+
 test("the follows' page reads no area lane: its categories stand for followed topics, which an article found only at area level matches none of", async () => {
   const { env } = corpus();
   const quantum = { ...arxivRecord, id: '2610.00021', arxivId: '2610.00021', title: 'A quantum error-correcting code', allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: '2026-10-20T00:00:00.000Z' };

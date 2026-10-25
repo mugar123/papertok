@@ -314,10 +314,9 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
         abstract_inverted_index: invertedIndex(abstract),
       },
       {
-        // Chemistry (field 16) has no area of its own, and the topic's name
-        // ("Polymer ...") does not stand in for one: it read as Chemical
-        // Engineering by keyword (PAP-60). And an editorial's inverted index
-        // is its body, not an abstract.
+        // Chemistry (field 16) is read by its field, not by the topic's name
+        // ("Polymer ..."). And an editorial's inverted index is its body, not
+        // an abstract.
         id: 'https://openalex.org/WNAMED',
         type: 'editorial',
         display_name: 'Polymer membranes for water',
@@ -338,7 +337,7 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
     const byId = Object.fromEntries(papers.map(paper => [paper!.id, paper]));
     assert.equal(byId.WFIELD!.area, 'cs');
     assert.equal(byId.WFIELD!.abstract, abstract);
-    assert.equal(byId.WNAMED!.area, undefined);
+    assert.equal(byId.WNAMED!.area, 'chem');
     assert.equal('abstract' in byId.WNAMED!, false);
   } finally {
     restore();

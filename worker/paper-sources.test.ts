@@ -507,9 +507,9 @@ test("an area's journal lane leaves out the working-paper series OpenAlex lists 
 // Statistics' label covers OpenAlex's Decision Sciences: of its 200 newest
 // articles on 2026-10-23, 107 were operations research and 40 information
 // systems, all labelled Statistics.
-test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
+test('the areas the feed fills from arXiv and chemistry get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
   const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
-  assert.deepEqual(lanes, ['area:ai', 'area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
+  assert.deepEqual(lanes, ['area:ai', 'area:chem', 'area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
 });
 
 // The cost of the lanes: one list call an area a night, two on a lane's first run.
