@@ -55,7 +55,7 @@ test('the comparison names an article whose labels differ from the reviews and c
 test('the repository\'s review files give one label per pair across the topic reviews and the venue samples', () => {
   const read = (name: string) => JSON.parse(readFileSync(new URL(`../../scripts/data/${name}`, import.meta.url), 'utf8'));
   const labels = labelsFromReviews(read('openalex-topic-reviews.json'), read('openalex-venue-reviews.json'));
-  // Called on target by the economics topic review, doubted by three samples of other topic filters.
+  // Called on target by the economics topic review, doubted by three later econ.GN topic samples (one a re-run of the same query).
   assert.equal(labels.get('W7223173143')?.['econ.GN'], 'doubt');
   // From the q-fin sample of one journal that names no leaf: the best fit its label names.
   assert.equal(labels.get('W7223108949')?.['q-fin.GN'], 'on');
