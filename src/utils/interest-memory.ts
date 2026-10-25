@@ -14,9 +14,12 @@ import { rankPreferences } from './preference-ranking.ts';
  * while the app learns it. An added area (every selected subarea of it added)
  * is new until it has AREA_LEARNED_EXAMPLES examples or has shown
  * AREA_LEARNED_SHOWN cards, whichever comes first, and is a group of its own
- * weighing from NEW_AREA_WEIGHT down to 1 on the way. A subarea added to an
- * area that is not new is a group of its own, weighing from 1 down to 0
- * against SUBAREA_LEARNED_EXAMPLES and SUBAREA_LEARNED_SHOWN. Once learned,
+ * weighing from NEW_AREA_WEIGHT down to 1 on the way. A subarea added beside
+ * one its area learned on its own (a subarea not added, or added and learned)
+ * is a group of its own, weighing from 1 down to 0 against
+ * SUBAREA_LEARNED_EXAMPLES and SUBAREA_LEARNED_SHOWN. An added area with no
+ * such subarea joins the established group whole once the area is learned,
+ * even if it learned only through the area's own evidence. Once learned,
  * either joins the established group, so no group ever weighs 0.
  */
 export const NEW_AREA_WEIGHT = 2;
@@ -133,10 +136,14 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
       for (const subarea of subareas) progress[subarea] = areaProgress;
       continue;
     }
+    // A retired id never learns on its own, so it stays established.
+    const ownProgress = (subarea: string) => (retired.includes(subarea) ? 1 : subareaProgress(subarea));
+    // Added subareas split off only beside one the area learned on its own;
+    // an added area learned as a whole stays whole.
+    const anchored = subareas.some(subarea => !addedIds.has(subarea) || ownProgress(subarea) >= 1);
     for (const subarea of subareas) {
-      // A retired id never learns on its own, so it stays established.
-      const own = retired.includes(subarea) ? 1 : subareaProgress(subarea);
-      if (addedIds.has(subarea) && own < 1) {
+      const own = ownProgress(subarea);
+      if (anchored && addedIds.has(subarea) && own < 1) {
         cold.push(coldGroup([subarea], 1 - own, true));
         progress[subarea] = own;
       } else {

@@ -331,3 +331,40 @@ test("a subarea both selected and deselected teaches its area with its examples"
   const input = memory({ selected: ['quant-ph', 'hep-th'], deselected: ['hep-th'], examples: examples('hep-th', 8) });
   assert.deepEqual(interestProgress(input), { 'quant-ph': 1, 'hep-th': 1 });
 });
+
+// ENG-137, ruling R15: an added area learned through its area-level evidence
+// (working papers filed under 'econ') joins the established group whole. Its
+// added subareas split off only beside a subarea established on its own.
+const economics = ['econ.EM', 'econ.GN', 'econ.TH'];
+
+test('an added area learned through its own examples joins the established group whole', () => {
+  assert.deepEqual(groupsOf(memory({
+    selected: ['cs.RO', ...economics],
+    added: economics,
+    examples: [...examples('econ', 8), ...examples('cs.RO', 10)],
+  })), [
+    { categories: ['cs.RO', ...economics], weight: 1 },
+  ]);
+});
+
+test('an added area one example short of learned is still one group of its own', () => {
+  assert.deepEqual(groupsOf(memory({
+    selected: ['cs.RO', ...economics],
+    added: economics,
+    examples: [...examples('econ', 7), ...examples('cs.RO', 10)],
+  })), [
+    { categories: ['cs.RO'], weight: 1 },
+    { categories: economics, weight: 2 - 7 / 8 },
+  ]);
+});
+
+test('a subarea added beside one its area learned on its own is a group of weight 1', () => {
+  assert.deepEqual(groupsOf(memory({
+    selected: ['quant-ph', 'hep-th'],
+    added: ['quant-ph', 'hep-th'],
+    examples: [...examples('quant-ph', 3), ...examples('physics', 8)],
+  })), [
+    { categories: ['quant-ph'], weight: 1 },
+    { categories: ['hep-th'], weight: 1 },
+  ]);
+});
