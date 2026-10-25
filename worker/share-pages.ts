@@ -355,6 +355,10 @@ export function matchShareRoute(url: URL): ShareRoute | InvalidRoute | null {
   if (kind === 'paper' && rest.length === 1) {
     const identity = parsePaperKey(rest[0]);
     if (!identity) return invalid;
+    // The DOI goes into the OpenAlex path with its slashes, and the URL parser
+    // resolves a whole `.` or `..` segment into another record's path. No real
+    // DOI has one; a dot inside a segment (`10.1234/a..b`) is part of the DOI.
+    if (identity.type === 'doi' && identity.value.split('/').some(segment => segment === '.' || segment === '..')) return invalid;
     const canonicalPath = getPublicPaperPath(identity.type, identity.value)!;
     return {
       kind,
