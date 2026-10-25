@@ -1,10 +1,9 @@
 import { createContext, useContext, useLayoutEffect } from 'react';
 
 /**
- * The release for the boot screen a reload opened a page under. `ProtectedRoute`
- * keeps its loader over a route that asked for it (`holdBootScreen`) and puts
- * the release here; everywhere else it is null. Its own module, without JSX,
- * so Fast Refresh does not re-create the context under its consumers.
+ * Set by `ProtectedRoute` while it holds its loader over a page; null
+ * elsewhere. Its own module, without JSX, so Fast Refresh does not re-create
+ * the context under its consumers.
  */
 const BootScreenContext = createContext<(() => void) | null>(null);
 

@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { peekAuthReturn } from '../../utils/auth-return.ts';
@@ -36,18 +36,30 @@ export default function ProtectedRoute({ children, requireOnboarding = true, hol
   const [carriedDestination] = useState(peekAuthReturn);
   const onboardingReturnTo = carriedDestination ?? requestedPath;
   const onboardingState = useMemo(() => ({ returnTo: onboardingReturnTo }), [onboardingReturnTo]);
-  // A route that booted under the loader mounts its page under the same loader
-  // element, so the mascot does not rise a second time. The loader stays until
-  // the page releases it, which a page whose chunk is still downloading cannot.
-  const [bootRoute] = useState(() => holdBootScreen && loading);
-  const [bootScreenUp, setBootScreenUp] = useState(bootRoute);
+  // A route that mounted during the session load and asked to hold keeps its
+  // loader until the page releases it; a page still downloading never mounts to
+  // do so. `underBootScreen` keeps one fragment shape from loading to ready, so
+  // the loader stays the same element and the mascot does not rise twice.
+  const [heldFromBoot] = useState(() => holdBootScreen && loading);
+  const [bootScreenUp, setBootScreenUp] = useState(heldFromBoot);
   const releaseBootScreen = useCallback(() => setBootScreenUp(false), []);
-  const bootFrame = (page: ReactNode) => (
+  const underBootScreen = (page: ReactNode) => (
     <>
       {page}
       {bootScreenUp && <BootScreen />}
     </>
   );
+  // The page and the navbar are mounted under the loader once the session is
+  // known: nothing there may take focus or be read until it lifts. The navbar
+  // sits outside this tree, so the whole document goes inert.
+  const coveringPage = heldFromBoot && bootScreenUp && !loading;
+  useLayoutEffect(() => {
+    if (!coveringPage) return undefined;
+    document.body.inert = true;
+    return () => {
+      document.body.inert = false;
+    };
+  }, [coveringPage]);
 
   if (loading) {
     // The feed route brings its own wait. FeedContainer lays an atom veil over
@@ -65,7 +77,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true, hol
       return children;
     }
 
-    return bootScreenUp ? bootFrame(null) : <BootScreen />;
+    return bootScreenUp ? underBootScreen(null) : <BootScreen />;
   }
 
   if (!user) {
@@ -139,8 +151,8 @@ export default function ProtectedRoute({ children, requireOnboarding = true, hol
     return <Navigate to="/onboarding" replace state={onboardingState} />;
   }
 
-  if (bootRoute) {
-    return bootFrame(
+  if (heldFromBoot) {
+    return underBootScreen(
       <BootScreenProvider value={releaseBootScreen}>{children}</BootScreenProvider>,
     );
   }

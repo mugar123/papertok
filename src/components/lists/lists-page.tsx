@@ -1492,7 +1492,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const timer = setTimeout(() => setFoldersReleased(true), LIST_PLACEHOLDER_DELAY_MS);
     return () => clearTimeout(timer);
   }, [foldersReleased]);
-  // After a reload the session's loader stays over this page until then.
   useReleaseBootScreen(foldersReleased);
 
   const targetOpenId = location.state?.openListId;
