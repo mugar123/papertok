@@ -840,9 +840,16 @@ for (const [removed, name] of dropped) {
 // on the page its number names; the corpus has dropped that page's works since
 // the pages left their ids on the kept order. A follow change asks for it, with
 // the order as it was ranked or, 15 minutes on, ranked again after the walk.
+// The walk is still at its second page when the corpus drops the works, or a
+// follow change walked it to the end of the order first, so that the page after
+// the drop changes only the ids the order keeps.
 const fallbackOrders: Array<[number, string]> = [[0, 'the order as it was ranked'], [20, 'an order ranked again 20 minutes on']];
-for (const [minutes, order] of fallbackOrders) {
-  test(`a page that goes on with a walk after the corpus dropped the papers its number names sends the next ones from ${order}, though the reader has seen every paper`, async t => {
+const fallbackWalks: Array<[boolean, string]> = [[false, 'a walk at its second page'], [true, 'a walk a follow change took to the end of its order']];
+const fallbackCases = fallbackWalks.flatMap(([followed, walk]) => fallbackOrders.map(([minutes, order]) => ({
+  followed, minutes, name: `${walk}, after the corpus dropped the papers its number names, sends the next ones from ${order}`,
+})));
+for (const { followed, minutes, name } of fallbackCases) {
+  test(`a page that goes on with ${name}, though the reader has seen every paper`, async t => {
     rankingCaches(t);
     t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
     const { env, db, ask } = store();
@@ -851,10 +858,8 @@ for (const [minutes, order] of fallbackOrders) {
     const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
     await ask(request(0, []));
     await ask(request(1, ids(papers.slice(0, 15))));
-    // A follow change before the corpus drops any work walks the order to its
-    // end, so the page after the drop changes only the ids the order keeps.
     const continued = request(0, ids(papers), { continues: true });
-    await ask(continued);
+    if (followed) await ask(continued);
     const workId = (arxivId: string) => (db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number }).work_id;
     const gone = new Set(papers.slice(0, 15).map(item => workId(item.id)));
     for (const item of papers.slice(0, 15)) removeWork(db, item.id);
