@@ -166,23 +166,25 @@ was flipped keeps working.
 Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
-app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`). An uncached
-request waits for a seat, and is refused with 429 `PROVIDER_RATE_LIMITED` when none is free
-within its wait, with that wait in whole seconds as `retry-after`. A missing ledger, or one
-that answers with an error, lets the request go to arXiv unpaced. A request from
+app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
+request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMITED`
+(`retry-after: 4`) when none is free. A missing ledger, or one that answers with an error,
+lets the request go to arXiv unpaced. A request from
 outside the Worker, signed in or not, may take only every other seat, 10 misses a minute for
-the whole app, so cache-busting queries from one script cannot hold every seat. Its seats are
-6 s apart, so it waits up to 6 s (`retry-after: 6`): a tab, whose lane sends its arXiv
-requests one at a time (`src/services/arxiv-request-queue.ts`), gets at most one miss
-answered every 6 s, and a miss can wait up to 6 s for its seat even when nobody else is
-asking. The browser leaves the route at 8 s (`ARXIV_ROUTE_TIMEOUT_MS`). Older bundles leave
-at 6 s and can time out on such a wait, so publish the frontend before the Worker. The
-Worker's own callers (liked-paper lookups and the harvest's arXiv lanes, which ask the route
-in-process) and share pages may take any seat and wait up to 4 s (`retry-after: 4`), so no
-anonymous caller can hold the other half. A signed-in reader can: the liked-paper lookups ask
-for the ids a reader sends to `POST /store/papers` (`{ ids }`, or `positiveIds` missing from
-the corpus), so one account, within its `PROVIDER_USER_MINUTE_LIMIT` requests a minute, can
-keep every seat taken. Anonymous readers still share their half with whoever else is asking.
+the whole app, so cache-busting queries from one script cannot hold every seat. An uncached
+request that arrives in a period it may not take waits for the next one, up to 3 s even when
+nobody else is asking. Its seats are 6 s apart and it waits at most 4 s, so one tab's
+back-to-back misses are not all answered. The tab's lane sends its arXiv requests one at a
+time (`src/services/arxiv-request-queue.ts`); a miss that follows one that took a seat often
+has none within 4 s. About 70% of such misses are refused with 429 while nobody else is
+asking, and the lane then refuses its own queued arXiv requests for the 4 s of that
+`retry-after`. This rate is accepted. The Worker's own callers (liked-paper lookups and the
+harvest's arXiv lanes, which ask the route in-process) and share pages may take any seat, so
+no anonymous caller can hold the other half. A signed-in reader can: the liked-paper lookups
+ask for the ids a reader sends to `POST /store/papers` (`{ ids }`, or `positiveIds` missing
+from the corpus), so one account, within its `PROVIDER_USER_MINUTE_LIMIT` requests a minute,
+can keep every seat taken. Anonymous readers still share their half with whoever else is
+asking.
 
 `/resources/figures?arxiv_id=` returns up to six figures of an arXiv paper, read from
 arxiv.org/html and ar5iv, which are asked at the same time. A result with figures is kept at
