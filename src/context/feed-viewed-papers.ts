@@ -1,3 +1,6 @@
+import type { InteractionProfile } from '../utils/interaction-profile.ts';
+
+import { viewedIds } from '../utils/interaction-profile.ts';
 import { readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/user-scoped-storage.ts';
 
 type DeviceStorage = Parameters<typeof readSeenPaperIds>[1];
@@ -37,6 +40,22 @@ export function recordCardView(
 export function seenPapersForAccount(userId: string | null, storage?: DeviceStorage) {
   removeLegacySeenPaperIds(storage, userId);
   return readSeenPaperIds(userId, storage);
+}
+
+/**
+ * What an account viewed on any device, as its aggregate has it, is passed
+ * over on load like what this browser viewed. The seen set lists papers oldest
+ * first, because a feed request holds only the last 2,000 of them
+ * (`feedSeenIds`). The aggregate lists its papers newest first, so they go in
+ * reversed and ahead of the papers it does not list: this browser's latest
+ * views, not stored yet, and the pages loaded since.
+ */
+export function addViewedPapers(sessionSeen: Set<string>, profile: InteractionProfile) {
+  const viewed = viewedIds(profile).reverse();
+  const listed = new Set(viewed);
+  const others = [...sessionSeen].filter(paperId => !listed.has(paperId));
+  sessionSeen.clear();
+  [...viewed, ...others].forEach(paperId => sessionSeen.add(paperId));
 }
 
 /**

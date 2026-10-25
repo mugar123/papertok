@@ -73,7 +73,7 @@ import {
   readSeenPaperIds,
   saveProfileDriftCheckedAt,
 } from '../utils/user-scoped-storage.ts';
-import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -84,6 +84,7 @@ import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
+import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import {
   createEmptyInteractionProfile,
   curatedIds,
@@ -92,7 +93,6 @@ import {
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
-  viewedIds,
 } from '../utils/interaction-profile.ts';
 import {
   hasInteractionProfile,
@@ -306,7 +306,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What this account viewed on any device, as its aggregate has it, is passed
   // over on load like what this browser viewed.
   const carryViewedPapers = useCallback((profile: InteractionProfile) => {
-    viewedIds(profile).forEach(paperId => sessionSeenPapers.current.add(paperId));
+    addViewedPapers(sessionSeenPapers.current, profile);
   }, []);
 
   const { trackEvent } = useAnalyticsConsent();
@@ -1239,11 +1239,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
         let mainFailed = false;
-        // The seen papers as the main page sends them. A profile that arrives
-        // late (applyInteractionProfile) or More like this adds to the
-        // session's while the request runs, and a paper the Worker sent as
-        // unseen does not then say that the reader has seen their ranking.
-        const seenSent = new Set(sessionSeenPapers.current);
+        // The seen papers as the main page sends them: the 2,000 most recent,
+        // which is all its filter holds. A profile that arrives late
+        // (applyInteractionProfile) or More like this adds to the session's
+        // while the request runs, and a paper the Worker sent as unseen does
+        // not then say that the reader has seen their ranking. Nor does one
+        // the reader saw before the 2,000, which the Worker takes as unseen.
+        const seenSent = new Set(feedSeenIds(sessionSeenPapers.current));
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({

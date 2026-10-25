@@ -27,11 +27,14 @@ export const SEEN_FILTER_BITS = bitsFor(SEEN_FILTER_CAPACITY);
 export const SEEN_FILTER_HASHES = Math.ceil((Math.LN2 * SEEN_FILTER_BITS) / SEEN_FILTER_CAPACITY);
 
 // The papers a feed request says the reader has seen, so the corpus can offer
-// notable papers they have not (worker/paper-store.ts). Sized for 2,000 ids at
-// 1% (the last 500 viewed, up to 1,200 viewed notable cards and the session's
-// pages): 19,200 bits, 7 hashes, 3,200 base64 characters whatever it holds.
-// More ids only raise the false positives, which pass over an unseen paper
-// and never offer a seen one.
+// notable papers they have not and walk its ranking past the ones they have
+// (worker/paper-store.ts). Sized for 2,000 ids at 1% false positives: 19,200
+// bits, 7 hashes, 3,200 base64 characters whatever it holds. A false positive
+// passes over an unseen paper; the filter never offers a seen one. Past its
+// capacity the rate climbs fast (about 6% at 3,000 ids, 29% at 5,000), so a
+// request holds only the 2,000 most recent ids (`feedSeenIds`): the last 500
+// viewed, up to 1,200 viewed notable cards and the session's pages. A paper
+// the reader saw before those can be offered again in a very long session.
 const FEED_SEEN_CAPACITY = 2000;
 const FEED_SEEN_BITS = bitsFor(FEED_SEEN_CAPACITY);
 const FEED_SEEN_HASHES = Math.ceil((Math.LN2 * FEED_SEEN_BITS) / FEED_SEEN_CAPACITY);
@@ -128,10 +131,19 @@ export function deserializeSeenFilter(encoded: unknown): BloomFilter|null {
   }
 }
 
+/**
+ * The ids a feed request holds, from `paperIds` listed oldest first: the
+ * `FEED_SEEN_CAPACITY` most recent. A caller that checks the corpus's answer
+ * against the papers sent must use these ids, not every id the reader has seen.
+ */
+export function feedSeenIds(paperIds: Iterable<string>) {
+  return [...paperIds].slice(-FEED_SEEN_CAPACITY);
+}
+
 /** The seen papers' ids as a feed request carries them (`seen`). */
 export function feedSeenFilter(paperIds: Iterable<string>) {
   const filter = new BloomFilter(FEED_SEEN_BITS, FEED_SEEN_HASHES);
-  for (const paperId of paperIds) addSeenPaper(filter, paperId);
+  for (const paperId of feedSeenIds(paperIds)) addSeenPaper(filter, paperId);
   return uint32ArrayToBase64(filter.buckets);
 }
 

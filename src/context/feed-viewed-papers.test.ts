@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/user-scoped-storage.ts';
-import { MAX_VIEWED_IDS, createEmptyInteractionProfile, deserializeInteractionProfile, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interaction-profile.ts';
+import { MAX_VIEWED_IDS, createEmptyInteractionProfile, deserializeInteractionProfile, recordInteractionEvent, serializeInteractionProfile } from '../utils/interaction-profile.ts';
+import { feedSeenFilter, hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -94,8 +95,39 @@ test('a notable card the reader viewed is in the seen set the next load starts f
   // The next load: what this browser kept, and what the stored aggregate carries over.
   const seen = seenPapersForAccount('test-user', storage);
   assert.equal(seen.has('notable-viewed'), false, "this browser's list keeps the last 500");
-  viewedIds(deserializeInteractionProfile(serializeInteractionProfile(aggregate))).forEach(paperId => seen.add(paperId));
+  addViewedPapers(seen, deserializeInteractionProfile(serializeInteractionProfile(aggregate))!);
   assert.equal(seen.has('notable-viewed'), true, 'the corpus is told the reader saw it');
+});
+
+// A feed request tells the corpus about the 2,000 papers the set lists last
+// (feedSeenFilter), so the set has to list them oldest first.
+test('the papers an account viewed on any device join the seen set oldest first, ahead of the pages loaded since', () => {
+  const storage = memoryStorage();
+  const account = { activeUserId: 'test-user', signedInUid: 'test-user', sessionSeen: new Set<string>() };
+  const aggregate = createEmptyInteractionProfile();
+  const viewed = (paperId: string, notable = false) => recordInteractionEvent(aggregate, { paperId, kind: 'viewTime', category: 'cs.AI', viewTime: 4, notable });
+  // On another device: 1,200 notable cards, then 500 ordinary ones, oldest first.
+  const earlier = Array.from({ length: 1_200 }, (_, index) => `notable-${index}`);
+  const recent = Array.from({ length: 500 }, (_, index) => `recent-${index}`);
+  earlier.forEach(paperId => viewed(paperId, true));
+  recent.forEach(paperId => viewed(paperId));
+  // On this browser, the last 500 are already in its list.
+  recent.forEach(paperId => recordCardView(paperId, 'test-user', account, storage));
+
+  // The profile arrives after the first page loaded.
+  const session = Array.from({ length: 600 }, (_, index) => `session-${index}`);
+  const seen = seenPapersForAccount('test-user', storage);
+  seen.add(session[0]);
+  addViewedPapers(seen, deserializeInteractionProfile(serializeInteractionProfile(aggregate))!);
+  assert.deepEqual([...seen], [...earlier, ...recent, session[0]]);
+
+  // A long session then fills the filter past what it holds: the oldest views leave it, the newest stay.
+  session.slice(1).forEach(paperId => seen.add(paperId));
+  const filter = readFeedSeenFilter(feedSeenFilter(seen));
+  assert.ok([...recent, ...session].every(paperId => hasSeenPaper(filter, paperId)), 'the newest views and the session are held');
+  assert.ok(earlier.slice(300).every(paperId => hasSeenPaper(filter, paperId)), 'so are the notable cards after the 300 oldest');
+  const forgotten = earlier.slice(0, 300).filter(paperId => hasSeenPaper(filter, paperId)).length;
+  assert.ok(forgotten <= 9, `${forgotten} of the 300 oldest notable cards are still held; only false positives may be`);
 });
 
 test('the previous account\'s papers are cleared on a switch or a sign-out, not on a reload of the same account', () => {

@@ -11,6 +11,7 @@ import {
   createSeenFilter,
   deserializeSeenFilter,
   feedSeenFilter,
+  feedSeenIds,
   hasSeenPaper,
   isSeenFilterEmpty,
   readFeedSeenFilter,
@@ -117,4 +118,35 @@ test('a feed request carries the seen papers in a few kilobytes, and the Worker 
   assert.equal(readFeedSeenFilter(encoded.slice(4)), null, 'cut short');
   assert.equal(readFeedSeenFilter(`${encoded.slice(0, -4)}@@@@`), null, 'not base64');
   assert.equal(readFeedSeenFilter(serializeSeenFilter(fill(createSeenFilter(), 1))), null, "the profile's filter is another size");
+});
+
+// Ids from a fixed seed, so the false positives counted below are the same on every run.
+function seededIds(count: number, seed: number) {
+  let state = seed;
+  return Array.from({ length: count }, () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return `W${String(state).padStart(10, '0')}`;
+  });
+}
+
+test('a feed request holds the 2,000 most recent seen papers however many the reader has seen, so it passes over about 1% of unseen ones', () => {
+  // Oldest first, the way the session's Set of seen papers lists them.
+  const seen = seededIds(3_000, 20261024);
+  const read = readFeedSeenFilter(feedSeenFilter(new Set(seen)));
+
+  assert.ok(seen.slice(-2_000).every(id => hasSeenPaper(read, id)), 'every one of the 2,000 most recent reads as seen');
+  const oldest = seen.slice(0, 1_000);
+  const oldestHeld = oldest.filter(id => hasSeenPaper(read, id)).length;
+  assert.ok(oldestHeld <= 30, `${oldestHeld} of the 1,000 oldest are still held; only false positives may be`);
+
+  const known = new Set(seen);
+  const unseen = seededIds(100_000, 7).filter(id => !known.has(id));
+  const passedOver = unseen.filter(id => hasSeenPaper(read, id)).length;
+  assert.ok(passedOver / unseen.length <= 0.012, `${((100 * passedOver) / unseen.length).toFixed(2)}% of unseen papers read as seen`);
+
+  // What judges the answer against what was sent lists the same 2,000.
+  const sent = feedSeenIds(new Set(seen));
+  assert.deepEqual(sent, seen.slice(-2_000));
+  assert.equal(feedSeenFilter(sent), feedSeenFilter(new Set(seen)));
+  assert.deepEqual(feedSeenIds(['a', 'b']), ['a', 'b'], 'fewer than 2,000 are all held');
 });
