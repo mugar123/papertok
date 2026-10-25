@@ -1304,6 +1304,27 @@ test('asks Scopus once per miss while Elsevier refuses the key', async () => {
   assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 401);
 });
 
+// Four 120-character terms make a 560-character query, over the 500 the egress
+// accepts. The egress answers that itself, so no view and no Elsevier call is
+// involved, and a second or third attempt could only repeat the answer.
+test('asks the egress once per miss when it refuses the query as too long', async () => {
+  const requests: Array<{ view: string | null; queryLength: number }> = [];
+  const terms = ['a', 'b', 'c', 'd'].map(letter => letter.repeat(120)).join('|');
+  const response = await withStubbedFetch(async url => {
+    const target = new URL(String(url));
+    requests.push({ view: target.searchParams.get('view'), queryLength: (target.searchParams.get('query') || '').length });
+    return new Response(JSON.stringify({ code: 'INVALID_QUERY' }), { status: 400 });
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/sources/scopus?terms=${terms}`,
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.ok(requests[0].queryLength > 500, 'the Worker built a query the egress refuses');
+  assert.deepEqual(requests.map(request => request.view), ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 400);
+});
+
 // CORE answered in 7-8 s when measured; the shared six-second deadline cut
 // every such search into a 502 before the edge cache could keep it.
 test('answers a CORE search that takes longer than the shared source deadline', async () => {

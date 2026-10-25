@@ -30,10 +30,11 @@ const SCOPUS_VIEWS = ['COMPLETE', 'STANDARD', ''];
 // 5xx is not here: an Elsevier outage says nothing about the view, and walking
 // the ladder through one would triple the calls made while it is struggling.
 const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406];
-// Two refusals share that 401 and are not about the view, so only the code tells
-// them apart from the one above: the egress refusing this Worker's secret, and
-// Elsevier refusing the API key. No other view can fix either.
-const SCOPUS_REFUSALS_NO_VIEW_CAN_FIX = ['PROXY_AUTH_REQUIRED', 'AUTHENTICATION_ERROR'];
+// Three refusals share a status with a view refusal and are not about the view,
+// so only the code tells them apart: the egress refusing this Worker's secret
+// (401) or the query itself (400), and Elsevier refusing the API key (401). No
+// other view can fix any of them.
+const SCOPUS_REFUSALS_NO_VIEW_CAN_FIX = ['PROXY_AUTH_REQUIRED', 'INVALID_QUERY', 'AUTHENTICATION_ERROR'];
 
 // Trying a view the account cannot have costs a doomed upstream call on every
 // cache miss, so once `/health/scopus` names the view that answers, pinning it
