@@ -7,10 +7,11 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readVector, rewriteWorks, thinLeaves,
+  readFeedPage, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { mapAdsPaper } from '../src/services/domain-source-records.ts';
 import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
@@ -817,6 +818,21 @@ test('the leaves under 300 papers in 30 days are reported, fewest first', async 
   lane.run('eess.telecom', 303, '2009-06-01T00:00:00.000Z');
   const thin = await thinLeaves(env.PAPER_STORE!, NOW);
   assert.deepEqual(thin.filter(entry => ['mech.fluid', 'mech.cad', 'eess.telecom'].includes(entry.leaf)), [{ leaf: 'eess.telecom', recent: 0 }, { leaf: 'mech.cad', recent: 2 }]);
+});
+
+test("the thin leaves step's output fits what the Workflows API keeps, and its log line names every leaf", () => {
+  // The worst case the taxonomy allows: every leaf under the floor, the
+  // longest ids first, each one character short of the floor.
+  const leaves = getAllLeafCategories().map(leaf => leaf.id).sort((a, b) => b.length - a.length || a.localeCompare(b));
+  const thin = leaves.map(leaf => ({ leaf, recent: 299 }));
+  const { line, summary } = thinLeavesReport(thin);
+  assert.equal(summary.under, leaves.length);
+  assert.equal(summary.thinnest.length, 30);
+  assert.deepEqual(summary.thinnest.slice(0, 2), [`${leaves[0]}:299`, `${leaves[1]}:299`]);
+  assert.ok(JSON.stringify(summary).length < 1_000, `${JSON.stringify(summary).length} characters`);
+  assert.ok(line.startsWith(`${leaves.length} leaves under 300 papers in 30 days: ${leaves[0]}:299 ${leaves[1]}:299 `));
+  assert.ok(line.endsWith(` ${leaves.at(-1)}:299`));
+  assert.deepEqual(thinLeavesReport([]).summary, { under: 0, thinnest: [] });
 });
 
 test("a vector keeps its leading dimensions, and a cut one compares like a whole one", () => {

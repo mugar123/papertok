@@ -635,6 +635,22 @@ export async function thinLeaves(db: D1Database, now: number): Promise<Array<{ l
     .sort((a, b) => a.recent - b.recent || a.leaf.localeCompare(b.leaf));
 }
 
+// The Workflows API keeps a step's output cut at about 1,000 characters, ending
+// in `[truncated output]`, whatever `--truncate-output-limit` is passed to
+// `wrangler workflows instances describe` (2026-10-25: a list of 140 leaves
+// stopped at the fortieth). So the step returns the count and the thinnest
+// THIN_LEAVES_SHOWN, and the whole list goes to the Worker's log.
+const THIN_LEAVES_SHOWN = 30;
+
+/** What the `thin leaves` step logs (every leaf) and returns (what `describe` can show). */
+export function thinLeavesReport(thin: Array<{ leaf: string; recent: number }>) {
+  const entry = ({ leaf, recent }: { leaf: string; recent: number }) => `${leaf}:${recent}`;
+  return {
+    line: `${thin.length} leaves under ${LEAF_FLOOR} papers in ${LEAF_FLOOR_DAYS} days: ${thin.map(entry).join(' ')}`,
+    summary: { under: thin.length, thinnest: thin.slice(0, THIN_LEAVES_SHOWN).map(entry) },
+  };
+}
+
 // ─── Embedding ───
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
