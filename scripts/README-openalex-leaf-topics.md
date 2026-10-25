@@ -223,13 +223,16 @@ Leaves are sampled by area, the areas with no notable lane at all first.
 
 107 anonymous requests between 16:51 and 16:55 UTC, one per distinct proposal
 of the 110 leaves, all answered 200 with 15 articles. Batch 1 is the 38 leaves
-of the areas with no notable lane at all (physics 24, statistics 5, economics
-3, chemistry 6) and `math.ST`, whose proposal is `stat.TH`'s. **An agent
-(Claude Fable 5.1) labelled this batch blind, not a person**: Nicolás asked not
-to wait for his own labels. The sheets held titles and decoded abstracts in
-shuffled rows with opaque ids; doubt was recorded as `uncertain`; the labels
-were joined to work ids after each sheet. Read the evidence as an agent's
-reading of 15 abstracts a leaf. New labels for the same sample replace these.
+of physics (its 24 without a lane), statistics (5), economics (3) and
+chemistry (6), the last three the areas with no notable lane at all, and
+`math.ST`, whose proposal is `stat.TH`'s. **An agent (Claude Fable 5.1)
+labelled this batch, not a person**, following the blind procedure above at
+Nicolás's request not to wait for his own labels: the sheets held titles and
+decoded abstracts in shuffled rows with opaque ids; doubt was recorded as
+`uncertain`; the labels were joined to work ids after each sheet. The agent
+reports reading the sheet files only; as the procedure says, that cannot be
+proved from the files. Read the evidence as an agent's reading of 15 abstracts
+a leaf. New labels for the same sample replace these.
 
 | Decision | Leaves |
 | --- | --- |
@@ -237,14 +240,35 @@ reading of 15 abstracts a leaf. New labels for the same sample replace these.
 | `rejected` | 22, among them `physics.plasm-ph`, `chem.anal` and `chem.org` at 9 of 15 and `gr-qc` and `econ.GN` at 8 |
 
 Five pass at exactly 10 of 15 (`cond-mat.str-el`, `hep-th`, `hep-ph`, `hep-ex`,
-`chem.inorg`). The 17 lanes ask for 48 topics and spend 170 units a week; with
-56 notable lanes the nightly share stays at eight. The most-cited articles of
-a subfield are often its tools and reference works: `quant-ph` and
-`physics.comp-ph` returned quantum-chemistry codes, the statistics leaves
+`chem.inorg`). The 17 lanes ask for 48 topic entries (45 distinct topics;
+`T10037`, `T10048` and `T11090` serve two lanes each) and spend 170 units a
+week; with 56 notable lanes the nightly share stays at eight. Their first
+night lists and embeds about 17,000 papers against the 7.5M-token embedding
+ceiling (about 5,000 papers a day), so the first embedding spreads over about
+three nights behind the day's new papers. The most-cited articles of a
+subfield are often its tools and reference works: `quant-ph` returned
+quantum-chemistry codes and `physics.comp-ph` scientific-software papers
+(SciPy, NumPy, Astropy beside those codes), the statistics leaves
 systematic-review guidelines and R packages, `math-ph` deep-learning inverse
 problems, `chem.spectro` proteomics repositories, `astro-ph.EP` Gaia and MESA
 papers. Authorized by Nicolás on 2026-10-25 (ENG-138, where the per-leaf
 table is).
+
+### Batch 2: computer science and artificial intelligence
+
+The 17 leaves of the two areas without a topic lane (`cs.SY` shares its page
+with `eess.SY`), labelled by the same agent under the same procedure. Five
+pass: `cs.LG` and `cs.CL` at 14 of 15, `cs.SI` and `cs.NE` at 13, `cs.DS` at
+10. Twelve are rejected: `cs.DC` and `cs.HC` at 8, `cs.RO`, `cs.GT` and
+`cs.AI` at 7, the rest lower. The five lanes ask for 21 topic entries (20
+distinct) and spend 50 units a week; with 61 notable lanes the nightly share
+becomes nine (90 units). Again the head of a subfield's citations is often its
+tools and surveys rather than its research: `cs.AI`'s proposal (the whole
+Artificial Intelligence subfield, 77 topics) returned SciPy, NumPy, seaborn,
+Astropy, QuPath and two quantum-computing papers beside its surveys; `cs.CR`
+returned federated-learning and blockchain surveys; `cs.IR` returned
+language-model papers; `cs.SY` returned machine fault diagnosis. Authorized by
+Nicolás on 2026-10-25 (ENG-138).
 
 ## The 2026-10-23 sample (PAP-99)
 

@@ -3514,6 +3514,3737 @@
       }
     ]
   },
+  "cs.AI": {
+    "capturedAt": "2026-10-25T16:52:50.122Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10020%7CT10028%7CT10100%7CT10126%7CT10181%7CT10201%7CT10215%7CT10237%7CT10320%7CT10456%7CT10462%7CT10637%7CT10639%7CT10664%7CT10682%7CT10711%7CT10764%7CT10820%7CT10862%7CT10906%7CT10951%7CT11010%7CT11130%7CT11269%7CT11273%7CT11276%7CT11303%7CT11307%7CT11424%7CT11512%7CT11550%7CT11574%7CT11598%7CT11612%7CT11652%7CT11689%7CT11901%7CT11902%7CT11975%7CT12026%7CT12031%7CT12072%7CT12128%7CT12131%7CT12157%7CT12260%7CT12262%7CT12380%7CT12535%7CT12611%7CT12676%7CT12761%7CT12805%7CT12814%7CT13018%7CT13062%7CT13083%7CT13398%7CT13514%7CT13559%7CT13567%7CT13623%7CT13629%7CT13650%7CT13674%7CT13702%7CT13734%7CT13851%7CT13898%7CT13904%7CT13935%7CT14064%7CT14175%7CT14335%7CT14351%7CT14381%7CT14413%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3003257820",
+        "type": "article",
+        "title": "SciPy 1.0: fundamental algorithms for scientific computing in Python",
+        "publication_date": "2020-02-03",
+        "cited_by_count": 38245,
+        "primary_topic": {
+          "id": "https://openalex.org/T13650"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3035965352",
+        "type": "article",
+        "title": "Array programming with NumPy",
+        "publication_date": "2020-09-16",
+        "cited_by_count": 23674,
+        "primary_topic": {
+          "id": "https://openalex.org/T13650"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2990427812",
+        "type": "article",
+        "title": "Welcome to the Tidyverse",
+        "publication_date": "2019-11-21",
+        "cited_by_count": 22044,
+        "primary_topic": {
+          "id": "https://openalex.org/T13398"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2907492528",
+        "type": "article",
+        "title": "A Comprehensive Survey on Graph Neural Networks",
+        "publication_date": "2020-03-24",
+        "cited_by_count": 10962,
+        "primary_topic": {
+          "id": "https://openalex.org/T11273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2493916176",
+        "type": "article",
+        "title": "Enriching Word Vectors with Subword Information",
+        "publication_date": "2017-12-01",
+        "cited_by_count": 9652,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952481429",
+        "type": "article",
+        "title": "QuPath: Open source software for digital pathology image analysis",
+        "publication_date": "2017-11-28",
+        "cited_by_count": 8853,
+        "primary_topic": {
+          "id": "https://openalex.org/T10862"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2781738013",
+        "type": "article",
+        "title": "Quantum Computing in the NISQ era and beyond",
+        "publication_date": "2018-08-06",
+        "cited_by_count": 8799,
+        "primary_topic": {
+          "id": "https://openalex.org/T10682"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2888532099",
+        "type": "article",
+        "title": "The Astropy Project: Building an Open-science Project and Status of the v2.0 Core Package *",
+        "publication_date": "2018-08-23",
+        "cited_by_count": 8131,
+        "primary_topic": {
+          "id": "https://openalex.org/T13650"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2560647685",
+        "type": "article",
+        "title": "Overcoming catastrophic forgetting in neural networks",
+        "publication_date": "2017-03-14",
+        "cited_by_count": 7771,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2982169647",
+        "type": "article",
+        "title": "Quantum supremacy using a programmable superconducting processor",
+        "publication_date": "2019-10-23",
+        "cited_by_count": 7710,
+        "primary_topic": {
+          "id": "https://openalex.org/T10682"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2995022099",
+        "type": "article",
+        "title": "Advances and Open Problems in Federated Learning",
+        "publication_date": "2020-12-02",
+        "cited_by_count": 7705,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3128261063",
+        "type": "article",
+        "title": "seaborn: statistical data visualization",
+        "publication_date": "2021-04-06",
+        "cited_by_count": 7276,
+        "primary_topic": {
+          "id": "https://openalex.org/T13650"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1689711448",
+        "type": "article",
+        "title": "LSTM: A Search Space Odyssey",
+        "publication_date": "2016-07-14",
+        "cited_by_count": 6949,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3152893301",
+        "type": "article",
+        "title": "Graph neural networks: A review of methods and applications",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 6862,
+        "primary_topic": {
+          "id": "https://openalex.org/T11273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3041133507",
+        "type": "article",
+        "title": "A Comprehensive Survey on Transfer Learning",
+        "publication_date": "2020-07-07",
+        "cited_by_count": 6671,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3003257820",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3035965352",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2990427812",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2907492528",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2493916176",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2952481429",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2781738013",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2888532099",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2560647685",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2982169647",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2995022099",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3128261063",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W1689711448",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3152893301",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3041133507",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.CL": {
+    "capturedAt": "2026-10-25T16:52:53.269Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10028%7CT10181%7CT10201%7CT10664%7CT11550%7CT12031%7CT12380%7CT13083%7CT13629%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2493916176",
+        "type": "article",
+        "title": "Enriching Word Vectors with Subword Information",
+        "publication_date": "2017-12-01",
+        "cited_by_count": 9652,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4309674289",
+        "type": "article",
+        "title": "Survey of Hallucination in Natural Language Generation",
+        "publication_date": "2022-11-17",
+        "cited_by_count": 4909,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3185341429",
+        "type": "article",
+        "title": "Pre-train, Prompt, and Predict: A Systematic Survey of Prompting Methods in Natural Language Processing",
+        "publication_date": "2022-09-14",
+        "cited_by_count": 4345,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2107743791",
+        "type": "article",
+        "title": "Probabilistic Latent Semantic Indexing",
+        "publication_date": "2017-08-02",
+        "cited_by_count": 3988,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4391136507",
+        "type": "article",
+        "title": "A Survey on Evaluation of Large Language Models",
+        "publication_date": "2024-01-23",
+        "cited_by_count": 3123,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3169320628",
+        "type": "article",
+        "title": "HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 2968,
+        "primary_topic": {
+          "id": "https://openalex.org/T10201"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884001105",
+        "type": "article",
+        "title": "Recent Trends in Deep Learning Based Natural Language Processing [Review Article]",
+        "publication_date": "2018-07-20",
+        "cited_by_count": 2910,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3046375318",
+        "type": "article",
+        "title": "Domain-Specific Language Model Pretraining for Biomedical Natural Language Processing",
+        "publication_date": "2021-10-15",
+        "cited_by_count": 2155,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2912924812",
+        "type": "article",
+        "title": "Natural Questions: A Benchmark for Question Answering Research",
+        "publication_date": "2019-08-02",
+        "cited_by_count": 2068,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964236337",
+        "type": "article",
+        "title": "Deep learning for sentiment analysis: A survey",
+        "publication_date": "2018-03-30",
+        "cited_by_count": 1963,
+        "primary_topic": {
+          "id": "https://openalex.org/T10664"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2179519966",
+        "type": "article",
+        "title": "Named Entity Recognition with Bidirectional LSTM-CNNs",
+        "publication_date": "2016-12-01",
+        "cited_by_count": 1925,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3209984917",
+        "type": "article",
+        "title": "WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing",
+        "publication_date": "2022-07-04",
+        "cited_by_count": 1919,
+        "primary_topic": {
+          "id": "https://openalex.org/T10201"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884159461",
+        "type": "article",
+        "title": "A Survey of the Usages of Deep Learning for Natural Language Processing",
+        "publication_date": "2020-04-21",
+        "cited_by_count": 1835,
+        "primary_topic": {
+          "id": "https://openalex.org/T10181"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2962753370",
+        "type": "article",
+        "title": "SpanBERT: Improving Pre-training by Representing and Predicting Spans",
+        "publication_date": "2020-03-12",
+        "cited_by_count": 1827,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2550821151",
+        "type": "article",
+        "title": "Google’s Multilingual Neural Machine Translation System: Enabling Zero-Shot Translation",
+        "publication_date": "2017-12-01",
+        "cited_by_count": 1753,
+        "primary_topic": {
+          "id": "https://openalex.org/T10181"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2493916176",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4309674289",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3185341429",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2107743791",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4391136507",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3169320628",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2884001105",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3046375318",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2912924812",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2964236337",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2179519966",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3209984917",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2884159461",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2962753370",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2550821151",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.CR": {
+    "capturedAt": "2026-10-25T16:52:30.267Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10237%7CT10270%7CT10400%7CT10734%7CT10764%7CT10951%7CT11241%7CT11424%7CT11504%7CT11644%7CT11800%7CT12122%7CT12479%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2995022099",
+        "type": "article",
+        "title": "Advances and Open Problems in Federated Learning",
+        "publication_date": "2020-12-02",
+        "cited_by_count": 7705,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2912213068",
+        "type": "article",
+        "title": "Federated Machine Learning",
+        "publication_date": "2019-01-28",
+        "cited_by_count": 6303,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3021654819",
+        "type": "article",
+        "title": "Federated Learning: Challenges, Methods, and Future Directions",
+        "publication_date": "2020-05-01",
+        "cited_by_count": 6194,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2392113277",
+        "type": "article",
+        "title": "Blockchains and Smart Contracts for the Internet of Things",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 4556,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898069736",
+        "type": "article",
+        "title": "Blockchain technology and its relationships to sustainable supply chain management",
+        "publication_date": "2018-10-17",
+        "cited_by_count": 4110,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2897450989",
+        "type": "article",
+        "title": "Blockchain challenges and opportunities: a survey",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 3650,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3012501605",
+        "type": "article",
+        "title": "The future of digital health with federated learning",
+        "publication_date": "2020-09-14",
+        "cited_by_count": 3457,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3015636663",
+        "type": "article",
+        "title": "Federated Learning in Mobile Edge Networks: A Comprehensive Survey",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 2556,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3016632787",
+        "type": "article",
+        "title": "Federated Learning With Differential Privacy: Algorithms and Performance Analysis",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 2396,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2963318081",
+        "type": "article",
+        "title": "Adaptive Federated Learning in Resource Constrained Edge Computing Systems",
+        "publication_date": "2019-03-11",
+        "cited_by_count": 2231,
+        "primary_topic": {
+          "id": "https://openalex.org/T10764"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2762776925",
+        "type": "article",
+        "title": "A Deep Learning Approach for Intrusion Detection Using Recurrent Neural Networks",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 2097,
+        "primary_topic": {
+          "id": "https://openalex.org/T10400"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2958285686",
+        "type": "article",
+        "title": "Survey of intrusion detection systems: techniques, datasets and challenges",
+        "publication_date": "2019-07-17",
+        "cited_by_count": 1996,
+        "primary_topic": {
+          "id": "https://openalex.org/T10400"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2926701059",
+        "type": "article",
+        "title": "Deep Learning Approach for Intelligent Intrusion Detection System",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 1966,
+        "primary_topic": {
+          "id": "https://openalex.org/T10400"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1837843568",
+        "type": "article",
+        "title": "The rise of social bots",
+        "publication_date": "2016-06-24",
+        "cited_by_count": 1947,
+        "primary_topic": {
+          "id": "https://openalex.org/T11644"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803371618",
+        "type": "article",
+        "title": "On blockchain and its integration with IoT. Challenges and opportunities",
+        "publication_date": "2018-05-24",
+        "cited_by_count": 1911,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2995022099",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2912213068",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3021654819",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2392113277",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2898069736",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2897450989",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3012501605",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3015636663",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3016632787",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2963318081",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2762776925",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2958285686",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2926701059",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1837843568",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2803371618",
+        "label": "on-target",
+        "uncertain": true
+      }
+    ]
+  },
+  "cs.DB": {
+    "capturedAt": "2026-10-25T16:52:33.335Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10317%7CT10538%7CT11106%7CT11181%7CT12601%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2740924709",
+        "type": "article",
+        "title": "DBSCAN Revisited, Revisited",
+        "publication_date": "2017-07-31",
+        "cited_by_count": 2747,
+        "primary_topic": {
+          "id": "https://openalex.org/T11106"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3088611441",
+        "type": "article",
+        "title": "Deep Learning for Spatio-Temporal Data Mining: A Survey",
+        "publication_date": "2020-09-22",
+        "cited_by_count": 843,
+        "primary_topic": {
+          "id": "https://openalex.org/T11106"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2268702383",
+        "type": "article",
+        "title": "Speeding Up Distributed Machine Learning Using Codes",
+        "publication_date": "2017-08-04",
+        "cited_by_count": 828,
+        "primary_topic": {
+          "id": "https://openalex.org/T11181"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4401495975",
+        "type": "article",
+        "title": "Enhancing K-nearest neighbor algorithm: a comprehensive review and performance analysis of modifications",
+        "publication_date": "2024-08-11",
+        "cited_by_count": 527,
+        "primary_topic": {
+          "id": "https://openalex.org/T11106"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2963214893",
+        "type": "article",
+        "title": "Spatio-Temporal Data Mining",
+        "publication_date": "2018-08-22",
+        "cited_by_count": 462,
+        "primary_topic": {
+          "id": "https://openalex.org/T11106"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2998701638",
+        "type": "article",
+        "title": "CRISP-DM Twenty Years Later: From Data Mining Processes to Data Science Trajectories",
+        "publication_date": "2019-12-27",
+        "cited_by_count": 443,
+        "primary_topic": {
+          "id": "https://openalex.org/T10538"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2970148517",
+        "type": "article",
+        "title": "Neo",
+        "publication_date": "2019-07-01",
+        "cited_by_count": 398,
+        "primary_topic": {
+          "id": "https://openalex.org/T10317"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2556205507",
+        "type": "article",
+        "title": "“Short-Dot”: Computing Large Linear Transforms Distributedly Using Coded Short Dot Products",
+        "publication_date": "2019-07-09",
+        "cited_by_count": 361,
+        "primary_topic": {
+          "id": "https://openalex.org/T11181"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4399800820",
+        "type": "article",
+        "title": "A Survey of Decision Trees: Concepts, Algorithms, and Applications",
+        "publication_date": "2024-01-01",
+        "cited_by_count": 356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10538"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2962844766",
+        "type": "article",
+        "title": "Error Characterization, Mitigation, and Recovery in Flash-Memory-Based Solid-State Drives",
+        "publication_date": "2017-08-18",
+        "cited_by_count": 348,
+        "primary_topic": {
+          "id": "https://openalex.org/T11181"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3085924233",
+        "type": "article",
+        "title": "TiDB",
+        "publication_date": "2020-08-01",
+        "cited_by_count": 329,
+        "primary_topic": {
+          "id": "https://openalex.org/T10317"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2804685987",
+        "type": "article",
+        "title": "A Survey of Utility-Oriented Pattern Mining",
+        "publication_date": "2019-09-20",
+        "cited_by_count": 320,
+        "primary_topic": {
+          "id": "https://openalex.org/T10538"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2475932436",
+        "type": "article",
+        "title": "A Comprehensive Study of the Past, Present, and Future of Data Deduplication",
+        "publication_date": "2016-08-02",
+        "cited_by_count": 319,
+        "primary_topic": {
+          "id": "https://openalex.org/T11181"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3009294386",
+        "type": "article",
+        "title": "Evaluating the Impact of GINI Index and Information Gain on Classification using Decision Tree Classifier Algorithm*",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 318,
+        "primary_topic": {
+          "id": "https://openalex.org/T10538"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2594680891",
+        "type": "article",
+        "title": "WiscKey",
+        "publication_date": "2017-02-28",
+        "cited_by_count": 303,
+        "primary_topic": {
+          "id": "https://openalex.org/T11181"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2740924709",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3088611441",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2268702383",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4401495975",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2963214893",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2998701638",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2970148517",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2556205507",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4399800820",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2962844766",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3085924233",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2804685987",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2475932436",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3009294386",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2594680891",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.DC": {
+    "capturedAt": "2026-10-25T16:52:34.916Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10054%7CT10101%7CT10270%7CT10273%7CT10715%7CT10742%7CT10772%7CT10829%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3201073812",
+        "type": "article",
+        "title": "LAMMPS - a flexible simulation tool for particle-based materials modeling at the atomic, meso, and continuum scales",
+        "publication_date": "2021-09-22",
+        "cited_by_count": 12527,
+        "primary_topic": {
+          "id": "https://openalex.org/T10054"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2416799949",
+        "type": "article",
+        "title": "Edge Computing: Vision and Challenges",
+        "publication_date": "2016-06-09",
+        "cited_by_count": 8703,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2624989916",
+        "type": "article",
+        "title": "A Survey on Mobile Edge Computing: The Communication Perspective",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 5592,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2392113277",
+        "type": "article",
+        "title": "Blockchains and Smart Contracts for the Internet of Things",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 4556,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898069736",
+        "type": "article",
+        "title": "Blockchain technology and its relationships to sustainable supply chain management",
+        "publication_date": "2018-10-17",
+        "cited_by_count": 4110,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2897450989",
+        "type": "article",
+        "title": "Blockchain challenges and opportunities: a survey",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 3650,
+        "primary_topic": {
+          "id": "https://openalex.org/T10270"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2594560857",
+        "type": "article",
+        "title": "Mobile Edge Computing: A Survey on Architecture and Computation Offloading",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 3253,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3046751266",
+        "type": "article",
+        "title": "Scalable molecular dynamics on CPU and GPU architectures with NAMD",
+        "publication_date": "2020-07-28",
+        "cited_by_count": 3167,
+        "primary_topic": {
+          "id": "https://openalex.org/T10054"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2122465391",
+        "type": "article",
+        "title": "MapReduce: Simplified Data Processing on Large Cluster",
+        "publication_date": "2018-04-01",
+        "cited_by_count": 2947,
+        "primary_topic": {
+          "id": "https://openalex.org/T10101"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2568772110",
+        "type": "article",
+        "title": "The Emergence of Edge Computing",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 2818,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2596636257",
+        "type": "article",
+        "title": "A Survey on Internet of Things: Architecture, Enabling Technologies, Security and Privacy, and Applications",
+        "publication_date": "2017-03-15",
+        "cited_by_count": 2794,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2949223833",
+        "type": "article",
+        "title": "OpenMM 7: Rapid development of high performance algorithms for molecular dynamics",
+        "publication_date": "2017-07-26",
+        "cited_by_count": 2734,
+        "primary_topic": {
+          "id": "https://openalex.org/T10054"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2751904527",
+        "type": "article",
+        "title": "Mobile Edge Computing: A Survey",
+        "publication_date": "2017-09-08",
+        "cited_by_count": 2475,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2542459869",
+        "type": "article",
+        "title": "Apache Spark",
+        "publication_date": "2016-10-28",
+        "cited_by_count": 2439,
+        "primary_topic": {
+          "id": "https://openalex.org/T10101"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2950865323",
+        "type": "article",
+        "title": "Edge Intelligence: Paving the Last Mile of Artificial Intelligence With Edge Computing",
+        "publication_date": "2019-06-12",
+        "cited_by_count": 2436,
+        "primary_topic": {
+          "id": "https://openalex.org/T10273"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3201073812",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2416799949",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2624989916",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2392113277",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2898069736",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2897450989",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2594560857",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3046751266",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2122465391",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2568772110",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2596636257",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2949223833",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2751904527",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2542459869",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2950865323",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.DS": {
+    "capturedAt": "2026-10-25T16:52:31.826Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10374%7CT10720%7CT11269%7CT11435%7CT11567%7CT11596%7CT12288%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2417863416",
+        "type": "article",
+        "title": "SymPy: symbolic computing in Python",
+        "publication_date": "2017-01-02",
+        "cited_by_count": 1725,
+        "primary_topic": {
+          "id": "https://openalex.org/T11435"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2117226423",
+        "type": "article",
+        "title": "Worst-Case Analysis of a New Heuristic for the Travelling Salesman Problem",
+        "publication_date": "2022-03-01",
+        "cited_by_count": 1131,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2583363792",
+        "type": "article",
+        "title": "KMC 3: counting and manipulating k -mer statistics",
+        "publication_date": "2017-05-03",
+        "cited_by_count": 755,
+        "primary_topic": {
+          "id": "https://openalex.org/T11269"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4302010773",
+        "type": "article",
+        "title": "Discovering faster matrix multiplication algorithms with reinforcement learning",
+        "publication_date": "2022-10-05",
+        "cited_by_count": 478,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2557169239",
+        "type": "article",
+        "title": "On implementing 2D rectangular assignment algorithms",
+        "publication_date": "2016-08-01",
+        "cited_by_count": 411,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4214950926",
+        "type": "article",
+        "title": "BWA-MEME: BWA-MEM emulated with a machine learning approach",
+        "publication_date": "2022-03-03",
+        "cited_by_count": 336,
+        "primary_topic": {
+          "id": "https://openalex.org/T11269"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2979531022",
+        "type": "article",
+        "title": "The PGM-index",
+        "publication_date": "2020-04-01",
+        "cited_by_count": 299,
+        "primary_topic": {
+          "id": "https://openalex.org/T11269"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964277307",
+        "type": "article",
+        "title": "Optimizing Bloom Filter: Challenges, Solutions, and Comparisons",
+        "publication_date": "2018-12-24",
+        "cited_by_count": 240,
+        "primary_topic": {
+          "id": "https://openalex.org/T11269"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1527073563",
+        "type": "article",
+        "title": "A Mathematical Bibliography of Signed and Gain Graphs and Allied Areas",
+        "publication_date": "2018-12-21",
+        "cited_by_count": 211,
+        "primary_topic": {
+          "id": "https://openalex.org/T10374"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2313886575",
+        "type": "article",
+        "title": "A $c^k n$ 5-Approximation Algorithm for Treewidth",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 206,
+        "primary_topic": {
+          "id": "https://openalex.org/T10374"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754517646",
+        "type": "article",
+        "title": "Introduction to Reconfiguration",
+        "publication_date": "2018-04-19",
+        "cited_by_count": 204,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2287429606",
+        "type": "article",
+        "title": "Distributed Constraint Optimization Problems and Applications: A Survey",
+        "publication_date": "2018-03-29",
+        "cited_by_count": 203,
+        "primary_topic": {
+          "id": "https://openalex.org/T11596"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2525830997",
+        "type": "article",
+        "title": "Online minimum matching in real-time spatial data",
+        "publication_date": "2016-08-01",
+        "cited_by_count": 189,
+        "primary_topic": {
+          "id": "https://openalex.org/T12288"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3138381145",
+        "type": "article",
+        "title": "Optimal Approximation for Submodular and Supermodular Optimization with Bounded Curvature",
+        "publication_date": "2017-05-16",
+        "cited_by_count": 183,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2467514673",
+        "type": "article",
+        "title": "The Locality of Distributed Symmetry Breaking",
+        "publication_date": "2016-06-28",
+        "cited_by_count": 175,
+        "primary_topic": {
+          "id": "https://openalex.org/T10720"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2417863416",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2117226423",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2583363792",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4302010773",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2557169239",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4214950926",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2979531022",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2964277307",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1527073563",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2313886575",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2754517646",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2287429606",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2525830997",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3138381145",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2467514673",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.GR": {
+    "capturedAt": "2026-10-25T16:52:45.137Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10481%7CT10648%7CT10719%7CT10789%7CT10996%7CT12290%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2979750740",
+        "type": "article",
+        "title": "Dynamic Graph CNN for Learning on Point Clouds",
+        "publication_date": "2019-10-10",
+        "cited_by_count": 7128,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4200150166",
+        "type": "article",
+        "title": "NeRF",
+        "publication_date": "2021-12-17",
+        "cited_by_count": 6814,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4385318467",
+        "type": "article",
+        "title": "3D Gaussian Splatting for Real-Time Radiance Field Rendering",
+        "publication_date": "2023-07-26",
+        "cited_by_count": 5985,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221151978",
+        "type": "article",
+        "title": "Instant neural graphics primitives with a multiresolution hash encoding",
+        "publication_date": "2022-07-01",
+        "cited_by_count": 4148,
+        "primary_topic": {
+          "id": "https://openalex.org/T10481"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4285585446",
+        "type": "article",
+        "title": "Metaverse beyond the hype: Multidisciplinary perspectives on emerging challenges, opportunities, and agenda for research, practice and policy",
+        "publication_date": "2022-07-15",
+        "cited_by_count": 2749,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3039448353",
+        "type": "article",
+        "title": "Deep Learning for 3D Point Clouds: A Survey",
+        "publication_date": "2020-06-29",
+        "cited_by_count": 2411,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3111535274",
+        "type": "article",
+        "title": "PCT: Point cloud transformer",
+        "publication_date": "2021-04-09",
+        "cited_by_count": 2100,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2562199918",
+        "type": "article",
+        "title": "Enhancing Our Lives with Immersive Virtual Reality",
+        "publication_date": "2016-12-19",
+        "cited_by_count": 1985,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4206484811",
+        "type": "article",
+        "title": "A Metaverse: Taxonomy, Components, Applications, and Open Challenges",
+        "publication_date": "2022-01-01",
+        "cited_by_count": 1827,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2899383251",
+        "type": "article",
+        "title": "The impact of virtual, augmented and mixed reality technologies on the customer experience",
+        "publication_date": "2018-11-02",
+        "cited_by_count": 1447,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3119399459",
+        "type": "article",
+        "title": "The Cognitive Affective Model of Immersive Learning (CAMIL): a Theoretical Research-Based Model of Learning in Immersive Virtual Reality",
+        "publication_date": "2021-01-06",
+        "cited_by_count": 1427,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2598210266",
+        "type": "article",
+        "title": "Virtual reality in the assessment, understanding, and treatment of mental health disorders",
+        "publication_date": "2017-03-21",
+        "cited_by_count": 1425,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2942074357",
+        "type": "article",
+        "title": "Deferred neural rendering",
+        "publication_date": "2019-07-12",
+        "cited_by_count": 1356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2553307952",
+        "type": "article",
+        "title": "A scalable active framework for region annotation in 3D shape collections",
+        "publication_date": "2016-11-11",
+        "cited_by_count": 1234,
+        "primary_topic": {
+          "id": "https://openalex.org/T10719"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4404112583",
+        "type": "article",
+        "title": "All One Needs to Know about Metaverse: A Complete Survey on Technological Singularity, Virtual Ecosystem, and Research Agenda",
+        "publication_date": "2024-11-06",
+        "cited_by_count": 1085,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2979750740",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4200150166",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4385318467",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221151978",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4285585446",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3039448353",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3111535274",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2562199918",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4206484811",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2899383251",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3119399459",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2598210266",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2942074357",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2553307952",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4404112583",
+        "uncertain": true
+      }
+    ]
+  },
+  "cs.GT": {
+    "capturedAt": "2026-10-25T16:52:41.100Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10456%7CT10991%7CT11031%7CT11182%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2799899844",
+        "type": "article",
+        "title": "Multi-Agent Systems: A Survey",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 1048,
+        "primary_topic": {
+          "id": "https://openalex.org/T10456"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3121860146",
+        "type": "article",
+        "title": "Information Design: A Unified Perspective",
+        "publication_date": "2019-03-01",
+        "cited_by_count": 531,
+        "primary_topic": {
+          "id": "https://openalex.org/T11031"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2936516903",
+        "type": "article",
+        "title": "Cooperative Heterogeneous Multi-Robot Systems",
+        "publication_date": "2019-04-09",
+        "cited_by_count": 454,
+        "primary_topic": {
+          "id": "https://openalex.org/T10456"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3023615263",
+        "type": "article",
+        "title": "Obviously Strategy-Proof Mechanisms",
+        "publication_date": "2017-10-26",
+        "cited_by_count": 444,
+        "primary_topic": {
+          "id": "https://openalex.org/T11182"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3122903325",
+        "type": "article",
+        "title": "Bayes correlated equilibrium and the comparison of information structures in games",
+        "publication_date": "2016-05-01",
+        "cited_by_count": 380,
+        "primary_topic": {
+          "id": "https://openalex.org/T11031"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2345998142",
+        "type": "article",
+        "title": "Distributed Algorithms for Aggregative Games on Graphs",
+        "publication_date": "2016-05-21",
+        "cited_by_count": 341,
+        "primary_topic": {
+          "id": "https://openalex.org/T11031"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2520078259",
+        "type": "article",
+        "title": "A Supply and Demand Framework for Two-Sided Matching Markets",
+        "publication_date": "2016-09-03",
+        "cited_by_count": 312,
+        "primary_topic": {
+          "id": "https://openalex.org/T10991"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3124038879",
+        "type": "article",
+        "title": "The Unreasonable Fairness of Maximum Nash Welfare",
+        "publication_date": "2019-08-31",
+        "cited_by_count": 291,
+        "primary_topic": {
+          "id": "https://openalex.org/T10991"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4402901320",
+        "type": "article",
+        "title": "Large language models empowered agent-based modeling and simulation: a survey and perspectives",
+        "publication_date": "2024-09-27",
+        "cited_by_count": 286,
+        "primary_topic": {
+          "id": "https://openalex.org/T10456"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2776276349",
+        "type": "article",
+        "title": "Agent-Oriented Cooperative Smart Objects: From IoT System Design to Implementation",
+        "publication_date": "2017-12-28",
+        "cited_by_count": 271,
+        "primary_topic": {
+          "id": "https://openalex.org/T10456"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1511490581",
+        "type": "article",
+        "title": "Priority Service: Pricing, Investment, and Market Organization",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 251,
+        "primary_topic": {
+          "id": "https://openalex.org/T10991"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4251543588",
+        "type": "article",
+        "title": "Persuading Voters",
+        "publication_date": "2016-10-31",
+        "cited_by_count": 247,
+        "primary_topic": {
+          "id": "https://openalex.org/T10991"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2599913900",
+        "type": "article",
+        "title": "Agent-Based Modelling of Social-Ecological Systems: Achievements, Challenges, and a Way Forward",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 246,
+        "primary_topic": {
+          "id": "https://openalex.org/T10456"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2602384579",
+        "type": "article",
+        "title": "Persuasion of a Privately Informed Receiver",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 246,
+        "primary_topic": {
+          "id": "https://openalex.org/T11031"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1482459011",
+        "type": "article",
+        "title": "Awarding Monopoly Franchises",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 224,
+        "primary_topic": {
+          "id": "https://openalex.org/T11182"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2799899844",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3121860146",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2936516903",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3023615263",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3122903325",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2345998142",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2520078259",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3124038879",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4402901320",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2776276349",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W1511490581",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4251543588",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2599913900",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2602384579",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1482459011",
+        "uncertain": true
+      }
+    ]
+  },
+  "cs.HC": {
+    "capturedAt": "2026-10-25T16:52:37.973Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10470%7CT10648%7CT10789%7CT10803%7CT11398%7CT11707%7CT13155%7CT14074%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W4285585446",
+        "type": "article",
+        "title": "Metaverse beyond the hype: Multidisciplinary perspectives on emerging challenges, opportunities, and agenda for research, practice and policy",
+        "publication_date": "2022-07-15",
+        "cited_by_count": 2749,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2562199918",
+        "type": "article",
+        "title": "Enhancing Our Lives with Immersive Virtual Reality",
+        "publication_date": "2016-12-19",
+        "cited_by_count": 1985,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2795274753",
+        "type": "article",
+        "title": "The System Usability Scale: Past, Present, and Future",
+        "publication_date": "2018-03-30",
+        "cited_by_count": 1950,
+        "primary_topic": {
+          "id": "https://openalex.org/T10470"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4206484811",
+        "type": "article",
+        "title": "A Metaverse: Taxonomy, Components, Applications, and Open Challenges",
+        "publication_date": "2022-01-01",
+        "cited_by_count": 1827,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2899383251",
+        "type": "article",
+        "title": "The impact of virtual, augmented and mixed reality technologies on the customer experience",
+        "publication_date": "2018-11-02",
+        "cited_by_count": 1447,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3119399459",
+        "type": "article",
+        "title": "The Cognitive Affective Model of Immersive Learning (CAMIL): a Theoretical Research-Based Model of Learning in Immersive Virtual Reality",
+        "publication_date": "2021-01-06",
+        "cited_by_count": 1427,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2598210266",
+        "type": "article",
+        "title": "Virtual reality in the assessment, understanding, and treatment of mental health disorders",
+        "publication_date": "2017-03-21",
+        "cited_by_count": 1425,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4404112583",
+        "type": "article",
+        "title": "All One Needs to Know about Metaverse: A Complete Survey on Technological Singularity, Virtual Ecosystem, and Research Agenda",
+        "publication_date": "2024-11-06",
+        "cited_by_count": 1085,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2792133971",
+        "type": "article",
+        "title": "Learning science in immersive virtual reality.",
+        "publication_date": "2018-01-25",
+        "cited_by_count": 1081,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2756029264",
+        "type": "article",
+        "title": "Design and Evaluation of a Short Version of the User Experience Questionnaire (UEQ-S)",
+        "publication_date": "2017-09-15",
+        "cited_by_count": 1055,
+        "primary_topic": {
+          "id": "https://openalex.org/T10803"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2782898451",
+        "type": "article",
+        "title": "A practical approach to measuring user engagement with the refined user engagement scale (UES) and new UES short form",
+        "publication_date": "2018-01-10",
+        "cited_by_count": 1005,
+        "primary_topic": {
+          "id": "https://openalex.org/T10803"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3038372909",
+        "type": "article",
+        "title": "Virtual Reality Sickness: A Review of Causes and Measurements",
+        "publication_date": "2020-07-02",
+        "cited_by_count": 976,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2469690627",
+        "type": "article",
+        "title": "Soli",
+        "publication_date": "2016-07-11",
+        "cited_by_count": 954,
+        "primary_topic": {
+          "id": "https://openalex.org/T11398"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221105860",
+        "type": "article",
+        "title": "What is XR? Towards a Framework for Augmented and Virtual Reality",
+        "publication_date": "2022-03-31",
+        "cited_by_count": 928,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2912830318",
+        "type": "article",
+        "title": "Presence and Cybersickness in Virtual Reality Are Negatively Related: A Review",
+        "publication_date": "2019-02-03",
+        "cited_by_count": 912,
+        "primary_topic": {
+          "id": "https://openalex.org/T10648"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W4285585446",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2562199918",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2795274753",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4206484811",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2899383251",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3119399459",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2598210266",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4404112583",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2792133971",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2756029264",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2782898451",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3038372909",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2469690627",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221105860",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2912830318",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.IR": {
+    "capturedAt": "2026-10-25T16:52:36.463Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10028%7CT10203%7CT10286%7CT12016%7CT13274%7CT14435%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2493916176",
+        "type": "article",
+        "title": "Enriching Word Vectors with Subword Information",
+        "publication_date": "2017-12-01",
+        "cited_by_count": 9652,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4309674289",
+        "type": "article",
+        "title": "Survey of Hallucination in Natural Language Generation",
+        "publication_date": "2022-11-17",
+        "cited_by_count": 4909,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3185341429",
+        "type": "article",
+        "title": "Pre-train, Prompt, and Predict: A Systematic Survey of Prompting Methods in Natural Language Processing",
+        "publication_date": "2022-09-14",
+        "cited_by_count": 4345,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2107743791",
+        "type": "article",
+        "title": "Probabilistic Latent Semantic Indexing",
+        "publication_date": "2017-08-02",
+        "cited_by_count": 3988,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4391136507",
+        "type": "article",
+        "title": "A Survey on Evaluation of Large Language Models",
+        "publication_date": "2024-01-23",
+        "cited_by_count": 3123,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2884001105",
+        "type": "article",
+        "title": "Recent Trends in Deep Learning Based Natural Language Processing [Review Article]",
+        "publication_date": "2018-07-20",
+        "cited_by_count": 2910,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2085937320",
+        "type": "article",
+        "title": "An Algorithmic Framework for Performing Collaborative Filtering",
+        "publication_date": "2017-08-02",
+        "cited_by_count": 2512,
+        "primary_topic": {
+          "id": "https://openalex.org/T10203"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2093390569",
+        "type": "article",
+        "title": "A Language Modeling Approach to Information Retrieval",
+        "publication_date": "2017-08-02",
+        "cited_by_count": 2502,
+        "primary_topic": {
+          "id": "https://openalex.org/T10286"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2083305840",
+        "type": "article",
+        "title": "The Use of MMR, Diversity-Based Reranking for Reordering Documents and Producing Summaries",
+        "publication_date": "2017-08-02",
+        "cited_by_count": 2156,
+        "primary_topic": {
+          "id": "https://openalex.org/T10286"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3046375318",
+        "type": "article",
+        "title": "Domain-Specific Language Model Pretraining for Biomedical Natural Language Processing",
+        "publication_date": "2021-10-15",
+        "cited_by_count": 2155,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2912924812",
+        "type": "article",
+        "title": "Natural Questions: A Benchmark for Question Answering Research",
+        "publication_date": "2019-08-02",
+        "cited_by_count": 2068,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2179519966",
+        "type": "article",
+        "title": "Named Entity Recognition with Bidirectional LSTM-CNNs",
+        "publication_date": "2016-12-01",
+        "cited_by_count": 1925,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2962753370",
+        "type": "article",
+        "title": "SpanBERT: Improving Pre-training by Representing and Predicting Spans",
+        "publication_date": "2020-03-12",
+        "cited_by_count": 1827,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3176923149",
+        "type": "article",
+        "title": "Text Data Augmentation for Deep Learning",
+        "publication_date": "2021-07-19",
+        "cited_by_count": 1744,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952370363",
+        "type": "article",
+        "title": "Pre-Training With Whole Word Masking for Chinese BERT",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 1634,
+        "primary_topic": {
+          "id": "https://openalex.org/T10028"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2493916176",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4309674289",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3185341429",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2107743791",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4391136507",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2884001105",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2085937320",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2093390569",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2083305840",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3046375318",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2912924812",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2179519966",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2962753370",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3176923149",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2952370363",
+        "label": "off-target"
+      }
+    ]
+  },
+  "cs.LG": {
+    "capturedAt": "2026-10-25T16:52:51.721Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10320%7CT10462%7CT10637%7CT11273%7CT11303%7CT11307%7CT11512%7CT11612%7CT11652%7CT11689%7CT12026%7CT12072%7CT12535%7CT12761%7CT12814%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2907492528",
+        "type": "article",
+        "title": "A Comprehensive Survey on Graph Neural Networks",
+        "publication_date": "2020-03-24",
+        "cited_by_count": 10962,
+        "primary_topic": {
+          "id": "https://openalex.org/T11273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2560647685",
+        "type": "article",
+        "title": "Overcoming catastrophic forgetting in neural networks",
+        "publication_date": "2017-03-14",
+        "cited_by_count": 7771,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1689711448",
+        "type": "article",
+        "title": "LSTM: A Search Space Odyssey",
+        "publication_date": "2016-07-14",
+        "cited_by_count": 6949,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3152893301",
+        "type": "article",
+        "title": "Graph neural networks: A review of methods and applications",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 6862,
+        "primary_topic": {
+          "id": "https://openalex.org/T11273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3041133507",
+        "type": "article",
+        "title": "A Comprehensive Survey on Transfer Learning",
+        "publication_date": "2020-07-07",
+        "cited_by_count": 6671,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2891503716",
+        "type": "article",
+        "title": "Peeking Inside the Black-Box: A Survey on Explainable Artificial Intelligence (XAI)",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 6277,
+        "primary_topic": {
+          "id": "https://openalex.org/T12026"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2395579298",
+        "type": "article",
+        "title": "A survey of transfer learning",
+        "publication_date": "2016-05-27",
+        "cited_by_count": 6227,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2999309192",
+        "type": "article",
+        "title": "The advantages of the Matthews correlation coefficient (MCC) over F1 score and accuracy in binary classification evaluation",
+        "publication_date": "2020-01-02",
+        "cited_by_count": 6117,
+        "primary_topic": {
+          "id": "https://openalex.org/T11652"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2944851425",
+        "type": "article",
+        "title": "A Review of Recurrent Neural Networks: LSTM Cells and Network Architectures",
+        "publication_date": "2019-05-21",
+        "cited_by_count": 5613,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2439568532",
+        "type": "article",
+        "title": "The Mythos of Model Interpretability",
+        "publication_date": "2018-06-01",
+        "cited_by_count": 5416,
+        "primary_topic": {
+          "id": "https://openalex.org/T12026"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3100789280",
+        "type": "article",
+        "title": "Deep Reinforcement Learning: A Brief Survey",
+        "publication_date": "2017-11-01",
+        "cited_by_count": 4725,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2473930607",
+        "type": "article",
+        "title": "Learning without Forgetting",
+        "publication_date": "2017-11-14",
+        "cited_by_count": 4189,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2558748708",
+        "type": "article",
+        "title": "Geometric Deep Learning: Going beyond Euclidean data",
+        "publication_date": "2017-07-01",
+        "cited_by_count": 3601,
+        "primary_topic": {
+          "id": "https://openalex.org/T11273"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2346062110",
+        "type": "article",
+        "title": "Convolutional Neural Networks for Medical Image Analysis: Full Training or Fine Tuning?",
+        "publication_date": "2016-03-07",
+        "cited_by_count": 3270,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3034942609",
+        "type": "article",
+        "title": "Generalizing from a Few Examples",
+        "publication_date": "2020-06-12",
+        "cited_by_count": 3160,
+        "primary_topic": {
+          "id": "https://openalex.org/T11307"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2907492528",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2560647685",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1689711448",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3152893301",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3041133507",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2891503716",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2395579298",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2999309192",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2944851425",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2439568532",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3100789280",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2473930607",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2558748708",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2346062110",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3034942609",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.MM": {
+    "capturedAt": "2026-10-25T16:52:47.020Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10741%7CT13745%7CT14216%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3202918664",
+        "type": "article",
+        "title": "Overview of the Versatile Video Coding (VVC) Standard and its Applications",
+        "publication_date": "2021-08-02",
+        "cited_by_count": 1820,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2501145764",
+        "type": "article",
+        "title": "Infrastructure studies meet platform studies in the age of Google and Facebook",
+        "publication_date": "2016-08-04",
+        "cited_by_count": 1654,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2553850813",
+        "type": "article",
+        "title": "The walkthrough method: An approach to the study of apps",
+        "publication_date": "2016-11-11",
+        "cited_by_count": 1077,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2905002332",
+        "type": "article",
+        "title": "Playing the visibility game: How digital influencers and algorithms negotiate influence on Instagram",
+        "publication_date": "2018-12-14",
+        "cited_by_count": 1015,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2905544027",
+        "type": "article",
+        "title": "Emerging MPEG Standards for Point Cloud Compression",
+        "publication_date": "2018-12-10",
+        "cited_by_count": 773,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3113786846",
+        "type": "article",
+        "title": "Extending the Internet meme: Conceptualizing technological mimesis and imitation publics on the TikTok platform",
+        "publication_date": "2020-12-26",
+        "cited_by_count": 654,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3123415290",
+        "type": "article",
+        "title": "Mapping Internet Celebrity on TikTok: Exploring Attention Economies and Visibility Labours",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 560,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2342560622",
+        "type": "article",
+        "title": "Instagrammatics and digital methods: studying visual social media, from selfies and GIFs to memes and emoji",
+        "publication_date": "2016-01-02",
+        "cited_by_count": 542,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3092722276",
+        "type": "article",
+        "title": "Twenty-Five Years of Social Media: A Review of Social Media Applications and Definitions from 1994 to 2019",
+        "publication_date": "2020-10-14",
+        "cited_by_count": 538,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3082030567",
+        "type": "article",
+        "title": "The co-evolution of two Chinese mobile short video apps: Parallel platformization of Douyin and TikTok",
+        "publication_date": "2020-08-30",
+        "cited_by_count": 499,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3014200484",
+        "type": "article",
+        "title": "An overview of ongoing point cloud compression standardization activities: video-based (V-PCC) and geometry-based (G-PCC)",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 493,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3010843081",
+        "type": "article",
+        "title": "Watch, Share or Create: The Influence of Personality Traits and User Motivation on TikTok Mobile Video Usage",
+        "publication_date": "2020-03-12",
+        "cited_by_count": 492,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4221035882",
+        "type": "article",
+        "title": "Why’s Everyone on TikTok Now? The Algorithmized Self and the Future of Self-Making on Social Media",
+        "publication_date": "2022-01-01",
+        "cited_by_count": 484,
+        "primary_topic": {
+          "id": "https://openalex.org/T13745"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2935381027",
+        "type": "article",
+        "title": "Image and Video Compression With Neural Networks: A Review",
+        "publication_date": "2019-04-17",
+        "cited_by_count": 461,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2319503556",
+        "type": "article",
+        "title": "Design, Implementation, and Evaluation of a Point Cloud Codec for Tele-Immersive Video",
+        "publication_date": "2016-03-16",
+        "cited_by_count": 432,
+        "primary_topic": {
+          "id": "https://openalex.org/T10741"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3202918664",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2501145764",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2553850813",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2905002332",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2905544027",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3113786846",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3123415290",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2342560622",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3092722276",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3082030567",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3014200484",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3010843081",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4221035882",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2935381027",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2319503556",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.NE": {
+    "capturedAt": "2026-10-25T16:52:54.781Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10100%7CT10320%7CT10502%7CT10848%7CT11975%7CT12611%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W1689711448",
+        "type": "article",
+        "title": "LSTM: A Search Space Odyssey",
+        "publication_date": "2016-07-14",
+        "cited_by_count": 6949,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2944851425",
+        "type": "article",
+        "title": "A Review of Recurrent Neural Networks: LSTM Cells and Network Architectures",
+        "publication_date": "2019-05-21",
+        "cited_by_count": 5613,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2783525259",
+        "type": "article",
+        "title": "Loihi: A Neuromorphic Manycore Processor with On-Chip Learning",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 3926,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2998553334",
+        "type": "article",
+        "title": "A novel swarm intelligence optimization approach: sparrow search algorithm",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 3869,
+        "primary_topic": {
+          "id": "https://openalex.org/T10100"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2901312569",
+        "type": "article",
+        "title": "State-of-the-art in artificial neural network applications: A survey",
+        "publication_date": "2018-11-01",
+        "cited_by_count": 3061,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3119051141",
+        "type": "article",
+        "title": "The Arithmetic Optimization Algorithm",
+        "publication_date": "2021-01-12",
+        "cited_by_count": 2944,
+        "primary_topic": {
+          "id": "https://openalex.org/T10100"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2764251381",
+        "type": "article",
+        "title": "PlatEMO: A MATLAB Platform for Evolutionary Multi-Objective Optimization [Educational Forum]",
+        "publication_date": "2017-10-11",
+        "cited_by_count": 2751,
+        "primary_topic": {
+          "id": "https://openalex.org/T10848"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2798701005",
+        "type": "article",
+        "title": "All-optical machine learning using diffractive deep neural networks",
+        "publication_date": "2018-07-26",
+        "cited_by_count": 2555,
+        "primary_topic": {
+          "id": "https://openalex.org/T12611"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3021613070",
+        "type": "article",
+        "title": "Pymoo: Multi-Objective Optimization in Python",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 2387,
+        "primary_topic": {
+          "id": "https://openalex.org/T10848"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2887258823",
+        "type": "article",
+        "title": "Recent advances in physical reservoir computing: A review",
+        "publication_date": "2019-03-20",
+        "cited_by_count": 2135,
+        "primary_topic": {
+          "id": "https://openalex.org/T12611"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2942231644",
+        "type": "article",
+        "title": "Review of Deep Learning Algorithms and Architectures",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 1882,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2343601797",
+        "type": "article",
+        "title": "A Reference Vector Guided Evolutionary Algorithm for Many-Objective Optimization",
+        "publication_date": "2016-01-19",
+        "cited_by_count": 1769,
+        "primary_topic": {
+          "id": "https://openalex.org/T10848"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2141119792",
+        "type": "article",
+        "title": "The irace package: Iterated racing for automatic algorithm configuration",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 1756,
+        "primary_topic": {
+          "id": "https://openalex.org/T10100"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2919358988",
+        "type": "article",
+        "title": "A State-of-the-Art Survey on Deep Learning Theory and Architectures",
+        "publication_date": "2019-03-05",
+        "cited_by_count": 1621,
+        "primary_topic": {
+          "id": "https://openalex.org/T10320"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2984844508",
+        "type": "article",
+        "title": "Surrogate Gradient Learning in Spiking Neural Networks: Bringing the Power of Gradient-Based Optimization to Spiking Neural Networks",
+        "publication_date": "2019-11-01",
+        "cited_by_count": 1563,
+        "primary_topic": {
+          "id": "https://openalex.org/T10502"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W1689711448",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2944851425",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2783525259",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2998553334",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2901312569",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3119051141",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2764251381",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2798701005",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3021613070",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2887258823",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2942231644",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2343601797",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2141119792",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2919358988",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2984844508",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.PL": {
+    "capturedAt": "2026-10-25T16:52:39.533Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10126%7CT10142%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2120575449",
+        "type": "article",
+        "title": "Julia: A Fresh Approach to Numerical Computing",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 6102,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2900153411",
+        "type": "article",
+        "title": "An abstract domain for certifying neural networks",
+        "publication_date": "2019-01-02",
+        "cited_by_count": 615,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2611136914",
+        "type": "article",
+        "title": "A General Safety Framework for Learning-Based Control in Uncertain Robotic Systems",
+        "publication_date": "2018-10-16",
+        "cited_by_count": 456,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2779850521",
+        "type": "article",
+        "title": "RustBelt: securing the foundations of the Rust programming language",
+        "publication_date": "2017-12-27",
+        "cited_by_count": 376,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2901454403",
+        "type": "article",
+        "title": "Iris from the ground up: A modular foundation for higher-order concurrent separation logic",
+        "publication_date": "2018-01-01",
+        "cited_by_count": 372,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1825294361",
+        "type": "article",
+        "title": "A FORMAL PROOF OF THE KEPLER CONJECTURE",
+        "publication_date": "2017-01-01",
+        "cited_by_count": 356,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4229675450",
+        "type": "article",
+        "title": "Program Synthesis",
+        "publication_date": "2017-07-11",
+        "cited_by_count": 353,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2238345790",
+        "type": "article",
+        "title": "Stabilization with guaranteed safety using Control Lyapunov–Barrier Function",
+        "publication_date": "2016-01-16",
+        "cited_by_count": 346,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3109541805",
+        "type": "article",
+        "title": "Algorithms for Verifying Deep Neural Networks",
+        "publication_date": "2020-12-02",
+        "cited_by_count": 336,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2789826932",
+        "type": "article",
+        "title": "Input-to-State Safety With Control Barrier Functions",
+        "publication_date": "2018-07-06",
+        "cited_by_count": 331,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2841721725",
+        "type": "article",
+        "title": "Control Barrier Functions for Signal Temporal Logic Tasks",
+        "publication_date": "2018-07-05",
+        "cited_by_count": 320,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2620840602",
+        "type": "article",
+        "title": "Nonsmooth Barrier Functions With Applications to Multi-Robot Systems",
+        "publication_date": "2017-06-01",
+        "cited_by_count": 312,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2787596386",
+        "type": "article",
+        "title": "A Survey of Statistical Model Checking",
+        "publication_date": "2018-01-31",
+        "cited_by_count": 289,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2811472820",
+        "type": "article",
+        "title": "Formal Specification and Verification of Autonomous Robotic Systems",
+        "publication_date": "2019-09-13",
+        "cited_by_count": 287,
+        "primary_topic": {
+          "id": "https://openalex.org/T10142"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2325347394",
+        "type": "article",
+        "title": "Multiparty Asynchronous Session Types",
+        "publication_date": "2016-03-03",
+        "cited_by_count": 284,
+        "primary_topic": {
+          "id": "https://openalex.org/T10126"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2120575449",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2900153411",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2611136914",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2779850521",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2901454403",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1825294361",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4229675450",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2238345790",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3109541805",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2789826932",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2841721725",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2620840602",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2787596386",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2811472820",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2325347394",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.RO": {
+    "capturedAt": "2026-10-25T16:52:28.730Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10462%7CT10571%7CT10653%7CT11099%7CT11615%7CT12784%7CT13382%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W3100789280",
+        "type": "article",
+        "title": "Deep Reinforcement Learning: A Brief Survey",
+        "publication_date": "2017-11-01",
+        "cited_by_count": 4725,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3003533476",
+        "type": "article",
+        "title": "Deep Reinforcement Learning for Autonomous Driving: A Survey",
+        "publication_date": "2021-02-10",
+        "cited_by_count": 2335,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964161785",
+        "type": "article",
+        "title": "End-to-end training of deep visuomotor policies",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 2196,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2962834855",
+        "type": "article",
+        "title": "Sigmoid-weighted linear units for neural network function approximation in reinforcement learning",
+        "publication_date": "2018-01-11",
+        "cited_by_count": 2108,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898035736",
+        "type": "article",
+        "title": "Applications of Deep Reinforcement Learning in Communications and Networking: A Survey",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 2081,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2293467699",
+        "type": "article",
+        "title": "Learning hand-eye coordination for robotic grasping with deep learning and large-scale data collection",
+        "publication_date": "2017-06-12",
+        "cited_by_count": 1970,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2953303875",
+        "type": "article",
+        "title": "A Survey of Autonomous Driving: Common Practices and Emerging Technologies",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 1882,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2981207549",
+        "type": "article",
+        "title": "A survey of deep learning techniques for autonomous driving",
+        "publication_date": "2019-11-14",
+        "cited_by_count": 1801,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2990747716",
+        "type": "article",
+        "title": "Learning dexterous in-hand manipulation",
+        "publication_date": "2019-11-18",
+        "cited_by_count": 1613,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4280571816",
+        "type": "article",
+        "title": "Robot Operating System 2: Design, architecture, and uses in the wild",
+        "publication_date": "2022-05-11",
+        "cited_by_count": 1579,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3008115128",
+        "type": "article",
+        "title": "Deep Multi-Modal Object Detection and Semantic Segmentation for Autonomous Driving: Datasets, Methods, and Challenges",
+        "publication_date": "2020-02-17",
+        "cited_by_count": 1417,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2908261578",
+        "type": "article",
+        "title": "Deep Reinforcement Learning for Multiagent Systems: A Review of Challenges, Solutions, and Applications",
+        "publication_date": "2020-03-20",
+        "cited_by_count": 1305,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3100366369",
+        "type": "article",
+        "title": "An Introduction to Deep Reinforcement Learning",
+        "publication_date": "2018-12-20",
+        "cited_by_count": 1302,
+        "primary_topic": {
+          "id": "https://openalex.org/T10462"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2775635818",
+        "type": "article",
+        "title": "GelSight: High-Resolution Robot Tactile Sensors for Estimating Geometry and Force",
+        "publication_date": "2017-11-29",
+        "cited_by_count": 1179,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2787690100",
+        "type": "article",
+        "title": "The grand challenges of Science Robotics",
+        "publication_date": "2018-01-31",
+        "cited_by_count": 1153,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W3100789280",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3003533476",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2964161785",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2962834855",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2898035736",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2293467699",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2953303875",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2981207549",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2990747716",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4280571816",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3008115128",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2908261578",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3100366369",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2775635818",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2787690100",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.SI": {
+    "capturedAt": "2026-10-25T16:52:43.571Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10064%7CT11980%7CT12592%7CT13924%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2897249806",
+        "type": "article",
+        "title": "From Louvain to Leiden: guaranteeing well-connected communities",
+        "publication_date": "2019-03-26",
+        "cited_by_count": 5608,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3033513666",
+        "type": "article",
+        "title": "Networks beyond pairwise interactions: Structure and dynamics",
+        "publication_date": "2020-06-13",
+        "cited_by_count": 1634,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2470861207",
+        "type": "article",
+        "title": "Higher-order organization of complex networks",
+        "publication_date": "2016-07-07",
+        "cited_by_count": 1282,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2896253905",
+        "type": "article",
+        "title": "Simplicial models of social contagion",
+        "publication_date": "2019-06-06",
+        "cited_by_count": 898,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2784007581",
+        "type": "article",
+        "title": "Scale-free networks are rare",
+        "publication_date": "2019-03-04",
+        "cited_by_count": 873,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2529741540",
+        "type": "article",
+        "title": "Social norms as solutions",
+        "publication_date": "2016-10-06",
+        "cited_by_count": 775,
+        "primary_topic": {
+          "id": "https://openalex.org/T12592"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2805301067",
+        "type": "article",
+        "title": "Experimental evidence for tipping points in social convention",
+        "publication_date": "2018-06-07",
+        "cited_by_count": 747,
+        "primary_topic": {
+          "id": "https://openalex.org/T12592"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2564084673",
+        "type": "article",
+        "title": "A Survey of Link Prediction in Complex Networks",
+        "publication_date": "2016-12-20",
+        "cited_by_count": 699,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2261717057",
+        "type": "article",
+        "title": "The H-index of a network node and its relation to degree and coreness",
+        "publication_date": "2016-01-12",
+        "cited_by_count": 694,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1552468722",
+        "type": "article",
+        "title": "The \"Majority Illusion\" in Social Networks",
+        "publication_date": "2016-02-17",
+        "cited_by_count": 668,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2963734869",
+        "type": "article",
+        "title": "Analysis and Control of Epidemics: A Survey of Spreading Processes on Complex Networks",
+        "publication_date": "2016-01-27",
+        "cited_by_count": 668,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2566971417",
+        "type": "article",
+        "title": "Random walks and diffusion on networks",
+        "publication_date": "2017-08-31",
+        "cited_by_count": 666,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2792990871",
+        "type": "article",
+        "title": "Influence Maximization on Social Graphs: A Survey",
+        "publication_date": "2018-02-22",
+        "cited_by_count": 660,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1877916171",
+        "type": "article",
+        "title": "Control principles of complex systems",
+        "publication_date": "2016-09-06",
+        "cited_by_count": 655,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2995191368",
+        "type": "article",
+        "title": "Comparison and Modelling of Country-level Microblog User and Activity in Cyber-physical-social Systems Using Weibo and Twitter Data",
+        "publication_date": "2019-11-30",
+        "cited_by_count": 632,
+        "primary_topic": {
+          "id": "https://openalex.org/T10064"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2897249806",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3033513666",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2470861207",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2896253905",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2784007581",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2529741540",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2805301067",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2564084673",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2261717057",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1552468722",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2963734869",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2566971417",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2792990871",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1877916171",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2995191368",
+        "label": "on-target"
+      }
+    ]
+  },
+  "cs.SY": {
+    "capturedAt": "2026-10-25T16:52:48.534Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10040%7CT10046%7CT10220%7CT10223%7CT10524%7CT10571%7CT10653%7CT10791%7CT10876%7CT10917%7CT10972%7CT11053%7CT11081%7CT11110%7CT11236%7CT11394%7CT11525%7CT11602%7CT11615%7CT11749%7CT11920%7CT12000%7CT12206%7CT12290%7CT12709%7CT12772%7CT12804%7CT12810%7CT12888%7CT12941%7CT13065%7CT13293%7CT13344%7CT13382%7CT13535%7CT13717%7CT13954%7CT14011%7CT14083%7CT14225%7CT14270%7CT14420%7CT14470%7CT14474%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2560504659",
+        "type": "article",
+        "title": "Control Barrier Function Based Quadratic Programs for Safety Critical Systems",
+        "publication_date": "2016-12-13",
+        "cited_by_count": 2665,
+        "primary_topic": {
+          "id": "https://openalex.org/T10791"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2768753204",
+        "type": "article",
+        "title": "A New Convolutional Neural Network-Based Data-Driven Fault Diagnosis Method",
+        "publication_date": "2017-11-17",
+        "cited_by_count": 2217,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2293467699",
+        "type": "article",
+        "title": "Learning hand-eye coordination for robotic grasping with deep learning and large-scale data collection",
+        "publication_date": "2017-06-12",
+        "cited_by_count": 1970,
+        "primary_topic": {
+          "id": "https://openalex.org/T10653"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2904460913",
+        "type": "article",
+        "title": "A Hybrid Prognostics Approach for Estimating Remaining Useful Life of Rolling Element Bearings",
+        "publication_date": "2018-12-14",
+        "cited_by_count": 1929,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2584994008",
+        "type": "article",
+        "title": "A New Deep Learning Model for Fault Diagnosis with Good Anti-Noise and Domain Adaptation Ability on Raw Vibration Signals",
+        "publication_date": "2017-02-22",
+        "cited_by_count": 1916,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2887782657",
+        "type": "article",
+        "title": "Highly Accurate Machine Fault Diagnosis Using Deep Transfer Learning",
+        "publication_date": "2018-08-10",
+        "cited_by_count": 1645,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2479280896",
+        "type": "article",
+        "title": "Event-Triggered Adaptive Control for a Class of Uncertain Nonlinear Systems",
+        "publication_date": "2016-07-27",
+        "cited_by_count": 1586,
+        "primary_topic": {
+          "id": "https://openalex.org/T10040"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4280571816",
+        "type": "article",
+        "title": "Robot Operating System 2: Design, architecture, and uses in the wild",
+        "publication_date": "2022-05-11",
+        "cited_by_count": 1579,
+        "primary_topic": {
+          "id": "https://openalex.org/T13382"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2796210679",
+        "type": "article",
+        "title": "Microgrids: A review of technologies, key drivers, and outstanding issues",
+        "publication_date": "2018-04-03",
+        "cited_by_count": 1505,
+        "primary_topic": {
+          "id": "https://openalex.org/T10223"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2977117446",
+        "type": "article",
+        "title": "Deep Residual Shrinkage Networks for Fault Diagnosis",
+        "publication_date": "2019-09-26",
+        "cited_by_count": 1439,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2461729787",
+        "type": "article",
+        "title": "Real-Time Motor Fault Detection by 1-D Convolutional Neural Networks",
+        "publication_date": "2016-06-29",
+        "cited_by_count": 1414,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2550453031",
+        "type": "article",
+        "title": "The 2015 Ukraine Blackout: Implications for False Data Injection Attacks",
+        "publication_date": "2016-11-22",
+        "cited_by_count": 1246,
+        "primary_topic": {
+          "id": "https://openalex.org/T10917"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898375427",
+        "type": "article",
+        "title": "Deep Convolutional Transfer Learning Network: A New Method for Intelligent Fault Diagnosis of Machines With Unlabeled Data",
+        "publication_date": "2018-10-26",
+        "cited_by_count": 1233,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3154122279",
+        "type": "article",
+        "title": "Grid-Forming Converters: Control Approaches, Grid-Synchronization, and Future Trends—A Review",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 1203,
+        "primary_topic": {
+          "id": "https://openalex.org/T10223"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2317595875",
+        "type": "article",
+        "title": "An Intelligent Fault Diagnosis Method Using Unsupervised Feature Learning Towards Mechanical Big Data",
+        "publication_date": "2016-01-19",
+        "cited_by_count": 1189,
+        "primary_topic": {
+          "id": "https://openalex.org/T10220"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2560504659",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2768753204",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2293467699",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2904460913",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2584994008",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2887782657",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2479280896",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4280571816",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2796210679",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2977117446",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2461729787",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2550453031",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2898375427",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3154122279",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2317595875",
+        "uncertain": true
+      }
+    ]
+  },
   "econ.EM": {
     "capturedAt": "2026-10-25T16:53:22.994Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10136%7CT10845%7CT11270%7CT11911%7CT12205%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
