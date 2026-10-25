@@ -1,35 +1,39 @@
 // Calibration of LEAF_FILING_RULES (worker/leaf-filing.ts) on labelled journal
-// articles. Node only.
+// articles. Node only. The evidence and how the dataset was made are in
+// worker/leaf-filing-calibration.md.
 //
-//   node worker/test-support/calibrate-leaf-filing.ts <dataset.json>
+//   node worker/test-support/calibrate-leaf-filing.ts <dataset.json> [held-out.json]
 //
-// The dataset holds int8 vectors in the stored form (paper-store.ts
-// `quantize`, base64), embedded from the text the corpus embeds:
-//   { "arxiv": [{ "id", "leaf", "vector" }],          newest arXiv papers whose primary category is the leaf
+// The dataset holds vectors in the stored form (paper-store.ts `quantize`, as
+// base64), embedded from the text the corpus embeds:
+//   { "arxiv": [{ "id", "leaf", "vector" }],          recent arXiv papers whose primary category is the leaf
 //     "labelled": [{ "id", "vector", "labels": { "<leaf>": "on" | "off" | "doubt" } }],
-//     "areaSamples": [{ "id", "area", "vector" }] }   newest articles of each area lane
+//     "areaSamples": [{ "id", "area", "vector" }] }   recent articles of each area lane
 // Each leaf with at least 50 arXiv papers gets a centroid, as storeLeafCentroids
 // gives one. Each area's labelled articles are split in two with a fixed seed.
-// On the calibration half, the rule chosen is the one that files the most
+// On the calibration half, the chosen rule is the one that files the most
 // articles correctly at CALIBRATION_PRECISION or more; the held-out half then
-// measures it once. An area gets a rule only when the held-out precision
-// reaches REQUIRED_PRECISION over MIN_HELD_OUT_DECIDED filings or more.
+// measures it once. An area gets a rule only when its held-out precision
+// reaches REQUIRED_PRECISION over MIN_HELD_OUT_DECIDED filings or more. Given a
+// second path, the script writes there the centroids and held-out articles of
+// the areas that get a rule: the fixture leaf-filing.test.ts files them with.
 //
 // An article filed under a leaf is correct when labelled on target for it. It
 // is wrong when labelled off target or doubted for it, or when it is unlabelled
 // there but on target for another leaf of the area. Otherwise its filing is
 // unknown: counted, but outside precision.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getAllLeafCategories } from '../../src/data/category-taxonomy.ts';
-import { type FilingRule, areaCentroids, closestLeaf, evaluateLeafFiling, leafCentroids, ruleFiles } from '../leaf-filing.ts';
+import { type FilingRule, areaCentroids, closestLeaf, leafCentroids, ruleFiles } from '../leaf-filing.ts';
 import { AREA_LANE_AREAS } from '../paper-store.ts';
 
 type Label = 'on' | 'off' | 'doubt';
-export interface CalibrationDataset {
+interface LabelledArticle { id: string; vector: string; labels: Record<string, Label> }
+interface CalibrationDataset {
   arxiv: Array<{ id: string; leaf: string; vector: string }>;
-  labelled: Array<{ id: string; vector: string; labels: Record<string, Label> }>;
+  labelled: LabelledArticle[];
   areaSamples: Array<{ id: string; area: string; vector: string }>;
 }
 
@@ -55,7 +59,7 @@ function mulberry32(seed: number) {
 }
 
 /** One area's articles in two halves, calibration then held out: ordered by id, shuffled with the fixed seed. */
-export function calibrationSplit<T extends { id: string }>(articles: T[]) {
+function calibrationSplit<T extends { id: string }>(articles: T[]) {
   const random = mulberry32(SEED);
   const shuffled = [...articles].sort((a, b) => a.id.localeCompare(b.id));
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -77,31 +81,16 @@ export function wilson(successes: number, trials: number) {
   return [round(Math.max(0, centre - half)), round(Math.min(1, centre + half))];
 }
 
-type Closest = ReturnType<typeof closestLeaf>;
-interface Article { id: string; labels: Record<string, Label>; positive: boolean; closest: Closest }
-
-type Measured = ReturnType<typeof outcomes>;
-type Interval = ReturnType<typeof wilson>;
-
-/** One area's calibration; the measurements are absent where it stopped before them. */
-export interface AreaCalibration {
-  area: string;
-  centroids: string[];
-  labelledArticles: number;
-  labelsPerLeaf: Record<string, Record<Label, number>>;
-  split?: { calibration: number; heldOut: number };
-  rule?: FilingRule;
-  calibration?: Measured;
-  heldOut?: Measured & {
-    precision: number | null; precisionInterval: Interval;
-    recall: number | null; recallInterval: Interval;
-    shareFiled: number | null; shareFiledInterval: Interval;
-  };
-  areaLaneSample?: { papers: number; filed: number; share: number | null; interval: Interval };
-  arxivHeldOut?: { papers: number; filed: number; correct: number; precision: number | null } | null;
-  enabled: boolean;
-  reason: string;
+/** The articles with a label on a leaf of the area, with only those labels. */
+function areaArticles(labelled: LabelledArticle[], area: string) {
+  const leafArea = new Map(getAllLeafCategories().map(leaf => [leaf.id, leaf.area]));
+  return labelled.flatMap(article => {
+    const labels = Object.fromEntries(Object.entries(article.labels).filter(([leaf]) => leafArea.get(leaf) === area));
+    return Object.keys(labels).length ? [{ ...article, labels }] : [];
+  });
 }
+
+interface Article { labels: Record<string, Label>; positive: boolean; closest: ReturnType<typeof closestLeaf> }
 
 function outcomes(articles: Article[], rule: FilingRule) {
   let filed = 0;
@@ -117,62 +106,81 @@ function outcomes(articles: Article[], rule: FilingRule) {
   return { papers: articles.length, positives: articles.filter(article => article.positive).length, filed, correct, wrong, unknown: filed - correct - wrong };
 }
 
+// Most correct filings first; then fewest wrong, the wider margin, the higher similarity.
+const rank = (measured: Measured, rule: FilingRule) => [measured.correct, -measured.wrong, rule.margin, rule.similarity];
+const outranks = (a: number[], b: number[]) => {
+  const index = a.findIndex((value, at) => value !== b[at]);
+  return index >= 0 && a[index] > b[index];
+};
+
 const ratio = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 1000 : null);
 
+type Measured = ReturnType<typeof outcomes>;
+type Interval = ReturnType<typeof wilson>;
+/** One area's calibration; the measurements are absent where it stopped before them. */
+interface AreaCalibration {
+  area: string;
+  centroids: string[];
+  labelledArticles: number;
+  labelsPerLeaf: Record<string, Record<Label, number>>;
+  split?: { calibration: number; heldOut: number };
+  rule?: FilingRule;
+  calibration?: Measured;
+  heldOut?: Measured & {
+    precision: number | null; precisionInterval: Interval;
+    recall: number | null; recallInterval: Interval;
+    shareFiled: number | null; shareFiledInterval: Interval;
+  };
+  areaLaneSample?: { papers: number; filed: number; share: number | null; interval: Interval };
+  enabled: boolean;
+  reason: string;
+}
+
 export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibration[] {
-  const leafArea = new Map(getAllLeafCategories().map(leaf => [leaf.id, leaf.area]));
-  const samples = dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) }));
-  const centroids = leafCentroids(samples);
+  const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
   return AREA_LANE_AREAS.flatMap((area): AreaCalibration[] => {
     const own = areaCentroids(area, centroids);
-    const articles = dataset.labelled.flatMap(paper => {
-      const labels = Object.fromEntries(Object.entries(paper.labels).filter(([leaf]) => leafArea.get(leaf) === area));
-      return Object.keys(labels).length ? [{ id: paper.id, labels, vector: paper.vector }] : [];
-    });
+    const articles = areaArticles(dataset.labelled, area);
     if (articles.length === 0) return [];
-    const perLeaf: Record<string, Record<Label, number>> = {};
+    const labelsPerLeaf: Record<string, Record<Label, number>> = {};
     for (const article of articles) {
       for (const [leaf, label] of Object.entries(article.labels)) {
-        perLeaf[leaf] ??= { on: 0, off: 0, doubt: 0 };
-        perLeaf[leaf][label] += 1;
+        labelsPerLeaf[leaf] ??= { on: 0, off: 0, doubt: 0 };
+        labelsPerLeaf[leaf][label] += 1;
       }
     }
-    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, labelsPerLeaf: perLeaf };
+    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, labelsPerLeaf };
     if (own.size < 2) return [{ ...summary, enabled: false, reason: 'fewer than two leaves with a centroid' }];
 
     const [calibration, heldOut] = calibrationSplit(articles).map(half => half.map(article => ({
-      id: article.id,
       labels: article.labels,
       positive: Object.values(article.labels).includes('on'),
       closest: closestLeaf(vectorOf(article.vector), own),
     })));
+    const split = { calibration: calibration.length, heldOut: heldOut.length };
 
     let chosen: { rule: FilingRule; measured: Measured } | null = null;
     for (const similarity of SIMILARITIES) {
       for (const margin of MARGINS) {
-        const measured = outcomes(calibration, { similarity, margin });
+        const rule = { similarity, margin };
+        const measured = outcomes(calibration, rule);
         const decided = measured.correct + measured.wrong;
         if (decided < MIN_CALIBRATION_DECIDED || measured.correct / decided < CALIBRATION_PRECISION) continue;
-        const better = !chosen || measured.correct > chosen.measured.correct
-          || (measured.correct === chosen.measured.correct && (measured.wrong < chosen.measured.wrong
-            || (measured.wrong === chosen.measured.wrong && (margin > chosen.rule.margin
-              || (margin === chosen.rule.margin && similarity > chosen.rule.similarity)))));
-        if (better) chosen = { rule: { similarity, margin }, measured };
+        if (!chosen || outranks(rank(measured, rule), rank(chosen.measured, chosen.rule))) chosen = { rule, measured };
       }
     }
-    if (!chosen) return [{ ...summary, split: { calibration: calibration.length, heldOut: heldOut.length }, enabled: false, reason: `no rule reaches ${CALIBRATION_PRECISION} precision on the calibration half over ${MIN_CALIBRATION_DECIDED} decided filings` }];
+    if (!chosen) return [{ ...summary, split, enabled: false, reason: `no rule reaches ${CALIBRATION_PRECISION} precision on the calibration half over ${MIN_CALIBRATION_DECIDED} decided filings` }];
 
     const { rule } = chosen;
     const test = outcomes(heldOut, rule);
     const decided = test.correct + test.wrong;
     const precision = ratio(test.correct, decided);
     const enabled = decided >= MIN_HELD_OUT_DECIDED && (precision ?? 0) >= REQUIRED_PRECISION;
-    const lane = dataset.areaSamples.filter(paper => paper.area === area).map(paper => closestLeaf(vectorOf(paper.vector), own));
-    const laneFiled = lane.filter(closest => ruleFiles(closest, rule)).length;
-    const [arxiv] = evaluateLeafFiling(samples, [rule]).filter(row => row.area === area);
+    const lane = dataset.areaSamples.filter(paper => paper.area === area);
+    const laneFiled = lane.filter(paper => ruleFiles(closestLeaf(vectorOf(paper.vector), own), rule)).length;
     return [{
       ...summary,
-      split: { calibration: calibration.length, heldOut: heldOut.length },
+      split,
       rule,
       calibration: chosen.measured,
       heldOut: {
@@ -182,7 +190,6 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
         shareFiled: ratio(test.filed, test.papers), shareFiledInterval: wilson(test.filed, test.papers),
       },
       areaLaneSample: { papers: lane.length, filed: laneFiled, share: ratio(laneFiled, lane.length), interval: wilson(laneFiled, lane.length) },
-      arxivHeldOut: arxiv ? { papers: arxiv.papers, filed: arxiv.filed, correct: arxiv.correct, precision: ratio(arxiv.correct, arxiv.filed) } : null,
       enabled,
       reason: enabled ? `held-out precision ${precision} over ${decided} decided filings`
         : decided < MIN_HELD_OUT_DECIDED ? `${decided} decided held-out filings, under ${MIN_HELD_OUT_DECIDED}` : `held-out precision ${precision}, under ${REQUIRED_PRECISION}`,
@@ -190,14 +197,28 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
   });
 }
 
+/** The centroids and held-out articles of these areas, one article a line. */
+function heldOutFixture(dataset: CalibrationDataset, areas: string[]) {
+  const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
+  const entries = areas.map(area => {
+    const own = Object.fromEntries([...areaCentroids(area, centroids)].map(([leaf, vector]) => [leaf, Buffer.from(vector.buffer).toString('base64')]));
+    const [, heldOut] = calibrationSplit(areaArticles(dataset.labelled, area));
+    const articles = heldOut.sort((a, b) => a.id.localeCompare(b.id)).map(({ id, labels, vector }) => JSON.stringify({ id, labels, vector }));
+    return `${JSON.stringify(area)}: {\n"centroids": ${JSON.stringify(own)},\n"articles": [\n${articles.join(',\n')}\n]}`;
+  });
+  return `{\n${entries.join(',\n')}\n}\n`;
+}
+
 function main() {
-  const path = process.argv[2];
+  const [path, fixturePath] = process.argv.slice(2);
   if (!path) {
-    process.stderr.write('Usage: node worker/test-support/calibrate-leaf-filing.ts <dataset.json>\n');
+    process.stderr.write('Usage: node worker/test-support/calibrate-leaf-filing.ts <dataset.json> [held-out.json]\n');
     process.exit(1);
   }
   const dataset = JSON.parse(readFileSync(path, 'utf8')) as CalibrationDataset;
-  process.stdout.write(`${JSON.stringify(calibrateLeafFiling(dataset), null, 1)}\n`);
+  const report = calibrateLeafFiling(dataset);
+  process.stdout.write(`${JSON.stringify(report, null, 1)}\n`);
+  if (fixturePath) writeFileSync(fixturePath, heldOutFixture(dataset, report.filter(row => row.enabled).map(row => row.area)));
 }
 
 if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) main();
