@@ -874,6 +874,886 @@
       }
     ]
   },
+  "bio.biotech": {
+    "capturedAt": "2026-10-25T16:54:32.584Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10404%7CT10613%7CT10878%7CT10900%7CT10932%7CT11340%7CT11455%7CT11617%7CT12673%7CT12856%7CT12996%7CT14150%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2787024379",
+        "type": "article",
+        "title": "CRISPR-Cas12a target binding unleashes indiscriminate single-stranded DNase activity",
+        "publication_date": "2018-02-15",
+        "cited_by_count": 4496,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2606915822",
+        "type": "article",
+        "title": "Nucleic acid detection with CRISPR-Cas13a/C2c2",
+        "publication_date": "2017-04-13",
+        "cited_by_count": 3878,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2409671300",
+        "type": "article",
+        "title": "C2c2 is a single-component programmable RNA-guided RNA-targeting CRISPR effector",
+        "publication_date": "2016-06-02",
+        "cited_by_count": 2357,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803479625",
+        "type": "article",
+        "title": "CRISPOR: intuitive guide selection for CRISPR/Cas9 genome editing experiments and screens",
+        "publication_date": "2018-04-23",
+        "cited_by_count": 2344,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2805837749",
+        "type": "article",
+        "title": "Efficient generation of mouse models of human diseases via ABE- and BE-mediated base editing",
+        "publication_date": "2018-06-08",
+        "cited_by_count": 2076,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2945567049",
+        "type": "article",
+        "title": "CHOPCHOP v3: expanding the CRISPR web toolbox beyond genome editing",
+        "publication_date": "2019-05-06",
+        "cited_by_count": 2069,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2461013690",
+        "type": "article",
+        "title": "Evaluation of off-target and on-target scoring algorithms and integration into the guide RNA selection tool CRISPOR",
+        "publication_date": "2016-07-05",
+        "cited_by_count": 1752,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2998881619",
+        "type": "article",
+        "title": "Applications of genome editing technology in the targeted therapy of human diseases: mechanisms, advances and prospects",
+        "publication_date": "2020-01-03",
+        "cited_by_count": 1719,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803581084",
+        "type": "article",
+        "title": "The CRISPR tool kit for genome editing and beyond",
+        "publication_date": "2018-05-09",
+        "cited_by_count": 1639,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2803245377",
+        "type": "article",
+        "title": "CRISPRCasFinder, an update of CRISRFinder, includes a portable version, enhanced performance and integrates search for Cas proteins",
+        "publication_date": "2018-05-09",
+        "cited_by_count": 1577,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2801783434",
+        "type": "article",
+        "title": "CRISPR-Cas12a-assisted nucleic acid detection",
+        "publication_date": "2018-04-18",
+        "cited_by_count": 1538,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2304674135",
+        "type": "article",
+        "title": "Design and synthesis of a minimal bacterial genome",
+        "publication_date": "2016-03-24",
+        "cited_by_count": 1497,
+        "primary_topic": {
+          "id": "https://openalex.org/T10932"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2765284830",
+        "type": "article",
+        "title": "RNA virus interference via CRISPR/Cas13a system in plants",
+        "publication_date": "2018-01-04",
+        "cited_by_count": 1490,
+        "primary_topic": {
+          "id": "https://openalex.org/T10878"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3035847987",
+        "type": "article",
+        "title": "Biocatalysis: Enzymatic Synthesis for Industrial Applications",
+        "publication_date": "2020-06-18",
+        "cited_by_count": 1428,
+        "primary_topic": {
+          "id": "https://openalex.org/T10404"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2782917400",
+        "type": "article",
+        "title": "Gene therapy comes of age",
+        "publication_date": "2018-01-12",
+        "cited_by_count": 1410,
+        "primary_topic": {
+          "id": "https://openalex.org/T10613"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2787024379",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2606915822",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2409671300",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2803479625",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2805837749",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2945567049",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2461013690",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2998881619",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2803581084",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2803245377",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2801783434",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2304674135",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2765284830",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3035847987",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2782917400",
+        "label": "on-target",
+        "uncertain": true
+      }
+    ]
+  },
+  "bio.immuno": {
+    "capturedAt": "2026-10-25T16:54:30.950Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10031%7CT10371%7CT10469%7CT10506%7CT10580%7CT10993%7CT11020%7CT11313%7CT11346%7CT11403%7CT11510%7CT11597%7CT11668%7CT11725%7CT12159%7CT12255%7CT12387%7CT12477%7CT12528%7CT12672%7CT12955%7CT13254%7CT13410%7CT14072%7CT14165%7CT14245%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2748400555",
+        "type": "article",
+        "title": "Antiinflammatory Therapy with Canakinumab for Atherosclerotic Disease",
+        "publication_date": "2017-08-27",
+        "cited_by_count": 9459,
+        "primary_topic": {
+          "id": "https://openalex.org/T12955"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2771472591",
+        "type": "article",
+        "title": "Inflammatory responses and inflammation-associated diseases in organs",
+        "publication_date": "2017-12-14",
+        "cited_by_count": 5166,
+        "primary_topic": {
+          "id": "https://openalex.org/T10371"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2782685575",
+        "type": "article",
+        "title": "Macrophage plasticity, polarization, and function in health and disease",
+        "publication_date": "2018-01-10",
+        "cited_by_count": 4921,
+        "primary_topic": {
+          "id": "https://openalex.org/T11313"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2966710588",
+        "type": "article",
+        "title": "The Tumor Microenvironment Innately Modulates Cancer Progression",
+        "publication_date": "2019-07-26",
+        "cited_by_count": 3260,
+        "primary_topic": {
+          "id": "https://openalex.org/T11313"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2798105113",
+        "type": "article",
+        "title": "Role of C-Reactive Protein at Sites of Inflammation and Infection",
+        "publication_date": "2018-04-13",
+        "cited_by_count": 3040,
+        "primary_topic": {
+          "id": "https://openalex.org/T14245"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3041960835",
+        "type": "article",
+        "title": "Impaired type I interferon activity and inflammatory responses in severe COVID-19 patients",
+        "publication_date": "2020-07-13",
+        "cited_by_count": 2982,
+        "primary_topic": {
+          "id": "https://openalex.org/T11668"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3180882235",
+        "type": "article",
+        "title": "Inflammation and tumor progression: signaling pathways and targeted intervention",
+        "publication_date": "2021-07-11",
+        "cited_by_count": 2817,
+        "primary_topic": {
+          "id": "https://openalex.org/T11313"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2336656712",
+        "type": "article",
+        "title": "Trained immunity: A program of innate immune memory in health and disease",
+        "publication_date": "2016-04-21",
+        "cited_by_count": 2762,
+        "primary_topic": {
+          "id": "https://openalex.org/T13410"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2471500324",
+        "type": "article",
+        "title": "Recommendations for myeloid-derived suppressor cell nomenclature and characterization standards",
+        "publication_date": "2016-07-06",
+        "cited_by_count": 2745,
+        "primary_topic": {
+          "id": "https://openalex.org/T11313"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3088256443",
+        "type": "article",
+        "title": "Autoantibodies against type I IFNs in patients with life-threatening COVID-19",
+        "publication_date": "2020-09-24",
+        "cited_by_count": 2660,
+        "primary_topic": {
+          "id": "https://openalex.org/T11668"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3028355101",
+        "type": "article",
+        "title": "Pathophysiology, Clinical Presentation, and Treatment of Psoriasis",
+        "publication_date": "2020-05-19",
+        "cited_by_count": 2352,
+        "primary_topic": {
+          "id": "https://openalex.org/T10469"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4377206081",
+        "type": "article",
+        "title": "Macrophages in immunoregulation and therapeutics",
+        "publication_date": "2023-05-21",
+        "cited_by_count": 2262,
+        "primary_topic": {
+          "id": "https://openalex.org/T11313"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3087862874",
+        "type": "article",
+        "title": "Inborn errors of type I IFN immunity in patients with life-threatening COVID-19",
+        "publication_date": "2020-09-24",
+        "cited_by_count": 2229,
+        "primary_topic": {
+          "id": "https://openalex.org/T11668"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2274924551",
+        "type": "article",
+        "title": "Vascular Smooth Muscle Cells in Atherosclerosis",
+        "publication_date": "2016-02-18",
+        "cited_by_count": 2176,
+        "primary_topic": {
+          "id": "https://openalex.org/T12955"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2924895007",
+        "type": "article",
+        "title": "Psoriasis Pathogenesis and Treatment",
+        "publication_date": "2019-03-23",
+        "cited_by_count": 2075,
+        "primary_topic": {
+          "id": "https://openalex.org/T10469"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2748400555",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2771472591",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2782685575",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2966710588",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2798105113",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3041960835",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3180882235",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2336656712",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2471500324",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3088256443",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3028355101",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4377206081",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3087862874",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2274924551",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2924895007",
+        "uncertain": true
+      }
+    ]
+  },
+  "bio.micro": {
+    "capturedAt": "2026-10-25T16:54:29.085Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10066%7CT10120%7CT10147%7CT10428%7CT10593%7CT10873%7CT10897%7CT10932%7CT11048%7CT11103%7CT11688%7CT11791%7CT12688%7CT12744%7CT13817%7CT13980%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W4206677002",
+        "type": "article",
+        "title": "Global burden of bacterial antimicrobial resistance in 2019: a systematic analysis",
+        "publication_date": "2022-01-19",
+        "cited_by_count": 16213,
+        "primary_topic": {
+          "id": "https://openalex.org/T10897"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952564192",
+        "type": "article",
+        "title": "Revised Estimates for the Number of Human and Bacteria Cells in the Body",
+        "publication_date": "2016-08-19",
+        "cited_by_count": 5422,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3027658010",
+        "type": "article",
+        "title": "Interaction between microbiota and immunity in health and disease",
+        "publication_date": "2020-05-20",
+        "cited_by_count": 3925,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4402557213",
+        "type": "article",
+        "title": "Global burden of bacterial antimicrobial resistance 1990–2021: a systematic analysis with forecasts to 2050",
+        "publication_date": "2024-09-01",
+        "cited_by_count": 3855,
+        "primary_topic": {
+          "id": "https://openalex.org/T10897"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2921966151",
+        "type": "article",
+        "title": "Short Chain Fatty Acids (SCFAs)-Mediated Gut Epithelial and Immune Regulation and Its Relevance for Inflammatory Bowel Diseases",
+        "publication_date": "2019-03-11",
+        "cited_by_count": 3808,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2236332835",
+        "type": "article",
+        "title": "Formation of short chain fatty acids by the gut microbiota and their impact on human metabolism",
+        "publication_date": "2016-03-10",
+        "cited_by_count": 3771,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2563720483",
+        "type": "article",
+        "title": "The Human Intestinal Microbiome in Health and Disease",
+        "publication_date": "2016-12-14",
+        "cited_by_count": 3634,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2616825195",
+        "type": "article",
+        "title": "Introduction to the human gut microbiota",
+        "publication_date": "2017-05-16",
+        "cited_by_count": 3591,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2345791363",
+        "type": "article",
+        "title": "PHASTER: a better, faster version of the PHAST phage search tool",
+        "publication_date": "2016-05-03",
+        "cited_by_count": 3566,
+        "primary_topic": {
+          "id": "https://openalex.org/T11048"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2520355709",
+        "type": "article",
+        "title": "Decoupling function and taxonomy in the global ocean microbiome",
+        "publication_date": "2016-09-15",
+        "cited_by_count": 3529,
+        "primary_topic": {
+          "id": "https://openalex.org/T11791"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2909668868",
+        "type": "article",
+        "title": "What is the Healthy Gut Microbiota Composition? A Changing Ecosystem across Age, Environment, Diet, and Diseases",
+        "publication_date": "2019-01-10",
+        "cited_by_count": 3450,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3048398081",
+        "type": "article",
+        "title": "ResFinder 4.0 for predictions of phenotypes from genotypes",
+        "publication_date": "2020-07-16",
+        "cited_by_count": 3363,
+        "primary_topic": {
+          "id": "https://openalex.org/T10147"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2791781902",
+        "type": "article",
+        "title": "Global increase and geographic convergence in antibiotic consumption between 2000 and 2015",
+        "publication_date": "2018-03-26",
+        "cited_by_count": 3226,
+        "primary_topic": {
+          "id": "https://openalex.org/T10897"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2982531601",
+        "type": "article",
+        "title": "CARD 2020: antibiotic resistome surveillance with the comprehensive antibiotic resistance database",
+        "publication_date": "2019-10-08",
+        "cited_by_count": 3199,
+        "primary_topic": {
+          "id": "https://openalex.org/T10147"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4224436908",
+        "type": "article",
+        "title": "Microbiota in health and diseases",
+        "publication_date": "2022-04-23",
+        "cited_by_count": 3151,
+        "primary_topic": {
+          "id": "https://openalex.org/T10066"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W4206677002",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2952564192",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3027658010",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4402557213",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2921966151",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2236332835",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2563720483",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2616825195",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2345791363",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2520355709",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2909668868",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3048398081",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2791781902",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2982531601",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4224436908",
+        "label": "on-target"
+      }
+    ]
+  },
+  "bio.zoo": {
+    "capturedAt": "2026-10-25T16:54:27.535Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10152%7CT10174%7CT10333%7CT10659%7CT11228%7CT11494%7CT11495%7CT11656%7CT11665%7CT12132%7CT12365%7CT12674%7CT12691%7CT13294%7CT13338%7CT14399%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2346578806",
+        "type": "article",
+        "title": "BORIS : a free, versatile open‐source event‐logging software for video/audio coding and live observations",
+        "publication_date": "2016-05-04",
+        "cited_by_count": 3458,
+        "primary_topic": {
+          "id": "https://openalex.org/T10174"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2977082078",
+        "type": "article",
+        "title": "A Comprehensive Review on Lipid Oxidation in Meat and Meat Products",
+        "publication_date": "2019-09-25",
+        "cited_by_count": 1935,
+        "primary_topic": {
+          "id": "https://openalex.org/T10333"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2788593837",
+        "type": "article",
+        "title": "No evidence that carotenoid pigments boost either immune or antioxidant defenses in a songbird",
+        "publication_date": "2018-01-30",
+        "cited_by_count": 1923,
+        "primary_topic": {
+          "id": "https://openalex.org/T10174"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3092664098",
+        "type": "article",
+        "title": "ASAP: assemble species by automatic partitioning",
+        "publication_date": "2020-10-15",
+        "cited_by_count": 1742,
+        "primary_topic": {
+          "id": "https://openalex.org/T14399"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3088495079",
+        "type": "article",
+        "title": "Hypothermia in newly born piglets: Mechanisms of thermoregulation and pathophysiology of death",
+        "publication_date": "2020-08-30",
+        "cited_by_count": 985,
+        "primary_topic": {
+          "id": "https://openalex.org/T12365"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3128638349",
+        "type": "article",
+        "title": "The soundscape of the Anthropocene ocean",
+        "publication_date": "2021-02-04",
+        "cited_by_count": 954,
+        "primary_topic": {
+          "id": "https://openalex.org/T10659"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2282823150",
+        "type": "article",
+        "title": "How Muscle Structure and Composition Influence Meat and Flesh Quality",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 876,
+        "primary_topic": {
+          "id": "https://openalex.org/T10333"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2754001138",
+        "type": "article",
+        "title": "Invited review: Effects of heat stress on dairy cattle welfare",
+        "publication_date": "2017-09-13",
+        "cited_by_count": 839,
+        "primary_topic": {
+          "id": "https://openalex.org/T12365"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2606222025",
+        "type": "article",
+        "title": "Global poultry production: current state and future outlook and challenges",
+        "publication_date": "2017-04-11",
+        "cited_by_count": 793,
+        "primary_topic": {
+          "id": "https://openalex.org/T13294"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2745089499",
+        "type": "article",
+        "title": "The biology of color",
+        "publication_date": "2017-08-03",
+        "cited_by_count": 767,
+        "primary_topic": {
+          "id": "https://openalex.org/T10174"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3042211652",
+        "type": "article",
+        "title": "Mechanism and consequences for avoidance of superparasitism in the solitary parasitoid Cotesia vestalis",
+        "publication_date": "2020-07-10",
+        "cited_by_count": 750,
+        "primary_topic": {
+          "id": "https://openalex.org/T10174"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2900884109",
+        "type": "article",
+        "title": "Terrestrial Passive Acoustic Monitoring: Review and Perspectives",
+        "publication_date": "2018-10-21",
+        "cited_by_count": 744,
+        "primary_topic": {
+          "id": "https://openalex.org/T11228"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2894847505",
+        "type": "article",
+        "title": "Emerging opportunities and challenges for passive acoustics in ecological assessment and monitoring",
+        "publication_date": "2018-10-06",
+        "cited_by_count": 734,
+        "primary_topic": {
+          "id": "https://openalex.org/T11665"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2807598220",
+        "type": "article",
+        "title": "The role of probiotics, prebiotics and synbiotics in animal nutrition",
+        "publication_date": "2018-06-06",
+        "cited_by_count": 707,
+        "primary_topic": {
+          "id": "https://openalex.org/T10152"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4235804341",
+        "type": "article",
+        "title": "Emerging coronaviruses: Genome structure, replication, and pathogenesis",
+        "publication_date": "2020-08-02",
+        "cited_by_count": 696,
+        "primary_topic": {
+          "id": "https://openalex.org/T11495"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2346578806",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2977082078",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2788593837",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3092664098",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3088495079",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3128638349",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2282823150",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2754001138",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2606222025",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2745089499",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3042211652",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2900884109",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2894847505",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2807598220",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4235804341",
+        "label": "off-target"
+      }
+    ]
+  },
   "chem.anal": {
     "capturedAt": "2026-10-25T16:54:34.315Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10180%7CT10212%7CT10532%7CT10640%7CT10683%7CT10908%7CT11460%7CT11630%7CT13079%7CT13128%7CT13325%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
@@ -3286,6 +4166,665 @@
       },
       {
         "workId": "https://openalex.org/W2803058542",
+        "label": "on-target"
+      }
+    ]
+  },
+  "civil.mat": {
+    "capturedAt": "2026-10-25T16:53:56.629Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10033%7CT10264%7CT10479%7CT10687%7CT11352%7CT11643%7CT11847%7CT11850%7CT12102%7CT12152%7CT12190%7CT12247%7CT12682%7CT13236%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2808508889",
+        "type": "article",
+        "title": "3D printing using concrete extrusion: A roadmap for research",
+        "publication_date": "2018-06-14",
+        "cited_by_count": 1619,
+        "primary_topic": {
+          "id": "https://openalex.org/T12190"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2748635950",
+        "type": "article",
+        "title": "Global CO 2 emissions from cement production",
+        "publication_date": "2018-01-26",
+        "cited_by_count": 1574,
+        "primary_topic": {
+          "id": "https://openalex.org/T10033"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2503299386",
+        "type": "article",
+        "title": "Additive manufacturing of concrete in construction: potentials and challenges of 3D concrete printing",
+        "publication_date": "2016-07-02",
+        "cited_by_count": 1256,
+        "primary_topic": {
+          "id": "https://openalex.org/T12190"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4235755884",
+        "type": "article",
+        "title": "Global CO 2 emissions from cement production, 1928–2018",
+        "publication_date": "2019-11-20",
+        "cited_by_count": 973,
+        "primary_topic": {
+          "id": "https://openalex.org/T10033"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2615049565",
+        "type": "article",
+        "title": "3D printing trends in building and construction industry: a review",
+        "publication_date": "2017-05-14",
+        "cited_by_count": 868,
+        "primary_topic": {
+          "id": "https://openalex.org/T12190"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2804514877",
+        "type": "article",
+        "title": "A Review of Self‐Healing Concrete for Damage Management of Structures",
+        "publication_date": "2018-05-16",
+        "cited_by_count": 778,
+        "primary_topic": {
+          "id": "https://openalex.org/T12247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2290592891",
+        "type": "article",
+        "title": "Formations of calcium carbonate minerals by bacteria and its multiple applications",
+        "publication_date": "2016-03-01",
+        "cited_by_count": 743,
+        "primary_topic": {
+          "id": "https://openalex.org/T12247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2294033738",
+        "type": "article",
+        "title": "Carbonate Precipitation through Microbial Activities in Natural Environment, and Their Potential in Biotechnology: A Review",
+        "publication_date": "2016-01-20",
+        "cited_by_count": 704,
+        "primary_topic": {
+          "id": "https://openalex.org/T12247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2979902195",
+        "type": "article",
+        "title": "Additive manufacturing in construction: A review on processes, applications, and digital planning methods",
+        "publication_date": "2019-10-09",
+        "cited_by_count": 677,
+        "primary_topic": {
+          "id": "https://openalex.org/T12190"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2556896272",
+        "type": "article",
+        "title": "Waste glass powder as partial replacement of cement for sustainable concrete practice",
+        "publication_date": "2016-11-16",
+        "cited_by_count": 647,
+        "primary_topic": {
+          "id": "https://openalex.org/T11847"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2540900744",
+        "type": "article",
+        "title": "Digital Concrete: Opportunities and Challenges",
+        "publication_date": "2016-10-31",
+        "cited_by_count": 642,
+        "primary_topic": {
+          "id": "https://openalex.org/T12190"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2979879033",
+        "type": "article",
+        "title": "Biomass waste utilisation in low-carbon products: harnessing a major potential resource",
+        "publication_date": "2019-10-14",
+        "cited_by_count": 631,
+        "primary_topic": {
+          "id": "https://openalex.org/T10033"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2476879142",
+        "type": "article",
+        "title": "Readily implementable techniques can cut annual CO 2 emissions from the production of concrete by over 20%",
+        "publication_date": "2016-07-01",
+        "cited_by_count": 593,
+        "primary_topic": {
+          "id": "https://openalex.org/T10033"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2794143268",
+        "type": "article",
+        "title": "Engineered Living Materials: Prospects and Challenges for Using Biological Systems to Direct the Assembly of Smart Materials",
+        "publication_date": "2018-02-12",
+        "cited_by_count": 570,
+        "primary_topic": {
+          "id": "https://openalex.org/T12247"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2950877469",
+        "type": "article",
+        "title": "Microbially Induced Calcium Carbonate Precipitation (MICP) and Its Potential in Bioconcrete: Microbiological and Molecular Concepts",
+        "publication_date": "2019-06-10",
+        "cited_by_count": 562,
+        "primary_topic": {
+          "id": "https://openalex.org/T12247"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2808508889",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2748635950",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2503299386",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4235755884",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2615049565",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2804514877",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2290592891",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2294033738",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2979902195",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2556896272",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2540900744",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2979879033",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2476879142",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2794143268",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2950877469",
+        "label": "on-target"
+      }
+    ]
+  },
+  "civil.trans": {
+    "capturedAt": "2026-10-25T16:53:55.052Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10298%7CT10370%7CT10524%7CT10698%7CT10842%7CT11344%7CT11942%7CT11980%7CT12306%7CT12725%7CT12985%7CT13154%7CT13527%7CT13562%7CT13601%7CT13800%7CT14250%7CT14445%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W2901504064",
+        "type": "article",
+        "title": "T-GCN: A Temporal Graph Convolutional Network for Traffic Prediction",
+        "publication_date": "2019-08-22",
+        "cited_by_count": 3350,
+        "primary_topic": {
+          "id": "https://openalex.org/T11344"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3120694366",
+        "type": "article",
+        "title": "Introducing the “15-Minute City”: Sustainability, Resilience and Place Identity in Future Post-Pandemic Cities",
+        "publication_date": "2021-01-08",
+        "cited_by_count": 1966,
+        "primary_topic": {
+          "id": "https://openalex.org/T10298"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2573587735",
+        "type": "article",
+        "title": "LSTM network: a deep learning approach for short‐term traffic forecast",
+        "publication_date": "2017-01-12",
+        "cited_by_count": 1839,
+        "primary_topic": {
+          "id": "https://openalex.org/T11344"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2579495707",
+        "type": "article",
+        "title": "Learning Traffic as Images: A Deep Convolutional Neural Network for Large-Scale Transportation Network Speed Prediction",
+        "publication_date": "2017-04-10",
+        "cited_by_count": 1416,
+        "primary_topic": {
+          "id": "https://openalex.org/T11344"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2565919573",
+        "type": "article",
+        "title": "On-demand high-capacity ride-sharing via dynamic trip-vehicle assignment",
+        "publication_date": "2017-01-03",
+        "cited_by_count": 1191,
+        "primary_topic": {
+          "id": "https://openalex.org/T11942"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2802508687",
+        "type": "article",
+        "title": "Big Data Analytics in Intelligent Transportation Systems: A Survey",
+        "publication_date": "2018-04-23",
+        "cited_by_count": 1078,
+        "primary_topic": {
+          "id": "https://openalex.org/T11344"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2284188655",
+        "type": "article",
+        "title": "Driver crash risk factors and prevalence evaluation using naturalistic driving data",
+        "publication_date": "2016-02-22",
+        "cited_by_count": 1045,
+        "primary_topic": {
+          "id": "https://openalex.org/T10370"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2915117209",
+        "type": "article",
+        "title": "Multi-Agent Deep Reinforcement Learning for Large-Scale Traffic Signal Control",
+        "publication_date": "2019-03-15",
+        "cited_by_count": 1044,
+        "primary_topic": {
+          "id": "https://openalex.org/T10524"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2996451395",
+        "type": "article",
+        "title": "Traffic Graph Convolutional Recurrent Neural Network: A Deep Learning Framework for Network-Scale Traffic Learning and Forecasting",
+        "publication_date": "2019-11-28",
+        "cited_by_count": 983,
+        "primary_topic": {
+          "id": "https://openalex.org/T11344"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017416358",
+        "type": "article",
+        "title": "The effect of COVID-19 and subsequent social distancing on travel behavior",
+        "publication_date": "2020-04-24",
+        "cited_by_count": 961,
+        "primary_topic": {
+          "id": "https://openalex.org/T10698"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2206428743",
+        "type": "article",
+        "title": "Policy and society related implications of automated driving: A review of literature and directions for future research",
+        "publication_date": "2017-02-13",
+        "cited_by_count": 956,
+        "primary_topic": {
+          "id": "https://openalex.org/T11942"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3157547930",
+        "type": "article",
+        "title": "Urban planning and quality of life: A review of pathways linking the built environment to subjective well-being",
+        "publication_date": "2021-04-29",
+        "cited_by_count": 888,
+        "primary_topic": {
+          "id": "https://openalex.org/T10298"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2293969526",
+        "type": "article",
+        "title": "Disruptive Change in the Taxi Business: The Case of Uber",
+        "publication_date": "2016-05-01",
+        "cited_by_count": 860,
+        "primary_topic": {
+          "id": "https://openalex.org/T11942"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2732194751",
+        "type": "article",
+        "title": "Mobility as a Service: A Critical Review of Definitions, Assessments of Schemes, and Key Challenges",
+        "publication_date": "2017-06-29",
+        "cited_by_count": 855,
+        "primary_topic": {
+          "id": "https://openalex.org/T11942"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2509583637",
+        "type": "article",
+        "title": "A Survey on the Coordination of Connected and Automated Vehicles at Intersections and Merging at Highway On-Ramps",
+        "publication_date": "2016-09-07",
+        "cited_by_count": 797,
+        "primary_topic": {
+          "id": "https://openalex.org/T10524"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W2901504064",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3120694366",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2573587735",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2579495707",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2565919573",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2802508687",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2284188655",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2915117209",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2996451395",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3017416358",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2206428743",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3157547930",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2293969526",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2732194751",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2509583637",
+        "label": "on-target"
+      }
+    ]
+  },
+  "civil.urban": {
+    "capturedAt": "2026-10-25T16:53:59.195Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10239%7CT10692%7CT10757%7CT10766%7CT11410%7CT11645%7CT11858%7CT11955%7CT12147%7CT12273%7CT12325%7CT12483%7CT12502%7CT12995%7CT13033%7CT13343%7CT13513%7CT13654%7CT13694%7CT13699%7CT13731%7CT13819%7CT13850%7CT13920%7CT14016%7CT14152%7CT14520%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "works": [
+      {
+        "id": "https://openalex.org/W1484598383",
+        "type": "article",
+        "title": "The Effects of Exposure to Better Neighborhoods on Children: New Evidence from the Moving to Opportunity Experiment",
+        "publication_date": "2016-03-28",
+        "cited_by_count": 2313,
+        "primary_topic": {
+          "id": "https://openalex.org/T11645"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2964203982",
+        "type": "article",
+        "title": "Nature and mental health: An ecosystem service perspective",
+        "publication_date": "2019-07-05",
+        "cited_by_count": 1994,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2289270062",
+        "type": "article",
+        "title": "Extinction of experience: the loss of human–nature interactions",
+        "publication_date": "2016-03-01",
+        "cited_by_count": 1800,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2549766072",
+        "type": "article",
+        "title": "OSMnx: New methods for acquiring, constructing, analyzing, and visualizing complex street networks",
+        "publication_date": "2017-07-07",
+        "cited_by_count": 1592,
+        "primary_topic": {
+          "id": "https://openalex.org/T12325"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2411654968",
+        "type": "article",
+        "title": "Nature-based solutions to climate change mitigation and adaptation in urban areas: perspectives on indicators, knowledge gaps, barriers, and opportunities for action",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 1504,
+        "primary_topic": {
+          "id": "https://openalex.org/T10766"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2584823719",
+        "type": "article",
+        "title": "Utilising green and bluespace to mitigate urban heat island intensity",
+        "publication_date": "2017-02-02",
+        "cited_by_count": 1443,
+        "primary_topic": {
+          "id": "https://openalex.org/T10766"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2606481191",
+        "type": "article",
+        "title": "Biodiversity in the city: key challenges for urban green space management",
+        "publication_date": "2017-04-10",
+        "cited_by_count": 1355,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2743768722",
+        "type": "article",
+        "title": "Nature Contact and Human Health: A Research Agenda",
+        "publication_date": "2017-07-24",
+        "cited_by_count": 1237,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2790123573",
+        "type": "article",
+        "title": "Urban Green Space and Its Impact on Human Health",
+        "publication_date": "2018-03-03",
+        "cited_by_count": 1184,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2952548366",
+        "type": "article",
+        "title": "Spending at least 120 minutes a week in nature is associated with good health and wellbeing",
+        "publication_date": "2019-06-13",
+        "cited_by_count": 1116,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2907470085",
+        "type": "article",
+        "title": "Satellite Remote Sensing of Surface Urban Heat Islands: Progress, Challenges, and Perspectives",
+        "publication_date": "2018-12-29",
+        "cited_by_count": 1073,
+        "primary_topic": {
+          "id": "https://openalex.org/T10766"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2912746916",
+        "type": "article",
+        "title": "The Relationship between Social Cohesion and Urban Green Space: An Avenue for Health Promotion",
+        "publication_date": "2019-02-04",
+        "cited_by_count": 1027,
+        "primary_topic": {
+          "id": "https://openalex.org/T10692"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3195494505",
+        "type": "article",
+        "title": "Street view imagery in urban analytics and GIS: A review",
+        "publication_date": "2021-08-13",
+        "cited_by_count": 937,
+        "primary_topic": {
+          "id": "https://openalex.org/T10757"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2568883667",
+        "type": "article",
+        "title": "Social Sustainability: A New Conceptual Framework",
+        "publication_date": "2017-01-05",
+        "cited_by_count": 893,
+        "primary_topic": {
+          "id": "https://openalex.org/T14520"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2923210967",
+        "type": "article",
+        "title": "Scale-dependent interactions between tree canopy cover and impervious surfaces reduce daytime urban heat during summer",
+        "publication_date": "2019-03-25",
+        "cited_by_count": 887,
+        "primary_topic": {
+          "id": "https://openalex.org/T10766"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "workId": "https://openalex.org/W1484598383",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2964203982",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2289270062",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2549766072",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2411654968",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2584823719",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2606481191",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2743768722",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2790123573",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2952548366",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2907470085",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2912746916",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W3195494505",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2568883667",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2923210967",
         "label": "on-target"
       }
     ]

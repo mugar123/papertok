@@ -3431,8 +3431,30 @@
         "T14250",
         "T14445"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10298%7CT10370%7CT10524%7CT10698%7CT10842%7CT11344%7CT11942%7CT11980%7CT12306%7CT12725%7CT12985%7CT13154%7CT13527%7CT13562%7CT13601%7CT13800%7CT14250%7CT14445%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12,
+      "precision": 0.8,
+      "byTopic": {
+        "T10298": "0/2",
+        "T10370": "1/1",
+        "T10524": "2/2",
+        "T10698": "1/1",
+        "T10842": "0/0",
+        "T11344": "5/5",
+        "T11942": "3/4",
+        "T11980": "0/0",
+        "T12306": "0/0",
+        "T12725": "0/0",
+        "T12985": "0/0",
+        "T13154": "0/0",
+        "T13527": "0/0",
+        "T13562": "0/0",
+        "T13601": "0/0",
+        "T13800": "0/0",
+        "T14250": "0/0",
+        "T14445": "0/0"
+      }
     },
     {
       "leaf": "civil.mat",
@@ -3469,8 +3491,26 @@
         "T12682",
         "T13236"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10033%7CT10264%7CT10479%7CT10687%7CT11352%7CT11643%7CT11847%7CT11850%7CT12102%7CT12152%7CT12190%7CT12247%7CT12682%7CT13236%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "byTopic": {
+        "T10033": "1/4",
+        "T10264": "0/0",
+        "T10479": "0/0",
+        "T10687": "0/0",
+        "T11352": "0/0",
+        "T11643": "0/0",
+        "T11847": "1/1",
+        "T11850": "0/0",
+        "T12102": "0/0",
+        "T12152": "0/0",
+        "T12190": "5/5",
+        "T12247": "2/5",
+        "T12682": "0/0",
+        "T13236": "0/0"
+      }
     },
     {
       "leaf": "civil.urban",
@@ -3515,8 +3555,39 @@
         "T14152",
         "T14520"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10239%7CT10692%7CT10757%7CT10766%7CT11410%7CT11645%7CT11858%7CT11955%7CT12147%7CT12273%7CT12325%7CT12483%7CT12502%7CT12995%7CT13033%7CT13343%7CT13513%7CT13654%7CT13694%7CT13699%7CT13731%7CT13819%7CT13850%7CT13920%7CT14016%7CT14152%7CT14520%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8,
+      "precision": 0.5333333333333333,
+      "byTopic": {
+        "T10239": "0/0",
+        "T10692": "2/7",
+        "T10757": "1/1",
+        "T10766": "4/4",
+        "T11410": "0/0",
+        "T11645": "0/1",
+        "T11858": "0/0",
+        "T11955": "0/0",
+        "T12147": "0/0",
+        "T12273": "0/0",
+        "T12325": "1/1",
+        "T12483": "0/0",
+        "T12502": "0/0",
+        "T12995": "0/0",
+        "T13033": "0/0",
+        "T13343": "0/0",
+        "T13513": "0/0",
+        "T13654": "0/0",
+        "T13694": "0/0",
+        "T13699": "0/0",
+        "T13731": "0/0",
+        "T13819": "0/0",
+        "T13850": "0/0",
+        "T13920": "0/0",
+        "T14016": "0/0",
+        "T14152": "0/0",
+        "T14520": "0/1"
+      }
     },
     {
       "leaf": "chemeng.nano",
@@ -4864,8 +4935,28 @@
         "T13338",
         "T14399"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10152%7CT10174%7CT10333%7CT10659%7CT11228%7CT11494%7CT11495%7CT11656%7CT11665%7CT12132%7CT12365%7CT12674%7CT12691%7CT13294%7CT13338%7CT14399%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 4,
+      "precision": 0.26666666666666666,
+      "byTopic": {
+        "T10152": "0/1",
+        "T10174": "3/4",
+        "T10333": "0/2",
+        "T10659": "0/1",
+        "T11228": "0/1",
+        "T11494": "0/0",
+        "T11495": "0/1",
+        "T11656": "0/0",
+        "T11665": "0/1",
+        "T12132": "0/0",
+        "T12365": "0/2",
+        "T12674": "0/0",
+        "T12691": "0/0",
+        "T13294": "0/1",
+        "T13338": "0/0",
+        "T14399": "1/1"
+      }
     },
     {
       "leaf": "bio.micro",
@@ -4900,8 +4991,28 @@
         "T13817",
         "T13980"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10066%7CT10120%7CT10147%7CT10428%7CT10593%7CT10873%7CT10897%7CT10932%7CT11048%7CT11103%7CT11688%7CT11791%7CT12688%7CT12744%7CT13817%7CT13980%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "byTopic": {
+        "T10066": "7/8",
+        "T10120": "0/0",
+        "T10147": "2/2",
+        "T10428": "0/0",
+        "T10593": "0/0",
+        "T10873": "0/0",
+        "T10897": "0/3",
+        "T10932": "0/0",
+        "T11048": "1/1",
+        "T11103": "0/0",
+        "T11688": "0/0",
+        "T11791": "1/1",
+        "T12688": "0/0",
+        "T12744": "0/0",
+        "T13817": "0/0",
+        "T13980": "0/0"
+      }
     },
     {
       "leaf": "bio.immuno",
@@ -4937,8 +5048,38 @@
         "T14165",
         "T14245"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10031%7CT10371%7CT10469%7CT10506%7CT10580%7CT10993%7CT11020%7CT11313%7CT11346%7CT11403%7CT11510%7CT11597%7CT11668%7CT11725%7CT12159%7CT12255%7CT12387%7CT12477%7CT12528%7CT12672%7CT12955%7CT13254%7CT13410%7CT14072%7CT14165%7CT14245%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10031": "0/0",
+        "T10371": "1/1",
+        "T10469": "0/2",
+        "T10506": "0/0",
+        "T10580": "0/0",
+        "T10993": "0/0",
+        "T11020": "0/0",
+        "T11313": "4/5",
+        "T11346": "0/0",
+        "T11403": "0/0",
+        "T11510": "0/0",
+        "T11597": "0/0",
+        "T11668": "3/3",
+        "T11725": "0/0",
+        "T12159": "0/0",
+        "T12255": "0/0",
+        "T12387": "0/0",
+        "T12477": "0/0",
+        "T12528": "0/0",
+        "T12672": "0/0",
+        "T12955": "0/2",
+        "T13254": "0/0",
+        "T13410": "1/1",
+        "T14072": "0/0",
+        "T14165": "0/0",
+        "T14245": "1/1"
+      }
     },
     {
       "leaf": "bio.biotech",
@@ -4964,8 +5105,24 @@
         "T12996",
         "T14150"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10404%7CT10613%7CT10878%7CT10900%7CT10932%7CT11340%7CT11455%7CT11617%7CT12673%7CT12856%7CT12996%7CT14150%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "byTopic": {
+        "T10404": "1/1",
+        "T10613": "0/1",
+        "T10878": "12/12",
+        "T10900": "0/0",
+        "T10932": "1/1",
+        "T11340": "0/0",
+        "T11455": "0/0",
+        "T11617": "0/0",
+        "T12673": "0/0",
+        "T12856": "0/0",
+        "T12996": "0/0",
+        "T14150": "0/0"
+      }
     },
     {
       "leaf": "chem.anal",

@@ -326,6 +326,24 @@ rendering and point-cloud learning). The nine lanes ask for 39 topics and
 spend 90 units a week; with 75 notable lanes the nightly share is eleven
 (110 units). Authorized by Nicolás on 2026-10-25 (ENG-138).
 
+### Batch 7: biology and civil engineering
+
+The seven leaves of biology and civil engineering without a topic lane,
+labelled by the same agent under the same procedure. Four pass:
+`bio.biotech` at 14 of 15 (CRISPR tools and nucleic-acid detection),
+`civil.trans` at 12 (traffic forecasting, connected vehicles, mobility
+services), `bio.micro` at 11 (gut microbiota, antimicrobial resistance
+databases) and `bio.immuno` at 10 (innate immunity, macrophages, interferon
+and COVID-19; psoriasis and atherosclerosis doubted as clinical). Three are
+rejected: `civil.mat` at 9 (3D concrete printing and self-healing concrete on
+target; cement emissions accounting and microbial carbonate doubted),
+`civil.urban` at 8 (urban heat islands, green space and street networks on
+target; nature-and-health epidemiology doubted) and `bio.zoo` at 4 (animal
+science and meat quality beside behaviour and taxonomy). The four lanes ask
+for 17 topics and spend 40 units a week; with 79 notable lanes the nightly
+share is twelve (120 units). This closes the 110 leaves: 40 admitted, 70
+rejected. Authorized by Nicolás on 2026-10-25 (ENG-138).
+
 ## The 2026-10-23 sample (PAP-99)
 
 107 anonymous requests, one per proposed leaf, between 08:04 and 08:05 UTC, all
