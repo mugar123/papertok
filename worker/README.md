@@ -342,7 +342,10 @@ free and reserves nothing; only the arXiv landing-page lookup reserves a unit.
 Identical requests in one isolate share one lookup; a refused admission is not cached, and a
 failure never replaces a record another request found. Lists are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the
-Worker before the frontend, and check them with a crawler user agent.
+Worker before the frontend, and check them with a crawler user agent. The release that moved a
+paper's page to `/paper/…` (ENG-44) reverses that order once: the Worker's canonical and list links
+name `/paper/…`, which a frontend from before it answers with its 404 page, so deploy the frontend
+first.
 
 A looked-up entity previews with its own card: `/share/image/entity/:type/:id`, a 1200x630
 PNG this Worker draws (`worker/share-image.ts`, laid out in `worker/share-card.ts`, drawn with

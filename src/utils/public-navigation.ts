@@ -386,14 +386,25 @@ function resolvePaperArguments(typeOrPaper: PaperInput, identifier: string | Sha
 
 /**
  * A paper's page is `/paper/<key>`, outside the `/public` prefix the list and
- * entity pages keep (PAP-44). Links minted as `/public/paper/<key>` before the
- * move are redirected permanently by vercel.json, and by App.tsx for the
- * addresses that never reach the server.
+ * entity pages keep (ENG-44). Links minted as `/public/paper/<key>` before the
+ * move are redirected permanently by vercel.json, and through `legacyPaperPath`
+ * for the addresses that never reach the server.
  */
 export function getPublicPaperPath(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const key = resolvePaperKey(typeOrPaper, input.identifier, input.options);
   return key ? `/paper/${encodePathSegment(key)}` : null;
+}
+
+/**
+ * Where an address from before ENG-44, `/public/paper/<key>`, lives now, or
+ * null for any other path. The router matches `/Public/Paper/…` as it matches
+ * `/public/paper/…`, so this does too, and the key keeps its own spelling. A
+ * trailing slash is dropped. The query and fragment are the caller's to carry.
+ */
+export function legacyPaperPath(pathname: string) {
+  const key = /^\/public\/paper\/([^/]+)\/*$/i.exec(pathname)?.[1];
+  return key ? `/paper/${key}` : null;
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

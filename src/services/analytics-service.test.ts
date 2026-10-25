@@ -180,8 +180,8 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/explorer/person/private-id'), '/explorer/entity/:id');
   assert.equal(normalizeAnalyticsPath('/search/private-query'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/paper/private-key'), '/paper/:id');
-  // The address a paper had before ENG-44, held for one render while the app
-  // redirects a link that never reached the server.
+  // The address a paper had before ENG-44: an earlier visit's stored values
+  // still carry it.
   assert.equal(normalizeAnalyticsPath('/public/paper/private-key'), '/public/paper/:id');
   assert.equal(normalizeAnalyticsPath('/public/list/private-key'), '/public/list/:id');
   // Profile pages are gone; an old link to one is a not-found page, and the

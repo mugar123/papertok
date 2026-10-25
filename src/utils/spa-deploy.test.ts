@@ -20,7 +20,7 @@ test('the SPA rewrite never answers a missing chunk with the app document', asyn
   const matches = (value: string) => new RegExp(`^${pattern}$`).test(value);
   assert.ok(matches('lists'));
   assert.ok(matches('public/paper/10.1234%2Fabc'));
-  // A paper's page since PAP-44: without this a person opening a shared link
+  // A paper's page since ENG-44: without this a person opening a shared link
   // would get the 404 page.
   assert.ok(matches('paper/ZG9pOjEwLjExNDUvMzU1NTE3NA'));
   assert.ok(!matches('_vercel/insights/script.js'));

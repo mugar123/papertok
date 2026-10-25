@@ -15,6 +15,7 @@ import {
   getShareImage,
   getSiteRootUrl,
   getViteBasePath,
+  legacyPaperPath,
   parsePaperKey,
   encodePaperKey,
 } from './public-navigation.ts';
@@ -67,6 +68,24 @@ test('prefers DOI identity and places paper keys in /paper/ router paths', () =>
   const key = encodePaperKey({ doi: '10.5555/Some.DOI' });
   assert.equal(path, `/paper/${key}`);
   assert.equal(getPublicPaperPath({ title: 'No stable identifier' } as NonNullable<Parameters<typeof getPublicPaperPath>[0]> & Record<string, unknown>), null);
+});
+
+test('a paper address from before ENG-44 maps to the page it moved to, and no other address does', () => {
+  const key = encodePaperKey({ doi: '10.5555/Some.DOI' })!;
+  const moved = getPublicPaperPath({ doi: '10.5555/Some.DOI' });
+  assert.equal(legacyPaperPath(`/public/paper/${key}`), moved);
+  assert.equal(moved, `/paper/${key}`);
+
+  // The router matches any letter case and trailing slashes. A prefix left
+  // whole would send the reader back to the address they came from.
+  assert.equal(legacyPaperPath(`/Public/PAPER/${key}`), moved);
+  assert.equal(legacyPaperPath(`/public/paper/${key}//`), moved);
+
+  // The new address is never moved again, and neither are other pages.
+  assert.equal(legacyPaperPath(`/paper/${key}`), null);
+  assert.equal(legacyPaperPath('/public/list/reading-list'), null);
+  assert.equal(legacyPaperPath(`/public/paper/${key}/more`), null);
+  assert.equal(legacyPaperPath('/public/paper/'), null);
 });
 
 /**

@@ -285,7 +285,9 @@ export function normalizeAnalyticsPath(pathname = '/') {
     return `/public/entity/${type}/:id`;
   }
   if (/^\/paper\/[^/]+$/.test(path)) return '/paper/:id';
-  // The address before PAP-44, on screen for one render while App.tsx redirects it.
+  // The address before ENG-44. What an earlier visit stored (its first URL, the
+  // previous page) still carries it, and it is on screen for one render when
+  // app.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
 

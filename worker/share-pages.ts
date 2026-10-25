@@ -80,7 +80,7 @@ import {
  * JavaScript: WhatsApp, Twitterbot, facebookexternalhit and Googlebot all
  * received the same 8963 bytes, titled «PaperTok», with og:url and canonical
  * at /feed and an empty #root. Vercel sends those bots here instead
- * (vercel.json), from /paper/… and /public/{list,user,entity}/… to /share/…, and
+ * (vercel.json), from /paper/… and /public/{list,entity}/… to /share/…, and
  * this module answers the same shell with the page's own head (profiles are
  * gone, so a /share/user/… path gets the not-found page): title,
  * description, canonical, og:* and twitter:*, JSON-LD, a static copy of the
