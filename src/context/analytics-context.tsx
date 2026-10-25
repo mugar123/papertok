@@ -1,8 +1,6 @@
 import type { PropsWithChildren } from 'react';
 export interface AnalyticsContextValue {
   consent: ReturnType<typeof readAnalyticsConsent>;
-  /** Whether a choice is stored at all; until it is, the consent banner asks. */
-  decided: boolean;
   updateConsent: (value: string) => Promise<boolean>;
   trackEvent: typeof trackProductEvent;
   markActivation: () => ReturnType<typeof markAnalyticsActivation>;
@@ -18,11 +16,11 @@ import { useLanguage } from './language-context.tsx';
 import { useAuth } from './auth-context.tsx';
 import {
   ANALYTICS_CONSENT,
+  ANALYTICS_CONSENT_KEY,
   identifyAnalyticsUser,
   markActivation as markAnalyticsActivation,
   normalizeAnalyticsPath,
   readAnalyticsConsent,
-  readStoredAnalyticsConsent,
   removeLegacyGoogleAnalyticsCookies,
   sanitizeVercelEvent,
   setAnalyticsConsent,
@@ -37,9 +35,15 @@ import {
 export function AnalyticsProvider({ children }: PropsWithChildren) {
   const location = useLocation();
   const { language } = useLanguage();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [consent, setConsent] = useState(readAnalyticsConsent);
-  const [decided, setDecided] = useState(() => readStoredAnalyticsConsent() !== null);
+
+  // A pending Firebase restore is not a sign-out. Resolve identity before
+  // recording this visit, so reloads keep the same signed-in identity.
+  useEffect(() => {
+    if (authLoading && !user) return;
+    void identifyAnalyticsUser(user && { uid: user.uid });
+  }, [authLoading, consent, user]);
 
   // Runs for everyone, consent or not: these are leftovers from GA4, and the
   // people carrying them are exactly the ones who once said yes.
@@ -48,9 +52,9 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (consent === ANALYTICS_CONSENT.DENIED) return;
+    if (authLoading || consent === ANALYTICS_CONSENT.DENIED) return;
     void trackAcquisition({ language });
-  }, [consent, language]);
+  }, [authLoading, consent, language]);
 
   // Page views go to both services, keyed on the concrete pathname, and report
   // only the pattern: Vercel Web Analytics counts visits, pages and countries,
@@ -64,48 +68,45 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   // `route` as the pattern and `path` as the concrete URL that matched it, but
   // the concrete URL is the one thing that must not travel: the privacy policy
   // promises that reading a paper is reported as `/public/paper/:id` and never
-  // says which. `trackPageView` normalizes the same way for PostHog, unless the
-  // reader opted in to detailed analytics.
+  // says which. `trackPageView` normalizes PostHog page views too; product
+  // events carry paper identifiers separately.
   useEffect(() => {
-    if (consent === ANALYTICS_CONSENT.DENIED) return;
+    if (authLoading || consent === ANALYTICS_CONSENT.DENIED) return;
     const viewPath = normalizeAnalyticsPath(location.pathname);
     pageview({ route: viewPath, path: viewPath });
     void trackPageView(location.pathname);
-  }, [consent, location.pathname]);
+  }, [authLoading, consent, location.pathname]);
 
   useEffect(() => {
-    if (consent === ANALYTICS_CONSENT.DENIED) return;
+    if (authLoading || consent === ANALYTICS_CONSENT.DENIED) return;
     void trackDay7Return();
-  }, [consent, location.pathname]);
-
-  // Detailed analytics follows the account: linked on sign-in, unlinked on
-  // sign-out. At any other level PostHog never hears about the account.
-  useEffect(() => {
-    if (consent !== ANALYTICS_CONSENT.DETAILED) return;
-    void identifyAnalyticsUser(user && {
-      uid: user.uid,
-      email: user.email,
-      name: user.displayName,
-      signInProviders: user.providerData.map(provider => provider.providerId),
-    });
-  }, [consent, user]);
+  }, [authLoading, consent, location.pathname]);
 
   const updateConsent = useCallback(async (value: string) => {
     if (!(Object.values(ANALYTICS_CONSENT) as string[]).includes(value)) return false;
     const persisted = await setAnalyticsConsent(value);
     if (persisted) {
       setConsent(value as typeof consent);
-      setDecided(true);
     }
     return persisted;
   }, []);
+
+  useEffect(() => {
+    const syncPreference = (event: StorageEvent) => {
+      if (event.key === ANALYTICS_CONSENT_KEY || event.key === null) {
+        void updateConsent(readAnalyticsConsent());
+      }
+    };
+    window.addEventListener('storage', syncPreference);
+    return () => window.removeEventListener('storage', syncPreference);
+  }, [updateConsent]);
 
   const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(
-    () => ({ consent, decided, updateConsent, trackEvent, markActivation }),
-    [consent, decided, updateConsent, trackEvent, markActivation],
+    () => ({ consent, updateConsent, trackEvent, markActivation }),
+    [consent, updateConsent, trackEvent, markActivation],
   );
 
   // Passing `route` flips `disableAutoTrack` on the injected script, whose own
