@@ -195,7 +195,7 @@ test('a connection lost while the answer arrives is marked unreachable too', asy
 });
 
 test('an answer without a papers list is an invalid response, not an empty page', async () => {
-  for (const body of ['{}', '{"papers":null}', '{"papers":{}}']) {
+  for (const body of ['null', '{}', '{"papers":null}', '{"papers":{}}']) {
     const { options } = harness(async () => new Response(body, { status: 200 }));
     await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { code: 'STORE_RESPONSE_INVALID' });
   }

@@ -61,8 +61,9 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const { papers } = await response.json().catch(markUnreachable) as { papers?: Paper[] };
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[] } | null;
   // The Worker always answers a list, empty when nothing matches.
+  const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
   return papers;
 }
