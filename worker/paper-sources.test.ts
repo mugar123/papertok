@@ -775,6 +775,35 @@ test('an arXiv eprint that lists a DOI and no journal reference leaves a stored 
   }
 });
 
+// An eprint's journal reference reads reviewed, yet its record carries no
+// journal DOI to upgrade the row with, so `merge` keeps the working paper's
+// `false` and the row would show the journal beside its Working paper tag.
+test('an arXiv eprint with a journal reference and no journal DOI leaves a stored working-paper row as it was', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const { env } = relay(t, () => ({ results: [workingPaper] }));
+  const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
+  for (const doi of ['', '10.3386/w35104']) {
+    const { binding, db } = testD1();
+    const store = { ...env, PAPER_STORE: binding };
+    const rows = () => (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>).map(row => ({ ...JSON.parse(row.paper), storedPublished: row.published }));
+    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
+    await harvestLane(store, series);
+    const [before] = rows();
+    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+    const eprint = arxivRecordPaper({
+      arxivId: '2610.01234', title: gmmArticle.title, abstract: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.',
+      authors: ['Ana Economist'], categories: ['econ.EM'], doi, journalRef: 'Journal of Business and Economic Statistics 44 (2026) 1-20', comments: null,
+      published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z',
+    });
+    await ingestPapers(store, [{ paper: eprint, lanes: [] }], { now: Date.parse('2026-10-24T03:00:00Z') });
+    const after = rows();
+    assert.equal(after.length, 1, doi);
+    const shown = (paper: typeof before) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
+    assert.deepEqual(shown(after[0]), shown(before), doi);
+  }
+});
+
 // The cost: up to five pages of 200 on a lane's first night and three on a
 // later one, one request a page for all of a leaf's sources.
 test("a venue lane reads five pages on its first night and three at most after, and every category lane's first night fits the categories' share", async t => {

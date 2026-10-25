@@ -463,12 +463,16 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       // merged into it. Listed the same night, the article comes first and
       // the row reads reviewed (README-openalex-leaf-venues.md); a working
       // paper stored earlier gets that order too, and keeps the id readers
-      // liked or saved it under (ENG-133).
+      // liked or saved it under (ENG-133). A record that leaves the row a
+      // working paper, such as an eprint naming its journal without the
+      // journal's DOI, does not lend it its landing page, text and date.
+      const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
       const journal = isWorkingPaperRow(base) ? records.find(readsAsReviewed) : undefined;
-      const ordered = journal ? [journal, ...records.filter(record => record !== journal)] : records;
-      paper = ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
-      // The row keeps the id readers hold, and enrichment asks OpenAlex for the article's work, not the working paper's.
-      if (journal) paper = { ...paper, id: base.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined };
+      const upgraded = journal && mergeAll([journal, ...records.filter(record => record !== journal)]);
+      paper = journal && upgraded && !isWorkingPaperRow(upgraded)
+        // The row keeps the id readers hold, and enrichment asks OpenAlex for the article's work, not the working paper's.
+        ? { ...upgraded, id: base.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined }
+        : mergeAll(records);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
