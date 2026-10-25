@@ -1284,6 +1284,26 @@ test('asks Scopus once per miss while Elsevier answers 500', async () => {
   assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 500);
 });
 
+// A refused key is refused whatever the view, unlike the 401 AUTHORIZATION_ERROR
+// an account without COMPLETE gets, which the next view can answer.
+test('asks Scopus once per miss while Elsevier refuses the key', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHENTICATION_ERROR', statusText: 'Invalid API Key' } } }),
+      { status: 401 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 401);
+});
+
 // CORE answered in 7-8 s when measured; the shared six-second deadline cut
 // every such search into a 502 before the edge cache could keep it.
 test('answers a CORE search that takes longer than the shared source deadline', async () => {

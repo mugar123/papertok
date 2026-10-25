@@ -30,9 +30,10 @@ const SCOPUS_VIEWS = ['COMPLETE', 'STANDARD', ''];
 // 5xx is not here: an Elsevier outage says nothing about the view, and walking
 // the ladder through one would triple the calls made while it is struggling.
 const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406];
-// The egress refuses this Worker's secret with the same 401 Elsevier uses for a
-// view, so only the code tells them apart. No other view can fix that refusal.
-const SCOPUS_EGRESS_AUTH_REFUSED = 'PROXY_AUTH_REQUIRED';
+// Two refusals share that 401 and are not about the view, so only the code tells
+// them apart from the one above: the egress refusing this Worker's secret, and
+// Elsevier refusing the API key. No other view can fix either.
+const SCOPUS_REFUSALS_NO_VIEW_CAN_FIX = ['PROXY_AUTH_REQUIRED', 'AUTHENTICATION_ERROR'];
 
 // Trying a view the account cannot have costs a doomed upstream call on every
 // cache miss, so once `/health/scopus` names the view that answers, pinning it
@@ -98,7 +99,7 @@ async function fetchScopusSearch(env: WorkerEnv, { query, start = 0, count = 1 }
     }
     const failure = await scopusFailure(response, view);
     attempts.push(failure);
-    if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status) || failure.code === SCOPUS_EGRESS_AUTH_REFUSED) break;
+    if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status) || SCOPUS_REFUSALS_NO_VIEW_CAN_FIX.includes(failure.code)) break;
   }
   // scopusViewLadder always names at least one view.
   if (!response) throw new Error('Scopus was not asked: no view to request');
