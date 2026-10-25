@@ -64,8 +64,9 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
 /**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
- * by the reader's liked and saved papers. Categories are the app's; follows
- * are sent as they are stored, and the Worker decides how each is served.
+ * by the reader's examples (likes, saves and long reads) per interest group.
+ * Categories are the app's; follows are sent as they are stored, and the
+ * Worker decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  */
