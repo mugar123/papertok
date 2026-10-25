@@ -240,8 +240,12 @@ function shareLanes(groups: PlannedGroup[], maxLanes: number) {
  *
  * Each group takes its weight's share of `maxPositives` (at least one when it
  * has any) from its newest examples: a cold group's from its own area, the
- * established group's from every area that is neither dormant nor
- * cold-added. Examples of no area fill whatever room the groups leave.
+ * established group's from every area but the cold-added ones. Neither takes
+ * an example of a removed subarea, nor one filed under the key of an area
+ * the reader left (no subarea selected, one removed) or under an arXiv
+ * category of it with no leaf (isDormantCategory); a like of a subarea of
+ * that area the reader never picked still ranks. Examples of no area fill
+ * whatever room the groups leave.
  */
 export function planInterestGroups(
   input: InterestMemoryInput,
