@@ -37,15 +37,26 @@ export interface InterestGroup { categories: string[]; exampleCategories: string
 
 interface PlannedGroup extends InterestGroup { ownSubarea: boolean }
 
+// The selected ids that place in an area, less the deselected ones. An id
+// retired from the taxonomy (q-bio.NC, eess.AS) is still stored by accounts
+// that picked it, and places by its archive.
+function chosenIds(selected: string[], dormant: Set<string>) {
+  return [...new Set(selected)].filter(id => !dormant.has(id) && areaKeyForCategory(id));
+}
+
 /**
  * Every subarea of an area with a selected subarea, less the deselected
- * ones. A deselected subarea sleeps: it keeps its examples but leaves the
- * feed, its exploration included.
+ * ones, and any selected id retired from the taxonomy. A deselected subarea
+ * sleeps: it keeps its examples but leaves the feed, its exploration included.
  */
 export function activeCategories(selected: string[], deselected: string[]) {
   const dormant = new Set(deselected);
-  const areas = new Set(selected.filter(id => !dormant.has(id)).map(getCategoryArea));
-  return new Set(getAllLeafCategories().filter(leaf => areas.has(leaf.area) && !dormant.has(leaf.id)).map(leaf => leaf.id));
+  const chosen = chosenIds(selected, dormant);
+  const areas = new Set<string | null>(chosen.map(areaKeyForCategory));
+  return new Set([
+    ...getAllLeafCategories().filter(leaf => areas.has(leaf.area) && !dormant.has(leaf.id)).map(leaf => leaf.id),
+    ...chosen.filter(id => !getCategoryArea(id)),
+  ]);
 }
 
 const progressOf = (examples: number, shown: number, learnedExamples: number, learnedShown: number) =>
@@ -54,21 +65,23 @@ const progressOf = (examples: number, shown: number, learnedExamples: number, le
 // One entry per active area, in the order the selection first names it.
 function readAreas({ selected, deselected, examples, exposure, affinities }: InterestMemoryInput) {
   const dormant = new Set(deselected);
-  const chosen = [...new Set(selected)].filter(id => !dormant.has(id) && getCategoryArea(id));
+  const chosen = chosenIds(selected, dormant);
   const active = activeCategories(chosen, deselected);
-  const areaKeys = [...new Set(chosen.map(id => getCategoryArea(id)!))];
+  const areaKeys = [...new Set(chosen.map(id => areaKeyForCategory(id)!))];
   const shownIn = (category: string) => exposure[category]?.shown ?? 0;
   const subareaProgress = (subarea: string) =>
     progressOf(examples.filter(example => example.category === subarea).length, shownIn(subarea), SUBAREA_LEARNED_EXAMPLES, SUBAREA_LEARNED_SHOWN);
 
   return areaKeys.map((area) => {
-    const activeLeaves = getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id);
+    const retired = chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
+    const activeLeaves = [...getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id), ...retired];
     // An example filed under the area itself (a working paper's 'econ') or an
     // unlisted archive counts for the area, never for one subarea.
     const areaExamples = examples.filter(example => areaKeyForCategory(example.category) === area && !dormant.has(example.category));
-    const shown = activeLeaves.reduce((total, leaf) => total + shownIn(leaf), 0);
+    // A retired id has no exposure of its own; its examples count above.
+    const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), 0);
     const progress = progressOf(areaExamples.length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
-    const subareas = rankPreferences(chosen.filter(id => getCategoryArea(id) === area), affinities);
+    const subareas = rankPreferences(chosen.filter(id => areaKeyForCategory(id) === area), affinities);
     const group = (categories: string[], weight: number, ownSubarea = false): PlannedGroup =>
       ({ categories, exampleCategories: activeLeaves, positiveIds: areaExamples.map(example => example.id), weight, ownSubarea });
 
@@ -76,12 +89,13 @@ function readAreas({ selected, deselected, examples, exposure, affinities }: Int
     if (progress < 1) {
       groups = [group(subareas, NEW_AREA_WEIGHT - (NEW_AREA_WEIGHT - 1) * progress)];
     } else {
-      const learned = subareas.filter(subarea => subareaProgress(subarea) >= 1);
+      // A retired id never learns on its own, so it stays in the area's group.
+      const learned = subareas.filter(subarea => !retired.includes(subarea) && subareaProgress(subarea) >= 1);
       groups = learned.length === 0
         ? [group(subareas, 1)]
         : [
-            group(learned, 1),
-            ...subareas.filter(subarea => !learned.includes(subarea)).map(subarea => group([subarea], 1 - subareaProgress(subarea), true)),
+            group(subareas.filter(subarea => learned.includes(subarea) || retired.includes(subarea)), 1),
+            ...subareas.filter(subarea => !learned.includes(subarea) && !retired.includes(subarea)).map(subarea => group([subarea], 1 - subareaProgress(subarea), true)),
           ];
     }
     return { progress, groups, subareaProgress };

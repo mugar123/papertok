@@ -158,3 +158,41 @@ test('examples with no area fill the room the groups leave', () => {
   assert.deepEqual(plan.unassignedPositiveIds, ['article-0', 'article-1']);
   assert.deepEqual(plan.groups[0].positiveIds, ['quant-ph-0', 'quant-ph-1']);
 });
+
+// q-bio.NC left the taxonomy on 2026-07-11, and accounts still hold it.
+test('a selected leaf retired from the taxonomy still asks for its area', () => {
+  const plan = planInterestGroups(memory({ selected: ['q-bio.NC'] }));
+  assert.equal(plan.groups.length, 1);
+  assert.ok(plan.groups[0].categories.includes('q-bio.NC'));
+  assert.ok(plan.groups[0].exampleCategories.includes('bio.neuro'));
+  assert.ok(activeCategories(['q-bio.NC'], []).has('q-bio.NC'));
+});
+
+test('a retired leaf shares the group of its current area', () => {
+  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen'] }));
+  assert.deepEqual(plan.groups.map(group => [...group.categories].sort()), [['bio.gen', 'q-bio.NC']]);
+});
+
+test('a retired leaf stays in its area group once the area is learned', () => {
+  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen', 'bio.mol'], examples: examples('bio.gen', 8) }));
+  assert.deepEqual(plan.groups.map(group => [...group.categories].sort()), [['bio.gen', 'q-bio.NC'], ['bio.mol']]);
+});
+
+test("a retired leaf's own exposure does not teach its area, but its examples do", () => {
+  const weight = (input: Partial<InterestMemoryInput>) => planInterestGroups(memory({ selected: ['q-bio.NC'], ...input })).groups[0].weight;
+  assert.equal(weight({ exposure: shown({ 'q-bio.NC': 60 }) }), 2);
+  assert.equal(weight({ examples: examples('q-bio.NC', 4) }), 1.5);
+});
+
+test("a retired leaf's examples teach its area, never the leaf alone", () => {
+  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen'], examples: examples('q-bio.NC', 8) }));
+  assert.deepEqual(plan.groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight })), [
+    { categories: ['bio.gen', 'q-bio.NC'], weight: 1 },
+  ]);
+});
+
+test('an id with no area is left out', () => {
+  const plan = planInterestGroups(memory({ selected: ['nonsense.XX', 'quant-ph'] }));
+  assert.deepEqual(plan.groups.map(group => group.categories), [['quant-ph']]);
+  assert.deepEqual(interestProgress(memory({ selected: ['nonsense.XX'] })), {});
+});
