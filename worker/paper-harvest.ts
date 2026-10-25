@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves } from './paper-store.ts';
+import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves, thinLeavesReport } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
@@ -285,7 +285,11 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
     }
     await step.do('forget followed lanes', () => forgetFollowedLanes(db, started));
   });
-  await phase('thin leaves', () => step.do('thin leaves', () => thinLeaves(db, started)));
+  await phase('thin leaves', () => step.do('thin leaves', async () => {
+    const report = thinLeavesReport(await thinLeaves(db, started));
+    console.log(report.line);
+    return report.summary;
+  }));
   // Apart, so a failed recomputation still files by the last run's centroids.
   await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
   await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));
