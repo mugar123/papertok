@@ -24,6 +24,7 @@ import {
   saveEmailNotificationPreferences,
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
+import { emailServiceState } from '../utils/email-health.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
@@ -177,6 +178,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // reader already turned email on themselves — the flag is spent, so a later
   // unsubscribe in Settings is never undone.
   const optInAttemptedFor = useRef<string | null>(null);
+  const emailServiceDown = emailServiceState(health) === 'down';
   useEffect(() => {
     if (
       !emailDigestPending
@@ -194,7 +196,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         .catch(settleError => console.warn('Could not settle the email digest opt-in', settleError));
       return undefined;
     }
-    if (!hasFollows || !health.available) return undefined;
+    if (!hasFollows || emailServiceDown) return undefined;
     // A beat after the follow lands, like the digest sync below, so a burst
     // of follows becomes one subscription carrying all of them.
     const optInTimeout = setTimeout(() => {
@@ -204,7 +206,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         .catch(optInError => console.warn('Could not start the email digest the reader opted into', optInError));
     }, 1200);
     return () => clearTimeout(optInTimeout);
-  }, [emailDigestPending, error, hasFollows, health.available, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
+  }, [emailDigestPending, emailServiceDown, error, hasFollows, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
 
   useEffect(() => {
     if (

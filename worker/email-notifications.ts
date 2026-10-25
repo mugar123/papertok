@@ -1,5 +1,5 @@
 import { captureEmailSendLimit, captureWorkerException } from './error-tracking.ts';
-import { accountOwnsEmail } from './firebase-auth.ts';
+import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -37,11 +37,7 @@ export interface Subscription extends Partial<Preferences>, DeliveryState {
   uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
 }
-interface EmailAccount {
-  localId?: string; email?: string; displayName?: unknown; emailVerified?: boolean;
-  providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
-}
-type EmailIdentity = Awaited<ReturnType<typeof verifyFirebaseIdentity>>;
+type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
   id?: unknown; title?: unknown; summary?: unknown; doi?: unknown; published?: unknown; updated?: unknown; journal_ref?: unknown;
   category?: { '@_term'?: unknown } | Array<{ '@_term'?: unknown }>;
@@ -127,7 +123,6 @@ const DIGEST_SOURCE_TIMEOUT_MS = 5_000;
 const DIGEST_SOURCE_RETRY_MAX_DELAY_MS = 1_000;
 const MAX_SHARED_OPENALEX_REQUESTS = 200;
 const EMAIL_PROVIDER_TIMEOUT_MS = 12_000;
-const EMAIL_IDENTITY_TIMEOUT_MS = 8_000;
 const EMAIL_HEALTH_TIMEOUT_MS = 8_000;
 const SCHEDULE_PROCESSING_BUDGET_MS = 12 * 60 * 1000;
 const SCHEDULE_MIN_BATCH_REMAINING_MS = 3 * 60 * 1000;
@@ -804,32 +799,6 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
     });
     return parseArxivDigestFeed(await response.text(), follows);
   });
-}
-
-async function verifyFirebaseIdentity(request: Request, env: WorkerEnv) {
-  const authorization = request.headers.get('authorization') || '';
-  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
-  if (!env.FIREBASE_WEB_API_KEY) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-
-  const response = await fetchWithDeadline(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ idToken: token }),
-  }, EMAIL_IDENTITY_TIMEOUT_MS);
-  const payload = await response.json<{ users?: EmailAccount[] }>().catch((): { users?: EmailAccount[] } => ({}));
-  const account = payload?.users?.[0];
-  if (!response.ok || !account?.localId || !account?.email) {
-    throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
-  }
-  if (!accountOwnsEmail(account)) {
-    throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
-  }
-  return {
-    uid: account.localId,
-    email: cleanText(account.email, 320),
-    displayName: cleanText(account.displayName, 160),
-  };
 }
 
 function publicSubscription(subscription: Subscription | null, email: string) {
@@ -2335,7 +2304,18 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
 }
 
 export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
-  const identity = await verifyFirebaseIdentity(request, env);
+  let verified;
+  try {
+    verified = await verifyFirebaseIdentity(request, env);
+  } catch (error) {
+    if (!(error instanceof WorkerAuthError)) throw error;
+    const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
+      : error.code === 'AUTH_NOT_CONFIGURED' ? 'EMAIL_NOT_CONFIGURED' : 'EMAIL_UNAVAILABLE';
+    throw new EmailNotificationError(code, error.status);
+  }
+  if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
+  const identity = { uid: verified.uid, email: verified.email, displayName: cleanText(verified.displayName, 160) };
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 

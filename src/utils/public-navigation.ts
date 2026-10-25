@@ -9,7 +9,47 @@ import { encodeBase64Url, decodeBase64Url } from './base64-url.ts';
 const VITE_BASE_URL = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
 
 export const DEFAULT_PUBLIC_ORIGIN = 'https://papertok.app';
-export const DEFAULT_SHARE_IMAGE_PATH = '/og/papertok-share-0.2.png';
+// The preview image a shared link shows, with alt text that reads what it
+// says. Each kind of public page has its own; everything else has the site's.
+// A changed image takes a new file name, since link previews are cached by URL.
+export interface ShareImage { path: string; alt: string; }
+export const DEFAULT_SHARE_IMAGE: ShareImage = {
+  path: '/og/papertok-share-0.3.png',
+  alt: 'PaperTok: Scientific papers, in one feed. Like TikTok, but you come out smarter. Etchings of a microscope, a magnifying glass, test tubes and old scrolls.',
+};
+const TOPIC_SHARE_IMAGE: ShareImage = {
+  path: '/og/papertok-share-topic-0.3.png',
+  alt: 'PaperTok, research topic: One research topic, in one feed. Follow it to see new papers as they come out. Etching of test tubes and a magnifying glass.',
+};
+const SHARE_IMAGES: Readonly<Record<string, ShareImage>> = Object.freeze({
+  author: {
+    path: '/og/papertok-share-author-0.3.png',
+    alt: 'PaperTok, author: A researcher’s papers, in one feed. Follow them to see new work as it comes out. Etching of a microscope.',
+  },
+  institution: {
+    path: '/og/papertok-share-institution-0.3.png',
+    alt: 'PaperTok, institution: A whole institution, in one feed. Follow it to see its new papers as they come out. Etchings of old scrolls, test tubes and a magnifying glass.',
+  },
+  project: {
+    path: '/og/papertok-share-project-0.3.png',
+    alt: 'PaperTok, research project: A research project, in one feed. The papers a grant or project produced, together. Etchings of a microscope, test tubes and a magnifying glass.',
+  },
+  source: {
+    path: '/og/papertok-share-source-0.3.png',
+    alt: 'PaperTok, scientific journal: A journal’s papers, in one feed. Browse what it publishes, most cited first. Etching of old scrolls.',
+  },
+  topic: TOPIC_SHARE_IMAGE,
+  concept: TOPIC_SHARE_IMAGE,
+  list: {
+    path: '/og/papertok-share-list-0.3.png',
+    alt: 'PaperTok, reading list: A reading list, shared with you. Papers someone picked, ready to read on PaperTok. Etchings of old scrolls and a microscope.',
+  },
+});
+
+/** The preview for an entity type or `list`; the site's own for anything else. */
+export function getShareImage(kind: string): ShareImage {
+  return Object.hasOwn(SHARE_IMAGES, kind) ? SHARE_IMAGES[kind] : DEFAULT_SHARE_IMAGE;
+}
 export const PUBLIC_ROUTE_PREFIX = '/public';
 export const PUBLIC_ENTITY_TYPES = Object.freeze([
   'author',

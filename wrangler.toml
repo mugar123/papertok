@@ -4,11 +4,8 @@ compatibility_date = "2026-07-16"
 compatibility_flags = ["nodejs_compat"]
 upload_source_maps = true
 
-# Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa
-# es la URL que sigue llamando el bundle en produccion: sin esta linea, el
-# despliegue que anade api.papertok.app deja la web viva sin API. Se queda
-# encendida hasta que el frontend haya migrado del todo.
-workers_dev = true
+# Production traffic uses api.papertok.app.
+workers_dev = false
 
 # A harvest invocation can execute many persisted steps before it yields.
 # Its accumulated CPU exceeded the default 30 seconds in both ingestion and
@@ -16,10 +13,21 @@ workers_dev = true
 [limits]
 cpu_ms = 120_000
 
-# El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
-# certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
-# la cuenta: un deploy antes de mover los nameservers falla con "zone not
-# found". La ruta nativa papertok-report-api.<cuenta>.workers.dev sigue viva.
+# The share card's renderer (worker/share-card-render.ts): its two
+# WebAssembly engines travel compiled, the only way a Worker may run them, and
+# its fonts and etchings as bytes. `wrangler types` declares these modules.
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = false
+
+# Match source assets and the hashed filenames emitted for the no-bundle upload.
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf", "**/*.png"]
+fallthrough = false
+
+# Cloudflare provisions DNS and TLS for the custom domain in this account.
 [[routes]]
 pattern = "api.papertok.app"
 custom_domain = true
@@ -55,6 +63,16 @@ EMAIL_DAILY_SEND_LIMIT = "100"
 RESEND_FROM_EMAIL = "Nico de PaperTok <noreply@updates.papertok.app>"
 PROVIDER_USER_MINUTE_LIMIT = "60"
 PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
+# /access cache misses per account and app-wide per UTC minute, an allowance of
+# its own so a fast scroller never spends the one above. Each miss asks Crossref,
+# the library's resolver (up to two calls) and, for SFX, Unpaywall.
+ACCESS_USER_MINUTE_LIMIT = "120"
+ACCESS_GLOBAL_MINUTE_LIMIT = "1000"
+# /institution/services requests per account and app-wide per UTC hour. Each may
+# probe the library's resolver dozens of times; a cold library takes the client
+# up to ten requests, and the client keeps the list for a day.
+INSTITUTION_SERVICES_USER_HOURLY_LIMIT = "30"
+INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT = "600"
 # OpenAlex bills per call against a daily budget ($1/day on a free key), and the
 # guest feed reads it without a session, so the ceiling here is global rather
 # than per user. It is reserved only after an edge-cache miss. Counted in list

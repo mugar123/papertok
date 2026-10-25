@@ -84,6 +84,10 @@ carried an abstract:
 curl -s -H "origin: https://papertok.app" https://api.papertok.app/health/scopus
 ```
 
+The Worker runs one live Scopus probe per 10 minutes app-wide. A `429 HEALTH_PROBE_LIMITED`
+means another request already used this window's probe and says nothing about the egress;
+ask again after `retry-after` seconds, when the next window opens.
+
 `available: true` is necessary but not sufficient, and the browser flow is
 deliberately off. Measured against OpenAlex, Scopus returned 75 papers across
 three fields and OpenAlex already held all 75 (2026-08-22), so it adds nothing as a discovery source; and without an

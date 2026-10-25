@@ -2,7 +2,7 @@ import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response>; crossref?: () => Response };
+type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response>; crossref?: () => Response; env?: WorkerEnv };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
@@ -16,6 +16,7 @@ import {
   upstreamParams,
 } from './institution-access.ts';
 import reportApi from './index.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), with the
@@ -1600,8 +1601,11 @@ const PROJECT_ID = 'papertok-168df';
 const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
-/** The route through the Worker's own dispatch, with the edge cache recorded. */
-async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL), crossref = () => jsonResponse({ message: CELL_WORK }) }: AccessOptions = {}) {
+/**
+ * The route through the Worker's own dispatch, with the edge cache recorded.
+ * Each request has a ledger of its own unless `env` brings one.
+ */
+async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL), crossref = () => jsonResponse({ message: CELL_WORK }), env = {} }: AccessOptions = {}) {
   const calls: string[] = [];
   const puts: Array<{ key: string; response: Response }> = [];
   const originalFetch = globalThis.fetch;
@@ -1625,7 +1629,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     const response = await reportApi.fetch(new Request(`https://api.papertok.test/access?${search}`, {
       method,
       headers: { origin: 'https://papertok.app', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    }), ROUTE_ENV);
+    }), { ...ROUTE_ENV, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ...env });
     const accessPuts = puts.filter(put => put.key.startsWith('https://papertok.internal/cache/access'));
     return { response, body: await response.json(), calls, accessPuts };
   } finally {
@@ -1752,6 +1756,30 @@ test('the route maps validation, unsupported institutions and outages to codes i
   }
   const { response } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { method: 'POST' });
   assert.equal(response.status, 405);
+});
+
+test('a reader\'s misses spend an allowance of the route\'s own, and a refused one reaches no provider', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:10Z') });
+  const lookUp = (doi: string, env: WorkerEnv) => requestAccess(`doi=${encodeURIComponent(doi)}&domain=usal.es`, { env });
+  // The allowance related papers and the specialist sources share is not spent.
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ACCESS_USER_MINUTE_LIMIT: '2', PROVIDER_USER_MINUTE_LIMIT: '1' };
+  const answers = [];
+  for (const doi of ['10.1016/j.cell.2020.01.001', '10.1016/j.cell.2020.01.002', '10.1016/j.cell.2020.01.003']) {
+    answers.push(await lookUp(doi, env));
+  }
+  assert.deepEqual(answers.map(({ response }) => response.status), [200, 200, 429]);
+  const refused = answers[2];
+  assert.deepEqual(refused.body, { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(refused.response.headers.get('retry-after'), '60');
+  assert.equal(refused.response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(refused.calls, ['identitytoolkit.googleapis.com']);
+  assert.equal(refused.accessPuts.length, 0);
+  // Everyone's misses together have a ceiling too.
+  const shared = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ACCESS_GLOBAL_MINUTE_LIMIT: '1' };
+  assert.equal((await lookUp('10.1016/j.cell.2020.01.004', shared)).response.status, 200);
+  const closed = await lookUp('10.1016/j.cell.2020.01.005', shared);
+  assert.equal(closed.response.status, 429);
+  assert.deepEqual(closed.calls, ['identitytoolkit.googleapis.com']);
 });
 
 
