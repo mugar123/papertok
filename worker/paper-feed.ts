@@ -64,9 +64,10 @@ const LANES_WRITTEN_PER_DAY = 4_000;
  * Liked papers the corpus cannot rank against yet, fetched and embedded: only
  * for a profile with fewer than ENOUGH_STORED_POSITIVES ranked likes, since a
  * reader with a few already gets a ranked page. Embedded within the reader's
- * own share of the day. Returns whether it stored a paper or a vector, which
- * changes the reader's ranking. Failures leave the likes already stored, and
- * count as a change: what they stored is unknown.
+ * own share of the day and the readers' combined share (`embedWorks`). Returns
+ * whether it stored a paper or a vector, which changes the reader's ranking.
+ * Failures leave the likes already stored, and count as a change: what they
+ * stored is unknown.
  */
 async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: string[]) {
   try {

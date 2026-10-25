@@ -1,6 +1,7 @@
 import type { BloomFilter } from 'bloomfilter';
 import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
+import type { QuotaPart } from './request-quota-ledger.ts';
 
 import { PaperBuilder } from '../src/services/paper-builder.ts';
 import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
@@ -69,12 +70,16 @@ const EMBEDDING_TOKENS_PER_UNIT = 1_000;
 // Shares of the day's limit for what readers start, so the daily run keeps the
 // rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
 // ten long papers; on the harvest's subject, a review estimated that one
-// account's lookups could spend the 60M-token day in about 143 minutes. The
-// runs new follows start, together: no reader
+// account's lookups could spend the 60M-token day in about 143 minutes. All
+// readers together: accounts are free to make, so shares of 50,000 each add up
+// to the whole day without a cap of their own. A fixed number rather than a
+// fraction of the day keeps the daily run its share when the limit returns to
+// 7.5M. The runs new follows start, together: no reader
 // is recorded with them, and each of the 20 new lanes a reader's runs may
 // harvest a day can bring a few hundred papers; what they leave waits for the
 // daily run.
 const READER_EMBEDDING_DAILY_TOKENS = 50_000;
+const READERS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Similarity orders the page; recency only separates near ties, so a reader
 // with likes still sees this week's papers ahead of last month's lookalikes.
@@ -626,8 +631,12 @@ export async function thinLeaves(db: D1Database, now: number): Promise<Array<{ l
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
 
-/** A share of the day's embedding limit: a ledger subject, and the most it may reserve. */
-interface EmbeddingShare { subject: string; tokens: number }
+/**
+ * A share of the day's embedding limit: a ledger subject, and the most it may reserve.
+ * `part` is a second subject that several shares count against together, with
+ * its limit in ledger units (1,000 tokens).
+ */
+interface EmbeddingShare { subject: string; tokens: number; part?: QuotaPart }
 
 /**
  * Reserves the embedding tokens for today before spending them, within
@@ -642,6 +651,7 @@ async function reserveEmbeddingTokens(env: StoreEnv, tokens: number, share?: Emb
     subjectLimit: share ? Math.min(limit, share.tokens / EMBEDDING_TOKENS_PER_UNIT) : limit,
     globalLimit: limit,
     amount: Math.max(1, Math.ceil(tokens / EMBEDDING_TOKENS_PER_UNIT)),
+    part: share?.part,
   });
   if (reservation.code) console.error(`Embedding budget unavailable (${reservation.code}); nothing embedded`);
   return reservation.accepted === true;
@@ -734,11 +744,15 @@ export async function embedPending(env: StoreEnv, limit: number, { lanes }: { la
   return embedRows(env, rows, { subject: 'embedding:follows', tokens: FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS });
 }
 
-/** Embed these works within the daily budget; a reader's lookup also uses that reader's share. */
+/** Embed these works within the daily budget; a reader's lookup also uses that reader's share and the readers' combined one. */
 export async function embedWorks(env: StoreEnv, workIds: number[], uid: string | undefined) {
   if (workIds.length === 0) return 0;
   const rows = await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length);
-  return embedRows(env, rows, uid === undefined ? undefined : { subject: `uid:${uid}`, tokens: READER_EMBEDDING_DAILY_TOKENS });
+  return embedRows(env, rows, uid === undefined ? undefined : {
+    subject: `uid:${uid}`,
+    tokens: READER_EMBEDDING_DAILY_TOKENS,
+    part: { subject: 'embedding:readers', limit: READERS_EMBEDDING_DAILY_TOKENS / EMBEDDING_TOKENS_PER_UNIT },
+  });
 }
 
 // ─── Reading ───
