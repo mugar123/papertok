@@ -114,29 +114,41 @@ measure the articles similarity actually sees and add decided filings. Labels
 for the leaf each unknown filing went to would turn those unknowns into
 outcomes.
 
-A rule shipped by a later calibration would also change how far back a reader
-of many leaves gets the articles it files. The category feed reads the newest
-`floor(800 / area lanes asked)` papers of an area lane: all 373 articles of
-the mathematics lane (published 2026-10-06 to 2026-10-24) for a reader whose
-leaves are all mathematics. It reads the newest `ceil(4,000 / other lanes
-asked)` papers of a leaf lane, the other lanes being the reader's leaves,
-follows and the working-paper series, and there a filed article competes by
-date with the leaf's preprints. In the 30 days to 2026-10-22, the arXiv API
-counts from 185 (math.LO) to 1,409 (math.CO) papers in each mathematics leaf
-with a centroid, cross-lists included. A reader of 12 leaves and no follows
-(334 papers a leaf) therefore reaches back about 7 days in math.CO and math.AP
-and 54 days in math.LO. A reader of 4 leaves (1,000) reaches back 21 to 162
-days, and a reader of one leaf (4,000) about the whole 90-day corpus. Each
-follow shortens these spans. Leaf lanes also take papers from
-other sources, venue lanes among them, so these spans are upper bounds. A
-filed article older than its reader's span is no longer a candidate for that
-reader, though at area level it was. A local probe with 400 newer math.CO
-preprints showed this: a reader of 12 leaves got a filed article published 14
-days earlier before filing and not after, while readers of 1 and 4 leaves
-still got it. The feed could keep the window by reading the journal articles
-in an asked area's leaf lanes within the area lanes' share, so that filing
-narrows who gets an article without shortening how far back they get it. That
-changes how the feed selects papers and would be a decision of its own.
+A rule shipped by a later calibration would also change who gets the articles
+it files, and how far back. Only a category request reads area lanes: a
+request with follows never does (`parseFeedRequest`), and the app sends
+follows only in its separate followed-entities request, so no request
+combines area lanes and follows. A category request asks for at most 10
+leaves. It reads the newest `floor(800 / area lanes asked)` papers of an area
+lane: all 373 articles of the mathematics lane (published 2026-10-06 to
+2026-10-24) for a reader whose leaves are all mathematics. It reads the
+newest `ceil(4,000 / non-area lanes asked)` papers of a leaf lane, the
+non-area lanes being the reader's leaves and, when one of them is in economics
+or q-fin, the working-paper series. There a filed article competes by date
+with the leaf's preprints. In the 30 days to 2026-10-22, the arXiv API counts
+from 185 (math.LO) to 1,409 (math.CO) papers in each mathematics leaf with a
+centroid, cross-lists included. A reader of 10 leaves therefore gets the
+newest 400 papers of each leaf (364 when the working-paper series takes a
+share) and reaches back about 8 to 9 days in math.CO and math.AP and 59 to 65
+days in math.LO. A reader of 4 leaves (1,000, without the series) reaches
+back 21 to 162 days, and a reader of one leaf (4,000) about the whole 90-day
+corpus. Leaf lanes also take papers from other sources, venue lanes among
+them, so these spans are upper bounds. A filed article older than its
+reader's span is no longer a candidate for that reader, though at area level
+it was. A local probe with 400 newer math.CO preprints showed this for a
+reader of 12 leaves, the most the Worker accepts: a filed article published
+14 days earlier was a candidate before filing and not after, while readers of
+1 and 4 leaves still got it.
+
+Filing also adds candidates. The followed-entities request never reads area
+lanes, so an article kept at area level could not reach, through that
+request, a reader who follows its leaf as a topic. A filed article sits in the
+leaf's lane, which that request reads for the topic follow, and can.
+
+The feed could keep the window by reading the journal articles in an asked
+area's leaf lanes within the area lanes' share, so that filing narrows who
+gets an article without shortening how far back they get it. That changes how
+the feed selects papers and would be a decision of its own.
 
 The labelled articles come from topic-lane samples and venue reviews, not from
 the area lanes, so even after the exclusions they may be easier to place than
