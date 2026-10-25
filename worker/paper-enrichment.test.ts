@@ -205,19 +205,27 @@ test("a paper without an abstract gets Crossref's, stripped of JATS markup, from
   assert.deepEqual(semanticScholarCalls(asked), []);
 });
 
-test("Crossref's JATS loses its heading and a formula's MathML twin, keeps the first of its languages, and decodes its entities", async t => {
+test("Crossref's JATS loses its heading and a formula's MathML twin, keeps the first of its languages and a section's title as its label, and decodes its entities", async t => {
   recoveryProviders(t, {
     crossref: () => Response.json({ message: { items: [
       // Springer's shape.
       { DOI: '10.5555/springer', type: 'journal-article', abstract: '<jats:title>Abstract</jats:title><jats:p>A measurement at <jats:alternatives><jats:tex-math>$$\\sqrt{s}=13$$</jats:tex-math><mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msqrt><mml:mi>s</mml:mi></mml:msqrt><mml:mo>=</mml:mo><mml:mn>13</mml:mn></mml:math></jats:alternatives> TeV with p &lt; 0.05.</jats:p>' },
       { DOI: '10.5555/bilingual', type: 'journal-article', abstract: '<jats:abstract xml:lang="en"><jats:title>Abstract</jats:title><jats:p>An English abstract of the &#946; decay, deposited first.</jats:p></jats:abstract><jats:abstract xml:lang="de"><jats:title>Zusammenfassung</jats:title><jats:p>Eine deutsche Zusammenfassung des Beta-Zerfalls, als zweite hinterlegt.</jats:p></jats:abstract>' },
+      // A structured abstract, as a medical journal deposits it: the heading
+      // goes, each section's title stays as its label, as PubMed prints them.
+      { DOI: '10.5555/structured', type: 'journal-article', abstract: '<jats:title>Abstract</jats:title><jats:sec><jats:title>Background</jats:title><jats:p>Heart failure is common.</jats:p></jats:sec><jats:sec id="s2"><jats:title>Methods:</jats:title><jats:p>We measured H-FABP in serum.</jats:p></jats:sec><jats:sec><jats:title><jats:italic>Results</jats:italic></jats:title><jats:p>Levels were higher.</jats:p></jats:sec>' },
+      // The heading wrapped in a section is still the heading; a formula in a
+      // section's title keeps its TeX spelling, like one in the text.
+      { DOI: '10.5555/wrapped', type: 'journal-article', abstract: '<jats:sec><jats:title>Abstract</jats:title><jats:p>Only the text of this abstract is kept here.</jats:p></jats:sec><jats:sec><jats:title>Measuring <jats:alternatives><jats:tex-math>$\\alpha$</jats:tex-math><mml:math><mml:mi>α</mml:mi></mml:math></jats:alternatives></jats:title><jats:p>Done.</jats:p></jats:sec>' },
     ] } }),
   });
-  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/springer'), awaitingAbstract('W4410000002', '10.5555/bilingual')]);
+  const { env, db } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/springer'), awaitingAbstract('W4410000002', '10.5555/bilingual'), awaitingAbstract('W4410000003', '10.5555/structured'), awaitingAbstract('W4410000004', '10.5555/wrapped')]);
   await enrichPending(env, 50, NOW);
   const works = stored(db);
   assert.equal(works['openalex:W4410000001'].paper.abstract, 'A measurement at $$\\sqrt{s}=13$$ TeV with p < 0.05.');
   assert.equal(works['openalex:W4410000002'].paper.abstract, 'An English abstract of the β decay, deposited first.');
+  assert.equal(works['openalex:W4410000003'].paper.abstract, 'Background: Heart failure is common. Methods: We measured H-FABP in serum. Results: Levels were higher.');
+  assert.equal(works['openalex:W4410000004'].paper.abstract, 'Only the text of this abstract is kept here. Measuring $\\alpha$: Done.');
 });
 
 test('what Crossref has no abstract for is asked of Semantic Scholar in one batch per step, matched by DOI', async t => {

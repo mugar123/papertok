@@ -289,9 +289,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
           <Users size={14} className="sc-icon" />
           <span className="sc-label">{author.display_name}</span>
           <span className="sc-meta">
-            {author.last_known_institution?.display_name
-              || author.localizedInstitutionName
-              || ''}
+            {getLocalizedInstitutionName(author.institutionData || { display_name: author.institution })}
           </span>
           {renderFollow({ type: 'author', id: author.id, name: author.display_name })}
         </CommandItem>
