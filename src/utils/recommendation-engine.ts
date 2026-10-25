@@ -2,7 +2,7 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
-import { areaKeyForCategory, leavesForOpenAlexTopic } from './area-accent.ts';
+import { areaKeyForCategory, areaKeyForPaper, leavesForOpenAlexTopic } from './area-accent.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import { isDormantCategory, selectedAreaSubareas } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
@@ -310,17 +310,21 @@ const NEUTRAL_RECENT_PROPS = Object.freeze({
 // evidence of an area is every category the taxonomy places (a leaf, an area
 // key such as a working paper's 'econ', an arXiv category with no leaf), the
 // leaves its OpenAlex topic stands for and the categories it was fetched for.
+// Without any of those, its evidence is the area its learning counts under
+// (areaKeyForPaper), which OpenAlex's field gives an area lane's article.
 // It sleeps when it has evidence and all of it sleeps. A card of the main
 // corpus request never does: its lanes are the reader's picks. One that says
-// nothing of its area (a followed author's article filed under concept names)
-// stays awake, as the Worker ranks a like with no area for every group.
+// nothing of its area (a followed author's article filed under concept names
+// and a field the app has no area for) stays awake, as the Worker ranks a
+// like with no area for every group.
 function isDormant(paper: Partial<Paper>, categories: string[], dormant: string[]) {
   if (paper._type === 'exploit') return false;
-  const evidence = [
+  const named = [
     ...categories.filter(category => areaKeyForCategory(category)),
     ...leavesForOpenAlexTopic(paper.primaryTopic),
     ...(paper._fetchedFor ?? []),
   ];
+  const evidence = named.length > 0 ? named : [areaKeyForPaper(paper)].filter((area): area is NonNullable<typeof area> => area !== null);
   return evidence.length > 0 && evidence.every(category => isDormantCategory(category, dormant));
 }
 

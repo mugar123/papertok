@@ -11,6 +11,9 @@ import {
   trimScoredCandidatePool,
 } from './recommendation-engine.ts';
 import type { Paper } from '../models/paper.ts';
+import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
+import { readFileSync } from 'node:fs';
+import { mapOpenAlexWork } from './open-alex-work.ts';
 import type { RecommendationContext } from './recommendation-engine.ts';
 import { dormantCategories } from './interest-memory.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
@@ -281,6 +284,22 @@ test("a removed subarea's affinity scores nothing on an awake card cross-listed 
   assertClose(removed.affinity, 0.35 * 20, 'only gr-qc, as a secondary category:');
   assert.equal(removed.corpusSimilarity, 50);
   assertClose(score([]).affinity, 80 + 0.35 * 20);
+});
+
+// ENG-137 (M-3): a card that names no area but the one OpenAlex files it
+// under (all of Chemistry's area-lane articles) sleeps by the area its
+// learning counts under (areaKeyForPaper).
+test('a card known only by its OpenAlex field sleeps when the reader removed all of that area', () => {
+  const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16')!;
+  const card = { ...mapOpenAlexWork(work)!, primaryCategory: '', _semanticScore: 0.5, _type: 'followed' as const };
+  const similarity = (selected: string[], deselected: string[]) => scorePaperForRecommendation(card, {
+    now: NOW, userPreferences: selected, dormantCategories: dormantCategories(selected, deselected),
+  }).corpusSimilarity;
+
+  assert.equal(similarity(['cs.LG'], leavesOf('chem')), 0);
+  assert.equal(similarity(['cs.LG'], ['hep-th']), 50, 'a reader who never selected Chemistry');
+  assert.equal(similarity(['cs.LG', 'chem.org'], ['chem.anal']), 50, 'a reader who keeps a Chemistry subarea');
 });
 
 // The feed's context is rebuilt on every call, and one re-rank's cache
