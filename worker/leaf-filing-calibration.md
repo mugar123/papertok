@@ -136,8 +136,9 @@ centroid, cross-lists included. A reader of 10 leaves therefore gets the
 newest 400 papers of each leaf (364 when the working-paper series takes a
 share) and reaches back about 8 to 9 days in math.CO and math.AP and 59 to 65
 days in math.LO. A reader of 4 leaves (1,000, without the series) reaches
-back 21 to 162 days, and a reader of one leaf (4,000) about the whole 90-day
-corpus. Leaf lanes also take papers from other sources, venue lanes among
+back from 21 days in math.CO to the whole 90-day corpus in math.LO, math.RA
+and math.GT, and a reader of one leaf (4,000) about the whole corpus in each
+leaf. Leaf lanes also take papers from other sources, venue lanes among
 them, so these spans are upper bounds. A filed article older than its
 reader's span is no longer a candidate for that reader, though at area level
 it was. A local probe with 400 newer math.CO preprints showed this for a
@@ -148,7 +149,11 @@ reader of 12 leaves, the most the Worker accepts: a filed article published
 Filing also adds candidates. The followed-entities request never reads area
 lanes, so an article kept at area level could not reach, through that
 request, a reader who follows its leaf as a topic. A filed article sits in the
-leaf's lane, which that request reads for the topic follow, and can.
+leaf's lane, which that request reads for the topic follow, and can. The
+category request already reads the area lane for such a reader when the
+followed leaf is among its 10 categories, as followed topics join them. What
+filing adds there is the card that names the follow. It adds reach when the
+leaf is not among those 10, or when the topic lookup misses its time budget.
 
 The feed could keep the window by reading the journal articles in an asked
 area's leaf lanes within the area lanes' share, so that filing narrows who
