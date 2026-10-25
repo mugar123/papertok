@@ -914,7 +914,7 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * order ran out on, which `ranks` holds as null. It leaves out how far a walk
  * passed over seen papers, but the ids a walk read (`paperId`) still say so in
  * its read steps (200, 600, 1,400 ranks and so on), and an order whose walk
- * reached its end is not final: together they tell roughly how much of the
+ * found papers up to its last rank is not final: together they tell roughly how much of the
  * top of the ranking the reader had seen, in an entry of the reader's alone,
  * kept for 15 minutes from the last page that read ids. A `final` order
  * serves the next pages as it is; otherwise a next page keeps only the ranks
