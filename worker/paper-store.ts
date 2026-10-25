@@ -1117,8 +1117,8 @@ function passedFirst(ranks: Array<RankedCandidate | null>, from: number, walk: A
  * it on the candidate (`paperId`) and the walk trusts it (not `recheck`): up
  * to rank 200, then 600, 1,400, 3,000 and so on, wherever the walk starts, so
  * a reader who has seen a few thousand papers costs a few reads, a whole
- * ranking at most six, and pages that each walk on from the last read each id
- * once.
+ * ranking of up to 12,600 ranks at most six, and pages that each walk on from
+ * the last read each id once.
  */
 async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, { from = 0, recheck = false } = {}) {
   const unseen: RankedCandidate[] = [];
