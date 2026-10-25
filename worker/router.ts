@@ -180,12 +180,8 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
   // contesta antes que nada porque un rastreador no manda `origin`.
   //
-  // Medido el 2026-09-01: en `api.papertok.app` Cloudflare intercepta
-  // /robots.txt ANTES que el Worker, asi que esta ruta solo se ve hoy en
-  // `papertok-report-api.*.workers.dev`. No esta rota: entra en vigor en el
-  // dominio propio en cuanto se apague el robots.txt gestionado de la zona
-  // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
-  // de los dos esta contestando.
+  // Cloudflare's managed robots.txt may answer before this handler on the
+  // custom domain. Check AI Crawl Control before changing this response.
   //
   // Share cards are the exception: a preview bot that honours robots.txt,
   // Twitterbot among them, fetches a card from here and draws no picture if
