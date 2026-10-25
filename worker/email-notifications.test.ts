@@ -3705,6 +3705,30 @@ test('an Identity Toolkit outage on a notification route is a retryable 503, not
   }
 });
 
+test('a Worker without the Firebase web key answers a notification route 503 EMAIL_NOT_CONFIGURED and asks nobody', async () => {
+  let lookups = 0;
+  const originalFetch = globalThis.fetch;
+  const restoreCache = stubIdentityCache();
+  globalThis.fetch = async () => {
+    lookups += 1;
+    return lookupResponse({ localId: 'reader', email: 'reader@example.com', emailVerified: true });
+  };
+  try {
+    await assert.rejects(
+      () => handleEmailNotificationRequest(
+        preferencesRequest(),
+        { ...emailEnvironment(createMemoryKv()), FIREBASE_PROJECT_ID: PROJECT_ID },
+        '/notifications/preferences',
+      ),
+      error => (error as { code?: string }).code === 'EMAIL_NOT_CONFIGURED' && (error as { status?: number }).status === 503,
+    );
+    assert.equal(lookups, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreCache();
+  }
+});
+
 test('sends the Resend digest with one-click unsubscribe headers', async () => {
   const now = new Date('2026-08-10T08:00:00Z');
   const subscriptionKey = 'notification:subscription:resend-reader';
