@@ -12,6 +12,7 @@ import {
   getEmailScheduleHealth,
   handleEmailNotificationRequest,
   handleEmailUnsubscribe,
+  purgeEmailSubscription,
   runEmailNotificationSchedule,
 } from './email-notifications.ts';
 
@@ -3628,15 +3629,55 @@ test('notification routes screen junk tokens locally and look a valid one up onc
     }
     assert.equal(lookups, 1);
 
-    // The name the digest greets the reader with comes from the same verified
-    // identity, cached or not.
+    // A write is not served from the cache (the next test says why), so this
+    // one looks the account up again; the name the digest greets the reader
+    // with comes from that verified identity.
     await handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
       method: 'PUT',
       headers: { authorization: `Bearer ${validToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }),
     }), identityEnvironment(kv), '/notifications/preferences');
-    assert.equal(lookups, 1);
+    assert.equal(lookups, 2);
     assert.equal((await kv.get<Subscription>('notification:subscription:reader', 'json'))!.displayName, 'Ada Lovelace');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreCache();
+  }
+});
+
+test('a notification write asks Identity Toolkit again, so a deleted account cannot bring its subscription back', async () => {
+  // Account deletion purges the subscription and then deletes the Auth account
+  // (privacy.html: it deletes the email subscription). A settings read just
+  // before it left the identity in the 60 s cache; a write must not be served
+  // from there, as institution-link does not either.
+  let deleted = false;
+  const token = fakeIdToken({ aud: PROJECT_ID });
+  const originalFetch = globalThis.fetch;
+  const restoreCache = stubIdentityCache();
+  globalThis.fetch = async () => (deleted
+    ? new Response(JSON.stringify({ error: { message: 'USER_NOT_FOUND' } }), { status: 400 })
+    : lookupResponse({ localId: 'gone', email: 'gone@example.com', emailVerified: true, displayName: 'Gone' }));
+  const kv = createMemoryKv({ 'notification:subscription:gone': digestSubscription({ uid: 'gone' }) });
+  const env = identityEnvironment(kv);
+  const refusedAs401 = (error: unknown) => (
+    (error as { code?: string }).code === 'EMAIL_AUTH_REQUIRED' && (error as { status?: number }).status === 401
+  );
+
+  try {
+    assert.equal((await handleEmailNotificationRequest(preferencesRequest(token), env, '/notifications/preferences')).preferences.email, 'gone@example.com');
+    await purgeEmailSubscription(env, 'gone');
+    deleted = true;
+
+    await assert.rejects(() => handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }),
+    }), env, '/notifications/preferences'), refusedAs401);
+    await assert.rejects(() => handleEmailNotificationRequest(new Request('https://worker.example/notifications/test', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }), env, '/notifications/test'), refusedAs401);
+    assert.equal(await kv.get('notification:subscription:gone', 'json'), null);
   } finally {
     globalThis.fetch = originalFetch;
     restoreCache();

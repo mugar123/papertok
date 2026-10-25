@@ -795,15 +795,21 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
 }
 
 /**
- * The shared verifier, so these routes get its junk-token screen, length cap
- * and 60 s identity cache, with its failures in the codes the email settings
- * already show. Identity Toolkit being unreachable is an outage, not a
- * signed-out reader, so it stays a 503 the reader can retry.
+ * The shared verifier, so these routes get its junk-token screen and length
+ * cap, with its failures in the codes the email settings already show.
+ * Identity Toolkit being unreachable is an outage, not a signed-out reader, so
+ * it stays a 503 the reader can retry.
+ *
+ * Only the settings read may use the 60 s identity cache. A write stores the
+ * reader's address and name and sends mail, and account deletion purges the
+ * subscription before it deletes Auth, so a cached identity would let a deleted
+ * account's token create the subscription again (institution-link.ts: a write
+ * asks every time).
  */
 async function verifyEmailIdentity(request: Request, env: WorkerEnv) {
   let identity;
   try {
-    identity = await verifyFirebaseIdentity(request, env);
+    identity = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
   } catch (error) {
     if (!(error instanceof WorkerAuthError)) throw error;
     const code = error.status !== 503
