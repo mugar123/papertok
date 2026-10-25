@@ -49,6 +49,17 @@ power, optics) are not arXiv categories: neither has a centroid, so their
 articles can only be filed wrong. Mechanical, civil and chemical engineering
 have no arXiv leaf, so no centroid.
 
+The table is the run of 2026-10-24. Since then ENG-113 (#319) made cs.AI,
+cs.LG, cs.CV, cs.CL and cs.NE the area `ai`, so the command now splits the
+computer science row. `cs`: 235 articles scored (164 left out for a venue lane,
+1 for its own preprint), 15 leaves with a centroid; the rule chosen on the
+calibration half, 0.66 / 0.02, files 21 held-out articles, 15 correct, 3 wrong
+and 3 unknown: 0.83 precision (15/18, 0.608–0.942), over fewer decided filings
+than the 30 the bar asks for. `ai`: 60 articles scored (60 left out for a
+venue lane), 5 leaves with a centroid, and no rule reaches 95% precision over
+20 decided filings on the calibration half. No area has a rule, as in the
+table.
+
 ### Before the venue lanes
 
 The first calibration, on the same dataset before ENG-104 was merged, also
@@ -68,12 +79,14 @@ filings are under the 30 the bar asks for.
 
 ## Method
 
-- Labels: `scripts/data/openalex-topic-reviews.json` and the blind labels of
-  two later reviews (venue samples for physics, mathematics, computer science
-  and engineering; economics and finance samples), as (OpenAlex work, leaf)
-  pairs. A pair is on target, off target or doubted; a doubted or uncertain
-  call, or two calls that disagree, is doubted, and only an on-target pair is
-  a positive.
+- Labels: `scripts/data/openalex-topic-reviews.json` and, in
+  `scripts/data/openalex-venue-reviews.json`, the blind labels of two later
+  reviews (venue samples for physics, mathematics, computer science and
+  engineering; economics and finance samples), among them the samples the
+  curators did not recommend (`otherSamples`), as (OpenAlex work, leaf) pairs.
+  A pair is on target, off target or doubted; a doubted or uncertain call, or
+  two calls that disagree, is doubted, and only an on-target pair is a
+  positive.
 - Vectors: `@cf/qwen/qwen3-embedding-0.6b` on Workers AI, from the text the
   corpus embeds, kept in the stored form (`quantize` in `paper-store.ts`). The
   texts were taken from `ingestPapers` and `embedPending` on a local D1.
@@ -166,27 +179,51 @@ an area lane's articles.
 
 ## Reproduce
 
-Every mathematics, computer science and electrical engineering label pair is
-in the repository, in `scripts/data/openalex-topic-reviews.json` and, since
-ENG-104, `scripts/data/openalex-venue-reviews.json`. Of the 2,785 pairs, 281
-are not: samples of the physics, economics, finance and engineering reviews.
+The labels are in the repository: all 2,785 (OpenAlex work, leaf) pairs of the
+areas with an area lane, in `scripts/data/openalex-topic-reviews.json` and
+`scripts/data/openalex-venue-reviews.json`. Of them, 281 pairs (physics,
+economics, finance and engineering) were in neither file before ENG-107: they
+belong to samples the curators took and did not recommend, now the `otherSamples`
+of the venue file, with the same fields as its other samples
+([evidence](../scripts/README-openalex-leaf-venues.md#evidence)). No lane
+changes: `scripts/generate-openalex-leaf-venues.ts` reads `sources` and
+`leaves` only, so its outputs are as before. The aggregated labels the dataset
+was built from, `labels.json` (SHA-256
+`730abb9b5393feb9a93737feb61bf28446156e05a95d8657268a7b715530c85c`), held the
+same 2,785 pairs with the same labels.
 
-The dataset is `leaf-filing-dataset.json` (3.0 MB, SHA-256
-`613a20ce25494b5af27eb3a56f80cd214237afac758cae1b731a857977a96e64`): arXiv
-and OpenAlex ids, labels, each labelled article's arXiv ids and OpenAlex
-source, type, primary topic and author count, and int8 vectors, with no text.
-It was built from the aggregated labels `labels.json` (SHA-256
-`730abb9b5393feb9a93737feb61bf28446156e05a95d8657268a7b715530c85c`). Both,
-and the 281 pairs above, exist only in temporary folders on the laptop that
-ran the calibration; until they are stored somewhere durable, the calibration
-cannot be rerun. Rebuilding the dataset takes about 75 Workers AI embedding
-calls and a new arXiv pull, which returns different papers. With the dataset:
+The vectors are not in the repository. The dataset is
+`leaf-filing-dataset.json` (3.0 MB, SHA-256
+`613a20ce25494b5af27eb3a56f80cd214237afac758cae1b731a857977a96e64`), attached
+to ENG-107 in Linear as "Leaf-filing calibration dataset (vectors and
+labels)": arXiv and OpenAlex ids, labels, each labelled article's arXiv ids and
+OpenAlex source, type, primary topic and author count, and int8 vectors, with
+no text. It holds 1,984 labelled articles with 2,269 of the 2,785 pairs. The
+other 516 have no vector in it; 512 of them are of mechanical, civil and
+chemical engineering leaves, which have no arXiv category and so no centroid
+to score them against. With the dataset downloaded and `sha256sum` matching:
 
 ```bash
+node worker/test-support/leaf-filing-labels.ts leaf-filing-dataset.json
 node worker/test-support/calibrate-leaf-filing.ts leaf-filing-dataset.json worker/test-support/leaf-filing-held-out.json
 ```
 
-The command prints each area's report and writes the centroids and held-out
-articles of the areas that get a rule, none at present.
-`worker/leaf-filing.test.ts` checks that each shipped rule has them and files
-them as calibrated.
+The first command compares the dataset's labels with the review files'
+(`labelsFromReviews`: a pair two samples call differently is doubted). It
+prints the articles and pairs of the dataset, the articles whose labels
+differ, none for this dataset, and the pairs of the files the dataset holds no
+vector for, 516. It exits with 1 when an article's labels differ. The second
+prints each area's report and writes the centroids and held-out articles of
+the areas that get a rule, none at present. `worker/leaf-filing.test.ts`
+checks that each shipped rule has them and files them as calibrated.
+
+A dataset's `labelled[].labels` are rebuilt from the files, not from the
+vectors: after a label changes in the files, set the labels of the articles
+the first command lists to what `labelsFromReviews` gives. A labelled article
+new to the dataset also needs its vector, the Workers AI embedding of the
+text the corpus embeds, from its OpenAlex record by work ID, and its
+`openAlex` fields and `arxivIds` from the same record. Rebuilding the whole
+dataset without the attachment takes those records for every labelled
+article, about 75 Workers AI embedding calls and a new arXiv pull, which
+returns different papers. Its `areaSamples` are the newest 100 articles of
+each area on 2026-10-24 and cannot be taken again.

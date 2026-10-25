@@ -18,19 +18,21 @@ node scripts/generate-openalex-leaf-venues.ts --check
 
 ## Evidence
 
-`openalex-venue-reviews.json` has two keys:
+`openalex-venue-reviews.json` has three keys:
 
 | Key | Contents |
 | --- | --- |
 | `sources` | Each source ID the samples asked for, with the `name`, `publisher` and `type` (`journal`, `conference`) its curator verified with `/sources/<id>`, and `leaves`, the leaves its curator filed it under: the curated lists, kept here only. A source filed under none was sampled but left off the lists: the excluded insurance, derivatives and market microstructure journals of q-fin.RM, q-fin.PR and q-fin.TR, and the optional Journal of Portfolio Management and Financial Analysts Journal of q-fin.PM. Nine computer science sources the curator dropped after sampling (eight with no work since 2024, one re-dated repository copy) have no record; a source without one cannot enter a lane. |
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
+| `otherSamples` | Labelled samples that no gate reads, each with the `leaf` it was taken for. The generator ignores them; they are label evidence for the leaf-filing calibration ([worker/leaf-filing-calibration.md](../worker/leaf-filing-calibration.md#reproduce)). 38 samples of 472 works: for physics (10) and engineering (9), lists the curators tried and did not recommend; for economics and finance (19), the lists with and without `has_abstract:true`, the econ.EM list with the Journal of Applied Econometrics, the own samples of six econ.GN journals and of the Journal of Financial and Quantitative Analysis, three econ.GN topic queries and the sample of Quantitative Finance. That one names no leaf: each of its labels carries the `leaf` its labeller judged nearest, and its fifteenth article, judged nearest to two leaves, is left out |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
 address (cs.DS's was derived, below), every returned work (`id`, `type`,
 `title`, `publication_date`, `source`, and `primary_topic` when the query
 filtered on topics) and one label per work: `on-target`, `off-target`, or
 `uncertain: true` without a label for a call the labeller doubted, which
-counts as a miss.
+counts as a miss. A sample of `otherSamples` may hold fewer than 15 works and
+may ask a topic query without sources (the three econ.GN topic samples).
 
 ## The gate
 
@@ -121,7 +123,7 @@ mathematics, computer science with statistics and electrical engineering, and
 engineering on 2026-10-24 between 02:06 and 02:54 UTC, with the window that
 ended on 2026-10-23. A leaf with a curated list is sampled on that list, as
 its curator recommended it before labelling; a list tried before it and
-dropped is not recorded here. cs.DS's query was derived, not sent: from the 14
+dropped has its sample in `otherSamples`, and decides nothing. cs.DS's query was derived, not sent: from the 14
 works a six-source request returned, its curator removed the one of the older
 Symposium on Discrete Algorithms ID (S4306420974), a 2000 paper a repository
 re-dated, and the five-source query recorded returns the other 13, since that
@@ -184,7 +186,8 @@ Society of America (9 of 15) did not.
 Nor did the Journal of Financial and Quantitative Analysis, absent from
 q-fin.GN's 15 newest: it published 8 articles in the 90 days, too few for a
 sample of its own, and the one its curator took (6 of 8 on target) asked
-`has_abstract:true` where q-fin.GN's sample did not, so it is not recorded.
+`has_abstract:true` where q-fin.GN's sample did not, so it is in
+`otherSamples`, not in `leaves`.
 
 econ.GN's lane asks for four of its curator's 15 journals: the Review of
 Economics and Statistics, The Quarterly Journal of Economics and The Economic
@@ -194,7 +197,7 @@ Review of Economic Studies were among the 15 newest with none on target. The
 other nine were not reached. Six of them had a sample of their own, none a full
 page: the four American Economic Journals, American Economic Review: Insights
 and the Journal of Monetary Economics held 4 to 14 articles with an abstract in
-the 90 days, and those samples are not recorded. The Journal of Political
+the 90 days, and those samples are in `otherSamples`. The Journal of Political
 Economy and the Journal of International Economics, whose articles mostly have
 no abstract in OpenAlex, had none, and OpenAlex has no Econometrica work since
 March.
