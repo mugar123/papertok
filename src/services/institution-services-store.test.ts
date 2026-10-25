@@ -8,10 +8,12 @@ import { fakeIdToken } from '../test-support/firebase-id-token.ts';
 // not have, so they load through a URL that TypeScript does not resolve.
 const { default: worker } = await import(new URL('../../worker/index.ts', import.meta.url).href) as { default: { fetch(request: Request, env: Record<string, unknown>): Promise<Response> } };
 const { SERVICE_CATALOGUE } = await import(new URL('../../worker/institution-services.ts', import.meta.url).href) as { SERVICE_CATALOGUE: ReadonlyArray<{ id: string; issn: string }> };
+const { inMemoryQuotaLedger } = await import(new URL('../../worker/test-support/quota-ledger.ts', import.meta.url).href) as { inMemoryQuotaLedger(): { binding: unknown } };
 
 const API = 'https://api.papertok.test';
 const PROJECT_ID = 'papertok-168df';
-const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
+// The route counts each request against the reader's hourly allowance.
+const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
 const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const HOUR = 60 * 60 * 1000;
 const SFX_HOST = 'sfx.bib-bvb.de';
