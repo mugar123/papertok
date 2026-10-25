@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { OPENALEX_LEAF_TOPICS } from '../../src/data/open-alex-leaf-topics.generated.ts';
 import { quantize } from '../paper-store.ts';
 import { calibrateLeafFiling, wilson } from './calibrate-leaf-filing.ts';
 
@@ -189,6 +190,29 @@ test('an article the topic lane of a leaf of the area takes is left out before t
   assert.deepEqual(physics.split, { calibration: 41, heldOut: 41 });
   assert.ok(physics.areaLaneSample);
   assert.deepEqual([physics.areaLaneSample.papers, physics.areaLaneSample.leftOutByVenueLane, physics.areaLaneSample.leftOutByTopicLane], [5, 0, 1]);
+});
+
+test('without a topic filter of its own, it leaves out the articles on the topics the harvest requests for a physics leaf', () => {
+  const [topic] = OPENALEX_LEAF_TOPICS['astro-ph.HE'];
+  const record = (type: string) => ({ source: 'S9', type, primaryTopic: topic, authors: 3 });
+  const dataset: Parameters<typeof calibrateLeafFiling>[0] = {
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: [
+      ...many(40, index => ({ id: `W1${index}`, vector: vector({ 0: 1 }, 1_000 + index), labels: { 'hep-th': 'on' as const } })),
+      ...many(40, index => ({ id: `W2${index}`, vector: vector({ 1: 1 }, 2_000 + index), labels: { 'quant-ph': 'on' as const } })),
+      // The topic lane of astro-ph.HE takes the articles of its topic: left out, whatever leaf this is labelled for.
+      { id: 'W30', vector: vector({ 0: 1 }, 3_000), labels: { 'hep-th': 'on' as const }, openAlex: record('article') },
+      // Its topic but not its type: kept.
+      { id: 'W40', vector: vector({ 0: 1 }, 4_000), labels: { 'hep-th': 'on' as const }, openAlex: record('review') },
+    ],
+    areaSamples: [],
+  };
+  const [physics] = calibrateLeafFiling(dataset);
+  assert.equal(physics.labelledArticles, 81);
+  assert.deepEqual(physics.leftOut, { centroidPreprint: 0, venueLane: 0, topicLane: 1 });
 });
 
 test('an area just under the required precision on its held-out half gets no rule, though the precision rounds to it', () => {
