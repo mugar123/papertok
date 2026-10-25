@@ -9,7 +9,6 @@ import {
   INTERACTION_PROFILE_SCHEMA_VERSION,
   MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
-  MAX_POSITIVE_EXAMPLES_PER_AREA,
   MAX_VIEWED_IDS,
   MAX_VIEWED_NOTABLE_IDS,
   buildProfileFromInteractionDocuments,
@@ -444,7 +443,6 @@ test('the examples are capped per area, so a newer area never evicts an older on
   likeEvents('econ', 'econ.EM', 30).forEach(event => recordInteractionEvent(profile, event, NOW));
 
   const ids = profile.positives.map(example => example.id);
-  assert.equal(MAX_POSITIVE_EXAMPLES_PER_AREA, 24);
   assert.equal(ids.length, 48);
   assert.deepEqual(ids.filter(id => id.startsWith('phys')), Array.from({ length: 24 }, (_, index) => `phys${29 - index}`));
   assert.deepEqual(ids.filter(id => id.startsWith('econ')), Array.from({ length: 24 }, (_, index) => `econ${29 - index}`));
@@ -524,20 +522,23 @@ test('the signals expose the examples with their category, newest first', () => 
   assert.deepEqual(readProfileSignals(null, NOW).positiveExamples, []);
 });
 
-test('an example for every area at 300-character ids still fits the stored budget with the learned maps', () => {
+test('full example lists in all 14 areas and for no area survive a reload beside the learned maps', () => {
   const profile = createEmptyInteractionProfile();
-  const areaCategories = ['quant-ph', 'cs.LG', 'cs.AI', 'math.AC', 'stat.ML', 'econ.EM', 'q-fin.PM', 'eess.SP',
-    'physics', 'q-bio.NC', 'cond-mat.mes-hall', 'astro-ph.GA', 'nlin.CD', 'hep-th'];
+  // One leaf of each area of the taxonomy.
+  const areaCategories = ['quant-ph', 'cs.RO', 'cs.LG', 'math.AG', 'stat.ML', 'econ.EM', 'q-fin.ST', 'eess.SP',
+    'mech.dyn', 'civil.struct', 'chemeng.process', 'med.gen', 'bio.gen', 'chem.anal'];
+  // About as long as a DOI or an OpenAlex id with its prefix.
+  const paperId = (prefix: string, index: number) => `10.1000/${prefix}.${index}.`.padEnd(40, '0');
   areaCategories.forEach((category, areaIndex) => {
     for (let index = 0; index < 30; index += 1) {
       recordInteractionEvent(profile, {
-        paperId: `10.1000/${areaIndex}-${index}-`.padEnd(300, 'x'), kind: 'like', category,
+        paperId: paperId(`area${areaIndex}`, index), kind: 'like', category,
         concepts: [{ id: `C${areaIndex}-${index}`, score: 0.5 }], authorIds: [`A${areaIndex}-${index}`],
       }, NOW);
     }
   });
   for (let index = 0; index < 30; index += 1) {
-    recordInteractionEvent(profile, { paperId: `none-${index}-`.padEnd(300, 'y'), kind: 'like', category: '' }, NOW);
+    recordInteractionEvent(profile, { paperId: paperId('none', index), kind: 'like', category: '' }, NOW);
   }
 
   const stored = serializeInteractionProfile(profile);
@@ -545,7 +546,9 @@ test('an example for every area at 300-character ids still fits the stored budge
   assert.ok(reloaded);
   assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
   assert.equal(reloaded.concepts.size, profile.concepts.size, 'no learned concept was given up for the examples');
-  assert.equal(reloaded.positives.length, profile.positives.length);
+  // 24 for each of the 14 areas and 24 with no area.
+  assert.equal(reloaded.positives.length, 360);
+  assert.deepEqual([...reloaded.positives], [...profile.positives]);
 });
 
 test('a rebuild recovers the examples and the exposure from the documents', () => {

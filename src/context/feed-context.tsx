@@ -1176,14 +1176,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       ])].slice(0, 200);
     }
     const excludedIds = feedExcludedIds.current;
-    const plan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
-      selected: userPreferences,
-      deselected: deselectedPreferences,
-      added: addedPreferences,
-      examples: profileSignals.current.positiveExamples,
-      exposure: profileSignals.current.categoryExposure,
-      affinities: profileSignals.current.categoryAffinities,
-    });
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1196,6 +1188,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     );
 
     try {
+      // Inside the try, so a throw still releases feedLoadInFlight.
+      const corpusPlan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
+        selected: userPreferences,
+        deselected: deselectedPreferences,
+        added: addedPreferences,
+        examples: profileSignals.current.positiveExamples,
+        exposure: profileSignals.current.categoryExposure,
+        affinities: profileSignals.current.categoryAffinities,
+      });
       let newPapers: Paper[] = [];
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
@@ -1269,7 +1270,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const followedCandidatesPromise = followedEntities.length > 0
           ? resolveWithin(
             loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(
-              followedCorpusRequest(plan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
+              followedCorpusRequest(corpusPlan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
             )),
             OPTIONAL_SOURCE_RENDER_BUDGET_MS,
             [],
@@ -1279,7 +1280,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         let mainFailed = false;
         try {
           mainPapers = await fetchCorpusPage({
-            ...mainCorpusRequest(plan, shared),
+            ...mainCorpusRequest(corpusPlan, shared),
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);
