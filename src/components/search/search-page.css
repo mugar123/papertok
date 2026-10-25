@@ -1,0 +1,501 @@
+/* The full search page.
+ *
+ * This file missed the light redesign entirely: it was still painting a dark
+ * glass header, white-on-white result titles (`rgba(255,255,255,0.95)` over
+ * `--bg-primary`, which is `#fff`) and skeleton rows at 1.8% white that nobody
+ * could see. It now speaks the language in `design.md`, and the reference files
+ * it copies are `entity-explorer.css` for the ruled rows and `navbar.css` for
+ * the flat chrome and the yellow active tab.
+ */
+
+.search-page-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--nav-total));
+  margin-top: var(--nav-total);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.search-suggestion-chip:focus-visible,
+.search-retry-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.search-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  height: 34px;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-input-wrapper:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-secondary);
+  }
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--border-ink);
+}
+
+/* A search that is still running says so on the field itself, not only through
+   the spinner: the border firms up while an answer is owed. */
+.search-input-wrapper.is-searching {
+  border-color: var(--border-strong);
+}
+
+.search-icon {
+  color: var(--text-tertiary);
+  margin-right: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* The ui Input, flat inside the wrapper that draws its box. */
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  border: none !important;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* iOS zooms into a field under 16px (ui/input.tsx). */
+@media (min-width: 901px) {
+  .search-input {
+    font-size: var(--fs-sm);
+  }
+}
+
+/* The field's own clear, drawn rather than the browser's cancel glyph. */
+.search-clear-btn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin-left: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-clear-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
+}
+
+.search-clear-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.search-scope-rule {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-2);
+  background: var(--border-default);
+}
+
+.search-input-wrapper:has(.search-scope-trigger) {
+  padding-right: var(--space-1);
+}
+
+.search-scope-trigger {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+
+.search-input-wrapper:has(.search-scope-icon-trigger) {
+  padding-right: 0;
+}
+
+/* Phone: the scope as its icon, a full-height thumb target at the field's end. */
+.search-scope-icon-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: stretch;
+  min-width: 48px;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.search-scope-icon-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.search-scope-row[aria-current='true'] {
+  font-weight: var(--fw-semibold);
+}
+
+.search-scope-row[aria-current='true'] svg {
+  color: var(--text-primary);
+}
+
+.search-scope-row-check {
+  margin-left: auto;
+}
+
+/* ─── Results container ─── */
+.search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-4) var(--space-4);
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: min(100%, 1120px);
+  min-height: 100%;
+  margin-inline: auto;
+  padding-bottom: var(--space-8);
+}
+
+/* ─── Skeleton ───
+   These rows were `rgba(255,255,255,0.018)` on a white page with a white
+   shimmer: a loading state nobody could see, which is the same as none. They
+   are the height of a real row, so nothing shifts when the answer lands. */
+.search-loading-state {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.search-loading-row {
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-loading-row:hover {
+    background: none;
+  }
+}
+
+.search-loading-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-loading-line {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 0%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 100%
+  );
+  background-size: 220% 100%;
+  animation: searchLoadingShimmer 1.15s ease-in-out infinite;
+}
+
+/* Each bar is the height of the line it stands in for, so the rows do not
+   jump when the results land. */
+.search-loading-line--meta { width: min(28%, 140px); height: 11px; margin-bottom: 10px; }
+.search-loading-line--title { width: min(72%, 480px); height: 18px; margin-bottom: 10px; }
+.search-loading-line--detail { width: min(44%, 280px); height: 12px; }
+
+/* ─── Empty / degraded ─── */
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 300px;
+  color: var(--text-secondary);
+  gap: var(--space-3);
+}
+
+.search-service-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--tint-amber-line);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+}
+
+/* The red `.is-error` variant is gone with the sentence it carried ("the search
+   is temporarily unavailable"). One provider being down is news, not a failure
+   of the page, so the notice keeps the amber informative tone. */
+
+.search-service-state > svg {
+  flex-shrink: 0;
+}
+
+/* One line: the provider, then what is missing. A narrow screen cuts the
+   detail short rather than growing the strip; the status reads it whole. */
+.search-service-copy {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-service-copy strong {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.search-service-copy span {
+  margin-left: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.search-retry-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-retry-btn:hover {
+    border-color: var(--border-ink);
+    background: var(--bg-secondary);
+  }
+}
+
+.search-empty-icon {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.search-empty span {
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}
+
+/* ─── Sections ─── */
+.search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.search-filtered-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.search-section-title {
+  margin: 0 0 var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+}
+
+@keyframes searchLoadingShimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* `fadeIn` used to be redefined here, shadowing the one in `variables.css`
+   with an identical body. It is gone; the global one is the one that runs. */
+
+/* ─── Overlay ─── */
+/* Hide scrollbar completely to make it look cleaner */
+.search-results::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Initial state ─── */
+.search-initial-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 50vh;
+  min-height: 50dvh;
+  padding: var(--space-5);
+}
+
+.search-initial-hero {
+  text-align: center;
+  margin-bottom: var(--space-6);
+  max-width: 400px;
+}
+
+.search-initial-petri {
+  display: block;
+  width: 7rem;
+  height: 7rem;
+  margin: 0 auto var(--space-4);
+  overflow: visible;
+  color: var(--text-primary);
+}
+
+.petri.search-initial-petri .onboarding-petri-body,
+.petri.search-outage-petri .onboarding-petri-body {
+  animation: none;
+}
+
+.search-initial-hero h2 {
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  margin: 0;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.search-suggestions {
+  width: 100%;
+  max-width: 600px;
+}
+
+.search-suggestions-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.search-suggestion-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-suggestion-chip:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-ink);
+    color: var(--text-primary);
+  }
+}
+
+.search-suggestion-chip svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .search-icon {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .search-results {
+    padding: var(--space-6) var(--space-3) var(--space-4);
+  }
+
+  .search-initial-state {
+    padding-inline: var(--space-1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-loading-line {
+    animation: none;
+  }
+}
+
+.search-section[data-section="projects"] .list-row-title {
+  overflow-wrap: anywhere;
+}
+
+.search-outage-state {
+  flex: 1;
+  justify-content: center;
+  min-height: 50dvh;
+}
+
+:root.search-results-transition .search-results-list {
+  view-transition-name: search-results;
+}
+
+::view-transition-old(search-results) {
+  animation: searchResultsOut 160ms var(--ease-out) both;
+}
+
+::view-transition-new(search-results) {
+  animation: searchResultsIn 280ms var(--ease-out) 60ms both;
+}
+
+@keyframes searchResultsOut {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes searchResultsIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}

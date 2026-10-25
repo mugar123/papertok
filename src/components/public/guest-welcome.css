@@ -1,0 +1,1322 @@
+/* ============================================
+   GuestWelcome — the visitor's first screens
+
+   An app's first screens, not a landing page: one centred column, one idea
+   per screen. The bar keeps language, theme and sign-in in reach; the stage
+   holds an illustration, a kicker, a serif headline and a sentence; the foot
+   is the way forward — progress dots, the button centred, and the quiet ways
+   round it underneath. The vocabulary is the feed's own (serif headlines,
+   mono data, the paper sheet with its field-coloured top edge), so the step
+   from the last screen into the feed lands on something already familiar.
+   ============================================ */
+
+.gw {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  isolation: isolate;
+
+  background: transparent;
+}
+
+
+.gw::before,
+.gw-bar::before,
+.gw-foot::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--text-primary);
+  opacity: var(--grain);
+  pointer-events: none;
+  mask: var(--grain-mask);
+  mask-composite: add;
+}
+
+
+:root:has(.gw) {
+  overscroll-behavior-y: none;
+}
+
+/* ── Bar ── */
+.gw-bar {
+  isolation: isolate;
+  clip-path: inset(0);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* Never squeezed: on the welcome the page is exactly the viewport tall,
+     and flex would otherwise take the columns' room out of the bar. */
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: var(--nav-total);
+  padding: var(--inset-top) var(--space-5) 0;
+  background: var(--bg-primary);
+}
+
+.gw-wordmark {
+  font-size: 1rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.gw-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+.gw-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.gw-bar-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 0.75rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* Labelled at every width, unlike the feed's: on a phone this is the door a
+   returning account is looking for, and the bar has room for it. */
+.gw-sign-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  /* The icon buttons beside it are bare glyphs in 36px boxes, so their
+     visible gap is the gap plus their padding; this framed button adds the
+     same space back, keeping the three evenly apart. */
+  margin-left: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-bar-button:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .gw-sign-in:hover {
+    background: var(--accent-primary-hover);
+  }
+}
+
+/* The bar has room for the label until the reader's text is set larger than
+   it can hold. An `em` media query follows the browser's font size, not the
+   page's, so at the default size this never applies down to a 288px screen.
+   Then Sign in folds to its icon, as the feed header's does, and keeps the
+   label as its name; the icon buttons beside it keep their size. It stays
+   folded under keyboard focus too, unlike the feed's: here the label is
+   folded precisely because it does not fit, so unfolding it on focus would
+   push it off the screen. */
+@media (max-width: 18em) {
+  .gw-bar {
+    gap: var(--space-2);
+  }
+
+  .gw-sign-in {
+    gap: 0;
+    font-size: 0;
+    padding: 0;
+    width: 36px;
+    justify-content: center;
+  }
+
+  .gw-bar-button,
+  .gw-sign-in {
+    flex: none;
+  }
+}
+
+/* ── Stage: the column ── */
+.gw-stage {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-6) var(--space-5);
+}
+
+/* The areas are the one screen that can be taller than the viewport, so it
+   starts at the top and scrolls under the foot rather than centring. */
+.gw-stage--topics {
+  justify-content: flex-start;
+  padding-top: clamp(16px, 4vh, 40px);
+}
+
+
+.gw-stage--topics:has(> .gw-step--topics),
+.gw-stage--topics:has(> .gw-step--university),
+.gw-stage--topics:has(> .gw-step--reading),
+.gw-stage--topics:has(> .gw-step--inbox),
+.gw-stage--topics:has(> .gw-step--support) {
+  justify-content: safe center;
+  padding-bottom: clamp(16px, 4vh, 40px);
+}
+
+.gw-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(520px, 100%);
+  text-align: center;
+}
+
+.gw-step--topics,
+.gw-step--subtopics {
+  width: min(760px, 100%);
+}
+
+.gw-step--how {
+  width: min(920px, 100%);
+}
+
+.gw-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gw-kicker {
+  margin: 0 0 var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.gw-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-serif);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  color: var(--text-primary);
+}
+
+/* The heading takes focus when the reader moves to its screen (tabIndex
+   -1), so the screen reader starts there. It is never a tab stop of its
+   own; a ring round a headline would read as a rendering fault, not as
+   focus. */
+.gw-title:focus-visible {
+  outline: none;
+}
+
+.gw-lede {
+  max-width: 38ch;
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  text-wrap: pretty;
+  color: var(--text-secondary);
+}
+
+
+/* The gestures. Each is drawn straight on the page, a size up from a
+   thumbnail, and plays its point once. */
+.gw-demo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.gw-demo-phone,
+.gw-demo-sheet {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.gw-demo-phone {
+  width: 124px;
+  height: 164px;
+}
+
+.gw-demo-track {
+  height: 300%;
+}
+
+.gw-demo-paper {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 6px;
+  height: 33.333%;
+  padding: 20px 12px 14px;
+}
+
+.gw-demo-kicker,
+.gw-demo-title,
+.gw-demo-line {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.gw-demo-kicker {
+  width: 44%;
+  height: 4px;
+  margin-bottom: 2px;
+  background: var(--area-accent);
+}
+
+.gw-demo-title {
+  width: 94%;
+  height: 7px;
+  background: var(--text-primary);
+  opacity: 0.85;
+}
+
+.gw-demo-title--short { width: 58%; margin-bottom: 4px; }
+
+.gw-demo-line {
+  width: 100%;
+  height: 4px;
+  background: var(--border-default);
+}
+
+.gw-demo-line--short { width: 66%; }
+
+.gw-demo-swipe {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-md);
+}
+
+.gw-demo-sheet {
+  width: 200px;
+  height: 136px;
+  padding: 16px;
+}
+
+.gw-demo-dense {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gw-demo-line--dense {
+  height: 5px;
+}
+
+.gw-demo-line--dense:nth-child(3n) { width: 82%; }
+
+/* The plain version: the AI reading action's own yellow, which is the one
+   thing design.md reserves it for. */
+.gw-demo-plain {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+.gw-demo-spark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.gw-demo-highlight {
+  display: block;
+  width: calc(var(--w) * 100%);
+  height: 11px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  transform-origin: left center;
+}
+
+.gw-demo--learn {
+  grid-template-columns: auto auto;
+  gap: 20px;
+  align-content: center;
+  justify-content: center;
+}
+
+.gw-demo-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gw-demo-key {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.gw-demo-key--like { color: var(--accent-rose); }
+.gw-demo-key--save { color: var(--accent-save); }
+.gw-demo-key--follow { color: var(--accent-teal); }
+
+.gw-demo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A width of its own: the well centres its children, and rows whose bars
+     are percentages of nothing collapse to their borders. */
+  width: 156px;
+}
+
+.gw-demo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.gw-demo-row-title,
+.gw-demo-row-line {
+  display: block;
+  height: 5px;
+  border-radius: var(--radius-sm);
+}
+
+.gw-demo-row-title {
+  width: 86%;
+  background: var(--text-primary);
+  opacity: 0.8;
+}
+
+.gw-demo-row-line {
+  width: 60%;
+  background: var(--border-default);
+}
+
+/* The welcome's two sentences take two lines on a wide screen. */
+.gw-step--welcome .gw-lede {
+  max-width: 50ch;
+}
+
+/* The areas' sentence is one line, and so are the stars screen's and the
+   account's university screen's: their copy runs the screen's width rather
+   than the reading measure above, which is for the welcome's two-line lede
+   and left these sentences broken into short lines. */
+.gw-step--topics .gw-lede,
+.gw-step--subtopics .gw-lede,
+.gw-step--support .gw-lede,
+.gw-step--university .gw-lede {
+  max-width: none;
+}
+
+
+.gw-step--university .gw-title {
+  width: max-content;
+  max-width: min(820px, calc(100vw - 2 * var(--space-5)));
+}
+
+
+.gw--landing {
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.gw--landing .gw-foot {
+  display: none;
+}
+
+
+/* Room under the account button for the provider stack. It overlays the foot
+   of the stage, and the landing clips what overflows: 104px for its two
+   buttons, then the gap and the "Preparing sign-in…" line under them
+   (PreparingNote). */
+.gw--landing .gw-stage {
+  padding-bottom: calc(104px + var(--fs-xs) * var(--lh-normal) + var(--space-2));
+}
+
+.gw-step--welcome {
+  width: min(680px, 100%);
+}
+
+.gw-step--welcome .gw-kicker {
+  margin-bottom: var(--space-4);
+}
+
+.gw-step--welcome .gw-title {
+  margin-bottom: var(--space-5);
+  font-size: clamp(2.5rem, 7vw, 4.75rem);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+
+.gw-step--welcome .gw-lede {
+  max-width: 30em;
+  margin-bottom: var(--space-8);
+  font-family: var(--font-serif);
+  font-size: clamp(1.125rem, 2.2vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.gw-cta {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 340px);
+  margin-inline: auto;
+}
+
+
+.gw-cta {
+  position: relative;
+}
+
+.gw-account-caret {
+  transition: rotate 220ms var(--ease-out-expo);
+}
+
+[aria-expanded='true'] > .gw-account-caret {
+  rotate: 180deg;
+}
+
+.gw-providers {
+  position: absolute;
+  z-index: 1;
+  /* Clear of the button's 4px halftone shadow, with room to read as a list of its own. */
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+}
+
+
+/* On paper: the stack overlays the engravings, which would otherwise sit
+   behind its text and show through its dimmed buttons. */
+.gw-providers > div {
+  display: grid;
+  gap: var(--space-2);
+  background: var(--bg-primary);
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 220ms var(--ease-out-expo);
+}
+
+.gw-providers[data-open] > div {
+  clip-path: inset(-8px);
+}
+
+.gw-providers:not([data-open]) > div {
+  transition-duration: 140ms;
+}
+
+.gw-providers > div > * {
+  opacity: 0;
+  translate: 0 -6px;
+  transition: opacity 200ms var(--ease-out-expo), translate 200ms var(--ease-out-expo);
+}
+
+.gw-providers[data-open] > div > * {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* A provider waiting for its window keeps the Button's disabled opacity
+   (button-variants.ts), which sits in a cascade layer below this sheet. */
+.gw-providers[data-open] > div > [data-disabled] {
+  opacity: revert-layer;
+}
+
+.gw-providers[data-open] > div > :nth-child(2) {
+  transition-delay: 40ms;
+}
+
+.gw-providers-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--accent-danger);
+}
+
+
+/* The landing's halftone bar buttons, the theme switch and Privacy, at one size. */
+.gw-bar-button.btn-halftone {
+  width: 40px;
+  height: 40px;
+  margin-right: 4px;
+  color: var(--text-primary);
+}
+
+.gw-bar-button.btn-halftone.theme-toggle::after {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+}
+
+/* A size down on a phone, where the bar is narrower: still well over the 24px
+   target minimum (WCAG 2.5.8). */
+@media (max-width: 640px) {
+  .gw-bar-button.btn-halftone {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .gw-bar-button.btn-halftone svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+.gw-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.gw-or::before,
+.gw-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+
+.gw-plate {
+  position: absolute;
+  z-index: -1;
+  width: calc(var(--w) / 2);
+  height: calc(var(--h) / 2);
+  background: var(--text-primary);
+  pointer-events: none;
+  -webkit-mask: var(--img) center / 100% 100% no-repeat;
+  mask: var(--img) center / 100% 100% no-repeat;
+}
+
+.gw-plate--scrolls {
+  --img: url('../../assets/welcome/scrolls.png');
+  --w: 331px;
+  --h: 345px;
+  top: 64px;
+  left: 0;
+}
+
+
+.gw-plate--microscope {
+  --img: url('../../assets/welcome/microscope.png');
+  --w: 281px;
+  --h: 463px;
+  width: calc(var(--w) * 0.68);
+  height: calc(var(--h) * 0.68);
+  bottom: -16px;
+  left: 8px;
+  rotate: 12deg;
+  transform-origin: bottom left;
+}
+
+.gw-plate--lab {
+  --img: url('../../assets/welcome/lab.png');
+  --w: 410px;
+  --h: 316px;
+  bottom: 0;
+  right: 0;
+  rotate: -16deg;
+  transform-origin: bottom right;
+}
+
+@media (min-width: 1440px) {
+  .gw-plate { width: var(--w); height: var(--h); }
+  .gw-plate--scrolls { top: 72px; left: 8px; }
+  .gw-plate--microscope { width: calc(var(--w) * 1.1); height: calc(var(--h) * 1.1); bottom: -56px; left: 24px; }
+  .gw-plate--lab { bottom: 32px; right: -32px; }
+}
+
+
+@media (max-width: 1100px) {
+  .gw-plate--scrolls { top: -50px; left: -70px; }
+  .gw-plate--microscope { display: none; }
+  .gw-plate--lab { bottom: -70px; right: -70px; }
+}
+
+@media (max-width: 560px) {
+  .gw-plate--scrolls { top: -40px; left: -60px; }
+  .gw-plate--lab { bottom: -12px; right: -32px; }
+}
+
+
+.gw-stars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.gw-stars svg {
+  position: absolute;
+  fill: var(--text-primary);
+}
+
+.gw-stars svg.is-spot {
+  overflow: visible;
+  fill: var(--brand-yellow);
+  stroke: var(--border-ink);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+
+.gw-subtopics {
+  animation: gwAreaIn 200ms var(--ease-out-expo) calc(var(--i, 0) * 60ms) backwards;
+}
+
+.gw-subtopics .gw-area {
+  animation: none;
+}
+
+.gw-petri text {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ── What you do here: three gestures in a row ── */
+.gw-beats {
+  display: flex;
+  flex-direction: row;
+  gap: clamp(16px, 3vw, 36px);
+  width: 100%;
+  margin: clamp(24px, 5vh, 48px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gw-beat {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.gw-beat-demo {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 190px;
+  margin-bottom: var(--space-4);
+}
+
+.gw-beat-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gw-beat-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.gw-beat-body {
+  max-width: 26ch;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* ── The areas ──
+   Compact tiles — glyph, name, box — so twelve fit in a glance and the
+   screen stays a question rather than a catalogue. */
+.gw-areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-top: var(--space-6);
+  text-align: left;
+}
+
+/* The shared Toggle, redrawn as a tile. Its own chip utilities (a 2rem row,
+   nowrap, an ink fill when pressed) are undone here; this rule is
+   unlayered, so it outranks the Tailwind layer they live in. */
+.gw-area {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 52px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    scale 150ms ease-out;
+  animation: gwAreaIn 150ms var(--ease-out-expo) min(calc(var(--i, 0) * 20ms), 300ms) backwards;
+}
+
+@keyframes gwAreaIn {
+  from { opacity: 0; translate: 0 8px; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-area:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+}
+
+.gw-area:active {
+  scale: 0.98;
+}
+
+/* Picked: the field's own ink on the edge and a wash of it, and the box
+   ticked — the tick and `aria-pressed` say it without the colour. */
+.gw-area[data-pressed] {
+  border-color: var(--area-accent);
+  background: color-mix(in srgb, var(--area-accent) 7%, var(--bg-elevated));
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--area-accent);
+}
+
+/* The glyph alone, in its field's ink: no tile behind it. A picked area
+   fills it instead (`weight="fill"`, guest-welcome.tsx), so the icon says it
+   too, beside the tick and the washed card. */
+.gw-area-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--area-accent);
+}
+
+.gw-area-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+
+.gw-area-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.gw-area[data-pressed] .gw-area-box {
+  border-color: var(--area-accent);
+  background: var(--area-accent);
+  color: var(--text-inverse);
+}
+
+/* ── The specific topics: one group of area cards per area ── */
+.gw-subtopics {
+  width: 100%;
+  margin-top: var(--space-6);
+  text-align: left;
+}
+
+.gw-subtopics + .gw-subtopics {
+  margin-top: var(--space-8);
+}
+
+.gw-subtopics-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.gw-subtopics-title svg {
+  color: var(--area-accent);
+}
+
+/* The grid follows its group's title rather than the page's lede. */
+.gw-subtopics .gw-areas {
+  margin-top: var(--space-3);
+}
+
+/* "Show more" under a folded group: a quiet text control, left-aligned
+   under the grid it opens. */
+.gw-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-more:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+.gw-more svg {
+  transition: rotate var(--transition-base);
+}
+
+.gw-more svg.is-flipped {
+  rotate: 180deg;
+}
+
+/* ── Foot: the way forward, centred ── */
+.gw-foot {
+  isolation: isolate; /* keeps the grain (below) under its content */
+  clip-path: inset(0); /* cuts the viewport-fixed grain to this box */
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) calc(var(--space-5) + var(--inset-bottom));
+  background: var(--bg-primary);
+}
+
+/* On the areas screen the tiles scroll under the foot, so it earns a rule. */
+.gw-stage--topics + .gw-foot {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gw-dots {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The current screen is a longer bar, not only a darker dot: the shape
+   carries it as well as the ink, and `aria-current` names it. */
+.gw-dots--fixed {
+  justify-content: flex-start;
+}
+
+.gw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  /* The width is WelcomeShell's motion (born, folded, the current bar). */
+  transition: background var(--transition-base);
+}
+
+.gw-dot.is-done {
+  background: var(--text-secondary);
+}
+
+.gw-dot.is-active {
+  width: 22px;
+  background: var(--accent-primary);
+}
+
+.gw-dot-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.gw-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: min(460px, 100%);
+}
+
+/* Each side keeps its width whether or not its icon is drawn, so the button
+   stays centred on every screen. */
+.gw-action-slot {
+  flex: 0 0 44px;
+  display: flex;
+  justify-content: center;
+}
+
+.gw-icon-action {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+}
+
+.gw-primary {
+  flex: 1 1 auto;
+  max-width: 340px;
+}
+
+@media (max-width: 640px) {
+  .gw-bar {
+    padding: var(--inset-top) var(--space-3) 0;
+  }
+
+  /* One line down to a 360px phone: the size follows the width there. */
+  .gw-step--topics .gw-lede,
+  .gw-step--subtopics .gw-lede {
+    font-size: clamp(0.8125rem, 3.9vw, 0.9375rem);
+  }
+
+  .gw-stage {
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .gw-stage.gw-stage--topics {
+    padding-bottom: var(--space-4);
+  }
+
+  .gw-areas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: var(--space-5);
+  }
+
+  .gw-area {
+    gap: 8px;
+    padding: 7px 10px 7px 7px;
+  }
+
+  .gw-area-name {
+    font-size: 0.8125rem;
+  }
+
+  .gw-foot {
+    gap: var(--space-3);
+    padding-inline: var(--space-4);
+  }
+
+  .gw-actions {
+    gap: var(--space-2);
+  }
+
+  /* Three across does not fit a phone: the gestures stack, each a row of a
+     small well beside its words, the illustration drawn at a little under
+     half size so it plays the same point in the space it has. */
+  .gw-beats {
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+  }
+
+  .gw-beat {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-4);
+    text-align: left;
+  }
+
+  .gw-beat-demo {
+    flex: 0 0 104px;
+    width: 104px;
+    height: 104px;
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-2xl);
+    background: var(--bg-secondary);
+  }
+
+  /* 236 × 0.44 = 104, the well: the widest illustration (the likes and the
+     list, 210px) lands at 92 and keeps its margin. */
+  .gw-beat-demo > .gw-demo {
+    zoom: 0.44;
+    width: 236px;
+    height: 236px;
+  }
+
+  .gw-beat-copy {
+    align-items: flex-start;
+  }
+
+  .gw-beat-title {
+    font-size: 1.1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-providers > div,
+  .gw-account-caret {
+    transition: none;
+  }
+
+  .gw-providers > div > * {
+    translate: none;
+    transition: opacity 160ms ease-out;
+  }
+
+  .gw-library-chip > span { transform: none !important; transition: opacity 150ms ease; }
+
+  .gw-subtopics {
+    animation: none;
+  }
+
+  .gw-area {
+    animation: none;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .gw-area:active {
+    scale: none;
+  }
+
+  .gw-dot,
+  .gw-area-icon,
+  .gw-area-box,
+  .gw-more svg {
+    transition: none;
+  }
+}
+
+/* Personalization continues the welcome's centered, document-first layout. */
+.gw-step--reading { width: min(760px, 100%); }
+.gw-preferences { width: 100%; margin-top: var(--space-6); }
+.gw-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; border: 0; }
+.gw-level { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); text-align: left; cursor: pointer; }
+
+.gw-level input { appearance: none; box-sizing: border-box; position: absolute; top: var(--space-5); right: var(--space-5); width: 18px; min-width: 0; height: 18px; margin: 0; padding: 0; border: 1.5px solid var(--border-ink); border-radius: var(--radius-full); background: transparent; }
+.gw-level input:checked { background: var(--text-primary); box-shadow: inset 0 0 0 3.5px var(--bg-card); }
+.gw-level input,
+.gw-level input:checked { transition: none; }
+.gw-level strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.gw-level > span { font-size: var(--fs-xs); line-height: 1.7; color: var(--text-secondary); }
+
+.gw-level:has(input:checked) { border-color: var(--border-ink); box-shadow: inset 0 -3px 0 var(--text-primary); }
+.gw-level:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-preference-note { margin: var(--space-4) 0 0; font-size: var(--fs-xs); line-height: 1.8; color: var(--text-secondary); }
+/* The digest arriving: an envelope on a sunken panel. Stage 260 × 410, the
+   envelope the bottom 240 × 150 of it; the letters rise from inside and the
+   slot clips them at the envelope's foot. Order, back to front: inside, the open
+   flap, letters, pocket. */
+.gw-inbox { margin-top: var(--space-2); }
+/* Pulled up to sit close under the lede. */
+.gw-digest-preview { display: grid; place-items: center; margin-top: -32px; pointer-events: none; }
+.gw-env { position: relative; width: 260px; height: 360px; perspective: 900px; zoom: 0.85; }
+
+.gw-step--inbox > .gw-digest-preview { margin: 0 0 var(--space-6); }
+
+.gw-env > .onboarding-petri-stamp { top: 218px; right: 6px; z-index: 5; }
+.gw-env-back,.gw-env-flap,.gw-env-pocket { position: absolute; left: 10px; right: 10px; bottom: 0; height: 150px; }
+.gw-env-back { z-index: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated)); }
+.gw-env-flap { z-index: 1; clip-path: polygon(0 0, 100% 0, 50% 62%); transform: rotateX(180deg); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
+.gw-env-back svg,.gw-env-flap svg,.gw-env-pocket svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.gw-env-flap path,.gw-env-pocket path { vector-effect: non-scaling-stroke; }
+.gw-env-slot { position: absolute; inset: 0; z-index: 2; overflow: hidden; }
+.gw-env-letter { position: absolute; left: 50%; bottom: 8px; display: flex; flex-direction: column; gap: 6px; width: 224px; height: 300px; margin-left: -112px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
+.gw-env-letter--behind { gap: 7px; background: color-mix(in srgb, var(--area-accent) 5%, var(--bg-card)); }
+.gw-env-venue { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.gw-env-letter strong { font: 500 0.95rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
+.gw-env-authors { font-size: 0.6875rem; line-height: 1.4; color: var(--text-secondary); }
+.gw-env-hook { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font: italic 400 0.8125rem/1.45 var(--font-serif); color: var(--text-secondary); }
+.gw-env-venue { margin-top: auto; color: var(--text-tertiary); }
+.gw-env-pocket { z-index: 3; clip-path: polygon(0 0, 50% 58%, 100% 0, 100% 100%, 0 100%); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-elevated); }
+/* The opt-in: one row, the whole row a target for the switch. */
+.gw-digest-optin { display: flex; align-items: center; gap: var(--space-4); width: min(400px, 100%); margin: var(--space-4) auto 0; text-align: left; padding: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
+/* On is said by the switch, in the same green as the envelope's label; the
+   row only warms a little, so the pair does not read as a block of ink. */
+.gw-digest-optin[data-checked] { border-color: color-mix(in srgb, var(--accent-success) 45%, var(--border-strong)); background: color-mix(in srgb, var(--accent-success) 5%, var(--bg-card)); }
+.gw-digest-optin:has(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-digest-optin-text { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
+.gw-digest-optin-text strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.gw-digest-optin-text span { font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
+/* The university: the library demo over the address field (here) or the
+   link form (the account onboarding's). Stage 300 × 250: the paper card sits top-left and the library card
+   lands over its bottom-right corner — the skeleton lines, never the chip,
+   which is the point of the picture. */
+.gw-university { margin-top: var(--space-2); }
+.gw-step--university { width: min(640px, 100%); }
+.gw-step--university > .gw-library-preview { margin: 0 0 var(--space-6); }
+.gw-university-field { display: flex; flex-direction: column; gap: var(--space-2); width: min(400px, 100%); margin: var(--space-4) auto 0; text-align: left; }
+.gw-university-field label { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.gw-university-field input { min-height: 44px; }
+.gw-university-field .gw-preference-note { margin-top: var(--space-1); }
+.gw-university-error { margin: 0; font-size: var(--fs-sm); color: var(--accent-danger); }
+.gw-university-error:empty { display: none; }
+.gw-library-preview { display: grid; place-items: center; margin-top: var(--space-2); pointer-events: none; }
+.gw-library { position: relative; width: 300px; height: 250px; zoom: 0.9; }
+.gw-library-paper { position: absolute; top: 10px; left: 18px; display: flex; flex-direction: column; gap: 6px; width: 214px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
+.gw-library-venue { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--area-accent); }
+.gw-library-paper strong { font: 500 0.95rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
+.gw-library-authors { font-size: 0.6875rem; line-height: 1.4; color: var(--text-secondary); }
+.gw-library-paper .gw-demo-title { margin-top: 4px; }
+/* The chip's two readings in one cell: locked, amber; opened, the blue the
+   real pill wears beside the reader's name. */
+.gw-library-chip { display: grid; justify-items: start; margin: 2px 0 4px; }
+.gw-library-chip > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 4px; min-height: 20px; padding: 0 7px; border: 1px solid var(--tint-amber-line); border-radius: var(--radius-sm); background: var(--tint-amber-bg); color: var(--tint-amber-fg); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; white-space: nowrap; transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1), transform 220ms cubic-bezier(0.23, 1, 0.32, 1); }
+.gw-library-chip > span:last-child { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--tint-blue-fg); opacity: 0; transform: translateY(5px); }
+.gw-library-chip[data-opened] > span:first-child { opacity: 0; transform: translateY(-5px); }
+.gw-library-chip[data-opened] > span:last-child { opacity: 1; transform: translateY(0); }
+/* The library card: ID-card proportions, landing over the paper's corner. */
+.gw-library-card { position: absolute; right: 10px; bottom: 0; display: flex; flex-direction: column; gap: 8px; width: 150px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-elevated); box-shadow: var(--shadow-md); text-align: left; }
+.gw-library-card-head { display: flex; align-items: center; gap: 5px; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.gw-library-card-head svg { color: var(--tint-blue-fg); }
+.gw-library-card-name { display: block; width: 78%; height: 6px; border-radius: var(--radius-sm); background: var(--text-primary); opacity: 0.8; }
+.gw-library-card-name--short { width: 48%; opacity: 0.45; }
+.gw-library-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.gw-library-card-bars { display: block; flex: 1; height: 12px; background: repeating-linear-gradient(90deg, var(--text-primary) 0 1px, transparent 1px 3px, var(--text-primary) 3px 5px, transparent 5px 7px); opacity: 0.55; }
+.gw-library-card-ok { display: inline-flex; align-items: center; gap: 3px; font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--accent-success); }
+/* Support: the words and the browser side by side, browser on the right, so
+   the browser can be large. Reversed in CSS rather than in the markup: the
+   browser is decoration (aria-hidden) and still comes first where a phone,
+   with no room for the pair, stacks them (below). */
+.gw-step--support { width: min(900px, 100%); }
+.gw-support { display: flex; flex-direction: row-reverse; align-items: center; justify-content: center; gap: var(--space-10); }
+.gw-support-copy { display: flex; flex: 0 1 280px; flex-direction: column; align-items: flex-start; gap: var(--space-5); text-align: left; }
+.gw-support-copy p { margin: 0; font-size: var(--fs-base); line-height: 1.7; color: var(--text-secondary); }
+/* The star demo: a browser on the repository. The page is 340 × 186 and
+   zooms from its top-right corner, where GitHub keeps the Star button, so the
+   cursor (a child of the page) stays on the button through the zoom. */
+.gw-gh { flex: none; width: 340px; zoom: 1.45; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-2xl); background: var(--bg-elevated); box-shadow: var(--shadow-md); text-align: left; }
+.gw-gh-chrome { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border-default); background: var(--bg-sunken); }
+.gw-gh-dots { display: flex; gap: 5px; }
+.gw-gh-dots i { width: 7px; height: 7px; border: 1px solid var(--border-strong); border-radius: var(--radius-full); }
+.gw-gh-url { display: flex; flex: 1; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 4px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-full); background: var(--bg-elevated); font: 500 0.625rem/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+.gw-gh-view { position: relative; height: 186px; overflow: hidden; }
+.gw-gh-page { position: absolute; inset: 0; padding: 12px; transform-origin: 100% 0; color: var(--text-primary); }
+.gw-gh-head { display: flex; align-items: center; gap: 6px; height: 22px; font-size: 0.6875rem; white-space: nowrap; }
+.gw-gh-repo { color: var(--accent-secondary); }
+.gw-gh-pill { padding: 2px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-full); font-size: 0.5625rem; color: var(--text-secondary); }
+.gw-gh-star { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 64px; height: 22px; margin-left: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-sunken); font-size: 0.625rem; font-weight: var(--fw-semibold); }
+.gw-gh-star-icon { display: grid; color: var(--text-secondary); }
+.gw-gh-star[data-starred] .gw-gh-star-icon,.gw-gh-plus { color: var(--accent-save); }
+.gw-gh-ring { position: absolute; inset: -1px; border: 1px solid var(--accent-save); border-radius: inherit; }
+.gw-gh-plus { position: absolute; top: -4px; right: 4px; font: 600 0.5625rem/1 var(--font-mono); }
+.gw-gh-tabs { display: flex; gap: 14px; margin: 12px -12px 0; padding: 0 12px; border-bottom: 1px solid var(--border-default); font-size: 0.625rem; color: var(--text-secondary); }
+.gw-gh-tabs span { padding-bottom: 7px; }
+.gw-gh-tabs .is-active { margin-bottom: -1px; border-bottom: 2px solid var(--text-primary); color: var(--text-primary); font-weight: var(--fw-semibold); }
+.gw-gh-files { margin: 10px 0 0; padding: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); list-style: none; }
+.gw-gh-files li { display: flex; align-items: center; gap: 7px; height: 19px; padding: 0 8px; font: 500 0.625rem/1 var(--font-mono); color: var(--text-secondary); }
+.gw-gh-files li + li { border-top: 1px solid var(--border-subtle); }
+.gw-gh-files li > span { width: 62px; color: var(--text-primary); }
+.gw-gh-files li > i { flex: 1; height: 4px; max-width: 46%; border-radius: var(--radius-sm); background: var(--border-default); }
+.gw-gh-files li:nth-child(even) > i { max-width: 32%; }
+.gw-gh-cursor { position: absolute; top: 0; left: 0; display: grid; transform-origin: 0 0; color: var(--text-primary); filter: drop-shadow(0 1px 1px var(--bg-elevated)); }
+@media (max-width: 900px) { .gw-gh { zoom: 1.15; } }
+@media (max-width: 760px) {
+  .gw-support { flex-direction: column; gap: var(--space-5); }
+  .gw-support-copy { flex: none; align-items: center; text-align: center; }
+  .gw-support-copy p { max-width: 42ch; font-size: var(--fs-sm); }
+  .gw-gh { zoom: 1; }
+}
+@media (max-width: 380px) { .gw-gh { zoom: 0.84; } }
+
+@media (max-width: 640px) {
+  .gw [data-slot=button].h-11,
+  .gw-icon-action {
+    height: 40px;
+  }
+
+  .gw-icon-action {
+    width: 40px;
+  }
+
+  .gw-gh-view {
+    height: 132px;
+  }
+
+  .gw-support-copy {
+    gap: var(--space-3);
+  }
+}
+.gw-preferences :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-preferences [data-slot=button],.gw-level { scroll-margin-block: 100px 160px; }
+@media (max-width: 640px) {
+  .gw-levels { grid-template-columns: minmax(0, 1fr); }
+  .gw-level { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 6px 12px; padding: var(--space-4); padding-right: 48px; }
+  .gw-level > svg { grid-row: 1 / 3; }
+  .gw-level > span { grid-column: 2; }
+  .gw-level input { top: var(--space-4); right: var(--space-4); }
+  /* Keep the illustration short enough that the sign-in action stays near. */
+  .gw-env { zoom: 0.72; }
+  .gw-library { zoom: 0.8; }
+}

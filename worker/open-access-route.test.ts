@@ -1,10 +1,14 @@
+import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi from './index.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 const DOI = '10.1080/07853890.2026.2726635';
 const ORIGIN = 'https://papertok.app';
+const SECRET = 'test-only-pdf-rate-limit-key-32-bytes';
+const routeEnv = (): WorkerEnv => ({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: SECRET });
 
 // What Unpaywall actually answers for a DOI it has not indexed yet: an HTML
 // page, not JSON (measured 2026-09-23 on DOIs registered that morning).
@@ -39,7 +43,7 @@ const TDM_ONLY = [{
   URL: 'https://www.elsevier.com/tdm/userlicense/1.0/',
 }];
 
-async function lookUp(upstream: { unpaywall: () => Response; crossref: () => Response }) {
+async function lookUp(upstream: { unpaywall: () => Response; crossref: () => Response }, { env = routeEnv(), ip = '192.0.2.1' }: { env?: WorkerEnv; ip?: string } = {}) {
   const calls: string[] = [];
   const puts: Response[] = [];
   const originalFetch = globalThis.fetch;
@@ -60,8 +64,8 @@ async function lookUp(upstream: { unpaywall: () => Response; crossref: () => Res
   try {
     const response = await reportApi.fetch(new Request(
       `https://papertok-report-api.example/oa?doi=${encodeURIComponent(DOI)}`,
-      { headers: { origin: ORIGIN } },
-    ), {});
+      { headers: { origin: ORIGIN, 'cf-connecting-ip': ip } },
+    ), env);
     return { response, body: await response.json<{ is_oa: boolean; source: string; best_oa_location: { url_for_pdf: string | null }; code: string; upstreamStatus: number }>(), calls, puts };
   } finally {
     globalThis.fetch = originalFetch;
@@ -164,4 +168,41 @@ test('a DOI Unpaywall knows is relayed as it answered, without asking Crossref',
   assert.deepEqual(body, unpaywallPayload);
   assert.equal(calls.some(url => url.startsWith('https://api.crossref.org/')), false);
   assert.match(response.headers.get('cache-control')!, /s-maxage=604800\b/);
+});
+
+const UNPAYWALL_RECORD = () => new Response(JSON.stringify({ doi: DOI, is_oa: false, best_oa_location: null }), {
+  headers: { 'content-type': 'application/json' },
+});
+
+test('one address is held to its own minute of misses while another address keeps its allowance', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-25T12:00:10Z') });
+  const env = routeEnv();
+  const upstream = { unpaywall: UNPAYWALL_RECORD, crossref: () => crossrefWork(CC_BY_VOR) };
+  for (let i = 0; i < 120; i += 1) {
+    assert.equal((await lookUp(upstream, { env, ip: '192.0.2.1' })).response.status, 200);
+  }
+
+  const refused = await lookUp(upstream, { env, ip: '192.0.2.1' });
+  assert.equal(refused.response.status, 429);
+  assert.equal(refused.body.code, 'PROVIDER_RATE_LIMITED');
+  assert.equal(refused.response.headers.get('retry-after'), '50');
+  assert.deepEqual(refused.calls, [], 'a refused caller asks no upstream');
+
+  const other = await lookUp(upstream, { env, ip: '198.51.100.7' });
+  assert.equal(other.response.status, 200);
+
+  t.mock.timers.setTime(Date.parse('2026-10-25T12:01:00Z'));
+  assert.equal((await lookUp(upstream, { env, ip: '192.0.2.1' })).response.status, 200, 'the next minute is a new allowance');
+});
+
+test('a lookup without a caller address or a rate-limit secret is refused before Unpaywall is asked', async () => {
+  const upstream = { unpaywall: UNPAYWALL_RECORD, crossref: () => crossrefWork(CC_BY_VOR) };
+  const withoutSecret = await lookUp(upstream, { env: { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding } });
+  const withoutAddress = await lookUp(upstream, { ip: '' });
+
+  for (const { response, body, calls } of [withoutSecret, withoutAddress]) {
+    assert.equal(response.status, 503);
+    assert.equal(body.code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+    assert.deepEqual(calls, []);
+  }
 });

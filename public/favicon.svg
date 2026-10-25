@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PaperTok">
   <!-- The bar's mark: yellow tile, hard shadow offset 2px on 26px, and "PT"
        in Fredoka Bold. The letters are outlined because a favicon cannot load
-       fonts; they are Navbar.tsx's paths, scaled. -->
+       fonts; they are navbar.tsx's paths, scaled. -->
   <rect width="64" height="64" fill="#ffffff"/>
   <rect x="10" y="10" width="48" height="48" rx="4" fill="#111318"/>
   <rect x="6" y="6" width="48" height="48" rx="4" fill="#ffd21e"/>

@@ -274,7 +274,7 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   } catch {
     throw new AccountDeletionError('AUTH_DELETE_UNAVAILABLE', 503);
   }
-  const payload = await response.json<{ error?: { message?: unknown } }>().catch(() => ({} as { error?: { message?: unknown } }));
+  const payload = await response.json<{ error?: { message?: unknown } }>().catch((): { error?: { message?: unknown } } => ({}));
   if (response.ok) return;
   const message = String(payload?.error?.message || '');
   if (message.includes('USER_NOT_FOUND')) return;

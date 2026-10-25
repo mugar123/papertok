@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     // OpenAlex's primary topic as a stored copy keeps it (`storedClassification`
-    // in src/models/Paper.ts): the topic, its subfield, field and domain, each
+    // in src/models/paper.ts): the topic, its subfield, field and domain, each
     // by id and name, and nothing else.
     function storedSubjectReference(value) {
       return value is map
@@ -45,13 +45,11 @@ service cloud.firestore {
     // These documents used to be validated here, per paper, from the client.
     // They cannot be: the rules engine stops at 1000 evaluated expressions per
     // request and ONE realistic paper already exceeded that budget, so
-    // publishing was refused outright in production. Measured in
-    // tests/p18-measure.test.js, with the ceiling for every trimmed variant —
-    // no honest trim left the product cap above six papers.
+    // publishing was refused outright in production.
     //
     // So the write moved to the Worker, which validates in real code with the
-    // service identity (`worker/public-list-api.js`) and holds the single
-    // definition of a valid public list in `src/services/publicListPayload.js`,
+    // service identity (`worker/public-list-api.ts`) and holds the single
+    // definition of a valid public list in `src/services/public-list-payload.ts`,
     // the same module the browser imports. Here, only two things remain true:
     // anyone may read a share link, and nobody may write one.
     //
@@ -61,6 +59,10 @@ service cloud.firestore {
         'onboardingComplete',
         'preferences',
         'selectedCategories',
+        // Subareas the reader removed from their interests; the feed keeps them out.
+        'deselectedPreferences',
+        // Subareas the reader added after onboarding; the feed gives them a head start.
+        'addedPreferences',
         'followedAuthors',
         'followingMigratedAt',
         'readingPreferences',
@@ -140,6 +142,13 @@ service cloud.firestore {
         && (!('selectedCategories' in request.resource.data)
           || request.resource.data.selectedCategories is list
             && request.resource.data.selectedCategories.size() <= 100)
+        // The taxonomy has 149 subareas; 150 leaves room for one retired id.
+        && (!('deselectedPreferences' in request.resource.data)
+          || request.resource.data.deselectedPreferences is list
+            && request.resource.data.deselectedPreferences.size() <= 150)
+        && (!('addedPreferences' in request.resource.data)
+          || request.resource.data.addedPreferences is list
+            && request.resource.data.addedPreferences.size() <= 150)
         && (!('followedAuthors' in request.resource.data)
           || request.resource.data.followedAuthors is list
             && request.resource.data.followedAuthors.size() <= 100)
@@ -301,7 +310,7 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'emoji', 'color', 'paperIds', 'createdAt', 'publicShareId',
-            // F12: `onProfile` and `publicSyncedAt` are stamped by the Worker
+            // `onProfile` is accepted for legacy lists; the Worker stamps `publicSyncedAt`
             // (attribution mirror and last-sync marker); `updatedAt` by the
             // client on each edit. They are tolerated rather than protected:
             // faking any of them only miscolors the owner's own badges and
@@ -468,7 +477,7 @@ service cloud.firestore {
             || 'endParagraphIndex' in request.resource.data);
       }
 
-      // The reader's own plain-words summaries (src/services/savedSummaryService.ts):
+      // The reader's own plain-words summaries (src/services/saved-summary-service.ts):
       // one per paper and level, keyed `<paperKey>.<level>`, written together
       // with the history row below in one batch. The client writes them only
       // for its own account and reads them back so that reopening a paper does

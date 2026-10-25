@@ -5,9 +5,7 @@ declare const window: { location: { href: string }; history: { state: unknown; r
  * Live project configuration for PaperTok
  */
 
-export const IS_DEMO = false;
-
-import type { PopupReadiness } from './popupRedirectResolver.ts';
+import type { PopupReadiness } from './popup-redirect-resolver.ts';
 import { initializeApp } from 'firebase/app';
 import {
   browserLocalPersistence,
@@ -21,9 +19,9 @@ import {
   signInWithCredential,
 } from 'firebase/auth';
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
-import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
-import { createStreamRecovery } from '../utils/streamRecovery.ts';
-import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
+import { isOffline, registerStallRecovery } from '../utils/bounded-read.ts';
+import { createStreamRecovery } from '../utils/stream-recovery.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popup-redirect-resolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -42,15 +40,15 @@ const firebaseConfig = {
   appId: "1:310243065214:web:623735321262c6e154c72f",
   // No `measurementId`: it named the GA4 property this app used to report to,
   // and the only thing Firebase does with it is hand it to `firebase/analytics`.
-  // Measurement is Vercel Web Analytics and PostHog now (src/services/analyticsService.ts),
+  // Measurement is Vercel Web Analytics and PostHog now (src/services/analytics-service.ts),
   // so leaving the id here would only invite that import back.
 };
 
 const app = initializeApp(firebaseConfig);
-// Firebase's popup resolver, without its start-up load (popupRedirectResolver.ts).
+// Firebase's popup resolver, without its start-up load (popup-redirect-resolver.ts).
 export const popupRedirectResolver = deferPopupRedirectResolver(browserPopupRedirectResolver);
 // What `getAuth` sets up, with a popup resolver that loads its scripts after
-// Auth reports the session instead of before (popupRedirectResolver.ts).
+// Auth reports the session instead of before (popup-redirect-resolver.ts).
 // Popup and redirect calls pass no resolver, so they use this one. Passing
 // `browserPopupRedirectResolver` would get a separate instance that nothing
 // has loaded ahead of the tap.
@@ -59,11 +57,8 @@ const auth = initializeAuth(app, {
   popupRedirectResolver,
 });
 // Whether a Google or GitHub window would open inside the press
-// (usePopupReady). Demo mode opens no popups, so it loads nothing and no
-// control waits.
-const popupReadiness: PopupReadiness = IS_DEMO
-  ? { ready: true, subscribe: () => () => {} }
-  : preparePopupRedirectResolver(auth);
+// (usePopupReady).
+const popupReadiness: PopupReadiness = preparePopupRedirectResolver(auth);
 
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
@@ -82,7 +77,7 @@ githubProvider.addScope('user:email');
 const db = getFirestore(app);
 
 // The Auth emulator accepts an unsigned JSON claim set as a Google credential.
-// Emulator sign-in below and re-authentication (authIdentityService.ts) both
+// Emulator sign-in below and re-authentication (auth-identity-service.ts) both
 // build it here, so the same name always reaches the same emulator account.
 export function emulatorGoogleCredential(name: string) {
   return GoogleAuthProvider.credential(JSON.stringify({
@@ -123,7 +118,7 @@ if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emu
 }
 
 // The one listen stream every SDK read rides can die under a live client and
-// the SDK will never notice (utils/streamRecovery.js: 96 s unanswered,
+// the SDK will never notice (utils/stream-recovery.ts: 96 s unanswered,
 // measured). This is the app's only way to rebuild it: a `patientRead` whose
 // attempt is still unanswered at DEFAULT_STALL_MS asks for it, the hostages
 // flush as the "not now" it already waits out, and the retry meets the new
