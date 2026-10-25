@@ -45,8 +45,11 @@ const MIN_ABSTRACT_LENGTH = 40;
 // (ENG-105). Text that opens this way is front matter, not an abstract.
 // A footnote marker ahead of it (`*`, `1`) is not part of the opening. "Supported
 // by" or "funded by" counts whoever the funder is (NIH, Wellcome Trust, a
-// ministry), except before data or evidence, so a study "supported by data
-// from" a survey stays an abstract.
+// ministry), "in part" or not, except before data or evidence, so a study
+// "supported by data from" a survey stays an abstract. The openings cover the
+// wordings funders ask grantees to use ("Research reported in this
+// publication", "has received funding from", "Funded by the European Union")
+// rather than listing funders.
 const FOOTNOTE_MARKER = /^(?:[*†‡§]+|\d{1,2}(?=\s))\s*/;
 const FRONT_MATTER_OPENINGS = [
   /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.–—]|-(?=\s))/i,
@@ -54,7 +57,9 @@ const FRONT_MATTER_OPENINGS = [
   /^(?:\S+\s+){0,12}gratefully acknowledg(?:es?|ed)\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
   /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thanks?|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
-  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\s+(?!(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/i,
+  /^(?:(?:this|the)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|research\s+reported\s+in\s+this\s+(?:publication|article|paper))\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)(?:,?\s+in\s+(?:whole\s*,?\s+or\s+in\s+)?part\s*,?)?\s+by\s+(?!(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/i,
+  /^(?:this|the)\s+(?:work|research|project|study)\s+has\s+received\s+funding\s+from\b/i,
+  /^funded\s+by\s+the\s+european\s+union\b/i,
   /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
   /^the views expressed (?:herein|here|in this)/i,
 ];

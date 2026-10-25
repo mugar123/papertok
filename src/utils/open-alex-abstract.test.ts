@@ -103,6 +103,15 @@ test('an opening that says what supported or funded the work is front matter unl
     'This study was funded by the Wellcome Trust (215123/Z/19/Z).',
     'This research was supported by the U.S. Department of Energy, Office of Science, Basic Energy Sciences.',
     'The project was funded by the EU and built a cohort of 10,000 children, whom we follow from birth to age 12.',
+    // The wordings funders ask grantees to use (NIH, Wellcome, NSF, Horizon 2020, Horizon Europe).
+    'Research reported in this publication was supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number R01GM123456.',
+    'This research was funded in whole, or in part, by the Wellcome Trust [215123/Z/19/Z]. For the purpose of open access, the author has applied a CC BY public copyright licence.',
+    'This work was supported in part by the National Science Foundation under Grant No. CCF-1234567.',
+    'This work was supported, in part, by the National Science Foundation under Grant No. CCF-1234567.',
+    'This project has received funding from the European Research Council (ERC) under the European Union\'s Horizon 2020 research and innovation programme (grant agreement No 123456).',
+    'Funded by the European Union. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union.',
+    'This article was supported by the National Natural Science Foundation of China (No. 12345678).',
+    'This trial was funded by the NIHR Health Technology Assessment programme (project 16/31/101).',
   ]) {
     assert.equal(isPlausibleAbstract(text), false, text);
   }
