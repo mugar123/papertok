@@ -20,6 +20,8 @@ export interface FeedContextValue {
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
   personalLibrary: Record<string, LibraryEntry>; libraryPapers: Record<string, Partial<Paper>>;
+  /** Whether the library has answered for this account and profile. */
+  personalLibraryReady: boolean;
   ensurePersonalLibrary: () => Promise<void>;
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
@@ -58,6 +60,7 @@ import { useFollowing } from './following-context.tsx';
 import { fetchPapers, clearCache } from '../services/arxiv-service.ts';
 import { getDeviceInfo } from '../utils/device.ts';
 import { getAllLeafCategories } from '../data/categories.ts';
+import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { enrichPapersBatch } from '../services/open-alex-service.ts';
 import {
   applyRecommendationScore,
@@ -78,7 +81,7 @@ import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
-import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
+import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
@@ -122,7 +125,8 @@ import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
-import { rankPreferences } from '../utils/preference-ranking.ts';
+import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
+import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -134,17 +138,10 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 // instead of riding in the boot graph of every route.
 const loadTopicRetrieval = () => import('../services/topic-retrieval-service.ts');
 
-// How many of the reader's ranked categories a page asks the corpus for.
-const MAIN_CATEGORIES = 10;
 // How long exploration and the follows may hold a page: past it, the page is
 // shown without them.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
-// How long the main query may wait for the followed-topic category ids. The
-// topic module is prewarmed the moment a topic follow is known (see the
-// following effect), so this is normally 0 ms and the budget only ever covers
-// a cold chunk on a slow connection.
-const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
@@ -178,13 +175,17 @@ const ENGAGEMENT_WINDOW_CARDS = 20;
 interface EngagementWindow { cards: number; skips: number; deepReads: number; likes: number; saves: number }
 const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
 
+// What the scoring reads of the interest memory: the list's plan holds it.
+type ScoringMemory = Partial<Pick<FeedPlan, 'dormantCategories'>> & Pick<FeedPlan, 'interestProgress' | 'coldAdded'>;
+const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {}, coldAdded: [] });
+
 // `feedRouteActive` says whether the route that actually renders this feed is
 // on screen. The provider wraps every route so its consumers (save modal, PDF
 // viewer) exist everywhere, but the multi-source fetch fan-out must not:
 // measured in production, a signed-in visit to a public page fired the full
 // source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }: PropsWithChildren<{ feedRouteActive?: boolean }>) {
-  const { user, userPreferences, followedAuthors } = useAuth();
+  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
@@ -199,6 +200,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
   const feedCache = useRef<Record<string, FeedSnapshot>>({});
   const feedExcludedIds = useRef<string[]>([]);
+  // The list's plan, made with its first page like the exclusions above
+  // (feedPlanFor): null until a page plans one.
+  const feedPlan = useRef<FeedPlan | null>(null);
+  // What the scoring reads of the interest memory while no plan exists (before
+  // the first page, or after a restore): derived from the state it follows,
+  // and kept while that state holds so the score cache is not defeated.
+  const unplannedMemory = useRef<{
+    signals: ProfileSignals; selected: string[] | null; deselected: string[]; added: string[]; memory: ScoringMemory;
+  } | null>(null);
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set<string>());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set<string>());
@@ -253,6 +263,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on it so they retry once the ids they need actually exist.
   const [interactionProfileGeneration, setInteractionProfileGeneration] = useState(0);
   const personalLibraryStatus = useRef<{ userId: string | null; generation: number; state: 'idle' | 'loading' | 'ready' }>({ userId: null, generation: -1, state: 'idle' });
+  // Which account and profile generation the library last answered for, so
+  // screens can tell a library still loading from one that is empty.
+  const [personalLibraryReadyFor, setPersonalLibraryReadyFor] = useState<string | null>(null);
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -335,11 +348,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [trackEvent]);
 
   // The paper, when there is one, lends the event its OpenAlex concepts and
-  // authors. Called before the re-rank it feeds, so that re-rank sees it.
+  // authors, and its area. Called before the re-rank it feeds, so that
+  // re-rank sees it.
   const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
     if (!userId) return;
-    recordInteractionEvent(interactionProfile.current, paper ? { ...event, ...paperAffinitySignals(paper) } : event);
+    recordInteractionEvent(interactionProfile.current, paper ? { ...event, ...paperAffinitySignals(paper), area: areaKeyForPaper(paper) } : event);
     profileSignals.current = readProfileSignals(interactionProfile.current);
     if (!interactionProfileHydrated.current) return;
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
@@ -528,6 +542,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         generation: fromCache ? -1 : interactionProfileGeneration,
         state: fromCache ? 'idle' : 'ready',
       };
+      if (!fromCache) setPersonalLibraryReadyFor(`${userId}:${interactionProfileGeneration}`);
     } catch (error) {
       console.error('Error loading reading library:', error);
       personalLibraryStatus.current = { userId, generation: -1, state: 'idle' };
@@ -537,6 +552,32 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper: Paper, recentPropsCount: Partial<RecentProperties> = {}) => {
     const signals = profileSignals.current;
+    // The list's plan holds the memory still while its pages load, and the
+    // score cache is validated by its references.
+    let memory: ScoringMemory | undefined = feedPlan.current ?? undefined;
+    if (!memory) {
+      const kept = unplannedMemory.current;
+      if (kept?.signals === signals && kept.selected === userPreferences && kept.deselected === deselectedPreferences
+        && kept.added === addedPreferences) {
+        memory = kept.memory;
+      } else {
+        const input = {
+          selected: userPreferences ?? [],
+          deselected: deselectedPreferences,
+          added: addedPreferences,
+          examples: signals.positiveExamples,
+          exposure: signals.categoryExposure,
+          affinities: signals.categoryAffinities,
+        };
+        // With nothing picked the memory has nothing to weigh, and nothing sleeps.
+        memory = !userPreferences?.length ? NO_INTEREST_MEMORY : {
+          dormantCategories: dormantCategories(userPreferences, deselectedPreferences),
+          interestProgress: interestProgress(input),
+          coldAdded: coldAddedInterests(input),
+        };
+        unplannedMemory.current = { signals, selected: userPreferences, deselected: deselectedPreferences, added: addedPreferences, memory };
+      }
+    }
     return applyRecommendationScore(paper, {
       userPreferences,
       followedEntities,
@@ -545,11 +586,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       authorAffinities: signals.authorAffinities,
       sessionAffinities: signals.sessionAffinities,
       interactionCount: signals.interactionCount,
+      interestProgress: memory.interestProgress,
+      coldAdded: memory.coldAdded,
+      dormantCategories: memory.dormantCategories,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
       recentPropsCount
     });
-  }, [userPreferences, followedEntities]);
+  }, [userPreferences, deselectedPreferences, addedPreferences, followedEntities]);
 
   // The card the reader is on: as FeedContainer reports it (on the restore
   // after a reload and on every scroll), the successor markNotInterested
@@ -864,6 +908,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     sessionSeenPapers.current = seenPapersForAccount(userId);
     notableAfterRef.current = null;
     feedExcludedIds.current = [];
+    feedPlan.current = null;
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
@@ -1131,49 +1176,44 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     );
 
     try {
+      // Inside the try, so a throw still releases feedLoadInFlight.
+      const corpusPlan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
+        selected: userPreferences,
+        deselected: deselectedPreferences,
+        added: addedPreferences,
+        examples: profileSignals.current.positiveExamples,
+        exposure: profileSignals.current.categoryExposure,
+        affinities: profileSignals.current.categoryAffinities,
+      });
       let newPapers: Paper[] = [];
       let rankingSeen = false;
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // Followed topics widen the main query. The lookup used to be an
-        // unbounded `await loadTopicRetrieval()` in front of every source;
-        // dropping it altogether left a followed topic worth at most six
-        // papers (audit 2026-09-02, A4). It is budgeted now, and normally
-        // served from the module the following effect already warmed.
-        const followedTopicIds = followedEntities.some(entity => entity?.type === 'topic')
-          ? await resolveWithin(
-            loadTopicRetrieval().then(module => module.getFollowedTopicCategoryIds(followedEntities)),
-            FOLLOWED_TOPIC_RANK_BUDGET_MS,
-            [],
-          )
-          : [];
+        // A followed topic fills only the follows' places (FOLLOWED_PER_PAGE).
+        // The main request asks for the reader's interests alone, so a topic
+        // of an area they removed or never picked takes none of its places
+        // and does not order it (ENG-137); it used to widen the main request
+        // (audit 2026-09-02, A4).
+
+        // ─── STEP 2: Choose query mode based on temporal preference ───
+        const queryMode = corpusOrder(temporalPreference.current || 0);
+        const negativeIds = curatedIds(interactionProfile.current, 'notInterested').slice(0, 24);
         // The seen papers the main page and the follows' page send. A profile
         // that arrives late (applyInteractionProfile) or More like this adds
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        // Ties are spread across areas (preference-ranking.ts): on a flat
-        // profile the five slots below used to go to the first five of the
-        // first area, whatever else the account had picked.
-        const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
-
-        // ─── STEP 2: Choose query mode based on temporal preference ───
-        const queryMode = corpusOrder(temporalPreference.current || 0);
-        const positiveIds = selectSemanticProfilePositiveIds(
-          curatedIds(interactionProfile.current, 'liked'),
-          curatedIds(interactionProfile.current, 'saved'),
-        );
-        const negativeIds = curatedIds(interactionProfile.current, 'notInterested').slice(0, 24);
+        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
         // harvests, merges and enriches them once a day (worker/paper-store.ts)
-        // and ranks the page by the reader's liked and saved papers. It asks
-        // for the fifteen the page shows, and says what the reader has seen:
-        // a Worker that skips seen papers sends the next fifteen they have
-        // not, however many pages they saw before. A paper asked for and left
-        // out joins the seen papers below, so it does not come back.
+        // and ranks each interest group of the plan by its own examples. It
+        // asks for the fifteen the page shows, and says what the reader has
+        // seen: a Worker that skips seen papers sends the next fifteen they
+        // have not, however many pages they saw before. A paper asked for and
+        // left out joins the seen papers below, so it does not come back.
         // The follows are optional: they join the page if they answer in time.
         // Start exploration beside the main request, within the same render budget.
         const explorationRequests: Promise<Paper[]>[] = [];
@@ -1182,7 +1222,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // Adjacent categories within the user's parent areas, chosen by what
         // exploring each of them has returned so far.
         const nearbyCats = pickExplorationCategories(
-          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities),
+          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities, deselectedPreferences),
           profileSignals.current.categoryExposure,
         );
 
@@ -1216,7 +1256,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // If highly bored, pull from completely random categories outside user areas
         if (!reset && currentBoredom >= boredomThreshold * 1.5) {
           const randomCats = allCategories
-            .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
+            .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id) && !deselectedPreferences.includes(c.id))
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
@@ -1225,15 +1265,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         const followedCandidatesPromise = followedEntities.length > 0
           ? resolveWithin(
-            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(followedEntities, {
-              page: currentPage,
-              order: queryMode,
-              positiveIds,
-              negativeIds,
-              excludedIds,
-              seen: seenSent,
-              categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
-            })),
+            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(
+              followedCorpusRequest(corpusPlan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
+            )),
             OPTIONAL_SOURCE_RENDER_BUDGET_MS,
             [],
           )
@@ -1243,19 +1277,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
-            categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
-            positiveIds,
-            negativeIds,
-            excludedIds,
-            page: currentPage,
-            pageSize: PAGE_SIZE,
-            order: queryMode,
+            ...mainCorpusRequest(corpusPlan, shared),
             continues,
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);
             // and the spares. A page has one place at least.
-            seen: seenSent,
             notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
           }));
           rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, seenSent);
@@ -1460,7 +1487,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     }
   }, [
-    userPreferences, page, papers, loading, feedMode,
+    userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
   ]);
@@ -1478,6 +1505,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     restoredFeedKeyRef.current = key;
     feedCache.current[mode] = snapshot;
     feedExcludedIds.current = snapshot.excludedIds ?? [];
+    feedPlan.current = null;
     // The restore shows these cards in this session, as a load would: a refresh
     // must not offer them again. Only a card's own report makes one "viewed".
     snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
@@ -1638,6 +1666,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const cached = feedCache.current[newMode];
     if (cached && cached.papers.length > 0) {
       feedExcludedIds.current = cached.excludedIds ?? [];
+      feedPlan.current = null;
       // Re-filter cached papers to ensure newly liked/saved papers are removed
       const refiltered = cached.papers.filter(p => 
         !notInterestedIdsRef.current.has(p.id) && 
@@ -2308,10 +2337,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // `userId` as its first statement (see `toggleLike` for the pattern) and
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
+  // Generation 0 is before the profile arrived, when the library has no ids to ask for.
+  const personalLibraryReady = interactionProfileGeneration > 0
+    && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
+
   const value = useMemo(() => ({
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
@@ -2324,7 +2357,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }), [
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,

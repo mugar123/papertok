@@ -6,12 +6,14 @@ import test from 'node:test';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { FollowEntity } from '../src/utils/following.ts';
+import type { FeedPlan } from '../src/context/feed-corpus-requests.ts';
 import type { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
+import { followedCorpusRequest } from '../src/context/feed-corpus-requests.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
@@ -619,10 +621,13 @@ test("the app's follows' page for follows with no lane of their own reads no are
       return Response.json({ code: (error as PaperStoreError).code }, { status: (error as PaperStoreError).status });
     }
   };
-  const followsPage = (follows: FollowEntity[]) => fetchFollowedEntityCandidates(follows, {
-    page: 0, order: 'recent', positiveIds: [], negativeIds: [], excludedIds: [], seen: new Set(),
-    categoryIdsOf: follow => (follow.canonicalId === 'quant-ph' ? ['quant-ph'] : []),
-  }, { fetchWorker, apiBase: 'https://worker.example' });
+  const plan: FeedPlan = { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] };
+  const followsPage = (follows: FollowEntity[]) => fetchFollowedEntityCandidates(followedCorpusRequest(
+    plan,
+    follows,
+    follow => (follow.canonicalId === 'quant-ph' ? ['quant-ph'] : []),
+    { page: 0, order: 'recent', negativeIds: [], excludedIds: [], seen: new Set() },
+  ), { fetchWorker, apiBase: 'https://worker.example' });
   // A reader whose only follow is one of the app's categories: the page is
   // that category's papers, not the area's journal articles, which match no follow.
   const categoryOnly = await followsPage([{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }]);
@@ -670,6 +675,21 @@ test('a first page that continues goes on with the walk of the order kept for th
   assert.deepEqual(ids((await ask(request(0, [], { continues: 'true' }))).papers), ids(papers.slice(0, 15)), 'only true continues');
   assert.deepEqual(ids((await ask(request(0, [], { continues: true }), 'reader-2')).papers), ids(papers.slice(0, 15)), 'no order kept for this reader');
   assert.deepEqual(ids((await ask(request(0, [], { continues: true, excludedIds: [] }))).papers), ids(papers.slice(0, 15)), 'no order kept for these exclusions');
+});
+
+// The load a follow change starts plans the interest groups again (ENG-137),
+// and their weights move as the reader sees cards: the groups rank the order
+// again, after the ranks the walk passed, rather than start a new walk.
+test('a first page that continues goes on with the walk when the load planned other interest groups', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const groups = (weight: number) => [{ categories: ['cs.CL'], exampleCategories: ['cs.CL'], positiveIds: [], weight }];
+  const request = (page: number, seen: string[], extra: object = {}) => ({ groups: groups(1), page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
+  await ask(request(0, []));
+  await ask(request(1, ids(papers.slice(0, 15))));
+  assert.deepEqual(ids((await ask(request(0, [], { groups: groups(2), continues: true }))).papers), ids(papers.slice(15, 30)));
 });
 
 // A rejection or a like since the last page ranks again after the ranks the

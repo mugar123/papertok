@@ -1,7 +1,9 @@
 import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
+import type { InterestGroup } from '../utils/interest-memory.ts';
 
 import { authenticatedWorkerFetch, workerSourceUrl } from './worker-api-client.ts';
+import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
@@ -10,6 +12,12 @@ const STORE_TIMEOUT_MS = 3_500;
 
 export interface CorpusPageRequest {
   categories?: string[];
+  /**
+   * The reader's interest groups (planInterestGroups), each ranked by its own
+   * examples. With them, `categories` is their union and `positiveIds` names
+   * only the examples of no group.
+   */
+  groups?: InterestGroup[];
   follows?: FollowEntity[];
   positiveIds?: string[];
   negativeIds?: string[];
@@ -52,11 +60,19 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
 }
 
 /**
+ * The groups' examples, then the ones of no group, as one request ranks by
+ * them: what a Worker that reads no groups ranks by.
+ */
+export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]) {
+  return [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])].slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
+}
+
+/**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
- * by the reader's liked and saved papers. Categories are the app's; the
- * follows the Worker reads are sent as they are stored, and the Worker
- * decides how each is served.
+ * by the reader's examples (likes, saves and long reads) per interest group.
+ * Categories are the app's; the follows the Worker reads are sent as they are
+ * stored, and the Worker decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  * `skipsSeen` says the Worker passed over the papers in `seen`; Workers
@@ -64,10 +80,10 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
   const body = {
-    categories,
+    categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
     // Only the follows the Worker reads travel (`parseFeedRequest`): the first
     // FEED_MAX_FOLLOWS with a lane. A topic follow that is one of the app's
     // categories has none; it is asked for as that category. When no follow
@@ -80,7 +96,8 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
       displayName,
       metadata: { query: metadata?.query, funder: metadata?.funder },
     })),
-    positiveIds,
+    positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
+    ...(groups ? { groups } : {}),
     ...(negativeIds.length ? { negativeIds: negativeIds.slice(0, 24) } : {}),
     excludedIds: [...new Set(excludedIds)].slice(0, 200),
     page,

@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FollowEntity } from '../utils/following.ts';
-import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates } from './feed-follows.ts';
+import type { FeedPlan } from './feed-corpus-requests.ts';
+import { FOLLOWED_PER_PAGE, followedCorpusRequest } from './feed-corpus-requests.ts';
+import { fetchFollowedEntityCandidates } from './feed-follows.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 const author: FollowEntity = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' };
 const topic: FollowEntity = { type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine Learning' };
+// The follows rank by the plan's examples (followedCorpusRequest).
+const plan: FeedPlan = { groups: [], unassignedPositiveIds: ['2610.00001'], positiveIds: ['2610.00001'], dormantCategories: [], interestProgress: {}, coldAdded: [] };
 
 // Synthetic, in the shape /store/papers answers a follows' page (worker/paper-feed.ts).
 function corpus(papers: unknown[]) {
@@ -27,10 +31,12 @@ test('followed authors and category topics come back as followed papers, each wi
     { id: 'in-topic-0', title: 'In the topic', _fetchedFor: ['cs.LG'] },
   ]);
   const seen = new Set(['seen-before']);
-  const papers = await fetchFollowedEntityCandidates([author, topic], {
-    page: 2, order: 'recent', positiveIds: ['2610.00001'], negativeIds: ['2610.00002'], excludedIds: ['2610.00003'], seen,
-    categoryIdsOf: follow => (follow.canonicalId === 'cs.LG' ? ['cs.LG'] : []),
-  }, options);
+  const papers = await fetchFollowedEntityCandidates(followedCorpusRequest(
+    plan,
+    [author, topic],
+    follow => (follow.canonicalId === 'cs.LG' ? ['cs.LG'] : []),
+    { page: 2, order: 'recent', negativeIds: ['2610.00002'], excludedIds: ['2610.00003'], seen },
+  ), options);
   assert.equal(asked.length, 1, 'one request for every follow');
   const { seen: filter, ...request } = asked[0];
   assert.deepEqual(request, {

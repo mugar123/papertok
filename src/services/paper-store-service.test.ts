@@ -71,6 +71,33 @@ test('a page sends only the follows the Worker reads: the first twenty with a la
   assert.deepEqual(body.follows.map(follow => follow.canonicalId), authors.slice(0, 20).map(follow => follow.canonicalId));
 });
 
+test('a page asked by interest groups sends them with their categories and examples as the flat request', async () => {
+  const { asked, options } = harness(answered([]));
+  const groups = [
+    { categories: ['econ.EM', 'econ.GN'], exampleCategories: ['econ.EM', 'econ.GN', 'econ.TH'], positiveIds: ['e1', 'e2'], weight: 2 },
+    { categories: ['quant-ph'], exampleCategories: ['quant-ph', 'hep-th'], positiveIds: ['p1', 'e2'], weight: 1 },
+  ];
+  await fetchCorpusPage({ groups, positiveIds: ['u1'], page: 1, pageSize: 15 }, options);
+  await fetchCorpusPage({ categories: ['econ.EM'], positiveIds: ['u1'], page: 1, pageSize: 15 }, options);
+  const [grouped, flat] = asked.map(entry => entry.body);
+  // An older Worker reads only the flat fields, so they carry every group.
+  assert.deepEqual(grouped, {
+    categories: ['econ.EM', 'econ.GN', 'quant-ph'], follows: [], positiveIds: ['e1', 'e2', 'p1', 'u1'], groups, page: 1, pageSize: 15, order: 'recent',
+  });
+  assert.deepEqual(flat, { categories: ['econ.EM'], follows: [], positiveIds: ['u1'], page: 1, pageSize: 15, order: 'recent' });
+});
+
+test('the examples of every group, then the unassigned ones, reach the corpus 24 at most', async () => {
+  const { asked, options } = harness(answered([]));
+  const ids = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `${prefix}${index}`);
+  const groups = [
+    { categories: ['econ.EM'], exampleCategories: ['econ.EM'], positiveIds: ids('e', 16), weight: 2 },
+    { categories: ['quant-ph'], exampleCategories: ['quant-ph'], positiveIds: ids('p', 8), weight: 1 },
+  ];
+  await fetchCorpusPage({ groups, positiveIds: ids('u', 4), page: 0, pageSize: 15 }, options);
+  assert.deepEqual((asked[0].body as { positiveIds: string[] }).positiveIds, [...ids('e', 16), ...ids('p', 8)]);
+});
+
 test('a page sends what the reader has seen as the filter the Worker reads, asks it to skip those papers, and asks for notable papers only with it', async () => {
   const { asked, options } = harness(answered([]));
   const seen = new Set(['2610.00001', 'openalex:W2107743791']);

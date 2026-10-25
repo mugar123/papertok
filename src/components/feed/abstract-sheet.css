@@ -63,10 +63,14 @@
   padding: var(--space-4) var(--space-5) var(--space-6);
 }
 
-.abstract-sheet-body p {
+.abstract-sheet-text {
   margin: 0;
   font-family: var(--font-serif);
   font-size: 1.0625rem;
   line-height: 1.72;
   color: var(--text-primary);
+}
+
+.abstract-sheet-source {
+  margin-top: var(--space-4);
 }
