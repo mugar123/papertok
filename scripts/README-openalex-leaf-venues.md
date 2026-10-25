@@ -100,7 +100,9 @@ from its store the second time. The lanes spend from the 3,000 of the
 harvest's 4,000 units a day that the category lanes share with the notable
 lanes: with the topic lanes (195 at most), the area lanes (9) and the
 working-paper series (4), a night's category calls are at most 448, and the
-notable lanes add 390 on their first night and at most 80 a night after.
+notable lanes add 390 on their first night and at most 80 a night for
+re-listings (a new lane whose first listing failed is listed again beside
+them).
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
 which spend what the lanes leave of the nightly run's 3,700 units. Every 14

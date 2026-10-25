@@ -1152,7 +1152,8 @@ const plsiWork = {
 
 test("an admitted leaf's notable lane lists each of the ten completed years before this one, most cited first, and never the current year", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
+  // OpenAlex lists the recorded work, of 2017, for its own year only.
+  const { urls, env } = relay(t, url => ({ results: filtersOf(url).includes('from_publication_date:2017-01-01') ? [plsiWork] : [] }));
   const page = (n: number) => SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: n, since: '', waits: { seconds: 0 } });
   await page(1); await page(10);
   assert.deepEqual(filtersOf(urls[0]).sort(), [
@@ -1168,9 +1169,16 @@ test("an admitted leaf's notable lane lists each of the ten completed years befo
   assert.equal(urls[0].searchParams.get('per-page'), '100');
   assert.equal(urls[1].searchParams.get('page'), '1', 'the lane page chooses the year; OpenAlex is asked its first page');
   assert.ok(!filtersOf(urls[0]).some(f => f.startsWith('has_abstract')));
+  const { items } = await page(2);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W2107743791', ['notable:cs.CV']]]);
+  const [{ paper }] = items;
+  assert.equal(paper.year, 2017);
+  assert.equal(paper.citationsCount, 3988);
+  assert.equal(paper.citationCountKnown, true);
+  assert.equal(paper.openAccess, false, 'a closed article stays closed');
   t.mock.timers.setTime(Date.parse('2027-01-02T03:00:00Z'));
   await page(1);
-  assert.ok(filtersOf(urls[2]).includes('from_publication_date:2017-01-01'), 'in January the oldest listed year moves on');
+  assert.ok(filtersOf(urls[3]).includes('from_publication_date:2017-01-01'), 'in January the oldest listed year moves on');
 });
 
 // Synthetic variants of the recorded work: `count` distinct articles of one year.
@@ -1254,14 +1262,16 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
 
 test("a notable lane's listing renews only the papers it returned, though the corpus keeps one it dropped for longer", async t => {
   const DAY = 86_400_000;
-  const first = Date.parse('2026-10-23T03:00:00Z');
+  // In January, so that last year's articles are both listed and recent.
+  const first = Date.parse('2027-01-05T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
   // Synthetic variants of the recorded work. A recent article is kept 90 days
   // from its date, past the listing's 14.
-  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-12-20', publication_year: 2026 };
   const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
-  let listing: unknown[] = [plsiWork, recent];
-  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  let listing = [plsiWork, recent];
+  // Each year's listing names that year's articles.
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing.filter(work => work.publication_year === listedYear(url)) } : { results: [] }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
   const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
@@ -1352,14 +1362,16 @@ test("a notable lane's listing renews the row a record merged into, and not one 
 
 test('a notable lane drops a paper 14 days after the listing that last returned it, though a like or its date keeps it in the corpus', async t => {
   const DAY = 86_400_000;
-  const first = Date.parse('2026-10-23T03:00:00Z');
+  // In January, so that last year's articles are both listed and recent.
+  const first = Date.parse('2027-01-05T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
   // Synthetic variants of the recorded work: an older one a reader liked, and
   // a recent one its category lane also holds, kept 90 days from its date.
   const liked = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
-  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
-  let listing: unknown[] = [plsiWork, liked, recent];
-  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-12-20', publication_year: 2026 };
+  let listing = [plsiWork, liked, recent];
+  // Each year's listing names that year's articles.
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing.filter(work => work.publication_year === listedYear(url)) } : { results: [] }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
   const lane = { source: 'openalex-notable' as const, lane: 'notable:cs.CV' };

@@ -119,14 +119,14 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 # papers, ~$1 in all) in two nights. A day's new papers (~5,000) stay inside the
 # free allocation, so the ceiling spends nothing once the backlog is gone.
 # The notable lanes, listed by year since ENG-129, add about 20-25M estimated
-# tokens on their first night (~35,000 new papers) and about 5M a night while
-# their first cycle runs.
-# Plan: seven nights after deploying the Worker that lists the notable lanes
-# by year, once their first cycle has run, count the works without a vector
-# in D1. Under a day's new papers (~5,000), set this back to
-# "7500000", the free allocation, and deploy: past the backlog, 60M only lets a
-# fault or many readers' lookups spend ~$0.40 a day. Otherwise keep it one more
-# night and count again.
+# tokens on the night of their first by-year listing (~35,000 new papers),
+# under this ceiling; a re-listing adds only the papers new to a year's 100.
+# Plan: return to "7500000", the free allocation, after the night of the first
+# by-year listing (migration 0011), once the works without a vector are under
+# a day's new papers (about 5,000). Count them in D1 after that night; if they
+# are fewer, set this value and deploy: past the backlog, 60M only lets a fault
+# or many readers' lookups spend ~$0.40 a day. Otherwise keep it one more night
+# and count again.
 EMBEDDING_DAILY_TOKEN_LIMIT = "60000000"
 
 # Also holds the OpenAlex relay's shared answers under the `openalex:v1:` prefix
