@@ -45,13 +45,54 @@ function getSearchQueryIntent(query: string = '') {
   return null;
 }
 
+// Letters NFD leaves whole, folded to the letters typed without them as
+// accents are: "Lukasz" finds "Łukasz", and "Arık" stays one word. The micro
+// sign is the Greek mu that scientific titles mean by it.
+const UNDECOMPOSED_LETTERS: Record<string, string> = {
+  ı: 'i', ł: 'l', ø: 'o', ß: 'ss', đ: 'd', ð: 'd', þ: 'th', æ: 'ae', œ: 'oe', ħ: 'h',
+  ĳ: 'ij', ŀ: 'l', ŧ: 't', µ: 'μ',
+};
+const UNDECOMPOSED_LETTER = new RegExp(`[${Object.keys(UNDECOMPOSED_LETTERS).join('')}]`, 'g');
+
+// Chinese, Japanese and the Southeast Asian scripts put no spaces between
+// words, so a phrase in them can begin or end anywhere in a run of letters.
+const UNSPACED = String.raw`[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}]`;
+const UNSPACED_RUN = new RegExp(`${UNSPACED}+(?: ${UNSPACED}+)*`, 'gu');
+const STARTS_UNSPACED = new RegExp(`^${UNSPACED}`, 'u');
+const ENDS_UNSPACED = new RegExp(`${UNSPACED}$`, 'u');
+const boundaryBefore = (phrase: string) => (STARTS_UNSPACED.test(phrase) ? '' : ' ');
+const boundaryAfter = (phrase: string) => (ENDS_UNSPACED.test(phrase) ? '' : ' ');
+
+/**
+ * Lowercase words of any script, split on everything else. Latin, Greek and
+ * Cyrillic accents fold away; marks of other scripts stay.
+ *
+ * Modifier letters such as the ʿayn in "Saʿid" and the ʻokina in "Hawaiʻi"
+ * separate words like the apostrophe readers type for them; tatweel and
+ * variation selectors only change how a letter is drawn. A run of a script
+ * written without spaces is one word: "LSTM预测" splits where the scripts
+ * meet, and "山田 太郎" joins to "山田太郎".
+ */
 export function normalizeSearchText(value: unknown = '') {
   return String(value)
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u0300-\u036f\u0640]|\p{Variation_Selector}/gu, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(UNDECOMPOSED_LETTER, letter => UNDECOMPOSED_LETTERS[letter])
+    .replace(/(?:[^\p{L}\p{M}\p{Nd}]|[\u00aa\u00ba\u02b0-\u02ff])+/gu, ' ')
+    .replace(UNSPACED_RUN, run => ` ${run.replaceAll(' ', '')} `)
+    .replace(/ {2,}/g, ' ')
     .trim();
+}
+
+/** Whole-word prefix on already-normalised text: "sam" does not start "samples". */
+function startsWithPhrase(normalizedText: string, normalizedPhrase: string) {
+  return `${normalizedText} `.startsWith(`${normalizedPhrase}${boundaryAfter(normalizedPhrase)}`);
+}
+
+/** Whole-word containment on already-normalised text: "sam" does not find "samples". */
+function containsPhrase(normalizedText: string, normalizedPhrase: string) {
+  return ` ${normalizedText} `.includes(`${boundaryBefore(normalizedPhrase)}${normalizedPhrase}${boundaryAfter(normalizedPhrase)}`);
 }
 
 /**
@@ -144,7 +185,7 @@ export function scoreSearchMatch(query: string|undefined, values: unknown[] = []
       bestScore = Math.max(bestScore, 100);
       return;
     }
-    if (normalizedValue.startsWith(`${normalizedQuery} `)) {
+    if (startsWithPhrase(normalizedValue, normalizedQuery)) {
       bestScore = Math.max(bestScore, 94);
       return;
     }
@@ -161,11 +202,6 @@ export function scoreSearchMatch(query: string|undefined, values: unknown[] = []
   });
 
   return bestScore;
-}
-
-/** Whole-word containment on already-normalised text: "sam" does not find "samples". */
-function containsPhrase(normalizedText: string, normalizedPhrase: string) {
-  return ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
 }
 
 export function withinOneEdit(left: string, right: string, minimumLength = 5, allowDigits = false) {
@@ -193,7 +229,7 @@ function approximatePhraseScore(query: string, value: string) {
     const matches = words.every((word, index) => {
       const candidate = target[start + index];
       if (word === candidate) return true;
-      if (index === words.length - 1 && /^[a-z]+$/.test(word)
+      if (index === words.length - 1 && /^[\p{L}\p{M}]+$/u.test(word)
         && word.length >= (words.length > 1 ? 2 : 4) && candidate.startsWith(word)) return true;
       if (!withinOneEdit(word, candidate)) return false;
       edits += 1;
@@ -250,10 +286,10 @@ export function scorePaperSearchMatch(query: string|undefined, paper: Partial<Pa
   const coveredShare = titleTokenList.length > queryTokens.length
     ? queryTokens.length / titleTokenList.length
     : 0;
-  if (title.startsWith(`${normalizedQuery} `)) return 94 + 5 * coveredShare;
+  if (startsWithPhrase(title, normalizedQuery)) return 94 + 5 * coveredShare;
   if (containsPhrase(title, normalizedQuery)) return 88 + 5 * coveredShare;
-  if (queryTokens.some(token => /^[a-z]{5,}$/.test(token))
-    && /^[a-z]+$/.test(queryTokens.at(-1)!)
+  if (queryTokens.some(token => /^[\p{L}\p{M}]{5,}$/u.test(token))
+    && /^[\p{L}\p{M}]+$/u.test(queryTokens.at(-1)!)
     && title.startsWith(normalizedQuery)) return 90 + 3 * queryTokens.length / titleTokenList.length;
   const approximate = approximatePhraseScore(normalizedQuery, title);
   if (approximate) return approximate;

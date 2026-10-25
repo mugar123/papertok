@@ -13,7 +13,7 @@ interface RorRecord {
   status?: string;
 }
 
-import { filterRelevantSearchResults, institutionSearchValues } from '../utils/search-relevance.ts';
+import { filterRelevantSearchResults, institutionSearchValues, normalizeSearchText } from '../utils/search-relevance.ts';
 import { withEnforcedDeadline } from '../utils/request-deadline.ts';
 import { safeCatalogUrl } from '../utils/external-url.ts';
 
@@ -177,14 +177,10 @@ export async function getRorInstitution(value: unknown) {
   return institution;
 }
 
-function normalizeName(value: unknown) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
 export async function searchRorInstitutions(query: unknown, limit = 8, options: { signal?: AbortSignal | null } = {}) {
   const cleanQuery = String(query || '').trim();
   if (!cleanQuery) return [];
-  const cacheKey = `${normalizeName(cleanQuery)}:${limit}`;
+  const cacheKey = `${normalizeSearchText(cleanQuery)}:${limit}`;
   const cached = SEARCH_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
     return cached.value;
@@ -218,9 +214,9 @@ export async function resolveRorInstitution({ ror, name, domain }: { ror?: strin
     const domainMatch = candidates.find(candidate => candidate.domains!.some(candidateDomain => candidateDomain.toLowerCase().replace(/^www\./, '') === normalizedDomain));
     if (domainMatch) return domainMatch;
   }
-  const normalizedName = normalizeName(name);
+  const normalizedName = normalizeSearchText(name);
   return candidates.find(candidate => (
-    normalizeName(candidate.display_name) === normalizedName
-    || candidate.aliases!.some(alias => normalizeName(alias) === normalizedName)
+    normalizeSearchText(candidate.display_name) === normalizedName
+    || candidate.aliases!.some(alias => normalizeSearchText(alias) === normalizedName)
   )) || candidates[0];
 }
