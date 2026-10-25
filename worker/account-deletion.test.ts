@@ -330,33 +330,32 @@ test('a list pointing at somebody else\'s share does not delete that share', asy
   assert.equal(admin.documents['users/victim/lists/v-list']?.publicShareId, victimShare);
 });
 
-test('a share published after the publicLists stage is still deleted through its pointer', async () => {
+test('a share published after the last publicLists stage is still deleted through its pointer', async () => {
   const lateShare = 'c'.repeat(32);
   const admin = memoryAdmin({
-    [`users/${UID}/lists/late`]: { name: 'Late', publicShareId: lateShare },
-  });
-  // The owner query of the publicLists stage has already run and found nothing
-  // when the publish lands, so only the list's pointer can find this share.
-  const getDocument = admin.getDocument;
-  let published = false;
-  admin.getDocument = (async (segments: string[]) => {
-    if (!published && segments[0] === 'publicListOwners') {
-      published = true;
-      admin.documents[`publicListOwners/${lateShare}`] = { ownerId: UID, listId: 'late' };
-      admin.documents[`publicLists/${lateShare}`] = { title: 'Late' };
-    }
-    return getDocument(segments);
+    [`users/${UID}/lists/early`]: { name: 'Early' },
   });
 
+  let published = false;
   let result;
   for (let i = 0; i < 12; i += 1) {
     result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
       idToken: TOKEN,
-      fetchImpl: async () => new Response('{}', { status: 200 }),
+      // The session stays valid until Auth is deleted, so a publish from another
+      // tab lands after every slice has run its publicLists stage. Only the
+      // private list's pointer, read by the final sweep, can find this share.
+      fetchImpl: async () => {
+        published = true;
+        admin.documents[`publicListOwners/${lateShare}`] = { ownerId: UID, listId: 'late' };
+        admin.documents[`publicLists/${lateShare}`] = { title: 'Late' };
+        admin.documents[`users/${UID}/lists/late`] = { name: 'Late', publicShareId: lateShare };
+        return new Response('{}', { status: 200 });
+      },
     });
     if (result.complete) break;
   }
 
+  assert.equal(published, true);
   assert.equal(result?.complete, true);
   assert.deepEqual(admin.documents, {});
 });

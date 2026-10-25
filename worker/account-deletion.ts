@@ -237,10 +237,11 @@ async function deleteUserTree(admin: DeletionAdmin, uid: string) {
     const writes = [];
     for (const row of rows) {
       if (collectionId === 'lists') {
-        // The pointer catches a share published after the publicLists stage,
-        // but the rules of 2026-08-13..20 let a client write any share id into
-        // its own list. Like requireOwnedShare, delete the share only when its
-        // owner record names this uid.
+        // The pointer catches a share published after the last publicLists
+        // stage, which only the final sweep after the Auth delete can see (an
+        // earlier slice reruns that stage). But the rules of 2026-08-13..20 let
+        // a client write any share id into its own list. Like requireOwnedShare,
+        // delete the share only when its owner record names this uid.
         const shareId = typeof row.data?.publicShareId === 'string' ? row.data.publicShareId : '';
         const owner = /^[a-f0-9]{32}$/.test(shareId)
           ? await admin.getDocument<{ ownerId?: unknown }>(['publicListOwners', shareId])
