@@ -212,7 +212,8 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // that moves on by that many rows each UTC day, taken modulo the year's own
 // count n, so every row of a year is read within ceil(n / 25) days: four
 // disjoint slices for a year of 100, eight for 200, overlapping ones for a
-// year of 40 and every day for a year of two. The candidates and vectors
+// year of 40 and every day for a year of two; a paper ADS listed waits for its
+// enrichment first (`readNotableCandidates`). The candidates and vectors
 // ranked per request are 250 a lane at most. Numbering the years reads every
 // row of the lane's window from its index (about 1,000, or 2,000), and the
 // read returns each work id with whether the day's slice holds it, so that a
@@ -909,15 +910,22 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
  */
 export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
   const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
-  const perLane = await db.batch<{ work_id: number; published: string; in_slice: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
-      ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+  // OpenAlex's listing leaves out what OpenAlex marks retracted and Europe
+  // PMC's what PubMed types as retracted; ADS's cannot, so a paper ADS listed
+  // is offered once the enrichment has looked it up in OpenAlex (`enriched_at`),
+  // which is what learns a retraction (README step 5). Asked only for the day's
+  // slice.
+  const perLane = await db.batch<{ work_id: number; published: string; offered: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
+      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
+        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
+      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
       SELECT work_id, published,
              ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
              COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
       FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
-    ) ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+    )) s ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
   return {
-    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.in_slice) }))),
+    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.offered) }))),
     inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
   };
 }
