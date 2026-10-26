@@ -172,7 +172,7 @@ test('distinct arXiv IDs survive identical labels while repeated IDs do not', ()
 
 
 // Topic IDs/names observed on the five affected OpenAlex works, 2026-10-26.
-test('the masthead uses an attributed OpenAlex topic instead of its broad field', () => {
+test('the classification keeps the OpenAlex topic and its source instead of its broad field', () => {
   for (const [id, label, fieldId, fieldName, subfieldId, subfieldName] of [
     ["T10860", "Speech and Audio Processing", "17", "Computer Science", "1711", "Signal Processing"],
     ["T11130", "Coding theory and cryptography", "17", "Computer Science", "1702", "Artificial Intelligence"],
