@@ -88,10 +88,16 @@ async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
     for (const work of await openAlexChunk(env, filter)) {
       const mapped = mapOpenAlexEnrichmentWork(work);
       if (!mapped) continue;
-      if (mapped.arxivId) byId[mapped.arxivId] = mapped.enrichment;
+      // OpenAlex can hold an eprint as a work of its own beside the journal's,
+      // and answer an arXiv id with both, the most cited first: a retracted
+      // article's eprint record would otherwise hide the retraction.
+      const keep = (key: string) => {
+        if (byId[key]?.publicationStatus !== 'retracted') byId[key] = mapped.enrichment;
+      };
+      if (mapped.arxivId) keep(mapped.arxivId);
       const doi = normalizeDoi(work.doi || work.ids?.doi);
-      if (doi) byId[`doi:${doi}`] = mapped.enrichment;
-      byId[`openalex:${mapped.openAlexId}`] = mapped.enrichment;
+      if (doi) keep(`doi:${doi}`);
+      keep(`openalex:${mapped.openAlexId}`);
     }
   }
   return byId;

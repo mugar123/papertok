@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { openAlexNotableFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexPeerReviewed } from '../src/utils/publication-status.ts';
 
 // The journals (and, in computer science, statistics and electrical
@@ -13,7 +14,7 @@ import { openAlexPeerReviewed } from '../src/utils/publication-status.ts';
 // has_abstract:true, which the lane does not ask.
 // scripts/README-openalex-leaf-venues.md describes the inputs.
 
-interface Work { id: string; type: string; title: string; publication_date: string; source: string; primary_topic?: string }
+interface Work { id: string; type: string; title: string; publication_date: string; source: string; primary_topic?: string; cited_by_count?: number }
 interface Sample {
   capturedAt: string;
   // The works URL as sent, without the sampler's address.
@@ -30,6 +31,9 @@ interface Reviews {
   // `sample` decides the leaf; a source sample asks the leaf's filters of one
   // of its sources, for a source the leaf's sample did not reach.
   leaves: Record<string, { sample: Sample; sourceSamples?: Sample[] }>;
+  // A leaf's 15 most-cited articles of its venue lane over the ten completed
+  // years: the evidence for a notable lane from its journals.
+  notableSamples?: Record<string, Sample>;
 }
 
 const leaves = getAllLeafCategories();
@@ -37,6 +41,9 @@ const leaves = getAllLeafCategories();
 // page of the 15 newest, at least two thirds on target without doubt.
 const minimumSample = 15;
 const minimumPrecision = 2 / 3;
+// The notable lanes list the ten completed years before the current one
+// (`NOTABLE_YEARS` in worker/paper-store.ts); their sample draws on the same years.
+const notableYears = 10;
 const DAY_MS = 86_400_000;
 // OpenAlex types a proceedings paper `conference-paper`; computer science
 // publishes in proceedings as much as in journals.
@@ -49,6 +56,21 @@ const EXTRA_FILTER = /^(?:primary_topic\.id:T\d+(?:\|T\d+)*|authors_count:[<>]\d
 const bare = (value: unknown) => String(value ?? '').split('/').pop()!;
 const day = (time: number) => new Date(time).toISOString().slice(0, 10);
 const ratio = (onTarget: number, sampled: number) => `${onTarget}/${sampled}`;
+
+// Every sampled work labelled once; the hits are the works on target without doubt.
+function checkLabels(leaf: string, sample: Sample, workIds: Set<string>) {
+  const labelled = new Set<string>();
+  for (const label of sample.labels) {
+    const id = bare(label?.workId);
+    if (!workIds.has(id) || labelled.has(id) || ![undefined, true].includes(label.uncertain)
+      || (label.label === undefined ? !label.uncertain : !['on-target', 'off-target'].includes(label.label))) {
+      throw new Error(`${leaf}: invalid or duplicate label: ${id}`);
+    }
+    labelled.add(id);
+  }
+  if (labelled.size !== workIds.size) throw new Error(`${leaf}: label every sampled work; do not omit misses`);
+  return new Set(sample.labels.filter(label => label.label === 'on-target' && !label.uncertain).map(label => bare(label.workId)));
+}
 
 function checkSample(leaf: string, value: unknown) {
   const sample = value as Sample | null;
@@ -102,22 +124,64 @@ function checkSample(leaf: string, value: unknown) {
     workIds.add(id);
     previousDate = work.publication_date;
   }
-  const labelled = new Set<string>();
-  for (const label of sample!.labels) {
-    const id = bare(label?.workId);
-    if (!workIds.has(id) || labelled.has(id) || ![undefined, true].includes(label.uncertain)
-      || (label.label === undefined ? !label.uncertain : !['on-target', 'off-target'].includes(label.label))) {
-      invalid(`invalid or duplicate label: ${id}`);
-    }
-    labelled.add(id);
-  }
-  if (labelled.size !== workIds.size) invalid('label every sampled work; do not omit misses');
-  const hits = new Set(sample!.labels.filter(label => label.label === 'on-target' && !label.uncertain).map(label => bare(label.workId)));
+  const hits = checkLabels(leaf, sample!, workIds);
   const bySource = new Map(sources.map(id => {
     const works = sample!.works.filter(work => work.source === id);
     return [id, { sampled: works.length, onTarget: works.filter(work => hits.has(bare(work.id))).length }];
   }));
   return { sources, types, extra: extra.map(filter => (filter.startsWith('primary_topic.id:') ? `primary_topic.id:${[...topics!].sort().join('|')}` : filter)), withAbstractOnly: withAbstractOnly === 'true', sampleSize: workIds.size, onTarget: hits.size, bySource };
+}
+
+// A notable lane from a leaf's journals lists each year's most cited of its
+// venue lane (`openAlexNotableListingFilter` in worker/paper-sources.ts),
+// without the core-source filter of the topic notables: these sources passed
+// the venue gate already. Its sample is the 15 most cited of the ten completed
+// years before the capture, asked with has_abstract:true for the labellers.
+function checkNotableSample(leaf: string, value: unknown, lane: { sources: string[]; filters: string[] }) {
+  const sample = value as Sample | null;
+  const invalid = (reason: string): never => { throw new Error(`${leaf}: ${reason}`); };
+  if (!sample || typeof sample.query !== 'string' || !Array.isArray(sample.works) || !Array.isArray(sample.labels)) invalid('missing notable sample');
+  const capturedAt = Date.parse(sample!.capturedAt);
+  if (!Number.isFinite(capturedAt)) invalid('missing capture date');
+  const year = new Date(capturedAt).getUTCFullYear();
+  const firstDay = `${year - notableYears}-01-01`;
+  const lastDay = `${year - 1}-12-31`;
+  const required = [
+    `primary_location.source.id:${lane.sources.join('|')}`, ...lane.filters,
+    `from_publication_date:${firstDay}`, `to_publication_date:${lastDay}`, 'has_abstract:true', 'is_retracted:false',
+  ];
+  const query = new URL(sample!.query);
+  const filters = query.searchParams.get('filter')?.split(',') || [];
+  const allowed = new Set(['filter', 'sort', 'page', 'per-page', 'select']);
+  if (query.origin !== 'https://api.openalex.org' || query.pathname !== '/works' || query.username || query.password
+    || [...query.searchParams.keys()].some(key => !allowed.has(key) || query.searchParams.getAll(key).length !== 1)
+    || query.searchParams.get('sort') !== 'cited_by_count:desc'
+    || query.searchParams.get('page') !== '1' || query.searchParams.get('per-page') !== String(minimumSample)
+    || filters.length !== required.length || required.some(filter => !filters.includes(filter))) {
+    invalid("notable sample must be the anonymous, most-cited page of 15 of the leaf's venue lane over the ten completed years");
+  }
+  const types = lane.filters[0].slice('type:'.length).split('|');
+  const topics = lane.filters.find(filter => filter.startsWith('primary_topic.id:'))?.slice('primary_topic.id:'.length).split('|');
+  if (sample!.works.length > minimumSample) invalid('a sample is one page of 15');
+  const workIds = new Set<string>();
+  let previous = Infinity;
+  for (const work of sample!.works) {
+    const id = bare(work?.id);
+    const cited = work?.cited_by_count;
+    if (!/^W\d+$/.test(id) || workIds.has(id) || !types.includes(work.type)
+      || typeof work.title !== 'string' || !work.title.trim()
+      || !/^\d{4}-\d{2}-\d{2}$/.test(work.publication_date)
+      || work.publication_date < firstDay || work.publication_date > lastDay
+      || !lane.sources.includes(work.source)
+      || (topics && !topics.includes(work.primary_topic!))
+      || !Number.isInteger(cited) || cited! < 0 || cited! > previous) invalid(`invalid notable work: ${id}`);
+    workIds.add(id);
+    previous = cited!;
+  }
+  const onTarget = checkLabels(leaf, sample!, workIds).size;
+  const sampleSize = workIds.size;
+  const status = sampleSize < minimumSample ? 'insufficient-sample' : onTarget / sampleSize >= minimumPrecision ? 'passed' : 'rejected';
+  return { status, sampleSize, onTarget };
 }
 
 function checkLeaf(leaf: string, entry: Reviews['leaves'][string], records: Reviews['sources']) {
@@ -187,12 +251,24 @@ for (const [id, record] of Object.entries(reviews.sources)) {
     throw new Error(`${id}: leaves must list the taxonomy leaves its curator filed it under`);
   }
 }
+const notableSamples = reviews.notableSamples ?? {};
+if (typeof notableSamples !== 'object' || Array.isArray(notableSamples)) throw new Error('Notable samples must be keyed by taxonomy leaf ID');
+for (const leaf of Object.keys(notableSamples)) {
+  if (!Object.hasOwn(reviews.leaves, leaf)) throw new Error(`${leaf}: a notable sample needs the leaf's venue lane`);
+}
 const report = Object.keys(reviews.leaves).sort().map(leaf => {
   const known = leaves.find(item => item.id === leaf);
   if (!known) throw new Error(`Review must name a taxonomy leaf: ${leaf}`);
-  return { leaf, label: known.label, ...checkLeaf(leaf, reviews.leaves[leaf], reviews.sources) };
+  const row = { leaf, label: known.label, ...checkLeaf(leaf, reviews.leaves[leaf], reviews.sources) };
+  if (!Object.hasOwn(notableSamples, leaf)) return row;
+  // A leaf with a topic notable lane lists its topics' most cited; a second
+  // OpenAlex listing for the same lane would only repeat or blur it.
+  if (row.status !== 'passed') throw new Error(`${leaf}: a notable sample needs the leaf's venue lane`);
+  if (openAlexNotableFilterForLeaf(leaf) !== null) throw new Error(`${leaf}: has a notable lane from its topics`);
+  return { ...row, notable: checkNotableSample(leaf, notableSamples[leaf], row) };
 });
 const lanes = report.filter(row => row.status === 'passed');
+const notableLeaves = report.flatMap(row => ('notable' in row && row.notable.status === 'passed' ? [row.leaf] : []));
 const sourceLine = (id: string) => {
   const { name, publisher } = reviews.sources[id];
   return `      '${id}', // ${name}${publisher ? ` (${publisher})` : ''}`;
@@ -208,11 +284,17 @@ const output = [
     `    filters: [${row.filters.map(filter => `'${filter}'`).join(', ')}],`,
     '  },',
   ]),
-  '});', '',
+  '});',
+  '',
+  "// The leaves whose notable lane lists the most-cited articles of their venue lane above: their notable sample passed.",
+  'export const OPENALEX_NOTABLE_VENUE_LEAVES: readonly string[] = Object.freeze([',
+  ...notableLeaves.map(leaf => `  '${leaf}',`),
+  ']);', '',
 ].join('\n');
 const files = [[resolve(values.out!), output], [resolve(values.report!), `${JSON.stringify(report, null, 2)}\n`]];
 for (const [path, text] of files) {
   if (!values.check) writeFileSync(path, text);
   else if (readFileSync(path, 'utf8') !== text) throw new Error(`${path} is stale; regenerate with the same reviews`);
 }
-process.stdout.write(`${lanes.length} of ${report.length} reviewed leaves have a venue lane, from ${new Set(lanes.flatMap(row => row.sources)).size} sources\n`);
+process.stdout.write(`${lanes.length} of ${report.length} reviewed leaves have a venue lane, from ${new Set(lanes.flatMap(row => row.sources)).size} sources; `
+  + `${notableLeaves.length} of ${Object.keys(notableSamples).length} sampled have a notable lane from their journals\n`);

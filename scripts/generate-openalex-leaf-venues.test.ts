@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 // Synthetic sources and samples; these do not establish live precision.
-const curated = ['cs.AI', 'cs.DS', 'econ.EM', 'econ.GN', 'econ.TH', 'hep-ex', 'q-fin.PM'];
+const curated = ['cs.AI', 'cs.CV', 'cs.DS', 'econ.EM', 'econ.GN', 'econ.TH', 'hep-ex', 'q-fin.PM'];
 const sources = {
   S901: { name: 'Journal of Synthetic Econometrics', publisher: 'Example Press', type: 'journal', leaves: curated },
   S902: { name: 'Synthetic Economic Letters', publisher: 'Example Press', type: 'journal', leaves: curated },
@@ -43,19 +43,43 @@ function sample({ asked = ['S901', 'S902', 'S903'], from = asked, onTarget = 12,
   return { capturedAt, query: decodeURIComponent(query.href), works, labels };
 }
 
+interface NotableOptions {
+  asked?: string[]; from?: string[]; onTarget?: number; size?: number; uncertain?: number; types?: string; extra?: string[];
+  capturedAt?: string; window?: [string, string]; sort?: string; more?: string[];
+}
+
+// The 15 most-cited works of `asked` over the ten completed years before the
+// capture, citations falling from 5000, the first `onTarget` on target.
+function notableSample({ asked = ['S901', 'S902', 'S903'], from = asked, onTarget = 12, size = 15, uncertain = 0, types = 'article', extra = [], capturedAt = '2026-10-26T10:00:00Z', window = ['2016-01-01', '2025-12-31'], sort = 'cited_by_count:desc', more = [] }: NotableOptions = {}) {
+  const query = new URL('https://api.openalex.org/works');
+  query.searchParams.set('filter', [`primary_location.source.id:${asked.join('|')}`, `type:${types}`, ...extra, `from_publication_date:${window[0]}`, `to_publication_date:${window[1]}`, 'has_abstract:true', 'is_retracted:false', ...more].join(','));
+  query.searchParams.set('sort', sort);
+  query.searchParams.set('page', '1');
+  query.searchParams.set('per-page', '15');
+  const works = Array.from({ length: size }, (_, index) => ({
+    id: `https://openalex.org/W88${String(index).padStart(4, '0')}${from[0].slice(1)}`,
+    type: types.split('|')[0], title: `Synthetic landmark result ${index}`, publication_date: `${2016 + (index % 10)}-05-01`,
+    source: from[index % from.length], cited_by_count: 5000 - index * 10,
+  }));
+  const labels = works.map((work, index) => (index < onTarget
+    ? { workId: work.id, label: 'on-target' }
+    : index < onTarget + uncertain ? { workId: work.id, uncertain: true } : { workId: work.id, label: 'off-target' }));
+  return { capturedAt, query: decodeURIComponent(query.href), works, labels };
+}
+
 function setup(t: import('node:test').TestContext) {
   const directory = mkdtempSync(join(tmpdir(), 'pap104-venues-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const reviews = join(directory, 'reviews.json');
   const output = join(directory, 'venues.ts');
   const report = join(directory, 'coverage.json');
-  const write = (leaves: Record<string, unknown>, records: Record<string, unknown> = sources) => writeFileSync(reviews, JSON.stringify({ sources: records, leaves }));
+  const write = (leaves: Record<string, unknown>, records: Record<string, unknown> = sources, notableSamples?: Record<string, unknown>) => writeFileSync(reviews, JSON.stringify({ sources: records, leaves, ...(notableSamples ? { notableSamples } : {}) }));
   const run = (...extra: string[]) => spawnSync(process.execPath, [
     'scripts/generate-openalex-leaf-venues.ts', '--reviews', reviews, '--out', output, '--report', report, ...extra,
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{
     leaf: string; status: string; sampleSize: number; onTarget: number; filters: string[]; sources: string[]; bySource: Record<string, string>;
-    sourceSamples?: Record<string, string>;
+    sourceSamples?: Record<string, string>; notable?: { status: string; sampleSize: number; onTarget: number };
   }>;
   return { write, run, coverage, output };
 }
@@ -195,4 +219,92 @@ test('--check detects stale venue lanes', t => {
   assert.equal(run('--check').status, 0);
   writeFileSync(output, `${readFileSync(output, 'utf8')}// edited\n`);
   assert.notEqual(run('--check').status, 0);
+});
+
+const notableLeavesIn = (text: string) => text.match(/OPENALEX_NOTABLE_VENUE_LEAVES: readonly string\[\] = Object\.freeze\(\[\n((?: {2}'[^']+',\n)*)\]\);/)?.[1]
+  .split('\n').filter(Boolean).map(line => line.trim().slice(1, -2));
+
+test("a leaf whose ten-year most-cited journal articles are two thirds on target gets a notable lane from its journals", t => {
+  const { write, run, coverage, output } = setup(t);
+  write({ 'econ.EM': { sample: sample() } }, sources, { 'econ.EM': notableSample({ onTarget: 10 }) });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(coverage()[0].notable, { status: 'passed', sampleSize: 15, onTarget: 10 });
+  assert.deepEqual(notableLeavesIn(readFileSync(output, 'utf8')), ['econ.EM']);
+});
+
+test('nine of fifteen on target, two of them doubted, or a short page gives no notable lane', t => {
+  const { write, run, coverage, output } = setup(t);
+  write({ 'econ.EM': { sample: sample() }, 'econ.GN': { sample: sample() }, 'econ.TH': { sample: sample() } }, sources, {
+    'econ.EM': notableSample({ onTarget: 9 }),
+    'econ.GN': notableSample({ onTarget: 9, uncertain: 2 }),
+    'econ.TH': notableSample({ size: 14, onTarget: 14 }),
+  });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(coverage().map(row => [row.leaf, row.notable?.status]), [['econ.EM', 'rejected'], ['econ.GN', 'rejected'], ['econ.TH', 'insufficient-sample']]);
+  assert.deepEqual(notableLeavesIn(readFileSync(output, 'utf8')), []);
+});
+
+test("a notable sample must ask the leaf's own journals, types and extra filter over the ten completed years, most cited first", t => {
+  const { write, run, output } = setup(t);
+  write({ 'econ.EM': { sample: sample() } }, sources, { 'econ.EM': notableSample() });
+  assert.equal(run().status, 0);
+  const before = readFileSync(output, 'utf8');
+  const broken = [
+    notableSample({ sort: 'publication_date:desc' }),
+    notableSample({ more: ['primary_location.source.is_core:true'] }),
+    notableSample({ window: ['2015-01-01', '2024-12-31'] }),
+    notableSample({ asked: ['S901', 'S902'] }),
+    notableSample({ types: 'article|conference-paper' }),
+  ];
+  for (const value of broken) {
+    write({ 'econ.EM': { sample: sample() } }, sources, { 'econ.EM': value });
+    assert.notEqual(run().status, 0, value.query);
+    assert.equal(readFileSync(output, 'utf8'), before);
+  }
+});
+
+test("a notable sample of a lane with a topic filter asks for the lane's topics, and every work is on one of them", t => {
+  const { write, run, output } = setup(t);
+  const onTopics = <T extends { works: object[] }>(value: T) => ({ ...value, works: value.works.map((work, index) => ({ ...work, primary_topic: index % 2 ? 'T1' : 'T2' })) });
+  const lane = { sample: onTopics(sample({ extra: ['primary_topic.id:T2|T1'] })) };
+  write({ 'econ.TH': lane }, sources, { 'econ.TH': onTopics(notableSample({ extra: ['primary_topic.id:T1|T2'] })) });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(notableLeavesIn(readFileSync(output, 'utf8')), ['econ.TH']);
+  const before = readFileSync(output, 'utf8');
+  const good = onTopics(notableSample({ extra: ['primary_topic.id:T1|T2'] }));
+  const broken = [
+    onTopics(notableSample()),
+    onTopics(notableSample({ extra: ['primary_topic.id:T2|T1'] })),
+    { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, primary_topic: 'T3' } : work)) },
+  ];
+  for (const value of broken) {
+    write({ 'econ.TH': lane }, sources, { 'econ.TH': value });
+    assert.notEqual(run().status, 0, value.query);
+    assert.equal(readFileSync(output, 'utf8'), before);
+  }
+});
+
+test('a notable sample out of citation order, outside the window or with an unlabelled work is refused', t => {
+  const { write, run } = setup(t);
+  const good = notableSample();
+  const broken = [
+    { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, cited_by_count: 9000 } : work)) },
+    { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, publication_date: '2026-01-02' } : work)) },
+    { ...good, labels: good.labels.slice(1) },
+  ];
+  for (const value of broken) {
+    write({ 'econ.EM': { sample: sample() } }, sources, { 'econ.EM': value });
+    assert.notEqual(run().status, 0);
+  }
+});
+
+test('a leaf with a notable lane from its topics, or without a venue lane, cannot take a journal notable sample', t => {
+  const { write, run } = setup(t);
+  write({ 'cs.CV': { sample: sample() } }, sources, { 'cs.CV': notableSample() });
+  assert.match(run().stderr, /cs\.CV: has a notable lane from its topics/);
+  write({ 'econ.GN': { sample: sample({ onTarget: 9 }) } }, sources, { 'econ.GN': notableSample() });
+  assert.match(run().stderr, /econ\.GN: a notable sample needs the leaf's venue lane/);
 });

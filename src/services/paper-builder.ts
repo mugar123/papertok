@@ -58,10 +58,11 @@ function readsAsPreprint(record: Pick<Partial<Paper>, 'publicationStatus' | 'pub
 }
 
 // A record that says it was published: by its status, or by a type that is
-// no preprint's or repository's when it states no status.
+// no preprint's or repository's when its status does not say. A retraction
+// does not: an article and a preprint can both be retracted.
 function readsAsPublished(record: Pick<Partial<Paper>, 'publicationStatus' | 'publicationType'>) {
   return record.publicationStatus === 'published'
-    || (record.publicationStatus === undefined
+    || ((record.publicationStatus === undefined || record.publicationStatus === 'retracted')
       && Boolean(record.publicationType && !['preprint', 'repository'].includes(record.publicationType)));
 }
 
@@ -495,6 +496,11 @@ export class PaperBuilder {
     if (shouldUpgradePublication) {
       merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
+    }
+    // A retraction stands whichever record states it and whichever comes
+    // first: a later listing that reads published or preprint does not undo it.
+    if (existingPaper.publicationStatus === 'retracted' || enrichmentData.publicationStatus === 'retracted') {
+      merged.publicationStatus = 'retracted';
     }
 
     // Re-read only when the enrichment brought publication evidence of its own.

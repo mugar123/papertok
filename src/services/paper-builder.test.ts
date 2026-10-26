@@ -93,6 +93,50 @@ test('a record without citation data leaves a confirmed count as it was', () => 
   assert.deepEqual([neverCounted.citationCount, neverCounted.citationCountKnown], [0, false]);
 });
 
+// Captured from OpenAlex on 2026-10-26 and trimmed: a Nature article of 2018,
+// retracted in 2021, with its arXiv eprint among the locations.
+const RETRACTED_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W2766253867',
+  doi: 'https://doi.org/10.1038/nature26142',
+  title: 'RETRACTED ARTICLE: Quantized Majorana conductance',
+  type: 'article',
+  publication_date: '2018-03-27',
+  is_retracted: true,
+  primary_location: { landing_page_url: 'https://doi.org/10.1038/nature26142', is_published: true, source: { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal' } },
+  locations: [{ landing_page_url: 'http://arxiv.org/abs/1710.10701', is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' } }],
+};
+
+// The corpus merges every later listing into the stored row, and search
+// deduplicates its results in the order they arrive.
+test('a retraction stands whichever record of the paper comes first', () => {
+  const eprint = () => PaperBuilder.create({
+    id: '1710.10701', arxivId: '1710.10701', title: 'Quantized Majorana conductance', authors: [{ name: 'Hao Zhang' }],
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  // Synthetic, in the shape NASA ADS returns: a refereed Nature article.
+  const article = () => mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    doi: ['10.1038/nature26142'], identifier: ['arXiv:1710.10701'], property: ['REFEREED', 'ARTICLE'],
+    doctype: 'article', pub: 'Nature', pubdate: '2018-04-00', year: '2018',
+  })!;
+  const retraction = mapOpenAlexEnrichmentWork(RETRACTED_WORK)!.enrichment;
+  for (const listing of [eprint, article]) {
+    const enriched = PaperBuilder.merge(listing(), retraction, 'openalex');
+    assert.equal(enriched.publicationStatus, 'retracted', listing().sources.primary);
+    assert.equal(PaperBuilder.merge(enriched, listing(), listing().sources.primary).publicationStatus, 'retracted', `${listing().sources.primary} lists it again`);
+  }
+  // The journal's evidence still counts: the eprint reads as the article it became.
+  const enrichedEprint = PaperBuilder.merge(eprint(), retraction, 'openalex');
+  assert.deepEqual([enrichedEprint.publicationType, enrichedEprint.peerReviewed], ['article', true]);
+
+  const card = new OpenAlexAdapter().mapToStandard(RETRACTED_WORK)!;
+  for (const records of [[card, eprint()], [eprint(), card]]) {
+    const merged = PaperBuilder.deduplicate(records);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].publicationStatus, 'retracted', records[0].sources.primary);
+  }
+});
+
 // A mapper leaves the year out when the provider's date is after today; the
 // builder, and `deduplicate` through it, used to write in the current year.
 test('a record without a year keeps no year', () => {

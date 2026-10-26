@@ -152,7 +152,11 @@ gate, with the lane's own population and its own candidates
 filter when the leaf has one, else the notable map's, else none). A leaf the
 notable sample admits gets a notable lane and no topic lane; once a later topic
 sample admits it, its notable lane lists the topic lane's topics and the
-generator asks for its notable entries to be removed.
+generator asks for its notable entries to be removed. A leaf that neither
+sample admits can get a notable lane from its venue lane's journals instead
+(`scripts/README-openalex-leaf-venues.md`, "Notable sample");
+`openAlexNotableListingFilter` in `worker/paper-sources.ts` gives each year's
+filter of any of them.
 
 **Candidates.** `scripts/data/openalex-notable-subfields.json` names, for each
 leaf without a topic lane, the OpenAlex subfield IDs whose catalogue topics
@@ -207,8 +211,8 @@ file reports `passed`, `rejected` or `insufficient-sample` with the sample's
 Each batch of admitted leaves changes what every reader of those leaves is
 shown and adds ten OpenAlex list calls a week per leaf, inside the category
 lanes' 3,000 nightly units; it is authorized under AGENTS.md before it is
-committed. A night re-lists at most eight due lanes, or a seventh of all the
-notable lanes once there are more than 56, so a batch keeps every lane weekly
+committed. A night re-lists at most eight due lanes of each source, or a
+seventh of that source's lanes once it has more than 56, so a batch keeps every lane weekly
 and raises the nightly re-listing units and CPU in step (`notableLanesPerNight`
 in `worker/paper-sources.ts`; 149 lanes would be 22 a night, 220 units). After a
 large batch every lane falls due on the same night and the last of them is

@@ -39,8 +39,8 @@ checks them now:
   makes the papers a page leaves out the newest of it (`markSeenLatest`), and gives
   `planUnshowablePage` `hasSeenRanking`'s answer for the main page. The decisions are tested
   in `src/context/` and `src/utils/`; the wiring inside the context is not.
-- `PaperCard` shows "Highly cited" on a notable card before the paper's own year and citation
-  count, and groups every citation count with `toLocaleString('en-US')`.
+- `PaperCard` shows a notable card's metadata line as any other card's, with the paper's own
+  year and citation count, and groups every citation count with `toLocaleString('en-US')`.
 - `FeedContainer` keys For You's place by the account (`forYouScrollKey`), and `App` clears
   every feed's place when the account changes (`feedResumeMemory.clear`).
 - The router keeps `useTransitions={false}` and keys the provider tree on `accountScopeKey`.

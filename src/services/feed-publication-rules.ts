@@ -1,10 +1,11 @@
 import type { Paper } from '../models/paper.ts';
 import { normalizeDoi } from '../utils/public-navigation.ts';
 
-// Which papers the feed shows by their type: not books or book reviews, nor
-// errata, retractions, datasets, peer-review records, front matter or
-// supplementary files. For the browser's Crossref lookups and the Worker's
-// paper store alike.
+// Which papers the feed shows. By their type: not books or book reviews, nor
+// errata, retraction notices, datasets, peer-review records, front matter or
+// supplementary files. Nor a retracted paper (`publicationStatus`, from
+// OpenAlex's `is_retracted`). For the browser's Crossref lookups and the
+// Worker's paper store alike.
 
 const BOOK_TYPES = new Set(['book', 'monograph', 'edited-book', 'reference-book', 'book-set', 'book-series']);
 const NON_RESEARCH_TYPES = new Set(['erratum', 'retraction', 'dataset', 'peer-review', 'paratext', 'supplementary-materials']);
@@ -28,9 +29,19 @@ function confirmedPublication(paper: Partial<Paper>) {
   return null;
 }
 
-export function isFeedPublication(paper: Partial<Paper>) {
+/**
+ * Whether the feed shows papers of this one's type, retracted or not. The
+ * Worker's paper store turns away a record of another type. A retracted record
+ * it keeps under no lane, so that a reader's like of it still ranks their feed
+ * and a later listing of the paper finds it retracted.
+ */
+export function isFeedPublicationType(paper: Partial<Paper>) {
   return !confirmedPublication(paper)
     && ![paper.publicationType, paper.sourceType].some(type => type === 'book-review' || BOOK_TYPES.has(type || '') || NON_RESEARCH_TYPES.has(type || ''));
+}
+
+export function isFeedPublication(paper: Partial<Paper>) {
+  return paper.publicationStatus !== 'retracted' && isFeedPublicationType(paper);
 }
 
 /**
