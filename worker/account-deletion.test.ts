@@ -435,6 +435,89 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   }
 });
 
+function captureErrors() {
+  const original = console.error;
+  const lines: string[] = [];
+  console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+  return { lines, restore: () => { console.error = original; } };
+}
+
+test('a purge that fails after the Auth delete still lets the final sweep run, and the deletion completes', async () => {
+  const admin = memoryAdmin({ [`users/${UID}/lists/early`]: { name: 'Early' } });
+  const store = kvStore();
+  let authDeleted = false;
+  const get = store.get;
+  store.get = async (key: string, type?: string) => {
+    if (authDeleted) throw new Error('KV GET failed: 503');
+    return get(key, type);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+
+  try {
+    let result;
+    for (let i = 0; i < 12; i += 1) {
+      result = await runAccountDeletionSlice(admin, UID, env, {
+        idToken: TOKEN,
+        fetchImpl: async () => {
+          admin.documents[`users/${UID}/lists/late`] = { name: 'Late' };
+          authDeleted = true;
+          return new Response('{}', { status: 200 });
+        },
+      });
+      if (result.complete) break;
+    }
+
+    assert.deepEqual(result, { complete: true, stage: 'auth' });
+    assert.equal(admin.documents[`users/${UID}/lists/late`], undefined);
+    assert.equal(errors.lines.length, 1);
+    assert.match(errors.lines[0], /subscription purge/);
+    assert.doesNotMatch(errors.lines[0], new RegExp(UID));
+  } finally {
+    errors.restore();
+  }
+});
+
+test('a final sweep that fails after the Auth delete still purges the subscription, and the deletion completes', async () => {
+  const admin = memoryAdmin();
+  let authDeleted = false;
+  const runQuery = admin.runQuery;
+  admin.runQuery = (async (options: QueryOptions) => {
+    if (authDeleted) throw new FirestoreAdminError('FIRESTORE_UNAVAILABLE', 503, `users/${UID}`);
+    return runQuery(options);
+  });
+  const store = kvStore();
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+
+  try {
+    const restore = stubIdentityLookup();
+    let result;
+    try {
+      result = await handleAccountDeletionRequest(deletionRequest(), env, {
+        admin,
+        fetchImpl: async () => {
+          // A digest saved from another tab while the Auth delete is in flight.
+          store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+          store.data.set('notification:unsubscribe:tok-2', UID);
+          authDeleted = true;
+          return new Response('{}', { status: 200 });
+        },
+      });
+    } finally {
+      restore();
+    }
+
+    assert.deepEqual(result, { complete: true, stage: 'auth' });
+    assert.equal(store.data.size, 0);
+    assert.equal(errors.lines.length, 1);
+    assert.match(errors.lines[0], /user tree sweep.*FIRESTORE_UNAVAILABLE/);
+    assert.doesNotMatch(errors.lines[0], new RegExp(UID));
+  } finally {
+    errors.restore();
+  }
+});
+
 test('paper stubs lose their createdBy attribution', async () => {
   const admin = memoryAdmin({
     [`userProfiles/${UID}`]: { handle: HANDLE },

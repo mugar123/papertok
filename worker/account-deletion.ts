@@ -335,8 +335,20 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // author, now that Auth is gone — can ever remove. Sweep once more, the
   // subscription included: a digest turned on in another tab meanwhile passed
   // Identity Toolkit because the account still existed.
-  await purgeEmailSubscription(env, uid);
-  await deleteUserTree(admin, uid);
+  // Neither cleanup may skip the other, and neither may fail the request: the
+  // account is gone, so a retry can only be refused with AUTH_REQUIRED, and a
+  // failure here would tell the reader a deleted account still exists. What
+  // is left is logged for the operator.
+  const [purge, sweep] = await Promise.allSettled([
+    purgeEmailSubscription(env, uid),
+    deleteUserTree(admin, uid),
+  ]);
+  for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep]] as const) {
+    if (outcome.status === 'rejected') {
+      const reason = outcome.reason as { code?: unknown; name?: unknown } | null;
+      console.error(`Account deletion: ${cleanup} after the Auth delete failed`, String(reason?.code || reason?.name || 'unknown'));
+    }
+  }
   return { complete: true, stage: 'auth' };
 }
 
