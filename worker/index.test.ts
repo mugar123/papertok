@@ -7,7 +7,7 @@ type QuotaScriptState = { actions: QuotaAction[] };
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { encodePaperKey } from '../src/utils/public-navigation.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publication-status.ts';
 import reportApi from './index.ts';
@@ -15,6 +15,7 @@ import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { fetchArxivPapers } from './paper-sources.ts';
 import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
@@ -1113,19 +1114,26 @@ test('cuts an arXiv upstream that sends its headers and then stalls the body', a
 
 const ARXIV_URL = 'https://papertok-report-api.example/arxiv?search_query=all:malaria';
 const ATOM_FEED = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>';
-const arxivThrough = (env: WorkerEnv, upstream: typeof fetch) => withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
-  ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
-), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
+// A request from outside the Worker takes only even seats of the arXiv beat.
+// At the start of an even period one is free at once, so these tests sleep
+// for none of it, whatever the time of day.
+const arxivThrough = (t: TestContext, env: WorkerEnv, upstream: typeof fetch) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:00.000Z') });
+  return withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
+    ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
+};
 const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
 
 // One request every three seconds is arXiv's published policy, and the Worker
 // is the one client arXiv sees. A miss takes a seat on the beat before it goes
 // upstream; a seat that is not free within the wait budget is refused here,
 // with no arXiv call spent.
-test('an arXiv miss takes a seat on the three-second beat before going upstream', async () => {
+test('an arXiv miss takes a seat on the three-second beat before going upstream', async t => {
   const state: QuotaScriptState = { actions: [] };
   let upstreamCalls = 0;
   const response = await arxivThrough(
+    t,
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state) },
     async () => { upstreamCalls += 1; return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }); },
   );
@@ -1136,10 +1144,11 @@ test('an arXiv miss takes a seat on the three-second beat before going upstream'
   assert.ok(seat, `no seat taken on the arXiv beat: ${JSON.stringify(state.actions)}`);
 });
 
-test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, without calling arXiv', async () => {
+test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, without calling arXiv', async t => {
   const state: QuotaScriptState = { actions: [] };
   let upstreamCalls = 0;
   const response = await arxivThrough(
+    t,
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_ARXIV_PACE }) },
     async () => { upstreamCalls += 1; return new Response(ATOM_FEED); },
   );
@@ -1153,9 +1162,10 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
 
 // The beat is courtesy towards arXiv, not the protection of a key: a ledger
 // that is missing or down must not take the source down with it.
-test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async () => {
+test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async t => {
   let upstreamCalls = 0;
   const response = await arxivThrough(
+    t,
     {},
     async () => { upstreamCalls += 1; return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }); },
   );
@@ -1167,8 +1177,9 @@ test('an arXiv miss goes upstream unpaced when there is no ledger to keep the be
 // A 429 from arXiv, a stall, and a bad answer used to leave as the same
 // `502 arXiv unavailable`. The client retries a 502 at once, which is the one
 // thing that makes a rate limit worse.
-test('relays an arXiv refusal as 429 UPSTREAM_RATE_LIMITED with the status that caused it', async () => {
+test('relays an arXiv refusal as 429 UPSTREAM_RATE_LIMITED with the status that caused it', async t => {
   const response = await arxivThrough(
+    t,
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
     async () => new Response('Rate exceeded.', { status: 429 }),
   );
@@ -1180,8 +1191,9 @@ test('relays an arXiv refusal as 429 UPSTREAM_RATE_LIMITED with the status that 
   assert.match(response.headers.get('retry-after')!, /^\d+$/);
 });
 
-test('names an arXiv stall as UPSTREAM_TIMEOUT', async () => {
+test('names an arXiv stall as UPSTREAM_TIMEOUT', async t => {
   const response = await withShortDeadlines(25, () => arxivThrough(
+    t,
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
     async (_url, options) => stalledBodyResponse(options?.signal, 'application/atom+xml'),
   ));
@@ -1190,13 +1202,191 @@ test('names an arXiv stall as UPSTREAM_TIMEOUT', async () => {
   assert.equal((await response.json<{ code: string }>()).code, 'UPSTREAM_TIMEOUT');
 });
 
-test('caches an arXiv answer for an hour at the edge', async () => {
+test('caches an arXiv answer for an hour at the edge', async t => {
   const response = await arxivThrough(
+    t,
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
     async () => new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }),
   );
 
   assert.match(response.headers.get('cache-control')!, /s-maxage=3600\b/);
+});
+
+// arXiv's Atom answer for one id, as `parseArxivAtom` reads it (synthetic).
+const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2610.01234v1</id>
+    <published>2026-10-20T00:00:00Z</published>
+    <updated>2026-10-20T00:00:00Z</updated>
+    <title>A liked paper</title>
+    <summary>Looked up by id.</summary>
+    <author><name>Ana Pérez</name></author>
+    <arxiv:primary_category term="cs.CL"/>
+    <category term="cs.CL"/>
+  </entry>
+</feed>`;
+
+// One anonymous script sending cache-busting queries used to hold every seat
+// a caller could wait for, and the Worker's own lookups (a reader's liked
+// papers, the harvest's arXiv lanes) were refused with it. The allowance per
+// address does not stop it: three misses fit within one address's five, and a
+// script can spread more over several addresses, such as one IPv6 /64.
+test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
+  // The last millisecond of a three-second period: three seats lie within the
+  // four seconds a caller may wait, the next one a millisecond away, so the
+  // seats taken here cost almost no real sleep.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
+  const statuses: number[] = [];
+  const papers = await withWorkerFetchMock(async input => {
+    const lookup = new URL(String(input)).searchParams.has('id_list');
+    return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+  }, async () => {
+    for (let miss = 0; miss < 3; miss += 1) {
+      const response = await reportApi.fetch(new Request(
+        `https://papertok-report-api.example/arxiv?search_query=all:x${miss}`,
+        { headers: { 'cf-connecting-ip': `2001:db8::${miss + 1}` } },
+      ), env);
+      statuses.push(response.status);
+    }
+    return fetchArxivPapers(env, ['2610.01234']);
+  });
+
+  assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);
+  assert.ok(statuses.includes(429), `the anonymous misses took every seat: ${statuses.join(', ')}`);
+});
+
+// Runs a request on mocked timers: each wait for a seat ends exactly when it
+// is due, as it would on the real clock, without sleeping for real.
+async function settledOnMockClock<Result>(t: TestContext, pending: Promise<Result>) {
+  let settled = false;
+  pending.then(() => { settled = true; }, () => { settled = true; });
+  for (let turn = 0; !settled; turn += 1) {
+    if (turn > 10_000) throw new Error('the request never settled');
+    // The ledger hashes subjects off the event loop; let it answer first.
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.runAll();
+  }
+  return pending;
+}
+
+// A request from outside the Worker takes only every other seat of the beat,
+// six seconds apart, and waits at most 4 s for one. One tab sends its misses
+// one at a time (the route answers in about 0.3 s, then the lane waits 350 ms),
+// so when its first miss arrives in an odd period and goes at the next even
+// seat, the seat after that is 5.35 s from its second miss: that miss is
+// refused at once with retry-after 4, not held for 6 s, which is as long as
+// the browser waits for /arxiv.
+test('one reader\'s second back-to-back arXiv miss is refused at once when its next public seat is more than 4 s away', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:03.100Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
+  const sent: string[] = [];
+  const ask = (query: string) => settledOnMockClock(t, reportApi.fetch(new Request(
+    `https://papertok-report-api.example/arxiv?search_query=all:${query}`,
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), env));
+  const result = await withWorkerFetchMock(async () => {
+    sent.push(new Date().toISOString());
+    t.mock.timers.tick(300);
+    return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+  }, async () => {
+    const first = await ask('first');
+    t.mock.timers.tick(350);
+    const askedAt = new Date().toISOString();
+    const second = await ask('second');
+    return {
+      first: first.status,
+      second: second.status,
+      retryAfter: second.headers.get('retry-after'),
+      askedAt,
+      answeredAt: new Date().toISOString(),
+    };
+  });
+
+  assert.equal(result.first, 200);
+  assert.equal(result.second, 429);
+  assert.equal(result.retryAfter, '4');
+  assert.equal(result.answeredAt, result.askedAt, 'the refusal costs no wait');
+  assert.deepEqual(sent, ['2026-10-24T12:00:06.000Z']);
+});
+
+// Each figures miss fetches arxiv.org/html and ar5iv, and anyone can ask
+// without an Origin, so misses share a minute ceiling of their own and each
+// address has an allowance inside it.
+const FIGURES_URL = 'https://papertok-report-api.example/resources/figures?arxiv_id=2401.00001';
+const IS_FIGURES_CALLER = (key: string) => key.startsWith('figures:caller:');
+
+test('refuses a figures miss with 429 once the figures minute is spent, without asking a renderer', async () => {
+  const fetched: string[] = [];
+  const state: QuotaScriptState = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    () => reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), {
+      PDF_RATE_LIMIT_SECRET: CALLER_SECRET,
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: key => key.startsWith('figures:') && !IS_FIGURES_CALLER(key) }),
+    }),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
+  assert.deepEqual(fetched, []);
+  assertRefunded(state, IS_FIGURES_CALLER);
+});
+
+test('a figures miss with no quota ledger is refused with 503 and asks no renderer', async () => {
+  const fetched: string[] = [];
+  const response = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    () => reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET }),
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  assert.deepEqual(fetched, []);
+});
+
+test('figures stops one address at 20 misses a minute while other addresses share the rest of the 60', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T12:00:30Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
+  const misses: string[] = [];
+  await withWorkerFetchMock(async input => {
+    if (String(input).startsWith('https://arxiv.org/html/')) misses.push(String(input));
+    return new Response('<html></html>', { headers: { 'content-type': 'text/html' } });
+  }, async () => {
+    const ask = (ip: string) => reportApi.fetch(new Request(FIGURES_URL, { headers: { 'cf-connecting-ip': ip } }), env);
+    for (let i = 0; i < 20; i += 1) assert.equal((await ask('192.0.2.1')).status, 200);
+    const refused = await ask('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal((await refused.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
+    assert.equal(refused.headers.get('retry-after'), '30', 'refused by the address allowance until the minute ends');
+    assert.equal(misses.length, 20, 'the refused miss asked no renderer');
+    for (const ip of ['198.51.100.7', '2001:db8::1']) {
+      for (let i = 0; i < 20; i += 1) assert.equal((await ask(ip)).status, 200, ip);
+    }
+    assert.equal(misses.length, 60, 'refused misses spent none of the shared 60');
+    const full = await ask('203.0.113.9');
+    assert.equal(full.status, 429);
+    assert.equal(full.headers.get('retry-after'), '60', 'refused by the app-wide minute');
+    assert.equal(misses.length, 60);
+  });
+});
+
+test('a figures miss without a caller address or a rate-limit secret is refused with 503 and asks no renderer', async () => {
+  const fetched: string[] = [];
+  const responses = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    async () => [
+      await reportApi.fetch(new Request(FIGURES_URL), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }),
+      await reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }),
+    ],
+  );
+
+  for (const response of responses) {
+    assert.equal(response.status, 503);
+    assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  }
+  assert.deepEqual(fetched, []);
 });
 
 // Every specialist route, not just the one that happened to be covered when this
@@ -4455,7 +4645,7 @@ test('share lookups stop one IP before the shared ceiling and leave other IPs ro
   });
 });
 
-test('arXiv stops one IP at ten misses while another IP can take the next paced seat', async t => {
+test('arXiv stops one IP at five misses while another IP can take the next paced seat', async t => {
   const start = Date.parse('2026-10-25T12:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: start });
   const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
@@ -4465,15 +4655,21 @@ test('arXiv stops one IP at ten misses while another IP can take the next paced 
     return new Response('<feed></feed>');
   }, async () => {
     const ask = (ip: string) => reportApi.fetch(new Request(ARXIV_URL, { headers: { 'cf-connecting-ip': ip } }), env);
-    for (let i = 0; i < 10; i += 1) {
-      t.mock.timers.setTime(start + i * 3000);
+    // A request from outside the Worker takes only every other seat, six
+    // seconds apart: these five are half of such seats in the minute.
+    for (let i = 0; i < 5; i += 1) {
+      t.mock.timers.setTime(start + i * 6000);
       assert.equal((await ask('192.0.2.1')).status, 200);
     }
+    // The sixth miss arrives at a public seat nobody has taken, so only this
+    // IP's spent allowance can refuse it.
     t.mock.timers.setTime(start + 30_000);
-    assert.equal((await ask('192.0.2.1')).status, 429);
-    assert.equal(upstreamCalls, 10);
+    const refused = await ask('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '30', 'refused by the allowance until the minute ends, not by the beat');
+    assert.equal(upstreamCalls, 5);
     assert.equal((await ask('198.51.100.7')).status, 200);
-    assert.equal(upstreamCalls, 11);
+    assert.equal(upstreamCalls, 6);
   });
 });
 

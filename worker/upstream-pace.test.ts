@@ -82,6 +82,28 @@ test('gives up within the wait budget instead of queueing forever', async () => 
   assert.deepEqual(slept, [], 'a refusal must not cost the caller any waiting');
 });
 
+test('a caller limited to some slots passes over the others without reserving them', async () => {
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
+  const slot = await awaitUpstreamSlot(scriptedLedger([{ accepted: true }], seen), {
+    namespace: 'arxiv', accepts: candidate => candidate % 2 === 0, now: () => 11_000, sleep: async ms => { slept.push(ms); },
+  });
+
+  assert.deepEqual(slot, { accepted: true, slot: 12, waitedMs: 1000 });
+  assert.equal(seen.calls, 1, 'second 11 is left for a caller that may take it');
+  assert.deepEqual(slept, [1000]);
+});
+
+test('a limited caller with no slot of its own inside the wait budget is refused without asking the ledger', async () => {
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slot = await awaitUpstreamSlot(scriptedLedger([{ accepted: true }], seen), {
+    namespace: 'arxiv', maxWaitMs: 500, accepts: candidate => candidate % 2 === 0, now: () => 11_000, sleep: async () => {},
+  });
+
+  assert.deepEqual(slot, { accepted: false });
+  assert.equal(seen.calls, 0);
+});
+
 test('relays a ledger that is not there instead of treating it as a full second', async () => {
   const seen: SeenReservations = { periodKeys: [], calls: 0 };
   const slot = await awaitUpstreamSlot(

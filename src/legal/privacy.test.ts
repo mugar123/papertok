@@ -95,6 +95,14 @@ test("the page says the server counts a signed-in reader's requests per account,
   assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
 });
 
+test('the page says figure lookups count against the caller address like the other public lookups', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
+  assert.match(html, /a public request looks up papers, paper figures, open-access links or a shared page, that server uses the IP address/);
+  // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
+  assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
+});
+
 test('the page promises the in-app announcement to signed-in accounts and says how a dismissal is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
