@@ -516,11 +516,13 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       // The stored row is the base: its id is the one readers already hold.
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
       const others = stored.slice(1).map(other => other.paper);
-      // A working paper stored earlier becomes its journal article's row
-      // (ENG-133). The group's own records are tried, since their merge reads
-      // as a working paper when the page listed the working paper first.
-      const journalRow = isWorkingPaperRow(base) ? asJournalRow([base, ...others, ...group.records]) : undefined;
-      paper = journalRow ? upgradedRow(base, journalRow) : mergeAll([base, ...others, group.paper]);
+      const merged = mergeAll([base, ...others, group.paper]);
+      // A working paper becomes its journal article's row (ENG-133), whether
+      // the row stored it, another stored row folded in brings it, or the page
+      // lists it before its article. The group's own records are tried, since
+      // their merge reads as a working paper then.
+      const journalRow = isWorkingPaperRow(merged) ? asJournalRow([base, ...others, ...group.records]) : undefined;
+      paper = journalRow ? upgradedRow(base, journalRow) : merged;
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }

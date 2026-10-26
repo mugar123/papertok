@@ -117,7 +117,11 @@ or Hugging Face eprint that lists no DOI. That row stays the eprint's when the
 article upgrades it: it keeps its id and primary source, so arXiv's next
 version replaces its title and abstract, as when the article joins the eprint
 directly. Until then it shows the article's text, landing page and date, where
-an eprint the article joined directly keeps arXiv's.
+an eprint the article joined directly keeps arXiv's. The store decides on the
+merged row, not on the stored one: a page listing the working paper and then
+its article gives the eprint's row what the two give it on two nights in that
+order, and an article that folds the working paper's separately stored row
+into the eprint's upgrades it that night.
 
 A working paper's own row upgraded by a journal record that is not an OpenAlex
 work takes that record's source as its primary source, and keeps the working

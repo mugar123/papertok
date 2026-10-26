@@ -1032,6 +1032,53 @@ test('a journal article and its working paper listed in one batch, in either ord
   }
 });
 
+// The row a working paper joins can be one another source started: an arXiv
+// or Hugging Face eprint without a DOI. One page listing the working paper and
+// its article gives that row what the two give it on two nights in the same
+// order, and a record that folds a separately stored working paper's row into
+// the eprint's upgrades the row that night.
+test('an eprint row that a working paper joins with its article on one page, or folded from its own row, ends as on separate nights', async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const shown = (paper: Paper & { storedPublished: string }) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract, paper.openAlexId];
+  async function rowAfter(nights: Paper[][]) {
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    for (const [night, papers] of nights.entries()) {
+      t.mock.timers.setTime(first + night * DAY);
+      await ingestPapers(store, papers.map(paper => ({ paper, lanes: ['econ.EM'] })), { now: first + night * DAY });
+    }
+    const rows = (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>)
+      .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
+    assert.equal(rows.length, 1);
+    return rows[0];
+  }
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const huggingFace = mapHuggingFacePaper({
+    paper: { id: '2610.01234', title: gmmArticle.title, summary: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.', publishedAt: '2026-10-20T12:00:00.000Z', upvotes: 3, authors: [{ name: 'Ana Economist' }] },
+  }, ['econ.EM'])!;
+  for (const eprint of [gmmEprint({}), huggingFace]) {
+    const name = eprint.sources.primary;
+    const separate = await rowAfter([[eprint], [workingPaper], [article]]);
+    assert.deepEqual([separate.sources.primary, separate.doi, separate.peerReviewed, separate.workingPaper], [name, '10.1080/07350015.2026.2743244', true, undefined], name);
+    assert.deepEqual(shown(await rowAfter([[eprint], [workingPaper, article]])), shown(separate), `${name}, working paper first`);
+    assert.deepEqual(shown(await rowAfter([[eprint], [article, workingPaper]])), shown(await rowAfter([[eprint], [article], [workingPaper]])), `${name}, article first`);
+  }
+
+  // The working paper's first author is spelled otherwise, and the eprint's
+  // title differs, so the two are stored as two rows. The article joins both:
+  // the eprint's by its arXiv id, the working paper's by title and author.
+  const smith = { authorships: [{ author: { id: 'https://openalex.org/A9', display_name: 'A. Economist-Smith' }, institutions: [] }] };
+  const bridged = await rowAfter([
+    [mapOpenAlexWork({ ...gmmWorkingPaperWork, ...smith })!],
+    [gmmEprint({ title: 'GMM estimators: efficiency against pricing accuracy' })],
+    [mapOpenAlexWork({ ...gmmArticle, ...smith, ids: { arxiv: 'https://arxiv.org/abs/2610.01234' } })!],
+  ]);
+  assert.deepEqual([bridged.id, bridged.sources.primary, bridged.doi, bridged.peerReviewed, bridged.workingPaper, bridged.title], ['2610.01234', 'arxiv', '10.1080/07350015.2026.2743244', true, undefined, gmmArticle.title]);
+});
+
 // The cost: up to five pages of 200 on a lane's first night and three on a
 // later one, one request a page for all of a leaf's sources.
 test("a venue lane reads five pages on its first night and three at most after, and every category lane's first night fits the categories' share", async t => {
