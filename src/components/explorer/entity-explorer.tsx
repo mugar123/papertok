@@ -1511,7 +1511,7 @@ export default function EntityExplorer({
       // Said aloud too: the toast region is a live region.
       if (error instanceof JournalFollowLimitError) {
         toast.error(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${entityDisplayName}.`, {
-          action: { label: 'Open Settings', onClick: () => { void navigate('/settings/following'); } },
+          action: { label: 'Open Settings', onClick: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); } },
         });
       } else if (error instanceof FollowsUnavailableError) {
         // A snapshot error ends the listener, so trying again cannot help;

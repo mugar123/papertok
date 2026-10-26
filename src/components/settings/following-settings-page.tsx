@@ -17,6 +17,7 @@ import {
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
+import { openingFollowType } from './opening-follow-type.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -42,6 +43,7 @@ const FOLLOW_TABS = [
   // The Explorer's icon for a source page.
   { type: 'journal', label: { en: 'Journals' }, Icon: FileText },
 ];
+const FOLLOW_TAB_TYPES = FOLLOW_TABS.map(tab => tab.type);
 
 function getFollowDisplayName(entity: FollowEntity) {
   return entity.type === 'institution'
@@ -87,9 +89,9 @@ function useFollowedView() {
   });
   useEffect(() => () => clearTimeout(releaseTimer.current), []);
 
-  const activeType = selectedType
-    || FOLLOW_TABS.find(tab => followedByType[tab.type]?.length > 0)?.type
-    || 'author';
+  const { state: locationState } = useLocation();
+  const requestedType = (locationState as { followType?: unknown } | null)?.followType;
+  const activeType = selectedType || openingFollowType(FOLLOW_TAB_TYPES, requestedType, followedByType);
   const activeTab = FOLLOW_TABS.find(tab => tab.type === activeType) || FOLLOW_TABS[0];
   const visibleEntities = useMemo(
     () => [...(followedByType[activeType] || [])]
