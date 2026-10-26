@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildNotificationPreferencesPayload,
+  hasDigestFollows,
   serializeFollowForNotifications,
   serializeUpdateForNotifications,
 } from './email-notification-service.ts';
@@ -56,6 +57,18 @@ test('the digest leaves journals out before it cuts follows and previews', () =>
   const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [...Array.from({ length: 20 }, (_, index) => journalOnly(index)), byAuthor] as never);
   assert.deepEqual(previewItems.map(item => item.id), ['a1']);
   assert.deepEqual(previewItems[0].matches.map(match => match.type), ['author']);
+});
+
+// ENG-123 (D6): the email settings, the guest opt-in and the background sync
+// ask whether the reader has follows before they write. Journals alone are
+// none: the save would send `follows: []` and the Worker answers 409.
+test('a reader who follows only journals has no follows for the digest', () => {
+  const journal = { type: 'journal' as const, canonicalId: 'S23254222', displayName: 'American Economic Review' };
+  const author = { type: 'author' as const, canonicalId: 'A5023888391', displayName: 'Ana Pérez' };
+  assert.equal(hasDigestFollows([]), false);
+  assert.equal(hasDigestFollows([journal]), false);
+  assert.equal(buildNotificationPreferencesPayload({ enabled: true }, [journal]).follows.length, 0);
+  assert.equal(hasDigestFollows([journal, author]), true);
 });
 
 test('serializes only the follow metadata required by notification digests', () => {

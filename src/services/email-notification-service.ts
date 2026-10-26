@@ -167,6 +167,15 @@ export async function getEmailNotificationHealth() {
 }
 
 /**
+ * Whether the reader follows anything the weekly digest is built from. A
+ * journal is not (D6), so a reader who follows only journals has no digest,
+ * and the Worker refuses to subscribe them (EMAIL_FOLLOWS_REQUIRED).
+ */
+export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
+  return follows.some(isDigestFollow);
+}
+
+/**
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
  * before the Worker that ignores it, and that Worker's default is daily.
