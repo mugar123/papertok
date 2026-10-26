@@ -3,8 +3,8 @@ import type { PaperSearchFilters } from './adapters/index.ts';
 
 import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
 import { searchPapers as searchArxivPapers } from './arxiv-service.ts';
-import { PaperBuilder } from './paper-builder.ts';
-import { rankPaperSearchResults, scorePaperSearchMatch, normalizeSearchText } from '../utils/search-relevance.ts';
+import { mergeRankedPapers } from './paper-search-merge.ts';
+import { normalizeSearchText } from '../utils/search-relevance.ts';
 import { getPaperKey } from '../utils/public-navigation.ts';
 import { settleWithin } from '../utils/async-timing.ts';
 
@@ -80,12 +80,6 @@ export async function searchPapersAcrossSources(query: unknown, {
   if (openAlex.status === 'rejected' && arxivPapers.length === 0) throw openAlex.reason;
   if (openAlex.status === 'timed_out' && arxivPapers.length === 0) throw new DOMException('Paper search timed out', 'TimeoutError');
 
-  // OpenAlex first: `deduplicate` keeps the position of the first record of a
-  // group, so a paper both sources found stays where OpenAlex ranked it and
-  // only the arXiv-only papers are appended, before the title ranking runs.
-  const merged = PaperBuilder.deduplicate([...openAlexPapers, ...arxivPapers]);
   const comparableTitle = normalizeSearchText(term) && !getPaperKey(term);
-  return rankPaperSearchResults(term, merged)
-    .filter(paper => !comparableTitle || scorePaperSearchMatch(term, paper) >= 80)
-    .slice(0, limit);
+  return mergeRankedPapers(term, openAlexPapers, arxivPapers, { limit, minimumTitleScore: comparableTitle ? 80 : 0 });
 }

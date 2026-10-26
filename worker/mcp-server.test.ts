@@ -248,6 +248,39 @@ test('search_papers merges OpenAlex and arXiv, one paper per DOI', async () => {
   });
 });
 
+test('search_papers ranks the merged list, so an arXiv-only title match survives a full OpenAlex page', async () => {
+  // OpenAlex's record for the Llama 2 preprint carries another title: it sends
+  // ten other works, and only arXiv knows the paper (src/services/paper-search-service.ts).
+  const unrelated = Array.from({ length: 10 }, (_, index) => ({
+    ...OPENALEX_WORK,
+    id: `https://openalex.org/W44000001${index}0`,
+    doi: `https://doi.org/10.1234/other.${index}`,
+    ids: {},
+    title: `Another study number ${index}`,
+  }));
+  const llama = `
+  <entry>
+    <id>http://arxiv.org/abs/2307.09288v2</id>
+    <published>2023-07-18T10:00:00Z</published>
+    <updated>2023-07-19T10:00:00Z</updated>
+    <title>Llama 2: Open Foundation and Fine-Tuned Chat Models</title>
+    <summary>We release Llama 2.</summary>
+    <author><name>Hugo Touvron</name></author>
+    <arxiv:primary_category term="cs.CL"/>
+    <category term="cs.CL"/>
+  </entry>`;
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: unrelated });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(llama));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'llama 2' });
+    const papers = answer.result?.structuredContent?.papers as Array<{ arxivId?: string }>;
+    assert.equal(papers.length, 10);
+    assert.equal(papers[0].arxivId, '2307.09288');
+  });
+});
+
 test('search_papers asks the same upstream questions whatever the limit', async () => {
   const upstream: Upstream = url => {
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });

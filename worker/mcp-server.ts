@@ -3,7 +3,7 @@ import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleArxiv } from './arxiv-api.ts';
@@ -266,8 +266,8 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     ? [{ source: sources[index], ...(outcome.reason instanceof ToolFailure ? outcome.reason.details : { code: 'UPSTREAM_UNAVAILABLE' }) }]
     : []);
   if (unavailable.length === sources.length) throw new ToolFailure({ code: 'SOURCES_UNAVAILABLE', unavailable });
-  const found = settled.flatMap(outcome => (outcome.status === 'fulfilled' ? outcome.value : []));
-  const papers = PaperBuilder.deduplicate(found).slice(0, limit).map(publicPaper);
+  const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
+  const papers = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(publicPaper);
   return { query, papers, unavailable };
 }
 
