@@ -262,6 +262,9 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://google.dev/': 'referral',
     'https://translate.google.com/': 'referral',
     'android-app://com.google.android.gm/': 'referral',
+    // A package name is matched whole: another vendor's package can end with a Google app's.
+    'android-app://net.example.com.google.android.youtube/': 'referral',
+    'android-app://net.example.com.google.android.googlequicksearchbox/': 'referral',
     'https://notgoogle.example.org/': 'referral',
     'https://www.yahoo.com/': 'referral',
     'https://search.yahoo.example.org/': 'referral',

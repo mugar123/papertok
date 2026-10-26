@@ -86,22 +86,21 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 //
 // Five Google apps on Android send their package name as the referrer and are filed
 // like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
-// Music as social. Other Google apps count as referral.
+// Music as social. Other Google apps count as referral. A package names one app, not a
+// domain with subdomains, so it is matched whole: another vendor's package can end with
+// a Google app's.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
-  'com.google.android.googlequicksearchbox',
-  'com.google.android.apps.searchlite',
-  'com.google.android.apps.magazines',
+  /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/,
   'bing.com',
   'duckduckgo.com',
   /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   /^(?:www\.)?ecosia\.org$/,
   'search.brave.com',
 ];
-const SOCIAL_HOSTS = [
+const SOCIAL_HOSTS: readonly (string | RegExp)[] = [
   'bsky.app',
-  'com.google.android.apps.youtube.music',
-  'com.google.android.youtube',
+  /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/,
   'facebook.com',
   'instagram.com',
   'linkedin.com',
