@@ -24,6 +24,7 @@ import {
   type FollowListState,
   createFollowEntity,
   createFollowKey,
+  followChangeEvent,
   followsEntity,
   migrateLegacyAuthors,
   planFollowToggle,
@@ -263,14 +264,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
         await deleteDoc(doc(db, 'users', user.uid, 'following', existingKey));
       }
       else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
-      void trackEvent('follow_change', {
-        entity_type: entity.type,
-        action: wasFollowing ? 'remove' : 'add',
-        surface: 'other',
-        // Which journals a reader follows stays out of analytics (ENG-123).
-        entity_id: entity.type === 'journal' ? undefined : entity.canonicalId,
-        entity_name: entity.displayName,
-      });
+      void trackEvent('follow_change', followChangeEvent(entity, wasFollowing));
       if (!wasFollowing) void markActivation();
       return !wasFollowing;
     } catch (toggleError) {

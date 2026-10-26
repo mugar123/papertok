@@ -184,6 +184,21 @@ export function planFollowToggle(followedEntities: FollowEntity[], entity: Follo
   return { existing, next: [...followedEntities, entity] };
 }
 
+/**
+ * The `follow_change` event of a press that followed or unfollowed `entity`.
+ * Which journals a reader follows stays out of analytics, detailed analytics
+ * included: a journal goes by its type alone, never its id (ENG-123, Pablo
+ * 2026-10-26).
+ */
+export function followChangeEvent(entity: FollowEntity, wasFollowing: boolean) {
+  return {
+    entity_type: entity.type,
+    action: wasFollowing ? 'remove' : 'add',
+    surface: 'other',
+    entity_id: entity.type === 'journal' ? undefined : entity.canonicalId,
+  };
+}
+
 export function migrateLegacyAuthors(authorNames: string[] = []) {
   return [...new Set(authorNames.filter(Boolean))].map((displayName) => createFollowEntity({
     type: 'author',

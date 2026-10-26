@@ -5,12 +5,14 @@ import {
   JournalFollowLimitError,
   createFollowEntity,
   createFollowKey,
+  followChangeEvent,
   followsEntity,
   migrateLegacyAuthors,
   normalizeFollowId,
   planFollowToggle,
 } from './following.ts';
 import { getProjectDisplayName } from './entity-metadata.ts';
+import { ANALYTICS_CONSENT, sanitizeProductEventParams } from '../services/analytics-service.ts';
 
 test('normalizes provider URLs into stable ids', () => {
   assert.equal(normalizeFollowId('https://openalex.org/A123'), 'A123');
@@ -250,6 +252,17 @@ test('a journal refused after the follow list failed to load is not retryable; o
   };
   assert.equal(refusal('waiting')?.retryable, true);
   assert.equal(refusal('failed')?.retryable, false);
+});
+
+// Pablo, 2026-10-26: `follow_change` may say a journal was followed, never
+// which one. Detailed analytics keeps an author's id; it gets no journal's.
+test('a journal follow reaches analytics as its type alone, even with detailed analytics on', () => {
+  const journal = createFollowEntity({ type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review' })!;
+  const author = createFollowEntity({ type: 'author', id: 'https://openalex.org/A5023888391', displayName: 'Wei Zhang' })!;
+  const detailed = (params: Record<string, unknown>) => sanitizeProductEventParams('follow_change', params, ANALYTICS_CONSENT.ENABLED);
+  assert.deepEqual(detailed(followChangeEvent(journal, false)), { entity_type: 'journal', action: 'add', surface: 'other' });
+  assert.deepEqual(detailed(followChangeEvent(journal, true)), { entity_type: 'journal', action: 'remove', surface: 'other' });
+  assert.deepEqual(detailed(followChangeEvent(author, false)), { entity_type: 'author', action: 'add', surface: 'other', entity_id: 'A5023888391' });
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
