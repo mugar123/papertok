@@ -1421,7 +1421,8 @@ test('a notable lane drops a paper 14 days after the listing that last returned 
 });
 
 test('a leaf no sample admitted has no OpenAlex notable listing, and a topic leaf keeps the core-source filter', () => {
-  assert.equal(openAlexNotableListingFilter('chem.org', 2016), null);
+  // med.path's topic sample was 3 of 15 on target on 2026-10-26.
+  assert.equal(openAlexNotableListingFilter('med.path', 2016), null);
   // cs.MM's journal sample was 3 of 15 on target on 2026-10-26.
   assert.ok(openAlexVenueFilterForLeaf('cs.MM'));
   assert.equal(openAlexNotableListingFilter('cs.MM', 2016), null, 'a venue lane alone does not admit a leaf');
