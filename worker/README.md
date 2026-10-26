@@ -888,8 +888,10 @@ ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`
 The citation graph waits for phase 2: the browser's `/citation-graph` requires a
 Firebase identity and charges each reader's share of the credential-backed
 providers' minute allowance, and MCP callers have no account yet. Figures are
-not in this phase either; `/resources/figures` is public, so adding them waits
-only on a product decision (ENG-91).
+not in this phase either. `/resources/figures` is public, but it has no per-IP
+allowance and does not take the arXiv beat's seat: each miss fetches arXiv's
+HTML rendering and ar5iv's at once. Offering it to agents waits on a decision
+about that spend (ENG-91).
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract, the feed's internal fields (the
