@@ -31,7 +31,7 @@
    gate is still open — and the class lands mid-flight. Measured 2026-09-07 over
    CDP, production build, real signed-in session, cold, 1280×900: the class
    arrived at t=909 and this padding-top went 0 → 56px in ONE frame, 217ms into
-   the hero body's own 360ms `useHeightSettle` — two vertical movements of the
+   the hero body's own `useHeightSettle` (360ms then) — two vertical movements of the
    same rows on the same frames, one eased and one cut. On a phone the same
    frame also dropped `.explorer-hero`'s padding to --space-4, a second cut in
    the opposite direction.
@@ -65,7 +65,7 @@
    defect and nothing else. */
 .explorer--app {
   padding-top: var(--nav-total);
-  transition: padding-top 0.24s ease-out;
+  transition: padding-top 0.24s var(--ease-out);
 }
 
 /* The notch this hands back to the bar travels on the same clock, so on a
@@ -75,7 +75,7 @@
    `padding-top`, so it inherits this. */
 .explorer--app .explorer-hero {
   padding-top: var(--space-5);
-  transition: padding-top 0.24s ease-out;
+  transition: padding-top 0.24s var(--ease-out);
 }
 
 /* Invisible at scrollTop 0, which is where a cold load sits — but this page has
@@ -84,7 +84,7 @@
    around it slid. */
 .explorer--app .explorer-toolbar-wrapper {
   top: var(--nav-total);
-  transition: top 0.24s ease-out;
+  transition: top 0.24s var(--ease-out);
 }
 
 .explorer-error {
@@ -515,7 +515,19 @@
 }
 
 .explorer-container--author .ehc-header {
-  animation: settle var(--motion-base) linear backwards;
+  animation: settle var(--motion-base) var(--ease-out) backwards;
+}
+
+.explorer-container--author.has-seed-name .ehc-header {
+  animation: none;
+}
+
+.explorer-container--author.has-seed-name .ehc-header :is(.ehc-visual-slot, .ehc-info > :not(.ehc-title-row), .ehc-hero-aside > *) {
+  animation: settle var(--motion-base) var(--ease-out) backwards;
+}
+
+.explorer-container.is-born-resolved :is(.explorer-hero-content, .ehc-header) {
+  animation: none;
 }
 
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
@@ -1453,6 +1465,11 @@
   contain-intrinsic-size: auto 100px;
 }
 
+/* No fill mode: under `content-visibility` a held first frame could pin a row at 0.35. */
+.explorer-grid--resolving > .list-row:not(.ex-skel-row):nth-child(-n + 8) {
+  animation: settle var(--motion-base) var(--ease-out);
+}
+
 
 .ee-author-card:focus-visible,
 .project-summary-box:focus-visible,
@@ -1659,9 +1676,9 @@
    the eye follows is the grey resolving into type rather than one thing leaving
    and another arriving.
 
-   It only works because the skeleton is always there first — `isLoadingEntity`
-   starts true on every entity — so this never plays against an empty page,
-   where starting at 0.35 would look like a pop. */
+   It only works where the skeleton was there first. A hero born resolved
+   (`.is-born-resolved`) never had one, so it does not play there: against a
+   page with nothing to hand over from, starting at 0.35 would look like a pop. */
 @keyframes settle {
   from { opacity: 0.35; }
   to { opacity: 1; }
@@ -2542,8 +2559,9 @@
   }
 
   /* The band lands instantly instead of opening. The bar's own `fadeIn`
-     is switched off under this same query (navbar.css), so there is nothing
-     left travelling for an instant band to be out of step with. These three
+     is cut to a 120ms fade under this same query (navbar.css), with no
+     travel, so there is nothing moving for an instant band to be out of
+     step with. These three
      repeat the compound selectors of the rules at the top of the file because
      that is what it takes to beat `.explorer--app .explorer-hero`. */
   .explorer--app,
@@ -2569,6 +2587,8 @@
   .orcid-profile,
   .ehc-orcid-stamp svg,
   .explorer-container--author .ehc-header,
+  .explorer-container--author.has-seed-name .ehc-header :is(.ehc-visual-slot, .ehc-info > :not(.ehc-title-row), .ehc-hero-aside > *),
+  .explorer-grid--resolving > .list-row:not(.ex-skel-row):nth-child(-n + 8),
   .ehc-spinner,
   .explorer-empty {
     animation: none;

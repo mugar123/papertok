@@ -277,6 +277,9 @@ function AppContent() {
       // main.jsx, and the feed coming back from the top — which read as the
       // whole feed reloading.
       SettingsPage.preload().catch(() => {})
+      // My lists is the account menu's other door; unpreloaded, its first
+      // open slid in an empty page and filled it afterwards.
+      ListsPage.preload().catch(() => {})
       // Every card links to authors, topics and projects; the first of those
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
