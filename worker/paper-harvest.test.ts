@@ -487,7 +487,8 @@ test('outages cost no followed lane a wait: the first night after one refreshes 
   };
   let outageNow: string | null = null;
   providers(t, url => (outageNow && providerOutages[outageNow] ? providerOutages[outageNow](url) : undefined)
-    ?? (url.hostname === 'export.arxiv.org' ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>') : undefined));
+    ?? (url.hostname === 'export.arxiv.org' ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>') : undefined)
+    ?? (url.hostname === 'api.openaire.eu' ? Response.json({ header: { numFound: 0 }, results: [] }) : undefined));
   const lanes = [
     ...Array.from({ length: 10 }, (_, index) => `query:search ${index}`),
     ...Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`),

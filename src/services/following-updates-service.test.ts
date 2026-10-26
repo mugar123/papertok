@@ -7,14 +7,14 @@ import { fetchFollowingUpdates, orderFollowsForRefresh } from './following-updat
 import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 
-const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) } as Response;
+const emptyOpenAire = () => Response.json({ header: { numFound: 0 }, results: [] });
 
 /** Runs one project follow through the real chain and returns the URLs it asked for. */
 async function urlsForProjectFollow(follow: Partial<FollowEntity> & Pick<FollowEntity, 'canonicalId'>) {
   const urls: string[] = [];
   CACHE.clear();
   try {
-    await withStubbedFetch(async (url) => { urls.push(String(url)); return emptyOpenAire; }, () => (
+    await withStubbedFetch(async (url) => { urls.push(String(url)); return emptyOpenAire(); }, () => (
       fetchFollowingUpdates([{ type: 'project' as const, displayName: 'Quantum leap', source: 'openaire', ...follow }])
     ));
   } finally {
@@ -178,8 +178,8 @@ test('a category topic in the inbox asks for what is new in the category, not fo
 });
 
 /**
- * A grant code is not unique across funders — `grantID=100010` answers for
- * three different projects — and the `canonicalId` of every project followed
+ * A grant code is not unique across funders — code 100010 answers for three
+ * different projects — and the `canonicalId` of every project followed
  * before the OpenAIRE id landed is exactly such a bare code. The funder that
  * tells them apart is stored on the follow, and the digest was not passing
  * it: the same project whose own page shows 39 publications reached the email
@@ -188,8 +188,10 @@ test('a category topic in the inbox asks for what is new in the category, not fo
 test('a project follow carries the funder stored on it into the OpenAIRE query', async () => {
   const urls = await urlsForProjectFollow({ canonicalId: '100010', metadata: { funder: 'SNSF' } });
   assert.equal(urls.length, 1, 'one OpenAIRE request, and nothing else to ask once it comes back empty');
-  assert.match(urls[0], /projectID=100010/);
-  assert.match(urls[0], /funder=SNSF/);
+  const request = new URL(urls[0]);
+  assert.equal(request.pathname, '/graph/v3/research-products');
+  assert.equal(request.searchParams.get('relProjectCode'), '100010');
+  assert.equal(request.searchParams.get('relProjectFundingShortName'), 'SNSF');
 });
 
 test('a project follow with no stored funder asks exactly what it asked before', async () => {
@@ -197,8 +199,12 @@ test('a project follow with no stored funder asks exactly what it asked before',
   // must leave the request untouched rather than send an empty one.
   const noMetadata = await urlsForProjectFollow({ canonicalId: 'snsf________::daa28096' });
   assert.equal(noMetadata.length, 1);
-  assert.doesNotMatch(noMetadata[0], /funder=/);
+  const byId = new URL(noMetadata[0]).searchParams;
+  assert.equal(byId.get('relProjectId'), 'snsf________::daa28096');
+  assert.equal(byId.has('relProjectFundingShortName'), false);
 
   const emptyMetadata = await urlsForProjectFollow({ canonicalId: '100010', metadata: {} });
-  assert.doesNotMatch(emptyMetadata[0], /funder=/);
+  const byCode = new URL(emptyMetadata[0]).searchParams;
+  assert.equal(byCode.get('relProjectCode'), '100010');
+  assert.equal(byCode.has('relProjectFundingShortName'), false);
 });

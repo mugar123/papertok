@@ -211,7 +211,7 @@ export interface Paper {
   _semanticScore?: number;
   // Set by the corpus on a notable paper it adds to a page, which the feed
   // places (placeNotableCards): one of the most-cited papers of the reader's
-  // categories, which the card says it is.
+  // categories.
   _notable?: boolean;
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;

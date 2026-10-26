@@ -287,18 +287,96 @@ export function getArxivArchiveArea(categoryId = '') {
   return ARXIV_ARCHIVE_AREAS.get(categoryId.split('.')[0]) ?? null;
 }
 
+// Display names for arXiv categories outside the selectable feed leaves.
+// Source: https://arxiv.org/category_taxonomy (2026-10-26).
+const ARXIV_DISPLAY_LABELS: Record<string, string> = {
+  'cs.AR': 'Hardware Architecture',
+  'cs.CC': 'Computational Complexity',
+  'cs.CE': 'Computational Engineering, Finance, and Science',
+  'cs.CG': 'Computational Geometry',
+  'cs.CY': 'Computers and Society',
+  'cs.DL': 'Digital Libraries',
+  'cs.DM': 'Discrete Mathematics',
+  'cs.ET': 'Emerging Technologies',
+  'cs.FL': 'Formal Languages and Automata Theory',
+  'cs.GL': 'General Literature',
+  'cs.IT': 'Information Theory',
+  'cs.LO': 'Logic in Computer Science',
+  'cs.MA': 'Multiagent Systems',
+  'cs.MS': 'Mathematical Software',
+  'cs.NA': 'Numerical Analysis',
+  'cs.OH': 'Other Computer Science',
+  'cs.OS': 'Operating Systems',
+  'cs.PF': 'Performance',
+  'cs.SC': 'Symbolic Computation',
+  'eess.AS': 'Audio and Speech Processing',
+  'math.AC': 'Commutative Algebra',
+  'math.AT': 'Algebraic Topology',
+  'math.CT': 'Category Theory',
+  'math.CV': 'Complex Variables',
+  'math.GM': 'General Mathematics',
+  'math.GN': 'General Topology',
+  'math.HO': 'History and Overview',
+  'math.IT': 'Information Theory',
+  'math.KT': 'K-Theory and Homology',
+  'math.MG': 'Metric Geometry',
+  'math.OA': 'Operator Algebras',
+  'math.QA': 'Quantum Algebra',
+  'math.RT': 'Representation Theory',
+  'math.SG': 'Symplectic Geometry',
+  'math.SP': 'Spectral Theory',
+  'astro-ph.IM': 'Instrumentation and Methods for Astrophysics',
+  'cond-mat.dis-nn': 'Disordered Systems and Neural Networks',
+  'cond-mat.other': 'Other Condensed Matter',
+  'hep-lat': 'High Energy Physics - Lattice',
+  'nlin.AO': 'Adaptation and Self-Organizing Systems',
+  'nlin.CD': 'Chaotic Dynamics',
+  'nlin.CG': 'Cellular Automata and Lattice Gases',
+  'nlin.PS': 'Pattern Formation and Solitons',
+  'nlin.SI': 'Exactly Solvable and Integrable Systems',
+  'physics.acc-ph': 'Accelerator Physics',
+  'physics.ao-ph': 'Atmospheric and Oceanic Physics',
+  'physics.app-ph': 'Applied Physics',
+  'physics.atm-clus': 'Atomic and Molecular Clusters',
+  'physics.chem-ph': 'Chemical Physics',
+  'physics.class-ph': 'Classical Physics',
+  'physics.data-an': 'Data Analysis, Statistics and Probability',
+  'physics.ed-ph': 'Physics Education',
+  'physics.gen-ph': 'General Physics',
+  'physics.geo-ph': 'Geophysics',
+  'physics.hist-ph': 'History and Philosophy of Physics',
+  'physics.ins-det': 'Instrumentation and Detectors',
+  'physics.med-ph': 'Medical Physics',
+  'physics.pop-ph': 'Popular Physics',
+  'physics.soc-ph': 'Physics and Society',
+  'physics.space-ph': 'Space Physics',
+  'q-bio.BM': 'Biomolecules',
+  'q-bio.CB': 'Cell Behavior',
+  'q-bio.GN': 'Genomics',
+  'q-bio.MN': 'Molecular Networks',
+  'q-bio.NC': 'Neurons and Cognition',
+  'q-bio.OT': 'Other Quantitative Biology',
+  'q-bio.PE': 'Populations and Evolution',
+  'q-bio.QM': 'Quantitative Methods',
+  'q-bio.SC': 'Subcellular Processes',
+  'q-bio.TO': 'Tissues and Organs',
+  'q-fin.EC': 'Economics',
+  'stat.OT': 'Other Statistics',
+};
+
 /**
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory: string) {
-  // Display-only: this category is not a selectable feed leaf.
-  if (arxivCategory === 'physics.data-an') return 'Data Analysis, Statistics and Probability';
-  if (CATEGORIES[arxivCategory]) {
+  if (Object.hasOwn(ARXIV_DISPLAY_LABELS, arxivCategory)) return ARXIV_DISPLAY_LABELS[arxivCategory];
+  // Own keys only: a stored category named `constructor` or `toString` is
+  // unknown, not a member inherited from Object.prototype.
+  if (Object.hasOwn(CATEGORIES, arxivCategory)) {
     const area = CATEGORIES[arxivCategory];
     return area.label || area.label;
   }
   for (const area of Object.values(CATEGORIES)) {
-    if (area.subcategories[arxivCategory]) {
+    if (Object.hasOwn(area.subcategories, arxivCategory)) {
       const category = area.subcategories[arxivCategory];
       return category.label || category.label;
     }
@@ -324,7 +402,7 @@ export function getAreaLeaves(id: unknown) {
  */
 export function getCategoryArea(arxivCategory: string) {
   for (const [areaKey, area] of Object.entries(CATEGORIES)) {
-    if (arxivCategory in area.subcategories) {
+    if (Object.hasOwn(area.subcategories, arxivCategory)) {
       return areaKey;
     }
   }
