@@ -19,9 +19,15 @@
 // (`quantize`), pseudo-random from its work id.
 //
 // The request is the app's main page (`fetchCorpusPage`): the categories as one
-// group, no follows, `excluded` papers (the reader's newest, as if shown), a seen
-// filter of `seen` papers with `skipsSeen`, NOTABLE_ASKED notable papers, pages
-// of PAGE_SIZE, and no likes or `likes` of the papers after the excluded ones.
+// group, no follows, `excluded` papers (the newest of the asked lanes, as if
+// shown), a seen filter of `seen` papers with `skipsSeen`, NOTABLE_ASKED notable
+// papers, pages of PAGE_SIZE, and no likes or `likes` of the papers after the
+// excluded ones. The papers shown are those of every asked lane, leaf and area,
+// newest first (`shownBy`), which is the order a feed without likes serves them
+// in: a filter of leaf papers only would leave the area articles, which share
+// their recency, unseen, and every page would be served from them. A reader with
+// likes is served the closest-ranked papers instead, so its filter here is not
+// what a real one holds.
 // A first page is ranked with an empty ranking cache; the second asks with the
 // first page's papers added to the filter, as the app does, and goes on from the
 // order the cache kept. Three more second pages show what a kept order saves only
@@ -40,6 +46,7 @@
 // `unstable_splitSqlQuery` is wrangler's, and the only use of it in the repo: a
 // wrangler upgrade that moves it breaks this file and its test.
 import type { GCProfilerResult } from 'node:v8';
+import type { Paper } from '../../src/models/paper.ts';
 import type { FeedRequestBody, KeptRanking, RankingCache } from '../paper-store.ts';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -55,10 +62,11 @@ import { feedSeenFilter } from '../../src/utils/seen-paper-filter.ts';
 import { NOTABLE_PER_YEAR, arxivRecordPaper } from '../paper-sources.ts';
 import {
   AREA_LANE_AREAS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, STORED_DIMENSIONS,
-  areaLane, daysFromNow, ingestPapers, parseFeedRequest, quantize, readFeedPage,
+  areaLane, daysFromNow, ingestPapers, parseFeedRequest, publishedOf, quantize, readFeedPage,
 } from '../paper-store.ts';
 
 interface Corpus { leafRows: number; areaRows: number; notablePerYear: number }
+interface Stored { id: string; published: string }
 interface Plan { readers: string[][]; likes: number; excluded: number; seen: number; repetitions: number }
 
 const SIX = ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.RO', 'cs.NE'];
@@ -72,7 +80,8 @@ const PRODUCTION: Corpus = { leafRows: FEED_CANDIDATE_LIMIT, areaRows: FEED_CAND
 // The six are the 2026-10-25 access audit's reader (ENG-128). The app asks for
 // at most 10 categories (MAIN_CATEGORIES); 12 is the most the Worker reads. A
 // request carries at most 24 likes and 200 excluded papers (fetchCorpusPage);
-// its seen filter holds every paper the reader was shown, 2,000 here.
+// its seen filter holds the papers the reader was shown, here the newest 2,000
+// of the asked lanes.
 const PLAN: Plan = {
   readers: [['cs.LG'], SIX, [...SIX, 'cs.CR', 'cs.SE', 'cs.DS', 'cs.DC', 'cs.IR', 'cs.HC']],
   likes: SEMANTIC_PROFILE_POSITIVE_CAP,
@@ -147,23 +156,28 @@ async function applyMigrations(db: D1Database) {
   }
 }
 
-/** Seeds the readers' lanes and returns each leaf's app ids, newest first. */
+// The area lanes a reader of these leaves asks for, in the Worker's order.
+const areaLanesOf = (leaves: string[]) => AREA_LANE_AREAS.filter(area => leaves.some(leaf => LEAF_AREA.get(leaf) === area)).map(areaLane);
+
+/** Seeds the readers' lanes and returns each leaf and area lane's papers, newest first. */
 async function seed(db: D1Database, corpus: Corpus, readers: string[][], now: number) {
   const env = { PAPER_STORE: db } as Parameters<typeof ingestPapers>[0];
   const ingest = async (items: Parameters<typeof ingestPapers>[1], options: Parameters<typeof ingestPapers>[2] = {}) => {
     for (let start = 0; start < items.length; start += WRITE_CHUNK) await ingestPapers(env, items.slice(start, start + WRITE_CHUNK), { now, ...options });
   };
   const leaves = [...new Set(readers.flat())];
-  const areas = AREA_LANE_AREAS.filter(area => leaves.some(leaf => LEAF_AREA.get(leaf) === area));
   let number = 0;
-  const papersOf = new Map<string, string[]>();
+  const papersOf = new Map<string, Stored[]>();
+  const storedOf = (papers: Paper[]) => papers.map(paper => ({ id: paper.id, published: publishedOf(paper, now) }));
   for (const leaf of leaves) {
     const papers = Array.from({ length: corpus.leafRows }, (_, index) => preprint(leaf, (number += 1), recent(index, now)));
     await ingest(papers.map(paper => ({ paper, lanes: [] })));
-    papersOf.set(leaf, papers.map(paper => paper.id));
+    papersOf.set(leaf, storedOf(papers));
   }
-  for (const area of areas) {
-    await ingest(Array.from({ length: corpus.areaRows }, (_, index) => ({ paper: article((number += 1), recent(index, now).slice(0, 10)), lanes: [areaLane(area)] })));
+  for (const lane of areaLanesOf(leaves)) {
+    const articles = Array.from({ length: corpus.areaRows }, (_, index) => article((number += 1), recent(index, now).slice(0, 10)));
+    await ingest(articles.map(paper => ({ paper, lanes: [lane] })));
+    papersOf.set(lane, storedOf(articles));
   }
   const year = new Date(now).getUTCFullYear();
   for (const leaf of leaves) {
@@ -312,12 +326,14 @@ const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floo
 
 // Rows from the first timed run (a later one writes no like again), times as
 // the timed runs' median, memory in use as their most, and live memory from
-// the memory run.
-function summary(categories: number, likes: number, page: number, after: Later, timed: Run[], memory: Run) {
+// the memory run. `seen` is the filter's papers before the first page; a second
+// page adds the first's.
+function summary(categories: number, likes: number, page: number, after: Later, timed: Run[], memory: Run, seen: string[]) {
   const [{ tally, papers, ids }] = timed;
   return {
     categories,
     ids,
+    seen,
     likes,
     page,
     after,
@@ -335,8 +351,15 @@ function summary(categories: number, likes: number, page: number, after: Later, 
   };
 }
 
-// The leaves' papers taking turns, each leaf's newest first, as a feed shows them.
-const inTurns = (lists: string[][]) => Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.flatMap(list => list.slice(index, index + 1))).flat();
+// The papers of every lane a request asks for (its leaves, then their areas):
+// the lanes taking turns, each lane's newest first, then all of them newest
+// first. The sort keeps the turns among papers of one date, as the ranking does
+// (`readCandidates`), so this is the order a feed without likes serves them in.
+function shownBy(categories: string[], papersOf: Map<string, Stored[]>) {
+  const lists = [...categories, ...areaLanesOf(categories)].map(lane => papersOf.get(lane) ?? []);
+  const inTurns = Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.flatMap(list => list.slice(index, index + 1))).flat();
+  return inTurns.sort((a, b) => b.published.localeCompare(a.published)).map(paper => paper.id);
+}
 
 // What makes the second page ask again: nothing (the kept order serves it), the
 // order's age, a card the reader dismissed since (a negative) or a lean that moved.
@@ -386,7 +409,7 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
     const papersOf = await seed(db, corpus, plan.readers, NOW);
     const rows: Array<ReturnType<typeof summary>> = [];
     for (const categories of plan.readers) {
-      const shown = inTurns(categories.map(leaf => papersOf.get(leaf) ?? []));
+      const shown = shownBy(categories, papersOf);
       const excludedIds = shown.slice(0, plan.excluded);
       const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
       // A paper the reader has not been shown, dismissed after the first page.
@@ -399,7 +422,7 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
           (await pages(db, body, seenIds, dismissedId, collectGarbage, false)).forEach(({ run }, index) => timed[index].push(run));
         }
         const memory = await pages(db, body, seenIds, dismissedId, collectGarbage, true);
-        rows.push(...memory.map(({ run, page, after }, index) => summary(categories.length, likes, page, after, timed[index], run)));
+        rows.push(...memory.map(({ run, page, after }, index) => summary(categories.length, likes, page, after, timed[index], run, seenIds)));
       }
     }
     return rows;
