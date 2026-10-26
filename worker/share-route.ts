@@ -1,9 +1,10 @@
 import type { OpenAlexWork } from './openalex-api.ts';
-import type { ShareProviders, OpenAireProjects } from './share-pages.ts';
+import type { ShareProviders } from './share-pages.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { WorkerEnv } from './env.ts';
 
 import { createFirestoreRest } from '../src/utils/firestore-rest.ts';
+import { OPENAIRE_GRAPH_URL } from '../src/services/open-aire-records.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { callerSubject } from './caller-quota.ts';
 import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
@@ -113,13 +114,12 @@ function shareProviders(env: WorkerEnv): ShareProviders {
       return response.text();
     },
     async openAire(params) {
-      const url = new URL('https://api.openaire.eu/search/projects');
-      url.searchParams.set('format', 'json');
-      url.searchParams.set('size', '1');
+      const url = new URL(`${OPENAIRE_GRAPH_URL}/projects`);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+      url.searchParams.set('pageSize', '1');
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (!response.ok) throw shareUpstreamError('OpenAIRE', response);
-      return response.json<OpenAireProjects>();
+      return response.json();
     },
     // Anonymous, on purpose: with no credential the rules decide exactly as
     // they do for a visitor.

@@ -2,7 +2,7 @@ import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup } from '../utils/interest-memory.ts';
 
-import { authenticatedWorkerFetch, workerSourceUrl } from './worker-api-client.ts';
+import { authenticatedWorkerFetch, sourceResponseError, workerSourceUrl } from './worker-api-client.ts';
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
@@ -47,16 +47,31 @@ interface StoreOptions {
   apiBase?: string;
 }
 
+// fetch, and reading its body, reject with a TypeError when the connection
+// fails. Marked where the transfer fails, so a TypeError from code is not taken for it.
+function markUnreachable(error: unknown): never {
+  if (error instanceof TypeError) throw Object.assign(new Error('The paper store could not be reached', { cause: error }), { code: 'STORE_UNREACHABLE' });
+  throw error;
+}
+
 async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Paper store returned ${response.status}`);
-  const { papers, skipsSeen } = await response.json() as { papers?: Paper[]; skipsSeen?: unknown };
-  return { papers: Array.isArray(papers) ? papers : [], skipsSeen: skipsSeen === true };
+  }).catch(markUnreachable);
+  if (!response.ok) {
+    // The Worker's `code` says why it refused (worker/router.ts); a body that
+    // is not JSON, such as a gateway's page, leaves the status alone.
+    const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
+    throw sourceResponseError('/store/papers', response.status, refusal);
+  }
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown } | null;
+  // The Worker always answers a list, empty when nothing matches.
+  const papers = answer?.papers;
+  if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
+  return { papers, skipsSeen: answer?.skipsSeen === true };
 }
 
 /**
