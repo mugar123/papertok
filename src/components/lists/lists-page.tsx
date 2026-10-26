@@ -49,6 +49,7 @@ import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '.
 import { EASE_DRAWER, EASE_OUT, animateSize } from '../../utils/motion-curves.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import Petri from '../onboarding/petri.tsx';
+import { useReleaseBootScreen } from '../auth/boot-screen-context.ts';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
@@ -1491,6 +1492,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const timer = setTimeout(() => setFoldersReleased(true), LIST_PLACEHOLDER_DELAY_MS);
     return () => clearTimeout(timer);
   }, [foldersReleased]);
+  useReleaseBootScreen(foldersReleased);
 
   const targetOpenId = location.state?.openListId;
   const pendingOpen = Boolean(

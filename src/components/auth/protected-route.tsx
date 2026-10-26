@@ -1,12 +1,18 @@
-import type { PropsWithChildren } from 'react';
-import { useMemo, useState } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { peekAuthReturn } from '../../utils/auth-return.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import Petri from '../onboarding/petri.tsx';
+import BootScreen from './boot-screen.tsx';
+import { BootScreenProvider } from './boot-screen-context.ts';
 
-export default function ProtectedRoute({ children, requireOnboarding = true }: PropsWithChildren<{ requireOnboarding?: boolean }>) {
+export default function ProtectedRoute({ children, requireOnboarding = true, holdBootScreen = false }: PropsWithChildren<{
+  requireOnboarding?: boolean;
+  /** Keep the loader over the page a reload opened on until it calls `useReleaseBootScreen`. */
+  holdBootScreen?: boolean;
+}>) {
   const location = useLocation();
   const {
     user,
@@ -30,6 +36,30 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
   const [carriedDestination] = useState(peekAuthReturn);
   const onboardingReturnTo = carriedDestination ?? requestedPath;
   const onboardingState = useMemo(() => ({ returnTo: onboardingReturnTo }), [onboardingReturnTo]);
+  // A route that mounted during the session load and asked to hold keeps its
+  // loader until the page releases it; a page still downloading never mounts to
+  // do so. `underBootScreen` keeps one fragment shape from loading to ready, so
+  // the loader stays the same element and the mascot does not rise twice.
+  const [heldFromBoot] = useState(() => holdBootScreen && loading);
+  const [bootScreenUp, setBootScreenUp] = useState(heldFromBoot);
+  const releaseBootScreen = useCallback(() => setBootScreenUp(false), []);
+  const underBootScreen = (page: ReactNode) => (
+    <>
+      {page}
+      {bootScreenUp && <BootScreen />}
+    </>
+  );
+  // The page and the navbar are mounted under the loader once the session is
+  // known: nothing there may take focus or be read until it lifts. The navbar
+  // sits outside this tree, so the whole document goes inert.
+  const coveringPage = heldFromBoot && bootScreenUp && !loading;
+  useLayoutEffect(() => {
+    if (!coveringPage) return undefined;
+    document.body.inert = true;
+    return () => {
+      document.body.inert = false;
+    };
+  }, [coveringPage]);
 
   if (loading) {
     // The feed route brings its own wait. FeedContainer lays an atom veil over
@@ -47,33 +77,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
       return children;
     }
 
-    return (
-      <div className="loading-screen">
-        <Petri pose="flask" className="petri-loader loading-atom" />
-        <p className="loading-text" aria-hidden="true">PaperTok</p>
-        <style>{`
-          .loading-screen {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            min-height: 100dvh;
-            background: var(--bg-primary);
-            gap: var(--space-4);
-          }
-          .petri.loading-atom {
-            width: 80px;
-            height: 80px;
-            margin: 0;
-          }
-          .loading-text {
-            color: var(--text-secondary);
-            font-size: var(--fs-sm);
-          }
-        `}</style>
-      </div>
-    );
+    return bootScreenUp ? underBootScreen(null) : <BootScreen />;
   }
 
   if (!user) {
@@ -145,6 +149,12 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
 
   if (requireOnboarding && !onboardingComplete) {
     return <Navigate to="/onboarding" replace state={onboardingState} />;
+  }
+
+  if (heldFromBoot) {
+    return underBootScreen(
+      <BootScreenProvider value={releaseBootScreen}>{children}</BootScreenProvider>,
+    );
   }
 
   return children;

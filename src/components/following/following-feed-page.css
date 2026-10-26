@@ -1,7 +1,22 @@
 /* Empty states of the Siguiendo feed, rendered inside .feed-empty */
+/* The two choices share one width, side by side or stacked. */
+.ff-empty-actions {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .ff-empty-actions {
+    grid-auto-flow: row;
+  }
+}
+
 .ff-empty-secondary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   background: transparent !important;
   color: var(--text-primary) !important;

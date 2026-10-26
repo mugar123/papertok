@@ -389,7 +389,7 @@ function AppContent() {
           <Route
             path="/lists"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute holdBootScreen>
                 <PageTransition>
                   <ListsPage onOpenPdf={openPdf} onEditPaper={setSaveModalPaper} />
                 </PageTransition>

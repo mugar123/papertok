@@ -125,14 +125,14 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
       art={<Petri pose="bell" className="following-petri" />}
       title={"You're not following anything yet"}
       actions={(
-        <>
+        <div className="ff-empty-actions">
           <button className="feed-retry-btn" onClick={() => { void navigate('/feed'); }}>
             {'Discover papers'}
           </button>
           <button className="feed-retry-btn ff-empty-secondary" onClick={() => { void navigate('/search'); }}>
             <MagnifyingGlass size={15} aria-hidden="true" /> {'Search entities'}
           </button>
-        </>
+        </div>
       )}
     >
       {'Follow anything from a paper or its page and its publications will appear here.'}
