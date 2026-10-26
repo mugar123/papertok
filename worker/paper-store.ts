@@ -365,168 +365,6 @@ async function readWorks(db: D1Database, ids: number[]) {
   return works;
 }
 
-const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
-
-// Hugging Face lists arXiv papers with the title and abstract it copied from
-// arXiv, so arXiv's listing carries a new version to a row Hugging Face
-// started, and Hugging Face's copy never replaces it. An OpenAlex row that
-// became its journal article keeps the working paper's id and follows the
-// article's own listing (`openAlexId`), never the working paper's.
-const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
-  ? listed.get(sourceRecordKey('arxiv', row.arxivId))
-  : listed.get(sourceRecordKey(row.sources?.primary, row.sources?.primary === 'openalex' && row.openAlexId ? `openalex:${row.openAlexId}` : row.id)));
-
-// A row's title and abstract are those of the source it was built from, and
-// that source listing it again (a new arXiv version) replaces them, where
-// `merge` only fills a gap. A listing without an abstract keeps the stored one,
-// unless that opens as a funding note, thanks or a disclaimer: a row an earlier
-// Worker filed with one (ENG-105) has no abstract once its source lists it.
-function withOwnText(row: Paper, own: Paper | undefined): Paper {
-  if (!own) return row;
-  return hasUsableAIAbstract(own.abstract) || opensAsFrontMatter(row.abstract)
-    ? { ...row, title: own.title, abstract: own.abstract }
-    : { ...row, title: own.title };
-}
-
-/**
- * Files what sources returned: records of one paper merge (PaperBuilder.merge,
- * the rule the browser applied to every page) into the row any of their
- * identifiers already names, or start a new one. A record that bridges two
- * rows folds them into one (`idRank`). The row's own source listing it again
- * replaces its title and abstract (`withOwnText`). A merge that changes the
- * title or abstract drops the vector for the embedding pass. A notable lane's
- * row is kept until `keepUntil`, the listing's own keeping date
- * (`listed_until`). Once the batch is saved, OpenAlex's journal articles in it
- * upgrade the working-paper rows they were filed under
- * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
- */
-export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
-  const db = database(env);
-  const since = daysFromNow(-CORPUS_DAYS, now);
-  const groups: Group[] = [];
-  const groupOfKey = new Map<string, Group>();
-  const listed = new Map<string, Paper>();
-  const articles: Paper[] = [];
-  for (const item of items) {
-    // A mapper stands "Untitled" in for a title its source left out.
-    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
-    const published = publishedOf(item.paper, now);
-    if (!published || (published < since && !keepUntil)) continue;
-    const paper = PaperBuilder.create(item.paper);
-    listed.set(sourceRecordKey(paper.sources?.primary, paper.id), paper);
-    const keys = workKeys(paper);
-    const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
-    let group = joined[0];
-    if (!group) {
-      group = { paper, lanes: new Set(), keys: new Set() };
-      groups.push(group);
-    } else {
-      for (const other of joined.slice(1)) {
-        group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
-        other.lanes.forEach(lane => group.lanes.add(lane));
-        other.keys.forEach(key => group.keys.add(key));
-        groups.splice(groups.indexOf(other), 1);
-      }
-      group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
-    }
-    if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
-    item.lanes.forEach(lane => group.lanes.add(lane));
-    keys.forEach(key => group.keys.add(key));
-    group.keys.forEach(key => groupOfKey.set(key, group));
-  }
-  if (groups.length === 0) return 0;
-
-  const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
-  const works = await readWorks(db, [...new Set(existingByKey.values())]);
-  const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
-  const keyRows: Array<{ key: string; id: number }> = [];
-  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
-  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
-  const staleVectors: number[] = [];
-  const folded: Array<{ from: number; into: number }> = [];
-  const withdrawn: number[] = [];
-
-  for (const group of groups) {
-    const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
-      .map(id => ({ id, paper: JSON.parse(works.get(id)!.paper) as Paper }))
-      .sort((a, b) => idRank(a.paper) - idRank(b.paper) || a.id - b.id);
-    const ids = stored.map(work => work.id);
-    let paper = group.paper;
-    let id = ids[0];
-    if (id === undefined) {
-      id = await workIdFor(paper);
-    } else {
-      // The stored row is the base: its id is the one readers already hold.
-      const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
-      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
-      paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
-      if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
-      for (const other of ids.slice(1)) folded.push({ from: other, into: id });
-    }
-    paper = storedPaper(paper);
-    // The merged record can carry another source's print date; the incoming one had a usable date.
-    const published = publishedOf(paper, now) || publishedOf(group.paper, now);
-    const keptUntil = [daysFromNow(CORPUS_DAYS, Date.parse(published)), keepUntil, ...ids.map(other => works.get(other)!.kept_until)].sort().at(-1)!;
-    const json = JSON.stringify(paper);
-    // D1 bills rows written: a paper a source lists again unchanged is not rewritten.
-    const before = ids.length === 1 ? works.get(id)! : null;
-    if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
-    for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    // The merged row can be one the feed does not show: a retracted paper,
-    // whether this record or the stored row says so. It is filed under no
-    // lane, and leaves those it holds, a folded row's included.
-    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
-    else withdrawn.push(id);
-  }
-  // Asked once the records are merged: a stored row names entities, such as
-  // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
-  const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
-  for (const { id, paper, published, lanes } of filings) {
-    for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
-      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
-    }
-  }
-
-  const statements: D1PreparedStatement[] = [];
-  for (const { from, into } of folded) {
-    statements.push(
-      db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      // A lane both rows are in keeps the later notable listing date.
-      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
-        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
-        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
-          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
-      db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
-      db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
-      db.prepare('DELETE FROM works WHERE id = ?').bind(from),
-    );
-  }
-  for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
-    statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
-  }
-  for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
-    statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
-  }
-  for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
-    statements.push(db.prepare(`INSERT INTO works (id, paper, published, kept_until)
-      SELECT value ->> 'id', value ->> 'paper', value ->> 'published', value ->> 'keptUntil' FROM json_each(?) WHERE true
-      ON CONFLICT (id) DO UPDATE SET paper = excluded.paper, published = excluded.published,
-        kept_until = max(works.kept_until, excluded.kept_until)`).bind(JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
-  }
-  for (let start = 0; start < keyRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
-      SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
-  }
-  for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
-      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil' FROM json_each(?) WHERE true
-      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
-        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
-  }
-  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
-  return rows.length + await upgradeWorkingPapers(db, articles, now);
-}
-
 // ─── Working paper to journal article (ENG-133) ───
 
 // A working paper says it was not reviewed and its journal article says it
@@ -610,6 +448,173 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
     ]);
   }
   return upgrades.length;
+}
+
+const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv, so arXiv's listing carries a new version to a row Hugging Face
+// started, and Hugging Face's copy never replaces it. An OpenAlex row that
+// became its journal article keeps the working paper's id and follows the
+// article's own listing (`openAlexId`), never the working paper's.
+const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
+  ? listed.get(sourceRecordKey('arxiv', row.arxivId))
+  : listed.get(sourceRecordKey(row.sources?.primary, row.sources?.primary === 'openalex' && row.openAlexId ? `openalex:${row.openAlexId}` : row.id)));
+
+// A row's title and abstract are those of the source it was built from, and
+// that source listing it again (a new arXiv version) replaces them, where
+// `merge` only fills a gap. A listing without an abstract keeps the stored one,
+// unless that opens as a funding note, thanks or a disclaimer: a row an earlier
+// Worker filed with one (ENG-105) has no abstract once its source lists it.
+function withOwnText(row: Paper, own: Paper | undefined): Paper {
+  if (!own) return row;
+  return hasUsableAIAbstract(own.abstract) || opensAsFrontMatter(row.abstract)
+    ? { ...row, title: own.title, abstract: own.abstract }
+    : { ...row, title: own.title };
+}
+
+/**
+ * Files what sources returned: records of one paper merge (PaperBuilder.merge,
+ * the rule the browser applied to every page) into the row any of their
+ * identifiers already names, or start a new one. A record that bridges two
+ * rows folds them into one (`idRank`). The row's own source listing it again
+ * replaces its title and abstract (`withOwnText`). A merge that changes the
+ * title or abstract drops the vector for the embedding pass. A notable lane's
+ * row is kept until `keepUntil`, the listing's own keeping date
+ * (`listed_until`). Once the batch is saved, OpenAlex's journal articles in it
+ * upgrade the working-paper rows they were filed under
+ * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
+ */
+export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
+  const db = database(env);
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  const groups: Group[] = [];
+  const groupOfKey = new Map<string, Group>();
+  const listed = new Map<string, Paper>();
+  const articles: Paper[] = [];
+  for (const item of items) {
+    // A mapper stands "Untitled" in for a title its source left out.
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
+    const published = publishedOf(item.paper, now);
+    if (!published || (published < since && !keepUntil)) continue;
+    const paper = PaperBuilder.create(item.paper);
+    listed.set(sourceRecordKey(paper.sources?.primary, paper.id), paper);
+    const keys = workKeys(paper);
+    const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
+    let group = joined[0];
+    if (!group) {
+      group = { paper, lanes: new Set(), keys: new Set() };
+      groups.push(group);
+    } else {
+      for (const other of joined.slice(1)) {
+        group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        other.lanes.forEach(lane => group.lanes.add(lane));
+        other.keys.forEach(key => group.keys.add(key));
+        groups.splice(groups.indexOf(other), 1);
+      }
+      group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
+    }
+    if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
+    item.lanes.forEach(lane => group.lanes.add(lane));
+    keys.forEach(key => group.keys.add(key));
+    group.keys.forEach(key => groupOfKey.set(key, group));
+  }
+  if (groups.length === 0) return 0;
+
+  const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
+  const works = await readWorks(db, [...new Set(existingByKey.values())]);
+  const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
+  const keyRows: Array<{ key: string; id: number }> = [];
+  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
+  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
+  const staleVectors: number[] = [];
+  const folded: Array<{ from: number; into: number }> = [];
+  const withdrawn: number[] = [];
+  // The groups written as a working paper's row: only their articles can
+  // upgrade one, and the step reads no other row.
+  const workingPaperGroups = new Set<Group>();
+
+  for (const group of groups) {
+    const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
+      .map(id => ({ id, paper: JSON.parse(works.get(id)!.paper) as Paper }))
+      .sort((a, b) => idRank(a.paper) - idRank(b.paper) || a.id - b.id);
+    const ids = stored.map(work => work.id);
+    let paper = group.paper;
+    let id = ids[0];
+    if (id === undefined) {
+      id = await workIdFor(paper);
+    } else {
+      // The stored row is the base: its id is the one readers already hold.
+      const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
+      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
+      paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
+      for (const other of ids.slice(1)) folded.push({ from: other, into: id });
+    }
+    paper = storedPaper(paper);
+    // The merged record can carry another source's print date; the incoming one had a usable date.
+    const published = publishedOf(paper, now) || publishedOf(group.paper, now);
+    const keptUntil = [daysFromNow(CORPUS_DAYS, Date.parse(published)), keepUntil, ...ids.map(other => works.get(other)!.kept_until)].sort().at(-1)!;
+    const json = JSON.stringify(paper);
+    // D1 bills rows written: a paper a source lists again unchanged is not rewritten.
+    const before = ids.length === 1 ? works.get(id)! : null;
+    if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
+    for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
+    // The merged row can be one the feed does not show: a retracted paper,
+    // whether this record or the stored row says so. It is filed under no
+    // lane, and leaves those it holds, a folded row's included.
+    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
+    else withdrawn.push(id);
+    if (isWorkingPaperRow(paper)) workingPaperGroups.add(group);
+  }
+  // Asked once the records are merged: a stored row names entities, such as
+  // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
+  const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  for (const { id, paper, published, lanes } of filings) {
+    for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
+    }
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  for (const { from, into } of folded) {
+    statements.push(
+      db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
+      // A lane both rows are in keeps the later notable listing date.
+      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
+        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
+          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
+      db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
+      db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
+      db.prepare('DELETE FROM works WHERE id = ?').bind(from),
+    );
+  }
+  for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
+  }
+  for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
+  }
+  for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare(`INSERT INTO works (id, paper, published, kept_until)
+      SELECT value ->> 'id', value ->> 'paper', value ->> 'published', value ->> 'keptUntil' FROM json_each(?) WHERE true
+      ON CONFLICT (id) DO UPDATE SET paper = excluded.paper, published = excluded.published,
+        kept_until = max(works.kept_until, excluded.kept_until)`).bind(JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
+  }
+  for (let start = 0; start < keyRows.length; start += WRITE_CHUNK * 4) {
+    statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
+      SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
+  }
+  for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
+    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil' FROM json_each(?) WHERE true
+      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
+        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+  }
+  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
+  const candidates = articles.filter(article => workingPaperGroups.has(groupOfKey.get(`id:${article.id.toLowerCase()}`)!));
+  return rows.length + await upgradeWorkingPapers(db, candidates, now);
 }
 
 /**
