@@ -31,6 +31,7 @@ import { useLanguage } from '../../context/language-context.tsx';
 import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
+import { removePaperFromList } from './remove-paper-from-list.ts';
 import { writeNewList } from './write-new-list.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
@@ -48,6 +49,7 @@ import RailMenu from '../feed/rail-menu.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { EASE_DRAWER, EASE_OUT, animateSize } from '../../utils/motion-curves.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
+import { useAfterPageArrival, useIsPageArriving } from '../../hooks/use-page-arrival.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
@@ -1167,33 +1169,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     }));
   };
 
-  const handleRemoveFromCustomList = async (listId: string, paperId: string) => {
-    // Only a write the server accepted may claim an edit time. Stamping the
-    // local copy after a failed write would tell the freshness check that a
-    // removal happened, and the sync would publish a list the account never
-    // agreed to.
-    let editedAt: Date | null = null;
-    try {
-      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-      await updateDoc(listRef, {
-        paperIds: arrayRemove(paperId),
-        // The mark the background sync looks for (P25). Every edit leaves
-        // it; nothing else here decides when the public copy is rebuilt.
-        updatedAt: serverTimestamp(),
-      });
-      editedAt = new Date();
-    } catch (err) {
-      console.error('Error removing paper from custom list:', err);
-    }
-    setLists((prev) => prev.map((list) => {
-      if (list.id !== listId) return list;
-      return {
-        ...list,
-        paperIds: list.paperIds!.filter((id) => id !== paperId),
-        ...(editedAt ? { updatedAt: editedAt } : {}),
-      };
-    }));
-  };
+  const handleRemoveFromCustomList = (listId: string, paperId: string) => removePaperFromList(listId, paperId, {
+    write: () => updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
+      paperIds: arrayRemove(paperId),
+      // The mark the background sync looks for (P25). Every edit leaves
+      // it; nothing else here decides when the public copy is rebuilt.
+      updatedAt: serverTimestamp(),
+    }),
+    apply: setLists,
+    onFailed: (removeError) => {
+      console.error('Error removing paper from custom list:', removeError);
+      // Firestore retries transient failures itself and rejects only a write
+      // that cannot succeed (list deleted elsewhere, rule refusal), so
+      // "Try again" would fail the same way.
+      toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
+    },
+  });
 
   const switchRowSheetStep = (step: 'menu' | 'remove' | 'edit') => {
     rowSheetFrom.current = rowSheetStepRef.current?.closest<HTMLElement>('[data-slot="drawer-content"]')?.offsetHeight ?? null;
@@ -1485,12 +1476,35 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // Ready at mount, the index rides the page's own arrival; held, it makes one
   // arrival of its own when it is let go, header and folders as one block.
   const [startedHeld] = useState(!previewsReady);
-  if (previewsReady && !foldersReleased) setFoldersReleased(true);
+  // Asked as the block is let go: a page still entering owns the movement,
+  // and the block only fades in on it.
+  const isPageArriving = useIsPageArriving();
+  const [indexResumed, setIndexResumed] = useState(false);
+  if (previewsReady && !foldersReleased) {
+    setFoldersReleased(true);
+    setIndexResumed(isPageArriving());
+  }
   useEffect(() => {
     if (foldersReleased) return undefined;
-    const timer = setTimeout(() => setFoldersReleased(true), LIST_PLACEHOLDER_DELAY_MS);
+    const timer = setTimeout(() => {
+      setFoldersReleased(true);
+      setIndexResumed(isPageArriving());
+    }, LIST_PLACEHOLDER_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [foldersReleased]);
+  }, [foldersReleased, isPageArriving]);
+  // Each folder's papers rise out of it once the page has landed: the page
+  // owns the travel, the sheets only finish it.
+  const afterPageArrival = useAfterPageArrival();
+  const [sheetsRise, setSheetsRise] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve(afterPageArrival()).then(() => {
+      if (active) setSheetsRise(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [afterPageArrival]);
 
   const targetOpenId = location.state?.openListId;
   const pendingOpen = Boolean(
@@ -1897,7 +1911,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       ) : (
         <motion.div key="index" {...listViewMotion}>
           {foldersReleased && (
-          <div className={startedHeld && !foldersArrived ? 'lists-index-arrive' : undefined}>
+          <div className={startedHeld && !foldersArrived ? `lists-index-arrive${indexResumed ? ' is-resumed' : ''}` : undefined}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -1908,9 +1922,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             </div>
             <p>{'Organize, annotate and share the papers you keep.'}</p>
           </header>
-          <div className="lists-grid">
+          <div className="lists-grid" data-sheets={foldersArrived ? undefined : sheetsRise ? 'rise' : 'waiting'}>
             <AnimatePresence initial={false} mode="popLayout">
-            {displayLists.map((list) => {
+            {displayLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               const behindIds = (list.paperIds || []).slice(0, 2).reverse();
@@ -1924,7 +1938,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                 key={list.id}
                 className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
                 onClick={() => enterList(list)}
-                style={accent ? { '--list-accent': accent } : undefined}
+                style={{ ...(accent && { '--list-accent': accent }), '--card-index': Math.min(index, 3) }}
               >
                 <div className="list-card-preview">
                   <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>

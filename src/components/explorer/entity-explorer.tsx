@@ -348,6 +348,7 @@ export default function EntityExplorer({
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
+  const [heroOpening] = useState(() => (bornResolved ? ' is-born-resolved' : ''));
   // True from the start, and re-armed by every entity load: the live page's
   // first frame comes before the effect that requests the papers, and with
   // this false that frame showed the empty-state copy — "no results matched"
@@ -436,6 +437,12 @@ export default function EntityExplorer({
   }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
+  const [rowsResolving, setRowsResolving] = useState(false);
+  const [rowsSeen, setRowsSeen] = useState({ loading: isLoadingPapers, tab: activeTab });
+  if (rowsSeen.loading !== isLoadingPapers || rowsSeen.tab !== activeTab) {
+    setRowsSeen({ loading: isLoadingPapers, tab: activeTab });
+    setRowsResolving(rowsSeen.tab === activeTab && rowsSeen.loading && !isLoadingPapers);
+  }
   // Whether the Authors tab has been opened on this entity. The list is
   // requested then and kept from then on; `activeTab` no longer drives the
   // fetch, so leaving the tab does not cancel it and coming back does not
@@ -636,7 +643,7 @@ export default function EntityExplorer({
     // same displacement, on a different clock. Measured stepping back from an
     // author to its institution: four settles in 76ms, each restarting a full
     // 360ms, and the tab strip dipping 16px instead of being where it was left.
-    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', duration: 280 },
   );
 
   // What the next mount of this entity resumes with (`visitMemory`).
@@ -2185,7 +2192,7 @@ export default function EntityExplorer({
   );
 
   return (
-    <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
+    <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}${heroOpening || (seedName ? ' has-seed-name' : '')}`} style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero. First child, with the bar its first child: the
           skeleton's position, which keeps an open Privacy popover mounted
           across the swap. */}
@@ -2486,7 +2493,7 @@ export default function EntityExplorer({
           <>
 
             
-            <div className="explorer-grid">
+            <div className={`explorer-grid${rowsResolving ? ' explorer-grid--resolving' : ''}`}>
               {(!isLoadingPapers || isFetchingMore) && visiblePapers.map((paper, idx) => (
                 <PaperListRow
                   key={`${paper.id}-${idx}`}
