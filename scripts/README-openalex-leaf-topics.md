@@ -9,8 +9,11 @@ npm run generate:openalex-topics -- --check
 ```
 
 The same command writes the per-leaf coverage report,
-`scripts/data/openalex-leaf-topics-coverage.json`; `--check` fails when either
-file differs from what the inputs produce.
+`scripts/data/openalex-leaf-topics-coverage.json`, and, for the leaves without
+a topic lane, the notable map `src/data/open-alex-notable-leaf-topics.generated.ts`
+and its candidates file `scripts/data/openalex-notable-candidates.json` (see
+[Notable sample](#notable-sample)); `--check` fails when any of the four
+differs from what the inputs produce.
 
 The baseline input preserves the 14 topic lists accepted in
 [PR #236](https://github.com/mugar123/papertok/pull/236), including their order
@@ -37,13 +40,16 @@ OpenAlex's own classifier repository at a pinned commit:
 
 To try another catalogue, supply an OpenAlex topic array, or a `/topics`
 response with a `results` array collected by `subfield.id` with `mailto`,
-following pagination, and write the outputs elsewhere:
+following pagination, and write all four outputs elsewhere, or the run
+replaces the checked-in notable candidates too:
 
 ```bash
 node scripts/generate-openalex-leaf-topics.ts \
   --catalogue /path/topics.json \
   --out /path/proposed-map.ts \
-  --report /path/coverage.json
+  --report /path/coverage.json \
+  --notable-out /path/proposed-notable-map.ts \
+  --candidates /path/notable-candidates.json
 ```
 
 The report includes every leaf in `category-taxonomy.ts`. For each leaf with
@@ -134,6 +140,214 @@ is unknown.
 
 The generator tests use synthetic data and run in `npm test`. They verify the
 admission mechanics; they do not establish live precision or feed composition.
+
+## Notable sample
+
+Every leaf with a topic lane also has a notable lane (`openalex-notable` in
+`worker/paper-sources.ts`): the 100 most-cited core journal articles of each of
+the ten completed years before the current one, on the topic lane's topics. The
+other leaves, 110 of 149 on 2026-10-25, get a notable lane through a second
+gate, with the lane's own population and its own candidates
+(`openAlexNotableFilterForLeaf` in `src/utils/area-accent.ts`: the topic lane's
+filter when the leaf has one, else the notable map's, else none). A leaf the
+notable sample admits gets a notable lane and no topic lane; once a later topic
+sample admits it, its notable lane lists the topic lane's topics and the
+generator asks for its notable entries to be removed. A leaf that neither
+sample admits can get a notable lane from its venue lane's journals instead
+(`scripts/README-openalex-leaf-venues.md`, "Notable sample");
+`openAlexNotableListingFilter` in `worker/paper-sources.ts` gives each year's
+filter of any of them.
+
+**Candidates.** `scripts/data/openalex-notable-subfields.json` names, for each
+leaf without a topic lane, the OpenAlex subfield IDs whose catalogue topics
+stand for it, and, where OpenAlex files a fitting topic under another subfield
+(quantum information under Artificial Intelligence), that topic's ID. It is
+hand-written from the catalogue's subfield list; `[]` records that nothing
+fits. The candidates are the catalogue topics of those subfields and IDs, not
+label matches: on 2026-10-23 the label selector proposed `T14414` for `cs.AI`,
+which returned 8 of its 15 articles, none on target. The map must name only
+leaves without a topic lane; a leaf it leaves out is reported `not-mapped`.
+OpenAlex ORs at most 100 values in one filter, so a proposal of more topics is
+reported `too-many-candidates` and must name fewer subfields. The candidates
+file records each leaf's status, its proposed topics and, for a proposal, the
+sample query to send:
+
+| Parameter | Value |
+| --- | --- |
+| `filter` | the proposed `primary_topic.id` values sorted and joined by `\|`, `type:article`, `from_publication_date:<year−10>-01-01`, `to_publication_date:<year−1>-12-31`, `has_abstract:true`, `is_retracted:false`, `primary_location.source.is_core:true` |
+| `sort` | `cited_by_count:desc` |
+| `page`, `per-page` | `1`, `15` |
+| `select` | the gate's fields and `cited_by_count` |
+
+The window is the lane's: the ten completed years before the year the file
+records (`year`), which generation sets to the current UTC year and `--check`
+keeps. Regenerate after 1 January to move the proposals on; a review's own
+window comes from its capture date. The sample asks `has_abstract:true`, which
+the lane does not, because the labellers read the abstracts; the lane also
+lists articles without one.
+
+**Procedure.** As for a recent sample: one anonymous request per leaf, one at a
+time, stopping on a quota rejection; a shuffled sheet with opaque row IDs,
+titles and decoded abstracts, and nothing else; `on-target`, `off-target` or
+`uncertain` for every row, joined back to work IDs afterwards. The label is
+`on-target` when a researcher who chose the leaf would recognise the article as
+a notable work of their field. Two leaves with the same proposal (`math-ph` and
+`math.MP`, `math.ST` and `stat.TH`, `cs.SY` and `eess.SY`) share one request
+and one labelled page, recorded under each.
+
+**Evidence and decision.** `scripts/data/openalex-notable-reviews.json` has the
+shape of the recent reviews, keyed by leaf, and each work also keeps
+`cited_by_count`; the generator checks the query is the most-cited notable
+query above for the capture's years, the works are in non-increasing citation
+order and dated within the window, and every work is labelled. The rule is the
+gate's: a full page of 15, at least 10 on target without doubt. A passing
+leaf's lane asks only for the sampled topics with an article on target. The
+sample is the 15 most cited of ten years over the proposed topics, so it is
+evidence about the head of the lane's population, not about the 100th article
+of a year; the check after the lanes deploy covers the rest. The candidates
+file reports `passed`, `rejected` or `insufficient-sample` with the sample's
+`onTarget` and `byTopic`.
+
+Each batch of admitted leaves changes what every reader of those leaves is
+shown and adds ten OpenAlex list calls a week per leaf, inside the category
+lanes' 3,000 nightly units; it is authorized under AGENTS.md before it is
+committed. A night re-lists at most eight due lanes, or a seventh of all the
+notable lanes once there are more than 56, so a batch keeps every lane weekly
+and raises the nightly re-listing units and CPU in step (`notableLanesPerNight`
+in `worker/paper-sources.ts`; 149 lanes would be 22 a night, 220 units). After a
+large batch every lane falls due on the same night and the last of them is
+re-listed 13 days after its first listing, one night before its papers would
+leave the lane; a failed night at that tail lapses the listing until the next
+successful one. A batch's first night also lists and embeds every new lane at
+once: about 1,000 papers a lane against the embedding ceiling of the night
+(`EMBEDDING_DAILY_TOKEN_LIMIT`, `wrangler.toml`), so size the batch against it.
+Leaves are sampled by area, the areas with no notable lane at all first.
+
+### The 2026-10-25 notable sample, batch 1
+
+107 anonymous requests between 16:51 and 16:55 UTC, one per distinct proposal
+of the 110 leaves, all answered 200 with 15 articles. Batch 1 is the 38 leaves
+of physics (its 24 without a lane), statistics (5), economics (3) and
+chemistry (6), the last three the areas with no notable lane at all, and
+`math.ST`, whose proposal is `stat.TH`'s. **An agent (Claude Fable 5.1)
+labelled this batch, not a person**, following the blind procedure above at
+Nicolás's request not to wait for his own labels: the sheets held titles and
+decoded abstracts in shuffled rows with opaque ids; doubt was recorded as
+`uncertain`; the labels were joined to work ids after each sheet. The agent
+reports reading the sheet files only; as the procedure says, that cannot be
+proved from the files. Read the evidence as an agent's reading of 15 abstracts
+a leaf. New labels for the same sample replace these.
+
+| Decision | Leaves |
+| --- | --- |
+| `passed` | 17: `cond-mat.supr-con`, `cond-mat.str-el`, `cond-mat.mes-hall`, `cond-mat.soft`, `hep-th`, `hep-ph`, `hep-ex`, `astro-ph.CO`, `astro-ph.GA`, `astro-ph.SR`, `physics.optics`, `physics.atom-ph`, `physics.flu-dyn`, `stat.CO`, `chem.electro`, `chem.inorg`, `chem.phys` |
+| `rejected` | 22, among them `physics.plasm-ph`, `chem.anal` and `chem.org` at 9 of 15 and `gr-qc` and `econ.GN` at 8 |
+
+Five pass at exactly 10 of 15 (`cond-mat.str-el`, `hep-th`, `hep-ph`, `hep-ex`,
+`chem.inorg`). The 17 lanes ask for 48 topic entries (45 distinct topics;
+`T10037`, `T10048` and `T11090` serve two lanes each) and spend 170 units a
+week; with 56 notable lanes the nightly share stays at eight. Their first
+night lists and embeds about 17,000 papers against the 7.5M-token embedding
+ceiling (a paper is at most about 670 estimated tokens, so about 11,000 a day,
+of which the day's about 5,000 new papers go first), so the first embedding
+spreads over about three nights behind the day's new papers. The most-cited articles of a
+subfield are often its tools and reference works: `quant-ph` returned
+quantum-chemistry codes and `physics.comp-ph` scientific-software papers
+(SciPy, NumPy, Astropy beside those codes), the statistics leaves
+systematic-review guidelines and R packages, `math-ph` deep-learning inverse
+problems, `chem.spectro` proteomics repositories, `astro-ph.EP` Gaia and MESA
+papers. Authorized by Nicolás on 2026-10-25 (ENG-138, where the per-leaf
+table is).
+
+### Batch 2: computer science and artificial intelligence
+
+The 17 leaves of the two areas without a topic lane (`cs.SY` shares its page
+with `eess.SY`), labelled by the same agent under the same procedure. Five
+pass: `cs.LG` and `cs.CL` at 14 of 15, `cs.SI` and `cs.NE` at 13, `cs.DS` at
+10. Twelve are rejected: `cs.DC` and `cs.HC` at 8, `cs.RO`, `cs.GT` and
+`cs.AI` at 7, the rest lower. The five lanes ask for 21 topic entries (20
+distinct) and spend 50 units a week; with 61 notable lanes the nightly share
+becomes nine (90 units). Again the head of a subfield's citations is often its
+tools and surveys rather than its research: `cs.AI`'s proposal (the whole
+Artificial Intelligence subfield, 77 topics) returned SciPy, NumPy, seaborn,
+Astropy, QuPath and two quantum-computing papers beside its surveys; `cs.CR`
+returned federated-learning and blockchain surveys; `cs.IR` returned
+language-model papers; `cs.SY` returned machine fault diagnosis. Authorized by
+Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 3: mathematics
+
+The 14 leaves of mathematics without a topic lane (`math.MP` shares its page
+with `math-ph`, `math.ST` with `stat.TH`), labelled by the same agent under
+the same procedure. None passes: `math.NA` at 9 of 15, `math.OC` at 7,
+`math.AP` at 6, the rest at 5 or fewer; nothing is admitted, so no reader
+sees a change and no authorization applies. The head of each subfield's
+citations was mostly other things: optimal-transport papers for `math.DG`,
+Bayesian software (Stan, PyMC, dynesty) for `math.PR`, fixed-point theorems
+in generalized metric spaces for `math.FA`, two-dimensional QFT symmetry
+papers for `math.AG` and `math.GR`, program-verification papers for
+`math.LO`, numerical fractional calculus and time-frequency transforms for
+`math.CA`.
+
+### Batch 4: medicine
+
+The 11 medicine leaves without a topic lane, labelled by the same agent under
+the same procedure. Five pass: `med.endo` at 14 of 15, `med.infect` at 13,
+`med.gen` and `med.cardio` at 12, `med.radio` at 11. Six are rejected:
+`med.immuno` at 9 (basic-immunology reviews doubted), `med.peds` at 7
+(maternal and perinatal epidemiology), `med.tox` at 6 (air-pollution
+epidemiology), `med.pharma` at 4 (pain and obesity epidemiology, genome-mining
+software), `med.path` and `med.surg` at 2 (multiple-sclerosis neurology;
+lipid and coronary guidelines filed under Surgery). The five lanes ask for 22
+topics and spend 50 units a week; with 66 notable lanes the nightly share is
+ten (100 units). `med.infect`'s page is the COVID-19 literature of 2020 and
+`med.gen`'s is nephrology and hepatology; `med.cardio` and `med.endo` are
+guidelines and outcome trials. Authorized by Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 5: quantitative finance
+
+The seven finance leaves without a topic lane, labelled by the same agent
+under the same procedure. None passes: `q-fin.PM` at 8 of 15, the rest at 6
+or fewer, with 4 to 8 doubted calls each; nothing is admitted. The Finance
+subfield's most-cited articles of the decade are connectedness and spillover
+econometrics, COVID-19 and cryptocurrency market studies, which appear on five
+to seven of the seven pages, and news-based uncertainty indices on two; the
+leaves' own matter (option pricing, portfolio theory, microstructure) is a
+minority on each.
+
+### Batch 6: mechanical, electrical and chemical engineering
+
+The 16 leaves of the three areas without a topic lane (`eess.SY` shares its
+page with `cs.SY`), labelled by the same agent under the same procedure.
+Nine pass: `mech.solid`, `eess.IV` and `eess.telecom` at 15 of 15,
+`chemeng.energy` at 14, `mech.dyn` at 12, `eess.electro`, `chemeng.metal` and
+`chemeng.nano` at 11, `mech.thermo` at 10. Seven are rejected: `eess.SP` at
+8 (medical-image denoising doubted between signal and image processing),
+`chemeng.sep` at 7 (MOF chemistry beside the separations), `mech.acoustics`
+and `chemeng.bio` at 6 (cavity magnomechanics and quantum optics; drug
+delivery beside wearables and biochar), `mech.auto` at 3 (battery science
+and additive manufacturing), `eess.SY` at 2 and `mech.cad` at 0 (neural
+rendering and point-cloud learning). The nine lanes ask for 39 topics and
+spend 90 units a week; with 75 notable lanes the nightly share is eleven
+(110 units). Authorized by Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 7: biology and civil engineering
+
+The seven leaves of biology and civil engineering without a topic lane,
+labelled by the same agent under the same procedure. Four pass:
+`bio.biotech` at 14 of 15 (CRISPR tools and nucleic-acid detection),
+`civil.trans` at 12 (traffic forecasting, connected vehicles, mobility
+services), `bio.micro` at 11 (gut microbiota, antimicrobial resistance
+databases) and `bio.immuno` at 10 (innate immunity, macrophages, interferon
+and COVID-19; psoriasis and atherosclerosis doubted as clinical). Three are
+rejected: `civil.mat` at 9 (3D concrete printing and self-healing concrete on
+target; cement emissions accounting and microbial carbonate doubted),
+`civil.urban` at 8 (urban heat islands, green space and street networks on
+target; nature-and-health epidemiology doubted) and `bio.zoo` at 4 (animal
+science and meat quality beside behaviour and taxonomy). The four lanes ask
+for 17 topics and spend 40 units a week; with 79 notable lanes the nightly
+share is twelve (120 units). This closes the 110 leaves: 40 admitted, 70
+rejected. Authorized by Nicolás on 2026-10-25 (ENG-138).
 
 ## The 2026-10-23 sample (PAP-99)
 

@@ -1,3 +1,4 @@
+import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -10,7 +11,7 @@ import {
 import { arxivPaper } from '../services/arxiv-records.ts';
 import { slimWorksPage } from '../services/open-alex-service.ts';
 import { SemanticScholarAdapter } from '../services/adapters/semantic-scholar-adapter.ts';
-import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
 
 // Chapters and accepted papers labelled «Preprint» (audit 2026-09-23, issue
 // 12a): of 31 recent chapters in the guest's six computing categories, 23
@@ -221,4 +222,52 @@ test('the arXiv, OpenAlex and Semantic Scholar mappers label a paper by these ru
 
   const review = new SemanticScholarAdapter().mapToStandard({ paperId: 'abc', publicationTypes: ['Review'] });
   assert.equal(review.publicationStatus, 'published', 'Semantic Scholar: a review is not a preprint');
+});
+
+// Captured from OpenAlex on 2026-10-26 (`works/doi:10.1038/nature26142`,
+// keyless) and trimmed to the fields the mappers read: a Nature article of
+// 2018, retracted in 2021, with its arXiv eprint among the locations.
+const NATURE_SOURCE = { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal', host_organization_name: 'Nature Portfolio' };
+const RETRACTED_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W2766253867',
+  doi: 'https://doi.org/10.1038/nature26142',
+  ids: { openalex: 'https://openalex.org/W2766253867', doi: 'https://doi.org/10.1038/nature26142', mag: '2766253867', pmid: 'https://pubmed.ncbi.nlm.nih.gov/29590094' },
+  title: 'RETRACTED ARTICLE: Quantized Majorana conductance',
+  type: 'article',
+  publication_date: '2018-03-27',
+  is_retracted: true,
+  cited_by_count: 522,
+  primary_location: { landing_page_url: 'https://doi.org/10.1038/nature26142', pdf_url: null, is_oa: false, is_published: true, source: NATURE_SOURCE },
+  locations: [
+    { landing_page_url: 'https://doi.org/10.1038/nature26142', pdf_url: null, is_oa: false, is_published: true, source: NATURE_SOURCE },
+    { landing_page_url: 'http://arxiv.org/abs/1710.10701', pdf_url: 'https://arxiv.org/pdf/1710.10701', is_oa: true, is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository', host_organization_name: 'Cornell University' } },
+  ],
+};
+
+test('a work OpenAlex marks retracted is retracted on every surface, and a record without the mark is not', () => {
+  assert.equal(slimWorksPage({ results: [RETRACTED_WORK] }).papers[0].publicationStatus, 'retracted', 'OpenAlex search and explorer');
+  assert.equal(mapOpenAlexWork(RETRACTED_WORK)?.publicationStatus, 'retracted', 'OpenAlex lanes');
+  assert.equal(mapOpenAlexEnrichmentWork(RETRACTED_WORK)?.enrichment.publicationStatus, 'retracted', 'OpenAlex enrichment');
+  // What a page of search or lane results and an enrichment answer hold: only
+  // the fields each request selects.
+  const selected = (fields: readonly string[]) => Object.fromEntries(Object.entries(RETRACTED_WORK).filter(([field]) => fields.includes(field)));
+  assert.equal(mapOpenAlexWork(selected(OPENALEX_WORK_SEARCH_FIELDS))?.publicationStatus, 'retracted', 'a search or lane page');
+  assert.equal(mapOpenAlexEnrichmentWork(selected(OPENALEX_ENRICHMENT_SELECT.split(',')))?.enrichment.publicationStatus, 'retracted', 'an enrichment');
+
+  // A record that does not carry the mark, or denies it, reads as it did.
+  const unmarked: OpenAlexWork = { ...RETRACTED_WORK };
+  delete unmarked.is_retracted;
+  for (const work of [unmarked, { ...RETRACTED_WORK, is_retracted: false }]) {
+    assert.equal(mapOpenAlexWork(work)?.publicationStatus, 'published');
+    assert.equal(mapOpenAlexEnrichmentWork(work)?.enrichment.publicationStatus, 'published');
+  }
+
+  // A retraction says nothing about review: the journal is still the venue,
+  // and a retracted preprint without a published copy is still unreviewed.
+  assert.equal(openAlexPeerReviewed(RETRACTED_WORK), true);
+  assert.equal(openAlexPeerReviewed({
+    type: 'preprint',
+    is_retracted: true,
+    primary_location: { is_published: false, source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
+  }), false);
 });
