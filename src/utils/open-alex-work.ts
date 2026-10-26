@@ -4,7 +4,7 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 import { normalizePmid } from './public-navigation.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
+import { isListedWorkingPaperSeries, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
 
 // An OpenAlex work as the app's papers: a whole card (`mapOpenAlexWork`) or the
 // fields it adds to a card from another source (`mapOpenAlexEnrichmentWork`).
@@ -111,13 +111,14 @@ export function getArxivIdFromWork(work: OpenAlexWork | null | undefined) {
 /**
  * The OpenAlex id (`S…`) of the journal that published a work: its primary
  * location's source, when OpenAlex types that source a journal. A repository
- * (arXiv, SSRN, Zenodo), a conference or a missing source gives none.
+ * (arXiv, SSRN, Zenodo), a conference, a listed working-paper series (the
+ * Explorer's rule for what a reader can follow) or a missing source gives none.
  */
 export function openAlexJournalId(work: OpenAlexWork | null | undefined) {
   const source = work?.primary_location?.source;
   if (source?.type !== 'journal') return undefined;
   const id = String(source.id || '').replace(/^https?:\/\/openalex\.org\//i, '');
-  return /^S\d+$/.test(id) ? id : undefined;
+  return /^S\d+$/.test(id) && !isListedWorkingPaperSeries(id) ? id : undefined;
 }
 
 function getReliableEnrichmentDoi(work: OpenAlexWork, arxivId: string) {

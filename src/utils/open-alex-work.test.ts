@@ -25,6 +25,10 @@ test("a work keeps the OpenAlex id of the journal that published it, and no id w
   assert.equal(mapOpenAlexWork(repository)?.venueId, undefined, 'a repository is not a venue to follow');
   assert.equal(mapOpenAlexEnrichmentWork(repository)?.enrichment.venueId, undefined);
 
+  // OpenAlex types the IMF Working Paper series a journal; the Explorer does not offer to follow it.
+  const series = work({ id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' });
+  assert.equal(mapOpenAlexWork(series)?.venueId, undefined, 'a listed working-paper series is not a venue to follow');
+
   assert.equal(mapOpenAlexWork(work(null))?.venueId, undefined, 'no source, no venue');
   assert.equal(mapOpenAlexWork(work({ display_name: 'A journal without an id', type: 'journal' }))?.venueId, undefined);
 });
