@@ -263,8 +263,9 @@
         <strong>Error reports</strong> from the browser and backend also go to PostHog.
         Reports contain a standard error type, code locations, software version and fixed
         labels. Browser reports use the same identity and stripped page addresses as
-        product events. Error messages, paper content, notes and account profile details
-        are removed. Turning analytics off stops new browser error reports. Backend
+        product events. When the feed fails to load, its error event carries the failure
+        reason, the HTTP status and the error code. Error messages, paper content, notes
+        and account profile details are removed. Turning analytics off stops new browser error reports. Backend
         reports contain no reader identity and continue independently of this choice.
       </p>
       <p>
