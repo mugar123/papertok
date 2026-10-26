@@ -47,15 +47,26 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 export function handleArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, true);
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
 }
 
 // The route as the paper harvest asks it in-process: no caller to count.
 export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, false);
+  return relayArxiv(request, env, { perCaller: false, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
 }
 
-async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) {
+/**
+ * The route as the MCP server asks it in-process for an AI client: the
+ * caller's allowance is counted, but a miss takes only the seat of the period
+ * the beat is in, never one ahead. Readers book the seats ahead of them, so an
+ * agent gets a seat no reader booked and gives way to readers (ENG-91 puts
+ * agents in the lowest budget tier).
+ */
+export function handleAgentArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
+}
+
+async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -100,17 +111,18 @@ async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) 
     const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
-      maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+      maxWaitMs,
     });
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.
       if (caller?.reading.accepted && caller.reservation) {
         await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
       }
+      // After the window it was refused within, which is at least this period.
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
-        'retry-after': paceRetryAfterSeconds(ARXIV_PACE_MAX_WAIT_MS),
+        'retry-after': paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }
     if (seat.code) console.warn(`arXiv beat unavailable (${seat.code}); sending unpaced`);

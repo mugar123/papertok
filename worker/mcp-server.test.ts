@@ -631,6 +631,78 @@ test('without the caller secret a tool call fails closed', async () => {
   });
 });
 
+// The in-memory ledger, with the tier, kind and units of each OpenAlex reservation it took.
+function tallyingLedger() {
+  const ledger = inMemoryQuotaLedger();
+  const tallies: string[] = [];
+  const binding = {
+    idFromName: (name: string): unknown => name,
+    get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (url, init) => {
+        const body = JSON.parse(String(init?.body || '{}')) as { tally?: string; amount?: number };
+        if (body.tally) tallies.push(`${body.tally} ${body.amount}`);
+        return ledger.binding!.get(name as DurableObjectId).fetch(url, init);
+      },
+    }),
+  } as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+  return { binding, tallies };
+}
+
+test('every billed OpenAlex miss of a tool spends the lowest tier, where ENG-91 puts agents', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://api.openalex.org/works/')) return Response.json(OPENALEX_WORK);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const ledger = tallyingLedger();
+    const env = routeEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+    // A DOI the relay cannot carry in its path is a one-work list: a reader
+    // opening a paper spends that in the essential tier.
+    await callTool(env, 'get_paper', { id: '10.1234/../example.2026.1' });
+    await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['openalex'] });
+    // One work by id is free and reserves nothing.
+    await callTool(env, 'get_paper', { id: 'W4400000001' });
+    assert.deepEqual(ledger.tallies, ['exploration.list 1', 'exploration.search 10']);
+  });
+});
+
+test("a tool takes arXiv's seat only when no reader has booked it, and books none ahead", async () => {
+  // A millisecond before the beat's next three-second period, so a reader's
+  // wait for that period is a millisecond.
+  const frozen = (Math.floor(Date.now() / 3_000) + 1) * 3_000 - 1;
+  const clock = mock.method(Date, 'now', () => frozen);
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+      if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+      throw new Error(`unexpected upstream ${url}`);
+    }, async calls => {
+      const env = routeEnv();
+      const arxivCalls = () => calls.filter(url => url.startsWith('https://export.arxiv.org/')).length;
+      const first = await callTool(env, 'get_paper', { id: '2603.01234' });
+      assert.equal((first.answer.result?.structuredContent?.paper as { arxivId?: string })?.arxivId, '2603.01234', 'a free seat is taken');
+
+      // This period's seat is taken, and the next is left to readers.
+      const refused = await callTool(env, 'get_paper', { id: '2603.09999' });
+      assert.equal(refused.answer.result?.isError, true);
+      assert.equal(refused.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
+      assert.equal(refused.answer.result?.structuredContent?.retryAfterSeconds, 3);
+      const searched = await callTool(env, 'search_papers', { query: 'graphene strain' });
+      const unavailable = searched.answer.result?.structuredContent?.unavailable as Array<{ source: string; code: string }>;
+      assert.deepEqual(unavailable.map(entry => [entry.source, entry.code]), [['arxiv', 'PROVIDER_RATE_LIMITED']]);
+      assert.equal(arxivCalls(), 1, 'a refused tool call reaches arXiv with nothing');
+
+      const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?id_list=2603.09999', {
+        headers: { 'cf-connecting-ip': '203.0.113.5' },
+      }), env);
+      assert.equal(reader.status, 200, 'a reader at the same moment still gets the next seat');
+      assert.equal(arxivCalls(), 2);
+    });
+  } finally {
+    clock.mock.restore();
+  }
+});
+
 test('a tool failure leaves a log line with the tool and code, never the arguments', async () => {
   const warn = mock.method(console, 'warn', () => {});
   try {

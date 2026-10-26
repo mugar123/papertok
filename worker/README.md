@@ -858,7 +858,7 @@ page; other refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
 Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
 caller allowance. In-process paper harvesting uses its existing provider
 budgets and pacing without a visitor IP. The public router cannot select those
-harvest entry points. Test these paths with `node --test worker/index.test.ts
+harvest entry points, nor the agent entry points the MCP server calls. Test these paths with `node --test worker/index.test.ts
 worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.test.ts`.
 
 ## MCP server
@@ -910,11 +910,21 @@ whose `publicationStatus` already says preprint. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
 tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
-keys, OpenAlex tiers, arXiv beat and per-IP miss limits as the browser (see
-[Public lookup caller limits](#public-lookup-caller-limits)). A search is an
-exploration-tier OpenAlex search. A lookup by id is a free entity lookup; a
-DOI the relay cannot carry in its path (`doiPathId`) is a one-work
-`filter=doi:` list, one essential-tier unit.
+keys, arXiv beat and per-IP miss limits as the browser (see
+[Public lookup caller limits](#public-lookup-caller-limits)). ENG-91 puts
+agents in the lowest budget tier, so the tools call the relays' agent entry
+points:
+
+- `handleAgentOpenAlex` bills every OpenAlex miss in the `exploration` tier: a
+  search's ten units, and the one unit of the one-work `filter=doi:` list that
+  `get_paper` asks for a DOI the relay cannot carry in its path (`doiPathId`),
+  which a reader opening a paper spends in `essential`. A lookup by id is a
+  free entity lookup.
+- `handleAgentArxiv` takes the beat's seat only for the current three-second
+  period, never one ahead. Readers book seats up to four seconds ahead, so an
+  agent gets only a seat no reader booked. A refused seat is
+  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds: 3`, under `unavailable` in a
+  search.
 
 Arguments are validated before any reservation. Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through

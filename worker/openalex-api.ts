@@ -310,7 +310,7 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
-async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null): Promise<RelayedAnswer> {
+async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null, agent: boolean): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
   if (shared) {
@@ -330,6 +330,8 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
     cost.tier = 'feed';
     cost.part = harvest.part;
     cost.newFollow = harvest.newFollow;
+  } else if (agent) {
+    cost.tier = 'exploration';
   }
   if (cost.units > 0 && !harvest) {
     // A reader's miss also spends the caller's own allowance for the minute,
@@ -381,7 +383,17 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
 }
 
 export function handleOpenAlex(request: Request, env: WorkerEnv) {
-  return relayOpenAlex(request, env, null);
+  return relayOpenAlex(request, env, null, false);
+}
+
+/**
+ * The relay as the MCP server asks it in-process for an AI client: a reader's
+ * request, the caller's allowance included, except that a billed miss spends
+ * the lowest tier, `exploration`, whatever it asks for. ENG-91 puts agents
+ * there, so they stop before readers' cards and opened papers do.
+ */
+export function handleAgentOpenAlex(request: Request, env: WorkerEnv) {
+  return relayOpenAlex(request, env, null, true);
 }
 
 // What a billed harvest miss spends: the new follows' share for a run a new
@@ -395,10 +407,10 @@ export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
  * `ask` names rather than a reader's tier.
  */
 export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: HarvestAsk = {}) {
-  return relayOpenAlex(request, env, ask);
+  return relayOpenAlex(request, env, ask, false);
 }
 
-async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null) {
+async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null, agent: boolean) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -419,10 +431,10 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
 
   // A request joins a miss in flight whatever its own tier: joining spends no
   // unit. It does not take that miss's budget refusal, because one URL can be
-  // asked under two tiers -- the harvest spends `feed` where a reader spends the
-  // URL's own, and two of the harvest's lanes can spend two shares or parts of it --
-  // and a reader's closed tier used to end a harvest run's
-  // enrichment. Whoever waited on a refused miss starts again under its own
+  // asked under two tiers -- the harvest spends `feed` and an agent
+  // `exploration` where a reader spends the URL's own, and two of the
+  // harvest's lanes can spend two shares or parts of it -- and a reader's
+  // closed tier used to end a harvest run's enrichment. Whoever waited on a refused miss starts again under its own
   // tier, one at a time, so a URL still has at most one reservation and one
   // call in flight. OpenAlex's own refusal is its answer and is shared. The
   // `finally` below removes an entry before its waiters resume, so a waiter
@@ -431,7 +443,7 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
     const answer = await pending;
     if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
   }
-  const pending = relayMiss(request, target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
+  const pending = relayMiss(request, target, cacheKey, env, harvest, agent).finally(() => inFlight.delete(cacheKey.url));
   inFlight.set(cacheKey.url, pending);
   return forOrigin(await pending, origin, env);
 }

@@ -6,13 +6,13 @@ import type { UpstreamError } from './provider-runtime.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
-import { handleArxiv } from './arxiv-api.ts';
+import { handleAgentArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
 import { captureWorkerException, captureWorkerResponseFailure } from './error-tracking.ts';
 import { allowedOrigins, json } from './http.ts';
 import { handleOpenAccess } from './open-access.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleAgentOpenAlex } from './openalex-api.ts';
 import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
 
 /**
@@ -22,11 +22,14 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  * not used; this handler covers the four methods phase 1 needs.
  *
  * Every tool asks an existing route in-process, as `paper-sources.ts` does
- * for the harvest, but as a reader: the route's validation, cache keys,
+ * for the harvest, but much as a reader: the route's validation, cache keys,
  * provider budgets and per-address allowances apply as they do to the
  * browser. The caller's `CF-Connecting-IP` travels with each ask, so those
- * allowances count this caller. The citation graph waits for phase 2: the
- * browser's needs an account, and these callers have none.
+ * allowances count this caller. ENG-91 puts agents in the lowest budget tier:
+ * a billed OpenAlex miss spends `exploration` (`handleAgentOpenAlex`), and an
+ * arXiv miss takes no seat a reader could book (`handleAgentArxiv`). The
+ * citation graph waits for phase 2: the browser's needs an account, and these
+ * callers have none.
  */
 export const MCP_PATH = '/mcp';
 
@@ -286,7 +289,7 @@ async function searchOpenAlex(query: string, since: string, caller: Request, env
   // The work types the app's search asks for, so errata, paratext, datasets
   // and peer-review records do not fill the page.
   const filters = [`type:${OPENALEX_SEARCH_TYPES.join('|')}`, ...(since ? [`from_publication_date:${since}`] : [])];
-  const response = await ask(handleOpenAlex, '/openalex/works', {
+  const response = await ask(handleAgentOpenAlex, '/openalex/works', {
     search: query,
     filter: filters.join(','),
     'per-page': MAX_RESULTS,
@@ -306,7 +309,7 @@ function arxivQuery(query: string, since: string) {
 }
 
 async function arxivPapers(params: Record<string, string | number>, caller: Request, env: WorkerEnv) {
-  const response = await ask(handleArxiv, '/arxiv', params, caller, env);
+  const response = await ask(handleAgentArxiv, '/arxiv', params, caller, env);
   return parseArxivAtom(await response.text()).map(arxivRecordPaper);
 }
 
@@ -366,11 +369,11 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   // One work by id, as the app's paper page asks for it (`fetchPaperByWorkId`
   // in src/services/open-alex-service.ts): OpenAlex does not bill it, so it
   // spends no budget. A DOI the relay cannot carry in its path is a one-work
-  // list instead, billed one unit in the essential tier.
+  // list instead, billed one unit in the exploration tier.
   const doiPath = identity.type === 'doi' ? doiPathId(identity.value) : '';
   const response = identity.type === 'doi' && !doiPath
-    ? await ask(handleOpenAlex, '/openalex/works', { filter: `doi:${identity.value}`, 'per-page': 1 }, caller, env)
-    : await ask(handleOpenAlex, `/openalex/works/${doiPath || encodeURIComponent(identity.type === 'pmid' ? `pmid:${identity.value}` : identity.value)}`, {}, caller, env);
+    ? await ask(handleAgentOpenAlex, '/openalex/works', { filter: `doi:${identity.value}`, 'per-page': 1 }, caller, env)
+    : await ask(handleAgentOpenAlex, `/openalex/works/${doiPath || encodeURIComponent(identity.type === 'pmid' ? `pmid:${identity.value}` : identity.value)}`, {}, caller, env);
   const answer = await response.json<OpenAlexWork & { results?: OpenAlexWork[] }>();
   const work = answer.results ? answer.results[0] : answer;
   if (!work?.id) throw new ToolFailure({ code: 'NOT_FOUND' });
