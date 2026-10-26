@@ -761,6 +761,59 @@ before publishing this setting; older bundles configured with the native host
 would lose access to the API. The production bundle inspected on 25 October
 2026 configures `https://api.papertok.app`.
 
+## OpenAIRE
+
+Project data comes from OpenAIRE's Graph API V3 (`https://api.openaire.eu/graph/v3`).
+It replaces the Search API (`/search/projects`, `/search/publications`), whose
+retirement OpenAIRE announced for 31 May 2026. `src/services/open-aire-records.ts`
+builds the shared requests and validates the answers for the browser and the Worker.
+
+| Caller | Request |
+| --- | --- |
+| Project search (browser) | `/projects` by `search`, `acronym` or `title` |
+| Project page (browser), share pages (Worker) | `/projects?id=<OpenAIRE id>`, or `code=<grant code>&fundingShortName=<funder>` |
+| Project badge on a card (browser) | `/research-products?pid=<DOI>&type=publication`, with the DOI bare and in lowercase as Graph stores it; when the DOI finds no publication, `originalId=oai:arXiv.org:<id without version>` |
+| Project publications: Explorer and Following (browser), followed project lanes (Worker) | `/research-products` by `relProjectId=<OpenAIRE id>`, or `relProjectCode=<grant code>&relProjectFundingShortName=<funder>`, with `type=publication&sortBy=publicationDate DESC` |
+| Project follows in the digest (Worker) | The same by `relProjectId`; a bare grant code is asked as `relProjectCode=<grant code>` alone |
+
+- A grant code is not unique across funders, so a bare code is asked with the
+  funder's short name wherever one is known: the project page, share pages, the
+  Explorer list, Following and followed project lanes. The digest does not know
+  it, because the Worker keeps no funder on a follow. A follow stored with a bare
+  code therefore gets the publications of every funder that used it (100010 is an
+  NHMRC, an SNSF and a UKRI grant). A follow stored with an OpenAIRE id names one
+  project and is not affected. A publication's `projects[].funder` is the funder's
+  full name; the card reads the short name (`EC`, not `European Commission`) from
+  the publication's `isProducedBy` link.
+- Unsorted, the first 30 of TAILOR's 1,428 publications were repository handles
+  with no DOI or arXiv id; newest first, 28 of 30 had one (2026-10-23). Every
+  project list is therefore sorted by publication date.
+- Offset paging answers `400` once `page` × `pageSize` passes 10,000, so the
+  Explorer's project list ends at page 333.
+- Graph project records have no measures (citations, downloads, views) and no
+  contract type. Those stay unknown: the project page has no citation stat. A
+  `granted.currency` of `null` also stays unknown, and the project page and the
+  project search rows then show the amount without a currency.
+- An answer that is not a Graph list (`header.numFound` and `results`) is an
+  error, not an empty project. The project page keeps the name its link carried,
+  the Explorer list reports a load failure, a share page lookup fails instead of
+  reporting a missing project, the digest records
+  `EMAIL_SOURCE_OPENAIRE_INVALID_RESPONSE`, and a project lane fails its turn.
+  The card shows no badge and keeps that failure, like a `429`, for 24 hours
+  without asking again. It does not try the arXiv id after a failed DOI lookup,
+  only after a DOI that Graph answered with no publication.
+
+Every call is anonymous. OpenAIRE documents 60 requests an hour without a token
+and 7,200 with a personal access token, but anonymous answers on 17, 23 and 25
+October 2026 carried `x-ratelimit-limit: 7199`. Browser calls count against each
+reader's address; share pages, the digest and project lanes leave from
+Cloudflare's addresses. If the documented anonymous limit is enforced, a token
+belongs in a Worker secret and covers only the Worker's calls. Deadlines cover the
+response body: 10 seconds for browser lookups, 5 seconds for all of a project
+search's requests together, 6 seconds for share pages, 5 seconds per digest
+attempt with one retry after a `429`, a `5xx` or a network failure, and 10
+seconds for a project lane.
+
 ## Public lookup caller limits
 
 Public cache misses on `/arxiv`, `/oa`, billed `/openalex/*` requests and
