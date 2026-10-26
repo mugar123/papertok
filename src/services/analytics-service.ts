@@ -102,6 +102,10 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
   app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
+  feed_failure_reason: new Set(['timeout', 'network', 'session', 'auth', 'rate_limited', 'rejected', 'server', 'invalid_response', 'empty', 'unexpected']),
+  // The codes /store/papers answers with (worker/router.ts, worker/paper-store.ts,
+  // worker/firebase-auth.ts) and the client's own; any other becomes 'other'.
+  feed_error: new Set(['LANES_REQUIRED', 'INVALID_JSON', 'PAYLOAD_TOO_LARGE', 'SEEN_INVALID', 'RATE_LIMITED', 'PAPER_STORE_UNAVAILABLE', 'PAPER_STORE_FAILED', 'EMBEDDINGS_UNAVAILABLE', 'EMBEDDINGS_INVALID', 'AUTH_REQUIRED', 'AUTH_NOT_CONFIGURED', 'AUTH_UNAVAILABLE', 'PROVIDER_AUTH_UNAVAILABLE', 'WORKER_AUTH_REQUIRED', 'WORKER_ORIGIN_NOT_ALLOWED', 'STORE_RESPONSE_INVALID', 'STORE_UNREACHABLE', 'auth/network-request-failed', 'auth/user-token-expired', 'auth/user-disabled', 'auth/too-many-requests', 'auth/internal-error', 'other']),
   activation_age: new Set(['day_0', 'day_1', 'days_2_6', 'days_7_13', 'days_14_29', 'days_30_59', 'days_60_plus']),
   ai_feature: new Set(['rewrite', 'annotation']),
   ai_quota_scope: new Set(['user', 'provider']),
@@ -162,8 +166,9 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
     cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
   },
   // A failure the reader is left looking at: the error boundary's screen or the
-  // feed's "Error loading papers". Only the kind travels, never the error.
-  app_error: { kind: 'app_error_kind' },
+  // feed's "Error loading papers". Never the error itself: for the feed, why
+  // its load failed as fixed labels (context/feed-load-failure.ts).
+  app_error: { kind: 'app_error_kind', reason: 'feed_failure_reason', status: 'boundedNumber', error_code: 'feed_error' },
   // A reader who ran out of AI uses for the day asked for more than the product
   // gives away, which is the clearest demand signal it has. `scope` keeps that
   // apart from the provider's own budget running out, which is an outage.
@@ -284,6 +289,10 @@ export function normalizeAnalyticsPath(pathname = '/') {
       : 'entity';
     return `/public/entity/${type}/:id`;
   }
+  if (/^\/paper\/[^/]+$/.test(path)) return '/paper/:id';
+  // The address before ENG-44. What an earlier visit stored (its first URL, the
+  // previous page) still carries it, and it is on screen for one render when
+  // app.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
 
@@ -305,7 +314,7 @@ export function sanitizeAnalyticsLocation(pathname: string|undefined, browserLoc
  * The door that is easy to miss. Both transports read `location.href` on their
  * own: the Vercel script builds its payload's `url` field from it, and PostHog
  * fills `$current_url` from it on EVERY event, page view or not. That string is
- * whatever the address bar says: `https://papertok.app/public/paper/<the real
+ * whatever the address bar says: `https://papertok.app/paper/<the real
  * id>`, or `/search?q=<what was searched>`, precisely the value the privacy
  * policy promises never leaves the browser. AnalyticsContext's `beforeSend`
  * and `sanitizeAnalyticsCapture` are where it gets replaced, and this is what
@@ -340,7 +349,7 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
       safeParams[key] = Math.min(1000, Math.max(0, Math.round(value as number)));
     }
     if (type === 'duration' && Number.isFinite(value)) safeParams[key] = Math.min(3_600_000, Math.max(0, Math.round(value as number)));
-    if ((type === 'rewrite_error' || type === 'auth_error') && typeof value === 'string') {
+    if ((type === 'rewrite_error' || type === 'auth_error' || type === 'feed_error') && typeof value === 'string') {
       safeParams[key] = CATEGORIES[type].has(value) ? value : 'other';
     }
     if (type === 'seconds' && Number.isFinite(value)) {
@@ -574,7 +583,7 @@ async function sendAnalyticsEvent(eventName: string, properties: Record<string, 
 
 /**
  * One view per change of concrete pathname, filed under its pattern: two papers
- * share `/public/paper/:id` and are still two views. PostHog's own page view
+ * share `/paper/:id` and are still two views. PostHog's own page view
  * capture stays off because it would read the address bar. The URL is fixed
  * here, from the route the view belongs to, so a navigation made while the
  * library loads cannot file this view under the next page.

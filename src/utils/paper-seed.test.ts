@@ -106,3 +106,21 @@ test('the stored authors stay unless the copy was cut and the provider knows mor
   assert.equal(hydratedAuthors(capped, capped.slice(0, 5)), capped, 'the provider knowing fewer is no reason to drop any');
   assert.equal(hydratedAuthors([], more), more);
 });
+
+
+test('arXiv hydration replaces concept-only seed classification as one unit', () => {
+  const paper = hydrateSeededPaper(provider, {
+    primaryCategory: 'cs.IT', categories: ['cs.IT', 'math.IT'], allCategories: ['cs.IT', 'math.IT'],
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  assert.equal(paper!.primaryCategory, 'cs.IT');
+  assert.deepEqual(paper!.categories, ['cs.IT', 'math.IT']);
+  assert.deepEqual(paper!.allCategories, ['cs.IT', 'math.IT']);
+  assert.deepEqual(paper!.primaryTopic, provider.primaryTopic);
+});
+
+test('OpenAlex fallback cannot replace known arXiv category lists', () => {
+  const paper = hydrateSeededPaper(seed, { ...provider, allCategories: ['Electronic circuit'] });
+  assert.deepEqual(paper!.allCategories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC']);
+  assert.deepEqual(paper!.primaryTopic, provider.primaryTopic);
+});

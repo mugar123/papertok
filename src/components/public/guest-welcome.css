@@ -474,11 +474,19 @@
 
 
 /* Room under the account button for the provider stack. It overlays the foot
-   of the stage, and the landing clips what overflows: 104px for its two
-   buttons, then the gap and the "Preparing sign-in…" line under them
-   (PreparingNote). */
+   of the stage, and the landing clips what overflows: the stack's offset
+   (.gw-providers top), its two lg buttons (h-11) and their gaps, then the
+   "Preparing sign-in…" line under them (PreparingNote). Once the load failed
+   that line can wrap at large text sizes, so Try again (an sm Button, h-8)
+   sits under it: reserve the text line, the button and the keyboard focus
+   ring's reach below it. */
 .gw--landing .gw-stage {
-  padding-bottom: calc(104px + var(--fs-xs) * var(--lh-normal) + var(--space-2));
+  --gw-provider-note: calc(var(--fs-xs) * var(--lh-normal));
+  padding-bottom: calc(var(--space-4) + 2 * 2.75rem + 2 * var(--space-2) + var(--gw-provider-note));
+}
+
+.gw--landing .gw-stage:has(.provider-preparing > button) {
+  --gw-provider-note: calc(var(--fs-xs) * var(--lh-normal) + 2rem + var(--space-1));
 }
 
 .gw-step--welcome {

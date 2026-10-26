@@ -1824,6 +1824,30 @@ test('a repeated PubMed identifier does not buy a second iCite entry', async () 
   assert.equal(calls.length, 1);
 });
 
+// ADS also holds meeting abstracts, circulars, catalogues, proposals and
+// software; the physics route's records reach the corpus (paper-sources.ts).
+test('the physics route asks NASA ADS for papers only', async () => {
+  const asked: URL[] = [];
+  await withIdentityAndCacheStore(async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async url => {
+      const isAds = String(url).includes('adsabs');
+      if (isAds) asked.push(new URL(String(url)));
+      return Response.json(isAds ? { response: { docs: [] } } : { hits: { hits: [], total: 0 } });
+    };
+    try {
+      await reportApi.fetch(new Request(
+        'https://papertok-report-api.example/sources/physics?q=galaxies&fallback_q=galaxies',
+        { headers: SIGNED_IN },
+      ), { ...AUTHENTICATED_ENV, NASA_ADS_API_TOKEN: 'ads-test-token' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].searchParams.get('q')!, / doctype:\(article OR eprint OR inproceedings\)$/);
+});
+
 // --- G5: a degraded answer does not own its entry for the full TTL ----------
 
 function maxAgeSeconds(response: Response) {
@@ -3701,6 +3725,28 @@ test('a list page reads the public document anonymously, as a visitor would', as
   const reads = urls.filter(entry => entry.address.includes('firestore.googleapis.com'));
   assert.equal(reads.length, 1);
   assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
+});
+
+test("a crawler gets a project page named from OpenAIRE's Graph API", async () => {
+  const tailor = 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a';
+  const urls: Array<{ address: string; authorization: string | null }> = [];
+  const upstream = shareUpstream(urls);
+  const response = await withWorkerFetchMock(
+    async (url, init) => {
+      const address = String(url);
+      if (!address.startsWith('https://api.openaire.eu/')) return upstream(url, init);
+      urls.push({ address, authorization: null });
+      // Graph's answer for TAILOR on 2026-10-23, trimmed to what the page reads.
+      return Response.json({ header: { numFound: 1 }, results: [{ id: tailor, code: '952215', acronym: 'TAILOR', title: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' }] });
+    },
+    () => reportApi.fetch(crawlerRequest(`/share/entity/project/${encodeURIComponent(tailor)}`), openAlexEnv()),
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project \| PaperTok<\/title>/);
+  const lookups = urls.filter(entry => entry.address.startsWith('https://api.openaire.eu/')).map(entry => new URL(entry.address));
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0].pathname, '/graph/v3/projects');
+  assert.deepEqual(Object.fromEntries(lookups[0].searchParams), { id: tailor, pageSize: '1' });
 });
 
 // The PDF relay behind the touch-screen viewer. It must stay a relay for the

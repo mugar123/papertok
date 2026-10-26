@@ -10,6 +10,8 @@ interface StoredProfile {
   onboardingComplete?: boolean;
   preferences?: string[];
   selectedCategories?: string[];
+  deselectedPreferences?: unknown;
+  addedPreferences?: unknown;
   followedAuthors?: string[];
   readingPreferences?: Parameters<typeof normalizeReadingPreferences>[0];
   emailDigestOptIn?: boolean;
@@ -21,14 +23,22 @@ export interface AuthContextValue {
   error: string | null;
   onboardingComplete: boolean;
   userPreferences: string[] | null;
+  // Subareas this account removed from its interests; always empty for a guest.
+  deselectedPreferences: string[];
+  // Subareas this account added to its interests after onboarding; always
+  // empty for a guest.
+  addedPreferences: string[];
   followedAuthors: string[];
   readingPreferences: ReadingPreferences;
   emailDigestPending: boolean;
   profileLoadError: string | null;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
-  signInWithGoogle: () => Promise<{ isNewUser: boolean; providerId: string }>;
-  signInWithGitHub: () => Promise<{ isNewUser: boolean; providerId: string }>;
+  /** A redirect sign-in came back without a session: the sign-in dialog opens again. */
+  reopenSignIn: boolean;
+  /** `surface` names the place that asked, for analytics (auth-identity-service.ts). */
+  signInWithGoogle: (surface?: string) => Promise<{ isNewUser: boolean; providerId: string }>;
+  signInWithGitHub: (surface?: string) => Promise<{ isNewUser: boolean; providerId: string }>;
   linkSignInMethod: typeof linkSignInProvider;
   linkInstitution: typeof linkInstitutionAccount;
   completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
@@ -48,12 +58,18 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
 import { auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import type { RedirectSignInOutcome } from '../services/auth-identity-service.ts';
 import {
   SIGN_IN_PROVIDERS,
+  abandonRedirectTrip,
+  completeRedirectSignIn,
   linkSignInProvider,
   providerIdsOf,
+  signInEvents,
+  signInFailure,
   signInWithProvider,
 } from '../services/auth-identity-service.ts';
+import { trackProductEvent } from '../services/analytics-service.ts';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   linkInstitution as linkInstitutionAccount,
@@ -75,11 +91,17 @@ import { confirmOnboardingWrite, profileReadOutcome } from './profile-load.ts';
 import { writeOptimistically } from './optimistic-write.ts';
 import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
+import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
 import { readGuestInterests } from '../utils/guest-interests.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
+
+// The redirect sign-in this page load comes back from, if any, read once and
+// at import: its destination is back in auth-return.ts before the first
+// render, so before any session can arrive (auth-identity-service.ts).
+const returningSignIn = completeRedirectSignIn();
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -87,6 +109,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [userPreferences, setUserPreferences] = useState<string[] | null>(null);
+  const [deselectedPreferences, setDeselectedPreferences] = useState<string[]>([]);
+  const [addedPreferences, setAddedPreferences] = useState<string[]>([]);
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
   const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
   // A yes to the email digest given in the guest welcome, saved on the
@@ -104,6 +128,39 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // (institution-link.js) and read here with the rest of the user document.
   const [institution, setInstitution] = useState<ReturnType<typeof normalizeInstitution>>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
+  const [reopenSignIn, setReopenSignIn] = useState(false);
+
+  // A redirect sign-in reports here what a popup's press reports in
+  // useProviderSignIn, on the one provider that lives as long as the page.
+  // Without a session the dialog it left from opens again (app.tsx), as it
+  // stays open after a closed or failed popup.
+  useEffect(() => {
+    let live = true;
+    const report = (outcome: RedirectSignInOutcome) => {
+      for (const [name, params] of signInEvents(outcome.providerId, outcome.surface, outcome)) {
+        void trackProductEvent(name, params);
+      }
+    };
+    void returningSignIn.then((outcome) => {
+      if (!live || !outcome) return;
+      report(outcome);
+      if (outcome.result === 'error') setError(outcome.code);
+      if (outcome.result !== 'success' && !auth.currentUser) setReopenSignIn(true);
+    });
+    // Back from the provider, Safari can show this page again from its
+    // back/forward cache instead of loading it: no load reads the trip, and
+    // the dialog is still on screen, so the trip ends here as cancelled.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      const abandoned = abandonRedirectTrip();
+      if (abandoned) report(abandoned);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      live = false;
+      window.removeEventListener('pageshow', onPageShow);
+    };
+  }, []);
 
   useEffect(() => {
 
@@ -117,6 +174,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setProfileLoadError(null);
       setUser(currentUser);
       setFollowedAuthors([]);
+      setDeselectedPreferences([]);
+      setAddedPreferences([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
@@ -124,6 +183,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
+        setReopenSignIn(false);
         const storedOnboarding = openAccountSession(currentUser.uid);
         if (storedOnboarding?.complete) {
           setOnboardingComplete(true);
@@ -144,6 +204,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
           const preferences = data.preferences || data.selectedCategories || null;
           setUserPreferences(preferences);
           setFollowedAuthors(data.followedAuthors || []);
+          // Anything but a list of strings counts as none.
+          setDeselectedPreferences(Array.isArray(data.deselectedPreferences) ? data.deselectedPreferences.filter((id): id is string => typeof id === 'string') : []);
+          setAddedPreferences(Array.isArray(data.addedPreferences) ? data.addedPreferences.filter((id): id is string => typeof id === 'string') : []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
@@ -232,15 +295,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // No reactive read besides state setters and module-level constants, so this
   // never needs to be recreated — every context consumer that depends on it
   // (both sign-in buttons below) inherits that stability.
-  const signInWith = useCallback(async (providerId: string) => {
+  const signInWith = useCallback(async (providerId: string, surface?: string) => {
     setError(null);
+    setReopenSignIn(false);
 
     try {
-      return await signInWithProvider(providerId);
+      return await signInWithProvider(providerId, undefined, { surface });
     } catch (err) {
       // Closing the window, or pressing again so a new one replaces it, is the
       // reader's own choice, not a failure to report.
-      if ((err as { code?: string } | null)?.code !== 'auth/popup-closed-by-user' && (err as { code?: string } | null)?.code !== 'auth/cancelled-popup-request') {
+      if (signInFailure(err).result === 'error') {
         setError((err as { code?: string } | null)?.code || 'AUTH_FAILED');
       }
       throw err;
@@ -248,11 +312,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signInWithGoogle = useCallback(
-    () => signInWith(SIGN_IN_PROVIDERS.google),
+    (surface?: string) => signInWith(SIGN_IN_PROVIDERS.google, surface),
     [signInWith],
   );
   const signInWithGitHub = useCallback(
-    () => signInWith(SIGN_IN_PROVIDERS.github),
+    (surface?: string) => signInWith(SIGN_IN_PROVIDERS.github, surface),
     [signInWith],
   );
 
@@ -366,12 +430,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const userId = user?.uid;
     if (userId) {
+      // Set with the preferences, so a second edit before the write settles
+      // still starts from every result of the first edit. Onboarding writes
+      // no added list: its picks start established.
+      const deselected = nextDeselected(userPreferences ?? [], newPreferences, deselectedPreferences);
+      const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
+      setDeselectedPreferences(deselected);
+      setAddedPreferences(added);
       await setDoc(doc(db, 'users', userId), {
-        preferences: newPreferences
+        preferences: newPreferences,
+        deselectedPreferences: deselected,
+        addedPreferences: added
       }, { merge: true });
       saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
     }
-  }, [user?.uid]);
+  }, [addedPreferences, deselectedPreferences, user?.uid, userPreferences]);
 
   // Needs the previous list itself, not just its owner's id: the new array is
   // written to Firestore in this same call,
@@ -430,12 +503,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     error,
     onboardingComplete,
     userPreferences,
+    deselectedPreferences,
+    addedPreferences,
     followedAuthors,
     readingPreferences,
     emailDigestPending,
     profileLoadError,
     signInProviders,
     institution,
+    reopenSignIn,
     signInWithGoogle,
     signInWithGitHub,
     linkSignInMethod,
@@ -451,9 +527,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     updateReadingPreferences,
     retryProfileLoad,
   }), [
-    completeOnboarding, completeInstitutionVerification, emailDigestPending, error, followedAuthors, institution, linkInstitution,
+    addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
     linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
-    retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
+    reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,
   ]);

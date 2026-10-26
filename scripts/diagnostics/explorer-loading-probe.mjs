@@ -135,7 +135,7 @@ try {
     await sleep(Number(extra || 12) * 1000);
     const tl = await cdp.eval('window.__tl');
     console.log(JSON.stringify(tl, null, 0).replace(/\},\{/g, '},\n{'));
-    const res = await cdp.eval(`(() => { const names = performance.getEntriesByType('resource').map(e => e.name); const count = (re) => names.filter(n => re.test(n)).length; return { publications: count(/openaire\\.eu\\/search\\/publications/), projects: count(/openaire\\.eu\\/search\\/projects/), arxiv: count(/arxiv/), works: count(/works/), total: names.length }; })()`);
+    const res = await cdp.eval(`(() => { const names = performance.getEntriesByType('resource').map(e => e.name); const count = (re) => names.filter(n => re.test(n)).length; return { publications: count(/openaire\\.eu\\/graph\\/v3\\/research-products/), projects: count(/openaire\\.eu\\/graph\\/v3\\/projects/), arxiv: count(/arxiv/), works: count(/works/), total: names.length }; })()`);
     console.log('resources:', JSON.stringify(res));
   }
 

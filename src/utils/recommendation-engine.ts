@@ -2,8 +2,9 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
-import { leavesForOpenAlexTopic } from './area-accent.ts';
+import { areaKeyForCategory, areaKeyForPaper, leavesForOpenAlexTopic } from './area-accent.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { isDormantCategory, selectedAreaSubareas } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
@@ -13,6 +14,11 @@ export interface RecommendationContext {
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
   conceptAffinities?: Record<string, number>; authorAffinities?: Record<string, number>;
   sessionAffinities?: Record<string, number>; interactionCount?: number;
+  // How far the app has learned each selected subarea, from 0 to 1 (see
+  // interestProgress), the added picks it is still learning (coldAddedInterests)
+  // and what the reader removed (dormantCategories). The learned signals score
+  // nothing of a dormant paper; without the list none is.
+  interestProgress?: Record<string, number>; coldAdded?: string[]; dormantCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
@@ -31,7 +37,8 @@ interface ShuffleOptions<T> {
 // page when the pool has little else or a follow carries it. The
 // selected-category preference fades to minPreferenceShare of itself over
 // preferenceFadeInteractions interactions: what the reader does takes over
-// from what they picked at sign-up.
+// from what they picked at sign-up. An interest the reader added later fades
+// instead as the app learns that subarea (interestProgress).
 export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
@@ -299,6 +306,28 @@ const NEUTRAL_RECENT_PROPS = Object.freeze({
   preprint: 0, published: 0, journal: 0, conference: 0,
 });
 
+// Whether a card belongs only to what the reader removed (ENG-137, R18). Its
+// evidence of an area is every category the taxonomy places (a leaf, an area
+// key such as a working paper's 'econ', an arXiv category with no leaf), the
+// leaves its OpenAlex topic stands for and the categories it was fetched for.
+// Without any of those, its evidence is the area its learning counts under
+// (areaKeyForPaper), which OpenAlex's field gives an area lane's article.
+// It sleeps when it has evidence and all of it sleeps. A card of the main
+// corpus request never does: its lanes are the reader's picks. One that says
+// nothing of its area (a followed author's article filed under concept names
+// and a field the app has no area for) stays awake, as the Worker ranks a
+// like with no area for every group.
+function isDormant(paper: Partial<Paper>, categories: string[], dormant: string[]) {
+  if (paper._type === 'exploit') return false;
+  const named = [
+    ...categories.filter(category => areaKeyForCategory(category)),
+    ...leavesForOpenAlexTopic(paper.primaryTopic),
+    ...(paper._fetchedFor ?? []),
+  ];
+  const evidence = named.length > 0 ? named : [areaKeyForPaper(paper)].filter((area): area is NonNullable<typeof area> => area !== null);
+  return evidence.length > 0 && evidence.every(category => isDormantCategory(category, dormant));
+}
+
 // Everything a score needs that does NOT move with the recent window: the
 // followed-entity matching, the topic flattening, affinities, cooldowns,
 // recency. A diversified shuffle asks for the same paper once per remaining
@@ -315,37 +344,61 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const authorAffinities = context.authorAffinities || {};
   const sessionAffinities = context.sessionAffinities || {};
   const temporalPreference = context.temporalPreference || 0;
+  const interestProgress = context.interestProgress || {};
+  const coldAdded = context.coldAdded || [];
 
   const categorySignals = getPaperCategorySignals(paper);
   const primaryCategory = categorySignals[0] || '';
   const allCategories = categorySignals;
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
 
-  const rawAffinity = categorySignals.reduce((sum, category, index) => {
-    const multiplier = index === 0 ? 1 : 0.35;
-    return sum + (categoryAffinities[category] || 0) * multiplier;
-  }, 0);
-  // Secondary categories can push the sum past the per-category clamp; cap it so
-  // learned affinity never outweighs an explicit preference by accumulation alone.
-  const affinity = clamp(rawAffinity, -weights.maxAffinity, weights.maxAffinity);
-
-  const preferenceShare = Math.max(
-    weights.minPreferenceShare,
-    1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
-  );
-  let preference = 0;
+  const picked = (category: string) => userPreferences.includes(category);
   // OpenAlex files a work under its own topic, never under a leaf; a chosen
   // leaf whose topic list holds that topic counts as its primary category.
   // A specialist source's card seldom names a category of the taxonomy. When
   // the source was asked for one of the reader's, the card earns that
   // category's preference without claiming the category.
-  if ((primaryCategory && userPreferences.includes(primaryCategory))
-    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => userPreferences.includes(leaf))
-    || paper._fetchedFor?.some(category => userPreferences.includes(category))) {
-    preference = weights.selectedCategory * preferenceShare;
-  } else if (allCategories.some((cat) => userPreferences.includes(cat))) {
-    preference = weights.relatedSelectedCategory * preferenceShare;
-  }
+  const chosenAsPrimary = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic)].filter(picked);
+  const chosenDirectly = [...chosenAsPrimary, ...(paper._fetchedFor || []).filter(picked)];
+  const chosenAsRelated = allCategories.filter(picked);
+  const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
+  // An established pick fades with the reader's interactions. An added pick
+  // the app is still learning fades with its progress, from the whole weight
+  // to the established share, so it never weighs less than an established
+  // pick and keeps its weight when it joins them. A card weighs as the pick
+  // its primary category is; one that is none of them weighs by the
+  // most-learned it matches.
+  const establishedShare = Math.max(
+    weights.minPreferenceShare,
+    1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
+  );
+  const shareOf = (category: string) => (coldAdded.includes(category)
+    ? establishedShare + (1 - (interestProgress[category] || 0)) * (1 - establishedShare)
+    : establishedShare);
+  const preferenceShare = Math.min(1, ...(chosenAsPrimary.length > 0 ? chosenAsPrimary : matched).map(shareOf));
+  // What the reader learned about a subject they removed stays stored but
+  // ranks nothing on a card of it alone (isDormant); a subject they never
+  // picked ranks as it always did. A follow and the card's own signals still do.
+  const isActive = !context.dormantCategories?.length
+    || chosenDirectly.length > 0
+    || !isDormant(paper, categorySignals, context.dormantCategories);
+
+  // A card awake through a category the reader kept or never picked keeps
+  // its own signals (corpus similarity, concepts, authors), but what the
+  // reader learned of a subarea they removed is not counted on it.
+  const dormant = context.dormantCategories || [];
+  const rawAffinity = categorySignals.reduce((sum, category, index) => {
+    if (dormant.length > 0 && isDormantCategory(category, dormant)) return sum;
+    const multiplier = index === 0 ? 1 : 0.35;
+    return sum + (categoryAffinities[category] || 0) * multiplier;
+  }, 0);
+  // Secondary categories can push the sum past the per-category clamp; cap it so
+  // learned affinity never outweighs an explicit preference by accumulation alone.
+  const affinity = isActive ? clamp(rawAffinity, -weights.maxAffinity, weights.maxAffinity) : 0;
+
+  let preference = 0;
+  if (chosenDirectly.length > 0) preference = weights.selectedCategory * preferenceShare;
+  else if (chosenAsRelated.length > 0) preference = weights.relatedSelectedCategory * preferenceShare;
 
   const authorBoost = paper.authors?.some((author) => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string))
     ? weights.followedAuthor
@@ -374,19 +427,19 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     const affinityValue = conceptAffinities[concept.id] || 0;
     return sum + conceptWeight(concept.score) * (affinityValue / 100);
   }, 0);
-  const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
-  const corpusSimilarity = Number.isFinite(paper._semanticScore)
+  const semantic = isActive ? clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier : 0;
+  const corpusSimilarity = isActive && Number.isFinite(paper._semanticScore)
     ? clamp(paper._semanticScore!, -1, 1) * weights.maxCorpusSimilarity : 0;
 
   // Authors the reader keeps engaging with, learned rather than followed.
   const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
-  const learnedAuthor = clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor;
+  const learnedAuthor = isActive ? clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor : 0;
 
   // What this session has been engaging with in the last dozen cards or so:
   // the primary category and the concepts, each weighed as above.
   const sessionMatch = (primaryCategory ? sessionAffinities[primaryCategory] || 0 : 0)
     + concepts.reduce((sum, concept) => sum + conceptWeight(concept.score) * (sessionAffinities[concept.id] || 0), 0);
-  const sessionInterest = clamp(sessionMatch / weights.sessionScale, -1, 1) * weights.maxSession;
+  const sessionInterest = isActive ? clamp(sessionMatch / weights.sessionScale, -1, 1) * weights.maxSession : 0;
 
   const citations = citedBy > 0
     ? Math.min(Math.log10(citedBy + 1), weights.maxCitationLog) * weights.citationMultiplier
@@ -426,6 +479,9 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     authorAffinities: context.authorAffinities,
     sessionAffinities: context.sessionAffinities,
     interactionCount: context.interactionCount,
+    interestProgress: context.interestProgress,
+    coldAdded: context.coldAdded,
+    dormantCategories: context.dormantCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
 
@@ -494,6 +550,9 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.authorAffinities === context.authorAffinities
     && cached.sessionAffinities === context.sessionAffinities
     && cached.interactionCount === context.interactionCount
+    && cached.interestProgress === context.interestProgress
+    && cached.coldAdded === context.coldAdded
+    && cached.dormantCategories === context.dormantCategories
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now) {
     return cached;
@@ -694,15 +753,15 @@ function sampleBeta(alpha: number, beta: number, random: () => number) {
  * offered; one that keeps holding the reader keeps coming back.
  */
 /**
- * The leaves exploration chooses from: the other leaves of the areas the
- * reader's preferences belong to, less any the reader has turned away from.
+ * The leaves exploration chooses from: the subareas of the reader's areas
+ * (selectedAreaSubareas) they have not picked, less any they have turned away
+ * from. A subarea they removed sleeps, and is not explored either; an area
+ * they never picked is not explored.
  */
-export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}) {
-  const leaves = getAllLeafCategories();
-  const areas = new Set(leaves.filter(leaf => preferences.includes(leaf.id)).map(leaf => leaf.area));
-  return leaves
-    .filter(leaf => areas.has(leaf.area) && !preferences.includes(leaf.id) && (affinities[leaf.id] || 0) >= -2)
-    .map(leaf => leaf.id);
+export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}, deselected: string[] = []) {
+  const leaves = new Set(getAllLeafCategories().map(leaf => leaf.id));
+  return [...selectedAreaSubareas(preferences, deselected)]
+    .filter(id => leaves.has(id) && !preferences.includes(id) && (affinities[id] || 0) >= -2);
 }
 
 export function pickExplorationCategories(
