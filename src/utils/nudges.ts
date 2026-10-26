@@ -153,7 +153,12 @@ export function privacyOwedFor({ user, signedIn, version, effectiveAt, storage }
 }
 
 /** The only route a nudge is picked on and shown on. */
-export const NUDGE_PATH = '/feed';
+const NUDGE_PATH = '/feed';
+
+/** Whether `pathname` is the feed route: React Router (and app.tsx) also match '/feed/'. */
+export function isNudgePath(pathname: string) {
+  return pathname.replace(/\/+$/, '') === NUDGE_PATH;
+}
 
 /**
  * The picked notice, while it may be on screen: for a signed-in reader, on the
@@ -161,7 +166,7 @@ export const NUDGE_PATH = '/feed';
  * takes the Escape meant for the notice. It comes back when the reader returns.
  */
 export function noticeOnScreen({ picked, signedIn, pathname }: { picked: string | null; signedIn: boolean; pathname: string }) {
-  return signedIn && pathname === NUDGE_PATH ? picked : null;
+  return signedIn && isNudgePath(pathname) ? picked : null;
 }
 
 /** One of the pending ones, at random, or nothing at all. */

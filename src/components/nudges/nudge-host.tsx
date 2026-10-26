@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple, ShieldCheck } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -7,7 +7,7 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
-  NUDGE_PATH,
+  isNudgePath,
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
@@ -90,7 +90,7 @@ export default function NudgeHost() {
 
   const openable = dwellDone
     && signedIn
-    && location.pathname === NUDGE_PATH;
+    && isNudgePath(location.pathname);
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
@@ -124,10 +124,30 @@ export default function NudgeHost() {
   // The close button does the same for a touch reader, who has no Escape.
   // Focus moves only when it was inside the panel: Safari does not focus a
   // button on click, and a reader whose focus sits on a feed control keeps it.
+  // Where focus was on the page before it went into the panel: Got it and the
+  // close button hand it back there, so the next Tab continues from the card the
+  // reader was on and not from the top of the page.
+  const focusBeforePanel = useRef<Element | null>(null);
+  useEffect(() => {
+    if (!privacyShown) return undefined;
+    const rememberFocus = (event: FocusEvent) => {
+      const target = event.target as Element | null;
+      if (target instanceof HTMLElement && !target.closest('.nudge')) focusBeforePanel.current = target;
+    };
+    document.addEventListener('focusin', rememberFocus);
+    return () => {
+      document.removeEventListener('focusin', rememberFocus);
+      focusBeforePanel.current = null;
+    };
+  }, [privacyShown]);
+
   const hidePrivacyForVisit = useCallback(() => {
     const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
+    const before = focusBeforePanel.current;
     setPicked(null);
-    if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });
+    if (!focusWasInside) return;
+    const back = before instanceof HTMLElement && before.isConnected ? before : document.getElementById('main-content');
+    back?.focus({ preventScroll: true });
   }, []);
 
   const uid = user?.uid;

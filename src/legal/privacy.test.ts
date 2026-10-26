@@ -156,6 +156,27 @@ test('the in-app summary also says what changed on the page since the 20 October
   }
 });
 
+test('the in-app summary says what usage analytics records and links to the account, in the page\'s words', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // On 20 October the page said analytics "never records which paper you read" unless detailed analytics was accepted.
+  // Every other clause of the summary is tied to the page here, so rewording the page leaves no stale clause behind.
+  const clauses: [summary: string, page: RegExp][] = [
+    ['keeps an identifier in this browser that connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
+    ['record the papers you view, open, like, save, highlight or annotate', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
+    ['the authors, topics or institutions you follow, by identifier', /the authors, topics or institutions you follow by their identifier/],
+    ['linked to your account when you sign in', /When you sign in, PaperTok links that activity to your account identifier/],
+    ['(turn it off in Settings)', /turn off both services in <strong>Settings → Privacy<\/strong>/],
+    ['error reports go to PostHog', /<strong>Error reports<\/strong> from the browser and backend also go to PostHog/],
+    ['the server keeps your feed order for up to 2 hours', /the server keeps the order it ranked for you[^.]*for up to 2 hours after your last page/],
+    ['counts requests per account', /counts them per account, under a hashed account identifier/],
+  ];
+  for (const [said, onPage] of clauses) {
+    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), `the summary says "${said}"`);
+    assert.match(html, onPage);
+  }
+  assert.doesNotMatch(PRIVACY_POLICY_CHANGE, /on by default/, 'anonymous analytics was already on by default on 20 October');
+});
+
 test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';

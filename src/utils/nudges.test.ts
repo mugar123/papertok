@@ -257,6 +257,10 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname });
   assert.equal(on(PRIVACY_NOTICE_ID, true, '/feed'), PRIVACY_NOTICE_ID);
   assert.equal(on('email-down', true, '/feed'), 'email-down');
+  for (const pathname of ['/feed/', '/feed//']) {
+    assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), PRIVACY_NOTICE_ID, `the feed route also matches ${pathname}`);
+    assert.equal(on('email-down', true, pathname), 'email-down', `the email nudge too on ${pathname}`);
+  }
   for (const pathname of ['/search', '/lists', '/explore', '/settings', '/paper/abc', '/feed/x', '/']) {
     assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), null, `a paper may be open as a modal on ${pathname}`);
     assert.equal(on('email-down', true, pathname), null, `the email nudge too on ${pathname}`);
