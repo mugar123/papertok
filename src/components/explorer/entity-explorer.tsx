@@ -85,7 +85,9 @@ import CareerTimeline from './career-timeline.tsx';
 import OrcidLinks from './orcid-links.tsx';
 import { foldMotion } from './explorer-fold.ts';
 import { careerStops } from './career-stops.ts';
+import ExplorerHeroTop from './explorer-hero-top.tsx';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.tsx';
@@ -133,6 +135,9 @@ import { formatProjectAmount } from '../../utils/format-project-amount.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
+
+// The Privacy trigger at Share's 40px (`.ehc-share`), so the bar's icon buttons match.
+const EXPLORER_PRIVACY_BUTTON = `${buttonVariants({ variant: 'ghost', size: 'icon-sm' })} ehc-share`;
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -1510,10 +1515,10 @@ export default function EntityExplorer({
     toggleFollow(followEntity).catch(console.error);
   };
 
-  // A visitor's analytics switch rides at the end of the actions, the far
-  // side of the bar from Back, where the paper page and the list keep it too.
+  // A visitor's analytics switch sits last in the bar, the far side from
+  // Back, where the paper page and the list keep it too (`explorerPrivacy`).
   // Only without a session: an account has Settings for it.
-  const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0 || publicMode) && (
+  const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
     <div className="ehc-actions">
       {followEntity && (
         <FollowToggle
@@ -1548,9 +1553,10 @@ export default function EntityExplorer({
           ))}
         </div>
       )}
-      {publicMode && <PrivacyPopover />}
     </div>
   );
+
+  const explorerPrivacy = publicMode && <PrivacyPopover className={EXPLORER_PRIVACY_BUTTON} />;
 
   const retryPapers = () => {
     setPapersError(null);
@@ -1647,16 +1653,7 @@ export default function EntityExplorer({
             hidden on its own instead, so the Back button is the one thing in
             here a screen reader still announces. */}
         <div className="explorer-hero">
-          <div className="explorer-hero-top">
-            <div className="eht-left">
-              <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
-                <ArrowLeft size={20} />
-              </Button>
-            </div>
-            {/* Where the live hero keeps it (`heroActions`), from the first
-                frame: a visitor can object while the entity is still coming. */}
-            {publicMode && <PrivacyPopover />}
-          </div>
+          <ExplorerHeroTop onBack={handleBack} privacy={explorerPrivacy} />
 
           {/* The live hero's own nesting, copied rather than approximated:
               header wraps main and aside, and the stats sit inside the aside.
@@ -2186,16 +2183,9 @@ export default function EntityExplorer({
       {/* Immersive Hero */}
       <div className="explorer-hero">
         
-        <div className="explorer-hero-top">
-          <div className="eht-left">
-            <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
-              <ArrowLeft size={20} />
-            </Button>
-          </div>
-          {/* Every page keeps its actions in the bar, across from the way
-              back, and leaves the header below to the entity itself. */}
-          {heroActions}
-        </div>
+        {/* Every page keeps its actions in the bar, across from the way
+            back, and leaves the header below to the entity itself. */}
+        <ExplorerHeroTop onBack={handleBack} actions={heroActions} privacy={explorerPrivacy} />
         
         <div className="explorer-hero-content" ref={heroBodyRef}>
           <div className={`ehc-layout${usesSheet ? ' ehc-layout--sheet' : ''}`}>

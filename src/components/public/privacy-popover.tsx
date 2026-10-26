@@ -25,8 +25,8 @@ const COPY = {
   newTab: ' (opens in a new tab)',
 };
 
-// The trigger where the host has no icon button of its own: the shared ghost
-// icon button, the size of the explorer's Share.
+// The trigger where the host has no icon button of its own: the shared 32px
+// ghost icon button. The explorer passes its own, at Share's 40px.
 const ICON_BUTTON = buttonVariants({ variant: 'ghost', size: 'icon-sm' });
 
 /**

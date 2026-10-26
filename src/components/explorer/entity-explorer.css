@@ -156,8 +156,15 @@
 .explorer-hero-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-1);
   margin-bottom: var(--space-5);
+}
+
+/* Back at one end, the actions and Privacy at the other. Privacy is its own
+   item, last, so it keeps one place whether or not the bar has actions. */
+.explorer-hero-top > .ehc-actions,
+.eht-left + .privacy-popover-trigger {
+  margin-left: auto;
 }
 
 .eht-left {
