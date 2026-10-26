@@ -7,8 +7,7 @@ import type { StoreEnv } from './paper-store.ts';
 import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
-import { stripMarkup } from '../src/services/crossref-institution-service.ts';
-import { decodeHtmlEntities, preferTexAlternatives } from '../src/utils/latex.ts';
+import { normalizeScientificMarkup } from '../src/utils/latex.ts';
 import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
@@ -142,15 +141,18 @@ const JATS_TITLE = /<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w
 const JATS_HEADINGS = new Set(['abstract', 'summary']);
 
 function sectionLabel(_match: string, title: string) {
-  const label = stripMarkup(preferTexAlternatives(title));
+  const label = normalizeScientificMarkup(title);
   if (!label || JATS_HEADINGS.has(label.replace(/[:.]$/, '').toLowerCase())) return ' ';
-  return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
+  return ` ${title.trim()}${/[:.]$/.test(label) ? '' : ':'} `;
 }
 
 function crossrefAbstractText(jats: unknown) {
   const deposit = String(jats || '');
   const first = JATS_ABSTRACT.exec(deposit)?.[0] ?? deposit;
-  return decodeHtmlEntities(stripMarkup(preferTexAlternatives(first.replace(JATS_SECTION_TITLE, sectionLabel).replace(JATS_TITLE, ' ')))).replace(/\s+/g, ' ').trim();
+  return normalizeScientificMarkup(first
+    .replace(JATS_SECTION_TITLE, sectionLabel)
+    .replace(JATS_TITLE, ' ')
+    .replace(/<\/(?:[a-z][\w.-]*:)?(?:p|sec)\s*>/gi, ' '));
 }
 
 /** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */

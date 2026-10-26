@@ -10,6 +10,7 @@ import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { FEED_MAX_FOLLOWS, entityLane, followLane } from '../src/utils/follow-lanes.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -44,7 +45,6 @@ const FEED_PAGE_SIZE = 15;
 // their retrieval budget. This bounds work, not the composition of a page.
 const AREA_CANDIDATE_LIMIT = 800;
 const FEED_MAX_CATEGORIES = 12;
-const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_EXCLUDED = 200;
 const DIVERSITY_POOL = 500;
@@ -231,18 +231,10 @@ const NOTABLE_READ_PER_YEAR = 25;
 export const AREA_LANE_AREAS: readonly string[] = [...ARXIV_FEED_AREAS.filter(area => area !== 'stat'), 'chem'];
 export const areaLane = (area: string) => `area:${area}`;
 const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
-const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
-const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
 // The entities whose lanes hold papers only while a reader follows them: a
 // paper names many, readers follow few, and no page reads the rest. Their
 // unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
 const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
-
-function entityLane(value: unknown) {
-  const match = text(value).match(OPENALEX_ENTITY);
-  const id = (match?.[1] || match?.[2] || '').toUpperCase();
-  return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
-}
 
 // The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
 function namedEntityLanes(paper: Partial<Paper>) {
@@ -995,8 +987,19 @@ export interface FeedQuery {
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
-  // The papers the reader has seen (`feedSeenFilter`); without it, no notable papers.
+  // The papers the reader has seen (`feedSeenFilter`). Without it, no notable
+  // papers come.
   seen: BloomFilter | null;
+  // The page passes over the papers `seen` holds (PAP-103). Without it, `page`
+  // names the page: apps that send `seen` only for notable papers page by number.
+  skipsSeen: boolean;
+  // A page that skips seen papers, asked for past the last page (`page` then
+  // holds the last): when its walk finds no unseen paper, it has no papers.
+  pastLastPage: boolean;
+  // A first page that skips seen papers and goes on with the walk of the
+  // order kept under its key, as a later page does, rather than start a new
+  // one: the app asks for it after a change of follows (ENG-103).
+  continues: boolean;
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
@@ -1009,20 +1012,85 @@ export interface FeedQuery {
  * first without any. Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
-/** A reader's ranked candidates, kept for the pages after the first. */
-export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number }
 /**
- * The order a reader's pages were served from. `served` counts the ranks
- * pages have covered, including the empty ones of a page the order ran out
- * on, which `ranks` holds as null. A `final` order serves the next pages as
- * it is; otherwise a next page keeps only the ranks served and ranks the rest
- * again. `notable` is the asked categories' notable papers, closest first,
- * which no rank holds: each page reads the ones its reader has not seen.
+ * A reader's ranked candidates, kept for the pages after the first. `paperId`
+ * is the app's id of the paper once a page with `seen` has read it from its
+ * row to check it against the filter, '' when the corpus no longer holds the
+ * work: the next pages check it against theirs without reading it again.
  */
-export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean; notable?: RankedCandidate[] }
+export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
+/**
+ * The order a reader's pages were served from, in an entry of the reader's
+ * alone, kept from the last page that changed it for WALK_KEPT_MS when its
+ * pages skip seen papers, RANKING_KEPT_MS otherwise. `served`
+ * counts the ranks of the pages served by their numbers, including the empty
+ * ones of a page the order ran out on, which `ranks` holds as null.
+ *
+ * A page that skips seen papers walks the order from `walked`, the rank of the
+ * first paper the last walk sent: that walk's filter held every rank before
+ * it, or the corpus had dropped the work. A filter holds only the reader's
+ * 2,000 most recent papers, so a walk from the top would send again the ones
+ * seen before those; one that a page sent and the app never got is sent again.
+ * `notable` is the asked categories' notable papers, closest first, which no
+ * rank holds, walked the same way from `notableWalked`.
+ *
+ * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
+ * lanes in the same order, `order`, likes, rejections and interest groups
+ * (`rankedBy`, a digest, so the entry holds no liked paper's id) serves the
+ * next pages as it is. Otherwise a next page keeps the ranks served and the
+ * ones walked past, less the papers liked or rejected since, and the notable
+ * papers walked past, and ranks the rest again; a page that skips seen papers
+ * keeps of those the ones `keptPassed` keeps. With the ids the walks read
+ * (`paperId`), the entry tells which ranks at the top of the reader's
+ * ranking their filter held.
+ */
+export interface KeptRanking {
+  ranks: Array<RankedCandidate | null>;
+  served: number;
+  final: boolean;
+  notable: RankedCandidate[];
+  walked: number;
+  notableWalked: number;
+  rankedAt: number;
+  rankedBy: string;
+}
+/** Keeps each order for `keptMs` from its last write. */
 export interface RankingCache {
   get(key: string): Promise<KeptRanking | null>;
-  put(key: string, ranking: KeptRanking): Promise<void>;
+  /** An order just ranked. */
+  put(key: string, ranking: KeptRanking, keptMs: number): Promise<void>;
+  /** An order read from the cache, with what its page changed: the pages served, the ids read, where the walks stopped. */
+  update?(key: string, ranking: KeptRanking, keptMs: number): Promise<void>;
+}
+
+// How long an order serves the pages after the first as it was ranked
+// (`rankedAt`); after that a page ranks it again after the ranks already
+// passed, so papers filed since come next. An order paged by number is kept
+// as long from the last page that changed it.
+const RANKING_KEPT_MS = 15 * 60_000;
+// How long a walk's order (pages that skip seen papers) is kept from the last
+// page that changed it. A walk whose order is gone starts again from the top
+// of the ranking and sends again, 15 a page, every paper the session was shown
+// that the reader's filter no longer holds: past about 65 loads, for about as
+// many loads as the session had. Two hours cover breaks of 20, 45 and 90
+// minutes (ENG-103); privacy.html states this lifetime.
+const WALK_KEPT_MS = 2 * 60 * 60_000;
+
+/**
+ * The lanes in their order, `order`, the likes, the rejections and the
+ * interest groups an order is ranked by, as a digest (`rankedBy`).
+ */
+async function rankingInputs(lanes: string[], query: FeedQuery) {
+  // The groups in their order, which decides the group an area's article goes to.
+  const groups = query.groups.map(group => ({
+    categories: [...group.categories].sort(),
+    examples: [...group.exampleCategories].sort(),
+    positives: [...group.positiveIds].sort(),
+    weight: Math.round(group.weight * 100) / 100,
+  }));
+  const inputs = JSON.stringify({ lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -1033,10 +1101,24 @@ export interface RankingCache {
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
  * later page of the same request reads only its own papers from a final
- * order. Otherwise it ranks again, after the ranks already served: a paper
- * that arrived since starts on this page, and none served comes back. An
- * order with nothing left to serve is not final: the lanes may be about to
- * fill.
+ * order. Otherwise it ranks again, after the ranks already served or walked
+ * past (KeptRanking): a paper that arrived since starts on this page, and
+ * none served comes back. An order with nothing left to serve is not final:
+ * the lanes may be about to fill.
+ *
+ * With `skipsSeen`, the page is the first papers of the order the filter does
+ * not hold, whatever `page` says, so a reload needs one request however many
+ * pages the reader saw before (PAP-103); a false positive passes over a paper
+ * the reader has not seen. A later page walks on from the first paper the
+ * last walk sent, not from the top, and so does a first page that `continues`
+ * when the reader's order is kept. When the order holds none, the page is
+ * the one `page` names, papers the reader has seen, rather than none; it goes
+ * on past the works the corpus has dropped, as a walk does. It still starts
+ * at the rank `page` names, so it can send again the papers that the page
+ * before it reached past dropped works; the app lists none twice and asks for
+ * the next page. Past the last page it is none, as for a page asked by number
+ * there. The paper ids the walk reads stay in the kept order, so a later page
+ * reads only the ones no page has read.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -1049,35 +1131,105 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
-  // The groups in their order, which decides the group an area's article goes to.
-  const groups = query.groups.map(group => ({
-    categories: [...group.categories].sort(),
-    examples: [...group.exampleCategories].sort(),
-    positives: [...group.positiveIds].sort(),
-    weight: Math.round(group.weight * 100) / 100,
-  }));
-  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0, groups });
-  const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
-  let ranking = kept?.final ? kept.ranks : null;
+  // A page that skips seen papers goes on with its session's walk whatever
+  // categories, interest groups and `order` it asks for: the app asks for the
+  // reader's first ten categories by their interests, plans the groups again
+  // with each first page, and asks for older papers past a lean toward them, all of
+  // which a session changes. Those, the order of the lanes, the likes and the
+  // rejections change the ranking (`rankedBy`), not the walk, so a change
+  // ranks again after the ranks the session passed rather than from the top.
+  // Other pages keep an order per set of lanes and `order`.
+  const cacheKey = JSON.stringify({
+    ...(query.skipsSeen ? { follows: [...new Set(query.follows.map(follow => follow.lane))].sort() } : { lanes: [...lanes].sort(), order: query.order }),
+    excluded: [...query.excludedIds].sort(),
+    pageSize: query.pageSize,
+    notable: query.notable > 0,
+  });
+  const rankedBy = await rankingInputs(lanes, query);
+  const goesOn = query.page > 0 || query.continues;
+  const kept = goesOn && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  // Counted in Workers Logs, without the reader or a paper: a page that goes
+  // on with a walk (one past the first, or a first one that continues) whose
+  // order this location does not hold, so the walk starts again from the top.
+  // Another location answered, the cache evicted the entry early, or the
+  // reader was away longer than WALK_KEPT_MS.
+  if (!kept && goesOn && cache && query.skipsSeen) console.log('Feed walk has no kept order to go on with');
+  const keptMs = query.skipsSeen ? WALK_KEPT_MS : RANKING_KEPT_MS;
+  const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
+  let ranking = kept?.ranks ?? [];
   let notable = kept?.notable ?? [];
-  if (!ranking) {
-    const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
-    const shown = new Set(served.map(candidate => candidate?.workId));
+  let walked = kept?.walked ?? 0;
+  let notableWalked = kept?.notableWalked ?? 0;
+  if (rankedAgain) {
     const ranked = await rankCandidates(db, lanes, query, now);
+    const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
+    // A page asked by number needs every rank served, empty ones included, at
+    // its place. A paper liked or rejected since leaves its rank empty: a page
+    // that finds nothing unseen falls back on these ranks, and would send it
+    // again. A walk drops empty ranks, and the others past the limit it carries
+    // (`keptPassed`), so its fallback page is counted over the ranks that remain
+    // and starts further down by the ranks dropped before its first paper.
+    let served = Array.from({ length: passed }, (_, index) => {
+      const candidate = kept!.ranks[index] ?? null;
+      return candidate && !ranked.excluded.has(candidate.workId) ? candidate : null;
+    });
+    if (query.skipsSeen) ({ ranks: served, walked } = keptPassed(served, walked, ranked.ranks, FEED_CANDIDATE_LIMIT + AREA_CANDIDATE_LIMIT));
+    const shown = new Set(served.map(candidate => candidate?.workId));
+    const notablePassed = keptPassed(notable.slice(0, notableWalked), notableWalked, ranked.notable, NOTABLE_READ_PER_YEAR * NOTABLE_YEARS * FEED_MAX_CATEGORIES);
+    notableWalked = notablePassed.walked;
+    const notableShown = new Set(notablePassed.ranks.map(candidate => candidate.workId));
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
-    notable = ranked.notable;
-    const through = (query.page + 1) * query.pageSize;
-    await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
-      .catch(error => console.warn('Feed ranking not cached', error));
+    notable = [...notablePassed.ranks, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
-  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
+  const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
+  const [own, unseen] = await Promise.all([
+    query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize, { from: walked }) : null,
+    // After the page's own papers, for the app to place: one it leaves out is
+    // still unseen, so a later page offers it again. Read beside the walk; a
+    // page that can have no paper of its own reads none.
+    query.seen && query.notable > 0 && (query.skipsSeen ? ranking.some(candidate => candidate !== null) : named.length > 0)
+      ? unseenRanks(db, notable, query.seen, query.notable, { from: notableWalked })
+      : null,
+  ]);
+  // A walk with no unseen paper to send falls back on the page `page` names,
+  // walked from its first rank as if the reader had seen nothing, so that page
+  // too goes on past the works the corpus dropped.
+  const walkNamed = () => unseenRanks(db, ranking, null, query.pageSize, { from: query.page * query.pageSize });
+  let fallback = own && !own.unseen.length && !query.pastLastPage ? await walkNamed() : null;
+  const works = await readWorks(db, [...(own ? (fallback ?? own).unseen : named), ...(unseen?.unseen ?? [])].map(candidate => candidate.workId));
+  // A walk trusts the ids pages left on the kept order, and a work the corpus
+  // has dropped since (merged into another, evicted) has no row: the walk
+  // goes on past it, and the order loses its id.
+  if (own?.unseen.length && query.seen) {
+    await walkPastDropped(db, own, ranking, query.seen, query.pageSize, works);
+    // Every unseen paper of the order is gone: the named page, as when it holds none.
+    if (own.unseen.length === 0 && !query.pastLastPage) {
+      fallback = await walkNamed();
+      (await readWorks(db, fallback.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+    }
+  }
+  if (fallback?.unseen.length) await walkPastDropped(db, fallback, ranking, null, query.pageSize, works);
+  if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
+  const sent = fallback ?? own;
+  const ranked = sent ? sent.unseen : named;
+  const walks = {
+    walked: own ? passedFirst(ranking, walked, own) : walked,
+    notableWalked: unseen ? passedFirst(notable, notableWalked, unseen) : notableWalked,
+  };
+  const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
+  if (rankedAgain) {
+    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
+      .catch(error => console.warn('Feed ranking not cached', error));
+  } else if (kept) {
+    const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
+    if (own?.read || fallback?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
+      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
+        .catch(error => console.warn('Feed ranking not cached', error));
+    }
+  }
   if (ranked.length === 0) return [];
-  // After the page's own papers, for the app to place: one it leaves out is
-  // still unseen, so a later page offers it again.
-  const unseen = query.seen && query.notable > 0 ? await unseenNotable(db, notable, query.seen, query.notable) : [];
-  const notableIds = new Set(unseen.map(candidate => candidate.workId));
-  const candidates = [...ranked, ...unseen];
-  const works = await readWorks(db, candidates.map(candidate => candidate.workId));
+  const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
+  const candidates = [...ranked, ...(unseen?.unseen ?? [])];
   const categories = new Set(query.categories);
   return candidates.flatMap(candidate => {
     const row = works.get(candidate.workId);
@@ -1096,20 +1248,101 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
 }
 
 /**
- * The notable papers in `ranked` the reader has not seen, in order, until
- * `wanted` are found. The filter holds the ids the app was served, so each
- * candidate's is read from its row.
+ * Of the ranks an order passed (`ranks`, walked up to `walked`), the ones a
+ * ranking again keeps ahead of its new ranks, and where its walk then starts.
+ * It keeps every paper still among the `candidates`, so none comes back once
+ * the filter no longer holds it. Of the others (a category the app no longer
+ * asks for, a work the corpus dropped), it keeps the first `others` passed,
+ * which the filter is the least likely to still hold when their category
+ * comes back. It keeps no empty rank. Without this bound, a filter that holds
+ * every paper, with another category on each page, would keep every earlier
+ * ranking whole.
  */
-async function unseenNotable(db: D1Database, ranked: RankedCandidate[], seen: BloomFilter, wanted: number) {
+function keptPassed(ranks: Array<RankedCandidate | null>, walked: number, candidates: RankedCandidate[], others: number) {
+  const current = new Set(candidates.map(candidate => candidate.workId));
+  let room = others;
+  const keeps = ranks.map(candidate => {
+    if (candidate === null) return false;
+    if (current.has(candidate.workId)) return true;
+    room -= 1;
+    return room >= 0;
+  });
+  return {
+    ranks: ranks.filter((candidate, index): candidate is RankedCandidate => keeps[index]),
+    walked: keeps.slice(0, walked).filter(Boolean).length,
+  };
+}
+
+/**
+ * Moves the ranks a walk from `from` passed over ahead of the papers it found,
+ * and returns where the next walk starts: past every rank the walk's filter
+ * held (or that names a work the corpus dropped, or none), and at the papers
+ * found, so one the app never got or did not place is found again. A later
+ * filter that no longer holds the passed ones does not bring them back, and a
+ * paper that a ranking after this one puts first stays ahead of the found
+ * ones without holding the next walk back.
+ */
+function passedFirst(ranks: Array<RankedCandidate | null>, from: number, walk: Awaited<ReturnType<typeof unseenRanks>>) {
+  const found = new Set(walk.unseen);
+  const passed = ranks.slice(from, walk.end).filter(candidate => !candidate || !found.has(candidate));
+  ranks.splice(from, walk.end - from, ...passed, ...walk.unseen);
+  return from + passed.length;
+}
+
+/**
+ * The first `wanted` of `ranks` from `from` whose papers the reader has not
+ * seen, in order, how many ranks the walk took to find them (`end`), and
+ * whether it read paper ids (`read`). The filter holds the ids the app was
+ * served, so a candidate's is read from its row, unless a walk already left
+ * it on the candidate (`paperId`) and the walk trusts it (not `recheck`): up
+ * to rank 200, then 600, 1,400, 3,000 and so on, wherever the walk starts, so
+ * a reader who has seen a few thousand papers costs a few reads, a whole
+ * ranking of up to 12,600 ranks at most six, and pages that each walk on from
+ * the last read each id once. Without `seen`, the reader has seen none.
+ */
+async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter | null, wanted: number, { from = 0, recheck = false } = {}) {
   const unseen: RankedCandidate[] = [];
-  for (let start = 0; start < ranked.length && unseen.length < wanted; start += 200) {
-    const chunk = ranked.slice(start, start + 200);
-    const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
-      .bind(JSON.stringify(chunk.map(candidate => candidate.workId))).all<{ id: number; paper_id: string }>();
-    const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
-    unseen.push(...chunk.filter(candidate => paperIds.has(candidate.workId) && !hasSeenPaper(seen, paperIds.get(candidate.workId))));
+  let end = from;
+  let read = false;
+  for (let bound = 200; end < ranks.length && unseen.length < wanted; bound = 2 * bound + 200) {
+    if (bound <= end) continue;
+    const chunk = ranks.slice(end, bound);
+    const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && (recheck ? candidate.paperId !== '' : candidate.paperId === undefined));
+    if (unread.length) {
+      const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
+        .bind(JSON.stringify(unread.map(candidate => candidate.workId))).all<{ id: number; paper_id: string | null }>();
+      const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
+      for (const candidate of unread) candidate.paperId = paperIds.get(candidate.workId) ?? '';
+      read = true;
+    }
+    for (const candidate of chunk) {
+      if (unseen.length === wanted) break;
+      end += 1;
+      if (candidate?.paperId && !(seen && hasSeenPaper(seen, candidate.paperId))) unseen.push(candidate);
+    }
   }
-  return unseen.slice(0, wanted);
+  return { unseen, end, read };
+}
+
+/**
+ * Takes out of `walk` the candidates whose work `works` lacks, and walks
+ * `ranks` on for as many, reading their rows into `works`. A page left those
+ * ids on the kept order before the corpus dropped the work; each loses its
+ * id, so no later page reads it again or counts it as a paper. The ids left
+ * on the ranks after them can name dropped works too, so the walk on reads
+ * them again rather than trust them: one more walk however many works the
+ * corpus dropped, not one per page of them. A work dropped between that walk
+ * and the read of its row leaves the page one paper short.
+ */
+async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof unseenRanks>>, ranks: Array<RankedCandidate | null>, seen: BloomFilter | null, wanted: number, works: Map<number, WorkRow>) {
+  const found = walk.unseen.filter(candidate => works.has(candidate.workId));
+  if (found.length === walk.unseen.length) return;
+  const more = await unseenRanks(db, ranks, seen, wanted - found.length, { from: walk.end, recheck: true });
+  (await readWorks(db, more.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+  for (const candidate of [...walk.unseen, ...more.unseen]) if (!works.has(candidate.workId)) candidate.paperId = '';
+  walk.unseen = [...found, ...more.unseen.filter(candidate => works.has(candidate.workId))];
+  walk.end = more.end;
+  walk.read = true;
 }
 
 /**
@@ -1203,7 +1436,7 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
   return areas;
 }
 
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number> }> {
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
   const workIdsOf = (ids: string[]) => [...new Set(ids.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const positiveIds = workIdsOf(query.positiveIds);
@@ -1259,39 +1492,17 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // The closest notable papers first, without recency: they are years old by design.
     notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+    excluded,
   };
 }
 
 // ─── Requests ───
 
 const CATEGORY_ID = /^[\w.-]{1,32}$/;
-const FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
-
-/**
- * The lane a followed entity is served from: the OpenAlex entity a paper
- * names, a search for a followed query or an author known by name only, or
- * a funded project. A topic that is one of the app's categories is asked for
- * as that category instead, and gets no lane here.
- */
-export function followLane(follow: { type?: unknown; canonicalId?: unknown; displayName?: unknown; metadata?: { query?: unknown; funder?: unknown } | null }) {
-  const type = text(follow?.type);
-  const canonicalId = text(follow?.canonicalId).split('/').pop()!.slice(0, 200);
-  if (!FOLLOW_TYPES.has(type) || !canonicalId) return '';
-  if (type === 'project') {
-    const funder = text(follow.metadata?.funder).slice(0, 80);
-    return `project:${funder ? `${funder}|` : ''}${canonicalId}`;
-  }
-  const entity = entityLane(canonicalId);
-  if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
-  if (LEAF_IDS.has(canonicalId)) return '';
-  const query = text(type === 'topic' ? follow.metadata?.query || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
-  if (!query) return '';
-  return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
-}
 
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
-  seen?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
+  seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
 }
 
 const categoryIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(text).filter(category => CATEGORY_ID.test(category)))];
@@ -1340,6 +1551,8 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
   const excludedIds = [...new Set((Array.isArray(body?.excludedIds) ? body.excludedIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_EXCLUDED);
   const seen = body?.seen === undefined ? null : readFeedSeenFilter(body.seen);
   if (body?.seen !== undefined && !seen) throw new PaperStoreError('SEEN_INVALID', 400);
+  const skipsSeen = seen !== null && body?.skipsSeen === true;
+  const page = Math.max(0, Math.floor(Number(body?.page) || 0));
   return {
     categories,
     follows,
@@ -1347,10 +1560,15 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     groups,
     negativeIds,
     excludedIds,
-    page: Math.max(0, Math.floor(Number(body?.page) || 0)),
+    // A page that skips seen papers walks on whatever its number, which the
+    // app raises on every load; past the last page, it counts as the last.
+    page: skipsSeen ? Math.min(page, FEED_MAX_PAGE) : page,
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
     seen,
+    skipsSeen,
+    pastLastPage: skipsSeen && page > FEED_MAX_PAGE,
+    continues: skipsSeen && body?.continues === true,
     notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
     // Not for the follows' request, even when no follow has a lane of its own
     // (a category topic): there the categories stand for followed topics
