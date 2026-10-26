@@ -7,6 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
+import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -1546,6 +1547,69 @@ test('a year with no ADS papers does not end the lane', async t => {
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:quant-ph'").get() as { n: number }).n, 9);
 });
 
+// PubMed's records and the preprint servers', without retracted papers and the
+// notices, errata and opinion pieces around research.
+const europePmcRecords = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT ((PUB_TYPE:"editorial" OR PUB_TYPE:"letter" OR PUB_TYPE:"comment") AND HAS_ABSTRACT:n)';
+// Synthetic Europe PMC search records in the shape the core search returns; not captured.
+const europePmcRecord = (index: number, extra: Record<string, unknown> = {}) => ({
+  id: String(29000000 + index), source: 'MED', pmid: String(29000000 + index), doi: `10.5555/genetics.${index}`,
+  title: `A genetics landmark, number ${index}`, abstractText: 'A synthetic abstract about genome-wide association studies of complex traits.',
+  authorString: 'Doe J, Roe R.', firstPublicationDate: '2018-03-14', pubYear: '2018', citedByCount: 5000 - index,
+  ...extra,
+});
+
+test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited records of each year that name the leaf", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ resultList: { result: [europePmcRecord(1)] } }));
+  const page = (n: number) => SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:bio.gen', page: n, since: '', waits: { seconds: 0 } });
+  await page(1);
+  const { items } = await page(3);
+  assert.deepEqual(urls.map(url => `${url.origin}${url.pathname}`), Array(2).fill('https://www.ebi.ac.uk/europepmc/webservices/rest/search'));
+  assert.deepEqual(urls.map(url => url.searchParams.get('query')), [
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2016-01-01 TO 2016-12-31] AND ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2018-01-01 TO 2018-12-31] AND ${europePmcRecords} sort_cited:y`,
+  ]);
+  assert.deepEqual(['pageSize', 'resultType', 'format'].map(name => urls[0].searchParams.get(name)), ['100', 'core', 'json']);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:bio.gen']]]);
+});
+
+test('every medicine and biology leaf the Europe PMC sample admitted, and no other leaf, has a Europe PMC notable job', async () => {
+  const { binding } = testD1();
+  const lanes = (await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'))).filter(job => job.source === 'europepmc-notable').map(job => job.lane);
+  const coverage = gateFile('europepmc-notable-coverage.json') as Array<{ leaf: string; status: string }>;
+  assert.deepEqual(lanes, coverage.filter(row => row.status === 'passed').map(row => `notable:${row.leaf}`).sort());
+  // med.onco's sample was 14 of 15 on target on 2026-10-26, bio.physio's 0,
+  // med.psych's 14 of a label that matches 57 records.
+  assert.ok(lanes.includes('notable:med.onco'));
+  for (const lane of ['notable:bio.physio', 'notable:med.psych', 'notable:cs.CV']) assert.ok(!lanes.includes(lane), lane);
+});
+
+test('a year with no Europe PMC records does not end the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const yearOf = (url: URL) => Number(url.searchParams.get('query')!.match(/FIRST_PDATE:\[(\d{4})-/)![1]);
+  const { urls, env } = relay(t, url => ({ resultList: { result: yearOf(url) === 2016 ? [] : [europePmcRecord(yearOf(url), { firstPublicationDate: `${yearOf(url)}-03-14` })] } }));
+  const { binding, db } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'europepmc-notable', lane: 'notable:med.onco' }, Date.now());
+  assert.deepEqual(urls.map(yearOf), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:med.onco'").get() as { n: number }).n, 9);
+});
+
+test('a preprint Europe PMC and bioRxiv both list is one work, in the notable lane and the category lane', async t => {
+  const now = Date.parse('2026-10-26T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const doi = '10.1101/2018.03.14.123456';
+  const preprint = europePmcRecord(2, { id: 'PPR12345', source: 'PPR', pmid: undefined, doi, firstPublicationDate: '2018-03-14' });
+  const { env } = relay(t, () => ({ resultList: { result: [preprint] } }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await ingestPapers(store, [{ paper: mapBioRxivPaper({ doi, title: preprint.title, abstract: preprint.abstractText, authors: 'Doe, J.', category: 'genetics', date: '2018-03-14', version: '1' })!, lanes: ['bio.gen'] }], { keepUntil: daysFromNow(14, now), now });
+  await harvestLane(store, { source: 'europepmc-notable', lane: 'notable:bio.gen' }, now);
+  const rows = db.prepare('SELECT work_id, lane FROM work_lanes ORDER BY lane').all() as Array<{ work_id: number; lane: string }>;
+  assert.deepEqual(rows.map(row => row.lane), ['bio.gen', 'notable:bio.gen']);
+  assert.equal(new Set(rows.map(row => row.work_id)).size, 1);
+  assert.deepEqual(db.prepare("SELECT paper ->> '$.publicationStatus' AS status FROM works").all().map(row => row.status), ['preprint'], 'still a preprint after the Europe PMC listing');
+});
+
 test('a leaf the notable sample admitted gets a notable lane asking for its sampled topics, and no topic lane', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
   const { binding } = testD1();
@@ -1607,11 +1671,12 @@ test("a night lists every never-harvested notable job, then each source's share 
     for (const [job, through] of rows) harvested.run(...job.split(' '), through);
     return (await notableLaneJobs(binding, now)).map(job => `${job.source} ${job.lane}`);
   };
-  // The first night: OpenAlex's lanes, then ADS's, each by lane id.
+  // The first night: OpenAlex's lanes, then ADS's, then Europe PMC's, each by lane id.
   const jobs = await nightWith([]);
   const openAlex = jobs.filter(job => job.startsWith('openalex-notable '));
   const ads = jobs.filter(job => job.startsWith('ads-notable '));
-  assert.deepEqual(jobs, [...notableLeaves().map(leaf => `openalex-notable notable:${leaf}`), ...[...ads].sort()]);
+  const europePmc = jobs.filter(job => job.startsWith('europepmc-notable '));
+  assert.deepEqual(jobs, [...notableLeaves().map(leaf => `openalex-notable notable:${leaf}`), ...[...ads].sort(), ...[...europePmc].sort()]);
   const share = (source: string[]) => notableLanesPerNight(source.length);
   // Harvested eight days ago, each a minute after the next job, so the longest unlisted is the last job.
   const eightDaysAgo = (index: number) => new Date(Date.parse('2026-10-22T03:00:00Z') + (jobs.length - index) * 60_000).toISOString();
@@ -1620,14 +1685,14 @@ test("a night lists every never-harvested notable job, then each source's share 
 
   assert.deepEqual(
     await nightWith(jobs.filter(job => job !== fresh).map(job => [job, '2026-10-22T03:00:00.000Z'])),
-    [fresh, ...others(openAlex).slice(0, share(openAlex)), ...others(ads).slice(0, share(ads))],
+    [fresh, ...others(openAlex).slice(0, share(openAlex)), ...others(ads).slice(0, share(ads)), ...europePmc.slice(0, share(europePmc))],
     'the new job, then each source\'s share of those due again, a tie by source and lane id',
   );
-  // ADS's jobs are the oldest, as when its listings keep failing: OpenAlex
-  // still gets its own share.
+  // The later sources' jobs are the oldest, as when their listings keep
+  // failing: OpenAlex still gets its own share.
   assert.deepEqual(
     await nightWith(jobs.map((job, index) => [job, eightDaysAgo(index)])),
-    [...ads.slice(-share(ads)).reverse(), ...openAlex.slice(-share(openAlex)).reverse()],
+    [...europePmc.slice(-share(europePmc)).reverse(), ...ads.slice(-share(ads)).reverse(), ...openAlex.slice(-share(openAlex)).reverse()],
     'each source\'s share of its own jobs due again, the oldest harvest first',
   );
   assert.deepEqual(await nightWith(jobs.map(job => [job, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
