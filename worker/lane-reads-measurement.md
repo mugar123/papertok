@@ -168,7 +168,7 @@ resolves, and differ between runs by up to about 5 times.
   at once, so a page 2 that arrives earlier ranks again.
 - An isolate shares its 128 MB across the concurrent requests it serves and its
   own bundle baseline. Three or four concurrent first pages of 12 categories
-  with likes (35 MB live, 83 to 95 MB with garbage) could reach that limit.
+  with likes (35 MB live, 95 MB with garbage) could reach that limit.
 - D1-side memory was not measured or reproduced. The production
   `SQLITE_NOMEM` case happens in D1's SQLite, where the notable statement's
   window-function sorts and the `json_each` temporary indexes allocate; this
