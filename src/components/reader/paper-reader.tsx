@@ -1237,6 +1237,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                     className="rd-tag rd-tag--link"
                     // The reader leaves for the page, which may be the one
                     // under it when it opened from that journal's Explorer page.
+                    // As with the Similar layer's links, the reader's history
+                    // entry stays under the new page: Back from it shows the
+                    // feed, and a second Back lands on the same feed URL and
+                    // seems to do nothing (use-overlay-history.ts). A
+                    // replacing navigation would remove it but give the page the
+                    // feed's history index, which the Explorer's back arrow and
+                    // the page transition read.
                     onClick={(event) => {
                       if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) requestClose();
                     }}
