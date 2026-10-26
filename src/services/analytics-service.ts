@@ -90,7 +90,8 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   acquisition_channel: new Set(['direct', 'organic_search', 'organic_social', 'referral', 'email', 'paid', 'other']),
   content_type: new Set(['paper', 'author', 'institution', 'project', 'topic', 'list', 'signup_cta', 'other']),
   destination: new Set(['publisher', 'pdf', 'doi', 'arxiv', 'other']),
-  entity_type: new Set(['author', 'institution', 'project', 'topic']),
+  // A fixed label for every follow type; a journal's id stays out (following-context.tsx).
+  entity_type: new Set(['author', 'institution', 'project', 'topic', 'journal']),
   language: new Set(['en', 'es']),
   method: new Set(['google', 'github', 'email', 'link', 'native', 'clipboard', 'other']),
   rewrite_result: new Set(['success', 'incomplete', 'error', 'cancelled']),
