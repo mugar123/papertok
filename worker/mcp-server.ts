@@ -93,7 +93,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv, or on OpenAlex when arXiv is busy or failing. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv, or on OpenAlex when arXiv is busy or failing. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -393,7 +393,7 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
 function getPaperArguments(args: Arguments) {
   onlyKeys(args, ['id']);
   const identity = paperIdentity(args.id);
-  if (!identity) throw new InvalidArguments('id must be a DOI, arXiv id or OpenAlex work id');
+  if (!identity) throw new InvalidArguments('id must be a DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123)');
   return identity;
 }
 

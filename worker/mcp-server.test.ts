@@ -108,7 +108,7 @@ interface RpcAnswer {
     isError?: boolean;
     structuredContent?: Record<string, unknown>;
     content?: Array<{ type: string; text: string }>;
-    tools?: Array<{ name: string; inputSchema: { type: string }; annotations?: { readOnlyHint?: boolean } }>;
+    tools?: Array<{ name: string; description: string; inputSchema: { type: string }; annotations?: { readOnlyHint?: boolean } }>;
   };
   error?: { code: number; message: string };
 }
@@ -812,6 +812,12 @@ test('invalid arguments are a tool error and reach no provider', async () => {
       assert.equal(answer.result?.isError, true, `${name} ${JSON.stringify(args)}`);
       assert.equal(answer.result?.structuredContent?.code, 'INVALID_ARGUMENTS');
     }
+    // A model correcting itself reads every kind of id the tool takes.
+    const { answer } = await callTool(env, 'get_paper', { id: 'not an id' });
+    assert.match(String(answer.result?.structuredContent?.message), /PubMed id/);
+    const listed = await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    const getPaper = listed.answer.result?.tools?.find(tool => tool.name === 'get_paper');
+    assert.match(String(getPaper?.description), /PubMed id/);
     assert.deepEqual(calls, []);
   });
 });
