@@ -485,6 +485,12 @@ test('a field the source did not give stays absent, in a search and in get_paper
         [undefined, 'https://openalex.org/A2'],
       ], `${name} keeps what OpenAlex gave of each author`);
     }
+    // Ana Pérez has a name but no institution, and an arXiv author no id.
+    for (const [name, relayed] of [['search', work], ['get_paper', paper], ['arXiv', preprint]] as const) {
+      const empty = (relayed.authors as Array<Record<string, unknown>>)
+        .flatMap(author => Object.entries(author).filter(([, value]) => value === null || value === '').map(([key]) => key));
+      assert.deepEqual(empty, [], `${name} sends no author field the source did not give`);
+    }
     const unlisted = await callTool(env, 'get_paper', { id: 'W4400000078' });
     assert.equal('authors' in (unlisted.answer.result?.structuredContent?.paper as Record<string, unknown>), false, 'no author is invented');
     // arXiv gives no citations, institutions or subjects, and a preprint record

@@ -963,7 +963,8 @@ collaborations with near-maximum abstracts come to five papers and about 33 KB. 
 absent rather than carrying `PaperBuilder.create`'s default: no placeholder
 abstract or title, no author name the OpenAlex mappers wrote for one OpenAlex
 did not give (`Unknown`, `Unknown Author`: the author keeps its id, or is left
-out when OpenAlex gave nothing of it), no empty list or string, no `referenceCount: 0` or `has*:
+out when OpenAlex gave nothing of it), no `null` author field such as the
+affiliation of an author without an institution, no empty list or string, no `referenceCount: 0` or `has*:
 false` (no record a tool reads carries them), no `citationCount` unless
 `citationCountKnown` is true, no `peerReviewed: false` on a preprint record,
 whose `publicationStatus` already says preprint, and no `peerReviewed: true`

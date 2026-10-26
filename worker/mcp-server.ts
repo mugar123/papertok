@@ -241,11 +241,13 @@ const PLACEHOLDER_AUTHOR_NAMES = new Set(['Unknown', 'Unknown Author']);
 
 type RelayedAuthor = Partial<PaperAuthor> | string;
 
-// An author keeps what the source gave of it: one known by its id alone stays
-// without a name, and one the source gave nothing of goes.
+// An author keeps what the source gave of it, and no field it did not give
+// (an affiliation OpenAlex left out is `null`): one known by its id alone
+// stays without a name, and one the source gave nothing of goes.
 function knownAuthor(author: Paper['authors'][number]): RelayedAuthor[] {
-  if (typeof author === 'string' || !PLACEHOLDER_AUTHOR_NAMES.has(author.name)) return [author];
-  const known = Object.entries(author).filter(([key, value]) => key !== 'name' && value !== null && value !== undefined && value !== '');
+  if (typeof author === 'string') return [author];
+  const known = Object.entries(author).filter(([key, value]) => value !== null && value !== undefined && value !== ''
+    && !(key === 'name' && PLACEHOLDER_AUTHOR_NAMES.has(value)));
   return known.length > 0 ? [Object.fromEntries(known)] : [];
 }
 
