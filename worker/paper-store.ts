@@ -204,19 +204,20 @@ export const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
 // A notable lane holds its weekly listing of 1,000, 100 of each of those ten
-// years (NOTABLE_PER_YEAR in paper-sources.ts), and, for 14 days, what dropped
-// out of the two listings before it (`work_lanes.listed_until`), whatever else
-// keeps the paper in the corpus (a like, its date, another lane). A page reads
+// years (NOTABLE_PER_YEAR in paper-sources.ts), or 2,000 for an arXiv
+// category ADS lists too, and, for 14 days, what dropped out of the two
+// listings before it (`work_lanes.listed_until`), whatever else keeps the
+// paper in the corpus (a like, its date, another lane). A page reads
 // NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
 // that moves on by that many rows each UTC day, taken modulo the year's own
 // count n, so every row of a year is read within ceil(n / 25) days: four
-// disjoint slices for a year of 100, overlapping ones for a year of 40 and
-// every day for a year of two. The candidates and vectors ranked per request
-// are 250 a lane at most. Numbering the years reads every row of the lane's
-// window from its index (about 1,000), and the read returns each work id with
-// whether the day's slice holds it, so that a paper of the lane outside the
-// slice is not ranked from the reader's other lanes either. How many of them
-// a reader sees is ENG-128's.
+// disjoint slices for a year of 100, eight for 200, overlapping ones for a
+// year of 40 and every day for a year of two. The candidates and vectors
+// ranked per request are 250 a lane at most. Numbering the years reads every
+// row of the lane's window from its index (about 1,000, or 2,000), and the
+// read returns each work id with whether the day's slice holds it, so that a
+// paper of the lane outside the slice is not ranked from the reader's other
+// lanes either. How many of them a reader sees is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
