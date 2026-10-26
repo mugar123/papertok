@@ -15,6 +15,7 @@ import {
   domainSourceRequests,
   getDomainSourcePlan,
   getEligibleDomainSources,
+  mapAdsPaper,
   mapBioRxivPaper,
 } from '../src/services/domain-source-records.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
@@ -23,7 +24,7 @@ import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { handleHarvestArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
-import { handlePhysicsLiterature } from './physics-api.ts';
+import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
@@ -295,6 +296,12 @@ const TOPIC_LEAVES = LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id));
 // sample admitted (ENG-129, part B), which get no topic lane, and the leaves
 // the journal sample admitted (`openAlexNotableListingFilter`).
 const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableListingFilter(leaf.id, notableListedYear(1)) !== null);
+// The leaves that are arXiv categories, whose notable lane also lists ADS's
+// most-cited papers of the class (`ads-notable`). `isArxivCategory` matches a
+// prefix, so it also takes the engineering leaves arXiv has no category for
+// (eess.optics); these are arXiv's own codes.
+const ARXIV_CODE = /^(?:(?:cs|math|eess|econ|q-fin|stat|q-bio|nlin|astro-ph)\.[A-Z]{2}|(?:cond-mat|physics)\.[a-z]+(?:-[a-z]+)*|astro-ph|cond-mat|gr-qc|hep-(?:ex|lat|ph|th)|nucl-(?:ex|th)|quant-ph|math-ph|nlin)$/;
+const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -354,7 +361,8 @@ export function openAlexNotableListingFilter(leaf: string, year: number) {
 
 export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-series'
-  | 'openalex-follows' | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
+  | 'openalex-follows' | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface'
+  | 'ads-notable';
 
 // `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
 export interface LaneJob { source: SourceName; lane: string; newFollow?: boolean }
@@ -598,6 +606,25 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // before KEPT_LISTING_DAYS run out. One that drops out of the list leaves the
   // lane when they do, even when a like or its date keeps it in the corpus
   // (paper-store.ts `evictExpired`).
+  // The arXiv side of an arXiv category's notable lane: ADS's 100 most-cited
+  // papers of the class in each of the ten completed years, preprints and
+  // their published versions alike, filed under the same lane as OpenAlex's.
+  // ADS's counts are not OpenAlex's, so the enrichment refreshes these papers.
+  'ads-notable': {
+    firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
+    fetchPage: async (env, { lane, page }) => {
+      const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
+      let docs: unknown[];
+      try {
+        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR));
+      } catch (error) {
+        // ADS answers a spent day with 429; the lane waits for the next night.
+        if ([403, 429].includes(Number((error as UpstreamError).status))) throw new SourceRefused('ads', LEDGER_REFUSAL_SECONDS);
+        throw error;
+      }
+      return pageOf(filed(docs.map(doc => mapAdsPaper(doc as Parameters<typeof mapAdsPaper>[0], [leaf])), lane), NOTABLE_PER_YEAR);
+    },
+  },
   'openalex-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true, separateListings: true,
     // The lane's page picks the year; OpenAlex is asked the first page of it.
@@ -713,17 +740,21 @@ export function categoryLaneJobs(): LaneJob[] {
  * last week's.
  */
 export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise<LaneJob[]> {
-  const { results } = await db.prepare("SELECT lane, harvested_through FROM lane_state WHERE source = 'openalex-notable'")
-    .all<{ lane: string; harvested_through: string }>();
-  const harvested = new Map(results.map(row => [row.lane, row.harvested_through]));
+  const { results } = await db.prepare("SELECT source, lane, harvested_through FROM lane_state WHERE source IN ('openalex-notable', 'ads-notable')")
+    .all<{ source: string; lane: string; harvested_through: string }>();
+  const key = (job: LaneJob) => `${job.source} ${job.lane}`;
+  const harvested = new Map(results.map(row => [`${row.source} ${row.lane}`, row.harvested_through]));
   const dueBefore = day(daysFromNow(1 - NOTABLE_LANE_DAYS, now));
-  const lanes = NOTABLE_LEAVES.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
-  const due = lanes.flatMap(lane => {
-    const through = harvested.get(lane);
-    return through !== undefined && through < dueBefore ? [{ lane, through }] : [];
+  const lanesOf = (leaves: typeof LEAVES) => leaves.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
+  const jobs: LaneJob[] = [
+    ...lanesOf(NOTABLE_LEAVES).map(lane => ({ source: 'openalex-notable' as const, lane })),
+    ...lanesOf(ADS_NOTABLE_LEAVES).map(lane => ({ source: 'ads-notable' as const, lane })),
+  ];
+  const due = jobs.flatMap(job => {
+    const through = harvested.get(key(job));
+    return through !== undefined && through < dueBefore ? [{ job, through }] : [];
   }).sort((a, b) => a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
-  return [...lanes.filter(lane => !harvested.has(lane)), ...due.slice(0, notableLanesPerNight(lanes.length)).map(({ lane }) => lane)]
-    .map(lane => ({ source: 'openalex-notable' as const, lane }));
+  return [...jobs.filter(job => !harvested.has(key(job))), ...due.slice(0, notableLanesPerNight(jobs.length)).map(({ job }) => job)];
 }
 
 // The source that serves each kind of followed lane (`followLane` in src/utils/follow-lanes.ts).
