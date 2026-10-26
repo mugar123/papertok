@@ -337,8 +337,9 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // Identity Toolkit because the account still existed.
   // Neither cleanup may skip the other, and neither may fail the request: the
   // account is gone, so a retry can only be refused with AUTH_REQUIRED, and a
-  // failure here would tell the reader a deleted account still exists. What
-  // is left is logged for the operator.
+  // failure here would tell the reader a deleted account still exists. The log
+  // only says which cleanup failed and why: it names no account, subscription
+  // or share, so whatever that cleanup missed stays behind untraced.
   const [purge, sweep] = await Promise.allSettled([
     purgeEmailSubscription(env, uid),
     deleteUserTree(admin, uid),
