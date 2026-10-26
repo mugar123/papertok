@@ -1,6 +1,6 @@
 import type { FirestoreData, FirestoreWrite, QueryOptions } from './firestore-admin.ts';
 import type { TestGlobals } from './test-types.ts';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
@@ -442,38 +442,105 @@ function captureErrors() {
   return { lines, restore: () => { console.error = original; } };
 }
 
-test('a purge that fails after the Auth delete still lets the final sweep run, and the deletion completes', async () => {
+// The purge after the Auth delete waits a second before its retry. Timers are
+// mocked, so this ticks that second instead of sleeping through it.
+async function settleTickingTimers<T>(t: TestContext, run: Promise<T>) {
+  let settled = false;
+  const tracked = run.finally(() => { settled = true; });
+  while (!settled) {
+    await new Promise(resolve => { setImmediate(resolve); });
+    t.mock.timers.tick(1000);
+  }
+  return tracked;
+}
+
+test('a purge that fails after the Auth delete still lets the final sweep run, and the deletion completes', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const admin = memoryAdmin({ [`users/${UID}/lists/early`]: { name: 'Early' } });
   const store = kvStore();
   let authDeleted = false;
+  let readsAfterAuth = 0;
   const get = store.get;
   store.get = async (key: string, type?: string) => {
-    if (authDeleted) throw new Error('KV GET failed: 503');
+    if (authDeleted) {
+      readsAfterAuth += 1;
+      throw new Error('KV GET failed: 503');
+    }
     return get(key, type);
   };
   const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
   const errors = captureErrors();
 
   try {
-    let result;
-    for (let i = 0; i < 12; i += 1) {
-      result = await runAccountDeletionSlice(admin, UID, env, {
-        idToken: TOKEN,
-        fetchImpl: async () => {
-          admin.documents[`users/${UID}/lists/late`] = { name: 'Late' };
-          authDeleted = true;
-          return new Response('{}', { status: 200 });
-        },
-      });
-      if (result.complete) break;
-    }
+    const result = await settleTickingTimers(t, (async () => {
+      let slice;
+      for (let i = 0; i < 12; i += 1) {
+        slice = await runAccountDeletionSlice(admin, UID, env, {
+          idToken: TOKEN,
+          fetchImpl: async () => {
+            admin.documents[`users/${UID}/lists/late`] = { name: 'Late' };
+            authDeleted = true;
+            return new Response('{}', { status: 200 });
+          },
+        });
+        if (slice.complete) break;
+      }
+      return slice;
+    })());
 
     assert.deepEqual(result, { complete: true, stage: 'auth' });
     assert.equal(admin.documents[`users/${UID}/lists/late`], undefined);
+    assert.equal(readsAfterAuth, 2, 'one retry, then the failure is logged');
     assert.equal(errors.lines.length, 1);
     assert.match(errors.lines[0], /subscription purge/);
     assert.doesNotMatch(errors.lines[0], new RegExp(UID));
   } finally {
+    errors.restore();
+  }
+});
+
+test('a purge that KV refuses just after the Auth delete is retried once the second has passed', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const store = kvStore();
+  let authDeleted = false;
+  let refusals = 0;
+  const remove = store.delete;
+  store.delete = async (key: string) => {
+    // Workers KV refuses a second write to one key within a second.
+    if (authDeleted && refusals === 0 && key === `notification:subscription:${UID}`) {
+      refusals += 1;
+      throw new Error('KV DELETE failed: 429 Too Many Requests');
+    }
+    return remove(key);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+  const restore = stubIdentityLookup();
+
+  try {
+    let settled = false;
+    const deletion = handleAccountDeletionRequest(deletionRequest(), env, {
+      admin: memoryAdmin(),
+      fetchImpl: async () => {
+        // A digest saved from another tab while the Auth delete is in flight.
+        store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+        store.data.set('notification:unsubscribe:tok-2', UID);
+        authDeleted = true;
+        return new Response('{}', { status: 200 });
+      },
+    }).finally(() => { settled = true; });
+    while (refusals === 0 && !settled) await new Promise(resolve => { setImmediate(resolve); });
+    await new Promise(resolve => { setImmediate(resolve); });
+
+    assert.equal(refusals, 1);
+    assert.equal(settled, false, 'the retry waits for the second to pass');
+    assert.equal(store.data.has(`notification:subscription:${UID}`), true);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(await deletion, { complete: true, stage: 'auth' });
+    assert.equal(store.data.size, 0);
+    assert.deepEqual(errors.lines, []);
+  } finally {
+    restore();
     errors.restore();
   }
 });

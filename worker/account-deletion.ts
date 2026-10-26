@@ -60,6 +60,14 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 8000;
  */
 const RECENT_SIGN_IN_SECONDS = 240;
 
+/**
+ * Workers KV answers a second write to one key within a second with a 429. The
+ * purge after the Auth delete writes the keys that the purge before it, and any
+ * digest saved from another tab meanwhile, often wrote within that second, so a
+ * failed purge gets one retry once the second has passed.
+ */
+const KV_SAME_KEY_WRITE_INTERVAL_MS = 1000;
+
 export class AccountDeletionError extends Error {
   declare code: string;
   declare status: number;
@@ -292,6 +300,15 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   throw new AccountDeletionError('AUTH_DELETE_FAILED', 502);
 }
 
+async function purgeAfterAuthDelete(env: WorkerEnv, uid: string) {
+  try {
+    await purgeEmailSubscription(env, uid);
+  } catch {
+    await new Promise(resolve => { setTimeout(resolve, KV_SAME_KEY_WRITE_INTERVAL_MS); });
+    await purgeEmailSubscription(env, uid);
+  }
+}
+
 /**
  * One bounded slice. Returns `{ complete, stage }` so the browser can POST
  * again until `complete` is true without the Worker holding the request
@@ -341,7 +358,7 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // only says which cleanup failed and why: it names no account, subscription
   // or share, so whatever that cleanup missed stays behind untraced.
   const [purge, sweep] = await Promise.allSettled([
-    purgeEmailSubscription(env, uid),
+    purgeAfterAuthDelete(env, uid),
     deleteUserTree(admin, uid),
   ]);
   for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep]] as const) {
