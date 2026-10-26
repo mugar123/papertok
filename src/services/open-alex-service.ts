@@ -1,4 +1,3 @@
-import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from './adapters/open-alex-types.ts';
 import type { OpenAlexJsonOptions } from './open-alex-client.ts';
 import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
@@ -27,12 +26,10 @@ import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
-import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
-import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER } from '../utils/publication-status.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
-import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
+import { normalizeDoi as normalizePublicDoi } from '../utils/public-navigation.ts';
 import { withEnforcedDeadline, withRequestDeadline } from '../utils/request-deadline.ts';
 import {
   applyInstitutionWorksFallback,
@@ -40,8 +37,7 @@ import {
   getRecentImpactConfig,
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
-import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
