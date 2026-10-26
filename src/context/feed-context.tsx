@@ -281,7 +281,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Read when a load fails, which can be after the reader left /feed.
   const feedRouteActiveRef = useRef(feedRouteActive);
   useEffect(() => { feedRouteActiveRef.current = feedRouteActive; }, [feedRouteActive]);
-  // A failure that happened off /feed, owed to the reader who comes back to it.
+  // The app_error of a failed load the reader has not seen yet (off /feed, or
+  // behind cards), sent once they do.
   const pendingFailureEventRef = useRef<ReturnType<typeof feedFailureEventStep>['hold']>(null);
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
