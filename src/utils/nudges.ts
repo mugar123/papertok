@@ -79,16 +79,40 @@ export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null)
   }
 }
 
+/**
+ * Orders policy versions ('2026-10-25', '2026-10-25.2'): by date, then by the
+ * numeric suffix, so '.10' follows '.2'. A value that is not a version covers
+ * nothing, so it reads as older than every version.
+ */
+function policyVersionRank(version: string | null) {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:\.(\d+))?$/.exec(version ?? '');
+  return match ? { day: match[1], suffix: Number(match[2] ?? 0) } : null;
+}
+
+function policyVersionCovers(acknowledged: string | null, version: string) {
+  const had = policyVersionRank(acknowledged);
+  const owed = policyVersionRank(version);
+  if (!had || !owed) return acknowledged === version;
+  return had.day !== owed.day ? had.day > owed.day : had.suffix >= owed.suffix;
+}
+
+/**
+ * Keeps the newest version dismissed: another tab still running an older
+ * bundle must not write its version over a newer one this reader dismissed.
+ */
 export function rememberPrivacyNotice(uid: string, version: string, storage?: NudgeStorage | null) {
   try {
-    resolveStorage(storage)?.setItem(privacyNoticeKey(uid), version);
+    const target = resolveStorage(storage);
+    if (policyVersionCovers(readPrivacyNoticeAck(uid, target), version)) return;
+    target?.setItem(privacyNoticeKey(uid), version);
   } catch {
     // The host still closes the notice for this visit; it returns next time.
   }
 }
 
 /**
- * Whether a reader still has to hear about policy `version`. Only signed-in
+ * Whether a reader still has to hear about policy `version`; dismissing it or a
+ * later version settles that. Only signed-in
  * accounts are told: a guest has no creation date, so a first-time visitor
  * could not be told apart from someone who read the old policy. An account
  * created on or after the day of the change started under the policy as it is
@@ -97,7 +121,7 @@ export function rememberPrivacyNotice(uid: string, version: string, storage?: Nu
  * opened close to midnight may land on either side of it.
  */
 export function privacyNoticeOwed({ version, acknowledged, accountCreated, signedIn }: { version: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
-  if (!signedIn || acknowledged === version) return false;
+  if (!signedIn || policyVersionCovers(acknowledged, version)) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
   if (!created || Number.isNaN(created.getTime())) return true;
   return created.toISOString().slice(0, 10) < version.slice(0, 10);

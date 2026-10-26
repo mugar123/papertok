@@ -138,6 +138,33 @@ test('a reader who has not dismissed this policy version is owed the notice', ()
   );
 });
 
+test('dismissing a later version settles an earlier one, and a suffix sorts as a number', () => {
+  const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, acknowledged, signedIn: true });
+  assert.equal(owed('2026-10-25', '2026-11-05'), false, 'a tab on an older bundle');
+  assert.equal(owed('2026-10-25.2', '2026-10-26'), false, 'a later day covers an earlier day with a suffix');
+  assert.equal(owed('2026-10-25.2', '2026-10-25.10'), false, '.10 is after .2');
+  assert.equal(owed('2026-10-25.10', '2026-10-25.2'), true, '.2 is before .10');
+  assert.equal(owed('2026-10-25.2', '2026-10-25'), true, 'no suffix is before .2');
+  assert.equal(owed('2026-10-25', '2026-10-25.2'), false, '.2 covers the day itself');
+  assert.equal(owed('2026-10-25', 'garbage'), true, 'a stored value that is no version covers nothing');
+});
+
+test('a tab on an older bundle does not overwrite a newer dismissal', () => {
+  const storage = fakeStorage();
+  rememberPrivacyNotice('reader-a', '2026-11-05', storage);
+  rememberPrivacyNotice('reader-a', '2026-10-25', storage);
+  assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-11-05');
+  rememberPrivacyNotice('reader-a', '2026-11-05.2', storage);
+  assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-11-05.2', 'a newer one is stored');
+  rememberPrivacyNotice('reader-a', '2026-11-05.10', storage);
+  assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-11-05.10');
+  rememberPrivacyNotice('reader-a', '2026-11-05.9', storage);
+  assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-11-05.10');
+  storage.setItem('papertok_privacyNotice:reader-b', 'garbage');
+  rememberPrivacyNotice('reader-b', '2026-10-25', storage);
+  assert.equal(readPrivacyNoticeAck('reader-b', storage), '2026-10-25', 'a stored value that is no version is replaced');
+});
+
 test('an account opened on or after the day of the change is not told about it', () => {
   const version = '2026-10-22';
   assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Tue, 20 Oct 2026 09:00:00 GMT', signedIn: true }), true);
