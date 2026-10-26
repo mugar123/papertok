@@ -238,6 +238,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://search.yahoo.com/': 'organic_search',
     'https://uk.search.yahoo.com/': 'organic_search',
     'https://search.yahoo.co.jp/': 'organic_search',
+    'https://de.search.yahoo.com/': 'organic_search',
     'https://search.brave.com/': 'organic_search',
     // Social networks, short links and the YouTube and YouTube Music apps included.
     'https://t.co/abc': 'organic_social',
@@ -261,6 +262,14 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://www.yahoo.com/': 'referral',
     'https://search.yahoo.example.org/': 'referral',
     'https://notsearch.yahoo.com/': 'referral',
+    'https://search.yahoo.com.evil.example/': 'referral',
+    // A suffix that only looks like a country: any three-letter or generic TLD,
+    // and `co.com` / `com.com`, which anyone can register.
+    'https://search.yahoo.xyz/': 'referral',
+    'https://search.yahoo.net/': 'referral',
+    'https://a.search.yahoo.top/': 'referral',
+    'https://search.yahoo.co.com/': 'referral',
+    'https://search.yahoo.com.com/': 'referral',
     'https://google.com.evil.example/': 'referral',
     'https://chatgpt.com/': 'referral',
     'https://copilot.microsoft.com/': 'referral',

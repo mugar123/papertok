@@ -85,7 +85,7 @@ const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   'com.google.android.apps.magazines',
   'bing.com',
   'duckduckgo.com',
-  /(?:^|\.)search\.yahoo\.(?:com?\.)?[a-z]{2,3}$/,
+  /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   'ecosia.org',
   'brave.com',
 ];
