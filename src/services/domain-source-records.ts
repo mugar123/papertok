@@ -157,15 +157,15 @@ function safeUrl(value: string | undefined) {
   }
 }
 
-function safeYear(value: string | undefined) {
-  const year = new Date(value!).getUTCFullYear();
-  return Number.isInteger(year) && year > 1800 ? year : new Date().getUTCFullYear();
+function safeYear(value: string | null | undefined) {
+  if (!value) return undefined;
+  const year = new Date(value).getUTCFullYear();
+  return Number.isInteger(year) && year > 1800 ? year : undefined;
 }
 
 function categoryLabel(categoryId: string) {
   for (const area of Object.values(CATEGORIES)) {
-    const category = (area.subcategories as Record<string, { label: string }>)?.[categoryId];
-    if (category) return category.label || category.label;
+    if (Object.hasOwn(area.subcategories, categoryId)) return area.subcategories[categoryId].label;
   }
   return categoryId.replace(/[.-]/g, ' ');
 }
@@ -250,7 +250,7 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
       ? record.authors
       : authorObjects(String(raw.authorString || '').split(',')),
     journal: normalizeText(journal?.title),
-    year: scheduled ? undefined : safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
+    year: scheduled ? undefined : safeYear(published || (raw.journalInfo?.yearOfPublication ? `${raw.journalInfo.yearOfPublication}-01-01` : undefined)),
     published,
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
     publicationType: chapter ? 'book-chapter' : 'article',
@@ -416,7 +416,7 @@ export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []):
     || properties.some(value => value.includes('OPENACCESS'))
     || (raw.esources || []).some(value => /eprint_pdf|openaccess/i.test(value));
   const citationCount = Number(raw.citation_count);
-  const published = normalizeText(raw.pubdate) || `${Number(raw.year) || new Date().getUTCFullYear()}-01-01`;
+  const published = normalizeText(raw.pubdate) || (Number(raw.year) ? `${Number(raw.year)}-01-01` : '');
   const paper = PaperBuilder.create({
     id: `ads:${bibcode}`,
     doi: doi || undefined,
@@ -484,7 +484,7 @@ export function mapInspirePaper(hit: InspireRecord, requestedCategories: string[
     title,
     abstract: normalizeText(raw.abstracts?.[0]?.value),
     authors: authorObjects(raw.authors?.map(author => author?.full_name || author?.raw_name)),
-    year: Number(String(published).slice(0, 4)) || new Date().getUTCFullYear(),
+    year: Number(String(published).slice(0, 4)) || undefined,
     published,
     journal,
     publicationType: documentTypes[0] || (isPublished ? 'article' : 'preprint'),
