@@ -435,10 +435,17 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   }
 });
 
+// Only the deletion's own log lines are kept. Node 22 prints the experimental
+// MockTimers warning through console.error too, and that line still reaches
+// the real console.
 function captureErrors() {
   const original = console.error;
   const lines: string[] = [];
-  console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+  console.error = (...args: unknown[]) => {
+    const line = args.map(String).join(' ');
+    if (line.startsWith('Account deletion:')) lines.push(line);
+    else original(...args);
+  };
   return { lines, restore: () => { console.error = original; } };
 }
 
