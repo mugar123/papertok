@@ -80,7 +80,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedErrorOnScreen, feedLoadFailedEvent } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedFailureEventStep } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -282,7 +282,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const feedRouteActiveRef = useRef(feedRouteActive);
   useEffect(() => { feedRouteActiveRef.current = feedRouteActive; }, [feedRouteActive]);
   // A failure that happened off /feed, owed to the reader who comes back to it.
-  const pendingFailureEventRef = useRef<ReturnType<typeof feedLoadFailedEvent> | null>(null);
+  const pendingFailureEventRef = useRef<ReturnType<typeof feedFailureEventStep>['hold']>(null);
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
@@ -334,10 +334,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   const { trackEvent } = useAnalyticsConsent();
   useEffect(() => {
-    const event = pendingFailureEventRef.current;
-    if (!event || !feedErrorOnScreen({ feedVisible: feedRouteActive, error, shownPapers: papers.length })) return;
-    pendingFailureEventRef.current = null;
-    void trackEvent('app_error', event);
+    const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
+      kind: 'screen_changed', screen: { feedVisible: feedRouteActive, error, shownPapers: papers.length },
+    });
+    pendingFailureEventRef.current = hold;
+    if (send) void trackEvent('app_error', send);
   }, [feedRouteActive, error, papers.length, trackEvent]);
   const engagementWindow = useRef(emptyEngagementWindow());
   // Only cards of this feed count: the Following feed reports its views
@@ -1156,7 +1157,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
-    pendingFailureEventRef.current = null;
+    pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
 
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
@@ -1486,12 +1487,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
         // reader sees the error.
-        const event = feedLoadFailedEvent(failure);
-        if (feedErrorOnScreen({ feedVisible: feedRouteActiveRef.current, error: 'FEED_LOAD_FAILED', shownPapers: papersRef.current.length })) {
-          void trackEvent('app_error', event);
-        } else {
-          pendingFailureEventRef.current = event;
-        }
+        const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
+          kind: 'load_failed',
+          failure,
+          screen: { feedVisible: feedRouteActiveRef.current, error: 'FEED_LOAD_FAILED', shownPapers: papersRef.current.length },
+        });
+        pendingFailureEventRef.current = hold;
+        if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.

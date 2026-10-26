@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyFirstPageError, feedErrorOnScreen, feedLoadFailedEvent, feedLoadFailure } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedFailureEventStep, feedLoadFailure } from './feed-load-failure.ts';
 import { WorkerApiAuthError, sourceResponseError } from '../services/worker-api-client.ts';
 
 const refused = (status: number, code?: string) => sourceResponseError('/store/papers', status, code ? { code } : null);
@@ -32,24 +32,40 @@ test('a failed Firebase token keeps its code: offline is network, throttled is r
   assert.deepEqual(feedLoadFailure(firebase('auth/user-token-expired')), { reason: 'session', code: 'auth/user-token-expired' });
 });
 
-test('a failed load owes an event, also when a card hides the error until the reader dismisses it', () => {
-  const event = feedLoadFailedEvent(refused(503, 'AUTH_UNAVAILABLE'));
-  assert.deepEqual(event, {
-    kind: 'feed_load_failed', reason: 'server', status: 503, error_code: 'AUTH_UNAVAILABLE',
-  });
-  // Reload and retry fail with one card left: the event waits, not dropped.
-  const base = { feedVisible: true, error: 'FEED_LOAD_FAILED' };
-  assert.equal(feedErrorOnScreen({ ...base, shownPapers: 1 }), false);
-  // The last card is dismissed: the reader now sees the error.
-  assert.equal(feedErrorOnScreen({ ...base, shownPapers: 0 }), true);
+const serverDown = { kind: 'feed_load_failed', reason: 'server', status: 503, error_code: 'AUTH_UNAVAILABLE' };
+const failed = { feedVisible: true, error: 'FEED_LOAD_FAILED' };
+const nothing = { send: null, hold: null };
+
+test('a failed load on /feed with no card sends its event at once, and only once', () => {
+  const first = feedFailureEventStep(null, { kind: 'load_failed', failure: refused(503, 'AUTH_UNAVAILABLE'), screen: { ...failed, shownPapers: 0 } });
+  assert.deepEqual(first, { send: serverDown, hold: null });
+  // The error state re-renders: nothing more is sent.
+  assert.deepEqual(feedFailureEventStep(first.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 0 } }), nothing);
 });
 
-test('the error is on screen only on /feed, with the error still set and no cards', () => {
-  const base = { feedVisible: true, error: 'FEED_LOAD_FAILED', shownPapers: 0 };
-  assert.equal(feedErrorOnScreen(base), true);
-  // The reader is on another page: the failure is held, not lost.
-  assert.equal(feedErrorOnScreen({ ...base, feedVisible: false }), false);
-  // A new load cleared the error, or cards arrived.
-  assert.equal(feedErrorOnScreen({ ...base, error: null }), false);
-  assert.equal(feedErrorOnScreen({ ...base, shownPapers: 3 }), false);
+test('a failed load behind a remaining card holds its event until the last card is dismissed, then sends it once', () => {
+  const held = feedFailureEventStep(null, { kind: 'load_failed', failure: refused(503, 'AUTH_UNAVAILABLE'), screen: { ...failed, shownPapers: 1 } });
+  assert.deepEqual(held, { send: null, hold: serverDown });
+  // Another render with the card still there keeps it held.
+  const still = feedFailureEventStep(held.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 1 } });
+  assert.deepEqual(still, held);
+  const dismissed = feedFailureEventStep(still.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 0 } });
+  assert.deepEqual(dismissed, { send: serverDown, hold: null });
+  assert.deepEqual(feedFailureEventStep(dismissed.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 0 } }), nothing);
+});
+
+test('a failed load off /feed holds its event until the reader returns and still sees the error', () => {
+  const held = feedFailureEventStep(null, { kind: 'load_failed', failure: refused(503, 'AUTH_UNAVAILABLE'), screen: { ...failed, feedVisible: false, shownPapers: 0 } });
+  assert.deepEqual(held, { send: null, hold: serverDown });
+  assert.deepEqual(feedFailureEventStep(held.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 0 } }), { send: serverDown, hold: null });
+  // Back on /feed with cards that arrived meanwhile: still hidden, still held.
+  assert.deepEqual(feedFailureEventStep(held.hold, { kind: 'screen_changed', screen: { ...failed, shownPapers: 2 } }), held);
+});
+
+test('a new load drops the event a previous failure still held, so a success never sends it later', () => {
+  const held = feedFailureEventStep(null, { kind: 'load_failed', failure: refused(503, 'AUTH_UNAVAILABLE'), screen: { ...failed, shownPapers: 1 } });
+  const started = feedFailureEventStep(held.hold, { kind: 'load_started' });
+  assert.deepEqual(started, nothing);
+  // The new load succeeds and the reader dismisses every card: no event.
+  assert.deepEqual(feedFailureEventStep(started.hold, { kind: 'screen_changed', screen: { feedVisible: true, error: null, shownPapers: 0 } }), nothing);
 });

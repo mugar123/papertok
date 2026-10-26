@@ -55,15 +55,18 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   return { reason: 'unexpected' };
 }
 
-/**
- * The `app_error` a failed load owes. A card on screen hides the error, so the
- * provider sends it once `feedErrorOnScreen` says the reader sees the error,
- * which may be later: when the last card is dismissed, or the reader returns
- * to /feed.
- */
-export function feedLoadFailedEvent(error: unknown) {
+/** The `app_error` a failed load owes. */
+function feedLoadFailedEvent(error: unknown) {
   const { reason, status, code } = feedLoadFailure(error);
   return { kind: 'feed_load_failed', reason, status, error_code: code };
+}
+
+type FeedLoadFailedEvent = ReturnType<typeof feedLoadFailedEvent>;
+
+interface FeedScreen {
+  feedVisible: boolean;
+  error: string | null;
+  shownPapers: number;
 }
 
 /**
@@ -71,6 +74,23 @@ export function feedLoadFailedEvent(error: unknown) {
  * on other pages, so a failure there is held until the reader returns to
  * /feed and the error is still on screen.
  */
-export function feedErrorOnScreen({ feedVisible, error, shownPapers }: { feedVisible: boolean; error: string | null; shownPapers: number }) {
+function feedErrorOnScreen({ feedVisible, error, shownPapers }: FeedScreen) {
   return feedVisible && error !== null && shownPapers === 0;
+}
+
+type FeedFailureChange =
+  | { kind: 'load_started' }
+  | { kind: 'load_failed'; failure: unknown; screen: FeedScreen }
+  | { kind: 'screen_changed'; screen: FeedScreen };
+
+/**
+ * What the provider does with the `app_error` a failed load owes. It is sent
+ * once, where the load runs, when the reader sees the error: at once on /feed
+ * with no card, or later, when the last card is dismissed or the reader
+ * returns to /feed. A new load drops the event a previous attempt still held.
+ */
+export function feedFailureEventStep(held: FeedLoadFailedEvent | null, change: FeedFailureChange) {
+  if (change.kind === 'load_started') return { send: null, hold: null };  const owed = change.kind === 'load_failed' ? feedLoadFailedEvent(change.failure) : held;
+  if (!owed) return { send: null, hold: null };
+  return feedErrorOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
 }
