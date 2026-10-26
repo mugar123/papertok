@@ -91,7 +91,10 @@ the upgrade: OpenAlex's journal record, PubMed's, Europe PMC's with a PubMed
 id, or an arXiv eprint naming its journal. Any other source's record reads
 reviewed by its `published` type alone, such as a repository's copy in CORE
 or OSTI or a preprint in Europe PMC, often under the paper's SSRN or Zenodo
-DOI, and leaves the working paper's row as it was.
+DOI, and leaves the working paper's row as it was. So does a journal record
+without a DOI, which would leave the working paper's DOI on the reviewed row.
+Listed before its working paper on one night or page, such a record still
+makes the row reviewed under the working paper's DOI, as before ENG-133.
 
 An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
 on a comment saying it was published. It starts the upgrade only when it names

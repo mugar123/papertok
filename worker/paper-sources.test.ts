@@ -913,6 +913,27 @@ test("a repository's record that reads reviewed by its type alone leaves a worki
   assert.deepEqual([journalRow.id, journalRow.doi, journalRow.peerReviewed, journalRow.workingPaper], ['openalex:W7220000104', '10.1080/07350015.2026.2743244', true, undefined]);
 });
 
+// A journal record without a DOI would give the reviewed row the working
+// paper's DOI, so the card's link and public key would open the unreviewed
+// version. Such a record leaves the row the working paper's.
+test("a journal record without a DOI leaves a working paper's row as it was, stored or on the same page", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract, paper.openAlexId];
+  const landingPage = 'https://www.tandfonline.com/doi/abs/07350015.2026.2743244';
+  for (const [name, record] of [
+    ['OpenAlex', mapOpenAlexWork({ ...gmmArticle, doi: null, primary_location: { ...gmmArticle.primary_location, landing_page_url: landingPage } })!],
+    ['PubMed', mapPubmedSummary({ uid: '41000000', title: gmmArticle.title, source: 'J Bus Econ Stat', pubdate: '2026 Oct 14', pubtype: ['Journal Article'], authors: [{ name: 'Ana Economist' }] })],
+  ] as const) {
+    for (const samePage of [false, true]) {
+      const label = `${name}, ${samePage ? 'on the same page' : 'stored first'}`;
+      const [before] = await workingPaperRowWith(t, null, samePage);
+      const after = await workingPaperRowWith(t, record, samePage);
+      assert.equal(after.length, 1, label);
+      assert.deepEqual(shown(after[0]), shown(before), label);
+    }
+  }
+});
+
 // `sources.peerReviewedByDoi` can hold a `false` under the article's DOI, from
 // a record such as NASA ADS's non-refereed one. PubMed's record of the article
 // then reads unreviewed beside it, and the row stays the working paper's

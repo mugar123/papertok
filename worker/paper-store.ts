@@ -369,22 +369,24 @@ const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true
 // journals and types its preprints, and Europe PMC's record with a PubMed id
 // is PubMed's. An arXiv record reads reviewed on any DOI it lists, arXiv's own
 // included, or on a comment saying it was published, so it counts only when it
-// names the journal and lists a publisher's DOI. Any other source's `true`
-// comes from a `published` type alone, and a repository's copy (CORE, or a
-// preprint in Europe PMC) proves no review.
+// names the journal. Any other source's `true` comes from a `published` type
+// alone, and a repository's copy (CORE, or a preprint in Europe PMC) proves no
+// review.
 function namesReviewingJournal(paper: Paper) {
   switch (paper.sources?.primary) {
     case 'openalex':
     case 'pubmed': return true;
     case 'europepmc': return Boolean(paper.pmid);
-    case 'arxiv': return Boolean(paper.journal) && isPublisherDoi(normalizeDoi(paper.doi));
+    case 'arxiv': return Boolean(paper.journal);
     default: return false;
   }
 }
-// A merged row's `true` that rests on a DOI alone (`restsOnArxivDoi`) is no
-// journal evidence either.
+// A journal record lists a publisher's DOI: without one, `merge` would fill
+// the gap with the working paper's DOI, and the reviewed row would link to the
+// unreviewed version. A merged row's `true` that rests on a DOI alone
+// (`restsOnArxivDoi`) is no journal evidence either.
 const readsAsReviewed = (paper: Paper) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
-  && namesReviewingJournal(paper);
+  && isPublisherDoi(normalizeDoi(paper.doi)) && namesReviewingJournal(paper);
 // OpenAlex's journal records first, which name the article's work
 // (`openAlexId`), and arXiv's last, whose journal reference is free text.
 const journalRank = (paper: Paper) => (paper.sources?.primary === 'openalex' ? 0 : paper.sources?.primary === 'arxiv' ? 2 : 1);
