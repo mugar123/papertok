@@ -99,7 +99,7 @@ test('the page names the public pages a shared link opens as places for the Priv
   const where = html.match(/with the <strong>Privacy<\/strong> button ([^.]*)\./)?.[1];
   assert.ok(where, 'the policy no longer says where the Privacy button is');
   assert.match(where, /welcome screens/);
-  for (const page of ['a paper', 'a list', 'an author or a topic', 'no longer works']) assert.ok(where.includes(page), page);
+  for (const page of ['a paper', 'a list', 'an author, institution, topic or project page', 'no longer works']) assert.ok(where.includes(page), page);
   assert.doesNotMatch(where, /\bfeed\b/);
 });
 
