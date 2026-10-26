@@ -65,7 +65,8 @@ const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
 
 // Unlike the nudges above, kept per reader: each account that signs in on this
 // device has to be told separately. It is not swept at sign-out, so signing in
-// again does not repeat a notice already dismissed.
+// again does not repeat a notice already dismissed. Deleting the account does
+// remove it (forgetPrivacyNotice).
 function privacyNoticeKey(uid: string) {
   return `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}`;
 }
@@ -76,6 +77,15 @@ export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null)
     return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
   } catch {
     return null;
+  }
+}
+
+/** For a deleted account: its uid has no business staying in this browser. */
+export function forgetPrivacyNotice(uid: string, storage?: (NudgeStorage & Pick<Storage, 'removeItem'>) | null) {
+  try {
+    (storage === undefined ? browserStorage() : storage)?.removeItem(privacyNoticeKey(uid));
+  } catch {
+    // Clearing site data removes it too.
   }
 }
 

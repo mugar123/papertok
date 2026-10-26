@@ -11,10 +11,10 @@ export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, delet
   reauthenticate: () => Promise<string>;
   onSignedIn: () => void;
   deleteAccount: (confirmedUid: string) => Promise<unknown>;
-  onDeleted: () => void | Promise<void>;
+  onDeleted: (deletedUid: string) => void | Promise<void>;
 }) {
   const confirmedUid = await reauthenticate();
   onSignedIn();
   await deleteAccount(confirmedUid);
-  await onDeleted();
+  await onDeleted(confirmedUid);
 }

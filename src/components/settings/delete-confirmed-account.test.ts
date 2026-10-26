@@ -33,6 +33,17 @@ test('account A confirms, account B takes the session during the popup: A is del
   assert.deepEqual(deleted, ['uid-a']);
 });
 
+test('onDeleted is told which account was deleted, even if the session has moved on', async () => {
+  const told: string[] = [];
+  await deleteConfirmedAccount({
+    reauthenticate: () => Promise.resolve('uid-a'),
+    onSignedIn: () => {},
+    deleteAccount: () => Promise.resolve(),
+    onDeleted: (uid) => { told.push(uid); },
+  });
+  assert.deepEqual(told, ['uid-a']);
+});
+
 test('a sign-in that fails deletes nothing and reaches the caller', async () => {
   const calls: string[] = [];
   await assert.rejects(deleteConfirmedAccount({

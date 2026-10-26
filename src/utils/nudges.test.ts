@@ -7,6 +7,7 @@ import {
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  forgetPrivacyNotice,
   pickNudge,
   pickVisitNotice,
   privacyNoticeOwed,
@@ -199,6 +200,15 @@ test('each account dismisses the notice separately', () => {
   rememberPrivacyNotice('reader-a', '2026-10-22', storage);
   assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-10-22');
   assert.equal(readPrivacyNoticeAck('reader-b', storage), null, 'another account on this device');
+});
+
+test('a deleted account leaves nothing of its uid behind, and no other account is touched', () => {
+  const storage = fakeStorage();
+  rememberPrivacyNotice('reader-a', '2026-10-22', storage);
+  rememberPrivacyNotice('reader-b', '2026-10-22', storage);
+  forgetPrivacyNotice('reader-a', storage);
+  assert.deepEqual([...storage.map.keys()], ['papertok_privacyNotice:reader-b']);
+  assert.doesNotThrow(() => forgetPrivacyNotice('reader-a', brokenStorage()));
 });
 
 test('blocked storage leaves the notice owed instead of failing', () => {
