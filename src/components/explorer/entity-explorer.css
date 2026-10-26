@@ -112,9 +112,10 @@
 
 /* The visitor's Privacy switch, in the corner the hero keeps it in. The page
    reserves the bar's height below, so large text cannot run its content
-   under the button. */
+   under the button. The button is `.ehc-share`, fixed at 40px whatever the
+   root font size, so the reserve is in px too. */
 .explorer-error:has(> .explorer-error-bar) {
-  padding-top: calc(var(--inset-top) + var(--space-3) + 2rem + var(--space-2));
+  padding-top: calc(var(--inset-top) + var(--space-3) + 40px + var(--space-2));
 }
 
 .explorer-error-bar {

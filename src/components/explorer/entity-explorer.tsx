@@ -1515,9 +1515,6 @@ export default function EntityExplorer({
     toggleFollow(followEntity).catch(console.error);
   };
 
-  // A visitor's analytics switch sits last in the bar, the far side from
-  // Back, where the paper page and the list keep it too (`explorerPrivacy`).
-  // Only without a session: an account has Settings for it.
   const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
     <div className="ehc-actions">
       {followEntity && (
@@ -1556,6 +1553,9 @@ export default function EntityExplorer({
     </div>
   );
 
+  // A visitor's analytics switch sits last in the bar, the far side from
+  // Back, where the paper page and the list keep it too (`explorerPrivacy`).
+  // Only without a session: an account has Settings for it.
   const explorerPrivacy = publicMode && <PrivacyPopover className={EXPLORER_PRIVACY_BUTTON} />;
 
   const retryPapers = () => {
