@@ -190,6 +190,9 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
   };
 }
 
+/** The `sourceName` of a work whose source OpenAlex gives no name: not a name to show. */
+export const UNNAMED_SOURCE = 'Unknown Journal';
+
 /** A work as a card of its own, the shape the OpenAlex search and topic lanes show. */
 export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider = 'openalex_search'): Paper | null {
   if (!work || !work.id) return null;
@@ -215,7 +218,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
   const pdfUrl = work.open_access?.oa_url || null;
   const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
 
-  const sourceName = work.primary_location?.source?.display_name || 'Unknown Journal';
+  const sourceName = work.primary_location?.source?.display_name || UNNAMED_SOURCE;
 
   const semanticEntries = work.concepts?.length ? work.concepts : (work.topics || []);
   const conceptObjects = usableOpenAlexConcepts(semanticEntries);

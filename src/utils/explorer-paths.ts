@@ -3,6 +3,7 @@ type AuthorInput = string | (Partial<PaperAuthor> & { openAlexId?: string }) | n
 export interface PaperReference { type: string; value: string; }
 
 import { getPublicEntityPath } from './public-navigation.ts';
+import { UNNAMED_SOURCE } from './open-alex-work.ts';
 
 /**
  * Where an author on a card opens, and why it matters which door.
@@ -107,4 +108,18 @@ export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | 
   }
   if (!name) return '';
   return withQuery(`/explorer/author/${encodeURIComponent(name)}`, paperQuery(reference));
+}
+
+/**
+ * The journal that published a paper, as the reader links it to the
+ * journal's page in the Explorer, where it can be followed (ENG-123): a
+ * journal OpenAlex identifies (`venueId`), by the name the paper carries for
+ * its venue. A paper mapped whole from OpenAlex, as the corpus serves one,
+ * carries that name as `sourceName`.
+ */
+export function journalExplorerLink(paper: Partial<Paper> | null | undefined) {
+  const id = String(paper?.venueId || '').trim();
+  const name = String(paper?.journal || paper?.sourceName || '').trim();
+  if (!/^S\d+$/.test(id) || !name || name === UNNAMED_SOURCE) return null;
+  return { name, path: `/explorer/source/${id}?name=${encodeURIComponent(name)}` };
 }

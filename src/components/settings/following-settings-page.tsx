@@ -236,8 +236,8 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
         </section>
       ) : (
         <section className="following-settings-empty">
-          {/* Search finds no journals, so the Journals tab says where one is
-              followed instead of sending the reader there. */}
+          {/* Search finds no journals, so the Journals tab says how to reach
+              a journal's page instead of sending the reader there. */}
           <EmptyState
             art={<Petri pose="compass" className="following-settings-empty-petri" />}
             title={'Nothing followed here yet'}
@@ -248,7 +248,7 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
             )}
           >
             {activeType === 'journal'
-              ? 'A journal you follow from its page in the Explorer shows up here, and its new articles join your feed.'
+              ? 'Open a paper with Read in plain words and select its journal’s name to follow the journal from its page.'
               : 'What you follow shows up here and shapes your feed.'}
           </EmptyState>
         </section>

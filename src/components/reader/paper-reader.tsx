@@ -50,6 +50,8 @@ import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlig
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
+import { journalExplorerLink } from '../../utils/explorer-paths.ts';
+import { Link } from 'react-router-dom';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
@@ -462,6 +464,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
+  // The way to a journal's Follow (ENG-123): its name opens its Explorer page.
+  const journal = journalExplorerLink(paper);
 
   const load = useCallback(async (targetLevel: string, {
     force = false,
@@ -1212,7 +1216,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            {(usesQuota || sections.length > 0 || paper?.year) && (
+            {(usesQuota || sections.length > 0 || paper?.year || journal) && (
               <div className="rd-doc-tags">
                 {usesQuota && (
                   <span className="rd-tag rd-tag--ai rd-uses">
@@ -1227,6 +1231,19 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   </InfoTag>
                 )}
                 {paper?.year && <span className="rd-tag">{paper.year}</span>}
+                {journal && (
+                  <Link
+                    to={journal.path}
+                    className="rd-tag rd-tag--link"
+                    // The reader leaves for the page, which may be the one
+                    // under it when it opened from that journal's Explorer page.
+                    onClick={(event) => {
+                      if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) requestClose();
+                    }}
+                  >
+                    {journal.name}
+                  </Link>
+                )}
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>
             )}

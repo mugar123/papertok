@@ -13,7 +13,7 @@ scroll, and the feed learns from what you read, like, save, skip and follow.
 ## Features
 
 - **Personalized feed** from arXiv, OpenAlex, PubMed, OpenReview, Hugging Face and more.
-- **Follow** authors, topics, institutions, projects and journals (up to 10, from a journal's page).
+- **Follow** authors, topics, institutions, projects and journals (up to 10, from a journal's page, which its name opens in Read in plain words).
 - **Search** papers, authors, topics, institutions and projects with `/`.
 - **Similar papers** from the card’s action rail.
 - **Read in plain words**: AI rewrites at Beginner, University or Researcher level when
