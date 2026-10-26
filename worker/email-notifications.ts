@@ -80,6 +80,7 @@ import type { WorkerEnv } from './env.ts';
 import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
+import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
@@ -461,7 +462,7 @@ function normalizePaperAuthor(value: unknown) {
 
 function sanitizeFollow(input: FollowInput = {}) {
   const type = input.type === 'concept' ? 'topic' : cleanText(input.type, 20);
-  if (!['author', 'topic', 'institution', 'project'].includes(type)) return null;
+  if (!DIGEST_FOLLOW_TYPES.includes(type)) return null;
   const canonicalId = normalizeId(input.canonicalId || input.id);
   if (isOpaqueQueryText(canonicalId) && !isQueryTopicId(canonicalId)) return null;
   const metadataQuery = cleanText(input.metadata?.query, 180);

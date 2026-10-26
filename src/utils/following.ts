@@ -4,6 +4,14 @@ export type FollowEntity = Omit<PaperFollowMatch, 'metadata'> & { metadata?: Fol
 export type FollowInput = Omit<Partial<FollowEntity>, 'type'> & { type?: PaperFollowMatch['type'] | 'concept'; id?: string; display_name?: string; name?: string };
 
 const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
+/**
+ * The follow types the weekly digest is built from. A journal is left out
+ * (ENG-123, D6): the client sends none and the Worker keeps none, so neither
+ * can take a follow slot or a preview from the others.
+ */
+export const DIGEST_FOLLOW_TYPES: readonly string[] = ['author', 'topic', 'institution', 'project'];
+export const isDigestFollow = (follow: { type?: unknown } | null | undefined) => DIGEST_FOLLOW_TYPES.includes(String(follow?.type));
+
 // A journal is followed by its OpenAlex source id. Its name is not unique in
 // OpenAlex, and its ISSN-L only resolves to the id (ENG-123).
 const JOURNAL_ID = /^S\d+$/;

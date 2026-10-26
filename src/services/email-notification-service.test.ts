@@ -38,6 +38,26 @@ test('marks a background sync, and only a background sync, for the Worker', () =
   assert.deepEqual(sync.follows, choice.follows);
 });
 
+test('the digest leaves journals out before it cuts follows and previews', () => {
+  const author = (index: number) => ({ type: 'author' as const, canonicalId: `A${index}`, displayName: `Author ${index}` });
+  const topic = (index: number) => ({ type: 'topic' as const, canonicalId: `T${index}`, displayName: `Topic ${index}` });
+  const journal = (index: number) => ({ type: 'journal' as const, canonicalId: `S${index}`, displayName: `Journal ${index}` });
+  const follows = [
+    ...Array.from({ length: 31 }, (_, index) => author(index)),
+    ...Array.from({ length: 10 }, (_, index) => journal(index)),
+    ...Array.from({ length: 9 }, (_, index) => topic(index)),
+  ];
+  const { follows: sent } = buildNotificationPreferencesPayload({ enabled: true }, follows);
+  assert.equal(sent.filter(follow => follow.type === 'topic').length, 9);
+  assert.equal(sent.some(follow => follow.type === 'journal'), false);
+
+  const journalOnly = (index: number) => ({ id: `j${index}`, title: `J${index}`, _followedEntityMatches: [journal(index)] });
+  const byAuthor = { id: 'a1', title: 'A1', _followedEntityMatches: [journal(1), author(1)] };
+  const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [...Array.from({ length: 20 }, (_, index) => journalOnly(index)), byAuthor] as never);
+  assert.deepEqual(previewItems.map(item => item.id), ['a1']);
+  assert.deepEqual(previewItems[0]!.matches.map(match => match.type), ['author']);
+});
+
 test('serializes only the follow metadata required by notification digests', () => {
   assert.deepEqual(serializeFollowForNotifications({
     type: 'institution',

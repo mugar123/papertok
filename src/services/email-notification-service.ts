@@ -1,5 +1,5 @@
 import type { Paper, PaperAuthor } from '../models/paper.ts';
-import type { FollowEntity } from '../utils/following.ts';
+import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
@@ -101,6 +101,7 @@ export function serializeUpdateForNotifications(paper: NotificationPaper = {}) {
     landingPageUrl: paper.landingPageUrl,
     pdfUrl: paper.pdfUrl,
     matches: (paper._followedEntityMatches || [])
+      .filter(isDigestFollow)
       .slice(0, 4)
       .map(follow => serializeFollowForNotifications(follow as Partial<FollowEntity>)),
   };
@@ -184,8 +185,12 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English only: a preference saved as 'es' before the interface went
     // English-only must not keep the emails in Spanish.
     language: 'en',
-    follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
-    previewItems: previewItems.slice(0, 20).map(paper => serializeUpdateForNotifications(paper)),
+    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
+    // A paper that matches journals only is not in the digest.
+    previewItems: previewItems
+      .filter(paper => !paper._followedEntityMatches?.length || paper._followedEntityMatches.some(isDigestFollow))
+      .slice(0, 20)
+      .map(paper => serializeUpdateForNotifications(paper)),
   };
 }
 
