@@ -11,9 +11,11 @@ of 1, 6 and 12 categories, with and without likes. This record is that
 baseline. It covers the store of main at `ead96548` (the walk of PAP-103, the
 paper ids kept on the order, ADS's notable listings and the works lookup that
 holds back a notable paper ADS listed until its enrichment, #391), measured with
-`worker/test-support/measure-lane-reads.ts` as of `9640fe02` on a local D1 that
-holds a synthetic corpus at the sizes the code keeps. No production data was
-read.
+`worker/test-support/measure-lane-reads.ts` on a local D1 that holds a synthetic
+corpus at the sizes the code keeps. The tables come from a full run at `75ef9e05`,
+with the "after a dismissal" rows from a rerun at `9640fe02`. A full run at
+`70f7f3c6` gave the same rows read, D1 calls and papers in every row; its times
+and memory are not used. No production data was read.
 
 Every row here is the app's main page request alone (`fetchCorpusPage` with the
 reader's categories as one group). A For You load also sends other requests to
@@ -129,16 +131,17 @@ level just before the request.
 | 12 | 24 | 2 after a dismissal | 20 | 9 | 209 | 3,217 | 843 | 36.8 | 108 |
 | 12 | 24 | 2 after the lean moved | 20 | 9 | 233 | 3,342 | 718 | 36.8 | 98.8 |
 
+Every row but "after a dismissal" comes from the first full run, at `75ef9e05`.
 The "after a dismissal" rows come from a second full run at `9640fe02`, which
 dismisses a paper page 1 served rather than one the reader never saw: their key
-and vector rows moved by at most 3, their times and memory are that run's.
+and vector rows moved by at most 3, and their times and memory are that run's.
 Every page returned 20 papers: its 15 and 5 notable ones. The row counts repeat
 for the same seeded corpus and can move by a row when it changes (one lane of
 2,000 reads 16,272 or 16,273). CPU on Windows ticks at about 15.6 ms, so the
 values above are close to multiples of it and the page 2 CPU figures from a kept
 order are 0 to 5 ticks, at the floor of what it resolves. CPU and wall times
 vary from run to run: here the 12-category first page with likes took 1,094 ms
-of CPU, and the other pages that rank with the same reader 625 to 859 ms.
+of CPU, and the other pages that rank with the same reader 625 to 843 ms.
 
 ## What the numbers show
 
@@ -181,10 +184,11 @@ of CPU, and the other pages that rank with the same reader 625 to 859 ms.
   lanes, so the walk passes about 1,800 ranks and reads 3,000: 9,000 rows and 3
   more D1 calls for 1, 6 and 12 categories alike (9,660 works rows in 9 calls).
   That is 28% of the first page's rows for 1 category, 8% for 6 and 4% for 12.
-  With likes the ranking is by similarity with a recency weight, and this filter
-  holds the newest papers, not the closest-ranked ones: the walk ended within the
-  first 200 ranks for 6 and 12 categories (1,380 works rows) and in the second
-  chunk for 1 category (2,580 rows, 10 calls). A real filter holds the cards
+  With likes the ranking is by similarity with a recency weight (the synthetic
+  similarity is noise, see Limits), and this filter holds the newest papers, not
+  the closest-ranked ones: the walk ended within the first 200 ranks for 6 and
+  12 categories (1,380 works rows) and in the second chunk for 1 category
+  (2,580 rows, 10 calls). A real filter holds the cards
   the reader was served, the closest-ranked ones, so a reader with likes can
   walk further than here; this run has no figure for it.
 - **A next page reads its own papers only from a good kept order, and only while
@@ -245,7 +249,7 @@ of CPU, and the other pages that rank with the same reader 625 to 859 ms.
   most-cited papers and ADS's (`ADS_NOTABLE_LEAVES`). Every leaf is given both,
   though cs.AI has only ADS's in the corpus, so its lane here is an upper bound. They go in through
   `ingestPapers`, and every work gets a pseudo-random vector in the stored form
-  (`quantize`). No paper is in two lanes.
+  (`quantize`; see Limits for what that cannot show). No paper is in two lanes.
 - **Readers.**
   - 1 category: cs.LG.
   - 6 categories: cs.AI, cs.LG, cs.CV, cs.CL, cs.RO and cs.NE, the reader of
@@ -306,6 +310,18 @@ of CPU, and the other pages that rank with the same reader 625 to 859 ms.
   fewer papers walks fewer chunks, which cost 600, 1,200, 2,400, 4,800 and 9,600
   rows. Any page whose walk reaches a new bound (rank 200, 600, 1,400, 3,000 or
   6,200) reads the next chunk of ids, even from a good kept order.
+- The vectors are pseudo-random (`vectorOf`, 256 dimensions), so any two are
+  nearly orthogonal and the corpus has no topics: their cosines have a mean of 0
+  and a standard deviation of 1/sqrt(256) = 0.0625. A separate check outside the
+  script on 400 of them gave 0.0624, a largest cosine of 0.264 and none above
+  0.4. In `rankBySimilarity` the semantic score (zero below a cosine of 0.4),
+  the penalty for a rejected paper and the MMR penalty (both from 0.75) are
+  therefore always zero, and with likes the order is the largest cosine to a
+  like (about 0.12 on average, noise) plus the recency term, not topical fit.
+  The vectors read, CPU and memory do not depend on these values. The walk's
+  works rows do when the reader has likes (1,380 and 2,580 for a first page),
+  and so do the papers served with likes: real vectors cluster, and a reader's
+  likes would rank their topic first.
 - These rows are the main page's request only, not the cost of a For You
   load. Each load also sends other `/store/papers` requests, none of them
   measured here:
@@ -330,8 +346,9 @@ of CPU, and the other pages that rank with the same reader 625 to 859 ms.
   average over all of these requests per route, and are not comparable with the
   tables here without separating them. Concurrent requests of one load share an
   isolate, so the memory limit bullet below counts them too.
-- The request has no follows, negatives or extra interest groups, and it
-  leaves out the route's sign-in and quota checks. It has no `waitForLikes`
+- The request has no follows or extra interest groups, and no negatives except
+  the one the "after a dismissal" rows send. It leaves out the route's sign-in
+  and quota checks. It has no `waitForLikes`
   lookups. The route's first page with likes and no follows also checks the
   likes' vectors (`addMissingPositives`), about 200 more rows by the same
   3-per-id pattern, which the run leaves out. Page 2 serves from the kept order
@@ -340,8 +357,9 @@ of CPU, and the other pages that rank with the same reader 625 to 859 ms.
   order at once, so a page 2 that arrives earlier ranks again, as the rows
   "after 16 min", "after a dismissal" and "after the lean moved" show.
 - An isolate shares its 128 MB across the concurrent requests it serves and its
-  own bundle baseline. Three or four concurrent first pages of 12 categories
-  with likes (37 MB live, 99 to 108 MB with garbage) could reach that limit.
+  own bundle baseline. Three or four concurrent requests of 12 categories with
+  likes, first pages or pages that rank again (36 to 37 MB live, 99 to 108 MB
+  with garbage), could reach that limit.
 - D1-side memory was not measured or reproduced. The production
   `SQLITE_NOMEM` case happens in D1's SQLite, where the notable statement's
   window-function sorts and the `json_each` temporary indexes allocate; this
@@ -373,8 +391,11 @@ node worker/test-support/measure-lane-reads.ts
 
 It prints the two tables, without thousands separators, with an Other column
 for rows read by any statement of no kind above (none here) and the papers each
-page returned. The run takes several minutes. The row counts repeat for the same
-seeded corpus; times and memory vary. `worker/test-support/measure-lane-reads.test.ts`
-runs the same script on a small corpus. The probe under "What the numbers show" is
+page returned. The run takes several minutes. It stops with an error when a page
+serves no paper beyond the seen filter, or when a reader's lanes hold fewer
+papers than the plan's seen filter, excluded papers and likes need. The row
+counts repeat for the same seeded corpus; times and memory vary.
+`worker/test-support/measure-lane-reads.test.ts` runs the same script on a small
+corpus. The probe under "What the numbers show" is
 `measureLaneReads(undefined, { readers: [['cs.LG']], likes: 0, excluded: 10, seen: 190, repetitions: 1 })`,
 which seeds the same production-sized corpus.
