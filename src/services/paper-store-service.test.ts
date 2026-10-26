@@ -283,5 +283,5 @@ test('an answer without a papers list is an invalid response, not an empty page'
     await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { code: 'STORE_RESPONSE_INVALID' });
   }
   const { options } = harness(answered([]));
-  assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), []);
+  assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { papers: [], skipsSeen: false });
 });
