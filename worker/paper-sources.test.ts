@@ -1475,7 +1475,10 @@ test("an arXiv category's notable lane also lists ADS's most-cited papers of eac
   const { urls, env } = relay(t, url => ({ response: { docs: adsYear(url) === 2018 ? [adsDoc(2018, 1)] : [] } }));
   const page = (n: number) => SOURCES['ads-notable'].fetchPage(adsEnv(env), { lane: 'notable:quant-ph', page: n, since: '', waits: { seconds: 0 } });
   await page(1); await page(10);
-  assert.deepEqual(urls.map(url => url.searchParams.get('q')), ['arxiv_class:"quant-ph" year:2016', 'arxiv_class:"quant-ph" year:2025']);
+  assert.deepEqual(urls.map(url => url.searchParams.get('q')), [
+    'arxiv_class:"quant-ph" year:2016 doctype:(article OR eprint OR inproceedings)',
+    'arxiv_class:"quant-ph" year:2025 doctype:(article OR eprint OR inproceedings)',
+  ]);
   assert.equal(urls[0].searchParams.get('sort'), 'citation_count desc');
   assert.equal(urls[0].searchParams.get('rows'), '100');
   const { items } = await page(3);
@@ -1490,6 +1493,12 @@ test('every arXiv category, and no other leaf, has an ADS notable job on its fir
   assert.equal(ads.length, 83, 'the 83 leaves that are arXiv categories');
   for (const lane of ['notable:quant-ph', 'notable:cs.RO', 'notable:econ.EM', 'notable:astro-ph.EP', 'notable:physics.plasm-ph', 'notable:cs.CV']) assert.ok(ads.includes(lane), lane);
   for (const lane of ['notable:eess.optics', 'notable:med.onco', 'notable:mech.aero', 'notable:chem.org']) assert.ok(!ads.includes(lane), lane);
+});
+
+test('without its token, an ADS notable listing fails before asking ADS', async t => {
+  const { urls, env } = relay(t, () => ({ response: { docs: [] } }));
+  await assert.rejects(SOURCES['ads-notable'].fetchPage(env, { lane: 'notable:quant-ph', page: 1, since: '', waits: { seconds: 0 } }), /NASA_ADS_API_TOKEN/);
+  assert.equal(urls.length, 0);
 });
 
 test('a refused ADS listing is not marked harvested, so the lane is listed again the next night', async t => {
@@ -1577,33 +1586,36 @@ test('a night re-lists eight due notable lanes, or a seventh of them once there 
   assert.equal(notableLanesPerNight(149), 22);
 });
 
-test('a night lists every never-harvested notable lane and at most its share of those due again, the longest unlisted first', async () => {
+test("a night lists every never-harvested notable job, then each source's share of its jobs due again, the longest unlisted first", async () => {
   const now = Date.parse('2026-10-30T02:40:00Z');
   const nightWith = async (rows: Array<[string, string]>) => {
     const { binding, db } = testD1();
     const harvested = db.prepare('INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)');
     for (const [job, through] of rows) harvested.run(...job.split(' '), through);
-    return (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`);
+    return (await notableLaneJobs(binding, now)).map(job => `${job.source} ${job.lane}`);
   };
   // The first night: OpenAlex's lanes, then ADS's, each by lane id.
   const jobs = await nightWith([]);
+  const openAlex = jobs.filter(job => job.startsWith('openalex-notable '));
   const ads = jobs.filter(job => job.startsWith('ads-notable '));
   assert.deepEqual(jobs, [...notableLeaves().map(leaf => `openalex-notable notable:${leaf}`), ...[...ads].sort()]);
+  const share = (source: string[]) => notableLanesPerNight(source.length);
   // Harvested eight days ago, each a minute after the next job, so the longest unlisted is the last job.
   const eightDaysAgo = (index: number) => new Date(Date.parse('2026-10-22T03:00:00Z') + (jobs.length - index) * 60_000).toISOString();
-  const perNight = notableLanesPerNight(jobs.length);
   const fresh = 'ads-notable notable:quant-ph';
-  const others = jobs.filter(job => job !== fresh);
+  const others = (source: string[]) => source.filter(job => job !== fresh);
 
   assert.deepEqual(
-    await nightWith(others.map(job => [job, '2026-10-22T03:00:00.000Z'])),
-    [fresh, ...others.slice(0, perNight)],
-    'the new lane, then the night\'s share of those due again, a tie by source and lane id',
+    await nightWith(jobs.filter(job => job !== fresh).map(job => [job, '2026-10-22T03:00:00.000Z'])),
+    [fresh, ...others(openAlex).slice(0, share(openAlex)), ...others(ads).slice(0, share(ads))],
+    'the new job, then each source\'s share of those due again, a tie by source and lane id',
   );
+  // ADS's jobs are the oldest, as when its listings keep failing: OpenAlex
+  // still gets its own share.
   assert.deepEqual(
     await nightWith(jobs.map((job, index) => [job, eightDaysAgo(index)])),
-    jobs.slice(-perNight).reverse(),
-    'the night\'s share of those due again, the oldest harvest first, whichever the source',
+    [...ads.slice(-share(ads)).reverse(), ...openAlex.slice(-share(openAlex)).reverse()],
+    'each source\'s share of its own jobs due again, the oldest harvest first',
   );
   assert.deepEqual(await nightWith(jobs.map(job => [job, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
 });

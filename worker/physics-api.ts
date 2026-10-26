@@ -40,7 +40,9 @@ async function fetchAdsLiterature(context: SourceContext, query: string, env: Wo
  * the classes of its arXiv version, chosen by its authors.
  */
 export async function fetchAdsNotable(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, arxivClass: string, year: number, rows: number) {
-  const data = await adsSearch(env, { q: `arxiv_class:"${arxivClass}" year:${year}`, sort: 'citation_count desc', rows, start: 0 });
+  // Journal articles, arXiv's records and conference papers: not ADS's
+  // abstracts, catalogues, software, theses or other records that are not papers.
+  const data = await adsSearch(env, { q: `arxiv_class:"${arxivClass}" year:${year} doctype:(article OR eprint OR inproceedings)`, sort: 'citation_count desc', rows, start: 0 });
   return { docs: data.response.docs };
 }
 

@@ -24,7 +24,7 @@ test("an arXiv class's notable listing asks ADS for the year's most-cited papers
   });
   const { docs } = await fetchAdsNotable({ NASA_ADS_API_TOKEN: 'ads-test-token' }, 'quant-ph', 2018, 100);
   assert.equal(`${urls[0].origin}${urls[0].pathname}`, 'https://api.adsabs.harvard.edu/v1/search/query');
-  assert.equal(urls[0].searchParams.get('q'), 'arxiv_class:"quant-ph" year:2018');
+  assert.equal(urls[0].searchParams.get('q'), 'arxiv_class:"quant-ph" year:2018 doctype:(article OR eprint OR inproceedings)');
   assert.equal(urls[0].searchParams.get('sort'), 'citation_count desc');
   assert.equal(urls[0].searchParams.get('rows'), '100');
   assert.equal(urls[0].searchParams.get('start'), '0');

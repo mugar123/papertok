@@ -621,10 +621,14 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // papers of the class in each of the ten completed years, preprints and
   // published versions alike, filed under the same lane and kept as
   // OpenAlex's are. Its listing does not renew the enrichment
-  // (`renewsEnrichment`): ADS's counts are not OpenAlex's.
+  // (`renewsEnrichment`), so the 14-day refresh still asks OpenAlex for these
+  // papers; a paper both list shows the higher count, as for any two sources
+  // (`PaperBuilder.merge`).
   'ads-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {
+      // The physics route answers from INSPIRE without it; this listing has no other source.
+      if (!env.NASA_ADS_API_TOKEN) throw new Error('The ADS notable listing needs NASA_ADS_API_TOKEN');
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
       let docs: unknown[];
       try {
@@ -730,11 +734,13 @@ export function categoryLaneJobs(): LaneJob[] {
 }
 
 /**
- * The notable lanes a night lists, of the leaves with a topic lane or admitted
- * by the topic or journal notable sample (`NOTABLE_LEAVES`): every lane
- * never harvested, by lane id, then at most `notableLanesPerNight` not
- * harvested in the last NOTABLE_LANE_DAYS days, the oldest harvest first.
- * Every new lane runs at once so that a lane's first listing does not wait
+ * The notable jobs a night lists: OpenAlex's listing of each leaf with a topic
+ * lane or admitted by the topic or journal notable sample (`NOTABLE_LEAVES`),
+ * and ADS's of each arXiv category (`ADS_NOTABLE_LEAVES`). Every job never
+ * harvested, by source and lane id, then each source's at most
+ * `notableLanesPerNight` of its own jobs not harvested in the last
+ * NOTABLE_LANE_DAYS days, the oldest harvest first.
+ * Every new job runs at once so that a lane's first listing does not wait
  * behind others' (the first cycle fills in one night). Re-listings are capped
  * because a lane re-ingests up to 1,000 rows a step and CPU accumulates across
  * an invocation (`wrangler.toml` `[limits]`). Counted in UTC days, so a lane
@@ -752,11 +758,16 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
     ...lanesOf(NOTABLE_LEAVES).map(lane => ({ source: 'openalex-notable' as const, lane })),
     ...lanesOf(ADS_NOTABLE_LEAVES).map(lane => ({ source: 'ads-notable' as const, lane })),
   ];
+  const byThrough = (a: { through: string }, b: { through: string }) => (a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
   const due = jobs.flatMap(job => {
     const through = harvested.get(key(job));
     return through !== undefined && through < dueBefore ? [{ job, through }] : [];
-  }).sort((a, b) => a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
-  return [...jobs.filter(job => !harvested.has(key(job))), ...due.slice(0, notableLanesPerNight(jobs.length)).map(({ job }) => job)];
+  }).sort(byThrough);
+  // Each source has its own share, so a source whose listings keep failing
+  // (its jobs stay due, the oldest) does not hold back another's re-listings.
+  const shares = [...new Set(jobs.map(job => job.source))].flatMap(source => due.filter(({ job }) => job.source === source)
+    .slice(0, notableLanesPerNight(jobs.filter(job => job.source === source).length)));
+  return [...jobs.filter(job => !harvested.has(key(job))), ...shares.sort(byThrough).map(({ job }) => job)];
 }
 
 // The source that serves each kind of followed lane (`followLane` in src/utils/follow-lanes.ts).
