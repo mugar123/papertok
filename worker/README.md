@@ -906,11 +906,15 @@ reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED`, `NOT_FOUND`,
 `INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
 `UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
-failed), so the client model can read them. An exception inside a tool call is
+failed, with `retryAfterSeconds` when every one was only rate limited), so the
+client model can read them. An exception inside a tool call is
 answered with `-32603` and the request's `id`, status 500. These answers are HTTP
 200, so `callTool` writes the Workers Logs line itself for a rate limit or a 5xx-class
 code, as `{route: '/mcp', tool, code, status}`, and reports the 5xx-class failures
-to PostHog as the routes report theirs. The server sends no search text, paper
+to PostHog as the routes report theirs. A search writes that line for each
+source that failed, with its `source`, whether or not the other source answered,
+and none for `SOURCES_UNAVAILABLE` itself, so a search its sources only rate
+limited is a 429 and never a server error. The server sends no search text, paper
 id or other argument to logs or analytics.
 
 To connect from Claude, add a custom connector with the URL

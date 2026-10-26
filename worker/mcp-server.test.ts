@@ -2,6 +2,7 @@ import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
+import { trackErrors } from './error-tracking.ts';
 import reportApi from './index.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -531,6 +532,76 @@ test('a tool failure leaves a log line with the tool and code, never the argumen
   } finally {
     warn.mock.restore();
   }
+});
+
+const POSTHOG = 'https://eu.i.posthog.com/';
+
+// One request as `instrumentation.ts` runs it, with its log lines, and the
+// PostHog reports it sent (to the stubbed fetch) once it is done.
+async function oneRequest<T>(env: WorkerEnv, calls: string[], run: () => Promise<T>) {
+  const warn = mock.method(console, 'warn', () => {});
+  const pending: Promise<unknown>[] = [];
+  const before = calls.length;
+  try {
+    const result = await trackErrors(env, { waitUntil: promise => { pending.push(promise); } }, 'http', run);
+    await Promise.all(pending);
+    const lines = warn.mock.calls.map(call => String(call.arguments[0]))
+      .filter(line => line.startsWith('{"route":"/mcp"'))
+      .map(line => JSON.parse(line) as Record<string, unknown>);
+    return { result, lines, reports: calls.slice(before).filter(url => url.startsWith(POSTHOG)).length };
+  } finally {
+    warn.mock.restore();
+  }
+}
+
+test('a search its sources only rate limited is logged as 429s and not reported as a server error', async () => {
+  await withUpstream(url => {
+    if (url.startsWith(POSTHOG)) return Response.json({});
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response('Rate exceeded.', { status: 429, headers: { 'retry-after': '30' } });
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ error: 'Too many requests' }, { status: 429, headers: { 'retry-after': '120' } });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    // Separate environments, so the second search does not wait for arXiv's beat.
+    const arxivEnv = routeEnv({ POSTHOG_PROJECT_TOKEN: 'phc_test' });
+    const arxivOnly = await oneRequest(arxivEnv, calls, () => callTool(arxivEnv, 'search_papers', { query: 'graphene', sources: ['arxiv'] }));
+    assert.deepEqual(arxivOnly.lines, [{ route: '/mcp', tool: 'search_papers', source: 'arxiv', code: 'UPSTREAM_RATE_LIMITED', status: 429 }]);
+    assert.equal(arxivOnly.reports, 0);
+    const arxivAnswer = arxivOnly.result.answer;
+    assert.equal(arxivAnswer.result?.isError, true);
+    assert.equal(arxivAnswer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+    assert.equal(arxivAnswer.result?.structuredContent?.retryAfterSeconds, 30);
+
+    const bothEnv = routeEnv({ POSTHOG_PROJECT_TOKEN: 'phc_test' });
+    const both = await oneRequest(bothEnv, calls, () => callTool(bothEnv, 'search_papers', { query: 'graphene' }));
+    const bothAnswer = both.result.answer;
+    assert.equal(bothAnswer.result?.structuredContent?.retryAfterSeconds, 30, 'the client can retry once one source reopens');
+    assert.deepEqual(both.lines.map(line => [line.source, line.status]), [['openalex', 429], ['arxiv', 429]]);
+    assert.equal(both.reports, 0);
+  });
+});
+
+test('a search source that fails while the other answers still leaves its line and report', async () => {
+  await withUpstream(url => {
+    if (url.startsWith(POSTHOG)) return Response.json({});
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    if (url.startsWith('https://api.openalex.org/works?') && url.includes('search=graphene')) return Response.json({ error: 'Service unavailable' }, { status: 503 });
+    // An answer the relay passes on but the tool cannot read.
+    if (url.startsWith('https://api.openalex.org/works?')) return new Response('<html>maintenance</html>', { headers: { 'content-type': 'application/json' } });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    const env = routeEnv({ POSTHOG_PROJECT_TOKEN: 'phc_test' });
+    const down = await oneRequest(env, calls, () => callTool(env, 'search_papers', { query: 'graphene' }));
+    const answer = down.result.answer;
+    assert.equal(answer.result?.isError, undefined);
+    assert.equal((answer.result?.structuredContent?.papers as unknown[]).length, 2);
+    assert.deepEqual(down.lines, [{ route: '/mcp', tool: 'search_papers', source: 'openalex', code: 'UPSTREAM_UNAVAILABLE', status: 503 }]);
+    assert.equal(down.reports, 1);
+
+    const unreadableEnv = routeEnv({ POSTHOG_PROJECT_TOKEN: 'phc_test' });
+    const unreadable = await oneRequest(unreadableEnv, calls, () => callTool(unreadableEnv, 'search_papers', { query: 'strain' }));
+    assert.deepEqual(unreadable.lines.map(line => [line.source, line.status]), [['openalex', 503]]);
+    assert.equal(unreadable.reports, 1);
+  });
 });
 
 test('an exception during a tool call is answered under the request id', async () => {

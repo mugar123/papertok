@@ -261,10 +261,25 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     arxiv: () => arxivPapers({ search_query: arxivQuery(query, since), start: 0, max_results: MAX_RESULTS, sortBy: 'relevance' }, caller, env),
   };
   const settled = await Promise.allSettled(sources.map(source => searches[source]()));
-  const unavailable = settled.flatMap((outcome, index) => outcome.status === 'rejected'
-    ? [{ source: sources[index], ...(outcome.reason instanceof ToolFailure ? outcome.reason.details : { code: 'UPSTREAM_UNAVAILABLE' }) }]
-    : []);
-  if (unavailable.length === sources.length) throw new ToolFailure({ code: 'SOURCES_UNAVAILABLE', unavailable });
+  const unavailable = settled.flatMap((outcome, index): Array<Record<string, unknown>> => {
+    if (outcome.status === 'fulfilled') return [];
+    // An answer the tool could not read is reported as any exception is.
+    if (!(outcome.reason instanceof ToolFailure)) captureWorkerException(outcome.reason);
+    return [{ source: sources[index], ...(outcome.reason instanceof ToolFailure ? outcome.reason.details : { code: 'UPSTREAM_UNAVAILABLE' }) }];
+  });
+  // Each failed source leaves the line and report that the browser's own
+  // request to its route would, whether or not the other source answered.
+  for (const entry of unavailable) recordFailure('search_papers', entry);
+  if (unavailable.length === sources.length) {
+    // When every source only refused for a while, the client can retry once
+    // the first of them reopens.
+    const waits = unavailable.map(entry => Number(entry.retryAfterSeconds));
+    throw new ToolFailure({
+      code: 'SOURCES_UNAVAILABLE',
+      unavailable,
+      ...(waits.every(wait => wait > 0) ? { retryAfterSeconds: Math.min(...waits) } : {}),
+    });
+  }
   const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
   const papers = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(publicPaper);
   return { query, papers, unavailable };
@@ -336,16 +351,19 @@ const RUN: Record<ToolName, ReturnType<typeof tool>> = {
 };
 
 // A tool failure is an HTTP 200 answer, so `index.ts` never sees it. This writes
-// the line it writes for a 429 or 5xx (route and status, here with the tool and
-// code) and reports a 5xx the way it reports one. The arguments stay out of it.
+// the line it writes for a 429 or 5xx (route and status, here with the tool,
+// the searched source and the code) and reports a 5xx the way it reports one.
+// The arguments stay out of it.
 function recordFailure(tool: string, details: Record<string, unknown>) {
+  // `searchPapers` recorded each of its sources.
+  if (details.code === 'SOURCES_UNAVAILABLE') return;
   const code = String(details.code);
   const upstreamStatus = Number(details.upstreamStatus) || 0;
   const status = details.retryAfterSeconds !== undefined ? 429
     : upstreamStatus >= 500 ? upstreamStatus
-      : /^(?:UPSTREAM_|SOURCES_UNAVAILABLE$|PROVIDER_QUOTA_NOT_CONFIGURED$)/.test(code) ? 503 : 0;
+      : /^(?:UPSTREAM_|PROVIDER_QUOTA_NOT_CONFIGURED$)/.test(code) ? 503 : 0;
   if (!status) return;
-  console.warn(JSON.stringify({ route: MCP_PATH, tool, code, status }));
+  console.warn(JSON.stringify({ route: MCP_PATH, tool, ...(details.source ? { source: details.source } : {}), code, status }));
   captureWorkerResponseFailure(status);
 }
 
