@@ -1510,7 +1510,9 @@ export default function EntityExplorer({
     toggleFollow(followEntity).catch((error: unknown) => {
       // Said aloud too: the toast region is a live region.
       if (error instanceof JournalFollowLimitError) {
-        toast.error(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${entityDisplayName}.`);
+        toast.error(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${entityDisplayName}.`, {
+          action: { label: 'Open Settings', onClick: () => { void navigate('/settings/following'); } },
+        });
       } else if (error instanceof FollowsUnavailableError) {
         toast.error(`Your follows have not loaded yet, so ${entityDisplayName} was not followed. Try again in a moment.`);
       } else {
