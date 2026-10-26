@@ -115,6 +115,44 @@ Crossref for its DOI's type, 20 DOIs a call: about 96 calls a night, and about
 1,080 for the about 21,700 articles of the lanes' first night, which the
 embedding passes also take.
 
+## Notable sample
+
+A leaf with a venue lane and no notable lane from its topics can get a
+notable lane from its journals: the 100 most-cited articles of its venue lane
+in each of the ten completed years before the current one, with or without an
+abstract (`openAlexNotableListingFilter` in `worker/paper-sources.ts`, source
+`openalex-notable`). The listing asks the venue lane's filter without the
+core-source filter the topic notables ask. These sources already passed the
+gate above and the review rule, and `primary_location.source.is_core:true`
+would drop the reviewed ones OpenAlex does not call core (ICPP in cs.DC,
+SPLASH in cs.PL, ACM TOIS in cs.IR).
+
+**Evidence.** `notableSamples` in `openalex-venue-reviews.json`, keyed by leaf,
+holds samples in the shape above whose works also keep `cited_by_count`. The
+query is the leaf's venue lane over the ten completed years before the capture
+year, most cited first:
+
+| Parameter | Value |
+| --- | --- |
+| `filter` | the lane's `primary_location.source.id` (sorted, joined by `\|`), its `type` and any topic or author-count filter, `from_publication_date:<year−10>-01-01`, `to_publication_date:<year−1>-12-31`, `has_abstract:true`, `is_retracted:false`, and nothing else |
+| `sort` | `cited_by_count:desc` |
+| `page`, `per-page` | `1`, `15` |
+
+The sample asks `has_abstract:true` because the labellers read the abstracts;
+the lane does not. The works must come from the lane's sources, in
+non-increasing citation order and dated within the window, and every work is
+labelled as in the gate above.
+
+**Decision.** The gate's rule: a full page of 15, at least 10 on target
+without doubt. A passing leaf joins `OPENALEX_NOTABLE_VENUE_LEAVES`, the second
+export of `worker/openalex-leaf-venues.generated.ts`, and the report gives each
+sampled leaf `notable: { status, sampleSize, onTarget }`. The generator stops
+on a notable sample for a leaf without a venue lane, or for a leaf with a
+notable lane from its topics (`openAlexNotableFilterForLeaf`): a notable lane
+has one OpenAlex listing. Each batch of admitted leaves changes what every
+reader of those leaves is shown and adds ten OpenAlex list calls a week per
+leaf, so it is authorized under AGENTS.md before it is committed.
+
 ## The 2026-10-23 and 2026-10-24 samples
 
 Curators proposed the lists and took the samples with keyless OpenAlex requests:
