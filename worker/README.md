@@ -368,8 +368,11 @@ anonymously, so the rules decide as they do for a visitor. These are **new** rou
 Worker before the frontend, and check them with a crawler user agent. The release that moved a
 paper's page to `/paper/…` (ENG-44) reverses that order once: the Worker's canonical and list links
 name `/paper/…`, which a frontend from before it answers with its 404 page, so deploy the frontend
-first, and deploy the Worker right after, because until then a crawler on `/paper/…` gets the old
-Worker's page, whose canonical still names the redirecting `/public/paper/…`.
+first. Deploy the Worker at least 5 minutes after Vercel publishes: the HTML shell can stay cached
+for 5 minutes, and a shell from before the release would run old JavaScript against the new
+`/paper/…` links. Do not wait much longer than that, because until the Worker is deployed a crawler
+on `/paper/…` gets the old Worker's page, whose canonical still names the redirecting
+`/public/paper/…`.
 
 A looked-up entity previews with its own card: `/share/image/entity/:type/:id`, a 1200x630
 PNG this Worker draws (`worker/share-image.ts`, laid out in `worker/share-card.ts`, drawn with
