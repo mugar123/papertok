@@ -369,9 +369,9 @@ const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true
 // journals and types its preprints, and Europe PMC's record with a PubMed id
 // is PubMed's. An arXiv record reads reviewed on any DOI it lists, arXiv's own
 // included, or on a comment saying it was published, so it counts only when it
-// names the journal. Any other source's `true` comes from a `published` type
-// alone, and a repository's copy (CORE, or a preprint in Europe PMC) proves no
-// review.
+// names the journal. Every other source is left out. CORE's, OSTI's and
+// NASA's `true`, and Europe PMC's for a preprint, come from a `published` type
+// alone, and a repository's copy proves no review.
 function namesReviewingJournal(paper: Paper) {
   switch (paper.sources?.primary) {
     case 'openalex':

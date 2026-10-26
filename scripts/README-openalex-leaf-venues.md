@@ -88,9 +88,9 @@ text and date, and only when the merge reads reviewed.
 
 Only a record whose source names the journal that reviewed the paper starts
 the upgrade: OpenAlex's journal record, PubMed's, Europe PMC's with a PubMed
-id, or an arXiv eprint naming its journal. Any other source's record reads
-reviewed by its `published` type alone, such as a repository's copy in CORE
-or OSTI or a preprint in Europe PMC, often under the paper's SSRN or Zenodo
+id, or an arXiv eprint naming its journal. No other source's record starts
+it. A repository's copy in CORE or OSTI, or a preprint in Europe PMC, reads
+reviewed by its `published` type alone, can list the paper's SSRN or Zenodo
 DOI, and leaves the working paper's row as it was. So does a journal record
 without a DOI, which would leave the working paper's DOI on the reviewed row.
 Listed before its working paper on one night or page, such a record still
