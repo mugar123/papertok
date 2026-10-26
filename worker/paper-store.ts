@@ -11,6 +11,7 @@ import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
+import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -247,7 +248,9 @@ function namedEntityLanes(paper: Partial<Paper>) {
   }
   for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
-  lanes.add(entityLane(paper.venueId));
+  // Only the types the journal's own lane lists: an editorial or letter that
+  // an author's lane brings stays out of the journal's.
+  if (FOLLOWED_JOURNAL_WORK_TYPES.includes(paper.publicationType || '')) lanes.add(entityLane(paper.venueId));
   lanes.delete('');
   return [...lanes];
 }

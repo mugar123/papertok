@@ -1819,6 +1819,30 @@ test("a journal's lane holds the papers that name it only while someone follows 
   assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'which its area lane keeps');
 });
 
+// ENG-123: a journal's lane holds what its own listing asks for, articles and
+// reviews. An editorial or letter another lane lists keeps out of it.
+test("a followed journal's lane takes the reviews other lanes list, not their editorials or letters", async () => {
+  const { env, db } = corpus();
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  const work = (id: number, type: string, title: string) => mapOpenAlexWork({
+    id: `https://openalex.org/W70000000${id}`,
+    title,
+    type,
+    publication_date: '2026-10-12',
+    abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+    authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+  })!;
+  const papers = [
+    work(11, 'review', 'Fifty years of the term structure: a review'),
+    work(12, 'editorial', 'Editorial: a new editor for the review'),
+    work(13, 'letter', 'Letter to the editor on monetary policy'),
+  ];
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['area:econ'] })), { now: NOW });
+  const filed = rows(db, "SELECT json_extract(works.paper, '$.title') AS title FROM work_lanes JOIN works ON works.id = work_lanes.work_id WHERE lane = 'source:S23254222'");
+  assert.deepEqual(filed.map(row => row.title), ['Fifty years of the term structure: a review']);
+});
+
 test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {
   const { env, db } = corpus();
   await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
