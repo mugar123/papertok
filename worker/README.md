@@ -892,7 +892,10 @@ not in this phase either; `/resources/figures` is public, so adding them waits
 only on a product decision (ENG-91).
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
-the `summary` that repeats the abstract and the feed's internal fields, and with
+the `summary` that repeats the abstract, the feed's internal fields (the
+adapter's `provider` label among them) and `sourceType`, which
+`mapOpenAlexWork` writes as `journal` for every work that is not a conference
+paper, a repository preprint included. They come with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
 institutions, 5 concepts and 3 topics. A search also cuts each abstract at the
 last space within 1,500 characters and ends it with `…`; `get_paper` sends the

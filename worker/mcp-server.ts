@@ -252,8 +252,10 @@ function withoutDefaults(paper: Partial<Paper>) {
 
 // The provider's record is left behind, with what only repeats other fields
 // (`summary` is the abstract, `allCategories` and `keywords` often the
-// categories) or is internal to the feed. Every list is bounded, and a list
-// the source never gave stays absent: unknown, not empty.
+// categories) or is internal to the feed: the adapter's `provider` label, and
+// the `sourceType` that `mapOpenAlexWork` writes as `journal` for every work
+// that is not a conference paper, a repository preprint included. Every list
+// is bounded, and a list the source never gave stays absent: unknown, not empty.
 function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstract = MAX_SEARCH_ABSTRACT } = {}) {
   const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
   const omitted: Partial<Record<CutList, number>> = {};
@@ -276,6 +278,8 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
   delete relayed.summary;
   delete relayed._followedEntityMatches;
   delete relayed._fetchedFor;
+  delete relayed.provider;
+  delete relayed.sourceType;
   const categories = JSON.stringify(relayed.categories || []);
   if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;
   if (JSON.stringify(relayed.keywords || []) === categories) delete relayed.keywords;

@@ -433,7 +433,7 @@ test('a field the source did not give stays absent, in a search and in get_paper
   };
   const unknown = ['abstract', 'openAccess', 'citationCount', 'referenceCount', 'hasReferences', 'hasData', 'hasSupplement',
     'concepts', 'topics', 'institutions', 'biomedicalTerms', 'projectIds', 'researchResources', 'categories', 'keywords',
-    'primaryCategory', 'primaryTopic'];
+    'primaryCategory', 'primaryTopic', 'sourceType', 'provider'];
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/W4400000077')) return Response.json(bare);
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [bare] });
@@ -457,6 +457,38 @@ test('a field the source did not give stays absent, in a search and in get_paper
     assert.deepEqual(['citationCount', 'peerReviewed', 'institutions', 'concepts', 'topics', 'referenceCount'].filter(key => key in preprint), []);
     assert.equal(preprint.publicationStatus, 'preprint');
     assert.equal(preprint.openAccess, true);
+  });
+});
+
+test('a repository preprint is given no journal venue and no feed adapter label, in a search and in get_paper', async () => {
+  // A working paper on SSRN as OpenAlex lists it (synthetic).
+  const ssrn = {
+    ...OPENALEX_WORK,
+    id: 'https://openalex.org/W4400000088',
+    doi: 'https://doi.org/10.2139/ssrn.4400088',
+    ids: {},
+    title: 'Graphene prices in a working paper',
+    type: 'preprint',
+    primary_location: {
+      landing_page_url: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4400088',
+      is_published: false,
+      source: { display_name: 'SSRN Electronic Journal', type: 'repository' },
+    },
+  };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000088')) return Response.json(ssrn);
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [ssrn] });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene prices', sources: ['openalex'] });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
+    const looked = await callTool(env, 'get_paper', { id: 'W4400000088' });
+    const paper = looked.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    for (const [name, relayed] of [['search', listed], ['get_paper', paper]] as const) {
+      assert.equal(relayed.publicationType, 'preprint', name);
+      assert.deepEqual(['sourceType', 'provider'].filter(key => key in relayed), [], name);
+    }
   });
 });
 
