@@ -342,8 +342,6 @@ export default function EntityExplorer({
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
-  // How the hero first painted, kept for the visit: a hero born resolved has no
-  // skeleton to hand over from, and a seeded name is already on screen.
   const [heroOpening] = useState(() => (bornResolved ? ' is-born-resolved' : ''));
   // True from the start, and re-armed by every entity load: the live page's
   // first frame comes before the effect that requests the papers, and with
@@ -433,8 +431,6 @@ export default function EntityExplorer({
   }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
-  // Whether the rows on screen replaced the skeleton in this showing of the
-  // papers tab: they settle out of its shapes then, and not on a return to it.
   const [rowsResolving, setRowsResolving] = useState(false);
   const [rowsSeen, setRowsSeen] = useState({ loading: isLoadingPapers, tab: activeTab });
   if (rowsSeen.loading !== isLoadingPapers || rowsSeen.tab !== activeTab) {
@@ -641,7 +637,6 @@ export default function EntityExplorer({
     // same displacement, on a different clock. Measured stepping back from an
     // author to its institution: four settles in 76ms, each restarting a full
     // 360ms, and the tab strip dipping 16px instead of being where it was left.
-    // 280ms, the page's own entrance clock, inside the 300ms UI budget.
     { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', duration: 280 },
   );
 

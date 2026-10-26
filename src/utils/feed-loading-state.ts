@@ -7,11 +7,7 @@ export const FEED_DISPLAY_STATES = Object.freeze({
   EMPTY: 'empty',
 });
 
-/**
- * Whether the feed's first wait is over: papers arrived, or a load finished
- * without them and without an error. A first load that failed is not over —
- * its retry is still the first wait, under the veil, not a skeleton card.
- */
+/** A failed first load is not over: its retry is still the first wait, under the veil. */
 export function firstLoadSettled({ hasPapers, loadStarted, loading, error }: { hasPapers: boolean; loadStarted: boolean; loading: boolean; error: unknown }) {
   return hasPapers || (loadStarted && !loading && !error);
 }

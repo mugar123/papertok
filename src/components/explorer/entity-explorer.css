@@ -518,8 +518,6 @@
   animation: settle var(--motion-base) var(--ease-out) backwards;
 }
 
-/* The name the link handed over is already on screen in the skeleton: it
-   stays put, and only what the profile brings resolves around it. */
 .explorer-container--author.has-seed-name .ehc-header {
   animation: none;
 }
@@ -528,8 +526,6 @@
   animation: settle var(--motion-base) var(--ease-out) backwards;
 }
 
-/* Born resolved (a topic, a cached or handed entity) there is no skeleton to
-   hand over from: the page's own entrance is the only one. */
 .explorer-container.is-born-resolved :is(.explorer-hero-content, .ehc-header) {
   animation: none;
 }
@@ -1469,10 +1465,7 @@
   contain-intrinsic-size: auto 100px;
 }
 
-/* The rows that replace the skeleton resolve out of its shapes, as the hero's
-   late blocks do: only the first chunk of 8, only when they did replace it
-   (`--resolving`, not a return to the tab). No fill mode: the rows sit under
-   `content-visibility`, where a held first frame could pin one at 0.35. */
+/* No fill mode: under `content-visibility` a held first frame could pin a row at 0.35. */
 .explorer-grid--resolving > .list-row:not(.ex-skel-row):nth-child(-n + 8) {
   animation: settle var(--motion-base) var(--ease-out);
 }

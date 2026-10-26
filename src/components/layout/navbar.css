@@ -38,8 +38,6 @@
   animation: fadeIn 0.24s var(--ease-out) both;
 }
 
-/* Less movement, not none: the fade has no travel, and the veil beside the
-   bar keeps its own short fade under this query too. */
 @media (prefers-reduced-motion: reduce) {
   .navbar--arriving {
     animation: fadeIn 120ms linear both;
