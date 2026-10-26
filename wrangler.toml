@@ -126,8 +126,10 @@ OPENALEX_GLOBAL_DAILY_LIMIT = "10000"
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
 # /resources/figures misses a minute, app-wide; each one fetches arxiv.org/html
-# and ar5iv. Hits are free. Set on 2026-10-24; revisit after a week of the
-# { route: "/resources/figures", status: 429 } lines in Workers Logs.
+# and ar5iv. Hits are free. Each address may send 20 of them (worker/source-api.ts),
+# so a 429 there is either the minute or one address's 20. Set on 2026-10-24;
+# revisit after a week of the { route: "/resources/figures", status: 429 } lines
+# in Workers Logs.
 FIGURES_GLOBAL_MINUTE_LIMIT = "60"
 
 # Estimated input tokens the paper store may embed per UTC day (worker/paper-store.ts).

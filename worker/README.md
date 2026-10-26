@@ -239,7 +239,11 @@ minute.
 arxiv.org/html and ar5iv, which are asked at the same time. A result with figures is kept at
 the edge for 30 days, an empty one for an hour. The route needs no `Origin`, so misses share
 an app-wide ceiling of their own, `FIGURES_GLOBAL_MINUTE_LIMIT` (60 a minute, so at most 120
-renderer fetches). A refused miss is a 429 `PROVIDER_RATE_LIMITED`, and a missing ledger
+renderer fetches), and each address may send 20 of them a minute (see
+[Public lookup caller limits](#public-lookup-caller-limits)). One address cannot spend the
+whole minute; three can, and one IPv6 host can send from many addresses of its /64.
+Everyone behind one NAT shares those 20. A refused miss is a
+429 `PROVIDER_RATE_LIMITED`, and a missing ledger, caller address or `PDF_RATE_LIMIT_SECRET`
 closes the route with a 503; either way the card shows no figures and asks again the next
 time it appears.
 
@@ -863,8 +867,9 @@ seconds for a project lane.
 
 ## Public lookup caller limits
 
-Public cache misses on `/arxiv`, `/oa`, billed `/openalex/*` requests and
-`/share/*` lookups reuse the PDF relay’s `CF-Connecting-IP` normalization and
+Public cache misses on `/arxiv`, `/oa`, `/resources/figures`, billed
+`/openalex/*` requests and `/share/*` lookups reuse the PDF relay’s
+`CF-Connecting-IP` normalization and
 `PDF_RATE_LIMIT_SECRET`. The HMAC includes the route namespace and UTC minute;
 no raw address is sent to the quota ledger, analytics or logs. Configure that
 existing secret before deploying these routes. Local requests need a test
@@ -874,19 +879,22 @@ existing secret before deploying these routes. Local requests need a test
 | --- | --- | --- |
 | `/arxiv` | 5 cache misses | The one-call-per-three-seconds beat, of which these requests take only every other seat (10 a minute, app-wide) |
 | `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
+| `/resources/figures` | 20 cache misses | The route's own 60/minute ceiling (`FIGURES_GLOBAL_MINUTE_LIMIT`) |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
 
 OpenAlex and share attach the caller as the existing reservation’s second
 subject, so a refused caller spends no shared quota. Their minute-specific
-identifiers expire with the daily ledger’s three-day cleanup. arXiv and OA have
-no existing shared reservation: each takes a caller-only reservation, with
-cleanup scheduled one minute after the window ends. arXiv gives that unit back
-when pacing refuses a seat. Its existing ledger-outage behavior remains
-unpaced service; OA, OpenAlex and share do not call their providers if the
-quota ledger is unavailable. Missing caller identity or secret refuses lookup
-when a caller reservation is required. A share refusal serves the generic
-page; other refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
+identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA and
+figures each take a caller-only reservation, with cleanup scheduled one minute
+after the window ends. arXiv gives that unit back when pacing refuses a seat.
+Figures takes the caller's unit before its minute ceiling: a caller past its 20
+spends none of the 60, and a miss the ceiling refuses gives the unit back.
+arXiv's existing ledger-outage behavior remains unpaced service; OA, figures,
+OpenAlex and share do not call their providers if the quota ledger is
+unavailable. Missing caller identity or secret refuses lookup when a caller
+reservation is required. A share refusal serves the generic page; other
+refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
 
 Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
 caller allowance. In-process paper harvesting uses its existing provider

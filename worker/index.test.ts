@@ -1312,32 +1312,80 @@ test('one reader\'s second back-to-back arXiv miss is refused at once when its n
 });
 
 // Each figures miss fetches arxiv.org/html and ar5iv, and anyone can ask
-// without an Origin, so misses share a minute ceiling of their own.
+// without an Origin, so misses share a minute ceiling of their own and each
+// address has an allowance inside it.
 const FIGURES_URL = 'https://papertok-report-api.example/resources/figures?arxiv_id=2401.00001';
+const IS_FIGURES_CALLER = (key: string) => key.startsWith('figures:caller:');
 
 test('refuses a figures miss with 429 once the figures minute is spent, without asking a renderer', async () => {
   const fetched: string[] = [];
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
-    () => reportApi.fetch(new Request(FIGURES_URL), {
-      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }, { refuse: key => key.startsWith('figures:') }),
+    () => reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), {
+      PDF_RATE_LIMIT_SECRET: CALLER_SECRET,
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: key => key.startsWith('figures:') && !IS_FIGURES_CALLER(key) }),
     }),
   );
 
   assert.equal(response.status, 429);
   assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   assert.deepEqual(fetched, []);
+  assertRefunded(state, IS_FIGURES_CALLER);
 });
 
 test('a figures miss with no quota ledger is refused with 503 and asks no renderer', async () => {
   const fetched: string[] = [];
   const response = await withWorkerFetchMock(
     async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
-    () => reportApi.fetch(new Request(FIGURES_URL), {}),
+    () => reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET }),
   );
 
   assert.equal(response.status, 503);
   assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  assert.deepEqual(fetched, []);
+});
+
+test('figures stops one address at 20 misses a minute while other addresses share the rest of the 60', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T12:00:30Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
+  const misses: string[] = [];
+  await withWorkerFetchMock(async input => {
+    if (String(input).startsWith('https://arxiv.org/html/')) misses.push(String(input));
+    return new Response('<html></html>', { headers: { 'content-type': 'text/html' } });
+  }, async () => {
+    const ask = (ip: string) => reportApi.fetch(new Request(FIGURES_URL, { headers: { 'cf-connecting-ip': ip } }), env);
+    for (let i = 0; i < 20; i += 1) assert.equal((await ask('192.0.2.1')).status, 200);
+    const refused = await ask('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal((await refused.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
+    assert.equal(refused.headers.get('retry-after'), '30', 'refused by the address allowance until the minute ends');
+    assert.equal(misses.length, 20, 'the refused miss asked no renderer');
+    for (const ip of ['198.51.100.7', '2001:db8::1']) {
+      for (let i = 0; i < 20; i += 1) assert.equal((await ask(ip)).status, 200, ip);
+    }
+    assert.equal(misses.length, 60, 'refused misses spent none of the shared 60');
+    const full = await ask('203.0.113.9');
+    assert.equal(full.status, 429);
+    assert.equal(full.headers.get('retry-after'), '60', 'refused by the app-wide minute');
+    assert.equal(misses.length, 60);
+  });
+});
+
+test('a figures miss without a caller address or a rate-limit secret is refused with 503 and asks no renderer', async () => {
+  const fetched: string[] = [];
+  const responses = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    async () => [
+      await reportApi.fetch(new Request(FIGURES_URL), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }),
+      await reportApi.fetch(new Request(FIGURES_URL, { headers: CALLER }), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }),
+    ],
+  );
+
+  for (const response of responses) {
+    assert.equal(response.status, 503);
+    assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  }
   assert.deepEqual(fetched, []);
 });
 
