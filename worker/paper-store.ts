@@ -417,7 +417,7 @@ function asJournalRow(records: Paper[]) {
 // replaces its text (`ownListing`), as when the article joins the eprint
 // directly.
 function upgradedRow(row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper {
-  const paper = { ...upgraded, id: row.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined };
+  const paper = { ...upgraded, id: row.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id.slice('openalex:'.length) : undefined };
   return row.sources.primary === 'openalex' ? paper : {
     ...paper,
     sources: { ...upgraded.sources, primary: row.sources.primary, enrichedBy: [...new Set([...upgraded.sources.enrichedBy, upgraded.sources.primary])] },
@@ -433,7 +433,7 @@ const sourceRecordKey = (source: string | undefined, id: string) => `${source}|$
 // article's own listing (`openAlexId`), never the working paper's.
 const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
   ? listed.get(sourceRecordKey('arxiv', row.arxivId))
-  : listed.get(sourceRecordKey(row.sources?.primary, (row.sources?.primary === 'openalex' && row.openAlexId) || row.id)));
+  : listed.get(sourceRecordKey(row.sources?.primary, row.sources?.primary === 'openalex' && row.openAlexId ? `openalex:${row.openAlexId}` : row.id)));
 
 // A row's title and abstract are those of the source it was built from, and
 // that source listing it again (a new arXiv version) replaces them, where

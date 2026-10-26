@@ -1020,10 +1020,10 @@ test('a journal article and its working paper listed in one batch, in either ord
   // first record. A page that does not open with a working paper's records
   // makes no working-paper row to upgrade, so it is tried over a stored one only.
   for (const [label, batch, unstored] of [
-    ['working paper first', [workingPaper, article], ['openalex:W7220000104', 'openalex:W7221756071']],
+    ['working paper first', [workingPaper, article], ['openalex:W7220000104', 'W7221756071']],
     ['article first', [article, workingPaper], ['openalex:W7221756071', undefined]],
-    ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], ['2610.01234', 'openalex:W7221756071']],
-    ['the working paper, then an eprint naming the journal and its DOI', [workingPaper, eprintWithJournalDoi, article], ['openalex:W7220000104', 'openalex:W7221756071']],
+    ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], ['2610.01234', 'W7221756071']],
+    ['the working paper, then an eprint naming the journal and its DOI', [workingPaper, eprintWithJournalDoi, article], ['openalex:W7220000104', 'W7221756071']],
     ['an eprint naming the journal and its DOI, then the article', [eprintWithJournalDoi, article], null],
   ] as const) {
     for (const storedFirst of unstored ? [true, false] : [true]) {
@@ -1046,7 +1046,8 @@ test('a journal article and its working paper listed in one batch, in either ord
       );
       assert.deepEqual(
         [after[0].id, paper.id, paper.openAlexId],
-        storedFirst ? [before[0].id, 'openalex:W7220000104', 'openalex:W7221756071'] : [after[0].id, ...unstored!],
+        // `openAlexId` is the bare work id, as on every other paper.
+        storedFirst ? [before[0].id, 'openalex:W7220000104', 'W7221756071'] : [after[0].id, ...unstored!],
         name,
       );
     }
