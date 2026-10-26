@@ -83,9 +83,12 @@ becomes the journal's reviewed row: it takes the article's DOI, landing page,
 title, abstract, venue and date, drops the Working paper tag, keeps the working
 paper's `false` under its own DOI, and keeps the id readers liked or saved it
 under. The same write moves the row's date in every lane it holds, so the
-newest-first feed orders it by the article's date. The two records pair on the
-title and first-author key (`PaperBuilder.identityKeys`), because they share
-no DOI or OpenAlex id.
+newest-first feed orders it by the article's date. It also files the row under
+the lanes the article's record names (`recordLanes`), as `ingestPapers` files a
+merged row, so a reader who follows a coauthor, institution, topic or concept
+only the article names finds the row on the article's first listing. The two
+records pair on the title and first-author key (`PaperBuilder.identityKeys`),
+because they share no DOI or OpenAlex id.
 
 The evidence is the listed record itself, never a merged row: OpenAlex's
 record typed `article`, whose primary source is a `journal`, that
