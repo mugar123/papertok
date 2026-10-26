@@ -1035,6 +1035,24 @@ test("a like in no group whose paper names no leaf ranks the group of the area i
   assert.deepEqual(byWorkingPaper.physics, physics.slice(0, byWorkingPaper.physics.length), 'and not physics');
 });
 
+test('an ungrouped like in an unlisted arXiv category ranks only its area, and sleeps when that area is removed', async () => {
+  const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
+  const legacy = {
+    ...arxivRecord, id: '2610.62001', arxivId: '2610.62001', title: 'Disordered spin systems',
+    allCategories: ['cond-mat.dis-nn'], categories: ['cond-mat.dis-nn'], primaryCategory: 'cond-mat.dis-nn',
+    published: '2026-09-01T00:00:00.000Z',
+  };
+  await ingestPapers(env, [{ paper: legacy, lanes: [] }], { now: NOW });
+  embed(legacy.id, direction(0, 1));
+  const groups = interestGroups([]);
+  const request = { positiveIds: [legacy.id], excludedIds: [liked] };
+  const economicsOnly = await servedByGroup(env, { ...request, groups: [groups[1]] }, physics, economics);
+  assert.deepEqual(economicsOnly.ids, economics, 'removing Physics leaves Economics ordered by recency');
+  const restored = await servedByGroup(env, { ...request, groups }, physics, economics);
+  assert.deepEqual(restored.physics, [...physics].reverse().slice(0, restored.physics.length), 'restoring Physics restores its legacy like');
+  assert.deepEqual(restored.economics, economics.slice(0, restored.economics.length), 'the Physics like never orders Economics');
+});
+
 test('a like in no group of an area no group holds ranks none, and one of no known area ranks every group', async () => {
   const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
   const paper = (id: string, primaryCategory: string, categories: string[]) => ({
@@ -1193,6 +1211,24 @@ test("a page that asks for notable papers gets the unseen ones of the reader's c
   const shown = [...seen, ...page.map(paper => paper.id)];
   const next = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 15, seen: feedSeenFilter(shown), notable: 3 }), { now: NOW });
   assert.deepEqual(next.map(paper => paper.id), recentIds(15, 30));
+});
+
+// ADS's listing cannot leave out retracted papers; the enrichment is what
+// learns that OpenAlex marks one retracted (README step 5).
+test('a notable paper ADS listed is not offered until the enrichment has asked OpenAlex about it', async () => {
+  const { env, db } = await notableCorpus();
+  const listed = mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    abstract: 'A synthetic abstract about Majorana zero modes in hybrid nanowires.', year: '2018', pubdate: '2018-04-00',
+    identifier: ['arXiv:1710.10701'], arxiv_class: ['cond-mat.mes-hall'], citation_count: 1500, doctype: 'article',
+  }, ['cs.LG'])!;
+  await ingestPapers(env, [{ paper: listed, lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  const request = parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 });
+  const offered = async () => (await readFeedPage(env, request, { now: NOW })).filter(paper => paper._notable).map(paper => paper.arxivId || paper.id);
+  assert.ok(!(await offered()).includes('1710.10701'), 'not offered before the enrichment');
+  assert.equal((await offered()).length, 3, 'the notable papers OpenAlex listed still are');
+  db.prepare("UPDATE works SET enriched_at = ? WHERE paper ->> '$.arxivId' = '1710.10701'").run(new Date(NOW).toISOString());
+  assert.ok((await offered()).includes('1710.10701'), 'offered once enriched and not retracted');
 });
 
 test('a reader who has seen every notable paper, a request that does not say what was seen or one that asks for none gets none', async () => {
@@ -1677,6 +1713,21 @@ test('an erratum the enrichment reveals leaves every lane; a letter stays', asyn
   await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, publicationType: before.arxivId === '2610.99999' ? 'letter' : 'erratum' } })), NOW);
   assert.equal(rows(db, 'SELECT DISTINCT work_id FROM work_lanes').length, 1);
   assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'publicationType' = 'letter' AND id IN (SELECT work_id FROM work_lanes)").length, 1);
+});
+
+test('a record that folds a retracted row into a filed one takes the paper out of every lane', async () => {
+  const { env, db } = corpus();
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: journal, lanes: ['bio.comp'] }], { now: NOW });
+  // The enrichment finds the journal version retracted.
+  const [retracted] = rows(db, "SELECT id, paper FROM works WHERE paper ->> '$.id' = 'openalex:W1'").map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, [{ ...retracted, after: { ...retracted.before, publicationStatus: 'retracted' } }], NOW);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG']);
+  // Another source's record of both folds them into the arXiv row.
+  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: ['bio.comp'] }], { now: NOW });
+  const works = rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)) as Paper);
+  assert.deepEqual(works.map(paper => [paper.id, paper.publicationStatus]), [['2610.11111', 'retracted']]);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes'), []);
 });
 
 test('a review or a conference paper the enrichment reveals keeps every lane', async () => {
