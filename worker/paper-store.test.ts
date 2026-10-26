@@ -16,6 +16,7 @@ import { mapAdsPaper } from '../src/services/domain-source-records.ts';
 import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
@@ -1817,6 +1818,15 @@ test("a journal's lane holds the papers that name it only while someone follows 
   await evictAll(env, NOW);
   assert.deepEqual(sourceLanes(), [], 'unfollowed, the lane lets the paper go');
   assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'which its area lane keeps');
+});
+
+// ENG-123: the reader's journal name is the way to the journal's page and its
+// Follow, so a paper the corpus serves keeps OpenAlex's name for the journal.
+test("a journal article the corpus serves still names its journal for the reader's link", async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [{ paper: physicsJournalArticle, lanes: ['area:physics'] }], { now: NOW });
+  const [served] = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'] }), { now: NOW });
+  assert.deepEqual(journalExplorerLink(served), { name: 'Journal of the Physical Society of Japan', path: '/explorer/source/S119212824' });
 });
 
 // ENG-123: a journal's lane holds what its own listing asks for, articles and

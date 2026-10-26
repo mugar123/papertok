@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { authorExplorerPath, journalExplorerLink, openAlexAuthorId } from './explorer-paths.ts';
 import { mapOpenAlexWork } from './open-alex-work.ts';
+import { PaperBuilder } from '../services/paper-builder.ts';
 
 // ENG-123: a journal is followed from its page in the Explorer, and the
 // reader opens that page from the journal's name. Works shaped as OpenAlex
@@ -16,9 +17,17 @@ const aerWork = (source: { id?: string; display_name?: string; type: string }) =
 });
 
 test("the reader links a paper's journal to the journal's Explorer page, by its OpenAlex id", () => {
-  const corpusPaper = aerWork({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' })!;
+  const listed = aerWork({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' })!;
+  // The corpus files a listing as `PaperBuilder.create` builds it.
+  const corpusPaper = PaperBuilder.create(listed);
   const americanEconomicReview = { name: 'American Economic Review', path: '/explorer/source/S23254222' };
+  assert.deepEqual(journalExplorerLink(listed), americanEconomicReview, 'an OpenAlex lane or Explorer page');
   assert.deepEqual(journalExplorerLink(corpusPaper), americanEconomicReview, 'a paper the corpus serves');
+  const preprint = PaperBuilder.create({
+    id: '2610.11111', arxivId: '2610.11111', sources: { primary: 'arxiv', enrichedBy: [] },
+    title: 'Monetary policy and the term structure', journal: 'Am. Econ. Rev. 116, 1 (2026)',
+  });
+  assert.deepEqual(journalExplorerLink(PaperBuilder.merge(preprint, listed, 'openalex')), americanEconomicReview, 'a preprint OpenAlex lists as the article');
   assert.deepEqual(journalExplorerLink({ ...corpusPaper, journal: 'Am Econ Rev' }), americanEconomicReview, "OpenAlex's name before another provider's");
   assert.deepEqual(journalExplorerLink({ id: 'openalex:W7000000001', journal: 'American Economic Review', venueId: 'S23254222' }), americanEconomicReview, 'an OpenAlex search result');
   // An arXiv paper OpenAlex enriched keeps arXiv's journal reference as its
@@ -35,6 +44,12 @@ test('a paper gets no journal link without a journal OpenAlex identifies, or wit
   assert.equal(journalExplorerLink(aerWork({ id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' })), null, 'a repository is no journal');
   assert.equal(journalExplorerLink(aerWork({ id: 'https://openalex.org/S23254222', type: 'journal' })), null, 'a journal OpenAlex gives no name');
   assert.equal(journalExplorerLink(null), null);
+  // Semantic Scholar names its venue in `sourceName`, and no id comes with it:
+  // the row keeps neither, and lends that name to no OpenAlex journal.
+  const semanticScholar = { id: 's2:1', sources: { primary: 'semanticscholar', enrichedBy: [] }, title: 'Monetary policy', sourceName: 'AER' };
+  assert.equal(PaperBuilder.create(semanticScholar).sourceName, undefined);
+  const article = { ...PaperBuilder.create({ id: 'openalex:W7000000001', sources: { primary: 'openalex', enrichedBy: [] }, title: 'Monetary policy' }), journal: 'American Economic Review', venueId: 'S23254222' };
+  assert.equal(PaperBuilder.merge(article, semanticScholar, 'semanticscholar').sourceName, undefined);
 });
 
 test('an author with an OpenAlex id opens by id, name riding along for the masthead', () => {

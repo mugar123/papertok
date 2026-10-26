@@ -114,8 +114,9 @@ export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | 
  * The journal that published a paper, as the reader links it to the
  * journal's page in the Explorer, where it can be followed (ENG-123): a
  * journal OpenAlex identifies (`venueId`). It is named as OpenAlex names it
- * where the paper kept that name (`sourceName`, on a paper mapped whole from
- * OpenAlex, as the corpus serves one), else by the paper's own `journal`,
+ * where the paper kept that name (`sourceName`, which `PaperBuilder` keeps
+ * only beside the same `venueId`: an OpenAlex lane, search or Explorer result,
+ * and the corpus row built from one), else by the paper's own `journal`,
  * which can be another provider's, such as arXiv's journal reference
  * ("Phys. Rev. Lett. 130, 041801 (2023)"). So the page is opened by id
  * alone, without a `?name=` for its masthead to show before the source loads.
