@@ -1,6 +1,10 @@
 .public-list-page {
   min-height: 100vh;
   min-height: 100dvh;
+  /* The wait and outcome states fill what the header leaves, whatever height
+     it wraps to. */
+  display: flex;
+  flex-direction: column;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
@@ -47,6 +51,8 @@
 }
 
 .public-list-brand-actions {
+  /* Right-aligned when the header wraps onto a second row. */
+  margin-left: auto;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -272,7 +278,7 @@
 
 .public-list-status {
   width: min(560px, calc(100% - 40px));
-  min-height: calc(100dvh - 58px);
+  flex: 1;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
