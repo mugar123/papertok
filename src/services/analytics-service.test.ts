@@ -291,6 +291,14 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://www.netflix.com/': 'referral',
     'https://news.ycombinator.com/': 'referral',
     'https://arxiv.org/abs/2401.00001': 'referral',
+    // A trailing dot names the host differently (referral, decided 2026-10-25) and
+    // upper case does not, for a listed host and for a pattern alike.
+    'https://t.co./': 'referral',
+    'https://www.google.com./': 'referral',
+    'https://search.yahoo.com./': 'referral',
+    'https://T.CO/abc': 'organic_social',
+    'https://WWW.Google.CO.UK/': 'organic_search',
+    'https://Search.Yahoo.Com/': 'organic_search',
   };
 
   assert.deepEqual(Object.fromEntries(Object.keys(expected).map(referrer => [referrer, channelOf(referrer)])), expected);
