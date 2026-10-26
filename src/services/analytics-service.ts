@@ -73,9 +73,9 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // A referrer counts when its whole host is listed, or is a subdomain of a listed
 // one. A name that merely contains an entry is another site: chatgpt.com holds
 // `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
-// per country, so those two are patterns. A country is `com`, two letters, or two
-// letters under `co.` or `com.`; a generic suffix (`.xyz`) or `co.com` and `com.com`,
-// which anyone can register, is not. The patterns take any two letters, so
+// per country, so those two are patterns. Their suffix is `com`, a two-letter country
+// code, or a two-letter code under `co.` or `com.`; a generic suffix (`.xyz`) or
+// `co.com` and `com.com`, which anyone can register, is not. Any two letters pass, so
 // `google.com.de` counts as search.
 //
 // Only a provider's search properties count as search. Google's (web, Scholar, Books,
