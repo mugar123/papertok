@@ -82,7 +82,7 @@ flowchart TD
     Corpus[("D1 · papers, lanes and vectors")]
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
-    Signals["Preferences, follows, likes and rejections"]
+    Signals["Preferences, follows, likes, rejections and seen papers"]
     Search["Live paper search · arXiv + OpenAlex relevance"]
     UI["Feed cards, search results and reader"]
 
@@ -137,7 +137,19 @@ files articles under the leaf their vectors match.
 candidate limits and ranking rules.
 
 [paper-store-service.ts](src/services/paper-store-service.ts) requests corpus
-pages. [FeedContext](src/context/feed-context.tsx) combines their semantic signal
+pages. Each page says which papers the reader has seen, as a Bloom filter, and
+asks the Worker to pass over them: [paper-store.ts](worker/paper-store.ts)
+walks the reader's kept ranking past the filter, so a reload is one request
+however many pages the reader saw, and each later page goes on from where the
+last walk stopped. The walk is kept for 2 hours after its last page, and the
+main page a change of follows asks for goes on with it (`continues`), so
+neither a shorter break nor a follow sends the main page's papers again. The
+follows' page sends no `continues` and starts a new walk after a change of
+follows.
+[feed-pagination.ts](src/context/feed-pagination.ts) decides when a page the
+feed cannot show goes one page on, and shows the page again when the reader
+has seen their whole ranking.
+[FeedContext](src/context/feed-context.tsx) combines their semantic signal
 with the [recommendation engine](src/utils/recommendation-engine.ts), manages
 interactions and preserves the unread queue.
 [feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives one card in
