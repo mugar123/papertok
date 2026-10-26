@@ -78,11 +78,13 @@ working paper stored on an earlier night becomes the journal's reviewed row
 when its journal article arrives (`ingestPapers`, ENG-133): the row takes the
 article's DOI, landing page and answer, drops the Working paper tag, keeps the
 working paper's `false` under its own DOI, and keeps its row and the id readers
-liked or saved it under. The series listing the working paper again does not
-put its title and abstract back on the row. The two records pair on the title
-and first-author key (`PaperBuilder.identityKeys`), as before, because they
-share no DOI or OpenAlex id; the upgrade now lets that join set the row's DOI,
-landing page, text and date, and only when the merge reads reviewed.
+liked or saved it under. A page that lists the working paper before its
+article starts the row the same way, under the working paper's id. The series
+listing the working paper again does not put its title and abstract back on
+the row. The two records pair on the title and first-author key
+(`PaperBuilder.identityKeys`), as before, because they share no DOI or
+OpenAlex id; the upgrade now lets that join set the row's DOI, landing page,
+text and date, and only when the merge reads reviewed.
 
 An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
 on a comment saying it was published. It starts the upgrade only when it names
@@ -100,14 +102,20 @@ and DOI, or a PubMed or Europe PMC record) leaves `openAlexId` unset, so
 enrichment still asks OpenAlex for the working paper's work. With the eprint
 stored first, the same pair is enriched through arXiv.
 
-A row upgraded by a journal record that is not an OpenAlex work also takes that
-record's source as its primary source, and keeps the working paper's id.
-`ownListing` (`worker/paper-store.ts`) finds a row's own listing by primary
-source and id, so it finds none for that row: an arXiv eprint listing a revised
-version later no longer replaces the row's title and abstract, as it does when
-the eprint was stored first and its arXiv id is the row's id. Looking an
+A working paper can also join a row another source started, such as an arXiv
+or Hugging Face eprint that lists no DOI. That row stays the eprint's when the
+article upgrades it: it keeps its id and primary source, so arXiv's next
+version replaces its title and abstract, as when the article joins the eprint
+directly. Until then it shows the article's text, landing page and date, where
+an eprint the article joined directly keeps arXiv's.
+
+A working paper's own row upgraded by a journal record that is not an OpenAlex
+work takes that record's source as its primary source, and keeps the working
+paper's id. `ownListing` (`worker/paper-store.ts`) finds a row's own listing by
+primary source and id, so it finds none for that row: an arXiv eprint listing a
+revised version later does not replace the row's title and abstract. Looking an
 arXiv-primary row up by `arxivId`, as `ownListing` does for a Hugging Face row,
-is left as a follow-up.
+is left as a follow-up (ENG-145).
 
 A row stored before ENG-133 that already merged its journal article changes
 when a lane lists that article again (the venue, topic or area lane). No

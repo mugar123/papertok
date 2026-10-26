@@ -24,6 +24,7 @@ import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexNotableFilterForLeaf
 import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../src/data/open-alex-notable-leaf-topics.generated.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -897,28 +898,64 @@ test("a journal record that a denial under its DOI leaves unreviewed does not up
   }
 });
 
+// A working paper can join the row of an eprint that lists no DOI, which arXiv
+// or Hugging Face started, before its journal article upgrades that row. The
+// row stays the eprint's, so arXiv's next version replaces its title and
+// abstract, as it does when the article joins the eprint directly.
+test("arXiv's new version replaces the title and abstract of an eprint's row that a working paper joined before its journal article, as without the working paper", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const revision = gmmEprint({
+    title: 'GMM Estimation of Linear Asset Pricing Models: Efficiency against Pricing Accuracy',
+    abstract: 'The second version of this paper adds a test of the trade-off between the efficiency and the pricing accuracy of GMM estimators.',
+    updated: '2026-10-24T12:00:00.000Z',
+  });
+  const huggingFace = mapHuggingFacePaper({
+    paper: { id: '2610.01234', title: gmmArticle.title, summary: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.', publishedAt: '2026-10-20T12:00:00.000Z', upvotes: 3, authors: [{ name: 'Ana Economist' }] },
+  }, ['econ.EM'])!;
+  const shown = (paper: Paper) => [paper.id, paper.sources.primary, paper.title, paper.abstract, paper.doi, paper.peerReviewed, paper.workingPaper];
+  for (const eprint of [gmmEprint({}), huggingFace]) {
+    const name = eprint.sources.primary;
+    const rows: Paper[] = [];
+    for (const nights of [[eprint, workingPaper, article, revision], [eprint, article, revision]]) {
+      const { binding, db } = testD1();
+      const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+      for (const [night, paper] of nights.entries()) {
+        t.mock.timers.setTime(first + night * DAY);
+        await ingestPapers(store, [{ paper, lanes: ['econ.EM'] }], { now: first + night * DAY });
+      }
+      const works = db.prepare('SELECT paper FROM works').all().map(row => JSON.parse(String((row as { paper: string }).paper)) as Paper);
+      assert.equal(works.length, 1, name);
+      rows.push(works[0]);
+    }
+    assert.deepEqual(shown(rows[0]), shown(rows[1]), name);
+    assert.deepEqual(shown(rows[0]).slice(1), [name, revision.title, revision.abstract, '10.1080/07350015.2026.2743244', true, undefined], name);
+  }
+});
+
 // One page can hold both records, the working paper first, and the merge of
-// the page's records reads as a working paper. The row is the journal's either
-// way, and a stored working-paper row keeps its id.
+// the page's records reads as a working paper. The row is the journal's
+// either way, under the id of the row the working paper is in: stored, or
+// the one the page starts.
 test('a journal article and its working paper listed in one batch, in either order, make the reviewed journal row, over a stored working paper or none', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const workingPaperWork = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
-  const workingPaper = mapOpenAlexWork(workingPaperWork)!;
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
   const article = mapOpenAlexWork(gmmArticle)!;
   // It reads reviewed, yet leaves the row a working paper when tried first.
-  const eprint = arxivRecordPaper({
-    arxivId: '2610.01234', title: gmmArticle.title, abstract: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.',
-    authors: ['Ana Economist'], categories: ['econ.EM'], doi: '', journalRef: 'Journal of Business and Economic Statistics 44 (2026) 1-20', comments: null,
-    published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z',
-  });
-  const { env } = relay(t, () => ({ results: [workingPaperWork] }));
+  const eprint = gmmEprint({ journalRef: JBES_REFERENCE });
+  const { env } = relay(t, () => ({ results: [gmmWorkingPaperWork] }));
   const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
-  for (const storedFirst of [true, false]) {
-    for (const [label, batch] of [
-      ['working paper first', [workingPaper, article]],
-      ['article first', [article, workingPaper]],
-      ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article]],
-    ] as const) {
+  // The row's [id, openAlexId] when nothing was stored: the id of the page's
+  // first record.
+  for (const [label, batch, unstored] of [
+    ['working paper first', [workingPaper, article], ['openalex:W7220000104', 'openalex:W7221756071']],
+    ['article first', [article, workingPaper], ['openalex:W7221756071', undefined]],
+    ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], ['2610.01234', 'openalex:W7221756071']],
+  ] as const) {
+    for (const storedFirst of [true, false]) {
       const name = `${storedFirst ? 'stored working paper' : 'nothing stored'}, ${label}`;
       const { binding, db } = testD1();
       const store = { ...env, PAPER_STORE: binding };
@@ -938,7 +975,7 @@ test('a journal article and its working paper listed in one batch, in either ord
       );
       assert.deepEqual(
         [after[0].id, paper.id, paper.openAlexId],
-        storedFirst ? [before[0].id, 'openalex:W7220000104', 'openalex:W7221756071'] : [after[0].id, 'openalex:W7221756071', undefined],
+        storedFirst ? [before[0].id, 'openalex:W7220000104', 'openalex:W7221756071'] : [after[0].id, ...unstored],
         name,
       );
     }

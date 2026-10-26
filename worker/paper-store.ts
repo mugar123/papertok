@@ -388,6 +388,22 @@ function asJournalRow(records: Paper[]) {
   return undefined;
 }
 
+// The journal's row keeps the id of the working-paper row it upgrades, stored
+// or started by the page, so the id readers liked or saved it under (ENG-133).
+// Enrichment asks OpenAlex for the article's work, not the working paper's. A
+// row another source started, such as an arXiv eprint the working paper
+// joined, stays that source's, with the journal's source among those that
+// enriched it: that source listing the paper again (a new arXiv version)
+// replaces its text (`ownListing`), as when the article joins the eprint
+// directly.
+function upgradedRow(row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper {
+  const paper = { ...upgraded, id: row.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined };
+  return row.sources.primary === 'openalex' ? paper : {
+    ...paper,
+    sources: { ...upgraded.sources, primary: row.sources.primary, enrichedBy: [...new Set([...upgraded.sources.enrichedBy, upgraded.sources.primary])] },
+  };
+}
+
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
@@ -477,21 +493,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     let id = ids[0];
     if (id === undefined) {
       // A page listing the working paper before its article starts the journal's row too.
-      if (isWorkingPaperRow(paper)) paper = asJournalRow(group.records)?.upgraded ?? paper;
+      const journalRow = isWorkingPaperRow(paper) ? asJournalRow(group.records) : undefined;
+      if (journalRow) paper = upgradedRow(paper, journalRow);
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
       const others = stored.slice(1).map(other => other.paper);
-      // A working paper stored earlier becomes its journal article's row and
-      // keeps the id readers liked or saved it under (ENG-133). The group's
-      // own records are tried, since their merge reads as a working paper
-      // when the page listed the working paper first.
+      // A working paper stored earlier becomes its journal article's row
+      // (ENG-133). The group's own records are tried, since their merge reads
+      // as a working paper when the page listed the working paper first.
       const journalRow = isWorkingPaperRow(base) ? asJournalRow([base, ...others, ...group.records]) : undefined;
-      paper = journalRow
-        // The row keeps the id readers hold, and enrichment asks OpenAlex for the article's work, not the working paper's.
-        ? { ...journalRow.upgraded, id: base.id, openAlexId: /^openalex:/.test(journalRow.journal.id) ? journalRow.journal.id : undefined }
-        : mergeAll([base, ...others, group.paper]);
+      paper = journalRow ? upgradedRow(base, journalRow) : mergeAll([base, ...others, group.paper]);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
