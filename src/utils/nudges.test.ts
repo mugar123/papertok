@@ -336,21 +336,20 @@ test('a remembered control the feed has unmounted is not returned to, and a stop
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {
-  // The shipped instant is 05:00:00Z on 26 October: #363, the last announced
-  // privacy.html change, was merged at 04:51:54Z and its Vercel deployment
-  // succeeded at 04:52:18Z. Whoever signed up on that text has nothing to be
-  // told, even though the notice itself ships later.
+  // The boundary is derived from the shipped instant, so the next policy change
+  // moves it without editing this test.
   const version = PRIVACY_POLICY_VERSION;
   const effectiveAt = PRIVACY_POLICY_EFFECTIVE_AT;
   const owed = (user: { uid: string; metadata?: { creationTime?: string | null } } | null, storage = fakeStorage(), signedIn = true) =>
     privacyOwedFor({ user, signedIn, version, effectiveAt, storage });
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }), true, 'an older account');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 04:51:53 GMT' } }), true, 'created before #363 was merged');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 04:59:59 GMT' } }), true, 'a second before');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 05:00:00 GMT' } }), false, 'the effective instant');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 05:00:01 GMT' } }), false, 'a second after');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 15:00:00 GMT' } }), false, 'signed up on the announced text, hours before the notice was deployed');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Tue, 27 Oct 2026 09:00:00 GMT' } }), false, 'a new account the next day');
+  const createdAt = (offsetMs: number) => ({ uid: 'a', metadata: { creationTime: new Date(Date.parse(effectiveAt) + offsetMs).toUTCString() } });
+  const HOUR = 3_600_000;
+  assert.equal(owed(createdAt(-24 * HOUR)), true, 'an older account');
+  assert.equal(owed(createdAt(-1000)), true, 'a second before');
+  assert.equal(owed(createdAt(0)), false, 'the effective instant');
+  assert.equal(owed(createdAt(1000)), false, 'a second after');
+  assert.equal(owed(createdAt(10 * HOUR)), false, 'signed up on the announced text, hours before the notice was deployed');
+  assert.equal(owed(createdAt(28 * HOUR)), false, 'a new account the next day');
   assert.equal(owed({ uid: 'a' }), true, 'no metadata: told');
   assert.equal(owed(null), false, 'nobody');
   assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }, fakeStorage(), false), false, 'not signed in');
