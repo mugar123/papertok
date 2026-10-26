@@ -8,7 +8,7 @@ test('a paper goes to the public paper page, never to the entity explorer', () =
   // mounts the entity explorer, which has no notion of a paper, so the id was
   // asked of the authors endpoint and came back 404 — "Entity not found".
   const { path } = searchPaperDestination({ doi: '10.1038/nature12373' });
-  assert.match(path, /^\/public\/paper\//);
+  assert.match(path, /^\/paper\//);
   assert.doesNotMatch(path, /explorer/);
 });
 

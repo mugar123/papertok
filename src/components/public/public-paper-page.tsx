@@ -201,7 +201,7 @@ export default function PublicPaperPage({
 
   const canonicalRoute = identity
     ? getPublicPaperPath(identity.type, identity.value)
-    : `/public/paper/${encodeURIComponent(paperKey)}`;
+    : `/paper/${encodeURIComponent(paperKey)}`;
   // Built from the paper on screen, seed included: a page painted from a seed
   // is the paper from its first render, never a noindex «loading».
   const metadata = useMemo(() => publicPaperMetadata(paper, canonicalRoute), [canonicalRoute, paper]);

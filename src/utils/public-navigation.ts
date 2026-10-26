@@ -384,10 +384,78 @@ function resolvePaperArguments(typeOrPaper: PaperInput, identifier: string | Sha
   return { identifier, options };
 }
 
+/**
+ * A paper's page is `/paper/<key>`, outside the `/public` prefix the list and
+ * entity pages keep (ENG-44). Links minted as `/public/paper/<key>` before the
+ * move are redirected permanently by vercel.json, and through `legacyPaperPath`
+ * for the addresses that never reach the server.
+ */
 export function getPublicPaperPath(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const key = resolvePaperKey(typeOrPaper, input.identifier, input.options);
-  return key ? `${PUBLIC_ROUTE_PREFIX}/paper/${encodePathSegment(key)}` : null;
+  return key ? `/paper/${encodePathSegment(key)}` : null;
+}
+
+/**
+ * Where an address from before ENG-44, `/public/paper/<key>`, lives now, or
+ * null for any other path. The router decodes each segment before it matches
+ * and ignores letter case, so `/Public/PAPER/…` and `/public/p%61per/…` are the
+ * old address too; the first two segments are compared the same way, and the key
+ * keeps its own spelling. A trailing slash is dropped. The query and fragment are
+ * the caller's to carry.
+ */
+export function legacyPaperPath(pathname: string) {
+  const [, root = '', section = '', key = '', ...rest] = pathname.split('/');
+  if (!key || rest.some(Boolean)) return null;
+  if (decodeSegment(root).toLowerCase() !== 'public' || decodeSegment(section).toLowerCase() !== 'paper') return null;
+  return `/paper/${key}`;
+}
+
+/**
+ * The redirect for a visit to the address from before ENG-44: the new path with
+ * the query and fragment of the visit, and its history state. Going Back to an
+ * old entry replays that state, and a paper opened from a saved copy carries its
+ * `paper` there, so a redirect that dropped it showed an error offline.
+ */
+export function legacyPaperRedirect(location: { pathname: string; search: string; hash: string; state: unknown }) {
+  const pathname = legacyPaperPath(location.pathname);
+  if (!pathname) return null;
+  return { to: { pathname, search: location.search, hash: location.hash }, state: location.state };
+}
+
+function decodeSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * Whether the path starts with these segments, which the router decodes and
+ * compares without letter case (`/p%61per/x` is `/paper/x`). A segment must
+ * follow the prefix, even an empty one, as in `/paper/`.
+ */
+function startsWithSegments(path: string, prefix: string[]) {
+  const segments = path.split('/').slice(1);
+  return segments.length > prefix.length
+    && prefix.every((name, index) => decodeSegment(segments[index]).toLowerCase() === name);
+}
+
+/**
+ * The pages a guest can open without a session. A sign-in from one of their
+ * doors (like, save, follow) leaves the new account right there.
+ */
+export function isPublicRoutePath(path: string) {
+  return [['public'], ['explorer'], ['paper']].some(prefix => startsWithSegments(path, prefix));
+}
+
+/**
+ * The pages that keep the signed-in navbar: a paper, a shared list and an
+ * entity page.
+ */
+export function keepsNavbarPath(path: string) {
+  return [['paper'], ['public', 'list'], ['explorer']].some(prefix => startsWithSegments(path, prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

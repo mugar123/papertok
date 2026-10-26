@@ -11,9 +11,18 @@ import { routeFromLegacyHash, applyLegacyHashRoute } from './legacy-hash-route.t
  */
 
 test('a fragment that is a route becomes the route', () => {
-  assert.equal(routeFromLegacyHash({ hash: '#/public/paper/abc' }), '/public/paper/abc');
+  assert.equal(routeFromLegacyHash({ hash: '#/public/list/abc' }), '/public/list/abc');
   assert.equal(routeFromLegacyHash({ hash: '#/research' }), '/research');
   assert.equal(routeFromLegacyHash({ hash: '#/explorer/author/A5023888391' }), '/explorer/author/A5023888391');
+});
+
+test('a paper link from the HashRouter era names the page the paper moved to', () => {
+  // ENG-44: the page is /paper/<key> now. Naming it here, rather than the old
+  // address, keeps the app from showing /public/paper/<key> for a render.
+  assert.equal(routeFromLegacyHash({ hash: '#/public/paper/abc' }), '/paper/abc');
+  assert.equal(routeFromLegacyHash({ hash: '#/Public/Paper/abc?ref=share' }), '/paper/abc?ref=share');
+  assert.equal(routeFromLegacyHash({ hash: '#/public/paper/abc', search: '?utm_source=wa' }), '/paper/abc?utm_source=wa');
+  assert.equal(routeFromLegacyHash({ hash: '#/public/paper/abc#main-content' }), '/paper/abc');
 });
 
 test('the old feed address is the new feed address', () => {
@@ -73,12 +82,12 @@ test('applying it rewrites the entry in place, once, before anything reads the l
   };
   const location = { pathname: '/feed', search: '', hash: '#/public/paper/abc' };
 
-  assert.equal(applyLegacyHashRoute({ history, location }), '/public/paper/abc');
+  assert.equal(applyLegacyHashRoute({ history, location }), '/paper/abc');
   assert.equal(calls.length, 1);
   // replace, not push: the fragment address must not sit in the history behind
   // the page it named, or Back would translate it all over again.
   assert.deepEqual(calls[0][0], { idx: 3, usr: null, key: 'abc' }, 'the entry keeps its state');
-  assert.equal(calls[0][1], '/public/paper/abc');
+  assert.equal(calls[0][1], '/paper/abc');
 });
 
 test('applying it to a location that carries no route does nothing at all', () => {

@@ -41,14 +41,14 @@ test('the seed is read from the element the Worker writes it into', () => {
 });
 
 test('a page with a paper is indexable, and its head reads as plain text', () => {
-  const metadata = publicPaperMetadata(PAPER, `/public/paper/${KEY}`);
+  const metadata = publicPaperMetadata(PAPER, `/paper/${KEY}`);
   assert.equal(metadata.noIndex, undefined);
   assert.deepEqual(metadata.title, { en: 'On commensurations of pro-C groups' });
   assert.equal(metadata.description.en, PAPER.abstract);
-  assert.equal(metadata.route, `/public/paper/${KEY}`);
+  assert.equal(metadata.route, `/paper/${KEY}`);
   assert.equal(metadata.ogType, 'article');
 });
 
 test('only a page with no paper yet is kept out of an index', () => {
-  assert.deepEqual(publicPaperMetadata(null, `/public/paper/${KEY}`), { route: `/public/paper/${KEY}`, noIndex: true });
+  assert.deepEqual(publicPaperMetadata(null, `/paper/${KEY}`), { route: `/paper/${KEY}`, noIndex: true });
 });

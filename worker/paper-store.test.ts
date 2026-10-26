@@ -1035,6 +1035,24 @@ test("a like in no group whose paper names no leaf ranks the group of the area i
   assert.deepEqual(byWorkingPaper.physics, physics.slice(0, byWorkingPaper.physics.length), 'and not physics');
 });
 
+test('an ungrouped like in an unlisted arXiv category ranks only its area, and sleeps when that area is removed', async () => {
+  const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
+  const legacy = {
+    ...arxivRecord, id: '2610.62001', arxivId: '2610.62001', title: 'Disordered spin systems',
+    allCategories: ['cond-mat.dis-nn'], categories: ['cond-mat.dis-nn'], primaryCategory: 'cond-mat.dis-nn',
+    published: '2026-09-01T00:00:00.000Z',
+  };
+  await ingestPapers(env, [{ paper: legacy, lanes: [] }], { now: NOW });
+  embed(legacy.id, direction(0, 1));
+  const groups = interestGroups([]);
+  const request = { positiveIds: [legacy.id], excludedIds: [liked] };
+  const economicsOnly = await servedByGroup(env, { ...request, groups: [groups[1]] }, physics, economics);
+  assert.deepEqual(economicsOnly.ids, economics, 'removing Physics leaves Economics ordered by recency');
+  const restored = await servedByGroup(env, { ...request, groups }, physics, economics);
+  assert.deepEqual(restored.physics, [...physics].reverse().slice(0, restored.physics.length), 'restoring Physics restores its legacy like');
+  assert.deepEqual(restored.economics, economics.slice(0, restored.economics.length), 'the Physics like never orders Economics');
+});
+
 test('a like in no group of an area no group holds ranks none, and one of no known area ranks every group', async () => {
   const { env, liked, physics, economics, embed, direction } = await physicsAndEconomics();
   const paper = (id: string, primaryCategory: string, categories: string[]) => ({
