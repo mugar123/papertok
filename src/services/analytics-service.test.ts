@@ -210,6 +210,113 @@ test('classifies acquisition without exposing the referring URL', () => {
   }), 'email');
 });
 
+test('files a referrer by its whole host, not by a fragment of its name', () => {
+  const channelOf = (referrer: string) => inferAcquisitionChannel({
+    referrer,
+    location: { search: '', origin: 'https://papertok.test' },
+  });
+  const expected: Record<string, string> = {
+    // Search engines, including Google's country domains, its search properties
+    // (Scholar, Books, Images, News) and its Android search and News apps.
+    'https://google.com/': 'organic_search',
+    'https://www.google.com/': 'organic_search',
+    'https://www.google.co.uk/': 'organic_search',
+    'https://www.google.com.br/': 'organic_search',
+    'https://www.google.co.jp/': 'organic_search',
+    'https://www.google.de/': 'organic_search',
+    'https://www.google.cat/': 'organic_search',
+    'https://scholar.google.com/': 'organic_search',
+    'https://scholar.google.co.uk/': 'organic_search',
+    'https://scholar.google.de/': 'organic_search',
+    'https://books.google.com/': 'organic_search',
+    'https://images.google.com/': 'organic_search',
+    'https://news.google.com/': 'organic_search',
+    'https://ipv6.google.com/': 'organic_search',
+    'android-app://com.google.android.googlequicksearchbox/': 'organic_search',
+    'android-app://com.google.android.apps.searchlite/': 'organic_search',
+    'android-app://com.google.android.apps.magazines/': 'organic_search',
+    'https://www.bing.com/': 'organic_search',
+    'https://duckduckgo.com/': 'organic_search',
+    'https://html.duckduckgo.com/': 'organic_search',
+    'https://www.ecosia.org/': 'organic_search',
+    'https://ecosia.org/': 'organic_search',
+    'https://search.yahoo.com/': 'organic_search',
+    'https://uk.search.yahoo.com/': 'organic_search',
+    'https://search.yahoo.co.jp/': 'organic_search',
+    'https://de.search.yahoo.com/': 'organic_search',
+    'https://search.brave.com/': 'organic_search',
+    // Social networks, short links and the YouTube and YouTube Music apps included.
+    'https://t.co/abc': 'organic_social',
+    'https://x.com/': 'organic_social',
+    'https://www.x.com/': 'organic_social',
+    'https://mobile.twitter.com/': 'organic_social',
+    'https://l.facebook.com/': 'organic_social',
+    'https://old.reddit.com/': 'organic_social',
+    'https://m.youtube.com/': 'organic_social',
+    'android-app://com.google.android.youtube/': 'organic_social',
+    'android-app://com.google.android.apps.youtube.music/': 'organic_social',
+    // Other Google products and sites whose name only contains a search or social host.
+    'https://docs.google.com/': 'referral',
+    'https://mail.google.com/': 'referral',
+    'https://gemini.google.com/': 'referral',
+    'https://google.org/': 'referral',
+    'https://google.dev/': 'referral',
+    'https://translate.google.com/': 'referral',
+    'android-app://com.google.android.gm/': 'referral',
+    // A package name is matched whole: another vendor's package can end with a Google app's.
+    'android-app://net.example.com.google.android.youtube/': 'referral',
+    'android-app://net.example.com.google.android.googlequicksearchbox/': 'referral',
+    // Listed hosts do not apply to a package, nor packages to a web host.
+    'android-app://evil.t.co/': 'referral',
+    'android-app://com.example.x.com/': 'referral',
+    'android-app://com.example.youtube.com/': 'referral',
+    'android-app://com.example.facebook.com/': 'referral',
+    'android-app://t.co/': 'referral',
+    'https://com.google.android.youtube/': 'referral',
+    'https://com.google.android.googlequicksearchbox/': 'referral',
+
+    'https://notgoogle.example.org/': 'referral',
+    'https://www.yahoo.com/': 'referral',
+    'https://search.yahoo.example.org/': 'referral',
+    'https://notsearch.yahoo.com/': 'referral',
+    'https://search.yahoo.com.evil.example/': 'referral',
+    // A suffix that only looks like a country: any three-letter or generic TLD,
+    // and `co.com` / `com.com`, which anyone can register.
+    'https://search.yahoo.xyz/': 'referral',
+    'https://search.yahoo.net/': 'referral',
+    'https://a.search.yahoo.top/': 'referral',
+    'https://search.yahoo.co.com/': 'referral',
+    'https://search.yahoo.com.com/': 'referral',
+    'https://www.google.co.com/': 'referral',
+    'https://www.google.com.com/': 'referral',
+    'https://scholar.google.co.com/': 'referral',
+    'https://google.com.cat/': 'referral',
+    // A search engine's other sites link out too: only its search host is search.
+    'https://brave.com/download/': 'referral',
+    'https://community.brave.com/': 'referral',
+    'https://blog.ecosia.org/': 'referral',
+    'https://google.com.evil.example/': 'referral',
+    'https://chatgpt.com/': 'referral',
+    'https://copilot.microsoft.com/': 'referral',
+    'https://teams.microsoft.com/': 'referral',
+    'https://getpocket.com/': 'referral',
+    'https://dropbox.com/': 'referral',
+    'https://www.netflix.com/': 'referral',
+    'https://news.ycombinator.com/': 'referral',
+    'https://arxiv.org/abs/2401.00001': 'referral',
+    // A trailing dot names the host differently (referral, decided 2026-10-25) and
+    // upper case does not, for a listed host and for a pattern alike.
+    'https://t.co./': 'referral',
+    'https://www.google.com./': 'referral',
+    'https://search.yahoo.com./': 'referral',
+    'https://T.CO/abc': 'organic_social',
+    'https://WWW.Google.CO.UK/': 'organic_search',
+    'https://Search.Yahoo.Com/': 'organic_search',
+  };
+
+  assert.deepEqual(Object.fromEntries(Object.keys(expected).map(referrer => [referrer, channelOf(referrer)])), expected);
+});
+
 test('tracks acquisition once per browser session after consent', async t => {
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const consentStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED });

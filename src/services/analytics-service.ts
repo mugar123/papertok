@@ -70,8 +70,36 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
   'concept',
   'source',
 ]);
-const SEARCH_ENGINE_HOSTS = ['google.', 'bing.com', 'duckduckgo.com', 'search.yahoo.', 'ecosia.org', 'brave.com'];
-const SOCIAL_HOSTS = [
+// A referrer counts when its whole host is listed, or is a subdomain of a listed
+// one. A name that merely contains an entry is another site: chatgpt.com holds
+// `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
+// per country, so those two are patterns. Their suffix is `com`, a two-letter country
+// code, or a two-letter code under `co.` or `com.`; a generic suffix (`.xyz`) or
+// `co.com` and `com.com`, which anyone can register, is not. Any two letters pass, so
+// `google.com.de` counts as search.
+//
+// Only a provider's search properties count as search. Google's (web, Scholar, Books,
+// Images, News) do; Docs, Gmail, Gemini and the rest do not. Brave lists
+// `search.brave.com` and Ecosia `ecosia.org` and `www.ecosia.org`: brave.com, its forum
+// and blog.ecosia.org link out and are referrals. Bing and DuckDuckGo list their whole
+// domain, so every subdomain of them counts as search.
+//
+// Five Google apps on Android send their package name as the referrer and are filed
+// like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
+// Music as social. Other Google apps count as referral. A package names one app, not a
+// domain with subdomains, so it is matched whole, and only in an `android-app:` referrer:
+// another vendor's package can end with a Google app's or with `t.co`.
+const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
+  /^(?:www\.|ipv6\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  'bing.com',
+  'duckduckgo.com',
+  /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  /^(?:www\.)?ecosia\.org$/,
+  'search.brave.com',
+];
+const ANDROID_SEARCH_PACKAGES = /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/;
+const ANDROID_SOCIAL_PACKAGES = /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/;
+const SOCIAL_HOSTS: readonly (string | RegExp)[] = [
   'bsky.app',
   'facebook.com',
   'instagram.com',
@@ -604,8 +632,10 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
 }
 
-function hostnameMatches(hostname: string, patterns: string[]) {
-  return patterns.some(pattern => hostname === pattern || hostname.endsWith(`.${pattern}`) || hostname.includes(pattern));
+function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
+  return patterns.some(pattern => typeof pattern === 'string'
+    ? hostname === pattern || hostname.endsWith(`.${pattern}`)
+    : pattern.test(hostname));
 }
 
 export function inferAcquisitionChannel({
@@ -630,6 +660,10 @@ export function inferAcquisitionChannel({
     const currentOrigin = location?.origin ? new URL(location.origin).origin : '';
     if (currentOrigin && referrerUrl.origin === currentOrigin) return 'direct';
     const hostname = referrerUrl.hostname.toLowerCase();
+    if (referrerUrl.protocol === 'android-app:') {
+      if (ANDROID_SEARCH_PACKAGES.test(hostname)) return 'organic_search';
+      return ANDROID_SOCIAL_PACKAGES.test(hostname) ? 'organic_social' : 'referral';
+    }
     if (hostnameMatches(hostname, SEARCH_ENGINE_HOSTS)) return 'organic_search';
     if (hostnameMatches(hostname, SOCIAL_HOSTS)) return 'organic_social';
     return 'referral';
