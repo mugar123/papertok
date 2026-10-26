@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -50,6 +50,17 @@ test('keeps established priority for errors, cards, and source empty states', ()
   assert.equal(
     getFeedDisplayState({ ...baseState, hasSourceEmptyState: true }),
     FEED_DISPLAY_STATES.SOURCE_EMPTY,
+  );
+});
+
+test('a store with no papers for the reader\'s interests is the empty state, not the error', () => {
+  assert.equal(
+    getFeedDisplayState({ ...baseState, error: FEED_EMPTY }),
+    FEED_DISPLAY_STATES.EMPTY,
+  );
+  assert.equal(
+    getFeedDisplayState({ ...baseState, error: FEED_EMPTY, hasPapers: true }),
+    FEED_DISPLAY_STATES.FEED,
   );
 });
 
@@ -107,4 +118,8 @@ test('the first wait ends with papers, or with a load that finished empty and cl
   assert.equal(firstLoadSettled({ hasPapers: true, loadStarted: false, loading: true, error: null }), true);
   assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: true, loading: false, error: null }), true);
   assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: false, loading: false, error: null }), false);
+});
+
+test('a first load the store answered with no papers is over: it is not retried', () => {
+  assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: true, loading: false, error: FEED_EMPTY }), true);
 });
