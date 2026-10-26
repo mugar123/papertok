@@ -110,10 +110,11 @@ and abstract. Upgrading these cases is left to ENG-145.
 A row stored before ENG-133 that already merged its journal article changes
 only when a lane lists that article again, and only under the rules above.
 Each night the venue lane rereads the 600 newest articles of its sources
-within 90 days, and the topic and area lanes reread their last 14 days. A
-venue that publishes more than 600 articles in 90 days drops its older ones
-from that listing, and a row whose article no lane lists again stays the
-working paper's. No backfill is run (Pablo, 2026-10-25).
+within 90 days, a topic lane rereads up to 1,000 articles back to 14 days,
+and an area lane rereads only its newest 200, about the last one or two days
+of most areas. A venue that publishes more than 600 articles in 90 days drops
+its older ones from that listing, and a row whose article no lane lists again
+stays the working paper's. No backfill is run (Pablo, 2026-10-25).
 
 A venue lane's article reaches its leaf's readers. When its area's lane
 (`openalex-areas`) listed it too, `fileAreaPapers` (`worker/leaf-filing.ts`)
