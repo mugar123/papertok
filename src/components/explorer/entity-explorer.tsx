@@ -128,6 +128,7 @@ import { nameInitials } from '../../utils/name-initials.ts';
 import 'katex/dist/katex.min.css';
 import './entity-explorer.css';
 import { EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
+import { formatProjectAmount } from '../../utils/format-project-amount.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
@@ -1910,7 +1911,7 @@ export default function EntityExplorer({
       {type === 'project' && (entity.budget as number) > 0 && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return entity.budget!.toLocaleString(locale); } })()}
+            {formatProjectAmount(entity.budget!, entity.currency, locale)}
           </span>
           <span className="ehc-stat-label">{'Total budget'}</span>
         </div>
@@ -1918,7 +1919,7 @@ export default function EntityExplorer({
       {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return entity.fundedAmount!.toLocaleString(locale); } })()}
+            {formatProjectAmount(entity.fundedAmount!, entity.currency, locale)}
           </span>
           <span className="ehc-stat-label">{'Funding'}</span>
         </div>
