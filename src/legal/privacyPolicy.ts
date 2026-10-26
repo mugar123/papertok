@@ -32,8 +32,14 @@ export const PRIVACY_POLICY_VERSION = '2026-10-26';
  * Whenever the page's text changes again, bump the page's date,
  * PRIVACY_POLICY_VERSION and this instant together.
  *
- * 2026-10-26T05:00Z: #363, the last announced privacy.html change, finished
- * deploying at 04:52:18Z (the Vercel status of its merge commit).
+ * 2026-10-26T05:00Z is an exception to that rule, kept on purpose. #363, the
+ * last change the summary announces to accounts, finished deploying at
+ * 04:52:18Z (the Vercel status of its merge commit). The page's 26 October
+ * date came later with #385 (live about 11:01Z), and #330's figure-lookup
+ * wording later still (about 19:24Z) without a date change. Neither changes
+ * what an account is told, so accounts created after 05:00Z miss nothing they
+ * needed. Do not copy this: a later change that the summary announces moves
+ * the instant to when that text is live.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T05:00:00Z';
 
