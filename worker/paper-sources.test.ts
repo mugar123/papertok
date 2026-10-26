@@ -820,9 +820,13 @@ test("the enrichment of a working-paper row that became its journal article asks
 // An economics paper often circulates as several OpenAlex working papers
 // (NBER, CESifo). The row its article upgraded can fold with a second working
 // paper's row later, and the row the fold keeps, set by the rows' numbers, can
-// be either. The row follows the article's work after the fold, so the first
-// working paper listed again does not put its text on the reviewed row.
-test("an upgraded row folded with a second working paper's row keeps following its article's work", async t => {
+// be either. The upgrade reads OpenAlex's record of the article, never a
+// merged row, so a fold that keeps the second working paper's row leaves it
+// the working paper's until the venue lane lists the article again, which it
+// does each night of the article's first 90 days. The row then follows the
+// article's work, so the first working paper listed again does not put its
+// text on the reviewed row.
+test("an upgraded row folded with a second working paper's row is the article's once OpenAlex lists the article again, and keeps following its work", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-23T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
@@ -839,8 +843,9 @@ test("an upgraded row folded with a second working paper's row keeps following i
     const rows = () => db.prepare('SELECT paper FROM works').all().map(row => JSON.parse(String((row as { paper: string }).paper)) as Paper);
     // The two working papers, two rows; the article upgrades the NBER one;
     // CESifo retitles its paper as the article, which folds the two rows; the
-    // NBER series lists its working paper again under a revised title.
-    for (const [night, works] of [[nber, cesifo], [gmmArticle], [{ ...cesifo, title: gmmArticle.title }], [{ ...nber, title: 'A revised title of the NBER working paper' }]].entries()) {
+    // venue lane lists the article again; the NBER series lists its working
+    // paper again under a revised title.
+    for (const [night, works] of [[nber, cesifo], [gmmArticle], [{ ...cesifo, title: gmmArticle.title }], [gmmArticle], [{ ...nber, title: 'A revised title of the NBER working paper' }]].entries()) {
       t.mock.timers.setTime(first + night * DAY);
       await ingestPapers(store, works.map(work => ({ paper: mapOpenAlexWork(work)!, lanes: ['econ.EM'] })), { now: first + night * DAY });
       if (night === 0) assert.equal(rows().length, 2, name);
@@ -1127,6 +1132,142 @@ test("an eprint row that a working paper joins stays the working paper's when it
     [mapOpenAlexWork({ ...gmmArticle, ...smith, ids: { arxiv: 'https://arxiv.org/abs/2610.01234' } })!],
   ]);
   assert.deepEqual([bridged.id, bridged.sources.primary, bridged.doi, bridged.peerReviewed, bridged.workingPaper], ['2610.01234', 'arxiv', '10.3386/w35104', false, true]);
+});
+
+// What a reader sees of the paper's row, its stored date and the dates of the
+// lanes it holds, after `nights` of listings, one batch a night.
+async function journalRowAfter(t: import('node:test').TestContext, nights: Paper[][]) {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  const { binding, db } = testD1();
+  const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+  for (const [night, papers] of nights.entries()) {
+    t.mock.timers.setTime(first + night * DAY);
+    await ingestPapers(store, papers.map(paper => ({ paper, lanes: paper.workingPaper ? ['series:working-papers'] : ['econ.EM'] })), { now: first + night * DAY });
+  }
+  const works = db.prepare('SELECT id, paper, published FROM works').all() as Array<{ id: number; paper: string; published: string }>;
+  assert.equal(works.length, 1);
+  const paper = JSON.parse(works[0].paper) as Paper;
+  const laneDates = (db.prepare('SELECT lane, published FROM work_lanes WHERE work_id = ? ORDER BY lane').all(works[0].id) as Array<{ lane: string; published: string }>)
+    .map(row => `${row.lane} ${row.published}`);
+  return {
+    id: works[0].id,
+    json: works[0].paper,
+    shown: [paper.doi, paper.landingPageUrl, paper.title, paper.abstract, paper.journal, paper.peerReviewed, paper.workingPaper, works[0].published],
+    laneDates,
+  };
+}
+
+// The upgrade is a step of its own over the stored row once the batch is
+// saved (Pablo, 2026-10-26), so the order of the records, within one batch or
+// across nights, does not decide what the row shows; neither does listing them
+// again.
+test('a journal article and its OpenAlex working paper give the same journal row in either order, in one batch or on two nights, and listing them again changes nothing', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const expected = [JBES_DOI, `https://doi.org/${JBES_DOI}`, article.title, article.abstract, article.journal, true, undefined, '2026-10-14T00:00:00.000Z'];
+  for (const [name, nights] of [
+    ['working paper, then article, one batch', [[workingPaper, article]]],
+    ['article, then working paper, one batch', [[article, workingPaper]]],
+    ['working paper, then article, two nights', [[workingPaper], [article]]],
+    ['article, then working paper, two nights', [[article], [workingPaper]]],
+  ] as const) {
+    const once = await journalRowAfter(t, nights.map(night => [...night]));
+    assert.deepEqual(once.shown, expected, name);
+    // Every lane the row holds, the working-paper series' included, carries
+    // the article's date, the one the newest-first feed orders by.
+    assert.ok(once.laneDates.length >= 2, name);
+    assert.deepEqual(once.laneDates.filter(row => !row.endsWith(' 2026-10-14T00:00:00.000Z')), [], name);
+    const repeated = await journalRowAfter(t, [...nights.map(night => [...night]), [workingPaper, article], [article, workingPaper], [workingPaper], [article]]);
+    assert.deepEqual(repeated.shown, expected, `${name}, listed again`);
+    assert.deepEqual(repeated.laneDates, once.laneDates, `${name}, listed again`);
+  }
+});
+
+test('a stored working-paper row upgraded once is not written again when the same records are listed again', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const { binding, db } = testD1();
+  const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+  const now = Date.parse('2026-10-22T03:00:00Z');
+  await ingestPapers(store, [{ paper: workingPaper, lanes: ['series:working-papers'] }], { now });
+  assert.equal(await ingestPapers(store, [{ paper: article, lanes: ['econ.EM'] }], { now }), 2, 'the merge, then the upgrade');
+  const stored = () => (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>)[0];
+  const upgraded = stored();
+  assert.equal(JSON.parse(upgraded.paper).peerReviewed, true);
+  assert.equal(await ingestPapers(store, [{ paper: article, lanes: ['econ.EM'] }], { now }), 0);
+  assert.deepEqual(stored(), upgraded);
+});
+
+// A row that already knows the ids of both versions forms two groups when the
+// article comes back retitled beside the working paper: they share no key. Each
+// group merges the same stored row, and the last one written stands, so the
+// upgrade must not depend on which group comes last.
+test('an upgraded row stays the reviewed journal row when one batch lists its retitled article and its working paper, in either order', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const retitled = mapOpenAlexWork({ ...gmmArticle, title: 'The Efficiency and Pricing Accuracy Trade-Off in GMM Estimation of Linear Asset Pricing Models' })!;
+  const rows = [];
+  for (const batch of [[retitled, workingPaper], [workingPaper, retitled]]) {
+    const row = await journalRowAfter(t, [[workingPaper], [article], batch]);
+    assert.deepEqual(row.shown, [JBES_DOI, `https://doi.org/${JBES_DOI}`, retitled.title, article.abstract, article.journal, true, undefined, '2026-10-14T00:00:00.000Z'], batch[0].id);
+    assert.ok(!JSON.parse(row.json).workingPaper);
+    rows.push(row.shown);
+  }
+  assert.deepEqual(rows[1], rows[0]);
+});
+
+// The evidence is OpenAlex's own record of the journal article. An OpenAlex
+// preprint whose row PubMed's record of it made read reviewed keeps
+// `sources.primary: 'openalex'`, yet it is no such record: folded into the
+// working paper's row, it leaves the row the working paper's.
+test("an OpenAlex preprint's row that PubMed made read reviewed never makes a working paper's row the journal's", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const preprintDoi = '10.1101/2026.10.01.123456';
+  const preprintTitle = 'GMM estimators of linear asset pricing models: the trade-off between efficiency and pricing accuracy';
+  const pubmed = (title: string) => mapPubmedSummary({
+    uid: '41000000', title, source: 'J Bus Econ Stat', pubdate: '2026 Oct 14', pubtype: ['Journal Article'],
+    authors: [{ name: 'Ana Economist' }], articleids: [{ idtype: 'doi', value: preprintDoi }],
+  });
+  // The working paper's work id decides which of the two stored rows the fold
+  // keeps: the preprint's for W7220000104, the working paper's for W7220000105.
+  const kept: string[] = [];
+  for (const workingPaperId of ['W7220000104', 'W7220000105']) {
+    const preprint = mapOpenAlexWork({
+      ...seriesWork('W7229990001', preprintDoi, 'preprint', { id: 'S4306402567', display_name: 'medRxiv' }, 'The preprint of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'),
+      title: preprintTitle, authorships: gmmArticle.authorships, primary_location: { landing_page_url: `https://doi.org/${preprintDoi}`, is_published: false, source: { id: 'https://openalex.org/S4306402567', display_name: 'medRxiv', type: 'repository' } },
+    })!;
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    const nights = [
+      [mapOpenAlexWork({ ...gmmWorkingPaperWork, id: `https://openalex.org/${workingPaperId}` })!],
+      [preprint, pubmed(preprintTitle)],
+      // PubMed lists the paper again under the working paper's title, which
+      // joins the two rows.
+      [pubmed(gmmArticle.title)],
+    ];
+    for (const [night, papers] of nights.entries()) {
+      t.mock.timers.setTime(first + night * DAY);
+      await ingestPapers(store, papers.map(paper => ({ paper, lanes: ['econ.EM'] })), { now: first + night * DAY });
+      if (night === 1) {
+        const reviewed = (db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>).map(row => JSON.parse(row.paper) as Paper).find(paper => paper.id === preprint.id)!;
+        assert.deepEqual([reviewed.sources.primary, reviewed.peerReviewed, reviewed.workingPaper], ['openalex', true, undefined], 'PubMed made the preprint row read reviewed');
+      }
+    }
+    const works = (db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>).map(row => JSON.parse(row.paper) as Paper);
+    assert.equal(works.length, 1, workingPaperId);
+    assert.equal(works[0].openAlexId, undefined, workingPaperId);
+    kept.push(works[0].id);
+    if (works[0].id !== preprint.id) {
+      assert.deepEqual([works[0].doi, works[0].peerReviewed, works[0].workingPaper], ['10.3386/w35104', false, true], workingPaperId);
+    }
+  }
+  assert.deepEqual(kept, ['openalex:W7229990001', 'openalex:W7220000105']);
 });
 
 // The cost: up to five pages of 200 on a lane's first night and three on a

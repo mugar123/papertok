@@ -72,31 +72,41 @@ mathematics curator did not record the core flag of its 42 sources.
 
 The nightly run harvests the venue lanes before the working-paper series, so
 a journal article and its working paper listed the same night merge into the
-journal's reviewed row (#198, PAP-85). So do the two listed on one page, in
-either order: with the working paper first, `asJournalRow`
-(`worker/paper-store.ts`) merges the journal record first. Working papers usually appear first. An OpenAlex working paper
-stored on an earlier night becomes the journal's reviewed row when OpenAlex
-lists its journal article (`ingestPapers`, ENG-133): the row takes the
-article's DOI, landing page and answer, drops the Working paper tag, keeps the
-working paper's `false` under its own DOI, and keeps its row and the id readers
-liked or saved it under. A page that lists the working paper before its
-article starts the row the same way, under the id of the page's first record.
-The series listing the working paper again does not put its title and
-abstract back on the row. The two records pair on the title and first-author
-key (`PaperBuilder.identityKeys`), as before, because they share no DOI or
-OpenAlex id; the upgrade now lets that join set the row's DOI, landing page,
-text and date, and only when the merge reads reviewed.
+journal's reviewed row (#198, PAP-85). Working papers usually appear first,
+though. `merge` keeps a working paper's `false` whichever record it merges, so
+the upgrade is a step of its own (`upgradeWorkingPapers` in
+`worker/paper-store.ts`, ENG-133) that runs on the stored rows once
+`ingestPapers` has saved a batch. For each OpenAlex journal-article record in
+the batch, it reads the row that record was filed under, by the article's work
+id or DOI. When that row is a working-paper row OpenAlex started, the row
+becomes the journal's reviewed row: it takes the article's DOI, landing page,
+title, abstract, venue and date, drops the Working paper tag, keeps the working
+paper's `false` under its own DOI, and keeps the id readers liked or saved it
+under. The same write moves the row's date in every lane it holds, so the
+newest-first feed orders it by the article's date. The two records pair on the
+title and first-author key (`PaperBuilder.identityKeys`), because they share
+no DOI or OpenAlex id.
 
-Only OpenAlex's journal record of the article, with a publisher's DOI, starts
-the upgrade, and only on a row OpenAlex's working paper started. A journal
-record without a DOI would leave the working paper's DOI on the reviewed row,
-so it leaves the row as it was. The row names the article's work in
-`openAlexId`, whichever lane listed it (venue, topic, area, notable or
-followed). Enrichment and its 14-day refresh read `openAlexId` first, and the
-row follows the article's own listing for its title and abstract, so both
-arrival orders end up with the article's title, venue, type, topic and counts,
-and its abstract when OpenAlex lists one. Otherwise the working paper's
-abstract fills the gap, as when both arrive the same night.
+The evidence is the listed record itself, never a merged row: OpenAlex's
+record typed `article`, whose primary source is a `journal`, that
+`openAlexPeerReviewed` calls reviewed and that lists a publisher's DOI
+(`openAlexIsJournalArticle`). A journal record without a DOI would leave the
+working paper's DOI on the reviewed row, so it leaves the row as it was. An
+OpenAlex preprint whose row PubMed's record made read reviewed keeps
+`sources.primary: 'openalex'`, but it is no such record and upgrades nothing.
+An upgraded row is no working paper, so the step applies once, whichever
+order the records arrive in, on one page or on several nights, and listing
+them again changes nothing. The row names the article's work in `openAlexId`.
+Enrichment and its 14-day refresh read `openAlexId` first, and the row follows
+the article's own listing for its title and abstract, so the series listing
+the working paper again does not put its text back on the row. When OpenAlex
+lists no abstract for the article, the working paper's fills the gap, as when
+both arrive the same night.
+
+A fold can join an upgraded row with a second working paper's row (an NBER and
+a CESifo version of one paper). When the fold keeps the second row, it is the
+working paper's until a lane lists the article again; the venue lane rereads
+it each night of its first 90 days.
 
 Records from every other source merge as they did before ENG-133
 (`PaperBuilder.merge`): a working paper's row keeps the working paper's DOI,
@@ -111,7 +121,8 @@ paper, when the article arrives, and arXiv's next version replaces its title
 and abstract. Upgrading these cases is left to ENG-145.
 
 A row stored before ENG-133 that already merged its journal article changes
-only when a lane lists that article again, and only under the rules above.
+only when a lane lists that article again, and only under the rules above:
+the article's work id and DOI already lead to the row.
 Each night the venue lane rereads the 600 newest articles of its sources
 within 90 days, a topic lane rereads up to 1,000 articles back to 14 days,
 and an area lane rereads only its newest 200, about the last one or two days

@@ -1,13 +1,15 @@
 import type { BloomFilter } from 'bloomfilter';
 import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
+import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
-import { PaperBuilder, isPublisherDoi, restsOnArxivDoi } from '../src/services/paper-builder.ts';
+import { PaperBuilder, isPublisherDoi } from '../src/services/paper-builder.ts';
 import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
+import { openAlexIsJournalArticle } from '../src/utils/publication-status.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -324,8 +326,7 @@ const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abst
   : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
-// `records` are the listed records the group merged into `paper`, in order.
-interface Group { paper: Paper; records: Paper[]; lanes: Set<string>; keys: Set<string> }
+interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
 
 // A new row's number comes from its paper id, so two writers filing the same
 // paper at once (a like looked up by two requests, a followed lane's run beside
@@ -364,44 +365,6 @@ async function readWorks(db: D1Database, ids: number[]) {
   return works;
 }
 
-// A working paper says it was not reviewed; its journal article says it was.
-// Only OpenAlex's working-paper row becomes its OpenAlex journal article's
-// (ENG-133): OpenAlex states review itself (`openAlexPeerReviewed`), and the
-// row then follows the article's own listing (`openAlexId`). A row another
-// source started, or a journal record from another source (PubMed, Europe PMC,
-// an arXiv eprint naming its journal, a repository's copy), merges as any
-// record does (ENG-145).
-const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 'openalex' && paper.workingPaper === true && paper.peerReviewed === false;
-// A journal record lists a publisher's DOI: without one, `merge` would fill
-// the gap with the working paper's DOI, and the reviewed row would link to the
-// unreviewed version. A merged row's `true` that rests on a DOI alone
-// (`restsOnArxivDoi`) is no journal evidence either.
-const readsAsReviewed = (paper: Paper) => paper.sources?.primary === 'openalex' && paper.peerReviewed === true && paper.workingPaper !== true
-  && !restsOnArxivDoi(paper) && isPublisherDoi(normalizeDoi(paper.doi));
-const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
-
-// `merge` keeps a working paper's `false` against a journal article merged
-// into it, so the records of a working paper and its journal article read
-// reviewed only with the article first (README-openalex-leaf-venues.md). Each
-// record that reads reviewed is tried first, in turn. One whose merge does not
-// read reviewed does not lend the row its landing page, text and date.
-// Undefined when none makes the row reviewed.
-function asJournalRow(records: Paper[]) {
-  for (const journal of records.filter(readsAsReviewed)) {
-    const upgraded = mergeAll([journal, ...records.filter(record => record !== journal)]);
-    if (upgraded.peerReviewed === true) return { journal, upgraded };
-  }
-  return undefined;
-}
-
-// The journal's row keeps the id of the working-paper row it upgrades, stored
-// or started by the page, so the id readers liked or saved it under (ENG-133).
-// Enrichment and the row's own listing follow the article's work: a stored row
-// an earlier upgrade made names it in `openAlexId`, as its id is a working
-// paper's.
-const upgradedRow = (row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper =>
-  ({ ...upgraded, id: row.id, openAlexId: journal.openAlexId || journal.id.slice('openalex:'.length) });
-
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
@@ -433,7 +396,9 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * replaces its title and abstract (`withOwnText`). A merge that changes the
  * title or abstract drops the vector for the embedding pass. A notable lane's
  * row is kept until `keepUntil`, the listing's own keeping date
- * (`listed_until`). Returns how many rows were written.
+ * (`listed_until`). Once the batch is saved, OpenAlex's journal articles in it
+ * upgrade the working-paper rows they were filed under
+ * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
@@ -441,6 +406,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
   const listed = new Map<string, Paper>();
+  const articles: Paper[] = [];
   for (const item of items) {
     // A mapper stands "Untitled" in for a title its source left out.
     if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
@@ -452,19 +418,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
     if (!group) {
-      group = { paper, records: [paper], lanes: new Set(), keys: new Set() };
+      group = { paper, lanes: new Set(), keys: new Set() };
       groups.push(group);
     } else {
       for (const other of joined.slice(1)) {
         group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
-        group.records.push(...other.records);
         other.lanes.forEach(lane => group.lanes.add(lane));
         other.keys.forEach(key => group.keys.add(key));
         groups.splice(groups.indexOf(other), 1);
       }
       group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
-      group.records.push(paper);
     }
+    if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
     item.lanes.forEach(lane => group.lanes.add(lane));
     keys.forEach(key => group.keys.add(key));
     group.keys.forEach(key => groupOfKey.set(key, group));
@@ -489,21 +454,12 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     let paper = group.paper;
     let id = ids[0];
     if (id === undefined) {
-      // A page listing the working paper before its article starts the journal's row too.
-      const journalRow = isWorkingPaperRow(paper) ? asJournalRow(group.records) : undefined;
-      if (journalRow) paper = upgradedRow(paper, journalRow);
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
-      const others = stored.slice(1).map(other => other.paper);
-      const merged = mergeAll([base, ...others, group.paper]);
-      // A working paper becomes its journal article's row (ENG-133), whether
-      // the row stored it, another stored row folded in brings it, or the page
-      // lists it before its article. The group's own records are tried, since
-      // their merge reads as a working paper then.
-      const journalRow = isWorkingPaperRow(merged) ? asJournalRow([base, ...others, ...group.records]) : undefined;
-      paper = journalRow ? upgradedRow(base, journalRow) : merged;
+      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
+      paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
@@ -568,7 +524,92 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
         WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
-  return rows.length;
+  return rows.length + await upgradeWorkingPapers(db, articles, now);
+}
+
+// ─── Working paper to journal article (ENG-133) ───
+
+// A working paper says it was not reviewed and its journal article says it
+// was; `merge` keeps the working paper's `false` whichever record it merges, so
+// the upgrade is a step of its own over stored rows, after the batch is saved
+// (Pablo, 2026-10-26). Only OpenAlex's working-paper row becomes the journal's,
+// and only on OpenAlex's own record of the journal article. A row another
+// source started, or a journal record from another source (PubMed, Europe PMC,
+// an arXiv eprint naming its journal, a repository's copy), stays as `merge`
+// left it (ENG-145).
+const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 'openalex' && paper.workingPaper === true && paper.peerReviewed === false;
+
+// The evidence is one listed record, never a merged row: OpenAlex's own record
+// typed `article` in a `journal` that `openAlexPeerReviewed` calls reviewed,
+// with a publisher's DOI. Without one, the reviewed row would keep the working
+// paper's DOI and link to the unreviewed version.
+function isJournalArticleRecord(paper: Paper, raw: unknown) {
+  return paper.sources?.primary === 'openalex' && /^openalex:W\d+$/i.test(paper.id)
+    && paper.peerReviewed === true && paper.workingPaper !== true && isPublisherDoi(normalizeDoi(paper.doi))
+    && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
+}
+
+// The row as the article's record would make it with the row merged in: the
+// article's DOI, landing page, title, abstract, venue and date, and what the
+// row adds (the working paper's abstract fills a missing one). It keeps the id
+// readers liked or saved it under and names the article's work in
+// `openAlexId`, which enrichment and the row's own listing follow. Undefined
+// when the row's evidence still denies review.
+function asJournalRow(row: Paper, article: Paper): Paper | undefined {
+  const merged = PaperBuilder.merge(article, row, row.provider || row.sources?.primary);
+  if (merged.peerReviewed !== true || merged.workingPaper) return undefined;
+  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length) });
+}
+
+/**
+ * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
+ * record of `articles` was filed under (by the article's work id or DOI) the
+ * journal's reviewed row, with its date in every lane it holds. An upgraded row
+ * is no working paper, so the step applies once whatever the order of the
+ * records and however often they are listed. Returns how many rows changed.
+ */
+async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number) {
+  if (articles.length === 0) return 0;
+  const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
+  const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
+  const works = await readWorks(db, [...new Set(found.values())]);
+  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean }> = [];
+  // In id order, so the same records upgrade a row the same way in any order.
+  for (const [id, work] of [...works].sort(([a], [b]) => a - b)) {
+    const row = JSON.parse(work.paper) as Paper;
+    if (!isWorkingPaperRow(row)) continue;
+    const upgraded = articles
+      .filter(article => keysOf(article).some(key => found.get(key) === id))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map(article => asJournalRow(row, article))
+      .find(Boolean);
+    if (!upgraded) continue;
+    const published = publishedOf(upgraded, now) || publishedOf(row, now);
+    upgrades.push({
+      id,
+      paper: JSON.stringify(upgraded),
+      published,
+      keptUntil: [daysFromNow(CORPUS_DAYS, Date.parse(published)), work.kept_until].sort().at(-1)!,
+      textChanged: embeddingText(upgraded) !== embeddingText(row),
+    });
+  }
+  // One batch a chunk: the row, its date in each of its lanes, its keys and
+  // its vector change together.
+  for (let start = 0; start < upgrades.length; start += WRITE_CHUNK) {
+    const slice = upgrades.slice(start, start + WRITE_CHUNK);
+    const chunk = JSON.stringify(slice);
+    await db.batch([
+      db.prepare(`UPDATE works SET paper = j.value ->> 'paper', published = j.value ->> 'published',
+        kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+      db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
+        WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
+        SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
+        .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
+      db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
+    ]);
+  }
+  return upgrades.length;
 }
 
 /**
