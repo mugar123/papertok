@@ -102,13 +102,14 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // in the cascade to win them.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import AbstractSheet from './abstract-sheet.tsx';
+import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
-import { lazyWithPreload } from '../../utils/lazy-preload.ts';
+import { connectionIsFrugal, lazyWithPreload } from '../../utils/lazy-preload.ts';
 
 // Preloaded once the card settles on a wider screen, so the map can stand in
 // the slot on the very frame it is asked for (see the slot's height morph).
@@ -120,14 +121,15 @@ import { institutionLabel } from '../../services/institution-service.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
-import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
+import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
-import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/area-accent.ts';
+import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
+import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
-import { buildPaperTopicTags } from '../../utils/paper-topic-tags.ts';
+import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
 /**
  * How still the abstract panel has to be before its clipping is believed: the
@@ -154,7 +156,6 @@ const STATUS_CHIP_ICONS = {
   openCopy: LockKeyOpen,
   subscription: LockKey,
 };
-import { isTechnicalClassification } from '../../utils/scientific-classification.ts';
 import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts';
 import { hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
@@ -510,7 +511,7 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution } = useAuth();
+  const { institution, user } = useAuth();
   const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -689,6 +690,25 @@ const PaperCard = memo(function PaperCard({
   const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
+  // `load` can fire before an async-decoded picture is ready to paint;
+  // `decode()` resolves once it is. A refusal still shows what loaded.
+  // A cached image can finish before React attaches `onLoad`, and then the
+  // event never comes: the ref catches the ones already done on mount.
+  const figureImageProps = (url: string) => ({
+    ref: (node: HTMLImageElement | null) => {
+      if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(url)) revealFigure(node, url);
+    },
+    onLoad: (event: SyntheticEvent<HTMLImageElement>) => revealFigure(event.currentTarget, url),
+  });
+  const decodingFigures = useRef(new Set<string>());
+  function revealFigure(image: HTMLImageElement, url: string) {
+    if (decodingFigures.current.has(url)) return;
+    decodingFigures.current.add(url);
+    void image.decode().catch(() => {}).then(() => {
+      decodingFigures.current.delete(url);
+      markFigureLoaded(url);
+    });
+  }
 
   // A clipping comes back WITH its page, not on a clock of its own.
   //
@@ -890,6 +910,7 @@ const PaperCard = memo(function PaperCard({
    * are the same words as before.
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
+  const abstractAttribution = semanticScholarAttribution(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -1125,13 +1146,6 @@ const PaperCard = memo(function PaperCard({
   const selectedRelatedState = activeRelatedPaper
     ? getInteractionState(activeRelatedPaper) || {}
     : {};
-  const visiblePrimaryCategory = useMemo(
-    () => [paper.primaryCategory, ...(paper.categories || [])]
-      .find(category => category
-        && !isTechnicalClassification(category)
-        && !isOpaqueQueryTopicText(category)) || '',
-    [paper.categories, paper.primaryCategory]
-  );
 
   /**
    * The related card is a Base UI Dialog (ui/dialog.jsx). Closing — the back
@@ -1229,41 +1243,15 @@ const PaperCard = memo(function PaperCard({
     void onMarkAsRead(paper);
   };
 
-  // Get area info for the gradient background
-  const getCategoryLabelText = () => {
-    const cat = visiblePrimaryCategory;
-    const area = Object.values(CATEGORIES).find(a => a.subcategories && (a.subcategories as Record<string, { label: string }>)[cat]);
-    if (area) {
-      return (area.subcategories as Record<string, { label: string }>)[cat].label || (area.subcategories as Record<string, { label: string }>)[cat].label;
-    }
-    // Not `cat` raw. For anything from OpenAlex that is a concept, not a
-    // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
-    // it meant to announce a branch of science, and disagreed with the colour
-    // beside it. The branch, resolved through the same chain as the ink.
-    const branch = areaLabelForPaper(paper);
-    if (branch) return branch;
-    if (paper.journal) return paper.journal;
-    return 'Research Paper';
-  };
-
-  const categoryLabel = getCategoryLabelText();
-  const primaryTopic = useMemo(
-    () => visiblePrimaryCategory ? resolvePaperTopic({
-      categoryId: visiblePrimaryCategory,
-      categoryIds: [visiblePrimaryCategory],
-      display_name: categoryLabel,
-      query: visiblePrimaryCategory,
-      source: 'category',
-    }) : null,
-    [categoryLabel, visiblePrimaryCategory]
-  );
+  const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
       concepts: paper.concepts,
       primaryCategory: paper.primaryCategory,
+      primaryTopic: paper.primaryTopic,
     }, 4),
-    [paper.categories, paper.concepts, paper.primaryCategory]
+    [paper.categories, paper.concepts, paper.primaryCategory, paper.primaryTopic]
   );
 
   // The field leads the masthead; under it, two subjects and "+N", whose
@@ -1278,9 +1266,7 @@ const PaperCard = memo(function PaperCard({
 
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
-    const path = publicMode
-      ? getPublicEntityPath(topic.type, topic.id)
-      : topicExplorerPath(topic);
+    const path = topicExplorerPath(topic, publicMode);
     void trackEvent('select_content', {
       content_type: topic.type === 'concept' ? 'topic' : topic.type,
       surface: analyticsSurface,
@@ -1306,7 +1292,7 @@ const PaperCard = memo(function PaperCard({
             >
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
-                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? classificationSource || 'Field' : 'Topic'}</span>
               </span>
               <ArrowRight size={14} aria-hidden="true" />
             </button>
@@ -1314,7 +1300,7 @@ const PaperCard = memo(function PaperCard({
             <span className="pc-topics-pop-item" data-kind={item.key === 'primary' ? 'field' : 'topic'}>
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
-                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? classificationSource || 'Field' : 'Topic'}</span>
               </span>
             </span>
           )}
@@ -1395,7 +1381,11 @@ const PaperCard = memo(function PaperCard({
   // the panel changes the column's height (see pinSheet).
   useEffect(() => {
     // A failed preload is retried by the lazy render that opens the sheet.
-    if (isCardIdle && hasRelated && !isPhone && !publicMode) RelatedPapersSheet.preload().catch(() => {});
+    // Unloaded, the phone drawer's first open suspends behind an empty
+    // fallback; desktop needs the chunk whatever the connection, for the swap.
+    if (isCardIdle && hasRelated && !publicMode && (!isPhone || !connectionIsFrugal())) {
+      RelatedPapersSheet.preload().catch(() => {});
+    }
   }, [isCardIdle, hasRelated, isPhone, publicMode]);
 
   const toggleRelated = (next: boolean) => {
@@ -1863,12 +1853,7 @@ const PaperCard = memo(function PaperCard({
                 // tooling that flags images with no width/height at all.
                 width="256"
                 height="200"
-                // A cached image can finish before React attaches `onLoad`, and
-                // then the event never comes and the clipping never appears. The
-                // ref catches the ones that were already done on mount; `onLoad`
-                // catches the rest.
-                ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(item.url); }}
-                onLoad={() => markFigureLoaded(item.url)}
+                {...figureImageProps(item.url)}
               />
             </figure>
           ))}
@@ -1894,8 +1879,7 @@ const PaperCard = memo(function PaperCard({
               alt=""
               loading="lazy"
               decoding="async"
-              ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(figures[0].url); }}
-              onLoad={() => markFigureLoaded(figures[0].url)}
+              {...figureImageProps(figures[0].url)}
             />
           )}
         </div>
@@ -2117,6 +2101,22 @@ const PaperCard = memo(function PaperCard({
                 {...abstractSwap}
               >
                 <ScientificText>{abstractText}</ScientificText>
+                {/* Inside the words it credits, so it is in the panel from
+                    their first frame and leaves with them: mounted on the
+                    clipped verdict instead, it would be a late line on the
+                    bottom-anchored phone column. Below the fold of a clipped
+                    panel it is inert, so focus never lands on a link no one
+                    can see; "Read full abstract" or the sheet shows it. */}
+                {abstractAttribution && (
+                  <SourceAttribution
+                    as="span"
+                    className="pc-abstract-source"
+                    lead={abstractAttribution.label}
+                    href={abstractAttribution.href}
+                    inert={!expanded && abstractClipped !== false}
+                    onLinkClick={swallowClick}
+                  />
+                )}
               </motion.p>
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.
@@ -2289,6 +2289,8 @@ const PaperCard = memo(function PaperCard({
             className="pc-side-btn pc-side-btn--connections"
             pressed={showRelated}
             onPressedChange={toggleRelated}
+            // A tap that beats the idle preload still gets the press's head start.
+            onPointerDown={() => { if (!publicMode) RelatedPapersSheet.preload().catch(() => {}); }}
             onClick={swallowClick}
             title={'Connections'}
           >
@@ -2459,6 +2461,7 @@ const PaperCard = memo(function PaperCard({
         // while the chunk downloads (a first open only; the browser caches it).
         <Suspense fallback={null}>
           <PaperReader
+            key={user?.uid}
             paper={readablePaper}
             originRect={readerOrigin}
             closeRef={readerCloseRef}

@@ -7,16 +7,18 @@ import {
   areaKeyForPaper,
   areaAccentForPaper,
   areaLabelForPaper,
+  openAlexNotableFilterForLeaf,
+  openAlexTopicFilterForLeaf,
 } from './area-accent.ts';
+import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../data/open-alex-notable-leaf-topics.generated.ts';
 import { openAlexFilterForArea } from '../data/open-alex-areas.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { CATEGORIES, getCategoryLabel } from '../data/category-taxonomy.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 
-/* One resolution, used by the accent ink, the field label and the watermark
-   alike. Computing any of them a second way is how a paper ends up inked as
-   one field, labelled as another and stamped with the mark of a third. */
+/* Area grouping drives the accent and watermark. The masthead can name a
+   more specific native category or an explicitly attributed OpenAlex topic. */
 
 test('an arXiv category resolves exactly, then by its archive', () => {
   assert.equal(areaKeyForCategory('cs.AI'), 'ai');
@@ -58,13 +60,12 @@ test('every arXiv category resolves to the area that lists it, else its archive\
   );
 });
 
-// The chip named `math.AC` "Mathematics" while the ink and the kicker beside
-// it said Physics.
-test("an arXiv category's chip, kicker and ink name the same area", () => {
+test("every arXiv category has a specific label and keeps its area's ink", () => {
   for (const [id, areaKey] of ARXIV_CATEGORY_AREAS) {
     const area = CATEGORIES[areaKey];
     const paper = { primaryCategory: id, categories: [id] };
-    assert.equal(getCategoryLabel(id), area.subcategories[id]?.label ?? area.label, id);
+    assert.notEqual(getCategoryLabel(id), id, id);
+    if (!area.subcategories[id]) assert.notEqual(getCategoryLabel(id), area.label, id);
     assert.equal(areaLabelForPaper(paper), area.label, id);
     assert.equal(areaAccentForPaper(paper), area.gradient, id);
   }
@@ -127,6 +128,19 @@ test('every area has an OpenAlex filter built from the tables that label its row
   assert.equal(openAlexFilterForArea('q-fin'), 'primary_topic.subfield.id:2003');
   assert.equal(openAlexFilterForArea('ai'), 'primary_topic.subfield.id:1702|1707');
   assert.equal(openAlexFilterForArea('nonsense'), null);
+});
+
+/* ENG-129. A leaf's notable lane lists the topics its topic lane asks for;
+   a leaf without one lists the topics its own blind sample found on target,
+   articles only. Neither map holds a leaf of the other. */
+test("a leaf's notable filter is its topic lane's, else its notable sample's, else none", () => {
+  assert.equal(openAlexNotableFilterForLeaf('cs.CV'), openAlexTopicFilterForLeaf('cs.CV'));
+  assert.equal(openAlexNotableFilterForLeaf('mech.aero'), openAlexTopicFilterForLeaf('mech.aero'), 'the conference papers too');
+  for (const [leaf, topics] of Object.entries(OPENALEX_NOTABLE_LEAF_TOPICS)) {
+    assert.equal(openAlexTopicFilterForLeaf(leaf), null, `${leaf} has no topic lane`);
+    assert.equal(openAlexNotableFilterForLeaf(leaf), `primary_topic.id:${[...topics].sort().join('|')},type:article`);
+  }
+  assert.equal(openAlexNotableFilterForLeaf('nlin.CD'), null);
 });
 
 /* PAP-60. A name says what a topic is about, not which field filed it: read

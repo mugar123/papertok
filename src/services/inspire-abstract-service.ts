@@ -15,8 +15,10 @@ interface InspireHit {
 export async function fetchInspireAbstracts(values: string[]): Promise<Partial<Paper>[]> {
   const dois = [...new Set(values.map(normalizeDoi).filter(doi => doi && doi.length <= 240))].slice(0, 40);
   if (!dois.length) return [];
-  const signal = AbortSignal.timeout(6_000);
   const lookup = requests.then(async () => {
+    // The deadline starts here, not at the call: time spent behind an earlier
+    // lookup says nothing about INSPIRE, and must not set the 60 s pause below.
+    const signal = AbortSignal.timeout(6_000);
     const missing = dois.filter(doi => !cache.has(doi) || cache.get(doi)!.expiresAt <= Date.now());
     for (let offset = 0; offset < missing.length; offset += 20) {
       signal.throwIfAborted();

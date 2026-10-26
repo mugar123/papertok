@@ -16,7 +16,7 @@ import {
   mapBioRxivPaper,
 } from '../src/services/domain-source-records.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { handleHarvestArxiv } from './arxiv-api.ts';
@@ -289,6 +289,9 @@ async function withShortWaits<T>(waits: LaneWaits, attempt: () => Promise<T>) {
 const LEAVES = getAllLeafCategories();
 // The leaves the precision gate admitted to OpenAlex topic lanes.
 const TOPIC_LEAVES = LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id));
+// The leaves with a notable lane: those, and the leaves the notable sample
+// admitted (ENG-129, part B), which get no topic lane.
+const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableFilterForLeaf(leaf.id));
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -443,6 +446,19 @@ export const NOTABLE_PER_YEAR = 100;
 const NOTABLE_LANE_DAYS = 7;
 export const NOTABLE_LANES_PER_NIGHT = 8;
 
+/**
+ * How many due notable lanes a night re-lists: NOTABLE_LANES_PER_NIGHT, or a
+ * seventh of the lanes when there are more than 56, so that every lane is
+ * still re-listed about weekly and its papers' 14-day listing (KEPT_LISTING_DAYS)
+ * never lapses while the lane waits its turn: the oldest harvest goes first,
+ * so no lane waits more than six nights past its due date. The 39 lanes of the
+ * first by-year night all listed in one run without reaching the CPU limit
+ * (ENG-129, the run of 2026-10-25: 23 to 45 s wall-clock a lane step).
+ */
+export function notableLanesPerNight(laneCount: number) {
+  return Math.max(NOTABLE_LANES_PER_NIGHT, Math.ceil(laneCount / NOTABLE_LANE_DAYS));
+}
+
 /** The year a notable lane's page lists: page 1 is the oldest of the NOTABLE_YEARS, page NOTABLE_YEARS the last completed one. */
 export function notableListedYear(page: number, now = Date.now()): number {
   return new Date(now).getUTCFullYear() - NOTABLE_YEARS - 1 + page;
@@ -578,7 +594,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => {
       const year = notableListedYear(page);
       return openAlexLane(env, [
-        openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
+        openAlexNotableFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
         `from_publication_date:${year}-01-01`,
         `to_publication_date:${year}-12-31`,
         'is_retracted:false',
@@ -678,8 +694,9 @@ export function categoryLaneJobs(): LaneJob[] {
 }
 
 /**
- * The notable lanes a night lists, of the leaves with a topic lane: every lane
- * never harvested, by lane id, then at most NOTABLE_LANES_PER_NIGHT not
+ * The notable lanes a night lists, of the leaves with a topic lane or admitted
+ * by the notable sample (`openAlexNotableFilterForLeaf`): every lane
+ * never harvested, by lane id, then at most `notableLanesPerNight` not
  * harvested in the last NOTABLE_LANE_DAYS days, the oldest harvest first.
  * Every new lane runs at once so that a lane's first listing does not wait
  * behind others' (the first cycle fills in one night). Re-listings are capped
@@ -693,16 +710,16 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
     .all<{ lane: string; harvested_through: string }>();
   const harvested = new Map(results.map(row => [row.lane, row.harvested_through]));
   const dueBefore = day(daysFromNow(1 - NOTABLE_LANE_DAYS, now));
-  const lanes = TOPIC_LEAVES.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
+  const lanes = NOTABLE_LEAVES.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
   const due = lanes.flatMap(lane => {
     const through = harvested.get(lane);
     return through !== undefined && through < dueBefore ? [{ lane, through }] : [];
   }).sort((a, b) => a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
-  return [...lanes.filter(lane => !harvested.has(lane)), ...due.slice(0, NOTABLE_LANES_PER_NIGHT).map(({ lane }) => lane)]
+  return [...lanes.filter(lane => !harvested.has(lane)), ...due.slice(0, notableLanesPerNight(lanes.length)).map(({ lane }) => lane)]
     .map(lane => ({ source: 'openalex-notable' as const, lane }));
 }
 
-// The source that serves each kind of followed lane (paper-store.ts `followLane`).
+// The source that serves each kind of followed lane (`followLane` in src/utils/follow-lanes.ts).
 const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
   [/^author-name:/, 'arxiv-search'],
   [/^project:/, 'openaire'],
