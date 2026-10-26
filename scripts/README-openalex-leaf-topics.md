@@ -211,8 +211,8 @@ file reports `passed`, `rejected` or `insufficient-sample` with the sample's
 Each batch of admitted leaves changes what every reader of those leaves is
 shown and adds ten OpenAlex list calls a week per leaf, inside the category
 lanes' 3,000 nightly units; it is authorized under AGENTS.md before it is
-committed. A night re-lists at most eight due lanes, or a seventh of all the
-notable lanes once there are more than 56, so a batch keeps every lane weekly
+committed. A night re-lists at most eight due lanes of each source, or a
+seventh of that source's lanes once it has more than 56, so a batch keeps every lane weekly
 and raises the nightly re-listing units and CPU in step (`notableLanesPerNight`
 in `worker/paper-sources.ts`; 149 lanes would be 22 a night, 220 units). After a
 large batch every lane falls due on the same night and the last of them is

@@ -398,7 +398,7 @@ interface SourceSpec {
   // end the lane.
   separateListings?: boolean;
   // Lanes whose listing is OpenAlex's current record of each paper it returns
-  // (the notable lanes' weekly one): it brings their counts, so the
+  // (OpenAlex's notable listing, weekly): it brings their counts, so the
   // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over the
   // papers a run filed, which a notable lane's rows record (`listed_until`).
   renewsEnrichment?: boolean;
@@ -484,8 +484,9 @@ const NOTABLE_LANE_DAYS = 7;
 export const NOTABLE_LANES_PER_NIGHT = 8;
 
 /**
- * How many due notable lanes a night re-lists: NOTABLE_LANES_PER_NIGHT, or a
- * seventh of the lanes when there are more than 56, so that every lane is
+ * How many of one source's due notable lanes a night re-lists:
+ * NOTABLE_LANES_PER_NIGHT, or a seventh of that source's lanes when it has
+ * more than 56, so that every lane is
  * still re-listed about weekly and its papers' 14-day listing (KEPT_LISTING_DAYS)
  * never lapses while the lane waits its turn: the oldest harvest goes first,
  * so no lane waits more than six nights past its due date. The 39 lanes of the
