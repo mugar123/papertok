@@ -236,7 +236,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .spinning { animation-duration: 2.4s; }
-  .skip-link { transition: none; }
 }
 
 /* ============================================
@@ -386,6 +385,11 @@ textarea:focus-visible,
 }
 .skip-link:focus-visible {
   transform: none;
+}
+/* After the base rule: both are unlayered with the same specificity, so a
+   reduced-motion override placed earlier in the file loses to the transition. */
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
 }
 
 /* Programmatic focus target; the ring belongs on real controls. */
