@@ -150,7 +150,7 @@ test('a share path names its kind, its identity and the public page it stands fo
   const paper = paperRoute();
   assert.equal(paper.kind, 'paper');
   assert.deepEqual(paper.identity, { type: 'doi', value: '10.1145/3555174' });
-  assert.equal(paper.canonicalPath, `/public/paper/${DOI_KEY}`);
+  assert.equal(paper.canonicalPath, `/paper/${DOI_KEY}`);
 
   const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`)) as Extract<ShareRoute, { kind: 'list' }>;
   assert.equal(list.kind, 'list');
@@ -212,7 +212,7 @@ test('the copy is English whatever the reader\'s Accept-Language says', async ()
 test('a paper page carries its own title, description, canonical, og and twitter tags', async () => {
   const outcome = await foundPaper();
   const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
-  const url = `https://papertok.app/public/paper/${DOI_KEY}`;
+  const url = `https://papertok.app/paper/${DOI_KEY}`;
 
   assert.equal(titleOf(html), 'Characterizing Alternative Monetization Strategies on YouTube');
   assert.equal(metaContent(html, 'property', 'og:title'), 'Characterizing Alternative Monetization Strategies on YouTube');
@@ -274,8 +274,12 @@ test('a list page names the list and links every paper in it', async () => {
   assert.equal(jsonLdOf(html)['@type'], 'CollectionPage');
   assert.equal(jsonLdOf(html).inLanguage, 'en-US');
   assert.match(html, /<h2>Papers in this list<\/h2>/);
-  assert.match(html, new RegExp(`<a href="/public/paper/${DOI_KEY}">Characterizing Alternative Monetization Strategies on YouTube</a>`));
-  assert.match(html, new RegExp(`<a href="/public/paper/${ARXIV_KEY}">StudentBench: AI and human tutoring</a>`));
+  assert.match(html, new RegExp(`<a href="/paper/${DOI_KEY}">Characterizing Alternative Monetization Strategies on YouTube</a>`));
+  assert.match(html, new RegExp(`<a href="/paper/${ARXIV_KEY}">StudentBench: AI and human tutoring</a>`));
+  assert.deepEqual(
+    jsonLdOf(html).mainEntity.itemListElement.map((item: { url: string }) => item.url),
+    [`https://papertok.app/paper/${DOI_KEY}`, `https://papertok.app/paper/${ARXIV_KEY}`],
+  );
   assert.equal(metaContent(html, 'property', 'og:image'), 'https://papertok.app/og/papertok-share-list-0.3.png');
   assert.equal(metaContent(html, 'name', 'twitter:image:alt'), getShareImage('list').alt);
 });
@@ -403,7 +407,7 @@ test('the page reads back the seed the Worker writes, paints from it and indexes
   assert.ok(paper, 'read for its own key');
   assert.equal(readShareSeed(ARXIV_KEY, documentStub), null, 'and for no other');
   assert.equal(seedPaintsWhole(paperLegacyAdapter(paper)), true);
-  assert.equal(publicPaperMetadata(paperLegacyAdapter(paper), `/public/paper/${DOI_KEY}`).noIndex, undefined);
+  assert.equal(publicPaperMetadata(paperLegacyAdapter(paper), `/paper/${DOI_KEY}`).noIndex, undefined);
 });
 
 test('only a paper page carries a seed', async () => {
@@ -545,7 +549,7 @@ test('a DOI or a PMID OpenAlex has not indexed yet previews as PaperTok, not as 
     const html = await response.text();
     assert.equal(response.status, 200, key!);
     assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
-    assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${key}`);
+    assert.equal(canonicalOf(html), `https://papertok.app/paper/${key}`);
     assert.equal(metaContent(html, 'name', 'robots'), null);
     assert.equal(response.headers.get('x-robots-tag'), null);
     const [kept] = [...deps.cache.stored.values()];
@@ -602,7 +606,7 @@ test('an upstream failure gives the generic head at the page address, briefly re
   const html = await first.text();
   assert.equal(first.status, 200, 'a preview bot shows nothing at all for an error status');
   assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
-  assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${DOI_KEY}`);
+  assert.equal(canonicalOf(html), `https://papertok.app/paper/${DOI_KEY}`);
   assert.equal(metaContent(html, 'name', 'robots'), null, 'an outage is not a reason to drop the page from an index');
   assert.equal(seedOf(html), null);
   assert.match(first.headers.get('cache-control')!, /max-age=60/);
@@ -692,7 +696,7 @@ test('without its shell the page still answers a minimal document with the same 
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.equal(titleOf(html), 'Characterizing Alternative Monetization Strategies on YouTube');
-  assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${DOI_KEY}`);
+  assert.equal(canonicalOf(html), `https://papertok.app/paper/${DOI_KEY}`);
 });
 
 // -------------------------------------------------------------- loaders
@@ -731,33 +735,50 @@ test('an arXiv answer with no entry is a paper that does not exist', async () =>
   assert.deepEqual(outcome, { found: false });
 });
 
+// Graph's answer for TAILOR on 2026-10-23, trimmed to the fields a share page reads.
+const TAILOR_PAGE = {
+  header: { numFound: 1, maxScore: 1, queryTime: 8, page: 1, pageSize: 1 },
+  results: [{
+    id: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a',
+    code: '952215',
+    acronym: 'TAILOR',
+    title: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization',
+  }],
+};
+
 test('a project is looked up in OpenAIRE by its OpenAIRE id', async () => {
-  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a'));
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a?funder=EC'));
   const asked: unknown[] = [];
   const outcome = await createShareLoader({
     openAire: async (params) => {
       asked.push(params);
-      return {
-        response: {
-          results: {
-            result: [{
-              metadata: {
-                'oaf:entity': {
-                  'oaf:project': {
-                    acronym: { $: 'TAILOR' },
-                    title: { $: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' },
-                  },
-                },
-              },
-            }],
-          },
-        },
-      };
+      return TAILOR_PAGE;
     },
   })(route);
-  assert.deepEqual(asked, [{ openaireProjectID: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a' }]);
+  assert.deepEqual(asked, [{ id: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a' }]);
+  assert.equal((route as ShareRoute).cacheId, 'entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a', 'an OpenAIRE id needs no funder');
   const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(titleOf(html), 'TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project | PaperTok');
+});
+
+test("a grant code is looked up with its funder's short name, and a project Graph does not list is not found", async () => {
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/100010?funder=SNSF'));
+  const asked: unknown[] = [];
+  const outcome = await createShareLoader({
+    openAire: async (params) => {
+      asked.push(params);
+      return { header: { numFound: 0, maxScore: 0, queryTime: 4, page: 1, pageSize: 1 }, results: [] };
+    },
+  })(route);
+  assert.deepEqual(asked, [{ code: '100010', fundingShortName: 'SNSF' }]);
+  assert.equal((route as ShareRoute).cacheId, 'entity/project/100010?funder=SNSF');
+  assert.deepEqual(outcome, { found: false });
+});
+
+test('a project answer in the retired Search shape is a failure, not a missing project', async () => {
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a'));
+  const searchShaped = { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:project': { acronym: { $: 'TAILOR' } } } } }] } } };
+  await assert.rejects(createShareLoader({ openAire: async () => searchShaped })(route), /Invalid OpenAIRE response/);
 });
 
 // -------------------------------------------------------------- shell

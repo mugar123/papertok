@@ -15,6 +15,10 @@ import {
   getShareImage,
   getSiteRootUrl,
   getViteBasePath,
+  isPublicRoutePath,
+  keepsNavbarPath,
+  legacyPaperPath,
+  legacyPaperRedirect,
   parsePaperKey,
   encodePaperKey,
 } from './public-navigation.ts';
@@ -58,15 +62,71 @@ test('encodes DOI and arXiv identities into reversible URL-safe paper keys', () 
   assert.equal(decodePaperKey(`${doiKey}!`), null);
 });
 
-test('prefers DOI identity and places paper keys in public router paths', () => {
+test('prefers DOI identity and places paper keys in /paper/ router paths', () => {
   const path = getPublicPaperPath({
     doi: '10.5555/Some.DOI',
     arxivId: '2401.12345',
   });
 
   const key = encodePaperKey({ doi: '10.5555/Some.DOI' });
-  assert.equal(path, `/public/paper/${key}`);
+  assert.equal(path, `/paper/${key}`);
   assert.equal(getPublicPaperPath({ title: 'No stable identifier' } as NonNullable<Parameters<typeof getPublicPaperPath>[0]> & Record<string, unknown>), null);
+});
+
+test('a paper address from before ENG-44 maps to the page it moved to, and no other address does', () => {
+  const key = encodePaperKey({ doi: '10.5555/Some.DOI' })!;
+  const moved = getPublicPaperPath({ doi: '10.5555/Some.DOI' });
+  assert.equal(legacyPaperPath(`/public/paper/${key}`), moved);
+  assert.equal(moved, `/paper/${key}`);
+
+  // The router matches any letter case and trailing slashes. A prefix left
+  // whole would send the reader back to the address they came from.
+  assert.equal(legacyPaperPath(`/Public/PAPER/${key}`), moved);
+  assert.equal(legacyPaperPath(`/public/paper/${key}//`), moved);
+
+  // The new address is never moved again, and neither are other pages.
+  assert.equal(legacyPaperPath(`/paper/${key}`), null);
+  assert.equal(legacyPaperPath('/public/list/reading-list'), null);
+  assert.equal(legacyPaperPath(`/public/paper/${key}/more`), null);
+  assert.equal(legacyPaperPath('/public/paper/'), null);
+
+  // The router decodes a segment before it matches, so an encoded prefix is
+  // the old address as well; an encoded slash in the key stays as it came.
+  assert.equal(legacyPaperPath('/public/p%61per/abc'), '/paper/abc');
+  assert.equal(legacyPaperPath('/%70ublic/paper/abc'), '/paper/abc');
+  assert.equal(legacyPaperPath('/public/paper/10.1%2Fx'), '/paper/10.1%2Fx');
+  assert.equal(legacyPaperPath('/public/p%zzper/abc'), null);
+});
+
+test('the redirect from a pre-ENG-44 address keeps the query, fragment and history state', () => {
+  const state = { paper: { title: 'Saved copy' } };
+  assert.deepEqual(
+    legacyPaperRedirect({ pathname: '/Public/Paper/abc', search: '?a=1', hash: '#x', state }),
+    { to: { pathname: '/paper/abc', search: '?a=1', hash: '#x' }, state },
+  );
+  assert.equal(legacyPaperRedirect({ pathname: '/paper/abc', search: '', hash: '', state }), null);
+});
+
+test('a new account from a paper page door is onboarded and a signed-in reader keeps the navbar, in any letter case', () => {
+  for (const path of ['/paper/abc', '/Paper/abc', '/public/paper/abc', '/PUBLIC/list/x', '/Explorer/author/1']) {
+    assert.equal(isPublicRoutePath(path), true, path);
+  }
+  // The router decodes a segment before it matches, in every prefix.
+  for (const path of ['/p%61per/abc', '/%50ublic/list/x', '/public/p%61per/abc', '/%65xplorer/author/1']) {
+    assert.equal(isPublicRoutePath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/settings', '/paper', '/p%61pers/abc']) {
+    assert.equal(isPublicRoutePath(path), false, path);
+  }
+  for (const path of ['/paper/abc', '/Paper/abc', '/Public/List/x', '/EXPLORER/author/1']) {
+    assert.equal(keepsNavbarPath(path), true, path);
+  }
+  for (const path of ['/p%61per/abc', '/public/l%69st/x', '/%50UBLIC/%4cist/x', '/%65xplorer/author/1']) {
+    assert.equal(keepsNavbarPath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/public/paper/abc', '/public/l%69sts/x']) {
+    assert.equal(keepsNavbarPath(path), false, path);
+  }
 });
 
 /**
@@ -83,8 +143,8 @@ test('keys OpenAlex work ids and PubMed ids so provider-keyed likes can link', (
   assert.equal(encodePaperKey('https://openalex.org/W2741809807'), openAlexKey, 'the URL form the API returns');
   assert.equal(encodePaperKey({ id: 'openalex:W2741809807', doi: '', arxivId: '' }), openAlexKey,
     'a like serialized from its stored title has empty DOI and arXiv fields');
-  assert.equal(getPublicPaperPath('openalex:W2741809807'), `/public/paper/${openAlexKey}`);
-  assert.equal(getPublicPaperPath('openalex', 'W2741809807'), `/public/paper/${openAlexKey}`);
+  assert.equal(getPublicPaperPath('openalex:W2741809807'), `/paper/${openAlexKey}`);
+  assert.equal(getPublicPaperPath('openalex', 'W2741809807'), `/paper/${openAlexKey}`);
 
   const pmidKey = encodePaperKey('pmid:31234567');
   assert.equal(decodePaperKey(pmidKey!), 'pmid:31234567');
@@ -140,11 +200,11 @@ test('builds shared-list paths and absolute share URLs with the Vite base', () =
   );
   assert.equal(
     getPublicPaperUrl({ arxivId: '2401.12345' }, undefined, URL_OPTIONS),
-    `https://example.test/papertok/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
+    `https://example.test/papertok/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
   );
   assert.equal(
     getPublicPaperUrl({ arxivId: '2401.12345' }, URL_OPTIONS),
-    `https://example.test/papertok/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
+    `https://example.test/papertok/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
   );
   assert.equal(
     getPublicListUrl('reading-list', URL_OPTIONS),
@@ -179,7 +239,7 @@ test('every share URL the app mints is a real path, with no fragment anywhere in
     getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', LIVE),
   ];
 
-  assert.equal(urls[0], `https://papertok.app/public/paper/${key}`);
+  assert.equal(urls[0], `https://papertok.app/paper/${key}`);
   assert.equal(urls[1], 'https://papertok.app/public/entity/topic/astro-ph.CO');
   assert.equal(urls[2], 'https://papertok.app/public/list/reading-list');
   assert.equal(urls[3], 'https://papertok.app/public/entity/topic/astro-ph.CO');

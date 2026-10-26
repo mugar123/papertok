@@ -3845,6 +3845,28 @@ test('a list page reads the public document anonymously, as a visitor would', as
   assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
 });
 
+test("a crawler gets a project page named from OpenAIRE's Graph API", async () => {
+  const tailor = 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a';
+  const urls: Array<{ address: string; authorization: string | null }> = [];
+  const upstream = shareUpstream(urls);
+  const response = await withWorkerFetchMock(
+    async (url, init) => {
+      const address = String(url);
+      if (!address.startsWith('https://api.openaire.eu/')) return upstream(url, init);
+      urls.push({ address, authorization: null });
+      // Graph's answer for TAILOR on 2026-10-23, trimmed to what the page reads.
+      return Response.json({ header: { numFound: 1 }, results: [{ id: tailor, code: '952215', acronym: 'TAILOR', title: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' }] });
+    },
+    () => reportApi.fetch(crawlerRequest(`/share/entity/project/${encodeURIComponent(tailor)}`), openAlexEnv()),
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project \| PaperTok<\/title>/);
+  const lookups = urls.filter(entry => entry.address.startsWith('https://api.openaire.eu/')).map(entry => new URL(entry.address));
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0].pathname, '/graph/v3/projects');
+  assert.deepEqual(Object.fromEntries(lookups[0].searchParams), { id: tailor, pageSize: '1' });
+});
+
 // The PDF relay behind the touch-screen viewer. It must stay a relay for the
 // hosts the AI routes already read, never a general proxy.
 const PDF_BYTES = new TextEncoder().encode('%PDF-1.7\n%fake\n');
