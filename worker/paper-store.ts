@@ -4,12 +4,12 @@ import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
 import { PaperBuilder, isPublisherDoi, restsOnArxivDoi } from '../src/services/paper-builder.ts';
-import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
+import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
-import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, entityLane, followLane } from '../src/utils/follow-lanes.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
@@ -205,19 +205,21 @@ export const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
 // A notable lane holds its weekly listing of 1,000, 100 of each of those ten
-// years (NOTABLE_PER_YEAR in paper-sources.ts), and, for 14 days, what dropped
-// out of the two listings before it (`work_lanes.listed_until`), whatever else
-// keeps the paper in the corpus (a like, its date, another lane). A page reads
+// years (NOTABLE_PER_YEAR in paper-sources.ts), or 2,000 for a leaf with two
+// listings (OpenAlex's and ADS's or Europe PMC's), and, for 14 days, what
+// dropped out of the two listings before it (`work_lanes.listed_until`), whatever else keeps the
+// paper in the corpus (a like, its date, another lane). A page reads
 // NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
 // that moves on by that many rows each UTC day, taken modulo the year's own
 // count n, so every row of a year is read within ceil(n / 25) days: four
-// disjoint slices for a year of 100, overlapping ones for a year of 40 and
-// every day for a year of two. The candidates and vectors ranked per request
-// are 250 a lane at most. Numbering the years reads every row of the lane's
-// window from its index (about 1,000), and the read returns each work id with
-// whether the day's slice holds it, so that a paper of the lane outside the
-// slice is not ranked from the reader's other lanes either. How many of them
-// a reader sees is ENG-128's.
+// disjoint slices for a year of 100, eight for 200, overlapping ones for a
+// year of 40 and every day for a year of two; a paper ADS listed waits for its
+// enrichment first (`readNotableCandidates`). The candidates and vectors
+// ranked per request are 250 a lane at most. Numbering the years reads every
+// row of the lane's window from its index (about 1,000, or 2,000), and the
+// read returns each work id with whether the day's slice holds it, so that a
+// paper of the lane outside the slice is not ranked from the reader's other
+// lanes either. How many of them a reader sees is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
@@ -441,7 +443,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const listed = new Map<string, Paper>();
   for (const item of items) {
     // A mapper stands "Untitled" in for a title its source left out.
-    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
     const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
@@ -477,6 +479,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
+  const withdrawn: number[] = [];
 
   for (const group of groups) {
     const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
@@ -513,7 +516,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    filings.push({ id, paper, published, lanes: group.lanes });
+    // The merged row can be one the feed does not show: a retracted paper,
+    // whether this record or the stored row says so. It is filed under no
+    // lane, and leaves those it holds, a folded row's included.
+    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
+    else withdrawn.push(id);
   }
   // Asked once the records are merged: a stored row names entities, such as
   // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
@@ -537,6 +544,9 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
     );
+  }
+  for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
@@ -581,8 +591,8 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       id,
       published,
       textChanged: embeddingText(paper) !== embeddingText(before),
-      // A book, an erratum or another type the feed does not show leaves
-      // every lane once the enrichment reveals it.
+      // A book, an erratum or another type the feed does not show, or a
+      // retracted paper, leaves every lane once the enrichment reveals it.
       offered: isFeedPublication(paper),
       keys: workKeys(paper),
       lanes: published >= since ? recordLanes(paper, followed) : [],
@@ -626,9 +636,12 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  *   area or followed lane, goes, unless readers still rank their feed by it
  *   (`liked_until`). A topic lane nobody follows keeps nothing: nearly every
  *   enriched paper names a topic, so it would keep every paper its category
- *   trimmed.
+ *   trimmed. A retracted paper, which no lane holds, stays until its keeping
+ *   date, which each listing of it renews: a later listing then finds it
+ *   retracted instead of filing it again.
  */
-// Each Workflow step scans at most 500 works, without loading their JSON.
+// Each Workflow step scans at most 500 works. It reads the JSON only of a
+// work no lane keeps, for its retraction.
 // The cursor is a primary key, so retries and deletions do not shift a page.
 export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): Promise<number | null> {
   const db = database(env);
@@ -662,8 +675,9 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
         AND lane NOT IN (SELECT lane FROM followed_lanes)`).bind(ids, JSON.stringify(PRUNED_ENTITY_LANE_KINDS)),
       db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
         AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
-          OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
-            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes))))`)
+          OR (NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
+            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))
+            AND paper ->> '$.publicationStatus' IS NOT 'retracted'))`)
         .bind(ids, cutoff, cutoff, ahead, keeping),
       db.prepare(`DELETE FROM work_keys WHERE work_id IN (SELECT value FROM json_each(?))
         AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_keys.work_id)`).bind(ids),
@@ -949,15 +963,22 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
  */
 export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
   const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
-  const perLane = await db.batch<{ work_id: number; published: string; in_slice: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
-      ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+  // OpenAlex's listing leaves out what OpenAlex marks retracted and Europe
+  // PMC's what PubMed types as retracted; ADS's cannot, so a paper ADS listed
+  // is offered once the enrichment has looked it up in OpenAlex (`enriched_at`),
+  // which is what learns a retraction (README step 5). Asked only for the day's
+  // slice.
+  const perLane = await db.batch<{ work_id: number; published: string; offered: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
+      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
+        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
+      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
       SELECT work_id, published,
              ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
              COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
       FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
-    ) ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+    )) s ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
   return {
-    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.in_slice) }))),
+    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.offered) }))),
     inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
   };
 }
@@ -1437,8 +1458,8 @@ function groupsOfCandidate(groups: FeedGroup[]) {
 /**
  * The groups a like no group names ranks, by the first evidence of its area:
  * the app's leaves its stored paper names, matched against each group's
- * `exampleCategories`; else the area its primary category names (a working
- * paper's `econ`), or else the areas whose journal lanes list it, matched
+ * `exampleCategories`; else the area its primary category or arXiv archive
+ * names, or else the areas whose journal lanes list it, matched
  * against the areas of those categories. A like of a known area no group
  * holds ranks none. The app's established group holds every leaf but the
  * ones the reader removed, so that is a like of a removed subarea, or of an
@@ -1450,7 +1471,9 @@ function groupsOfLike(groups: FeedGroup[]) {
   return (paper: Partial<Paper> | undefined, laneAreas: string[]) => {
     const leaves = [paper?.primaryCategory, ...(paper?.categories ?? [])].filter((category): category is string => !!category && LEAF_IDS.has(category));
     if (leaves.length) return groups.flatMap((group, index) => (leaves.some(leaf => group.exampleCategories.includes(leaf)) ? [index] : []));
-    const areas = paper?.primaryCategory && AREAS.has(paper.primaryCategory) ? [paper.primaryCategory] : laneAreas;
+    const primaryArea = paper?.primaryCategory && AREAS.has(paper.primaryCategory)
+      ? paper.primaryCategory : getArxivArchiveArea(paper?.primaryCategory);
+    const areas = primaryArea ? [primaryArea] : laneAreas;
     if (areas.length) return groups.flatMap((_, index) => (areas.some(area => exampleAreas[index].has(area)) ? [index] : []));
     return groups.map((_, index) => index);
   };

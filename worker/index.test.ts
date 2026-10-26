@@ -1824,6 +1824,30 @@ test('a repeated PubMed identifier does not buy a second iCite entry', async () 
   assert.equal(calls.length, 1);
 });
 
+// ADS also holds meeting abstracts, circulars, catalogues, proposals and
+// software; the physics route's records reach the corpus (paper-sources.ts).
+test('the physics route asks NASA ADS for papers only', async () => {
+  const asked: URL[] = [];
+  await withIdentityAndCacheStore(async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async url => {
+      const isAds = String(url).includes('adsabs');
+      if (isAds) asked.push(new URL(String(url)));
+      return Response.json(isAds ? { response: { docs: [] } } : { hits: { hits: [], total: 0 } });
+    };
+    try {
+      await reportApi.fetch(new Request(
+        'https://papertok-report-api.example/sources/physics?q=galaxies&fallback_q=galaxies',
+        { headers: SIGNED_IN },
+      ), { ...AUTHENTICATED_ENV, NASA_ADS_API_TOKEN: 'ads-test-token' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].searchParams.get('q')!, / doctype:\(article OR eprint OR inproceedings\)$/);
+});
+
 // --- G5: a degraded answer does not own its entry for the full TTL ----------
 
 function maxAgeSeconds(response: Response) {

@@ -228,7 +228,7 @@ export function createOverlayHistory({ history, listen, unlisten }: { history: O
  * navigation nobody asked for — the marked entry can be one the visitor
  * reached by pressing FORWARD (see the note on `disarm()` above). What is left
  * after clearing is one Back press that lands on an identical URL and so looks
- * like it did nothing: on `/explorer/*` and `/public/paper/*` the in-page back
+ * like it did nothing: on `/explorer/*` and `/paper/*` the in-page back
  * arrow inherits that, once, after a reload taken with an overlay open.
  */
 export function clearStaleOverlayMarker({ history, location }: { history: Pick<OverlayHistory, 'state'> & Partial<Pick<OverlayHistory, 'replaceState'>>; location?: Pick<Location, 'href'> | null }) {
