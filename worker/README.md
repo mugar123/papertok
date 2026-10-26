@@ -584,8 +584,7 @@ minute through `RequestQuotaLedger`. Cache keys are built only from validated, o
 parameters, so arbitrary query parameters cannot bypass provider caches.
 Authentication is checked before route handling, while quota is reserved only after parameter
 validation and a cache miss. Invalid queries and cached responses therefore cannot consume the
-provider allowance. The MCP server's `get_citation_graph` calls the `/citation-graph` handler
-without a token and charges one subject shared by every MCP caller (see [MCP server](#mcp-server)).
+provider allowance.
 
 Every route that requires a token also screens it locally before asking Identity Toolkit: three
 base64url segments, an unexpired `exp`, and an `aud` matching `FIREBASE_PROJECT_ID` when that
@@ -882,7 +881,10 @@ SDK is not used, so the package lock is unchanged.
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match as the app's search does (`mergeRankedPapers`), plus the sources that refused or failed |
 | `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations |
-| `get_citation_graph(doi, limit?)` | `/citation-graph` | References, citing works, counts and `degraded` |
+
+The citation graph waits for phase 2: the browser's `/citation-graph` requires a
+Firebase identity and charges each reader's share of the credential-backed
+providers' minute allowance, and MCP callers have no account yet.
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract and the feed's internal fields, and with
@@ -894,13 +896,7 @@ keys, OpenAlex tiers, arXiv beat and per-IP miss limits as the browser (see
 [Public lookup caller limits](#public-lookup-caller-limits)). A search is an
 exploration-tier OpenAlex search. A lookup by id is a free entity lookup; a
 DOI the relay cannot carry in its path (`doiPathId`) is a one-work
-`filter=doi:` list, one essential-tier unit. The browser's citation graph
-requires a Firebase identity and charges each reader's share
-(`PROVIDER_USER_MINUTE_LIMIT`) of the credential-backed providers' app-wide
-minute allowance (`PROVIDER_GLOBAL_MINUTE_LIMIT`). MCP callers have no account,
-so they all charge one subject, `mcp:agents`: together they get one reader's
-share of that allowance, and the graph still spends the OpenAlex exploration
-tier.
+`filter=doi:` list, one essential-tier unit.
 
 Arguments are validated before any reservation. Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through

@@ -190,15 +190,19 @@ test('a browser origin outside the allowlist is refused', async () => {
   assert.equal(response.status, 403);
 });
 
-test('tools/list names the four read-only tools with input schemas', async () => {
-  await withUpstream(NO_UPSTREAM, async () => {
+test('tools/list names the three read-only tools with input schemas', async () => {
+  await withUpstream(NO_UPSTREAM, async calls => {
     const { answer } = await rpc(routeEnv(), { jsonrpc: '2.0', id: 2, method: 'tools/list' });
     const tools = answer.result?.tools || [];
-    assert.deepEqual(tools.map(tool => tool.name).sort(), ['find_open_access', 'get_citation_graph', 'get_paper', 'search_papers']);
+    assert.deepEqual(tools.map(tool => tool.name).sort(), ['find_open_access', 'get_paper', 'search_papers']);
     for (const tool of tools) {
       assert.equal(tool.inputSchema.type, 'object');
       assert.equal(tool.annotations?.readOnlyHint, true);
     }
+    // The citation graph waits for phase 2, when callers can sign in.
+    const graph = await callTool(routeEnv(), 'get_citation_graph', { doi: '10.1234/example.2026.1' });
+    assert.equal(graph.answer.error?.code, -32602);
+    assert.deepEqual(calls, []);
   });
 });
 
@@ -456,46 +460,6 @@ test('find_open_access relays the legal copy and licence without the record arou
   });
 });
 
-test('get_citation_graph returns references and citing works without an account', async () => {
-  const citing = { ...OPENALEX_WORK, id: 'https://openalex.org/W4400000002', doi: 'https://doi.org/10.1234/citing', title: 'A citing paper' };
-  await withUpstream(url => {
-    if (url.startsWith('https://api.opencitations.net/index/v2/references/')) return Response.json([]);
-    if (url.startsWith('https://api.opencitations.net/index/v2/citations/')) return Response.json([]);
-    if (url.startsWith('https://api.openalex.org/works/doi:')) return Response.json({ id: OPENALEX_WORK.id, referenced_works: [], cited_by_count: 1 });
-    if (url.startsWith('https://api.openalex.org/works?') && url.includes('cites%3AW4400000001')) return Response.json({ results: [citing] });
-    throw new Error(`unexpected upstream ${url}`);
-  }, async () => {
-    const { answer } = await callTool(routeEnv(), 'get_citation_graph', { doi: '10.1234/example.2026.1', limit: 3 });
-    assert.equal(answer.result?.isError, undefined);
-    const graph = answer.result?.structuredContent as { references: unknown[]; citations: Array<{ title: string }>; degraded: boolean };
-    assert.deepEqual(graph.references, []);
-    assert.deepEqual(graph.citations.map(paper => paper.title), ['A citing paper']);
-    assert.equal(graph.degraded, false);
-  });
-});
-
-test('citation graphs asked through MCP share one provider allowance, whoever asks', async () => {
-  await withUpstream(url => {
-    if (url.startsWith('https://api.opencitations.net/')) return Response.json([]);
-    if (url.startsWith('https://api.openalex.org/works/doi:')) return Response.json({ id: OPENALEX_WORK.id, referenced_works: [], cited_by_count: 0 });
-    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [] });
-    throw new Error(`unexpected upstream ${url}`);
-  }, async calls => {
-    // One miss a minute for the credential-backed providers' subject.
-    const env = routeEnv({ PROVIDER_USER_MINUTE_LIMIT: '1' });
-    const ask = (doi: string, ip: string) => rpc(env, {
-      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_citation_graph', arguments: { doi } },
-    }, { ip });
-    const first = await ask('10.1234/first', '192.0.2.7');
-    assert.equal(first.answer.result?.isError, undefined);
-    const before = calls.length;
-    const second = await ask('10.1234/second', '198.51.100.9');
-    assert.equal(second.answer.result?.isError, true);
-    assert.equal(second.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
-    assert.equal(calls.length, before, 'a refused graph asks nothing upstream');
-  });
-});
-
 test('invalid arguments are a tool error and reach no provider', async () => {
   await withUpstream(NO_UPSTREAM, async calls => {
     const env = routeEnv();
@@ -507,7 +471,6 @@ test('invalid arguments are a tool error and reach no provider', async () => {
       ['search_papers', { query: 'graphene', extra: true }],
       ['get_paper', { id: 'not an id' }],
       ['find_open_access', { doi: '2603.01234' }],
-      ['get_citation_graph', { doi: '10.1/x' }],
     ] as const) {
       const { answer } = await callTool(env, name, args);
       assert.equal(answer.result?.isError, true, `${name} ${JSON.stringify(args)}`);

@@ -9,7 +9,6 @@ import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
-import { handleCitationGraph } from './citation-graph.ts';
 import { captureWorkerException, captureWorkerResponseFailure } from './error-tracking.ts';
 import { allowedOrigins, json } from './http.ts';
 import { handleOpenAccess } from './open-access.ts';
@@ -26,9 +25,8 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  * for the harvest, but as a reader: the route's validation, cache keys,
  * provider budgets and per-address allowances apply as they do to the
  * browser. The caller's `CF-Connecting-IP` travels with each ask, so those
- * allowances count this caller. The citation graph charges the subject all
- * MCP callers share (`MCP_PROVIDER_SUBJECT`) where the browser charges the
- * reader's account.
+ * allowances count this caller. The citation graph waits for phase 2: the
+ * browser's needs an account, and these callers have none.
  */
 export const MCP_PATH = '/mcp';
 
@@ -40,14 +38,6 @@ const MAX_BODY_BYTES = 16 * 1024;
 // Tool calls one address may make in a UTC minute, cache hits included. The
 // routes behind them keep their own per-address limits on misses.
 const MCP_CALLER_MINUTE = Object.freeze({ namespace: 'mcp', limit: 30 });
-// The browser's citation graph needs an account, and each reader's misses
-// spend their own share (PROVIDER_USER_MINUTE_LIMIT) of the app-wide minute
-// allowance of the credential-backed providers (PROVIDER_GLOBAL_MINUTE_LIMIT).
-// MCP callers have no account, so they share one such subject: together they
-// take at most one reader's share, and the app-wide ceiling sees every miss.
-// The uids Firebase generates are letters and digits (PaperTok mints no
-// custom tokens), so this one names no reader.
-const MCP_PROVIDER_SUBJECT = Object.freeze({ uid: 'mcp:agents' });
 const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_LIMIT = 5;
 // A client reads a tool result up to a ceiling (Claude Code's default is about
@@ -97,18 +87,6 @@ const TOOLS = [
     title: 'Find open access',
     description: `Finds legal open-access copies of a paper by DOI (Unpaywall, then Crossref licences): whether one exists, the best location, its licence and version, and up to ${MAX_OA_LOCATIONS} locations. "is_oa": null means it is unknown.`,
     inputSchema: { type: 'object', properties: { doi: DOI_SCHEMA }, required: ['doi'], additionalProperties: false },
-    annotations: READ_ONLY,
-  },
-  {
-    name: 'get_citation_graph',
-    title: 'Get citation graph',
-    description: 'Returns papers a DOI cites and papers citing it (OpenCitations and OpenAlex), with the total counts. "degraded": true means a provider failed and the lists may be incomplete.',
-    inputSchema: {
-      type: 'object',
-      properties: { doi: DOI_SCHEMA, limit: { type: 'integer', minimum: 1, maximum: MAX_RESULTS, default: 8, description: 'Papers per list.' } },
-      required: ['doi'],
-      additionalProperties: false,
-    },
     annotations: READ_ONLY,
   },
 ] as const;
@@ -343,31 +321,6 @@ async function findOpenAccess({ doi }: ReturnType<typeof openAccessArguments>, c
   };
 }
 
-function citationGraphArguments(args: Arguments) {
-  onlyKeys(args, ['doi', 'limit']);
-  return { doi: doiArgument(args.doi), limit: integerArgument(args.limit, 8, 'limit') };
-}
-
-async function getCitationGraph({ doi, limit }: ReturnType<typeof citationGraphArguments>, caller: Request, env: WorkerEnv) {
-  const response = await ask(
-    (request, routeEnv) => handleCitationGraph(request, routeEnv, MCP_PROVIDER_SUBJECT),
-    '/citation-graph',
-    { doi, limit },
-    caller,
-    env,
-  );
-  const graph = await response.json<{ references: Paper[]; citations: Paper[]; counts: unknown; source: string; partial: boolean; degraded: boolean }>();
-  return {
-    doi,
-    references: graph.references.map(publicPaper),
-    citations: graph.citations.map(publicPaper),
-    counts: graph.counts,
-    source: graph.source,
-    partial: graph.partial,
-    degraded: graph.degraded,
-  };
-}
-
 // Each tool's arguments are read once, then the call runs on what was read.
 function tool<T>(parse: (args: Arguments) => T, run: (parsed: T, caller: Request, env: WorkerEnv) => Promise<Record<string, unknown>>) {
   return (args: Arguments) => {
@@ -380,7 +333,6 @@ const RUN: Record<ToolName, ReturnType<typeof tool>> = {
   search_papers: tool(searchArguments, searchPapers),
   get_paper: tool(getPaperArguments, getPaper),
   find_open_access: tool(openAccessArguments, findOpenAccess),
-  get_citation_graph: tool(citationGraphArguments, getCitationGraph),
 };
 
 // A tool failure is an HTTP 200 answer, so `index.ts` never sees it. This writes
