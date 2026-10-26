@@ -76,11 +76,17 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // per country, so those two are patterns. A country is `com`, two letters, or two
 // letters under `co.` or `com.`; a generic suffix (`.xyz`) or `co.com` and `com.com`,
 // which anyone can register, is not. The patterns take any two letters, so
-// `google.com.de` counts as search. Google's search properties (web, Scholar,
-// Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. Five
-// Google apps on Android send their package name as the referrer and are filed like
-// their sites: the Google, Google Go and News apps as search, YouTube and YouTube Music
-// as social. Other Google apps count as referral.
+// `google.com.de` counts as search.
+//
+// Only a provider's search properties count as search. Google's (web, Scholar, Books,
+// Images, News) do; Docs, Gmail, Gemini and the rest do not. Brave lists
+// `search.brave.com` and Ecosia `ecosia.org` and `www.ecosia.org`: brave.com, its forum
+// and blog.ecosia.org link out and are referrals. Bing and DuckDuckGo list their whole
+// domain, so every subdomain of them counts as search.
+//
+// Five Google apps on Android send their package name as the referrer and are filed
+// like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
+// Music as social. Other Google apps count as referral.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   'com.google.android.googlequicksearchbox',
@@ -89,8 +95,8 @@ const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   'bing.com',
   'duckduckgo.com',
   /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
-  'ecosia.org',
-  'brave.com',
+  /^(?:www\.)?ecosia\.org$/,
+  'search.brave.com',
 ];
 const SOCIAL_HOSTS = [
   'bsky.app',
