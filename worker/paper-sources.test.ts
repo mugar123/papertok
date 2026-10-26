@@ -760,6 +760,58 @@ test("a journal article that adds a followed coauthor to a stored working paper 
   assert.deepEqual(await following(), [['openalex:W7220000104', true]]);
 });
 
+// Beside a coauthor, the article can name an institution, a topic and a
+// concept the working paper did not, and it can come a night after the working
+// paper or on one page with it, in either order.
+test('a journal article that adds a coauthor, an institution, a topic or a concept to its working paper reaches their followers on its first listing, a night later or in one batch', async t => {
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const topic = { id: 'https://openalex.org/T10999', display_name: 'Asset pricing' };
+  const article = mapOpenAlexWork({
+    ...gmmArticle,
+    authorships: [
+      { ...gmmArticle.authorships[0], institutions: [{ id: 'https://openalex.org/I5000000888', display_name: 'Ana University' }] },
+      { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] },
+    ],
+    primary_topic: topic,
+    topics: [topic],
+    concepts: [{ id: 'https://openalex.org/C5000000999', display_name: 'Stochastic discount factor', score: 0.8 }],
+  })!;
+  // The working paper names an institution and a concept of its own, and no topic.
+  const workingPaper = mapOpenAlexWork({
+    ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null),
+    title: gmmArticle.title,
+    authorships: [{ ...gmmArticle.authorships[0], institutions: [{ id: 'https://openalex.org/I5000000111', display_name: 'NBER' }] }],
+    publication_date: '2026-09-28',
+    concepts: [{ id: 'https://openalex.org/C5000000222', display_name: 'Interest rates', score: 0.8 }],
+  })!;
+  const follows = [
+    { type: 'author', canonicalId: 'A5000000777', displayName: 'Ben Coauthor' },
+    { type: 'institution', canonicalId: 'I5000000888', displayName: 'Ana University' },
+    { type: 'topic', canonicalId: 'T10999', displayName: 'Asset pricing' },
+    { type: 'topic', canonicalId: 'C5000000999', displayName: 'Stochastic discount factor' },
+  ];
+  for (const [name, nights] of [
+    ['a night later', [[workingPaper], [article]]],
+    ['working paper first in one batch', [[workingPaper, article]]],
+    ['article first in one batch', [[article, workingPaper]]],
+  ] as const) {
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    for (const lane of ['author:A5000000777', 'institution:I5000000888', 'concept:C5000000999']) {
+      db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)').run(lane, new Date(first).toISOString());
+    }
+    for (const [night, papers] of nights.entries()) {
+      t.mock.timers.setTime(first + night * 86_400_000);
+      await ingestPapers(store, papers.map(paper => ({ paper, lanes: ['econ.EM'] })), { now: first + night * 86_400_000 });
+    }
+    for (const follow of follows) {
+      const page = await readFeedPage(store, parseFeedRequest({ categories: [], follows: [follow] }));
+      assert.deepEqual(page.map(paper => [paper.doi, paper.peerReviewed]), [[gmmArticle.doi.slice('https://doi.org/'.length), true]], `${name}: ${follow.canonicalId}`);
+    }
+  }
+});
+
 // The row keeps the working paper's id, yet its text is the article's, so the
 // article's corrected title and abstract reach it in either order of arrival.
 test('OpenAlex listing a journal article again with a corrected title and abstract updates its row whichever of the article and its working paper arrived first', async t => {
