@@ -75,7 +75,7 @@ test('the project link carries any paper id whole, whatever characters it holds'
   const project = { id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' };
   const open = (paperId: string) => new URL(projectExplorerPath(project, paperId), 'https://papertok.app');
 
-  for (const paperId of ['2401.12345', 'hep-th/9901001', 'openalex:W123', 'ads:2019A&A...623A..72B', '10.1000/a&b=c', '10.5555/a+b', '10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-#']) {
+  for (const paperId of ['2401.12345', 'hep-th/9901001', 'openalex:W123', 'ads:2019A&A...623A..72B', '10.1000/a&b=c', '10.5555/a+b', '10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-#', 'doi:10.1000/a%2Fb', '10.1/a?b=c#d', 'x y']) {
     const url = open(paperId);
     assert.equal(url.searchParams.get('arxivId'), paperId, paperId);
     assert.deepEqual([...url.searchParams.keys()], ['name', 'funder', 'arxivId'], `${paperId} adds no query key`);
