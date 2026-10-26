@@ -1,12 +1,21 @@
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
-import test, { mock } from 'node:test';
+import test, { afterEach, beforeEach, mock } from 'node:test';
 import { trackErrors } from './error-tracking.ts';
 import reportApi from './index.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 const SECRET = 'test-only-pdf-rate-limit-key-32-bytes';
+
+// A request from outside the Worker, an agent's included, takes only even
+// seats of the arXiv beat, and an agent never waits for one. Every test starts
+// at the start of an even three-second period, so arXiv's seat is free
+// whatever the time of day.
+const EVEN_ARXIV_PERIOD = Date.parse('2026-10-24T12:00:00.000Z');
+let pinnedClock: ReturnType<typeof mock.method> | undefined;
+beforeEach(() => { pinnedClock = mock.method(Date, 'now', () => EVEN_ARXIV_PERIOD); });
+afterEach(() => { pinnedClock?.mock.restore(); });
 const routeEnv = (extra: Partial<WorkerEnv> = {}): WorkerEnv => ({
   REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
   PDF_RATE_LIMIT_SECRET: SECRET,
@@ -787,9 +796,10 @@ test('every billed OpenAlex miss of a tool spends the lowest tier, where ENG-91 
 });
 
 test("a tool takes arXiv's seat only when no reader has booked it, and books none ahead", async () => {
-  // A millisecond before the beat's next three-second period, so a reader's
-  // wait for that period is a millisecond.
-  const frozen = (Math.floor(Date.now() / 3_000) + 1) * 3_000 - 1;
+  // The last millisecond of a public (even) period. The odd period after it
+  // is not a public seat, so the next one a reader can take starts 3,001 ms
+  // later, and the reader asks then.
+  let frozen = EVEN_ARXIV_PERIOD + 3_000 - 1;
   const clock = mock.method(Date, 'now', () => frozen);
   try {
     await withUpstream(url => {
@@ -802,7 +812,7 @@ test("a tool takes arXiv's seat only when no reader has booked it, and books non
       const first = await callTool(env, 'get_paper', { id: '2603.01234' });
       assert.equal((first.answer.result?.structuredContent?.paper as { arxivId?: string })?.arxivId, '2603.01234', 'a free seat is taken');
 
-      // This period's seat is taken, and the next is left to readers.
+      // This period's seat is taken, and the next public one is left to readers.
       const refused = await callTool(env, 'get_paper', { id: '2603.09999' });
       assert.equal(refused.answer.result?.isError, true);
       assert.equal(refused.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
@@ -812,11 +822,30 @@ test("a tool takes arXiv's seat only when no reader has booked it, and books non
       assert.deepEqual(unavailable.map(entry => [entry.source, entry.code]), [['arxiv', 'PROVIDER_RATE_LIMITED']]);
       assert.equal(arxivCalls(), 1, 'a refused tool call reaches arXiv with nothing');
 
+      frozen += 3_001;
       const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?id_list=2603.09999', {
         headers: { 'cf-connecting-ip': '203.0.113.5' },
       }), env);
-      assert.equal(reader.status, 200, 'a reader at the same moment still gets the next seat');
+      assert.equal(reader.status, 200, 'a reader still gets the next public seat');
       assert.equal(arxivCalls(), 2);
+    });
+  } finally {
+    clock.mock.restore();
+  }
+});
+
+test("a tool takes only a public seat of arXiv's beat, as a reader's request does", async () => {
+  // An odd period: its seat is free, but it is left to the Worker's own callers.
+  const clock = mock.method(Date, 'now', () => EVEN_ARXIV_PERIOD + 3_000);
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+      throw new Error(`unexpected upstream ${url}`);
+    }, async calls => {
+      const searched = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
+      assert.equal(searched.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+      assert.equal(searched.answer.result?.structuredContent?.retryAfterSeconds, 3);
+      assert.deepEqual(calls, []);
     });
   } finally {
     clock.mock.restore();

@@ -18,15 +18,28 @@ export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 // seat somebody else could have used.
 export const ARXIV_PACE_PERIOD_MS = 3_000;
 export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
+// A request from outside the Worker (`handleArxiv`: a reader, a guest or a
+// script; `handleAgentArxiv`: an AI client) may take only every other seat,
+// 10 misses a minute app-wide, so cache-busting queries cannot hold every seat however many addresses send
+// them; the caller allowance below counts one address, and one IPv6 host can
+// send from a whole /64. The Worker's own callers take any seat: the
+// harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
+// and share pages. A signed-in reader chooses the ids those lookups ask for
+// through POST /store/papers, so one account, within its per-minute feed
+// allowance, can still hold every seat. Spacing towards arXiv is unchanged:
+// still one call every three seconds.
+const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
 // for the whole app, every call the cache saves is a seat somebody else gets.
 const ARXIV_CACHE_SECONDS = 60 * 60;
-// The misses one caller may send in a UTC minute: half of the twenty seats the
-// beat has, so one address cannot hold every seat. The paper harvest asks
+// The misses one address may send in a UTC minute: 5, half of the 10 seats
+// PUBLIC_SEAT leaves a request from outside the Worker. One address, such as a
+// script or a university behind one NAT, cannot take every public seat; two
+// can, and everyone behind one NAT shares these 5. The paper harvest asks
 // in-process (`handleHarvestArxiv`) and spends no caller's allowance.
-const ARXIV_CALLER_MINUTE_LIMIT = 10;
+const ARXIV_CALLER_MINUTE_LIMIT = 5;
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function safeArxivParam(name: string, rawValue: unknown) {
@@ -60,12 +73,15 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
  * caller's allowance is counted, but a miss takes only the seat of the period
  * the beat is in, never one ahead. Readers book the seats ahead of them, so an
  * agent gets a seat no reader booked and gives way to readers (ENG-91 puts
- * agents in the lowest budget tier).
+ * agents in the lowest budget tier). An agent is a caller from outside the
+ * Worker, so that seat must also be a public one.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
   return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
 }
 
+// `perCaller` is true for a request from outside the Worker: it spends its
+// address's allowance and takes only public seats.
 async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -112,6 +128,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs,
+      accepts: perCaller ? PUBLIC_SEAT : undefined,
     });
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.
