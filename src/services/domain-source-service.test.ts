@@ -393,6 +393,14 @@ test('maps NASA ADS records with citations, references and physics concepts', ()
   assert.ok(paper!.keywords!.includes('11.25.Tq'));
 });
 
+test('an ADS date with an unknown day or month keeps the month or year it names', () => {
+  const published = (pubdate: string) => mapAdsPaper({ bibcode: '2018PhRvL.120a0001A', title: ['A dated ADS record'], abstract: 'A.', year: 2018, pubdate })!.published;
+  assert.equal(published('2018-03-00'), '2018-03');
+  assert.equal(published('2018-00-00'), '2018');
+  assert.equal(published('2018-03-14'), '2018-03-14');
+  assert.equal(new Date(published('2018-03-00')!).toISOString(), '2018-03-01T00:00:00.000Z', 'read as the first day of the month');
+});
+
 // Real record, 2026NatSR..16.2819Z as ADS served it on 2026-09-23: the title
 // verbatim; the abstract cut to its formulas and scripts, and the `<P />` ADS
 // writes between paragraphs.

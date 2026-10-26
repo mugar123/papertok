@@ -416,7 +416,9 @@ export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []):
     || properties.some(value => value.includes('OPENACCESS'))
     || (raw.esources || []).some(value => /eprint_pdf|openaccess/i.test(value));
   const citationCount = Number(raw.citation_count);
-  const published = normalizeText(raw.pubdate) || (Number(raw.year) ? `${Number(raw.year)}-01-01` : '');
+  // ADS writes an unknown day or month as 00 (2018-03-00), which no date
+  // parser reads; the month or year it names stays, read as its first day.
+  const published = normalizeText(raw.pubdate).replace(/(?:-00)+$/, '') || (Number(raw.year) ? `${Number(raw.year)}-01-01` : '');
   const paper = PaperBuilder.create({
     id: `ads:${bibcode}`,
     doi: doi || undefined,
