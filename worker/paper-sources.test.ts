@@ -1451,17 +1451,21 @@ test('a leaf the notable sample admitted gets a notable lane asking for its samp
   assert.equal(openAlexNotableFilterForLeaf('nlin.CD'), null, 'a leaf neither sample admitted has no lane');
 });
 
-// The generator proposes each sample over the years the lane lists; the two
-// are written apart, so this ties them.
+// The generator proposes each sample over the years the lane lists, and a
+// review's query is checked against its capture year; both are written apart
+// from the Worker, so this ties them to the lane's own years.
 test("a notable sample's query covers the ten completed years the lane lists, before its capture year", () => {
-  const { year, leaves } = gateFile('openalex-notable-candidates.json') as { year: number; leaves: Array<{ leaf: string; status: string; sampleUrl?: string }> };
-  const now = Date.UTC(year, 5, 1);
-  const proposals = leaves.filter(row => row.status === 'not-reviewed');
-  assert.ok(proposals.length > 0);
-  for (const row of proposals) {
-    const filters = filtersOf(new URL(row.sampleUrl!));
-    assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${row.leaf} starts at the oldest listed year`);
-    assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${row.leaf} ends with the last completed year`);
+  const { year, leaves } = gateFile('openalex-notable-candidates.json') as { year: number; leaves: Array<{ leaf: string; sampleUrl?: string }> };
+  const reviews = gateFile('openalex-notable-reviews.json') as Record<string, { capturedAt: string; query: string }>;
+  const queries = [
+    ...leaves.filter(row => row.sampleUrl).map(row => ({ leaf: row.leaf, url: row.sampleUrl!, now: Date.UTC(year, 5, 1) })),
+    ...Object.entries(reviews).map(([leaf, review]) => ({ leaf, url: review.query, now: Date.parse(review.capturedAt) })),
+  ];
+  assert.ok(queries.length > 0);
+  for (const { leaf, url, now } of queries) {
+    const filters = filtersOf(new URL(url));
+    assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${leaf} starts at the oldest listed year`);
+    assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${leaf} ends with the last completed year`);
     assert.ok(filters.includes('type:article') && filters.includes('is_retracted:false') && filters.includes('primary_location.source.is_core:true'));
   }
 });

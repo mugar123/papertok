@@ -18,3 +18,21 @@ test('every leaf belongs to exactly one area', () => {
   const leaves = Object.values(CATEGORIES).flatMap(area => Object.keys(area.subcategories));
   assert.equal(new Set(leaves).size, leaves.length);
 });
+
+
+test('arXiv categories outside the selectable leaves have specific display names', () => {
+  for (const [id, label] of [
+    ['astro-ph.IM', 'Instrumentation and Methods for Astrophysics'],
+    ['cs.IT', 'Information Theory'],
+    ['eess.AS', 'Audio and Speech Processing'],
+    ['math.AC', 'Commutative Algebra'],
+    ['q-bio.NC', 'Neurons and Cognition'],
+    ['physics.data-an', 'Data Analysis, Statistics and Probability'],
+    ['q-fin.EC', 'Economics'],
+    ['stat.OT', 'Other Statistics'],
+  ]) {
+    assert.equal(getCategoryLabel(id), label);
+    assert.equal(getCategoryArea(id), null, 'display names do not create selectable feed leaves');
+  }
+  assert.equal(getCategoryLabel('unknown-code'), 'unknown-code');
+});
