@@ -13,6 +13,7 @@ Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker
 - `arxiv-api.ts` and `share-route.ts` keep the arXiv beat through `upstream-pace.ts`, and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
 - `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
 - The paper corpus (see [Paper store](#paper-store)): `paper-store.ts` owns its rows, lanes, vectors and ranking; `paper-sources.ts` harvests each source by calling the provider handlers above in-process; `paper-enrichment.ts` enriches stored papers; `paper-harvest.ts` runs them as a Workflow; `paper-feed.ts` owns the reader routes.
+- `mcp-server.ts` owns the public MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process.
 - Existing feature modules own AI, accounts, institutions, notifications, lists and ledgers.
 
 Provider modules use the shared runtime and HTTP helpers. `http.ts` imports nothing; `provider-runtime.ts` imports `http.ts`, the request-quota ledger and `upstream-pace.ts`. Neither imports the router or a provider module. OpenAlex relay, graph and share requests reserve against the same budget in `provider-runtime.ts`.
@@ -786,3 +787,46 @@ caller allowance. In-process paper harvesting uses its existing provider
 budgets and pacing without a visitor IP. The public router cannot select those
 harvest entry points. Test these paths with `node --test worker/index.test.ts
 worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.test.ts`.
+
+## MCP server
+
+`POST /mcp` is a public, read-only [Model Context Protocol](https://modelcontextprotocol.io)
+server with no account (ENG-91, phase 1). `mcp-server.ts` implements the
+Streamable HTTP transport without sessions or server-sent events: each POST
+carries one JSON-RPC message and receives one `application/json` answer.
+Notifications receive `202`, GET and other methods receive `405`, batches
+receive `-32600`, and bodies above 16 KB receive `413`. It negotiates protocol
+versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A browser `Origin`
+outside the allowlist receives `403`; remote clients send none. The official
+SDK is not used, so the package lock is unchanged.
+
+| Tool | Route asked in-process | Result |
+| --- | --- | --- |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv` | Up to 10 papers merged with `PaperBuilder.deduplicate`, plus the sources that refused or failed |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id; `/arxiv?id_list=` for an arXiv id | One paper from `mapOpenAlexWork` or `arxivRecordPaper` |
+| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations |
+| `get_citation_graph(doi, limit?)` | `/citation-graph` | References, citing works, counts and `degraded` |
+
+Tools return the existing `Paper` shape without the provider's `raw` record and
+with at most 100 authors. Every tool calls the existing route handler with the
+caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
+keys, OpenAlex tiers, arXiv beat and per-IP miss limits as the browser (see
+[Public lookup caller limits](#public-lookup-caller-limits)). A search is an
+exploration-tier OpenAlex search; a lookup by id is a free entity lookup.
+Unlike the browser route, the citation graph requires no Firebase identity, so
+the provider minute quota for signed-in readers does not apply; the OpenAlex
+exploration tier and the MCP allowance limit it instead.
+
+Arguments are validated before any reservation. Each `tools/call` then
+reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
+`reserveCallerMinute`; cache hits count too. A refusal, a missing
+`PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
+`isError: true` and a `code` (`PROVIDER_RATE_LIMITED` with
+`retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED`, `NOT_FOUND`,
+`INVALID_ARGUMENTS`, `UPSTREAM_UNAVAILABLE`), so the client model can read
+them. Search text and paper ids are not sent to analytics or logged.
+
+To connect from Claude, add a custom connector with the URL
+`https://api.papertok.app/mcp` in claude.ai (Settings, Connectors). In Claude
+Code, run `claude mcp add --transport http papertok https://api.papertok.app/mcp`.
+No authentication is configured. Test with `node --test worker/mcp-server.test.ts`.
