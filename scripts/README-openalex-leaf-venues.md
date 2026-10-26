@@ -93,7 +93,9 @@ so it leaves the row as it was. The row names the article's work in
 `openAlexId`, whichever lane listed it (venue, topic, area, notable or
 followed). Enrichment and its 14-day refresh read `openAlexId` first, and the
 row follows the article's own listing for its title and abstract, so both
-arrival orders end up with the article's text, venue, type, topic and counts.
+arrival orders end up with the article's title, venue, type, topic and counts,
+and its abstract when OpenAlex lists one. Otherwise the working paper's
+abstract fills the gap, as when both arrive the same night.
 
 Records from every other source merge as they did before ENG-133
 (`PaperBuilder.merge`): a working paper's row keeps the working paper's DOI,
