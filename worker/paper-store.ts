@@ -3,10 +3,11 @@ import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
-import { PaperBuilder, restsOnArxivDoi } from '../src/services/paper-builder.ts';
+import { PaperBuilder, isPublisherDoi, restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
+import { normalizeDoi } from '../src/utils/public-navigation.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -363,8 +364,12 @@ async function readWorks(db: D1Database, ids: number[]) {
 
 // A working paper says it was not reviewed; its journal article says it was.
 const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
-// An arXiv record reads reviewed on a DOI alone (`restsOnArxivDoi`), which is no journal evidence.
-const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper);
+// An arXiv record reads reviewed on any DOI it lists, arXiv's own included, or
+// on a comment saying it was published: it is a journal's record only when it
+// names the journal and lists a publisher's DOI. A merged row's `true` that
+// rests on a DOI alone (`restsOnArxivDoi`) is no journal evidence either.
+const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
+  && (paper.sources?.primary !== 'arxiv' || (Boolean(paper.journal) && isPublisherDoi(normalizeDoi(paper.doi))));
 const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
 
 // `merge` keeps a working paper's `false` against a journal article merged

@@ -5,6 +5,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
+import type { ArxivRecord } from './paper-sources.ts';
+import type { Paper } from '../src/models/paper.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
@@ -809,60 +811,59 @@ test("the enrichment of a working-paper row that became its journal article asks
   assert.deepEqual(urls.filter(url => url.hostname === 'api.openalex.org').map(url => url.searchParams.get('filter')), ['openalex:W7221756071']);
 });
 
-// An arXiv eprint reads reviewed on any DOI it lists, with no journal evidence
-// behind it, so it never becomes the base of a working-paper row.
-test('an arXiv eprint that lists a DOI and no journal reference leaves a stored working-paper row as it was', async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
-  const { env } = relay(t, () => ({ results: [workingPaper] }));
-  const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
-  for (const doi of ['10.3386/w35104', '10.1080/07350015.2026.2743244']) {
-    const { binding, db } = testD1();
-    const store = { ...env, PAPER_STORE: binding };
-    const rows = () => (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>).map(row => ({ ...JSON.parse(row.paper), storedPublished: row.published }));
-    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
-    await harvestLane(store, series);
-    const [before] = rows();
-    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
-    const eprint = arxivRecordPaper({
-      arxivId: '2610.01234', title: gmmArticle.title, abstract: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.',
-      authors: ['Ana Economist'], categories: ['econ.EM'], doi, journalRef: null, comments: null,
-      published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z',
-    });
-    await ingestPapers(store, [{ paper: eprint, lanes: [] }], { now: Date.parse('2026-10-24T03:00:00Z') });
-    const after = rows();
-    assert.equal(after.length, 1, doi);
-    const shown = (paper: typeof before) => [paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
-    assert.deepEqual(shown(after[0]), shown(before), doi);
-  }
+// The NBER working paper of `gmmArticle`, and its arXiv eprint.
+const gmmWorkingPaperWork = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+const gmmEprint = (record: Partial<ArxivRecord>) => arxivRecordPaper({
+  arxivId: '2610.01234', title: gmmArticle.title, abstract: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.',
+  authors: ['Ana Economist'], categories: ['econ.EM'], doi: null, journalRef: null, comments: null,
+  published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z', ...record,
 });
+const JBES_REFERENCE = 'Journal of Business and Economic Statistics 44 (2026) 1-20';
 
-// An eprint's journal reference reads reviewed, yet its record carries no
-// journal DOI to upgrade the row with, so `merge` keeps the working paper's
-// `false` and the row would show the journal beside its Working paper tag.
-test('an arXiv eprint with a journal reference and no journal DOI leaves a stored working-paper row as it was', async t => {
+// The row the working paper makes, then `paper` joins: a night later, or on
+// the same page after it. Without `paper`, the working paper's row alone.
+async function workingPaperRowWith(t: import('node:test').TestContext, paper: Paper | null, samePage: boolean) {
+  const { binding, db } = testD1();
+  const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+  const night = (day: string, papers: Paper[]) => {
+    t.mock.timers.setTime(Date.parse(day));
+    return ingestPapers(store, papers.map(listed => ({ paper: listed, lanes: ['econ.EM'] })), { now: Date.parse(day) });
+  };
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  if (samePage) await night('2026-10-24T03:00:00Z', paper ? [workingPaper, paper] : [workingPaper]);
+  else {
+    await night('2026-10-23T03:00:00Z', [workingPaper]);
+    if (paper) await night('2026-10-24T03:00:00Z', [paper]);
+  }
+  return (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>)
+    .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
+}
+
+// An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
+// on a comment saying it was published. Only one that names its journal beside
+// a publisher's DOI is a journal's record; the others never become the base of
+// a working paper's row. One that names its journal without the journal's DOI
+// leaves the row unreviewed, so it does not upgrade it either: `merge` keeps
+// the working paper's `false`.
+test('an arXiv eprint that does not name its journal beside a publisher DOI leaves a working paper row as it was, stored or on the same page', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
-  const { env } = relay(t, () => ({ results: [workingPaper] }));
-  const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
-  for (const doi of ['', '10.3386/w35104']) {
-    const { binding, db } = testD1();
-    const store = { ...env, PAPER_STORE: binding };
-    const rows = () => (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>).map(row => ({ ...JSON.parse(row.paper), storedPublished: row.published }));
-    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
-    await harvestLane(store, series);
-    const [before] = rows();
-    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
-    const eprint = arxivRecordPaper({
-      arxivId: '2610.01234', title: gmmArticle.title, abstract: 'The arXiv version of this paper compares the efficiency and the pricing accuracy of GMM estimators.',
-      authors: ['Ana Economist'], categories: ['econ.EM'], doi, journalRef: 'Journal of Business and Economic Statistics 44 (2026) 1-20', comments: null,
-      published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z',
-    });
-    await ingestPapers(store, [{ paper: eprint, lanes: [] }], { now: Date.parse('2026-10-24T03:00:00Z') });
-    const after = rows();
-    assert.equal(after.length, 1, doi);
-    const shown = (paper: typeof before) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
-    assert.deepEqual(shown(after[0]), shown(before), doi);
+  const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
+  for (const record of [
+    { doi: '10.3386/w35104' },
+    { doi: '10.1080/07350015.2026.2743244' },
+    { doi: '10.48550/arXiv.2610.01234' },
+    { comments: 'Published in the Journal of Business and Economic Statistics' },
+    { journalRef: JBES_REFERENCE },
+    { journalRef: JBES_REFERENCE, doi: '10.3386/w35104' },
+    { journalRef: JBES_REFERENCE, doi: '10.48550/arXiv.2610.01234' },
+  ]) {
+    for (const samePage of [false, true]) {
+      const name = `${JSON.stringify(record)}, ${samePage ? 'on the same page' : 'stored first'}`;
+      const [before] = await workingPaperRowWith(t, null, samePage);
+      const after = await workingPaperRowWith(t, gmmEprint(record), samePage);
+      assert.equal(after.length, 1, name);
+      assert.deepEqual(shown(after[0]), shown(before), name);
+    }
   }
 });
 

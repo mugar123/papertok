@@ -82,17 +82,22 @@ liked or saved it under. The series listing the working paper again does not
 put its title and abstract back on the row. The two records pair on the title
 and first-author key (`PaperBuilder.identityKeys`), as before, because they
 share no DOI or OpenAlex id; the upgrade now lets that join set the row's DOI,
-landing page, text and date. An arXiv eprint that lists a DOI and no journal
-reference is not journal evidence and never starts the upgrade. An eprint with
-a journal reference but no journal DOI leaves the row unreviewed, so it does
-not upgrade it either. The row keeps the working paper's id. Only an OpenAlex
-journal record sets `openAlexId`: when the record is an OpenAlex work, whichever
-lane listed it (venue, topic, area, notable or followed), the row names the
-article's work in `openAlexId`, which enrichment and its 14-day refresh read
-first, so both arrival orders end up with the article's venue, type, topic and
-counts. A journal record from any other source (an arXiv eprint with a journal
-reference and DOI, or a PubMed or Europe PMC record) leaves `openAlexId` unset,
-so enrichment still asks OpenAlex for the working paper's work. With the eprint
+landing page, text and date.
+
+An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
+on a comment saying it was published. It starts the upgrade only when it names
+its journal beside a publisher's DOI. One with a journal reference and no DOI,
+or only arXiv's, never does. An SSRN or Zenodo DOI beside a journal reference
+reads the same as the journal's DOI, so such an eprint does upgrade the row.
+
+The row keeps the working paper's id. Only an OpenAlex journal record sets
+`openAlexId`: when the record is an OpenAlex work, whichever lane listed it
+(venue, topic, area, notable or followed), the row names the article's work in
+`openAlexId`, which enrichment and its 14-day refresh read first, so both
+arrival orders end up with the article's venue, type, topic and counts. A
+journal record from any other source (an arXiv eprint with a journal reference
+and DOI, or a PubMed or Europe PMC record) leaves `openAlexId` unset, so
+enrichment still asks OpenAlex for the working paper's work. With the eprint
 stored first, the same pair is enriched through arXiv.
 
 A row upgraded by a journal record that is not an OpenAlex work also takes that

@@ -24,7 +24,7 @@ function arxivIdKey(value: unknown) {
 
 // A DOI a publisher issued. arXiv's own DataCite DOI (10.48550/arXiv.<id>)
 // names the eprint, as the arXiv id does.
-function isPublisherDoi(normalizedDoi: string) {
+export function isPublisherDoi(normalizedDoi: string) {
   return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
 }
 
