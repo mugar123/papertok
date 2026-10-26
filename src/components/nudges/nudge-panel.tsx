@@ -4,6 +4,8 @@ interface NudgePanelProps {
   icon: ReactNode; title: string; body: ReactNode;
   action: { label: string; onClick: () => void };
   dismissLabel?: string; onDismiss?: () => void;
+  // Which edge of the screen it sits on; the host moves it off a focused control.
+  edge?: 'bottom' | 'top';
 }
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
@@ -44,12 +46,14 @@ export default function NudgePanel({
   action,
   dismissLabel,
   onDismiss,
+  edge = 'bottom',
 }: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
     <motion.aside
       className="nudge"
+      data-edge={edge}
       aria-labelledby="nudge-title"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}

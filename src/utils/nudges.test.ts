@@ -8,6 +8,8 @@ import {
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  firstEdgeClearOf,
+  focusAfterPanel,
   forgetPrivacyNotice,
   statusIsSet,
   noticeOnScreen,
@@ -383,6 +385,39 @@ test('a remembered control the feed has unmounted is not returned to, and a stop
   tracker.stop();
   source.focusIn(pageElement('A'));
   assert.equal(tracker.target(), first, 'a focus event after the notice went away');
+});
+
+// A 320x568 screen with the panel at 60% of it: the bottom edge covers 227-548 and
+// the top edge 56-397, so only the strip between them is covered both ways.
+const box = (top: number, bottom: number, left = 12, right = 308) => ({ top, bottom, left, right });
+const edges = [
+  { edge: 'bottom', box: box(227, 548) },
+  { edge: 'top', box: box(56, 397) },
+];
+
+test('the panel stays at the bottom while no focused control is under it', () => {
+  assert.equal(firstEdgeClearOf(box(100, 140), edges), 'bottom');
+  assert.equal(firstEdgeClearOf(box(500, 540, 400, 440), edges), 'bottom', 'beside it, on a wide screen');
+  assert.equal(firstEdgeClearOf(box(548, 580), edges), 'bottom', 'touching its edge covers nothing');
+});
+
+test('a control under the bottom edge moves the panel to the top, and back when focus leaves', () => {
+  assert.equal(firstEdgeClearOf(box(450, 490), edges), 'top');
+  assert.equal(firstEdgeClearOf(box(450, 490), [...edges].reverse()), 'top');
+  assert.equal(firstEdgeClearOf(box(100, 140), edges), 'bottom', 'the next control is clear of the bottom again');
+});
+
+test('a control that both edges cover leaves no place, so the notice is put away for the visit', () => {
+  assert.equal(firstEdgeClearOf(box(300, 340), edges), null);
+  assert.equal(firstEdgeClearOf(box(300, 340), []), null);
+});
+
+test('focus is given up, not handed to a far-off control, when the panel was reached by a click', () => {
+  const was = { focusWasInside: true, rememberedOnScreen: true };
+  assert.equal(focusAfterPanel({ ...was, viaKeyboard: true }), 'remembered');
+  assert.equal(focusAfterPanel({ ...was, viaKeyboard: false }), 'blur', 'a click or tap on Got it');
+  assert.equal(focusAfterPanel({ ...was, viaKeyboard: true, rememberedOnScreen: false }), 'page', 'the remembered control was scrolled away');
+  assert.equal(focusAfterPanel({ focusWasInside: false, viaKeyboard: false, rememberedOnScreen: false }), 'keep', 'focus was never in the panel');
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {

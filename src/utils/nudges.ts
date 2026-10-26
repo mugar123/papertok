@@ -268,6 +268,34 @@ export function trackFocusOutsideNotice(source: FocusSource) {
   };
 }
 
+export interface Box { top: number; bottom: number; left: number; right: number }
+
+/**
+ * The first of `candidates`, in the order given, whose panel box does not cover
+ * `target`, or null when each one does. The panel is fixed over the page, so a
+ * control focused underneath it would have its focus ring hidden (WCAG 2.4.11);
+ * the host measures the panel at each edge it may sit on and moves it to one that
+ * leaves the control in view. A box that only touches the target covers nothing.
+ */
+export function firstEdgeClearOf<T>(target: Box, candidates: Array<{ edge: T; box: Box }>) {
+  const covers = (box: Box) => box.left < target.right && box.right > target.left && box.top < target.bottom && box.bottom > target.top;
+  return candidates.find(candidate => !covers(candidate.box))?.edge ?? null;
+}
+
+/**
+ * What to do with focus when the panel is put away: nothing when it was not in
+ * the panel; give it up when it got there by a click or tap (a button the pointer
+ * pressed takes focus in Chrome and on Android, and handing it to a control the
+ * reader has since scrolled far from leaves it invisible and pulls the feed back
+ * on the next Tab); otherwise return it to the control that held it, or to the
+ * page when that one is off screen or gone.
+ */
+export function focusAfterPanel({ focusWasInside, viaKeyboard, rememberedOnScreen }: { focusWasInside: boolean; viaKeyboard: boolean; rememberedOnScreen: boolean }) {
+  if (!focusWasInside) return 'keep';
+  if (!viaKeyboard) return 'blur';
+  return rememberedOnScreen ? 'remembered' : 'page';
+}
+
 /**
  * What, if anything, is wrong with email — as reported by the service itself.
  *

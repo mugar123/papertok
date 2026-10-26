@@ -328,6 +328,11 @@ function AppContent() {
         {'Skip to content'}
       </a>
       <RouteAnnouncer />
+      {/* Before the page, not after it: the panel is fixed, so its place in the
+          source is only its place in the Tab order, and after the feed it would
+          sit behind every card the feed has loaded and keeps loading. Here it is
+          the first stop after the skip link. */}
+      <NudgeHost />
       {/* The one place toasts render; anything calls `toast()` from 'sonner'. */}
       <Toaster />
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} />}
@@ -563,8 +568,6 @@ function AppContent() {
           <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} finalFocus={searchOpenerRef} />
         </Suspense>
       )}
-
-      <NudgeHost />
 
       <AnimatePresence>
         {authPromptOpen && (

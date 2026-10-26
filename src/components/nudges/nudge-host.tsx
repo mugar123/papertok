@@ -13,6 +13,8 @@ import {
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  firstEdgeClearOf,
+  focusAfterPanel,
   noticeOnScreen,
   pickVisitNotice,
   privacyOwedFor,
@@ -47,7 +49,7 @@ const COPY = {
     dismiss: 'Dismiss and do not show again',
     privacy: {
       title: 'Privacy policy updated',
-      announced: 'The notice follows the feed, as a landmark with the same name.',
+      announced: 'The notice is a landmark with the same name, right after the skip link.',
       policy: 'Read the policy',
       newTab: ' (opens in a new tab)',
       done: 'Got it',
@@ -149,12 +151,57 @@ export default function NudgeHost() {
   }, [privacyShown]);
 
   const hidePrivacyForVisit = useCallback(() => {
-    const focusWasInside = Boolean(document.querySelector(NUDGE_PANEL_SELECTOR)?.contains(document.activeElement));
+    const active = document.activeElement;
+    const focusWasInside = Boolean(active && document.querySelector(NUDGE_PANEL_SELECTOR)?.contains(active));
     const before = focusTracker.current?.target();
+    const rect = before?.getBoundingClientRect();
+    const rememberedOnScreen = Boolean(rect && rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth);
     setPicked(null);
-    if (!focusWasInside) return;
-    (before ?? document.getElementById('main-content'))?.focus({ preventScroll: true });
+    const next = focusAfterPanel({ focusWasInside, viaKeyboard: Boolean(active?.matches(':focus-visible')), rememberedOnScreen });
+    if (next === 'blur') (active as HTMLElement).blur();
+    else if (next === 'remembered') before?.focus({ preventScroll: true });
+    else if (next === 'page') document.getElementById('main-content')?.focus({ preventScroll: true });
   }, []);
+
+  // The panel is fixed over the feed, so a control focused beneath it would have
+  // its focus ring hidden (WCAG 2.4.11). On each focus change, and again once the
+  // scroll that brought the control into view has settled, the panel moves to the
+  // other edge when that leaves the control uncovered; with neither edge free it is
+  // hidden for this visit, as Escape does. Measured at each edge in turn, with no
+  // paint in between, so nothing flickers.
+  const [edge, setEdge] = useState<'bottom' | 'top'>('bottom');
+  useEffect(() => {
+    if (!privacyShown) return undefined;
+    let settle = 0;
+    const keepClear = () => {
+      const panel = document.querySelector<HTMLElement>(NUDGE_PANEL_SELECTOR);
+      const active = document.activeElement;
+      if (!panel || !active || active === document.body || panel.contains(active)) return;
+      const target = active.getBoundingClientRect();
+      const current = panel.dataset.edge;
+      const candidates = (['bottom', 'top'] as const).map(candidate => {
+        panel.dataset.edge = candidate;
+        return { edge: candidate, box: panel.getBoundingClientRect() };
+      });
+      panel.dataset.edge = current;
+      const clear = firstEdgeClearOf(target, candidates);
+      if (clear) setEdge(clear);
+      else hidePrivacyForVisit();
+    };
+    const onFocusIn = () => {
+      keepClear();
+      window.clearTimeout(settle);
+      settle = window.setTimeout(keepClear, 400);
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('scrollend', keepClear, true);
+    return () => {
+      window.clearTimeout(settle);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('scrollend', keepClear, true);
+      setEdge('bottom');
+    };
+  }, [privacyShown, hidePrivacyForVisit]);
 
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
@@ -204,6 +251,7 @@ export default function NudgeHost() {
       {privacyShown ? (
         <NudgePanel
           key="privacy-change"
+          edge={edge}
           icon={<ShieldCheck size={19} />}
           title={copy.privacy.title}
           body={(

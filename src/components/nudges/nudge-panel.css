@@ -143,6 +143,15 @@
   }
 }
 
+/* Moved up under the navbar when a focused control sits beneath it at the
+   bottom (NudgeHost measures both edges); the higher specificity beats the
+   narrow-screen `bottom` above. The cap is 60% of the screen, so the other edge
+   is clear of any control that one edge covers except in the middle fifth. */
+.nudge[data-edge='top'] {
+  top: calc(var(--nav-total) + 8px);
+  bottom: auto;
+}
+
 /* Fewer and gentler, not none: the panel still fades. */
 @media (prefers-reduced-motion: reduce) {
   .nudge-dismiss {
