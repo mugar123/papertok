@@ -1132,7 +1132,7 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
 
 // ENG-123 (D4, Pablo 2026-10-25): a followed journal's lane lists its newest
 // articles, with or without an abstract, 100 a page: one list call, as a page
-// of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 41 articles a day,
+// of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 39 articles a day,
 // Nature 12, the American Economic Review 0.3. Errata and paratext stay out.
 test("a followed journal's lane asks OpenAlex for the journal's articles, 100 a page, none dated after today", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T02:40:00Z') });

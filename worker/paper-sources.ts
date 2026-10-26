@@ -651,7 +651,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const until = `to_publication_date:${day(new Date().toISOString())}`;
       // A followed journal (ENG-123, D4): its articles, without its errata and
       // paratext, 100 a page for the same list call. In the 90 days to
-      // 2026-10-25 PLOS ONE published 41 articles a day and Nature 12.
+      // 2026-10-25 PLOS ONE published 39 articles a day and Nature 12.
       if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},type:article,${until}`, { page, lane, perPage: 100, part });
       return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},${until}`, { page, lane, perPage: 50, part });
     },
