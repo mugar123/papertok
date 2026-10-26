@@ -14,6 +14,7 @@ import {
   getEmailScheduleHealth,
   handleEmailNotificationRequest,
   handleEmailUnsubscribe,
+  purgeEmailSubscription,
   runEmailNotificationSchedule,
 } from './email-notifications.ts';
 
@@ -3647,6 +3648,37 @@ test('gives the identity lookup and both provider probes a deadline', async () =
   }
 });
 
+test('an Identity Toolkit outage on a notification route is a retryable 503, not a sign-out', async t => {
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new TypeError('network connection lost');
+  });
+
+  await assert.rejects(
+    () => withIdentityCache(() => handleEmailNotificationRequest(
+      preferencesRequest(),
+      identityEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    )),
+    error => (error as { code?: string }).code === 'EMAIL_UNAVAILABLE' && (error as { status?: number }).status === 503,
+  );
+});
+
+test('a Worker without the Firebase web key answers a notification route 503 EMAIL_NOT_CONFIGURED and asks nobody', async t => {
+  const lookup = t.mock.method(globalThis, 'fetch', async () => jsonResponse(200, {
+    users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
+  }));
+
+  await assert.rejects(
+    () => withIdentityCache(() => handleEmailNotificationRequest(
+      preferencesRequest(),
+      emailEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    )),
+    error => (error as { code?: string }).code === 'EMAIL_NOT_CONFIGURED' && (error as { status?: number }).status === 503,
+  );
+  assert.equal(lookup.mock.callCount(), 0);
+});
+
 test('sends the Resend digest with one-click unsubscribe headers', async () => {
   const now = new Date('2026-08-10T08:00:00Z');
   const subscriptionKey = 'notification:subscription:resend-reader';
@@ -4080,6 +4112,46 @@ test('notification authentication screens junk locally and reuses a verified ide
       assert.equal(first.preferences.email, 'reader@example.com');
       assert.equal(second.preferences.email, 'reader@example.com');
       assert.equal(lookups, 1);
+    });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a notification write asks Identity Toolkit again, so a deleted account cannot bring its subscription back', async () => {
+  // Account deletion purges the subscription and then deletes the Auth account
+  // (privacy.html: it deletes the email subscription). A settings read just
+  // before it left the identity in the 60 s cache; a write must not be served
+  // from there, as institution-link does not either.
+  let deleted = false;
+  const authorization = `Bearer ${fakeIdToken()}`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => (deleted
+    ? new Response(JSON.stringify({ error: { message: 'USER_NOT_FOUND' } }), { status: 400 })
+    : new Response(JSON.stringify({ users: [{ localId: 'gone', email: 'gone@example.com', emailVerified: true, displayName: 'Gone' }] })));
+  const kv = createMemoryKv({ 'notification:subscription:gone': digestSubscription({ uid: 'gone' }) });
+  const env = identityEnvironment(kv);
+  const refusedAs401 = (error: unknown) => (
+    (error as { code?: string }).code === 'EMAIL_AUTH_REQUIRED' && (error as { status?: number }).status === 401
+  );
+
+  try {
+    await withIdentityCache(async () => {
+      const read = await handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
+        headers: { authorization },
+      }), env, '/notifications/preferences');
+      assert.equal(read.preferences.email, 'gone@example.com');
+      await purgeEmailSubscription(env, 'gone');
+      deleted = true;
+
+      await assert.rejects(() => handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
+        method: 'PUT',
+        headers: { authorization, 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }),
+      }), env, '/notifications/preferences'), refusedAs401);
+      await assert.rejects(() => handleEmailNotificationRequest(new Request('https://worker.example/notifications/test', {
+        method: 'POST',
+        headers: { authorization },
+      }), env, '/notifications/test'), refusedAs401);
+      assert.equal(await kv.get('notification:subscription:gone', 'json'), null);
     });
   } finally { globalThis.fetch = originalFetch; }
 });
