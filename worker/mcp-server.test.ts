@@ -882,19 +882,22 @@ function tallyingLedger() {
 
 test('every billed OpenAlex miss of a tool spends the lowest tier, where ENG-91 puts agents', async () => {
   await withUpstream(url => {
-    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_LAB_PREPRINT] });
     if (url.startsWith('https://api.openalex.org/works/')) return Response.json(OPENALEX_WORK);
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response('down', { status: 503 });
     throw new Error(`unexpected upstream ${url}`);
   }, async () => {
     const ledger = tallyingLedger();
     const env = routeEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
-    // A DOI the relay cannot carry in its path is a one-work list: a reader
-    // opening a paper spends that in the essential tier.
+    // A DOI the relay cannot carry in its path is a one-work list, and so is
+    // the arXiv fallback: a reader opening a paper spends those in the
+    // essential tier.
     await callTool(env, 'get_paper', { id: '10.1234/../example.2026.1' });
     await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['openalex'] });
+    await callTool(env, 'get_paper', { id: '2603.01234' });
     // One work by id is free and reserves nothing.
     await callTool(env, 'get_paper', { id: 'W4400000001' });
-    assert.deepEqual(ledger.tallies, ['exploration.list 1', 'exploration.search 10']);
+    assert.deepEqual(ledger.tallies, ['exploration.list 1', 'exploration.search 10', 'exploration.list 1']);
   });
 });
 
