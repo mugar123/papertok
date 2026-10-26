@@ -10,6 +10,7 @@ import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { MAX_FOLLOWED_JOURNALS } from '../src/utils/following.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -231,12 +232,13 @@ const NOTABLE_READ_PER_YEAR = 25;
 export const AREA_LANE_AREAS: readonly string[] = [...ARXIV_FEED_AREAS.filter(area => area !== 'stat'), 'chem'];
 export const areaLane = (area: string) => `area:${area}`;
 const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
-const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
-const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
+const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITCS]\d+)$|^([AITCS]\d+)$/i;
+const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept', S: 'source' };
 // The entities whose lanes hold papers only while a reader follows them: a
 // paper names many, readers follow few, and no page reads the rest. Their
 // unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
-const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
+// A paper names one journal (`source:S…`, ENG-123), and readers follow few of them.
+const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution', 'source'] as const;
 
 function entityLane(value: unknown) {
   const match = text(value).match(OPENALEX_ENTITY);
@@ -244,7 +246,7 @@ function entityLane(value: unknown) {
   return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
 }
 
-// The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
+// The OpenAlex authors, institutions, topics, concepts and journal a paper names, as lanes.
 function namedEntityLanes(paper: Partial<Paper>) {
   const lanes = new Set<string>();
   for (const author of paper.authors || []) {
@@ -252,6 +254,7 @@ function namedEntityLanes(paper: Partial<Paper>) {
   }
   for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
+  lanes.add(entityLane(paper.venueId));
   lanes.delete('');
   return [...lanes];
 }
@@ -280,10 +283,11 @@ async function followedLanesAmong(db: D1Database, lanes: Iterable<string>) {
 /**
  * The lanes a paper belongs to by its own record, whichever source listed it:
  * its arXiv categories that are categories of the app, the OpenAlex topics it
- * names, and the OpenAlex authors, institutions and concepts it names that
- * are in `followed`. Every reader of them shares these lanes, so a paper is
- * filed under them only inside the corpus window: an older one a reader liked,
- * or a lane that keeps listings kept, stays in the lanes it was asked for.
+ * names, and the OpenAlex authors, institutions, concepts and journal it
+ * names that are in `followed`. Every reader of them shares these lanes, so a
+ * paper is filed under them only inside the corpus window: an older one a
+ * reader liked, or a lane that keeps listings kept, stays in the lanes it was
+ * asked for.
  */
 export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>) {
   const lanes = new Set<string>();
@@ -573,9 +577,9 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  * - a notable lane drops a paper once its `listed_until` has passed, 14 days
  *   after the listing that last returned it: the lane holds the leaf's most
  *   cited, whatever else keeps the paper (a like, its date, another lane);
- * - a paper leaves the lane of an author, concept or institution nobody
- *   follows: `recordLanes` files those for followed entities only, and the
- *   rows filed before it did go here. A later follow of that entity starts
+ * - a paper leaves the lane of an author, concept, institution or journal
+ *   nobody follows: `recordLanes` files those for followed entities only, and
+ *   the rows filed before it did go here. A later follow of that entity starts
  *   without those papers, until its own harvest lists them;
  * - a paper past its keeping date, or in no category, notable, working-paper,
  *   area or followed lane, goes, unless readers still rank their feed by it
@@ -1243,13 +1247,14 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 // ─── Requests ───
 
 const CATEGORY_ID = /^[\w.-]{1,32}$/;
-const FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
+const FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
 
 /**
  * The lane a followed entity is served from: the OpenAlex entity a paper
- * names, a search for a followed query or an author known by name only, or
- * a funded project. A topic that is one of the app's categories is asked for
- * as that category instead, and gets no lane here.
+ * names (a journal is its OpenAlex source), a search for a followed query or
+ * an author known by name only, or a funded project. A topic that is one of
+ * the app's categories is asked for as that category instead, and gets no
+ * lane here.
  */
 export function followLane(follow: { type?: unknown; canonicalId?: unknown; displayName?: unknown; metadata?: { query?: unknown; funder?: unknown } | null }) {
   const type = text(follow?.type);
@@ -1260,6 +1265,8 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
     return `project:${funder ? `${funder}|` : ''}${canonicalId}`;
   }
   const entity = entityLane(canonicalId);
+  // By its source id alone: a journal's name is no search for its papers.
+  if (type === 'journal') return entity.startsWith('source:') ? entity : '';
   if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
   if (LEAF_IDS.has(canonicalId)) return '';
   const query = text(type === 'topic' ? follow.metadata?.query || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
@@ -1297,9 +1304,14 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
   const asked = parseFeedGroups(body?.groups);
   // A request without groups, from a bundle published before them, is one group.
   const categories = (asked.length ? [...new Set(asked.flatMap(group => group.categories))] : categoryIds(body?.categories)).slice(0, FEED_MAX_CATEGORIES);
-  const follows = (Array.isArray(body?.follows) ? body.follows : [])
+  const served = (Array.isArray(body?.follows) ? body.follows : [])
     .map(follow => ({ follow, lane: followLane(follow) }))
-    .filter(({ lane }) => lane)
+    .filter(({ lane }) => lane);
+  // The first MAX_FOLLOWED_JOURNALS journals only, whatever a client stored:
+  // each is a lane the nightly harvest lists.
+  const pastJournalCap = new Set(served.filter(({ lane }) => lane.startsWith('source:')).slice(MAX_FOLLOWED_JOURNALS));
+  const follows = served
+    .filter(entry => !pastJournalCap.has(entry))
     .slice(0, FEED_MAX_FOLLOWS)
     .map(({ follow, lane }) => ({
       type: text(follow.type) as PaperFollowMatch['type'],

@@ -265,8 +265,14 @@ service cloud.firestore {
             'type', 'canonicalId', 'displayName', 'source', 'externalIds',
             'metadata', 'followedAt', 'followKey'
           ])
-          && request.resource.data.type in ['author', 'topic', 'institution', 'project']
+          && request.resource.data.type in ['author', 'topic', 'institution', 'project', 'journal']
           && validString(request.resource.data.canonicalId, 500)
+          // A journal is its OpenAlex source id (`createFollowEntity` in
+          // src/utils/following.ts). How many a reader follows is not counted
+          // here, since rules cannot count a collection: the Worker serves
+          // the first MAX_FOLLOWED_JOURNALS and the app writes no more.
+          && (request.resource.data.type != 'journal'
+            || request.resource.data.canonicalId.matches('^S[0-9]+$'))
           && validString(request.resource.data.displayName, 500)
           && (!('source' in request.resource.data) || validString(request.resource.data.source, 80))
           && (!('externalIds' in request.resource.data) || request.resource.data.externalIds is map)

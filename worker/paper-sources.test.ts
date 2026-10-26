@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
@@ -1128,6 +1128,21 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
   await follows();
   assert.equal(urls.length, 1, 'the second page came from the store');
   assert.deepEqual(ledger.calls.map(key => key.split(':').slice(0, 2).join(':')), ['openalex:day']);
+});
+
+// ENG-123 (D4, Pablo 2026-10-25): a followed journal's lane lists its newest
+// articles, with or without an abstract, 100 a page: one list call, as a page
+// of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 41 articles a day,
+// Nature 12, the American Economic Review 0.3. Errata and paratext stay out.
+test("a followed journal's lane asks OpenAlex for the journal's articles, 100 a page, none dated after today", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T02:40:00Z') });
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  assert.deepEqual(followedLaneJob('source:S23254222'), { source: 'openalex-follows', lane: 'source:S23254222' });
+  await SOURCES['openalex-follows'].fetchPage(env, { lane: 'source:S23254222', page: 1, since: '', waits: { seconds: 0 } });
+  const [url] = urls;
+  assert.deepEqual(filtersOf(url).sort(), ['primary_location.source.id:S23254222', 'to_publication_date:2026-10-25', 'type:article']);
+  assert.equal(url.searchParams.get('per-page'), '100');
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
 });
 
 // ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───

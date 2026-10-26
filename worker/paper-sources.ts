@@ -465,7 +465,7 @@ export function notableListedYear(page: number, now = Date.now()): number {
 }
 
 // Followed OpenAlex entities, by the filter that names their works.
-const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
+const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id', source: 'primary_location.source.id' };
 
 async function openAireProjectDois(lane: string) {
   // An OpenAIRE project id holds `::` itself; a funder, when stored, comes first.
@@ -648,7 +648,12 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const part = newFollow ? 'new' : 'nightly';
       if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, part });
+      const until = `to_publication_date:${day(new Date().toISOString())}`;
+      // A followed journal (ENG-123, D4): its articles, without its errata and
+      // paratext, 100 a page for the same list call. In the 90 days to
+      // 2026-10-25 PLOS ONE published 41 articles a day and Nature 12.
+      if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},type:article,${until}`, { page, lane, perPage: 100, part });
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},${until}`, { page, lane, perPage: 50, part });
     },
   },
   openaire: {
@@ -723,7 +728,7 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
 const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
   [/^author-name:/, 'arxiv-search'],
   [/^project:/, 'openaire'],
-  [/^(author|institution|topic|concept|query):/, 'openalex-follows'],
+  [/^(author|institution|topic|concept|source|query):/, 'openalex-follows'],
 ];
 
 /** The sources followed lanes are harvested from, as `lane_state` names them. */

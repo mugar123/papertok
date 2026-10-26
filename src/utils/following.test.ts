@@ -179,6 +179,33 @@ test('a nameless entity is no follow, and a shared placeholder name would have b
   );
 });
 
+// ENG-123: a journal is followed by its OpenAlex source id. Its ISSN-L rides
+// along for display; a name or an ISSN alone is no journal to follow.
+test('a journal is followed by its OpenAlex source id, never by its name or ISSN', () => {
+  assert.deepEqual(createFollowEntity({
+    type: 'journal',
+    id: 'https://openalex.org/S23254222',
+    displayName: 'American Economic Review',
+    source: 'openalex',
+    externalIds: { issnl: '0002-8282' },
+  }), {
+    type: 'journal',
+    canonicalId: 'S23254222',
+    displayName: 'American Economic Review',
+    source: 'openalex',
+    externalIds: { issnl: '0002-8282' },
+    metadata: {},
+  });
+  assert.equal(createFollowKey('journal', 'S23254222'), 'journal_S23254222');
+  assert.equal(createFollowEntity({ type: 'journal', displayName: 'American Economic Review' }), null);
+  assert.equal(createFollowEntity({ type: 'journal', id: '0002-8282', displayName: 'American Economic Review' }), null);
+
+  // OpenAlex lists distinct sources under one name; only the id tells them apart.
+  const followed = [{ type: 'journal' as const, canonicalId: 'S23254222', displayName: 'Economic Review' }];
+  assert.equal(followsEntity(followed, { type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), true);
+  assert.equal(followsEntity(followed, { type: 'journal', id: 'S99999999', displayName: 'Economic Review' }), false);
+});
+
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
   assert.equal(getProjectDisplayName({ acronym: 'LEAP', title: 'Quantum leap' }), 'LEAP: Quantum leap');
   assert.equal(getProjectDisplayName({ title: 'Quantum leap' }), 'Quantum leap');

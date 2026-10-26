@@ -41,7 +41,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
 import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork, openAlexJournalId } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1667,6 +1667,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     arxivId: getArxivIdFromWork(work) || undefined,
     pmid: normalizePmid(work.ids?.pmid) || undefined,
     journal: work.primary_location?.source?.display_name,
+    venueId: openAlexJournalId(work),
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
     citationCountKnown: Number.isFinite(work.cited_by_count),

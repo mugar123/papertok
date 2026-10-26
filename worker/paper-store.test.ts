@@ -480,6 +480,30 @@ test('a follow is served from the lane its entity names, and a followed category
   assert.equal(followLane({ type: 'author', canonicalId: 'T10604' }), '', 'a topic id is no author, and there is no name to search');
 });
 
+// ENG-123: a journal is followed by its OpenAlex source id, and served from
+// that source's lane. Its name is no lane: a search by name would be another
+// journal's papers as often as its own.
+test("a followed journal is served from its source's lane, and only by its source id", () => {
+  assert.equal(followLane({ type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' }), 'source:S23254222');
+  assert.equal(followLane({ type: 'journal', canonicalId: 'https://openalex.org/S23254222' }), 'source:S23254222');
+  assert.equal(followLane({ type: 'journal', canonicalId: '0002-8282', displayName: 'American Economic Review' }), '', 'an ISSN is no source id');
+  assert.equal(followLane({ type: 'journal', canonicalId: 'A5023888391', displayName: 'Wei Zhang' }), '', 'an author id is no journal');
+  assert.equal(followLane({ type: 'author', canonicalId: 'S23254222' }), '', 'a source id is no author');
+});
+
+// D3 (Pablo, 2026-10-25): at most 10 followed journals a reader. A journal's
+// lane costs the harvest a list call a night whoever follows it, so the cap
+// holds where the lanes are made, whatever a client stored.
+test('a request serves at most 10 followed journals, and still its other follows', () => {
+  const journals = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Wei Zhang' };
+  const { follows } = parseFeedRequest({ categories: [], follows: [...journals, author] });
+  assert.deepEqual(follows.map(follow => follow.lane), [
+    ...Array.from({ length: 10 }, (_, index) => `source:S${1000 + index}`),
+    'author:A5023888391',
+  ]);
+});
+
 test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
   assert.deepEqual(parseFeedRequest(null).negativeIds, []);
   assert.deepEqual(parseFeedRequest(null).excludedIds, []);
@@ -1617,6 +1641,36 @@ test('an author, concept or institution lane is filed only while someone follows
   db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('concept:C20', ?)").run(new Date(NOW).toISOString());
   await ingestPapers(env, [{ paper: { ...paper, title: 'Listed again, v2' }, lanes: ['cs.LG'] }], { now: NOW });
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['concept:C20', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+// ENG-123: the stored row keeps the OpenAlex id of the journal that published
+// it (`venueId`), so a paper any lane lists joins a followed journal's lane,
+// as it joins a followed author's, and no other journal's.
+test("a journal's lane holds the papers that name it only while someone follows it, and eviction prunes it after", async () => {
+  const { env, db } = corpus();
+  const article = mapOpenAlexWork({
+    id: 'https://openalex.org/W7000000001',
+    doi: 'https://doi.org/10.1257/aer.20260001',
+    title: 'Monetary policy and the term structure of interest rates',
+    type: 'article',
+    publication_date: '2026-10-12',
+    abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+    authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+  })!;
+  const sourceLanes = () => rows(db, "SELECT lane FROM work_lanes WHERE lane LIKE 'source:%'").map(row => row.lane);
+  await ingestPapers(env, [{ paper: article, lanes: ['area:econ'] }], { now: NOW });
+  assert.equal(JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)).venueId, 'S23254222');
+  assert.deepEqual(sourceLanes(), [], 'nobody follows the journal');
+
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper: article, lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(sourceLanes(), ['source:S23254222']);
+
+  db.prepare('DELETE FROM followed_lanes').run();
+  await evictAll(env, NOW);
+  assert.deepEqual(sourceLanes(), [], 'unfollowed, the lane lets the paper go');
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'which its area lane keeps');
 });
 
 test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {

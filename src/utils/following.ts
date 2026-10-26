@@ -3,7 +3,17 @@ export type FollowMetadata = { labelEn?: string; query?: string; categoryIds?: s
 export type FollowEntity = Omit<PaperFollowMatch, 'metadata'> & { metadata?: FollowMetadata; categoryIds?: string[]; followKey?: string };
 export type FollowInput = Omit<Partial<FollowEntity>, 'type'> & { type?: PaperFollowMatch['type'] | 'concept'; id?: string; display_name?: string; name?: string };
 
-const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
+const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
+// A journal is followed by its OpenAlex source id. Its name is not unique in
+// OpenAlex, and its ISSN-L only resolves to the id (ENG-123).
+const JOURNAL_ID = /^S\d+$/;
+
+/**
+ * The most journals a reader follows (D3, Pablo 2026-10-25). Each one is a
+ * lane the nightly harvest lists for everyone who follows it; the Worker
+ * serves no more than these per request (worker/paper-store.ts).
+ */
+export const MAX_FOLLOWED_JOURNALS = 10;
 
 export function normalizeFollowText(value: unknown) {
   return String(value || '')
@@ -48,6 +58,7 @@ export function createFollowEntity(input: FollowInput = {}): FollowEntity | null
   const displayName = String(input.displayName || input.display_name || input.name || '').trim();
   const canonicalId = normalizeFollowId(input.canonicalId || input.id || displayName);
   if (!canonicalId || !displayName) return null;
+  if (type === 'journal' && !JOURNAL_ID.test(canonicalId)) return null;
 
   return compactFollowData({
     type,
@@ -88,7 +99,8 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
   return (followedEntities || []).some((follow) => {
     if (follow.type !== normalized.type) return false;
     if (normalizeFollowId(follow.canonicalId) === id) return true;
-    if (!name) return false;
+    // No journal was ever stored by name, and two sources can share one.
+    if (!name || normalized.type === 'journal') return false;
     const followName = normalizeFollowText(follow.displayName);
     if (followName === name) return true;
     return normalized.type === 'project' && isSameProjectNameSpelling(followName, name);
