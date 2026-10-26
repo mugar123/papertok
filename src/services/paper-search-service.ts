@@ -1,7 +1,8 @@
 import type { Paper } from '../models/paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
 
-import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
+import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
+import { OPENALEX_SEARCH_TYPES } from '../utils/open-alex-work.ts';
 import { searchPapers as searchArxivPapers } from './arxiv-service.ts';
 import { mergeRankedPapers } from './paper-search-merge.ts';
 import { normalizeSearchText } from '../utils/search-relevance.ts';

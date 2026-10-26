@@ -4,7 +4,7 @@ import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -205,8 +205,9 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   }
   if (response.ok) return response;
   if (response.status === 404) throw new ToolFailure({ code: 'NOT_FOUND' });
-  // The route's own validation: an identifier the relay cannot carry.
-  if (response.status === 400) throw new ToolFailure({ code: 'INVALID_ARGUMENTS', message: 'PaperTok cannot look this identifier up' });
+  // The route's own validation, or the provider's, refused what was asked:
+  // an identifier the relay cannot carry, or a search the provider rejects.
+  if (response.status === 400) throw new ToolFailure({ code: 'INVALID_ARGUMENTS', message: 'The source refused this request as invalid' });
   const answer = await response.json<{ code?: string }>().catch(() => null);
   if (response.status === 429) {
     throw new ToolFailure({
@@ -282,9 +283,12 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
 // list is cut afterwards: a billed OpenAlex search costs the same for one
 // result as for ten, and one question has one cache entry.
 async function searchOpenAlex(query: string, since: string, caller: Request, env: WorkerEnv) {
+  // The work types the app's search asks for, so errata, paratext, datasets
+  // and peer-review records do not fill the page.
+  const filters = [`type:${OPENALEX_SEARCH_TYPES.join('|')}`, ...(since ? [`from_publication_date:${since}`] : [])];
   const response = await ask(handleOpenAlex, '/openalex/works', {
     search: query,
-    filter: since ? `from_publication_date:${since}` : '',
+    filter: filters.join(','),
     'per-page': MAX_RESULTS,
     select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   }, caller, env);
@@ -375,7 +379,11 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
     throw new ToolFailure({ code: 'NOT_FOUND' });
   }
-  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work), PAPER_BOUNDS) };
+  // `formatOpenAlexWorkAsPaper` ids a work as `W…`, `mapOpenAlexWork` as
+  // `openalex:W…`; a search returns the second, so the same work keeps one id
+  // whichever tool returned it and whatever identifier found it.
+  const paper = formatOpenAlexWorkAsPaper(work);
+  return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
 }
 
 function openAccessArguments(args: Arguments) {
@@ -421,7 +429,8 @@ function recordFailure(tool: string, details: Record<string, unknown>) {
   if (details.code === 'SOURCES_UNAVAILABLE') return;
   const code = String(details.code);
   const upstreamStatus = Number(details.upstreamStatus) || 0;
-  const status = details.retryAfterSeconds !== undefined ? 429
+  const status = code === 'QUOTA_LEDGER_UNAVAILABLE' ? 503
+    : details.retryAfterSeconds !== undefined ? 429
     : upstreamStatus >= 500 ? upstreamStatus
       : /^(?:UPSTREAM_|PROVIDER_QUOTA_NOT_CONFIGURED$)/.test(code) ? 503 : 0;
   if (!status) return;
@@ -444,7 +453,12 @@ async function callTool(params: Record<string, unknown>, request: Request, env: 
   try {
     const run = RUN[name as ToolName](args as Arguments);
     const caller = await reserveCallerMinute(request, env, MCP_CALLER_MINUTE.namespace, MCP_CALLER_MINUTE.limit);
-    if (caller.reading.code) return failed({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
+    // A missing secret or ledger binding is configuration; a ledger that did
+    // not answer is an outage the client can retry after.
+    if (caller.reading.code === 'CALLER_IDENTITY_NOT_CONFIGURED' || caller.reading.code === 'QUOTA_LEDGER_NOT_CONFIGURED') {
+      return failed({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
+    }
+    if (caller.reading.code) return failed({ code: 'QUOTA_LEDGER_UNAVAILABLE', retryAfterSeconds: Number(caller.retryAfter) });
     if (!caller.reading.accepted) {
       return failed({ code: 'PROVIDER_RATE_LIMITED', retryAfterSeconds: Number(caller.retryAfter) });
     }
@@ -481,9 +495,10 @@ export async function handleMcpRequest(request: Request, env: WorkerEnv) {
   if (Array.isArray(message)) return rpcError(null, -32600, 'Batches are not supported', 400);
   const { jsonrpc, id, method, params = {} } = (message || {}) as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: Record<string, unknown> };
   if (jsonrpc !== '2.0') return rpcError(null, -32600, 'Invalid Request', 400);
+  if (typeof method !== 'string') return rpcError(null, -32600, 'Invalid Request', 400);
   // A notification. This server sends no requests, so it expects no responses.
   if (id === undefined) return new Response(null, { status: 202, headers: { 'cache-control': 'no-store' } });
-  if ((typeof id !== 'string' && typeof id !== 'number') || typeof method !== 'string') {
+  if (typeof id !== 'string' && typeof id !== 'number') {
     return rpcError(null, -32600, 'Invalid Request', 400);
   }
 

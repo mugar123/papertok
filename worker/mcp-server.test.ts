@@ -738,6 +738,79 @@ test('an exception during a tool call is answered under the request id', async (
   }
 });
 
+test('a ledger that does not answer is an outage to retry, not a configuration fault', async () => {
+  const warn = mock.method(console, 'warn', () => {});
+  try {
+    await withUpstream(NO_UPSTREAM, async calls => {
+      const ledger = { idFromName: () => 'ledger', get: () => ({ fetch: async () => new Response('unavailable', { status: 500 }) }) };
+      const env = routeEnv({ REQUEST_QUOTA_LEDGER: ledger as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'] });
+      const { answer } = await callTool(env, 'get_paper', { id: 'W4400000001' });
+      assert.equal(answer.result?.isError, true);
+      assert.equal(answer.result?.structuredContent?.code, 'QUOTA_LEDGER_UNAVAILABLE');
+      assert.ok(Number(answer.result?.structuredContent?.retryAfterSeconds) > 0);
+      assert.deepEqual(calls, []);
+    });
+    assert.deepEqual(warn.mock.calls.map(call => JSON.parse(String(call.arguments[0]))), [
+      { route: '/mcp', tool: 'get_paper', code: 'QUOTA_LEDGER_UNAVAILABLE', status: 503 },
+    ]);
+  } finally {
+    warn.mock.restore();
+  }
+});
+
+test('a message without a method is refused, not taken for a notification', async () => {
+  await withUpstream(NO_UPSTREAM, async () => {
+    for (const body of [{ jsonrpc: '2.0' }, { jsonrpc: '2.0', method: 5 }, { jsonrpc: '2.0', id: 1 }]) {
+      const { response, answer } = await rpc(routeEnv(), body);
+      assert.equal(response.status, 400, JSON.stringify(body));
+      assert.equal(answer.error?.code, -32600);
+    }
+  });
+});
+
+test('a search OpenAlex refuses as invalid is not reported as a bad identifier', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ error: 'Invalid query' }, { status: 400 });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain' });
+    const [refused] = answer.result?.structuredContent?.unavailable as Array<{ source: string; code: string; message: string }>;
+    assert.equal(refused.source, 'openalex');
+    assert.equal(refused.code, 'INVALID_ARGUMENTS');
+    assert.doesNotMatch(refused.message, /identifier/i);
+  });
+});
+
+test('search_papers asks OpenAlex for the work types the app searches', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['openalex'], since: '2026-01-01' });
+    const asked = new URL(calls.find(url => url.startsWith('https://api.openalex.org/'))!);
+    assert.equal(asked.searchParams.get('filter'), 'type:article|conference-paper|review|preprint,from_publication_date:2026-01-01');
+  });
+});
+
+test('one OpenAlex work has one id, whichever tool and identifier found it', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://api.openalex.org/works/')) return Response.json(OPENALEX_WORK);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['openalex'] });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Array<{ id: string }>;
+    assert.equal(listed.id, 'openalex:W4400000001');
+    for (const id of ['W4400000001', 'openalex:W4400000001', '10.1234/example.2026.1']) {
+      const { answer } = await callTool(env, 'get_paper', { id });
+      assert.equal((answer.result?.structuredContent?.paper as { id: string }).id, listed.id, id);
+    }
+  });
+});
+
 test('get_paper does not present another work as a DOI the one-work list did not match', async () => {
   await withUpstream(url => {
     // OpenAlex reads `,` in the filter as another clause and answers with whatever matched.

@@ -867,7 +867,9 @@ worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.
 server with no account (ENG-91, phase 1). `mcp-server.ts` implements the
 Streamable HTTP transport without sessions or server-sent events: each POST
 carries one JSON-RPC message and receives one `application/json` answer.
-Notifications receive `202`, GET and other methods except the router's CORS
+Notifications receive `202`; a message without a string `method` receives
+`400` with `-32600`, as the server sends no requests a client could answer. GET
+and other methods except the router's CORS
 preflight receive `405`, batches
 receive `-32600` (a deviation from `2025-03-26`, the version assumed when a client
 sends no `MCP-Protocol-Version`, whose transport requires batches; the two later
@@ -878,13 +880,16 @@ SDK is not used, so the package lock is unchanged.
 
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
-| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match as the app's search does (`mergeRankedPapers`), plus the sources that refused or failed |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper` |
-| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it |
+| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
+ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
 The citation graph waits for phase 2: the browser's `/citation-graph` requires a
 Firebase identity and charges each reader's share of the credential-backed
-providers' minute allowance, and MCP callers have no account yet.
+providers' minute allowance, and MCP callers have no account yet. Figures are
+not in this phase either; `/resources/figures` is public, so adding them waits
+only on a product decision (ENG-91).
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract and the feed's internal fields, and with
@@ -916,7 +921,9 @@ reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `reserveCallerMinute`; cache hits count too. A refusal, a missing
 `PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
 `isError: true` and a `code` (`PROVIDER_RATE_LIMITED` with
-`retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED`, `NOT_FOUND`,
+`retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED` for a missing secret or
+ledger binding, `QUOTA_LEDGER_UNAVAILABLE` with `retryAfterSeconds` when the
+ledger did not answer (logged as a 503), `NOT_FOUND`,
 `INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
 `UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
 failed, with `retryAfterSeconds` when every one was only rate limited), so the
