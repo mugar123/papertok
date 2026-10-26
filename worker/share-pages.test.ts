@@ -735,33 +735,50 @@ test('an arXiv answer with no entry is a paper that does not exist', async () =>
   assert.deepEqual(outcome, { found: false });
 });
 
+// Graph's answer for TAILOR on 2026-10-23, trimmed to the fields a share page reads.
+const TAILOR_PAGE = {
+  header: { numFound: 1, maxScore: 1, queryTime: 8, page: 1, pageSize: 1 },
+  results: [{
+    id: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a',
+    code: '952215',
+    acronym: 'TAILOR',
+    title: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization',
+  }],
+};
+
 test('a project is looked up in OpenAIRE by its OpenAIRE id', async () => {
-  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a'));
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a?funder=EC'));
   const asked: unknown[] = [];
   const outcome = await createShareLoader({
     openAire: async (params) => {
       asked.push(params);
-      return {
-        response: {
-          results: {
-            result: [{
-              metadata: {
-                'oaf:entity': {
-                  'oaf:project': {
-                    acronym: { $: 'TAILOR' },
-                    title: { $: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' },
-                  },
-                },
-              },
-            }],
-          },
-        },
-      };
+      return TAILOR_PAGE;
     },
   })(route);
-  assert.deepEqual(asked, [{ openaireProjectID: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a' }]);
+  assert.deepEqual(asked, [{ id: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a' }]);
+  assert.equal((route as ShareRoute).cacheId, 'entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a', 'an OpenAIRE id needs no funder');
   const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(titleOf(html), 'TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project | PaperTok');
+});
+
+test("a grant code is looked up with its funder's short name, and a project Graph does not list is not found", async () => {
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/100010?funder=SNSF'));
+  const asked: unknown[] = [];
+  const outcome = await createShareLoader({
+    openAire: async (params) => {
+      asked.push(params);
+      return { header: { numFound: 0, maxScore: 0, queryTime: 4, page: 1, pageSize: 1 }, results: [] };
+    },
+  })(route);
+  assert.deepEqual(asked, [{ code: '100010', fundingShortName: 'SNSF' }]);
+  assert.equal((route as ShareRoute).cacheId, 'entity/project/100010?funder=SNSF');
+  assert.deepEqual(outcome, { found: false });
+});
+
+test('a project answer in the retired Search shape is a failure, not a missing project', async () => {
+  const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a'));
+  const searchShaped = { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:project': { acronym: { $: 'TAILOR' } } } } }] } } };
+  await assert.rejects(createShareLoader({ openAire: async () => searchShaped })(route), /Invalid OpenAIRE response/);
 });
 
 // -------------------------------------------------------------- shell
