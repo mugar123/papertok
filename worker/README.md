@@ -990,7 +990,9 @@ points:
   the seat of its period. An odd period is never an agent's, so even on an
   idle Worker every agent arXiv miss in an odd period is refused: about half
   of uncached arXiv lookups, which a search lists under `unavailable` and
-  `get_paper` answers from OpenAlex for one billed unit. A refused seat is
+  `get_paper` answers from OpenAlex for one billed unit. That answer is the
+  OpenAlex record: id `openalex:W…` and concept names in `categories`, where
+  arXiv's answer has the arXiv id and arXiv categories. A refused seat is
   `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of
   the next public seat (1 to 6 seconds), under `unavailable` in a search;
   `get_paper` then asks OpenAlex, and logs arXiv's refusal with

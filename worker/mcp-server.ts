@@ -398,8 +398,9 @@ function getPaperArguments(args: Arguments) {
 }
 
 // `formatOpenAlexWorkAsPaper` ids a work as `W…`, `mapOpenAlexWork` as
-// `openalex:W…`; a search returns the second, so the same work keeps one id
-// whichever tool returned it and whatever identifier found it.
+// `openalex:W…`; a search returns the second, so an OpenAlex work keeps one id
+// whichever tool returned it and whichever OpenAlex, DOI or PubMed identifier
+// found it. An arXiv id that arXiv answers keeps the arXiv id.
 function openAlexPaper(work: OpenAlexWork) {
   const paper = formatOpenAlexWorkAsPaper(work);
   return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
