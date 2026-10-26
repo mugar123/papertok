@@ -258,19 +258,14 @@
     gap: var(--space-5);
   }
 
+  /* The row wraps rather than scrolling under a hidden scrollbar: with five
+     tabs, or at 200% text, the last (Journals) would sit off-screen with
+     nothing to show it is there (ENG-123). */
   .following-settings-tabs {
     position: static;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: var(--space-1);
-    margin: 0 -24px;
-    padding: 0 24px;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-  }
-
-  .following-settings-tabs::-webkit-scrollbar {
-    display: none;
   }
 
   .following-settings-tabs button {
@@ -288,11 +283,6 @@
   .following-settings-heading {
     margin-bottom: var(--space-5);
   }
-
-  .following-settings-tabs {
-    margin: 0 -16px;
-    padding: 0 16px;
-  }
 }
 
 @media (max-width: 600px) {
@@ -300,9 +290,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-1);
-    margin: 0;
-    padding: 0;
-    overflow: visible;
   }
 }
 
