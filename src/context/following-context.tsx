@@ -21,6 +21,7 @@ import { useAuth } from './auth-context.tsx';
 import { useAnalyticsConsent } from './analytics-context.tsx';
 import {
   FollowsUnavailableError,
+  type FollowListState,
   createFollowEntity,
   createFollowKey,
   followsEntity,
@@ -56,12 +57,13 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   // Mirrored in an effect, like the other stale-closure guards in this app
   // (see FeedContext): a ref must not be written during render.
   useEffect(() => { followedAuthorsRef.current = followedAuthors; }, [followedAuthors]);
-  // True while the follows in hand are a snapshot Firestore sent for the
-  // account below: false before the first one arrives, and again once a
-  // snapshot error puts the legacy authors in its place. A ref, not state: the
-  // migration effect and toggleFollow only need to read it, and writing it from
-  // the snapshot callback keeps it correct before the re-render it triggers.
-  const followsArrived = useRef(false);
+  // `listed` while the follows in hand are a snapshot Firestore sent for the
+  // account below: `waiting` before the first one arrives, and `failed` once a
+  // snapshot error ends the listener and puts the legacy authors in its place.
+  // A ref, not state: the migration effect and toggleFollow only need to read
+  // it, and writing it from the snapshot callback keeps it correct before the
+  // re-render it triggers.
+  const followList = useRef<FollowListState>('waiting');
   const localizedInstitutionNames = institutionLocalizationState.userId === user?.uid
     ? institutionLocalizationState.names
     : EMPTY_LOCALIZED_INSTITUTION_NAMES;
@@ -96,7 +98,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       return undefined;
     }
 
-    followsArrived.current = false;
+    followList.current = 'waiting';
     legacyMigrationAttempted.current = false;
     const followsCollection = collection(db, 'users', user.uid, 'following') as CollectionReference<FollowEntity>;
     /**
@@ -120,14 +122,14 @@ export function FollowingProvider({ children }: PropsWithChildren) {
 
     const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
       window.clearTimeout(loadingTimeout);
-      followsArrived.current = true;
+      followList.current = 'listed';
       setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
       // Whatever went wrong before, this is the server's own answer.
       setError(null);
       setLoading(false);
     }, (snapshotError) => {
       window.clearTimeout(loadingTimeout);
-      followsArrived.current = false;
+      followList.current = 'failed';
       console.error('Error loading follows', snapshotError);
       setError(snapshotError);
       setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
@@ -158,7 +160,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const userId = user?.uid;
     if (!userId) return;
-    if (!followsArrived.current || legacyMigrationAttempted.current) return;
+    if (followList.current !== 'listed' || legacyMigrationAttempted.current) return;
     if (followedAuthors.length === 0) return;
 
     legacyMigrationAttempted.current = true;
@@ -247,7 +249,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     const pendingKey = createFollowKey(entity.type, entity.canonicalId);
     if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
 
-    const { existing: existingFollow, next } = planFollowToggle(followedEntities, entity, { listed: followsArrived.current });
+    const { existing: existingFollow, next } = planFollowToggle(followedEntities, entity, { list: followList.current });
     const wasFollowing = Boolean(existingFollow);
     const previous = followedEntities;
     setFollowedEntities(next);

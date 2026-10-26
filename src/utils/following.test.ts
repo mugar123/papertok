@@ -213,7 +213,7 @@ test('a journal is followed by its OpenAlex source id, never by its name or ISSN
 // list the provider shows and writes; an eleventh journal is refused before
 // anything is written, and unfollowing one, or following anything else, never is.
 test('a reader who follows ten journals cannot follow an eleventh, and can still unfollow one', () => {
-  const listed = { listed: true };
+  const listed = { list: 'listed' as const };
   const journals = Array.from({ length: 10 }, (_, index) => createFollowEntity({ type: 'journal', id: `S${1000 + index}`, displayName: `Journal ${index}` })!);
   const another = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
   const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
@@ -230,13 +230,26 @@ test('a reader who follows ten journals cannot follow an eleventh, and can still
 // snapshot the list is empty, and after a snapshot error it holds only the
 // legacy authors, so either would let an eleventh journal through.
 test('a journal is not followed while the follow list has not arrived', () => {
-  const unlisted = { listed: false };
+  const unlisted = { list: 'waiting' as const };
   const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
   assert.throws(() => planFollowToggle([], journal, unlisted), FollowsUnavailableError);
-  assert.throws(() => planFollowToggle(migrateLegacyAuthors(['Ada Lovelace']), journal, unlisted), FollowsUnavailableError);
+  assert.throws(() => planFollowToggle(migrateLegacyAuthors(['Ada Lovelace']), journal, { list: 'failed' }), FollowsUnavailableError);
   // Any other follow is written as before the list arrives.
   const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
   assert.deepEqual(planFollowToggle([], author, unlisted).next, [author]);
+});
+
+// The listener is still attached while the app waits for its first snapshot,
+// so trying again can succeed. A snapshot error ends it for the session: the
+// refusal says so, and the Explorer asks for a reload, not a second try.
+test('a journal refused after the follow list failed to load is not retryable; one refused while it loads is', () => {
+  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  const refusal = (list: 'waiting' | 'failed') => {
+    try { planFollowToggle([], journal, { list }); } catch (error) { return error as FollowsUnavailableError; }
+    return null;
+  };
+  assert.equal(refusal('waiting')?.retryable, true);
+  assert.equal(refusal('failed')?.retryable, false);
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {

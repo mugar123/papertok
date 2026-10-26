@@ -136,18 +136,27 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
  * from "this account follows nobody" — a distinction that decides whether it
  * is safe to write notification preferences derived from the list.
  * `planFollowToggle` throws it for a new journal, which cannot be counted
- * against a list it does not have.
+ * against a list it does not have. After a snapshot error the listener has
+ * ended and the list will not arrive in this session, so that error is not
+ * `retryable`: only a reload attaches a new listener.
  */
 export class FollowsUnavailableError extends Error {
   declare code: string;
   declare retryable: boolean;
-  constructor() {
-    super('The follow list has not arrived yet.');
+  constructor({ retryable = true }: { retryable?: boolean } = {}) {
+    super(retryable ? 'The follow list has not arrived yet.' : 'The follow list could not be loaded.');
     this.name = 'FollowsUnavailableError';
     this.code = 'FOLLOWS_UNAVAILABLE';
-    this.retryable = true;
+    this.retryable = retryable;
   }
 }
+
+/**
+ * Where the follow list Firestore sends stands: `waiting` for its first
+ * snapshot (the listener is attached and may still answer), `listed` once a
+ * snapshot arrived, `failed` after a snapshot error ended the listener.
+ */
+export type FollowListState = 'waiting' | 'listed' | 'failed';
 
 /** A journal follow refused by `planFollowToggle`; nothing was written. */
 export class JournalFollowLimitError extends Error {
@@ -162,14 +171,14 @@ export class JournalFollowLimitError extends Error {
  * when the list has it, and follows it otherwise. A new journal is counted
  * against the journals in the list, since Firestore rules cannot count them,
  * so it is refused, with nothing written, past MAX_FOLLOWED_JOURNALS (D3) and
- * while the list is not the one Firestore sent (`listed`): before the first
+ * while the list is not the one Firestore sent (`list`): before the first
  * snapshot, or once a snapshot error put the legacy authors in its place.
  */
-export function planFollowToggle(followedEntities: FollowEntity[], entity: FollowEntity, { listed }: { listed: boolean }) {
+export function planFollowToggle(followedEntities: FollowEntity[], entity: FollowEntity, { list }: { list: FollowListState }) {
   const existing = followedEntities.find(follow => followsEntity([follow], entity));
   if (existing) return { existing, next: followedEntities.filter(follow => !followsEntity([follow], entity)) };
   if (entity.type === 'journal') {
-    if (!listed) throw new FollowsUnavailableError();
+    if (list !== 'listed') throw new FollowsUnavailableError({ retryable: list === 'waiting' });
     if (followedEntities.filter(follow => follow.type === 'journal').length >= MAX_FOLLOWED_JOURNALS) throw new JournalFollowLimitError();
   }
   return { existing, next: [...followedEntities, entity] };

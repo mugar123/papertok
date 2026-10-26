@@ -1514,7 +1514,14 @@ export default function EntityExplorer({
           action: { label: 'Open Settings', onClick: () => { void navigate('/settings/following'); } },
         });
       } else if (error instanceof FollowsUnavailableError) {
-        toast.error(`Your follows have not loaded yet, so ${entityDisplayName} was not followed. Try again in a moment.`);
+        // A snapshot error ends the listener, so trying again cannot help;
+        // a reload attaches a new one.
+        if (error.retryable) toast.error(`Your follows have not loaded yet, so ${entityDisplayName} was not followed. Try again in a moment.`);
+        else {
+          toast.error(`Your follows could not be loaded, so ${entityDisplayName} was not followed. Reload the page to try again.`, {
+            action: { label: 'Reload', onClick: () => { window.location.reload(); } },
+          });
+        }
       } else {
         console.error(error);
       }
