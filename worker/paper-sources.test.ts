@@ -1485,7 +1485,7 @@ test("an arXiv category's notable lane also lists ADS's most-cited papers of eac
 
 test('every arXiv category, and no other leaf, has an ADS notable job on its first night', async () => {
   const { binding } = testD1();
-  const jobs = await notableLaneJobs(binding as never, Date.parse('2026-10-30T02:40:00Z'));
+  const jobs = await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'));
   const ads = jobs.filter(job => job.source === 'ads-notable').map(job => job.lane);
   assert.equal(ads.length, 83, 'the 83 leaves that are arXiv categories');
   for (const lane of ['notable:quant-ph', 'notable:cs.RO', 'notable:econ.EM', 'notable:astro-ph.EP', 'notable:physics.plasm-ph', 'notable:cs.CV']) assert.ok(ads.includes(lane), lane);
@@ -1519,7 +1519,7 @@ test('a year with no ADS papers does not end the lane', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
   const { urls, env } = relay(t, url => ({ response: { docs: adsYear(url) === 2016 ? [] : [adsDoc(adsYear(url), 1)] } }));
   const { binding, db } = testD1();
-  await harvestLane({ ...adsEnv(env), PAPER_STORE: binding } as never, { source: 'ads-notable', lane: 'notable:quant-ph' }, Date.now());
+  await harvestLane({ ...adsEnv(env), PAPER_STORE: binding }, { source: 'ads-notable', lane: 'notable:quant-ph' }, Date.now());
   assert.deepEqual(urls.map(adsYear), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:quant-ph'").get() as { n: number }).n, 9);
 });
