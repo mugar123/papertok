@@ -94,6 +94,19 @@ test("the page says the server counts a signed-in reader's requests per account,
   assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
 });
 
+test('the page names the public pages a shared link opens as places for the Privacy button', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const where = html.match(/with the <strong>Privacy<\/strong> button ([^.]*)\./)?.[1];
+  assert.ok(where, 'the policy no longer says where the Privacy button is');
+  assert.match(where, /welcome screens/);
+  // The sentence Pablo approved on 2026-10-25, word for word.
+  assert.ok(
+    where.endsWith('screens and of the public pages a shared link opens: a paper, a list, an author, institution, journal, topic or project page, and the page for a link that no longer works'),
+    where,
+  );
+  assert.doesNotMatch(where, /\bfeed\b/);
+});
+
 test('the page says figure lookups count against the caller address like the other public lookups', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
@@ -107,4 +120,3 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
-

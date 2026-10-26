@@ -1,6 +1,7 @@
 [
   {
     "leaf": "bio.biochem",
+    "query": "(TITLE_ABS:\"Biochemistry\" OR KW:\"Biochemistry\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -9,6 +10,7 @@
   },
   {
     "leaf": "bio.biotech",
+    "query": "(TITLE_ABS:\"Biotechnology\" OR KW:\"Biotechnology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -17,6 +19,7 @@
   },
   {
     "leaf": "bio.bot",
+    "query": "(TITLE_ABS:\"Botany\" OR KW:\"Botany\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -25,6 +28,7 @@
   },
   {
     "leaf": "bio.cell",
+    "query": "(TITLE_ABS:\"Cell Biology\" OR KW:\"Cell Biology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -33,6 +37,7 @@
   },
   {
     "leaf": "bio.comp",
+    "query": "(TITLE_ABS:\"Bioinformatics\" OR KW:\"Bioinformatics\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -41,6 +46,7 @@
   },
   {
     "leaf": "bio.eco",
+    "query": "(TITLE_ABS:\"Ecology\" OR KW:\"Ecology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -49,6 +55,7 @@
   },
   {
     "leaf": "bio.evo",
+    "query": "(TITLE_ABS:\"Evolution & Population Dynamics\" OR KW:\"Evolution & Population Dynamics\")",
     "status": "insufficient-sample",
     "sampleSize": 5,
     "onTarget": 3,
@@ -57,6 +64,7 @@
   },
   {
     "leaf": "bio.gen",
+    "query": "(TITLE_ABS:\"Genetics\" OR KW:\"Genetics\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -65,6 +73,7 @@
   },
   {
     "leaf": "bio.immuno",
+    "query": "(TITLE_ABS:\"Biological Immunology\" OR KW:\"Biological Immunology\")",
     "status": "insufficient-sample",
     "sampleSize": 3,
     "onTarget": 1,
@@ -73,6 +82,7 @@
   },
   {
     "leaf": "bio.marine",
+    "query": "(TITLE_ABS:\"Marine Biology\" OR KW:\"Marine Biology\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 6,
@@ -81,6 +91,7 @@
   },
   {
     "leaf": "bio.micro",
+    "query": "(TITLE_ABS:\"Microbiology\" OR KW:\"Microbiology\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -89,6 +100,7 @@
   },
   {
     "leaf": "bio.mol",
+    "query": "(TITLE_ABS:\"Molecular Biology\" OR KW:\"Molecular Biology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -97,6 +109,7 @@
   },
   {
     "leaf": "bio.neuro",
+    "query": "(TITLE_ABS:\"Neuroscience\" OR KW:\"Neuroscience\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -105,6 +118,7 @@
   },
   {
     "leaf": "bio.physio",
+    "query": "(TITLE_ABS:\"Physiology\" OR KW:\"Physiology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -113,6 +127,7 @@
   },
   {
     "leaf": "bio.zoo",
+    "query": "(TITLE_ABS:\"Zoology\" OR KW:\"Zoology\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 7,
@@ -121,6 +136,7 @@
   },
   {
     "leaf": "med.cardio",
+    "query": "(TITLE_ABS:\"Cardiology\" OR KW:\"Cardiology\")",
     "status": "insufficient-sample",
     "sampleSize": 14,
     "onTarget": 10,
@@ -129,6 +145,7 @@
   },
   {
     "leaf": "med.derma",
+    "query": "(TITLE_ABS:\"Dermatology\" OR KW:\"Dermatology\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 8,
@@ -137,6 +154,7 @@
   },
   {
     "leaf": "med.endo",
+    "query": "(TITLE_ABS:\"Endocrinology\" OR KW:\"Endocrinology\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -145,6 +163,7 @@
   },
   {
     "leaf": "med.gen",
+    "query": "(TITLE_ABS:\"General Medicine\" OR KW:\"General Medicine\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -153,14 +172,16 @@
   },
   {
     "leaf": "med.immuno",
-    "status": "small-population",
+    "query": "(ISSN:\"0091-6749\" OR ISSN:\"0105-4538\" OR ISSN:\"2213-2198\" OR ISSN:\"0954-7894\" OR ISSN:\"1081-1206\" OR ISSN:\"0905-6157\" OR ISSN:\"0271-9142\" OR ISSN:\"1521-6616\" OR ISSN:\"1939-4551\" OR ISSN:\"2045-7022\" OR ISSN:\"1018-2438\" OR ISSN:\"1018-9068\" OR ISSN:\"1323-8930\" OR ISSN:\"1080-0549\" OR ISSN:\"0009-9104\" OR ISSN:\"2092-7355\" OR ISSN:\"0889-8561\")",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 14,
-    "precision": 0.9333333333333333,
-    "hitCount": 974
+    "onTarget": 9,
+    "precision": 0.6,
+    "hitCount": 20463
   },
   {
     "leaf": "med.infect",
+    "query": "(TITLE_ABS:\"Infectious Diseases\" OR KW:\"Infectious Diseases\")",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -169,6 +190,7 @@
   },
   {
     "leaf": "med.neuro",
+    "query": "(TITLE_ABS:\"Clinical Neurology\" OR KW:\"Clinical Neurology\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 12,
@@ -177,6 +199,7 @@
   },
   {
     "leaf": "med.onco",
+    "query": "(TITLE_ABS:\"Oncology\" OR KW:\"Oncology\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -185,14 +208,16 @@
   },
   {
     "leaf": "med.path",
-    "status": "rejected",
+    "query": "(ISSN:\"0893-3952\" OR ISSN:\"0147-5185\" OR ISSN:\"0309-0167\" OR ISSN:\"0003-9985\" OR ISSN:\"0021-9746\" OR ISSN:\"0945-6317\" OR ISSN:\"0046-8177\" OR ISSN:\"0002-9173\" OR ISSN:\"0001-6322\" OR ISSN:\"1015-6305\" OR ISSN:\"0305-1846\" OR ISSN:\"1934-662X\" OR ISSN:\"0956-5507\" OR ISSN:\"2229-5089\" OR ISSN:\"1746-1596\" OR ISSN:\"1072-4109\" OR ISSN:\"0740-2570\" OR ISSN:\"0031-3025\" OR ISSN:\"1066-8969\" OR ISSN:\"1525-1578\" OR ISSN:\"0303-6987\" OR ISSN:\"1936-055X\" OR ISSN:\"1046-3976\" OR ISSN:\"0937-9827\" OR ISSN:\"0195-7910\")",
+    "status": "passed",
     "sampleSize": 15,
-    "onTarget": 5,
-    "precision": 0.3333333333333333,
-    "hitCount": 215214
+    "onTarget": 12,
+    "precision": 0.8,
+    "hitCount": 30021
   },
   {
     "leaf": "med.peds",
+    "query": "(TITLE_ABS:\"Pediatrics\" OR KW:\"Pediatrics\")",
     "status": "insufficient-sample",
     "sampleSize": 14,
     "onTarget": 9,
@@ -201,6 +226,7 @@
   },
   {
     "leaf": "med.pharma",
+    "query": "(TITLE_ABS:\"Pharmacology\" OR KW:\"Pharmacology\")",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -209,6 +235,7 @@
   },
   {
     "leaf": "med.psych",
+    "query": "(TITLE_ABS:\"Psychiatry & Mental Health\" OR KW:\"Psychiatry & Mental Health\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 14,
@@ -217,6 +244,7 @@
   },
   {
     "leaf": "med.pubh",
+    "query": "(TITLE_ABS:\"Public Health & Epidemiology\" OR KW:\"Public Health & Epidemiology\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 9,
@@ -225,6 +253,7 @@
   },
   {
     "leaf": "med.radio",
+    "query": "(TITLE_ABS:\"Radiology & Imaging\" OR KW:\"Radiology & Imaging\")",
     "status": "small-population",
     "sampleSize": 15,
     "onTarget": 8,
@@ -233,18 +262,20 @@
   },
   {
     "leaf": "med.surg",
-    "status": "rejected",
+    "query": "(KW:\"General Surgery\" OR KW:\"Surgeons\" OR KW:\"Surgical Procedures\" OR KW:\"Postoperative Complications\" OR KW:\"Surgical Wound Infection\" OR KW:\"Perioperative Care\" OR KW:\"Enhanced Recovery After Surgery\" OR KW:\"Laparoscopy\" OR KW:\"Bariatric Surgery\" OR KW:\"Anastomotic Leak\")",
+    "status": "passed",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4,
-    "hitCount": 779550
+    "onTarget": 12,
+    "precision": 0.8,
+    "hitCount": 268008
   },
   {
     "leaf": "med.tox",
+    "query": "(ISSN:\"1096-6080\" OR ISSN:\"0340-5761\" OR ISSN:\"0893-228X\" OR ISSN:\"0300-483X\" OR ISSN:\"1040-8444\" OR ISSN:\"0041-008X\" OR ISSN:\"0378-4274\" OR ISSN:\"0278-6915\" OR ISSN:\"1743-8977\" OR ISSN:\"0890-6238\" OR ISSN:\"0161-813X\" OR ISSN:\"0887-2333\" OR ISSN:\"0260-437X\" OR ISSN:\"0273-2300\" OR ISSN:\"1556-3650\" OR ISSN:\"1556-9039\" OR ISSN:\"0041-0101\" OR ISSN:\"1383-5718\" OR ISSN:\"0893-6692\" OR ISSN:\"1091-5818\" OR ISSN:\"0192-6233\" OR ISSN:\"0895-8378\" OR ISSN:\"1528-7394\" OR ISSN:\"1093-7404\" OR ISSN:\"1868-596X\")",
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 8,
-    "precision": 0.5333333333333333,
-    "hitCount": 21522
+    "onTarget": 9,
+    "precision": 0.6,
+    "hitCount": 35963
   }
 ]

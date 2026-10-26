@@ -6,10 +6,10 @@ import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { europePmcLabelQuery } from '../src/services/domain-source-records.ts';
 
 // The medicine and biology leaves whose notable lane also lists Europe PMC's
-// most-cited records of each year that name the leaf (`europepmc-notable` in
-// worker/paper-sources.ts). Each leaf's evidence is a labelled sample: the 15
-// most-cited records with an abstract of the ten completed years before the
-// capture, asked with the leaf's label query.
+// most-cited records of each year (`europepmc-notable` in
+// worker/paper-sources.ts), and the query each lists with. Each leaf's
+// evidence is a labelled sample: the 15 most-cited records with an abstract of
+// the ten completed years before the capture, asked with the leaf's query.
 // scripts/README-europepmc-notable.md describes the inputs.
 
 interface Work { id: string; source: string; title: string; pubYear: string; citedByCount: number }
@@ -31,12 +31,21 @@ const leaves = getAllLeafCategories();
 const minimumSample = 15;
 const minimumPrecision = 2 / 3;
 // The years the notable lanes list (worker/paper-store.ts `NOTABLE_YEARS`),
-// 100 records a year (worker/paper-sources.ts `NOTABLE_PER_YEAR`). A label
+// 100 records a year (worker/paper-sources.ts `NOTABLE_PER_YEAR`). A query
 // that matches fewer records than the listing takes would list nearly all of
 // them, uncited ones included, of which the sample's head says little.
 const notableYears = 10;
 const minimumPopulation = notableYears * 100;
 const EUROPE_PMC_SEARCH = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
+// A leaf's query is the label query of the category lanes (the label in the
+// title, abstract or keywords), or an OR of phrases in Europe PMC's KW field,
+// which holds a record's MeSH descriptors beside its authors' keywords, or of
+// journals by ISSN, print or electronic. The form is checked here; that a
+// phrase is a MeSH descriptor is checked before sampling. A phrase holds no
+// quote, backslash or control character, so it can neither escape its quotes
+// nor break the generated string.
+const MESH_QUERY = /^\(KW:"[A-Za-z0-9][^"\\\p{Cc}]*"(?: OR KW:"[A-Za-z0-9][^"\\\p{Cc}]*")*\)$/u;
+const JOURNAL_QUERY = /^\(ISSN:"\d{4}-\d{3}[\dX]"(?: OR ISSN:"\d{4}-\d{3}[\dX]")*\)$/;
 
 function checkSample(leaf: string, value: unknown) {
   const sample = value as Sample | null;
@@ -49,14 +58,18 @@ function checkSample(leaf: string, value: unknown) {
   const year = new Date(capturedAt).getUTCFullYear();
   const [first, last] = [year - notableYears, year - 1];
   const query = new URL(sample!.query);
+  const window = ` AND PUB_YEAR:[${first} TO ${last}] AND HAS_ABSTRACT:y sort_cited:y`;
+  const asked = query.searchParams.get('query') ?? '';
+  const leafQuery = asked.endsWith(window) ? asked.slice(0, -window.length) : '';
   const expected: Record<string, string> = {
-    query: `${europePmcLabelQuery([leaf])} AND PUB_YEAR:[${first} TO ${last}] AND HAS_ABSTRACT:y sort_cited:y`,
+    query: `${leafQuery}${window}`,
     format: 'json', resultType: 'core', pageSize: String(minimumSample), page: '1',
   };
   if (`${query.origin}${query.pathname}` !== EUROPE_PMC_SEARCH || query.username || query.password
+    || (leafQuery !== europePmcLabelQuery([leaf]) && !MESH_QUERY.test(leafQuery) && !JOURNAL_QUERY.test(leafQuery))
     || [...query.searchParams.keys()].length !== Object.keys(expected).length
     || Object.entries(expected).some(([name, wanted]) => query.searchParams.getAll(name).length !== 1 || query.searchParams.get(name) !== wanted)) {
-    invalid("sample must be the most-cited page of 15 with an abstract of the leaf's label query over the ten completed years before its capture");
+    invalid("sample must be the most-cited page of 15 with an abstract of the leaf's label, MeSH or journal query over the ten completed years before its capture");
   }
 
   if (sample!.works.length > minimumSample) invalid('a sample is one page of 15');
@@ -102,7 +115,7 @@ function checkSample(leaf: string, value: unknown) {
   const status = sampleSize < minimumSample ? 'insufficient-sample'
     : sample!.hitCount < minimumPopulation ? 'small-population'
       : onTarget / sampleSize >= minimumPrecision ? 'passed' : 'rejected';
-  return { status, sampleSize, onTarget, precision: sampleSize ? onTarget / sampleSize : null, hitCount: sample!.hitCount };
+  return { query: leafQuery, status, sampleSize, onTarget, precision: sampleSize ? onTarget / sampleSize : null, hitCount: sample!.hitCount };
 }
 
 const { values } = parseArgs({ options: {
@@ -114,13 +127,15 @@ const { values } = parseArgs({ options: {
 const reviews = JSON.parse(readFileSync(values.reviews!, 'utf8')) as Reviews;
 if (!reviews?.leaves || typeof reviews.leaves !== 'object') throw new Error('Reviews must hold the samples keyed by taxonomy leaf ID');
 const report = Object.keys(reviews.leaves).sort().map(leaf => ({ leaf, ...checkSample(leaf, reviews.leaves[leaf]) }));
-const admitted = report.filter(row => row.status === 'passed').map(row => row.leaf);
+const admitted = report.filter(row => row.status === 'passed');
+const quoted = (text: string) => `'${text.replace(/[\\']/g, '\\$&')}'`;
 const output = [
   '// Generated by scripts/generate-europepmc-notable-leaves.ts from scripts/data/europepmc-notable-reviews.json; do not edit.',
-  '// The leaves whose notable lane also lists Europe PMC\'s most-cited records of each year: their sample passed.',
-  'export const EUROPE_PMC_NOTABLE_LEAVES: readonly string[] = Object.freeze([',
-  ...admitted.map(leaf => `  '${leaf}',`),
-  ']);', '',
+  '// The leaves whose notable lane also lists Europe PMC\'s most-cited records of each year, and the query each',
+  '// lists with, as its sample asked it: their sample passed.',
+  'export const EUROPE_PMC_NOTABLE_QUERIES: Readonly<Record<string, string>> = Object.freeze({',
+  ...admitted.map(row => `  ${quoted(row.leaf)}: ${quoted(row.query)},`),
+  '});', '',
 ].join('\n');
 const files = [[resolve(values.out!), output], [resolve(values.report!), `${JSON.stringify(report, null, 2)}\n`]];
 for (const [path, text] of files) {
