@@ -131,7 +131,7 @@ export class ScopusAdapter {
     if (authors.length === 0 && raw['dc:creator']) authors.push({ name: normalizeText(raw['dc:creator']) });
 
     const published = raw['prism:coverDate'] || '';
-    const year = Number(String(published).slice(0, 4)) || new Date().getFullYear();
+    const year = Number(String(published).slice(0, 4)) || undefined;
     const citedByUrl = links['scopus-citedby'] || '';
     const rawCitationCount = Number(raw['citedby-count']);
     const hasAttributedCitations = Number.isFinite(rawCitationCount) && Boolean(citedByUrl);

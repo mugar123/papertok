@@ -34,6 +34,11 @@ checks them now:
   `notablePlaceAfterDismissal`'s card for the next page, the snapshot carries it and the account
   change clears it; view and skip events carry `notable`. The
   decisions are tested in `src/context/`; the wiring inside the context is not.
+- The seen filter (PAP-103): `loadPapers` sends the session's seen set with its main page and
+  its follows' page, the 2,000 newest once a main answer said `skipsSeen` (`feedSeenIds`),
+  makes the papers a page leaves out the newest of it (`markSeenLatest`), and gives
+  `planUnshowablePage` `hasSeenRanking`'s answer for the main page. The decisions are tested
+  in `src/context/` and `src/utils/`; the wiring inside the context is not.
 - `PaperCard` shows "Highly cited" on a notable card before the paper's own year and citation
   count, and groups every citation count with `toLocaleString('en-US')`.
 - `FeedContainer` keys For You's place by the account (`forYouScrollKey`), and `App` clears

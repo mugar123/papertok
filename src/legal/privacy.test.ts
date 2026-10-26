@@ -77,6 +77,16 @@ test('the page says papers you liked, saved or opened reach the catalogue and Wo
   assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
 });
 
+test('the page says what the server keeps of the feed order ranked for a reader, where, for how long, and, up top too, that deleting the account leaves it to expire', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // worker/paper-feed.ts `rankingCache`: a walk's order lasts WALK_KEPT_MS from its last page.
+  assert.match(html, /keeps the order it ranked for you, and how far down it you got, for up to 2 hours after your last page/);
+  assert.match(html, /cache of the Cloudflare data center that answered you/);
+  assert.match(html, /Deleting your account does not remove it sooner/);
+  const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
+  assert.match(summary, /delete your account, and everything in it, [^<]*The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page/);
+});
+
 test("the page says the server counts a signed-in reader's requests per account, not only their volume", () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // The ledger keys per-account limits (feed, follows, embedding, provider minutes) by a SHA-256 of the uid.
@@ -91,4 +101,10 @@ test('the page names the public pages a shared link opens as places for the Priv
   assert.match(where, /welcome screens/);
   for (const page of ['a paper', 'a list', 'an author or a topic', 'no longer works']) assert.ok(where.includes(page), page);
   assert.doesNotMatch(where, /\bfeed\b/);
+});
+
+test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
+  assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
