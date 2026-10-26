@@ -115,16 +115,15 @@ export function rememberPrivacyNotice(uid: string, version: string, storage?: Nu
  * later version settles that. Only signed-in
  * accounts are told: a guest has no creation date, so a first-time visitor
  * could not be told apart from someone who read the old policy. An account
- * created on or after the day of the change started under the policy as it is
- * and has nothing to be told; one whose creation date is unknown is told. The
- * policy date has no time zone, so the creation day is read in UTC; an account
- * opened close to midnight may land on either side of it.
+ * created at or after `effectiveAt` (an ISO instant: when the change went
+ * live) started under the policy as it is and has nothing to be told; one whose
+ * creation time is unknown is told.
  */
-export function privacyNoticeOwed({ version, acknowledged, accountCreated, signedIn }: { version: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
+export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountCreated, signedIn }: { version: string; effectiveAt: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
   if (!signedIn || policyVersionCovers(acknowledged, version)) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
   if (!created || Number.isNaN(created.getTime())) return true;
-  return created.toISOString().slice(0, 10) < version.slice(0, 10);
+  return created.getTime() < new Date(effectiveAt).getTime();
 }
 
 /** One of the pending ones, at random, or nothing at all. */

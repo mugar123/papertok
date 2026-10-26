@@ -4,7 +4,7 @@ import { EnvelopeSimple, ShieldCheck } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
@@ -94,6 +94,7 @@ export default function NudgeHost() {
     const id = pickVisitNotice({
       privacyOwed: privacyNoticeOwed({
         version: PRIVACY_POLICY_VERSION,
+        effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
         acknowledged: readPrivacyNoticeAck(user.uid),
         accountCreated: user.metadata?.creationTime,
         signedIn,

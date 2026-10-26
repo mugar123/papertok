@@ -127,19 +127,20 @@ test('los tiempos son los acordados', () => {
 
 test('a reader who has not dismissed this policy version is owed the notice', () => {
   const version = '2026-10-22';
-  assert.equal(privacyNoticeOwed({ version, acknowledged: null, signedIn: true }), true, 'an account with no creation date');
-  assert.equal(privacyNoticeOwed({ version, acknowledged: null, signedIn: false }), false, 'a guest cannot be told apart from a first-time visitor');
-  assert.equal(privacyNoticeOwed({ version, acknowledged: '2026-10-20', signedIn: true }), true, 'dismissed an earlier version');
-  assert.equal(privacyNoticeOwed({ version, acknowledged: '2026-10-22', signedIn: true }), false, 'dismissed this one');
+  const effectiveAt = '2026-10-22T05:00:00Z';
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: true }), true, 'an account with no creation date');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: false }), false, 'a guest cannot be told apart from a first-time visitor');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'dismissed an earlier version');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'dismissed this one');
   assert.equal(
-    privacyNoticeOwed({ version: '2026-10-22.2', acknowledged: '2026-10-22', signedIn: true }),
+    privacyNoticeOwed({ version: '2026-10-22.2', effectiveAt, acknowledged: '2026-10-22', signedIn: true }),
     true,
     'a second change on the same day is news to whoever dismissed the first',
   );
 });
 
 test('dismissing a later version settles an earlier one, and a suffix sorts as a number', () => {
-  const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, acknowledged, signedIn: true });
+  const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, effectiveAt: '2026-10-25T05:00:00Z', acknowledged, signedIn: true });
   assert.equal(owed('2026-10-25', '2026-11-05'), false, 'a tab on an older bundle');
   assert.equal(owed('2026-10-25.2', '2026-10-26'), false, 'a later day covers an earlier day with a suffix');
   assert.equal(owed('2026-10-25.2', '2026-10-25.10'), false, '.10 is after .2');
@@ -165,25 +166,32 @@ test('a tab on an older bundle does not overwrite a newer dismissal', () => {
   assert.equal(readPrivacyNoticeAck('reader-b', storage), '2026-10-25', 'a stored value that is no version is replaced');
 });
 
-test('an account opened on or after the day of the change is not told about it', () => {
+test('an account opened at or after the moment of the change is not told about it', () => {
   const version = '2026-10-22';
-  assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Tue, 20 Oct 2026 09:00:00 GMT', signedIn: true }), true);
+  const effectiveAt = '2026-10-22T05:00:00Z';
+  const owed = (accountCreated: string | null) => privacyNoticeOwed({ version, effectiveAt, acknowledged: null, accountCreated, signedIn: true });
+  assert.equal(owed('Tue, 20 Oct 2026 09:00:00 GMT'), true);
+  assert.equal(owed('Wed, 21 Oct 2026 23:59:00 GMT'), true, 'the day before is an account that read the old policy');
+  assert.equal(owed('Thu, 22 Oct 2026 04:59:59 GMT'), true, 'the same day but before the change went live read the old policy');
+  assert.equal(owed('2026-10-22T04:59:59.999Z'), true, 'a millisecond before');
+  assert.equal(owed('Thu, 22 Oct 2026 05:00:00 GMT'), false, 'the instant it took effect started under it');
+  assert.equal(owed('Thu, 22 Oct 2026 08:00:00 GMT'), false, 'later that day started under it');
+  assert.equal(owed('Thu, 22 Oct 2026 06:30:00 +0200'), true, 'an offset is read as the instant it names: 04:30Z');
+  assert.equal(owed('Thu, 22 Oct 2026 07:00:00 +0200'), false, 'an offset is read as the instant it names: 05:00Z');
+  assert.equal(owed('not a date'), true, 'an unknown start is told');
+  assert.equal(owed(null), true, 'a missing start is told');
   assert.equal(
-    privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Wed, 21 Oct 2026 23:59:00 GMT', signedIn: true }),
-    true,
-    'the day before is an account that read the old policy',
-  );
-  assert.equal(
-    privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Thu, 22 Oct 2026 08:00:00 GMT', signedIn: true }),
-    false,
-    'a change is published the day it is dated, so a new account that day started under it',
-  );
-  assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'not a date', signedIn: true }), true, 'an unknown start is told');
-  assert.equal(
-    privacyNoticeOwed({ version: '2026-11-05', acknowledged: '2026-10-22', accountCreated: 'Fri, 23 Oct 2026 08:00:00 GMT', signedIn: true }),
+    privacyNoticeOwed({ version: '2026-11-05', effectiveAt: '2026-11-05T05:00:00Z', acknowledged: '2026-10-22', accountCreated: 'Fri, 23 Oct 2026 08:00:00 GMT', signedIn: true }),
     true,
     'and is told about the next change',
   );
+});
+
+test('an account created after an earlier change on the same UTC day is still told of a later one', () => {
+  const owed = (accountCreated: string) =>
+    privacyNoticeOwed({ version: '2026-10-26', effectiveAt: '2026-10-26T05:00:00Z', acknowledged: null, accountCreated, signedIn: true });
+  assert.equal(owed('Sun, 25 Oct 2026 15:00:00 GMT'), true, 'created the day of the earlier change, after it');
+  assert.equal(owed('Mon, 26 Oct 2026 00:10:00 GMT'), true, 'after midnight UTC, before this change');
 });
 
 test('each account dismisses the notice separately', () => {

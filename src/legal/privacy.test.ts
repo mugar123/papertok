@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -97,8 +97,8 @@ test("the page says the server counts a signed-in reader's requests per account,
 
 test('the page promises the in-app announcement to signed-in accounts and says how a dismissal is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  // Guests and accounts created on or after the policy date are not told (nudges.ts privacyNoticeOwed).
-  assert.match(html, /the change will be announced in the application to signed-in accounts created before that date/);
+  // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
+  assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
   assert.match(html, /remembers that version, separately for each account/);
 });
 
@@ -110,6 +110,13 @@ test('the in-app notice announces the version this page is dated', () => {
   const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
   const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
   assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacyPolicy.ts');
+});
+
+test('the effective time is an ISO UTC instant on the day of the announced version', () => {
+  assert.match(PRIVACY_POLICY_EFFECTIVE_AT, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  const at = new Date(PRIVACY_POLICY_EFFECTIVE_AT);
+  assert.ok(!Number.isNaN(at.getTime()), 'it parses');
+  assert.equal(at.toISOString().slice(0, 10), PRIVACY_POLICY_VERSION.slice(0, 10), 'the page is dated the day the change went live');
 });
 
 test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
@@ -126,7 +133,7 @@ test('the in-app summary is one sentence that tells what the page says goes to t
     if (PRIVACY_POLICY_CHANGE.includes(provider)) assert.ok(html.includes(provider), provider);
   }
   // What a request for more papers carries, per the page's feed paragraph, is what an account
-  // created before the 25 October page was never told: the summary says it in the page's words.
+  // created before the 26 October page was never told: the summary says it in the page's words.
   assert.match(PRIVACY_POLICY_CHANGE, /request for more papers/);
   for (const carried of ['interests', 'what you follow', 'up to 24 papers', 'liked, saved or read at length', 'filter of the papers you viewed']) {
     assert.ok(html.includes(carried), `the page says "${carried}"`);
