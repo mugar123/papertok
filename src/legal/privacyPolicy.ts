@@ -32,9 +32,10 @@ export const PRIVACY_POLICY_VERSION = '2026-10-26';
  * Whenever the page's text changes again, bump the page's date,
  * PRIVACY_POLICY_VERSION and this instant together.
  *
- * 2026-10-26T05:00Z is an exception to that rule, kept on purpose. #363, the
- * last change the summary announces to accounts, finished deploying at
- * 04:52:18Z (the Vercel status of its merge commit). The page's 26 October
+ * 2026-10-26T05:00Z is an exception to that rule, kept on purpose. The summary
+ * announces the PostHog analytics and the contents of a feed request, and both
+ * were live before #363 finished deploying at 04:52:18Z (the Vercel status of
+ * its merge commit), so 05:00Z is a safe upper bound. The page's 26 October
  * date came later with #385 (live about 11:01Z), and #330's figure-lookup
  * wording later still (about 19:24Z) without a date change. Neither changes
  * what an account is told, so accounts created after 05:00Z miss nothing they

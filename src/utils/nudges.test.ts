@@ -9,6 +9,7 @@ import {
   emailNudgeProblem,
   escapeBelongsToOther,
   forgetPrivacyNotice,
+  modalIsOpen,
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
@@ -194,10 +195,20 @@ test('an account opened at or after the moment of the change is not told about i
 });
 
 test('an account created after an earlier change on the same UTC day is still told of a later one', () => {
-  const owed = (accountCreated: string) =>
-    privacyNoticeOwed({ version: '2026-10-26', effectiveAt: '2026-10-26T05:00:00Z', acknowledged: null, accountCreated, signedIn: true });
-  assert.equal(owed('Sun, 25 Oct 2026 15:00:00 GMT'), true, 'created the day of the earlier change, after it');
-  assert.equal(owed('Mon, 26 Oct 2026 00:10:00 GMT'), true, 'after midnight UTC, before this change');
+  // Boundary times come from the shipped instant, so the next policy change moves them.
+  const effective = Date.parse(PRIVACY_POLICY_EFFECTIVE_AT);
+  const HOUR = 3_600_000;
+  const owed = (offsetMs: number) =>
+    privacyNoticeOwed({
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      acknowledged: null,
+      accountCreated: new Date(effective + offsetMs).toUTCString(),
+      signedIn: true,
+    });
+  assert.equal(owed(-14 * HOUR), true, 'created the day of the earlier change, after it');
+  assert.equal(owed(-1000), true, 'a second before this change');
+  assert.equal(owed(0), false, 'the instant of this change');
 });
 
 test('each account dismisses the notice separately', () => {
@@ -259,7 +270,7 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname });
   assert.equal(on(PRIVACY_NOTICE_ID, true, '/feed'), PRIVACY_NOTICE_ID);
   assert.equal(on('email-down', true, '/feed'), 'email-down');
-  for (const pathname of ['/feed/', '/feed//']) {
+  for (const pathname of ['/feed/', '/feed//', '/Feed', '/FEED', '/Feed/']) {
     assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), PRIVACY_NOTICE_ID, `the feed route also matches ${pathname}`);
     assert.equal(on('email-down', true, pathname), 'email-down', `the email nudge too on ${pathname}`);
   }
@@ -269,6 +280,12 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   }
   assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+test('a modal anywhere on the page holds the status message back', () => {
+  const page = (open: boolean) => ({ querySelector: (selector: string) => (open && selector === '[aria-modal="true"]' ? {} : null) });
+  assert.equal(modalIsOpen(page(true)), true, 'a paper, the PDF viewer or the Similar layer is open');
+  assert.equal(modalIsOpen(page(false)), false, 'nothing modal');
 });
 
 // What the focus tracker reads of the page: an element on it, the body that holds

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple, ShieldCheck } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -9,6 +9,7 @@ import {
   NUDGE_DWELL_MS,
   NUDGE_PANEL_SELECTOR,
   isNudgePath,
+  modalIsOpen,
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
@@ -64,6 +65,12 @@ const COPY = {
     },
   },
 };
+
+function subscribeToModals(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-modal'] });
+  return () => observer.disconnect();
+}
 
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete } = useAuth();
@@ -164,6 +171,11 @@ export default function NudgeHost() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [privacyShown, hidePrivacyForVisit]);
 
+  // A status set while a modal is open is never spoken (everything outside it is
+  // hidden from assistive technology), and closing the modal would not change the
+  // text again. So the message waits for the modal to close.
+  const modalOpen = useSyncExternalStore(subscribeToModals, () => modalIsOpen(document), () => false);
+
   const handleSettings = useCallback(() => {
     close('email-down');
     void navigate('/settings/notifications');
@@ -179,7 +191,7 @@ export default function NudgeHost() {
         It says only that the notice is there; the summary is read once, in the
         panel, instead of a second time from here. */}
     <p className="visually-hidden" role="status">
-      {privacyShown ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
+      {privacyShown && !modalOpen ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
     </p>
     <AnimatePresence>
       {privacyShown ? (

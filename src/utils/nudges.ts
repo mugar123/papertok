@@ -155,9 +155,22 @@ export function privacyOwedFor({ user, signedIn, version, effectiveAt, storage }
 /** The only route a nudge is picked on and shown on. */
 const NUDGE_PATH = '/feed';
 
-/** Whether `pathname` is the feed route: React Router (and app.tsx) also match '/feed/'. */
+/**
+ * Whether `pathname` is the feed route. React Router (and app.tsx, which sets no
+ * caseSensitive) also match '/feed/', '/Feed' and '/FEED'.
+ */
 export function isNudgePath(pathname: string) {
-  return pathname.replace(/\/+$/, '') === NUDGE_PATH;
+  return pathname.replace(/\/+$/, '').toLowerCase() === NUDGE_PATH;
+}
+
+/**
+ * Whether a modal (the reader, the PDF viewer, the Similar layer) is open in
+ * `root`. Base UI makes everything outside a modal inert and hidden from
+ * assistive technology, the status region included, so a message set meanwhile
+ * is never spoken.
+ */
+export function modalIsOpen(root: { querySelector(selector: string): unknown }) {
+  return root.querySelector('[aria-modal="true"]') !== null;
 }
 
 /**
