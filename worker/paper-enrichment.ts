@@ -7,8 +7,7 @@ import type { StoreEnv } from './paper-store.ts';
 import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
-import { stripMarkup } from '../src/services/crossref-institution-service.ts';
-import { decodeHtmlEntities, preferTexAlternatives } from '../src/utils/latex.ts';
+import { normalizeScientificMarkup } from '../src/utils/latex.ts';
 import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
@@ -89,10 +88,16 @@ async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
     for (const work of await openAlexChunk(env, filter)) {
       const mapped = mapOpenAlexEnrichmentWork(work);
       if (!mapped) continue;
-      if (mapped.arxivId) byId[mapped.arxivId] = mapped.enrichment;
+      // OpenAlex can hold an eprint as a work of its own beside the journal's,
+      // and answer an arXiv id with both, the most cited first: a retracted
+      // article's eprint record would otherwise hide the retraction.
+      const keep = (key: string) => {
+        if (byId[key]?.publicationStatus !== 'retracted') byId[key] = mapped.enrichment;
+      };
+      if (mapped.arxivId) keep(mapped.arxivId);
       const doi = normalizeDoi(work.doi || work.ids?.doi);
-      if (doi) byId[`doi:${doi}`] = mapped.enrichment;
-      byId[`openalex:${mapped.openAlexId}`] = mapped.enrichment;
+      if (doi) keep(`doi:${doi}`);
+      keep(`openalex:${mapped.openAlexId}`);
     }
   }
   return byId;
@@ -142,15 +147,18 @@ const JATS_TITLE = /<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w
 const JATS_HEADINGS = new Set(['abstract', 'summary']);
 
 function sectionLabel(_match: string, title: string) {
-  const label = stripMarkup(preferTexAlternatives(title));
+  const label = normalizeScientificMarkup(title);
   if (!label || JATS_HEADINGS.has(label.replace(/[:.]$/, '').toLowerCase())) return ' ';
-  return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
+  return ` ${title.trim()}${/[:.]$/.test(label) ? '' : ':'} `;
 }
 
 function crossrefAbstractText(jats: unknown) {
   const deposit = String(jats || '');
   const first = JATS_ABSTRACT.exec(deposit)?.[0] ?? deposit;
-  return decodeHtmlEntities(stripMarkup(preferTexAlternatives(first.replace(JATS_SECTION_TITLE, sectionLabel).replace(JATS_TITLE, ' ')))).replace(/\s+/g, ' ').trim();
+  return normalizeScientificMarkup(first
+    .replace(JATS_SECTION_TITLE, sectionLabel)
+    .replace(JATS_TITLE, ' ')
+    .replace(/<\/(?:[a-z][\w.-]*:)?(?:p|sec)\s*>/gi, ' '));
 }
 
 /** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */

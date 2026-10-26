@@ -46,6 +46,23 @@ test('a degraded bioRxiv answer is a source failure, not an empty result', () =>
 // entry points can import without closing a cycle.
 import { sourceResponseError } from './worker-api-client.ts';
 
+test('records without a publication date keep the year unknown', () => {
+  const papers = [
+    mapBioRxivPaper({ doi: '10.1101/2024.01.01.000001', title: 'Undated preprint', abstract: 'A.', authors: 'Ada', category: 'neuroscience' }),
+    mapOstiRecord({ osti_id: '1', title: 'Undated report', description: 'A.', doi: '10.2172/1' }),
+    mapCoreWork({ id: '1', title: 'Undated core', abstract: 'A.', doi: '10.1000/core' }),
+    mapAdsPaper({ bibcode: '2024xxxx.1A', title: ['Undated ADS'], abstract: 'A.', doi: ['10.1000/ads'] }),
+    mapInspirePaper({ control_number: 7, titles: [{ title: 'Undated INSPIRE' }], abstracts: [{ value: 'A.' }], dois: [{ value: '10.1000/ins' }] }),
+    mapEuropePmcSearchResult({ id: '1', pmid: '1', source: 'MED', title: 'Undated Europe PMC' }),
+    mapNasaRecord({ id: 1, title: 'Undated NASA', abstract: 'A.' }),
+  ];
+  for (const paper of papers) {
+    assert.ok(paper, 'record maps');
+    assert.equal(paper.year, undefined, paper.id);
+    assert.equal(/^\d{4}-01-01$/.test(String(paper.published || '')), false, `${paper.id} has no invented date`);
+  }
+});
+
 test('routes biology and engineering categories only to relevant specialist sources', () => {
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
   assert.deepEqual(plan.biology, ['bio.cell']);
@@ -87,6 +104,18 @@ test('maps a bioRxiv preprint under the subject bioRxiv files it in', () => {
   assert.match(paper!.pdfUrl!, /\.full\.pdf$/);
   assert.match(paper!.landingPageUrl!, /10\.1101\/2026/);
   assert.equal(paper!.authors.length, 2);
+});
+
+// Europe PMC's PPR source is its preprints (bioRxiv, medRxiv, Research Square
+// and others); its MED records are PubMed's.
+test('a Europe PMC preprint maps as a preprint, and a PubMed record as published', () => {
+  const preprint = mapEuropePmcSearchResult({ id: 'PPR12345', source: 'PPR', doi: '10.1101/2020.03.14.123456', title: 'A preprint', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([preprint!.publicationType, preprint!.publicationStatus], ['preprint', 'preprint']);
+  const article = mapEuropePmcSearchResult({ id: '123', source: 'MED', pmid: '123', title: 'An article', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([article!.publicationType, article!.publicationStatus], ['article', 'published']);
+  // PubMed indexes NIH-funded preprints, typed Preprint.
+  const indexed = mapEuropePmcSearchResult({ id: '124', source: 'MED', pmid: '124', title: 'An indexed preprint', firstPublicationDate: '2020-03-14', pubTypeList: { pubType: ['Preprint'] } });
+  assert.deepEqual([indexed!.publicationType, indexed!.publicationStatus], ['preprint', 'preprint']);
 });
 
 test('maps Europe PMC search results including free full text and biomedical terms', () => {
@@ -374,6 +403,14 @@ test('maps NASA ADS records with citations, references and physics concepts', ()
   assert.deepEqual(paper!.categories, ['astro-ph.CO', 'Cosmology']);
   assert.ok(!paper!.concepts!.some(concept => concept.display_name === '11.25.Tq'));
   assert.ok(paper!.keywords!.includes('11.25.Tq'));
+});
+
+test('an ADS date with an unknown day or month keeps the month or year it names', () => {
+  const published = (pubdate: string) => mapAdsPaper({ bibcode: '2018PhRvL.120a0001A', title: ['A dated ADS record'], abstract: 'A.', year: 2018, pubdate })!.published;
+  assert.equal(published('2018-03-00'), '2018-03');
+  assert.equal(published('2018-00-00'), '2018');
+  assert.equal(published('2018-03-14'), '2018-03-14');
+  assert.equal(new Date(published('2018-03-00')!).toISOString(), '2018-03-01T00:00:00.000Z', 'read as the first day of the month');
 });
 
 // Real record, 2026NatSR..16.2819Z as ADS served it on 2026-09-23: the title
