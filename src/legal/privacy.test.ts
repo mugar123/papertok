@@ -112,11 +112,13 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacyPolicy.ts');
 });
 
-test('the effective time is an ISO UTC instant on the day of the announced version', () => {
+test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
   assert.match(PRIVACY_POLICY_EFFECTIVE_AT, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
   const at = new Date(PRIVACY_POLICY_EFFECTIVE_AT);
   assert.ok(!Number.isNaN(at.getTime()), 'it parses');
-  assert.equal(at.toISOString().slice(0, 10), PRIVACY_POLICY_VERSION.slice(0, 10), 'the page is dated the day the change went live');
+  // A page edited after midnight UTC may be dated later than the instant its text went live.
+  const endOfVersionDay = Date.parse(PRIVACY_POLICY_VERSION.slice(0, 10) + 'T23:59:59.999Z');
+  assert.ok(at.getTime() <= endOfVersionDay, 'the text went live no later than the day the page is dated');
 });
 
 test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
@@ -125,53 +127,32 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
 
-test('the in-app summary is one sentence that tells what the page says goes to the server and to providers', () => {
-  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  assert.equal(PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length, 1, 'one sentence');
-  // Each provider the summary names is one the page lists.
-  for (const provider of ['PostHog', 'Resend']) {
-    if (PRIVACY_POLICY_CHANGE.includes(provider)) assert.ok(html.includes(provider), provider);
-  }
-  // What a request for more papers carries, per the page's feed paragraph, is what an account
-  // created before the 26 October page was never told: the summary says it in the page's words.
-  assert.match(PRIVACY_POLICY_CHANGE, /request for more papers/);
-  for (const carried of ['interests', 'what you follow', 'up to 24 papers', 'liked, saved or read at length', 'filter of the papers you viewed']) {
-    assert.ok(html.includes(carried), `the page says "${carried}"`);
-    assert.ok(PRIVACY_POLICY_CHANGE.includes(carried), `the summary says "${carried}"`);
-  }
+test('the in-app summary is short: at most two sentences, PostHog named up front, the full list left to the page', () => {
+  const sentences = PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length ?? 0;
+  assert.ok(sentences >= 1 && sentences <= 2, 'one or two sentences');
+  // The panel covers the card being read on a phone; the page has every detail.
+  assert.ok(PRIVACY_POLICY_CHANGE.length <= 400, PRIVACY_POLICY_CHANGE.length + ' characters');
+  // An account from before 15 October read a page with Vercel Web Analytics and no PostHog.
+  const at = PRIVACY_POLICY_CHANGE.indexOf('PostHog');
+  assert.ok(at >= 0 && at < 40, 'the provider is in the lead clause');
 });
 
-test('the in-app summary also says what changed on the page since the 20 October version, in the page\'s words', () => {
+test("every clause of the in-app summary is the page's own words", () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  // Brevo to Resend (#253, #308), the per-minute keyed IP identifier (#315, #327), sign-in session storage (#377) and the feed failure cause (#363).
-  const sinceThen: [summary: string, page: RegExp][] = [
-    ['emails are now sent by Resend', /<strong>Resend<\/strong> sends the emails/],
-    ['a protected identifier derived from your IP address and the current minute', /protected identifier derived from the address and the current minute/],
-    ['the tab\'s session storage briefly holds the provider and the page to return to', /this tab's session storage briefly holds the provider, the part of the app that asked and the page to return to/],
-    ['an error report for a failed feed load carries its reason, HTTP status and error code', /its error event carries the failure reason, the HTTP status and the error code/],
-  ];
-  for (const [said, onPage] of sinceThen) {
-    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), `the summary says "${said}"`);
-    assert.match(html, onPage);
-  }
-});
-
-test('the in-app summary says what usage analytics records and links to the account, in the page\'s words', () => {
-  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  // On 20 October the page said analytics "never records which paper you read" unless detailed analytics was accepted.
-  // Every other clause of the summary is tied to the page here, so rewording the page leaves no stale clause behind.
   const clauses: [summary: string, page: RegExp][] = [
-    ['keeps an identifier in this browser that connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
-    ['record the papers you view, open, like, save, highlight or annotate', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
-    ['the authors, topics or institutions you follow, by identifier', /the authors, topics or institutions you follow by their identifier/],
+    ['run by PostHog', /PaperTok uses <strong>PostHog<\/strong>/],
+    ['connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
+    ['records the papers you view, like or save', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
     ['linked to your account when you sign in', /When you sign in, PaperTok links that activity to your account identifier/],
     ['(turn it off in Settings)', /turn off both services in <strong>Settings → Privacy<\/strong>/],
-    ['error reports go to PostHog', /<strong>Error reports<\/strong> from the browser and backend also go to PostHog/],
-    ['the server keeps your feed order for up to 2 hours', /the server keeps the order it ranked for you[^.]*for up to 2 hours after your last page/],
-    ['counts requests per account', /counts them per account, under a hashed account identifier/],
+    // What a request for more papers carries, per the page's feed paragraph.
+    ['Each request for more papers now sends the server your interests', /Each request for more papers sends it your interests/],
+    ['what you follow', /the subjects you removed, what you follow, the identifiers of up to 24 papers you liked, saved or read at length/],
+    ['the identifiers of up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
+    ['to rank the page', /They are used to choose and rank that page/],
   ];
   for (const [said, onPage] of clauses) {
-    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), `the summary says "${said}"`);
+    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), 'the summary says "' + said + '"');
     assert.match(html, onPage);
   }
   assert.doesNotMatch(PRIVACY_POLICY_CHANGE, /on by default/, 'anonymous analytics was already on by default on 20 October');

@@ -126,7 +126,8 @@ a session can finish, lints the files changed on the branch and in the working t
 - When a change to `privacy.html` needs announcing, update its "Last updated" date and set
   `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (at or after the moment the announced
   policy text is live in production, never before: a later instant only tells a few new accounts
-  too, an earlier one skips accounts that read the old page) and the one-sentence summary in
+  too, an earlier one skips accounts that read the old page) and the summary (one or two short
+  sentences with the main changes; the page keeps the full list) in
   `src/legal/privacyPolicy.ts`. The
   app shows that summary to each signed-in account on /feed, after onboarding and a minute of
   reading, until the account chooses Got it; Escape only hides it for that visit. Guests and
