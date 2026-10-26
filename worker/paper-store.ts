@@ -885,8 +885,8 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
-// for up to a dozen categories and twenty follows. The candidates come in
-// turns across the lanes, each lane's newest first, and the ranking keeps that
+// for up to a dozen categories, twenty follows and ten journals. The
+// candidates come in turns across the lanes, each lane's newest first, and the ranking keeps that
 // order among papers it cannot tell apart: one night's articles of two areas
 // share their date, and take turns between the areas instead of following the
 // order the lanes were asked in.
