@@ -32,7 +32,7 @@ function decodeHtmlEntity(entity: string) {
 }
 
 /** `text` with its named entities above, and its numeric ones, decoded. */
-export function decodeHtmlEntities(text: string) {
+function decodeHtmlEntities(text: string) {
   return text.replace(/&(?:amp|gt|lt|quot|apos|nbsp|minus|le|ge|times|#39|#\d+|#x[\da-f]+);/gi, decodeHtmlEntity);
 }
 
@@ -80,7 +80,7 @@ function closeDocument(content: string) {
 }
 
 /** `text` with each `<alternatives>` reduced to its `<tex-math>` spelling, when it has one. */
-export function preferTexAlternatives(text: string) {
+function preferTexAlternatives(text: string) {
   return text.replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
 }
 

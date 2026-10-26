@@ -1,7 +1,8 @@
 import type { Paper } from '../models/paper.ts';
 import type { TopicInput, TopicTarget } from './topic-navigation.ts';
 
-import { getCategoryLabel } from '../data/categories.ts';
+import { getArxivArchiveArea, getCategoryLabel } from '../data/category-taxonomy.ts';
+import { areaLabelForPaper } from './area-accent.ts';
 import { isTechnicalClassification } from './scientific-classification.ts';
 import { resolvePaperTopic } from './topic-navigation.ts';
 
@@ -38,12 +39,30 @@ function chipText(topic: TopicTarget, providerLabel: string, translatedLabel: st
   return { label: providerLabel, lang: 'en', identity: normalizedLabel(providerLabel) };
 }
 
+/** The masthead names a native category, or explicitly attributes an OpenAlex topic. */
+export function getPaperClassification(paper: Partial<Paper>) {
+  const category = [paper.primaryCategory, ...(paper.categories || [])]
+    .find(id => id && !isTechnicalClassification(id) && getCategoryLabel(id) !== id);
+  if (category) {
+    const label = getCategoryLabel(category);
+    return {
+      label,
+      sourceLabel: '',
+      topic: resolvePaperTopic({ categoryId: category, categoryIds: [category], display_name: label, query: category, source: 'category' }),
+    };
+  }
+  if (paper.primaryTopic?.display_name) {
+    const topic = resolvePaperTopic(paper.primaryTopic);
+    if (topic) return { label: paper.primaryTopic.display_name, sourceLabel: 'OpenAlex topic', topic };
+  }
+  return { label: areaLabelForPaper(paper) || paper.journal || 'Research Paper', sourceLabel: '', topic: null };
+}
+
 export function buildPaperTopicTags(paper: Partial<Paper>, limit = 4) {
-  const primaryCategory = paper?.primaryCategory || paper?.categories?.[0] || '';
-  const primaryLabel = getCategoryLabel(primaryCategory);
-  const primaryTopic = primaryCategory
-    ? resolvePaperTopic({ categoryId: primaryCategory, categoryIds: [primaryCategory], display_name: primaryLabel, query: primaryCategory, source: 'category' })
-    : null;
+  const classification = getPaperClassification(paper);
+  const primaryTopic = classification.topic;
+  const primaryCategory = primaryTopic?.categoryIds?.[0] || (primaryTopic?.reliable ? primaryTopic.id : '');
+  const primaryLabel = classification.label;
   // The category pill already says the primary category; no chip repeats it,
   // in either language.
   const seen = new Set([
@@ -51,6 +70,7 @@ export function buildPaperTopicTags(paper: Partial<Paper>, limit = 4) {
     normalizedLabel(primaryLabel),
     primaryTopic?.reliable ? `topic:${primaryTopic.id}` : '',
   ].filter(Boolean));
+  const seenCategories = new Set([primaryCategory]);
   const tags = [];
 
   for (const category of paper?.categories || []) {
@@ -71,7 +91,10 @@ export function buildPaperTopicTags(paper: Partial<Paper>, limit = 4) {
     const topic = resolvePaperTopic(value);
     if (!topic) continue;
     const text = chipText(topic, label, label !== category ? label : '');
-    if (seen.has(text.identity) || seen.has(normalizedLabel(text.label))) continue;
+    if (seenCategories.has(category)) continue;
+    // Cross-lists retain their IDs even when two arXiv categories share a name.
+    if (!getArxivArchiveArea(category) && (seen.has(text.identity) || seen.has(normalizedLabel(text.label)))) continue;
+    seenCategories.add(category);
     seen.add(text.identity);
     seen.add(normalizedLabel(text.label));
     tags.push({
