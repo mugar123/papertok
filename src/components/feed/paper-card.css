@@ -582,19 +582,11 @@ a.pc-citations {
   }
 }
 
-.pc-followed-badge,
-.pc-notable-badge {
+.pc-followed-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-.pc-followed-badge {
   color: var(--tint-amber-fg);
-}
-
-.pc-notable-badge {
-  color: var(--tint-violet-fg);
 }
 
 /* ── Status chips ──

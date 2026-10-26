@@ -7,7 +7,7 @@ import { plainScientificText } from './plain-scientific-text.ts';
 /**
  * The paper a shared link's document was sent with.
  *
- * A crawler opening /public/paper/<key> gets the page from the Worker
+ * A crawler opening /paper/<key> gets the page from the Worker
  * (worker/share-pages.ts), with the paper written into the document as JSON.
  * Googlebot renders JavaScript but may not reach the API the page loads from
  * (api.papertok.app's robots.txt is `Disallow: /`), so without this its

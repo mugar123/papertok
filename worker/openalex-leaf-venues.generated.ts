@@ -668,3 +668,7 @@ export const OPENALEX_LEAF_VENUES: Readonly<Record<string, { readonly sources: r
     filters: ['type:article|conference-paper'],
   },
 });
+
+// The leaves whose notable lane lists the most-cited articles of their venue lane above: their notable sample passed.
+export const OPENALEX_NOTABLE_VENUE_LEAVES: readonly string[] = Object.freeze([
+]);

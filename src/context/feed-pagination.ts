@@ -28,17 +28,54 @@ export function showsNoPaper(available: Paper[]) {
 }
 
 /**
+ * Whether the reader has seen every paper of their ranking, from the main
+ * page's answer. A Worker that skips seen papers (`skipsSeen`, PAP-103) sends
+ * seen ones only when the ranking has no other, so no later page has a paper
+ * the reader has not seen. A notable card says nothing of the ranking: the
+ * corpus sends them unseen. From a Worker that pages by number, the app
+ * cannot know, and goes one page on as before. `held` is the ids the
+ * request's filter held (`feedSeenIds`), not every paper the reader has seen:
+ * the Worker sends a paper the filter left out as unseen.
+ */
+export function hasSeenRanking({ papers, skipsSeen }: { papers: Paper[]; skipsSeen: boolean }, held: ReadonlySet<string>) {
+  return skipsSeen && papers.some(paper => !paper._notable && held.has(paper.id));
+}
+
+/**
+ * Whether a load's main request goes on with the walk of the session's
+ * ranking (`continues`, ENG-103) instead of starting one: the first page a
+ * change of follows asks for, which keeps the cards through the one the reader
+ * is on, from a Worker that skips seen papers. The load then keeps the
+ * session's exclusion snapshot, so the request names the order the Worker
+ * kept. A new walk would start at the top of the ranking and send again, 15 a
+ * load, every paper the session was shown that the filter no longer holds. A
+ * refresh, an interests edit and a reload start a new walk, as before; a
+ * Worker that pages by number gets the request it got before.
+ */
+export function continuesWalk({ reset, keepThroughVisible, currentPage, relaxExclusions, workerSkipsSeen }: {
+  reset: boolean;
+  keepThroughVisible: boolean;
+  currentPage: number;
+  relaxExclusions: boolean;
+  workerSkipsSeen: boolean;
+}) {
+  return reset && keepThroughVisible && currentPage === 0 && !relaxExclusions && workerSkipsSeen;
+}
+
+/**
  * A page none of whose papers can be shown. An entirely excluded page still
  * proves the corpus has results, so the load goes one page on (not more: the
  * corpus ranks the same way on every load, so a longer move would pass over
- * papers not yet shown). It carries the first page of papers shown before but
- * never liked, saved, read or dismissed (`shownBeforeHere` on this page), which
- * is shown again when no later page has an unseen paper: the feed is never
- * empty because everything was seen. A notable card is never shown twice, so
- * the carried papers leave them out; this page's unseen notable cards
- * (`notableHere`) take their places among the papers shown again.
+ * papers not yet shown), unless the reader has seen their whole ranking
+ * (`rankingSeen`): no later page has a paper they have not. It carries the
+ * first page of papers shown before but never liked, saved, read or dismissed
+ * (`shownBeforeHere` on this page), which is shown again when no later page
+ * has an unseen paper: the feed is never empty because everything was seen. A
+ * notable card is never shown twice, so the carried papers leave them out;
+ * this page's unseen notable cards (`notableHere`) take their places among
+ * the papers shown again.
  */
-export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere, notableHere = [], reset = false, excludedCount = 0 }: {
+export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere, notableHere = [], reset = false, excludedCount = 0, rankingSeen = false }: {
   candidateCount: number;
   currentPage: number;
   seenFallback: SeenFallback | undefined;
@@ -46,13 +83,14 @@ export function planUnshowablePage({ candidateCount, currentPage, seenFallback, 
   notableHere?: Paper[];
   reset?: boolean;
   excludedCount?: number;
+  rankingSeen?: boolean;
 }) {
   const seenHere = shownBeforeHere.filter(paper => !paper._notable);
   const shownBefore = seenFallback ?? (seenHere.length > 0 ? { page: currentPage, papers: seenHere } : undefined);
   // The server cannot see the client's full curated sets or Bloom filter.
   // Restart once without soft exclusions when they leave no usable fallback.
   if (reset && excludedCount > 0 && !shownBefore) return { kind: 'relax-exclusions', page: 0 } as const;
-  if (canFetchNextPage(candidateCount, currentPage)) {
+  if (canFetchNextPage(candidateCount, currentPage) && !rankingSeen) {
     return { kind: 'next-page', page: currentPage + 1, seenFallback: shownBefore } as const;
   }
   if (shownBefore) {
