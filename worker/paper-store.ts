@@ -364,12 +364,27 @@ async function readWorks(db: D1Database, ids: number[]) {
 
 // A working paper says it was not reviewed; its journal article says it was.
 const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
-// An arXiv record reads reviewed on any DOI it lists, arXiv's own included, or
-// on a comment saying it was published: it is a journal's record only when it
-// names the journal and lists a publisher's DOI. A merged row's `true` that
-// rests on a DOI alone (`restsOnArxivDoi`) is no journal evidence either.
-const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
-  && (paper.sources?.primary !== 'arxiv' || (Boolean(paper.journal) && isPublisherDoi(normalizeDoi(paper.doi))));
+// Whether a record's source names the journal that reviewed the paper.
+// OpenAlex states review itself (`openAlexPeerReviewed`). PubMed indexes
+// journals and types its preprints, and Europe PMC's record with a PubMed id
+// is PubMed's. An arXiv record reads reviewed on any DOI it lists, arXiv's own
+// included, or on a comment saying it was published, so it counts only when it
+// names the journal and lists a publisher's DOI. Any other source's `true`
+// comes from a `published` type alone, and a repository's copy (CORE, or a
+// preprint in Europe PMC) proves no review.
+function namesReviewingJournal(paper: Paper) {
+  switch (paper.sources?.primary) {
+    case 'openalex':
+    case 'pubmed': return true;
+    case 'europepmc': return Boolean(paper.pmid);
+    case 'arxiv': return Boolean(paper.journal) && isPublisherDoi(normalizeDoi(paper.doi));
+    default: return false;
+  }
+}
+// A merged row's `true` that rests on a DOI alone (`restsOnArxivDoi`) is no
+// journal evidence either.
+const readsAsReviewed = (paper: Paper) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
+  && namesReviewingJournal(paper);
 // OpenAlex's journal records first, which name the article's work
 // (`openAlexId`), and arXiv's last, whose journal reference is free text.
 const journalRank = (paper: Paper) => (paper.sources?.primary === 'openalex' ? 0 : paper.sources?.primary === 'arxiv' ? 2 : 1);

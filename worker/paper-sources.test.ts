@@ -26,6 +26,7 @@ import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapCoreWork, mapEuropePmcSearchResult, mapOstiRecord } from '../src/services/domain-source-records.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
@@ -867,6 +868,49 @@ test("an arXiv eprint that does not name both its journal and the journal's DOI 
       assert.deepEqual(shown(after[0]), shown(before), name);
     }
   }
+});
+
+// A repository's record reads reviewed by its `published` type alone: CORE's
+// copy of an author's deposit, Europe PMC's preprint record and OSTI's record,
+// here under an SSRN or Zenodo DOI. None names the journal that reviewed the
+// paper, so none makes a working paper's row the journal's. Europe PMC's
+// record of a PubMed article does.
+test("a repository's record that reads reviewed by its type alone leaves a working paper's row as it was, stored or on the same page", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
+  const deposit = (doi: string, journal?: string) => mapCoreWork({
+    id: 99887766, title: gmmArticle.title, doi, publishedDate: '2026-10-10', authors: [{ name: 'Ana Economist' }], documentType: 'research',
+    abstract: 'A copy of this paper that its author deposited in her university repository, with the same results.',
+    links: [{ type: 'display', url: 'https://core.ac.uk/works/99887766' }], journals: journal ? [{ title: journal }] : undefined,
+  })!;
+  const europePmc = (doi: string, source: string, pmid?: string) => mapEuropePmcSearchResult({
+    id: pmid || 'PPR123456', pmid, source, title: gmmArticle.title, doi, firstPublicationDate: '2026-10-10', authorString: 'Economist A',
+    abstractText: 'The record Europe PMC keeps of this paper, which compares the efficiency and the pricing accuracy of GMM estimators.',
+    journalInfo: pmid ? { journal: { title: 'Journal of Business and Economic Statistics' } } : undefined,
+  })!;
+  const osti = mapOstiRecord({
+    osti_id: '1234567', title: gmmArticle.title, doi: '10.2139/ssrn.4999999', publication_date: '2026-10-10', authors: ['Ana Economist'],
+    description: 'The record OSTI keeps of this paper, which compares the efficiency and the pricing accuracy of GMM estimators.',
+    product_type: 'Journal Article', journal_name: 'SSRN Electronic Journal',
+  })!;
+  for (const [name, record] of [
+    ['CORE, SSRN DOI', deposit('10.2139/ssrn.4999999')],
+    ['CORE, Zenodo DOI', deposit('10.5281/zenodo.123456')],
+    ['CORE, SSRN Electronic Journal', deposit('10.2139/ssrn.4999999', 'SSRN Electronic Journal')],
+    ['Europe PMC preprint, SSRN DOI', europePmc('10.2139/ssrn.4999999', 'PPR')],
+    ['OSTI, SSRN Electronic Journal', osti],
+  ] as const) {
+    assert.equal(record.peerReviewed, true, `${name} reads reviewed by itself`);
+    for (const samePage of [false, true]) {
+      const label = `${name}, ${samePage ? 'on the same page' : 'stored first'}`;
+      const [before] = await workingPaperRowWith(t, null, samePage);
+      const after = await workingPaperRowWith(t, record, samePage);
+      assert.equal(after.length, 1, label);
+      assert.deepEqual(shown(after[0]), shown(before), label);
+    }
+  }
+  const [journalRow] = await workingPaperRowWith(t, europePmc('10.1080/07350015.2026.2743244', 'MED', '41000001'), false);
+  assert.deepEqual([journalRow.id, journalRow.doi, journalRow.peerReviewed, journalRow.workingPaper], ['openalex:W7220000104', '10.1080/07350015.2026.2743244', true, undefined]);
 });
 
 // `sources.peerReviewedByDoi` can hold a `false` under the article's DOI, from

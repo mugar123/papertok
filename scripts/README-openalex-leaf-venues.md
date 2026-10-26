@@ -86,6 +86,13 @@ key (`PaperBuilder.identityKeys`), as before, because they share no DOI or
 OpenAlex id; the upgrade now lets that join set the row's DOI, landing page,
 text and date, and only when the merge reads reviewed.
 
+Only a record whose source names the journal that reviewed the paper starts
+the upgrade: OpenAlex's journal record, PubMed's, Europe PMC's with a PubMed
+id, or an arXiv eprint naming its journal. Any other source's record reads
+reviewed by its `published` type alone, such as a repository's copy in CORE
+or OSTI or a preprint in Europe PMC, often under the paper's SSRN or Zenodo
+DOI, and leaves the working paper's row as it was.
+
 An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
 on a comment saying it was published. It starts the upgrade only when it names
 its journal beside a publisher's DOI. One with a journal reference and no DOI,
