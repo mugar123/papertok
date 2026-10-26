@@ -287,7 +287,8 @@ test('search_papers ranks the merged list, so an arXiv-only title match survives
 });
 
 test('a search of large collaborations stays inside what an MCP client reads', async () => {
-  const abstract = Object.fromEntries(Array.from({ length: 220 }, (_, index) => [`word${index}`, [index]]));
+  // About 5,800 characters, near the 6,000 `usableOpenAlexAbstract` accepts.
+  const abstract = Object.fromEntries(Array.from({ length: 640 }, (_, index) => [`lorem${index}`, [index]]));
   const collaboration = (index: number) => ({
     ...OPENALEX_WORK,
     id: `https://openalex.org/W44000002${index}0`,
@@ -310,21 +311,35 @@ test('a search of large collaborations stays inside what an MCP client reads', a
     })),
   });
   await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000220')) return Response.json(collaboration(2));
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: Array.from({ length: 10 }, (_, index) => collaboration(index)) });
     return new Response(arxivFeed(''));
   }, async () => {
-    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
-    const papers = answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
-    assert.equal(papers.length, 5, 'the default limit');
+    const env = routeEnv();
     // The text block and structuredContent each carry the payload. Claude Code
     // stops reading a tool result at about 25,000 tokens, which JSON spends at
     // roughly three bytes each.
-    const bytes = new TextEncoder().encode(answer.result?.content?.[0].text).length;
-    assert.ok(bytes < 40_000, `${bytes} bytes for the default search`);
-    for (const paper of papers) {
-      assert.equal(paper.summary, undefined, 'the abstract is not sent twice');
-      assert.equal(paper.raw, undefined);
+    const textBytes = (answer: RpcAnswer) => new TextEncoder().encode(answer.result?.content?.[0].text).length;
+    for (const limit of [undefined, 10]) {
+      const { answer } = await callTool(env, 'search_papers', { query: 'graphene', ...(limit ? { limit } : {}) });
+      const result = answer.result?.structuredContent as { papers: Array<Record<string, unknown>>; omitted?: { papers: number } };
+      const asked = limit ?? 5;
+      assert.ok(textBytes(answer) < 40_000, `${textBytes(answer)} bytes for a search of ${asked}`);
+      assert.ok(result.papers.length >= 1);
+      assert.equal(result.papers.length + (result.omitted?.papers ?? 0), asked, 'the papers left out are counted');
+      for (const paper of result.papers) {
+        assert.equal(paper.summary, undefined, 'the abstract is not sent twice');
+        assert.equal(paper.raw, undefined);
+        assert.ok(String(paper.abstract).length <= 1_501);
+        assert.match(String(paper.abstract), /…$/);
+        assert.ok(Number((paper.omitted as Record<string, number>).abstract) > 4_000);
+      }
     }
+    // One paper asked for alone keeps its whole abstract.
+    const { answer } = await callTool(env, 'get_paper', { id: 'W4400000220' });
+    const paper = answer.result?.structuredContent?.paper as { abstract: string; omitted?: Record<string, number> };
+    assert.ok(paper.abstract.length > 5_000);
+    assert.equal(paper.omitted?.abstract, undefined);
   });
 });
 

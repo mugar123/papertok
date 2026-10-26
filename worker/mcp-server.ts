@@ -52,6 +52,14 @@ const MAX_INSTITUTIONS = 10;
 const MAX_SUBJECTS = 5;
 const MAX_TOPICS = 3;
 const MAX_OA_LOCATIONS = 5;
+// An abstract runs up to 6,000 characters (`usableOpenAlexAbstract`). A search
+// sends its first 1,500, and `get_paper` the whole of it.
+const MAX_SEARCH_ABSTRACT = 1_500;
+// Even cut, ten papers of large collaborations come to about 70 KB. A search
+// sends papers in rank order while they fit in this many bytes of JSON, which
+// keeps its text block under 40 KB, and counts the rest in `omitted.papers`.
+const SEARCH_BUDGET_BYTES = 36_000;
+const PAPER_BOUNDS = Object.freeze({ maxAuthors: MAX_PAPER_AUTHORS, maxAbstract: Infinity });
 
 const SERVER_INFO = Object.freeze({ name: 'papertok', title: 'PaperTok', version: '1.0.0' });
 const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalizes them. Results carry abstracts and metadata, never full text. citationCount is given only where citationCountKnown is true. A field a paper lacks, such as its abstract, review status or open-access status, is unknown, not empty, zero or false.';
@@ -64,7 +72,7 @@ const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with author lists cut at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out. A source that is unavailable or over its budget is listed in "unavailable".`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable".`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -209,7 +217,8 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   throw new ToolFailure({ code: answer?.code || 'UPSTREAM_UNAVAILABLE', upstreamStatus: response.status });
 }
 
-type CutList = 'authors' | 'institutions' | 'concepts' | 'topics';
+// For the abstract, `omitted` counts characters.
+type CutList = 'abstract' | 'authors' | 'institutions' | 'concepts' | 'topics';
 
 // Every paper reaches `publicPaper` through `PaperBuilder.create`, which fills
 // what a record lacks with these texts. They say "not given".
@@ -241,13 +250,19 @@ function withoutDefaults(paper: Partial<Paper>) {
 // (`summary` is the abstract, `allCategories` and `keywords` often the
 // categories) or is internal to the feed. Every list is bounded, and a list
 // the source never gave stays absent: unknown, not empty.
-function publicPaper(paper: Partial<Paper>, maxAuthors = MAX_AUTHORS) {
+function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstract = MAX_SEARCH_ABSTRACT } = {}) {
   const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
   const omitted: Partial<Record<CutList, number>> = {};
   const cut = <T>(list: T[], name: CutList, max: number) => {
     if (list.length > max) omitted[name] = list.length - max;
     return list.slice(0, max);
   };
+  if (relayed.abstract && relayed.abstract.length > maxAbstract) {
+    // At the last space inside the bound, marked, so it is not quoted as whole.
+    const kept = relayed.abstract.slice(0, maxAbstract).replace(/\s+\S*$/, '');
+    omitted.abstract = relayed.abstract.length - kept.length;
+    relayed.abstract = `${kept}…`;
+  }
   if (relayed.authors) relayed.authors = cut(relayed.authors, 'authors', maxAuthors);
   if (relayed.institutions) relayed.institutions = cut(relayed.institutions, 'institutions', MAX_INSTITUTIONS);
   if (relayed.concepts) relayed.concepts = cut(relayed.concepts, 'concepts', MAX_SUBJECTS);
@@ -317,8 +332,17 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     });
   }
   const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
-  const papers = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(paper => publicPaper(paper));
-  return { query, papers, unavailable };
+  const ranked = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(paper => publicPaper(paper));
+  const papers: typeof ranked = [];
+  let bytes = 0;
+  for (const paper of ranked) {
+    const size = new TextEncoder().encode(JSON.stringify(paper)).length + 1;
+    if (papers.length > 0 && bytes + size > SEARCH_BUDGET_BYTES) break;
+    papers.push(paper);
+    bytes += size;
+  }
+  const left = ranked.length - papers.length;
+  return { query, papers, unavailable, ...(left > 0 ? { omitted: { papers: left } } : {}) };
 }
 
 function getPaperArguments(args: Arguments) {
@@ -333,7 +357,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
     const arxivId = identity.value.replace(/v\d+$/, '');
     const [paper] = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
     if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
-    return { paper: publicPaper(paper, MAX_PAPER_AUTHORS) };
+    return { paper: publicPaper(paper, PAPER_BOUNDS) };
   }
   // One work by id, as the app's paper page asks for it (`fetchPaperByWorkId`
   // in src/services/open-alex-service.ts): OpenAlex does not bill it, so it
@@ -351,7 +375,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
     throw new ToolFailure({ code: 'NOT_FOUND' });
   }
-  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work), MAX_PAPER_AUTHORS) };
+  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work), PAPER_BOUNDS) };
 }
 
 function openAccessArguments(args: Arguments) {

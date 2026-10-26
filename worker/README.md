@@ -889,8 +889,14 @@ providers' minute allowance, and MCP callers have no account yet.
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract and the feed's internal fields, and with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
-institutions, 5 concepts and 3 topics. A paper's `omitted` counts the entries
-each cut list left out (`{ authors: 1900 }`). A field the source never gave stays
+institutions, 5 concepts and 3 topics. A search also cuts each abstract at the
+last space within 1,500 characters and ends it with `…`; `get_paper` sends the
+whole abstract (up to the 6,000 characters `usableOpenAlexAbstract` accepts). A
+paper's `omitted` counts the entries each cut list left out and, for the
+abstract, the characters (`{ abstract: 4300, authors: 1900 }`). A search then
+sends its papers in rank order while they fit in 36,000 bytes of JSON and counts
+the rest in the result's `omitted.papers`: ten papers of 2,000-author
+collaborations with near-maximum abstracts come to five papers and about 34 KB. A field the source never gave stays
 absent rather than carrying `PaperBuilder.create`'s default: no placeholder
 abstract or title, no empty list or string, no `referenceCount: 0` or `has*:
 false` (no record a tool reads carries them), no `citationCount` unless
