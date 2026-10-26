@@ -910,8 +910,10 @@ collaborations with near-maximum abstracts come to five papers and about 34 KB. 
 absent rather than carrying `PaperBuilder.create`'s default: no placeholder
 abstract or title, no empty list or string, no `referenceCount: 0` or `has*:
 false` (no record a tool reads carries them), no `citationCount` unless
-`citationCountKnown` is true, and no `peerReviewed: false` on a preprint record,
-whose `publicationStatus` already says preprint. A client
+`citationCountKnown` is true, no `peerReviewed: false` on a preprint record,
+whose `publicationStatus` already says preprint, and no `peerReviewed: true`
+that rests on nothing but the DOI an arXiv record lists (`restsOnArxivDoi`),
+which can be a repository's. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
 tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache

@@ -3,6 +3,7 @@ import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
+import { restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
@@ -247,6 +248,9 @@ function withoutDefaults(paper: Partial<Paper>) {
   // A preprint record's `false` is about that version; the paper may have been
   // reviewed since (`ownAnswer` in paper-builder.ts). Its status says preprint.
   if (known.peerReviewed === false && known.publicationStatus === 'preprint') delete known.peerReviewed;
+  // arXiv reads any DOI on its record as publication, a repository's included,
+  // so a `true` with nothing else behind it does not show review.
+  if (known.peerReviewed === true && restsOnArxivDoi(paper)) delete known.peerReviewed;
   return known as Partial<Paper>;
 }
 

@@ -44,7 +44,7 @@ function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
 // eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
 // (Cornell University)" among them. So a record's own fields are read before
 // its first merge, and `sources.arxivDoiOnly` carries the answer after it.
-function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
+export function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
   return !hasMerged(record)
     ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
     : record.sources?.arxivDoiOnly === true;

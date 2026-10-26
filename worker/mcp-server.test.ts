@@ -460,6 +460,32 @@ test('a field the source did not give stays absent, in a search and in get_paper
   });
 });
 
+test("an arXiv record's DOI alone does not make its paper peer reviewed, in a search and in get_paper", async () => {
+  // arXiv lists a DOI and nothing else: no journal reference, no comment.
+  const doiOnly = ARXIV_LAB_ENTRY.replace('<author>', '<arxiv:doi>10.5281/zenodo.99999</arxiv:doi><author>');
+  const inJournal = ARXIV_LAB_ENTRY
+    .replace('2603.01234', '2603.04321')
+    .replace('<author>', '<arxiv:doi>10.1234/sheets.2026.7</arxiv:doi><arxiv:journal_ref>Journal of Sheets 12, 34 (2026)</arxiv:journal_ref><author>');
+  await withUpstream(url => {
+    if (url.includes('id_list=2603.04321')) return new Response(arxivFeed(inJournal));
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(doiOnly));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    // Separate environments, so each arXiv request finds the beat's seat free.
+    const searched = await callTool(routeEnv(), 'search_papers', { query: 'strained graphene', sources: ['arxiv'] });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
+    const looked = await callTool(routeEnv(), 'get_paper', { id: '2603.01234' });
+    const paper = looked.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    for (const [name, relayed] of [['search', listed], ['get_paper', paper]] as const) {
+      assert.equal(relayed.doi, '10.5281/zenodo.99999', name);
+      assert.equal('peerReviewed' in relayed, false, name);
+    }
+    // A journal reference is evidence of its own.
+    const published = await callTool(routeEnv(), 'get_paper', { id: '2603.04321' });
+    assert.equal((published.answer.result?.structuredContent?.paper as { peerReviewed?: boolean }).peerReviewed, true);
+  });
+});
+
 test('a repository preprint is given no journal venue and no feed adapter label, in a search and in get_paper', async () => {
   // A working paper on SSRN as OpenAlex lists it (synthetic).
   const ssrn = {
