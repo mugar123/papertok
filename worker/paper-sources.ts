@@ -601,9 +601,13 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   'openalex-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true, separateListings: true,
     // The lane's page picks the year; OpenAlex is asked the first page of it.
-    fetchPage: (env, { lane, page }) => openAlexLane(env, openAlexNotableListingFilter(lane.slice(NOTABLE_LANE_PREFIX.length), notableListedYear(page))!, {
-      page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories',
-    }),
+    fetchPage: async (env, { lane, page }) => {
+      // A job saved by an earlier deployment can name a leaf this one no longer
+      // admits; without a filter OpenAlex would list its most-cited works of all.
+      const filter = openAlexNotableListingFilter(lane.slice(NOTABLE_LANE_PREFIX.length), notableListedYear(page));
+      if (!filter) throw new Error(`${lane} has no notable listing`);
+      return openAlexLane(env, filter, { page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories' });
+    },
   },
   // The newest journal articles of a whole area, filed under the area. On
   // 2026-10-23 a page of 200 with an abstract held the last one or two days of
@@ -698,7 +702,7 @@ export function categoryLaneJobs(): LaneJob[] {
 
 /**
  * The notable lanes a night lists, of the leaves with a topic lane or admitted
- * by the notable sample (`openAlexNotableFilterForLeaf`): every lane
+ * by the topic or journal notable sample (`NOTABLE_LEAVES`): every lane
  * never harvested, by lane id, then at most `notableLanesPerNight` not
  * harvested in the last NOTABLE_LANE_DAYS days, the oldest harvest first.
  * Every new lane runs at once so that a lane's first listing does not wait

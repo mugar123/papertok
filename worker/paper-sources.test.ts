@@ -20,6 +20,7 @@ import { parseXmlDocument as parseWithShim } from '../src/test-support/xml-dom-s
 import { readPubmedEfetch } from '../src/utils/pubmed-efetch.ts';
 import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../src/data/open-alex-notable-leaf-topics.generated.ts';
+import { OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
@@ -307,8 +308,9 @@ test("a topic lane's article without an abstract is filed saying it has none, an
 
 const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/data/${name}`, import.meta.url), 'utf8'));
 const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
-// The leaves with a notable lane: those with a topic lane and those the notable sample admitted.
-const notableLeaves = () => [...topicLanes(), ...Object.keys(OPENALEX_NOTABLE_LEAF_TOPICS)].sort();
+// The leaves with a notable lane: those with a topic lane and those the topic
+// or journal notable sample admitted.
+const notableLeaves = () => [...topicLanes(), ...Object.keys(OPENALEX_NOTABLE_LEAF_TOPICS), ...OPENALEX_NOTABLE_VENUE_LEAVES].sort();
 const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
 
 // OpenAlex W7223183626 as returned to the gate's q-fin.GN sample on 2026-10-23
@@ -1419,6 +1421,8 @@ test('a notable lane drops a paper 14 days after the listing that last returned 
 
 test('a leaf no sample admitted has no OpenAlex notable listing, and a topic leaf keeps the core-source filter', () => {
   assert.equal(openAlexNotableListingFilter('chem.org', 2016), null);
+  assert.ok(openAlexVenueFilterForLeaf('econ.EM'));
+  assert.equal(openAlexNotableListingFilter('econ.EM', 2016), null, 'a venue lane alone does not admit a leaf');
   assert.deepEqual(openAlexNotableListingFilter('cs.CV', 2016)!.split(','), [
     ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
     'from_publication_date:2016-01-01',
@@ -1426,6 +1430,12 @@ test('a leaf no sample admitted has no OpenAlex notable listing, and a topic lea
     'is_retracted:false',
     'primary_location.source.is_core:true',
   ]);
+});
+
+test('a notable job for a leaf without a notable listing fails before asking OpenAlex', async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  await assert.rejects(SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:econ.EM', page: 1, since: '', waits: { seconds: 0 } }), /notable:econ\.EM has no notable listing/);
+  assert.equal(urls.length, 0);
 });
 
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {
@@ -1462,9 +1472,9 @@ test('a leaf the notable sample admitted gets a notable lane asking for its samp
   assert.equal(openAlexNotableFilterForLeaf('nlin.CD'), null, 'a leaf neither sample admitted has no lane');
 });
 
-// The generator proposes each sample over the years the lane lists, and a
-// review's query is checked against its capture year; both are written apart
-// from the Worker, so this ties them to the lane's own years.
+// The generators propose each sample over the years the lane lists, and check
+// a review's query against its capture year; both are written apart from the
+// Worker, so this ties them to the lane's own years.
 test("a notable sample's query covers the ten completed years the lane lists, before its capture year", () => {
   const { year, leaves } = gateFile('openalex-notable-candidates.json') as { year: number; leaves: Array<{ leaf: string; sampleUrl?: string }> };
   const reviews = gateFile('openalex-notable-reviews.json') as Record<string, { capturedAt: string; query: string }>;
@@ -1478,6 +1488,14 @@ test("a notable sample's query covers the ten completed years the lane lists, be
     assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${leaf} starts at the oldest listed year`);
     assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${leaf} ends with the last completed year`);
     assert.ok(filters.includes('type:article') && filters.includes('is_retracted:false') && filters.includes('primary_location.source.is_core:true'));
+  }
+  // A journal notable sample asks the venue lane's own types and no core filter.
+  const { notableSamples } = gateFile('openalex-venue-reviews.json') as { notableSamples: Record<string, { capturedAt: string; query: string }> };
+  for (const [leaf, sample] of Object.entries(notableSamples)) {
+    const now = Date.parse(sample.capturedAt);
+    const filters = filtersOf(new URL(sample.query));
+    assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${leaf} starts at the oldest listed year`);
+    assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${leaf} ends with the last completed year`);
   }
 });
 
