@@ -365,10 +365,14 @@ textarea:focus-visible,
    author content" failure of WCAG 2.4.11, and it made 2.4.1 useless to anyone
    who needs to see where the focus went. 1100 clears every fixed header while
    staying under the dialog layers (AuthPrompt 1800, overlays 9999+), which no
-   focused skip link ever has to cross. */
+   focused skip link ever has to cross.
+
+   It hides by its own height, not by a fixed offset: at 320px wide with 200%
+   text the label wraps to about 128px, so a `top: -100px` would leave its
+   bottom 28px over the page and the controls under it (WCAG 1.4.10). */
 .skip-link {
   position: fixed;
-  top: -100px;
+  top: var(--space-2);
   left: var(--space-4);
   z-index: 1100;
   background: var(--accent-primary);
@@ -377,10 +381,11 @@ textarea:focus-visible,
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   text-decoration: none;
-  transition: top var(--transition-fast);
+  transform: translateY(calc(-100% - var(--space-2)));
+  transition: transform var(--transition-fast);
 }
 .skip-link:focus-visible {
-  top: var(--space-2);
+  transform: none;
 }
 
 /* Programmatic focus target; the ring belongs on real controls. */
