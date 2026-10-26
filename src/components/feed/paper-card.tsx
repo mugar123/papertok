@@ -121,15 +121,15 @@ import { institutionLabel } from '../../services/institution-service.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
-import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
+import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
-import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/area-accent.ts';
+import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
-import { buildPaperTopicTags } from '../../utils/paper-topic-tags.ts';
+import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
 /**
  * How still the abstract panel has to be before its clipping is believed: the
@@ -156,7 +156,6 @@ const STATUS_CHIP_ICONS = {
   openCopy: LockKeyOpen,
   subscription: LockKey,
 };
-import { isTechnicalClassification } from '../../utils/scientific-classification.ts';
 import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts';
 import { hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
@@ -1147,13 +1146,6 @@ const PaperCard = memo(function PaperCard({
   const selectedRelatedState = activeRelatedPaper
     ? getInteractionState(activeRelatedPaper) || {}
     : {};
-  const visiblePrimaryCategory = useMemo(
-    () => [paper.primaryCategory, ...(paper.categories || [])]
-      .find(category => category
-        && !isTechnicalClassification(category)
-        && !isOpaqueQueryTopicText(category)) || '',
-    [paper.categories, paper.primaryCategory]
-  );
 
   /**
    * The related card is a Base UI Dialog (ui/dialog.jsx). Closing — the back
@@ -1251,41 +1243,15 @@ const PaperCard = memo(function PaperCard({
     void onMarkAsRead(paper);
   };
 
-  // Get area info for the gradient background
-  const getCategoryLabelText = () => {
-    const cat = visiblePrimaryCategory;
-    const area = Object.values(CATEGORIES).find(a => a.subcategories && (a.subcategories as Record<string, { label: string }>)[cat]);
-    if (area) {
-      return (area.subcategories as Record<string, { label: string }>)[cat].label || (area.subcategories as Record<string, { label: string }>)[cat].label;
-    }
-    // Not `cat` raw. For anything from OpenAlex that is a concept, not a
-    // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
-    // it meant to announce a branch of science, and disagreed with the colour
-    // beside it. The branch, resolved through the same chain as the ink.
-    const branch = areaLabelForPaper(paper);
-    if (branch) return branch;
-    if (paper.journal) return paper.journal;
-    return 'Research Paper';
-  };
-
-  const categoryLabel = getCategoryLabelText();
-  const primaryTopic = useMemo(
-    () => visiblePrimaryCategory ? resolvePaperTopic({
-      categoryId: visiblePrimaryCategory,
-      categoryIds: [visiblePrimaryCategory],
-      display_name: categoryLabel,
-      query: visiblePrimaryCategory,
-      source: 'category',
-    }) : null,
-    [categoryLabel, visiblePrimaryCategory]
-  );
+  const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
       concepts: paper.concepts,
       primaryCategory: paper.primaryCategory,
+      primaryTopic: paper.primaryTopic,
     }, 4),
-    [paper.categories, paper.concepts, paper.primaryCategory]
+    [paper.categories, paper.concepts, paper.primaryCategory, paper.primaryTopic]
   );
 
   // The field leads the masthead; under it, two subjects and "+N", whose
@@ -1300,9 +1266,7 @@ const PaperCard = memo(function PaperCard({
 
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
-    const path = publicMode
-      ? getPublicEntityPath(topic.type, topic.id)
-      : topicExplorerPath(topic);
+    const path = topicExplorerPath(topic, publicMode);
     void trackEvent('select_content', {
       content_type: topic.type === 'concept' ? 'topic' : topic.type,
       surface: analyticsSurface,
@@ -1328,7 +1292,7 @@ const PaperCard = memo(function PaperCard({
             >
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
-                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? classificationSource || 'Field' : 'Topic'}</span>
               </span>
               <ArrowRight size={14} aria-hidden="true" />
             </button>
@@ -1336,7 +1300,7 @@ const PaperCard = memo(function PaperCard({
             <span className="pc-topics-pop-item" data-kind={item.key === 'primary' ? 'field' : 'topic'}>
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
-                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? classificationSource || 'Field' : 'Topic'}</span>
               </span>
             </span>
           )}
@@ -1931,6 +1895,12 @@ const PaperCard = memo(function PaperCard({
             </button>
           ) : categoryLabel && (
             <span className="pc-masthead-field">{categoryLabel}</span>
+          )}
+          {classificationSource && (
+            <>
+              <span className="pc-meta-dot">·</span>
+              <span className="pc-date">{classificationSource}</span>
+            </>
           )}
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the

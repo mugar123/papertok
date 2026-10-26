@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPaperTopicTags } from './paper-topic-tags.ts';
+import { buildPaperTopicTags, getPaperClassification } from './paper-topic-tags.ts';
 import { resolvePaperTopic, topicExplorerPath } from './topic-navigation.ts';
 
 test('keeps original arXiv categories ahead of later OpenAlex concepts', () => {
@@ -54,7 +54,7 @@ test('hides PACS classification codes from visible paper topics', () => {
   assert.deepEqual(tags.map(tag => tag.label), ['Quantum gravity']);
 });
 
-test('uses readable area labels for valid arXiv codes outside the preference taxonomy', () => {
+test('keeps distinct arXiv categories outside the preference taxonomy', () => {
   const tags = buildPaperTopicTags({
     primaryCategory: 'quant-ph',
     categories: ['quant-ph', 'nlin.CD', 'cs.CC', 'cs.IT', 'astro-ph.IM'],
@@ -62,17 +62,18 @@ test('uses readable area labels for valid arXiv codes outside the preference tax
   }, 4);
 
   assert.deepEqual(tags.map(tag => tag.label), [
-    'Physics',
-    'Computer Science',
-    'Quantum chaos',
+    'Chaotic Dynamics',
+    'Computational Complexity',
+    'Information Theory',
+    'Instrumentation and Methods for Astrophysics',
   ]);
 
   const fallbackTopic = resolvePaperTopic(tags[0].value);
   const fallbackUrl = new URL(topicExplorerPath(fallbackTopic)!, 'https://papertok.test');
-  assert.equal(fallbackTopic!.display_name, 'Physics');
+  assert.equal(fallbackTopic!.display_name, 'Chaotic Dynamics');
   assert.equal(fallbackTopic!.query, 'nlin.CD');
   assert.deepEqual(fallbackTopic!.categoryIds, ['nlin.CD']);
-  assert.equal(fallbackUrl.searchParams.get('name'), 'Physics');
+  assert.equal(fallbackUrl.searchParams.get('name'), 'Chaotic Dynamics');
   assert.equal(fallbackUrl.searchParams.get('q'), 'nlin.CD');
 });
 
@@ -147,7 +148,7 @@ test('our label for an arXiv code is ours, not provider text', () => {
     categories: ['quant-ph', 'nlin.CD'],
   }, 4);
 
-  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [['Physics', undefined]]);
+  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [['Chaotic Dynamics', undefined]]);
 });
 
 test('two chips that are the same topic show once, and never repeat the category pill', () => {
@@ -158,4 +159,67 @@ test('two chips that are the same topic show once, and never repeat the category
   }, 4);
 
   assert.deepEqual(tags.map(tag => tag.label), ['Oncology']);
+});
+
+
+test('distinct arXiv IDs survive identical labels while repeated IDs do not', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'cs.IT',
+    categories: ['cs.IT', 'math.IT', 'math.IT', 'cs.LG', 'stat.ML'],
+  }, 10);
+  assert.deepEqual(tags.map(tag => tag.key), ['category:math.IT', 'category:cs.LG', 'category:stat.ML']);
+});
+
+
+// Topic IDs/names observed on the five affected OpenAlex works, 2026-10-26.
+test('the masthead uses an attributed OpenAlex topic instead of its broad field', () => {
+  for (const [id, label, fieldId, fieldName, subfieldId, subfieldName] of [
+    ["T10860", "Speech and Audio Processing", "17", "Computer Science", "1711", "Signal Processing"],
+    ["T11130", "Coding theory and cryptography", "17", "Computer Science", "1702", "Artificial Intelligence"],
+    ["T11323", "Gamma-ray bursts and supernovae", "31", "Physics and Astronomy", "3103", "Astronomy and Astrophysics"],
+    ["T11513", "stochastic dynamics and bifurcation", "31", "Physics and Astronomy", "3109", "Statistical and Nonlinear Physics"],
+    ["T12069", "Commutative Algebra and Its Applications", "26", "Mathematics", "2602", "Algebra and Number Theory"],
+  ]) {
+    const classification = getPaperClassification({
+      categories: ['Unrelated concept'],
+      primaryTopic: { id: `https://openalex.org/${id}`, display_name: label,
+        field: { id: `https://openalex.org/fields/${fieldId}`, display_name: fieldName },
+        subfield: { id: `https://openalex.org/subfields/${subfieldId}`, display_name: subfieldName },
+      },
+    });
+    assert.equal(classification.label, label);
+    assert.equal(classification.sourceLabel, 'OpenAlex topic');
+    assert.equal(classification.topic?.id, id);
+    assert.equal(topicExplorerPath(classification.topic), `/explorer/topic/${id}`);
+  }
+});
+
+test('native categories take precedence over OpenAlex topics and concept order', () => {
+  const classification = getPaperClassification({
+    primaryCategory: 'cs.IT', categories: ['Unrelated concept', 'cs.IT', 'math.IT'],
+    primaryTopic: { id: 'T11130', display_name: 'Coding theory and cryptography' },
+  });
+  assert.equal(classification.label, 'Information Theory');
+  assert.equal(classification.sourceLabel, '');
+  assert.deepEqual(classification.topic?.categoryIds, ['cs.IT']);
+  assert.equal(getPaperClassification({ categories: ['Unrelated concept', 'math.AC'] }).label, 'Commutative Algebra');
+});
+
+test('missing and technical-only classifications stay unknown', () => {
+  for (const paper of [{}, { categories: ['04.70.Dy'] }, { categories: ['query-deadbeef'] }]) {
+    assert.deepEqual(getPaperClassification(paper), { label: 'Research Paper', sourceLabel: '', topic: null });
+  }
+  assert.equal(getPaperClassification({ journal: 'Nature' }).label, 'Nature');
+  assert.deepEqual(getPaperClassification({ primaryTopic: { id: 'T1', field: { id: '17', display_name: 'Computer Science' } } }),
+    { label: 'Computer Science', sourceLabel: '', topic: null });
+});
+
+
+test('secondary tags exclude the classification actually printed in the masthead', () => {
+  const native = { categories: ['Unrelated concept', 'math.AC'] };
+  assert.equal(getPaperClassification(native).label, 'Commutative Algebra');
+  assert.deepEqual(buildPaperTopicTags(native).map(tag => tag.key), ['category:Unrelated concept']);
+  const external = { primaryTopic: { id: 'T11130', display_name: 'Coding theory and cryptography' },
+    concepts: [{ id: 'T11130', display_name: 'Coding theory and cryptography' }] };
+  assert.deepEqual(buildPaperTopicTags(external), []);
 });
