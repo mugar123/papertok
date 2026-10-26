@@ -43,8 +43,11 @@ const DEFAULT_SEARCH_LIMIT = 5;
 // A client reads a tool result up to a ceiling (Claude Code's default is about
 // 25,000 tokens), and the payload travels twice, as text and as structured
 // content. One paper of a large collaboration lists thousands of authors and
-// hundreds of institutions, so each list a paper carries is cut.
+// hundreds of institutions, so each list a paper carries is cut, and the paper
+// says how many entries each cut left out. A paper asked for alone keeps more
+// of its authors: a hundred are about 7 KB.
 const MAX_AUTHORS = 20;
+const MAX_PAPER_AUTHORS = 100;
 const MAX_INSTITUTIONS = 10;
 const MAX_SUBJECTS = 5;
 const MAX_TOPICS = 3;
@@ -61,7 +64,7 @@ const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with author lists cut at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}. A source that is unavailable or over its budget is listed in "unavailable".`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with author lists cut at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out. A source that is unavailable or over its budget is listed in "unavailable".`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -78,14 +81,14 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: 'Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok\'s paper format (abstract and metadata, not full text).',
+    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text), with authors cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
   {
     name: 'find_open_access',
     title: 'Find open access',
-    description: `Finds legal open-access copies of a paper by DOI (Unpaywall, then Crossref licences): whether one exists, the best location, its licence and version, and up to ${MAX_OA_LOCATIONS} locations. "is_oa": null means it is unknown.`,
+    description: `Finds legal open-access copies of a paper by DOI (Unpaywall, then Crossref licences): whether one exists, the best location, its licence and version, and up to ${MAX_OA_LOCATIONS} locations ("omitted" counts the rest). "is_oa": null means it is unknown.`,
     inputSchema: { type: 'object', properties: { doi: DOI_SCHEMA }, required: ['doi'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -206,17 +209,24 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   throw new ToolFailure({ code: answer?.code || 'UPSTREAM_UNAVAILABLE', upstreamStatus: response.status });
 }
 
+type CutList = 'authors' | 'institutions' | 'concepts' | 'topics';
+
 // The provider's record is left behind, with what only repeats other fields
 // (`summary` is the abstract, `allCategories` and `keywords` often the
-// categories) or is internal to the feed, and every list is bounded.
-function publicPaper(paper: Partial<Paper>) {
-  const relayed: Partial<Paper> = {
-    ...paper,
-    authors: (paper.authors || []).slice(0, MAX_AUTHORS),
-    institutions: (paper.institutions || []).slice(0, MAX_INSTITUTIONS),
-    concepts: (paper.concepts || []).slice(0, MAX_SUBJECTS),
-    topics: (paper.topics || []).slice(0, MAX_TOPICS),
+// categories) or is internal to the feed. Every list is bounded, and a list
+// the source never gave stays absent: unknown, not empty.
+function publicPaper(paper: Partial<Paper>, maxAuthors = MAX_AUTHORS) {
+  const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = { ...paper };
+  const omitted: Partial<Record<CutList, number>> = {};
+  const cut = <T>(list: T[], name: CutList, max: number) => {
+    if (list.length > max) omitted[name] = list.length - max;
+    return list.slice(0, max);
   };
+  if (paper.authors) relayed.authors = cut(paper.authors, 'authors', maxAuthors);
+  if (paper.institutions) relayed.institutions = cut(paper.institutions, 'institutions', MAX_INSTITUTIONS);
+  if (paper.concepts) relayed.concepts = cut(paper.concepts, 'concepts', MAX_SUBJECTS);
+  if (paper.topics) relayed.topics = cut(paper.topics, 'topics', MAX_TOPICS);
+  if (Object.keys(omitted).length > 0) relayed.omitted = omitted;
   delete relayed.raw;
   delete relayed.summary;
   delete relayed._followedEntityMatches;
@@ -281,7 +291,7 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     });
   }
   const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
-  const papers = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(publicPaper);
+  const papers = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(paper => publicPaper(paper));
   return { query, papers, unavailable };
 }
 
@@ -297,7 +307,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
     const arxivId = identity.value.replace(/v\d+$/, '');
     const [paper] = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
     if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
-    return { paper: publicPaper(paper) };
+    return { paper: publicPaper(paper, MAX_PAPER_AUTHORS) };
   }
   // One work by id, as the app's paper page asks for it (`fetchPaperByWorkId`
   // in src/services/open-alex-service.ts): OpenAlex does not bill it, so it
@@ -315,7 +325,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
     throw new ToolFailure({ code: 'NOT_FOUND' });
   }
-  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work)) };
+  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work), MAX_PAPER_AUTHORS) };
 }
 
 function openAccessArguments(args: Arguments) {
@@ -326,12 +336,14 @@ function openAccessArguments(args: Arguments) {
 async function findOpenAccess({ doi }: ReturnType<typeof openAccessArguments>, caller: Request, env: WorkerEnv) {
   const response = await ask(handleOpenAccess, '/oa', { doi }, caller, env);
   const record = await response.json<Record<string, unknown> & { oa_locations?: unknown[] }>();
+  const locations = record.oa_locations || [];
   return {
     doi,
     is_oa: record.is_oa ?? null,
     oa_status: record.oa_status ?? null,
     best_oa_location: record.best_oa_location ?? null,
-    oa_locations: (record.oa_locations || []).slice(0, MAX_OA_LOCATIONS),
+    oa_locations: locations.slice(0, MAX_OA_LOCATIONS),
+    ...(locations.length > MAX_OA_LOCATIONS ? { omitted: { oa_locations: locations.length - MAX_OA_LOCATIONS } } : {}),
     source: record.source || 'unpaywall',
   };
 }

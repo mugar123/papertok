@@ -415,6 +415,48 @@ test('get_paper asks arXiv for an arXiv id and reports an unknown id as not foun
   });
 });
 
+test('get_paper keeps a hundred authors, and a cut list says how many entries it left out', async () => {
+  // Every author from an institution of their own.
+  const authored = (id: string, count: number) => ({
+    ...OPENALEX_WORK,
+    id: `https://openalex.org/${id}`,
+    doi: null,
+    ids: {},
+    authorships: Array.from({ length: count }, (_, index) => ({
+      author: { id: `https://openalex.org/A${index}`, display_name: `Author ${index}` },
+      institutions: [{ id: `https://openalex.org/I${index}`, ror: `https://ror.org/0${index}`, display_name: `Institute ${index}` }],
+    })),
+  });
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000045')) return Response.json(authored('W4400000045', 45));
+    if (url.startsWith('https://api.openalex.org/works/W4400002000')) return Response.json(authored('W4400002000', 2_000));
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [authored('W4400000045', 45)] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(''));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    type Relayed = { authors: Array<{ name: string }>; institutions: unknown[]; omitted?: Record<string, number> };
+    const env = routeEnv();
+    const one = await callTool(env, 'get_paper', { id: 'W4400000045' });
+    const paper = one.answer.result?.structuredContent?.paper as Relayed;
+    assert.equal(paper.authors.length, 45, 'one paper keeps every one of its 45 authors');
+    assert.equal(paper.authors.at(-1)?.name, 'Author 44');
+    assert.equal(paper.institutions.length, 10);
+    assert.deepEqual(paper.omitted, { institutions: 35 });
+
+    const large = await callTool(env, 'get_paper', { id: 'W4400002000' });
+    const collaboration = large.answer.result?.structuredContent?.paper as Relayed;
+    assert.equal(collaboration.authors.length, 100);
+    assert.deepEqual(collaboration.omitted, { authors: 1_900, institutions: 1_990 });
+    const bytes = new TextEncoder().encode(large.answer.result?.content?.[0].text).length;
+    assert.ok(bytes < 40_000, `${bytes} bytes for one paper of 2,000 authors`);
+
+    const searched = await callTool(env, 'search_papers', { query: 'graphene' });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
+    assert.equal(listed.authors.length, 20);
+    assert.deepEqual(listed.omitted, { authors: 25, institutions: 35 });
+  });
+});
+
 test('get_paper asks OpenAlex for the DOI it was given, whatever characters the DOI carries', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/doi:10.1234/odd%3Fpart%23two')) return Response.json(OPENALEX_WORK);
@@ -458,6 +500,19 @@ test('find_open_access relays the legal copy and licence without the record arou
     assert.equal(result.best_oa_location.license, 'cc-by');
     assert.equal(result.best_oa_location.url_for_pdf, 'https://arxiv.org/pdf/2603.09999');
     assert.equal(result.z_authors, undefined);
+  });
+});
+
+test('find_open_access says how many locations it left out', async () => {
+  const locations = Array.from({ length: 8 }, (_, index) => ({ ...UNPAYWALL.best_oa_location, url: `https://repository${index}.example/paper` }));
+  await withUpstream(url => {
+    if (url.startsWith('https://api.unpaywall.org/v2/')) return Response.json({ ...UNPAYWALL, oa_locations: locations });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const { answer } = await callTool(routeEnv(), 'find_open_access', { doi: '10.1234/example.2026.1' });
+    const result = answer.result?.structuredContent as { oa_locations: Array<{ url: string }>; omitted?: Record<string, number> };
+    assert.deepEqual(result.oa_locations.map(location => location.url), locations.slice(0, 5).map(location => location.url));
+    assert.deepEqual(result.omitted, { oa_locations: 3 });
   });
 });
 

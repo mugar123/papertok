@@ -880,7 +880,7 @@ SDK is not used, so the package lock is unchanged.
 | --- | --- | --- |
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match as the app's search does (`mergeRankedPapers`), plus the sources that refused or failed |
 | `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper` |
-| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations |
+| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest |
 
 The citation graph waits for phase 2: the browser's `/citation-graph` requires a
 Firebase identity and charges each reader's share of the credential-backed
@@ -888,7 +888,9 @@ providers' minute allowance, and MCP callers have no account yet.
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract and the feed's internal fields, and with
-bounded lists: 20 authors, 10 institutions, 5 concepts and 3 topics. A client
+bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
+institutions, 5 concepts and 3 topics. A paper's `omitted` counts the entries
+each cut list left out (`{ authors: 1900 }`). A list the source never gave stays absent. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
 tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
