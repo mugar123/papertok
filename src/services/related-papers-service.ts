@@ -48,7 +48,9 @@ function mapRelatedPaper(item: SemanticScholarRecord): Paper {
     journal: item.venue,
     publicationType: item.publicationTypes?.[0] || 'article',
     publicationStatus: 'published',
-    openAccess: Boolean(item.isOpenAccess || item.openAccessPdf?.url),
+    // A PDF link is evidence of a free copy. `isOpenAccess: false` only means
+    // Semantic Scholar found none, which is not a paywall.
+    openAccess: item.openAccessPdf?.url || item.isOpenAccess === true ? true : undefined,
     pdfUrl: item.openAccessPdf?.url,
     landingPageUrl: item.url,
     citationCount: item.citationCount ?? undefined,

@@ -2,11 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getQueryTopicMetadata,
+  isScientificCategoryId,
   resolvePaperTopic,
   resolveQueryTopicRoute,
   topicExplorerPath,
 } from './topic-navigation.ts';
 import { CATEGORIES } from '../data/categories.ts';
+
+test('inherited object keys are not local topics or category ids', () => {
+  assert.equal(isScientificCategoryId('constructor'), false);
+  assert.equal(isScientificCategoryId('toString'), false);
+  assert.equal(resolvePaperTopic('constructor')?.reliable, false);
+});
 
 test('resolves a PaperTok category id as a reliable topic', () => {
   const topic = resolvePaperTopic('astro-ph.CO');
@@ -197,4 +204,23 @@ test('the indexed taxonomy answers exactly what the per-call walk answered', () 
     }
   }
   assert.ok(matched > 30, `the comparison actually exercised the taxonomy (${matched} local hits)`);
+});
+
+
+test('an OpenAlex topic ID is retained when its name also matches a local category', () => {
+  const topic = resolvePaperTopic({ id: 'https://openalex.org/T12345', display_name: 'Machine Learning' });
+  assert.equal(topic?.id, 'T12345');
+  assert.equal(topicExplorerPath(topic), '/explorer/topic/T12345');
+});
+
+
+test('public category links preserve the metadata required to restore a query topic', () => {
+  const topic = resolvePaperTopic({ categoryId: 'cs.IT', categoryIds: ['cs.IT'], display_name: 'Information Theory', query: 'cs.IT', source: 'category' });
+  const path = topicExplorerPath(topic, true)!;
+  const url = new URL(path, 'https://papertok.test');
+  assert.equal(url.pathname, `/public/entity/topic/${topic!.id}`);
+  const restored = resolveQueryTopicRoute(topic!.id, url.searchParams);
+  assert.equal(restored?.label, 'Information Theory');
+  assert.equal(restored?.query, 'cs.IT');
+  assert.deepEqual(restored?.categoryIds, ['cs.IT']);
 });

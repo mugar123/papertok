@@ -152,7 +152,11 @@ gate, with the lane's own population and its own candidates
 filter when the leaf has one, else the notable map's, else none). A leaf the
 notable sample admits gets a notable lane and no topic lane; once a later topic
 sample admits it, its notable lane lists the topic lane's topics and the
-generator asks for its notable entries to be removed.
+generator asks for its notable entries to be removed. A leaf that neither
+sample admits can get a notable lane from its venue lane's journals instead
+(`scripts/README-openalex-leaf-venues.md`, "Notable sample");
+`openAlexNotableListingFilter` in `worker/paper-sources.ts` gives each year's
+filter of any of them.
 
 **Candidates.** `scripts/data/openalex-notable-subfields.json` names, for each
 leaf without a topic lane, the OpenAlex subfield IDs whose catalogue topics

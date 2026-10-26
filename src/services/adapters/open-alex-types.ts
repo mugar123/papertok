@@ -13,6 +13,7 @@ export interface OpenAlexWork {
   publication_year?: number | null;
   publication_date?: string;
   type?: string;
+  is_retracted?: boolean;
   primary_location?: OpenAlexLocation | null;
   best_oa_location?: OpenAlexLocation | null;
   locations?: OpenAlexLocation[];
