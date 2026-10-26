@@ -106,6 +106,15 @@ test('maps a bioRxiv preprint under the subject bioRxiv files it in', () => {
   assert.equal(paper!.authors.length, 2);
 });
 
+// Europe PMC's PPR source is its preprints (bioRxiv, medRxiv, Research Square
+// and others); its MED records are PubMed's.
+test('a Europe PMC preprint maps as a preprint, and a PubMed record as published', () => {
+  const preprint = mapEuropePmcSearchResult({ id: 'PPR12345', source: 'PPR', doi: '10.1101/2020.03.14.123456', title: 'A preprint', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([preprint!.publicationType, preprint!.publicationStatus], ['preprint', 'preprint']);
+  const article = mapEuropePmcSearchResult({ id: '123', source: 'MED', pmid: '123', title: 'An article', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([article!.publicationType, article!.publicationStatus], ['article', 'published']);
+});
+
 test('maps Europe PMC search results including free full text and biomedical terms', () => {
   const paper = mapEuropePmcSearchResult({
     id: '123',

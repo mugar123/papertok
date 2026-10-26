@@ -238,6 +238,7 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
   const published = scheduled ? '' : date;
   const journal = raw.journalInfo?.journal;
   const chapter = isProtocolBookSeries({ issn: journal?.issn, essn: journal?.essn, nlmId: journal?.nlmid });
+  const preprint = raw.source === 'PPR';
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
@@ -253,9 +254,10 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     year: scheduled ? undefined : safeYear(published || (raw.journalInfo?.yearOfPublication ? `${raw.journalInfo.yearOfPublication}-01-01` : undefined)),
     published,
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
-    publicationType: chapter ? 'book-chapter' : 'article',
+    // Europe PMC's PPR source is its preprints.
+    publicationType: chapter ? 'book-chapter' : preprint ? 'preprint' : 'article',
     sourceType: chapter ? 'book-series' : undefined,
-    publicationStatus: 'published',
+    publicationStatus: preprint ? 'preprint' : 'published',
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
       || `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`,
