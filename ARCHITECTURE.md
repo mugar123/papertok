@@ -43,6 +43,13 @@ flowchart TD
     class Auth,Providers,Scopus external
 ```
 
+- [index.html](index.html) contains a startup recovery screen with inline styles.
+  Vite embeds [startup-guard.ts](src/startup-guard.ts) as an independent inline
+  script before the generated stylesheet links, so a stalled stylesheet cannot
+  delay the watchdog. It reports startup errors or a wait longer than 15 seconds, and removes
+  the screen when React adds content to the root. Reload preserves the current
+  address; the guard does not clear storage or send telemetry. Render failures
+  after startup remain owned by [GlobalErrorBoundary](src/global-error-boundary.tsx).
 - [app.tsx](src/app.tsx) owns routes and provider composition.
   [AuthContext](src/context/auth-context.tsx) owns frontend identity and profile
   lifecycle. User data reaches Firestore through the browser SDK and REST
