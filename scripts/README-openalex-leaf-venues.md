@@ -18,13 +18,14 @@ node scripts/generate-openalex-leaf-venues.ts --check
 
 ## Evidence
 
-`openalex-venue-reviews.json` has three keys:
+`openalex-venue-reviews.json` has four keys:
 
 | Key | Contents |
 | --- | --- |
 | `sources` | Each source ID the samples of `leaves` asked for, with the `name`, `publisher` and `type` (`journal`, `conference`) its curator verified with `/sources/<id>`, and `leaves`, the leaves its curator filed it under: the curated lists, kept here only. A source filed under none was sampled but left off the lists: the excluded insurance, derivatives and market microstructure journals of q-fin.RM, q-fin.PR and q-fin.TR, and the optional Journal of Portfolio Management and Financial Analysts Journal of q-fin.PM. Nine computer science sources the curator dropped after sampling (eight with no work since 2024, one re-dated repository copy) have no record, nor do the 24 sources only the queries of `otherSamples` name; a source without one cannot enter a lane. |
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
 | `otherSamples` | Labelled samples that no gate reads, each with the `leaf` it was taken for. The generator ignores them; they are label evidence for the leaf-filing calibration ([worker/leaf-filing-calibration.md](../worker/leaf-filing-calibration.md#reproduce)). 38 samples of 537 works (472 distinct): for physics (10) and engineering (9), lists the curators tried and did not recommend; for economics and finance (19), the lists with and without `has_abstract:true`, the econ.EM list with the Journal of Applied Econometrics, the own samples of six econ.GN journals and of the Journal of Financial and Quantitative Analysis, three econ.GN topic queries and the sample of Quantitative Finance. That one names no leaf: each of its labels carries the `leaf` its labeller judged nearest, and its tenth article (newest first), judged nearest to two leaves, is left out |
+| `notableSamples` | Per leaf, the labelled sample of the most-cited works of its venue lane that admits it to a notable lane from its venue lane ("Notable sample", below) |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
 address (cs.DS's was derived, below), every returned work (`id`, `type`,
@@ -114,6 +115,44 @@ calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
 Crossref for its DOI's type, 20 DOIs a call: about 96 calls a night, and about
 1,080 for the about 21,700 articles of the lanes' first night, which the
 embedding passes also take.
+
+## Notable sample
+
+A leaf with a venue lane and no notable lane from its topics can get a
+notable lane from its venue lane: the 100 most-cited works of the lane's
+sources and types in each of the ten completed years before the current one,
+with or without an abstract (`openAlexNotableListingFilter` in
+`worker/paper-sources.ts`, source `openalex-notable`). The listing asks the
+venue lane's filter without the core-source filter the topic notables ask.
+These sources already passed the gate above and the review rule, and
+`primary_location.source.is_core:true` would drop the reviewed ones OpenAlex
+does not call core (ICPP in cs.DC, SPLASH in cs.PL, ACM TOIS in cs.IR).
+
+**Evidence.** `notableSamples` in `openalex-venue-reviews.json`, keyed by leaf,
+holds samples in the shape above whose works also keep `cited_by_count`. The
+query is the leaf's venue lane over the ten completed years before the capture
+year, most cited first:
+
+| Parameter | Value |
+| --- | --- |
+| `filter` | the lane's `primary_location.source.id` (sorted, joined by `\|`), its `type` and topic or author-count filters exactly as `OPENALEX_LEAF_VENUES` lists them (topic IDs sorted), `from_publication_date:<year−10>-01-01`, `to_publication_date:<year−1>-12-31`, `has_abstract:true`, `is_retracted:false`, and nothing else |
+| `sort` | `cited_by_count:desc` |
+| `page`, `per-page` | `1`, `15` |
+
+The sample asks `has_abstract:true` because the labellers read the abstracts;
+the lane does not. The works must come from the lane's sources, in
+non-increasing citation order and dated within the window, and every work is
+labelled as in the gate above.
+
+**Decision.** The gate's rule: a full page of 15, at least 10 on target
+without doubt. A passing leaf joins `OPENALEX_NOTABLE_VENUE_LEAVES`, the second
+export of `worker/openalex-leaf-venues.generated.ts`, and the report gives each
+sampled leaf `notable: { status, sampleSize, onTarget }`. The generator stops
+on a notable sample for a leaf without a venue lane, or for a leaf with a
+notable lane from its topics (`openAlexNotableFilterForLeaf`): a notable lane
+has one OpenAlex listing. Each batch of admitted leaves changes what every
+reader of those leaves is shown and adds ten OpenAlex list calls a week per
+leaf, so it is authorized under AGENTS.md before it is committed.
 
 ## The 2026-10-23 and 2026-10-24 samples
 
