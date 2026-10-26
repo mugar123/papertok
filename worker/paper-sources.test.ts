@@ -814,6 +814,44 @@ test("the enrichment of a working-paper row that became its journal article asks
   assert.deepEqual(urls.filter(url => url.hostname === 'api.openalex.org').map(url => url.searchParams.get('filter')), ['openalex:W7221756071']);
 });
 
+// An economics paper often circulates as several OpenAlex working papers
+// (NBER, CESifo). The row its article upgraded can fold with a second working
+// paper's row later, and the row the fold keeps, set by the rows' numbers, can
+// be either. The row follows the article's work after the fold, so the first
+// working paper listed again does not put its text on the reviewed row.
+test("an upgraded row folded with a second working paper's row keeps following its article's work", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const otherTitle = 'Efficiency or Pricing Accuracy: Choosing Between Beta and SDF Representations in Linear Factor Models';
+  const article = mapOpenAlexWork(gmmArticle)!;
+  // Each pair of work ids in both orders: two of the four keep the second
+  // working paper's row.
+  for (const [nberId, cesifoId] of [['W7220000104', 'W7220000301'], ['W7220000301', 'W7220000104'], ['W7220000111', 'W7220000222'], ['W7220000222', 'W7220000111']]) {
+    const name = `NBER ${nberId}, CESifo ${cesifoId}`;
+    const nber = { ...seriesWork(nberId, '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+    const cesifo = { ...seriesWork(cesifoId, '10.2139/cesifo.11111', 'report', CESIFO, 'The CESifo version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: otherTitle, authorships: gmmArticle.authorships, publication_date: '2026-09-29' };
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    const rows = () => db.prepare('SELECT paper FROM works').all().map(row => JSON.parse(String((row as { paper: string }).paper)) as Paper);
+    // The two working papers, two rows; the article upgrades the NBER one;
+    // CESifo retitles its paper as the article, which folds the two rows; the
+    // NBER series lists its working paper again under a revised title.
+    for (const [night, works] of [[nber, cesifo], [gmmArticle], [{ ...cesifo, title: gmmArticle.title }], [{ ...nber, title: 'A revised title of the NBER working paper' }]].entries()) {
+      t.mock.timers.setTime(first + night * DAY);
+      await ingestPapers(store, works.map(work => ({ paper: mapOpenAlexWork(work)!, lanes: ['econ.EM'] })), { now: first + night * DAY });
+      if (night === 0) assert.equal(rows().length, 2, name);
+    }
+    const works = rows();
+    assert.equal(works.length, 1, name);
+    assert.deepEqual(
+      [works[0].doi, works[0].peerReviewed, works[0].workingPaper, works[0].openAlexId, works[0].title, works[0].abstract],
+      ['10.1080/07350015.2026.2743244', true, undefined, 'W7221756071', article.title, article.abstract],
+      name,
+    );
+  }
+});
+
 // The NBER working paper of `gmmArticle`, and its arXiv eprint.
 const gmmWorkingPaperWork = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.'), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
 const gmmEprint = (record: Partial<ArxivRecord>) => arxivRecordPaper({

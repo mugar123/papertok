@@ -394,9 +394,11 @@ function asJournalRow(records: Paper[]) {
 
 // The journal's row keeps the id of the working-paper row it upgrades, stored
 // or started by the page, so the id readers liked or saved it under (ENG-133).
-// Enrichment and the row's own listing follow the article's work.
+// Enrichment and the row's own listing follow the article's work: a stored row
+// an earlier upgrade made names it in `openAlexId`, as its id is a working
+// paper's.
 const upgradedRow = (row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper =>
-  ({ ...upgraded, id: row.id, openAlexId: journal.id.slice('openalex:'.length) });
+  ({ ...upgraded, id: row.id, openAlexId: journal.openAlexId || journal.id.slice('openalex:'.length) });
 
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
