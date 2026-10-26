@@ -1,4 +1,5 @@
 import { markAppForcedReload, PRELOAD_RELOAD_KEY } from '../utils/app-reload.ts';
+import { getPublicPaperPath } from '../utils/public-navigation.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { PostHogConfig } from 'posthog-js';
@@ -178,12 +179,19 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/paper/10.1234/private-id'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/explorer/person/private-id'), '/explorer/entity/:id');
   assert.equal(normalizeAnalyticsPath('/search/private-query'), '/unknown');
+  assert.equal(normalizeAnalyticsPath('/paper/private-key'), '/paper/:id');
+  // The address a paper had before ENG-44: an earlier visit's stored values
+  // still carry it.
   assert.equal(normalizeAnalyticsPath('/public/paper/private-key'), '/public/paper/:id');
   assert.equal(normalizeAnalyticsPath('/public/list/private-key'), '/public/list/:id');
   // Profile pages are gone; an old link to one is a not-found page, and the
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
+  assert.equal(normalizeAnalyticsPath(getPublicPaperPath('arxiv', '2401.12345')!), '/paper/:id');
 });
 
 test('classifies acquisition without exposing the referring URL', () => {
@@ -391,10 +399,8 @@ test('builds page locations from the sanitized path and origin only', () => {
  * reads `location.href`, and since the router moved off the fragment that URL
  * carries the real entity id in the PATH -- so this is the function standing
  * between a paper id and a request leaving the browser. The policy published at
- * /privacy.html promises it never does: "Reading a specific paper is recorded
- * as /public/paper/:id [...] which one never travels. A search is recorded as
- * a search, with its type and how many results it returned, never with what
- * you searched for."
+ * /privacy.html promises it never does: "Page addresses have query strings,
+ * fragments and individual paper, list and profile identifiers removed."
  *
  * Every route on this origin that carries something belonging to a reader is
  * here: the paper, the author, the list, the handle in an old profile link (a
@@ -402,6 +408,10 @@ test('builds page locations from the sanitized path and origin only', () => {
  * search query (what they typed). None of them has a fragment any more.
  */
 test('strips the identifier out of the real path before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/paper/W2741809807'),
+    'https://papertok.app/paper/:id',
+  );
   assert.equal(
     sanitizeAnalyticsEventUrl('https://papertok.app/public/paper/W2741809807'),
     'https://papertok.app/public/paper/:id',
@@ -425,6 +435,7 @@ test('strips the identifier out of the real path before the page-view URL is sen
   // No fragment anywhere in the inputs above, and none in the outputs: an `#`
   // in a returned value would mean the id survived somewhere this reads past.
   for (const url of [
+    'https://papertok.app/paper/W2741809807',
     'https://papertok.app/public/paper/W2741809807',
     'https://papertok.app/explorer/author/a5023888391',
     'https://papertok.app/public/list/private-list-key',
@@ -702,6 +713,15 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   assert.deepEqual(sanitizeProductEventParams('follow_change', {
     action: 'add', entity_type: 'author', entity_id: 'A123', entity_name: 'Author Name',
   }), { action: 'add', entity_type: 'author', entity_id: 'A123' });
+});
+
+test('a feed load error says why it failed with fixed labels only', () => {
+  assert.deepEqual(sanitizeProductEventParams('app_error', {
+    kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED', message: 'Paper store returned 400',
+  }), { kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED' });
+  assert.deepEqual(sanitizeProductEventParams('app_error', {
+    kind: 'feed_load_failed', reason: 'made up', error_code: 'Paper 10.1234/x not found',
+  }), { kind: 'feed_load_failed', error_code: 'other' });
 });
 
 test('time on a paper is whole seconds, and a tab left open counts four hours at most', () => {

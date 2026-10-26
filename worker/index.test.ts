@@ -606,11 +606,11 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
   assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 403], ['STANDARD', 200]]);
 });
 
-test('records what every view answered when Scopus refuses both of them', async () => {
+test('records what every view answered when Scopus refuses all of them', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(
-      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
-      { status: 500, headers: { 'X-ELS-ReqId': 'req-42' } },
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHORIZATION_ERROR', statusText: 'The requestor is not authorized to access the requested view' } } }),
+      { status: 401, headers: { 'X-ELS-ReqId': 'req-42' } },
     ),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
@@ -622,9 +622,31 @@ test('records what every view answered when Scopus refuses both of them', async 
   const health = await response.json<{ available: boolean; view: unknown; code: string; attempts: Array<{ view: unknown; requestId: string }> }>();
   assert.equal(health.available, false);
   assert.equal(health.view, null);
-  assert.equal(health.code, 'GENERAL_SYSTEM_ERROR');
+  assert.equal(health.code, 'AUTHORIZATION_ERROR');
   assert.deepEqual(health.attempts.map(attempt => attempt.view), ['COMPLETE', 'STANDARD', 'DEFAULT']);
   assert.equal(health.attempts[0].requestId, 'req-42');
+});
+
+test('stops at the first view when the egress refuses the Worker, and reports the egress code', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withWorkerFetchMock(
+    async url => {
+      requestedViews.push(new URL(url as string | URL).searchParams.get('view'));
+      return new Response(JSON.stringify({ code: 'PROXY_AUTH_REQUIRED' }), { status: 401 });
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), healthProbeEnv(SCOPUS_EGRESS)),
+  );
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 503);
+  const health = await response.json<{ available: boolean; status: number; code: string; attempts: Array<{ view: unknown; status: unknown }> }>();
+  assert.equal(health.available, false);
+  assert.equal(health.status, 401);
+  assert.equal(health.code, 'PROXY_AUTH_REQUIRED');
+  assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 401]]);
 });
 
 test('reports a COMPLETE view that carries the abstract', async () => {
@@ -1247,6 +1269,66 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
   });
 }
 
+// The view ladder exists for an account that lacks a view. An Elsevier outage
+// says nothing about the view, so it must not make every miss cost one call per
+// rung while Elsevier is already struggling.
+test('asks Scopus once per miss while Elsevier answers 500', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
+      { status: 500 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 500);
+});
+
+// A refused key is refused whatever the view, unlike the 401 AUTHORIZATION_ERROR
+// an account without COMPLETE gets, which the next view can answer.
+test('asks Scopus once per miss while Elsevier refuses the key', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHENTICATION_ERROR', statusText: 'Invalid API Key' } } }),
+      { status: 401 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 401);
+});
+
+// Four long terms are a query the egress refuses. It answers that itself, so no
+// view and no Elsevier call is involved, and a second or third attempt could
+// only repeat the answer.
+test('asks the egress once per miss when it refuses the query as too long', async () => {
+  const requestedViews: Array<string | null> = [];
+  const terms = ['a', 'b', 'c', 'd'].map(letter => letter.repeat(120)).join('|');
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(JSON.stringify({ code: 'INVALID_QUERY' }), { status: 400 });
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/sources/scopus?terms=${terms}`,
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 400);
+});
+
 // CORE answered in 7-8 s when measured; the shared six-second deadline cut
 // every such search into a 502 before the edge cache could keep it.
 test('answers a CORE search that takes longer than the shared source deadline', async () => {
@@ -1740,6 +1822,30 @@ test('a repeated PubMed identifier does not buy a second iCite entry', async () 
   );
 
   assert.equal(calls.length, 1);
+});
+
+// ADS also holds meeting abstracts, circulars, catalogues, proposals and
+// software; the physics route's records reach the corpus (paper-sources.ts).
+test('the physics route asks NASA ADS for papers only', async () => {
+  const asked: URL[] = [];
+  await withIdentityAndCacheStore(async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async url => {
+      const isAds = String(url).includes('adsabs');
+      if (isAds) asked.push(new URL(String(url)));
+      return Response.json(isAds ? { response: { docs: [] } } : { hits: { hits: [], total: 0 } });
+    };
+    try {
+      await reportApi.fetch(new Request(
+        'https://papertok-report-api.example/sources/physics?q=galaxies&fallback_q=galaxies',
+        { headers: SIGNED_IN },
+      ), { ...AUTHENTICATED_ENV, NASA_ADS_API_TOKEN: 'ads-test-token' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].searchParams.get('q')!, / doctype:\(article OR eprint OR inproceedings\)$/);
 });
 
 // --- G5: a degraded answer does not own its entry for the full TTL ----------
@@ -3619,6 +3725,28 @@ test('a list page reads the public document anonymously, as a visitor would', as
   const reads = urls.filter(entry => entry.address.includes('firestore.googleapis.com'));
   assert.equal(reads.length, 1);
   assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
+});
+
+test("a crawler gets a project page named from OpenAIRE's Graph API", async () => {
+  const tailor = 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a';
+  const urls: Array<{ address: string; authorization: string | null }> = [];
+  const upstream = shareUpstream(urls);
+  const response = await withWorkerFetchMock(
+    async (url, init) => {
+      const address = String(url);
+      if (!address.startsWith('https://api.openaire.eu/')) return upstream(url, init);
+      urls.push({ address, authorization: null });
+      // Graph's answer for TAILOR on 2026-10-23, trimmed to what the page reads.
+      return Response.json({ header: { numFound: 1 }, results: [{ id: tailor, code: '952215', acronym: 'TAILOR', title: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' }] });
+    },
+    () => reportApi.fetch(crawlerRequest(`/share/entity/project/${encodeURIComponent(tailor)}`), openAlexEnv()),
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project \| PaperTok<\/title>/);
+  const lookups = urls.filter(entry => entry.address.startsWith('https://api.openaire.eu/')).map(entry => new URL(entry.address));
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0].pathname, '/graph/v3/projects');
+  assert.deepEqual(Object.fromEntries(lookups[0].searchParams), { id: tailor, pageSize: '1' });
 });
 
 // The PDF relay behind the touch-screen viewer. It must stay a relay for the

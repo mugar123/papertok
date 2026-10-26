@@ -35,7 +35,7 @@ import NudgeHost from './components/nudges/nudge-host.tsx'
 import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
-import { getPublicPaperPath } from './utils/public-navigation.ts'
+import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 import './app.css'
@@ -71,13 +71,15 @@ const PublicPaperPage = lazyWithPreload(() => import('./components/public/public
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
 const SearchCommand = lazyWithPreload(() => import('./components/search/search-command.tsx'))
 
-// The standalone routes a guest can reach without a session. A sign-in from
-// one of these doors (like, save, follow) leaves the new account right there,
-// and none of them is behind ProtectedRoute, so App itself has to take it to
-// the onboarding (the effect below).
-const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
-function isPublicRoute(path: string) {
-  return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
+// A paper's page was /public/paper/:key until ENG-44. vercel.json moves that
+// address permanently, but some visits never ask the server for it: the document
+// the service worker serves offline, `npm run dev`, and an in-app navigation to
+// a stored legacy path such as an auth return saved before the move. (A
+// `#/public/paper/…` link is translated before React mounts, in
+// utils/legacy-hash-route.ts.) The query, fragment and history state carry over.
+function LegacyPaperRedirect() {
+  const redirect = legacyPaperRedirect(useLocation())
+  return redirect ? <Navigate to={redirect.to} state={redirect.state} replace /> : <NotFoundPage />
 }
 
 function LoginRedirect() {
@@ -155,7 +157,7 @@ function AppContent() {
   // which cannot work it out for itself, because it is kept mounted inside a
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
-  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
@@ -165,9 +167,7 @@ function AppContent() {
   // tap and left an empty band over the card while it dissolved. Signed-out
   // visitors still get the standalone page (`user` gates below).
   const showNavbar = (navbarRoutes.includes(normalizedPathname)
-    || normalizedPathname.startsWith('/public/paper/')
-    || normalizedPathname.startsWith('/public/list/')
-    || normalizedPathname.startsWith('/explorer/'))
+    || keepsNavbarPath(normalizedPathname))
     && Boolean(user)
     && !authLoading
     && onboardingComplete
@@ -200,6 +200,18 @@ function AppContent() {
     setConsumedAuthArrival(authArrivalKey)
     if (!user) setAuthPromptOpen(true)
   }
+  // A sign-in that went through this tab and came back without a session
+  // (auth-context.tsx) finds its dialog open again, as a closed popup leaves it,
+  // with the destination it carried still waiting. Once: the flag clears on
+  // the next attempt, and a session remounts this component. The restored
+  // dialog sends no auth_prompt_view: the reader's own open counted one.
+  const [reopenedSignIn, setReopenedSignIn] = useState(false)
+  const [authPromptRestored, setAuthPromptRestored] = useState(false)
+  if (reopenSignIn && !user && !reopenedSignIn) {
+    setReopenedSignIn(true)
+    setAuthPromptOpen(true)
+    setAuthPromptRestored(true)
+  }
   useEffect(() => {
     if (!authArrivalKey) return
     offerAuthReturn(arrivalReturnTo)
@@ -221,7 +233,7 @@ function AppContent() {
   // handling covers those, and a redirect on a guess would be wrong.
   useEffect(() => {
     if (!user || authLoading || onboardingComplete || profileLoadError) return
-    if (!isPublicRoute(location.pathname)) return
+    if (!isPublicRoutePath(location.pathname)) return
     void navigate('/onboarding', { replace: true, state: { returnTo: `${location.pathname}${location.search}` } })
   }, [user, authLoading, onboardingComplete, profileLoadError, location.pathname, location.search, navigate])
 
@@ -504,8 +516,9 @@ function AppContent() {
               </PageTransition>
             }
           />
+          <Route path="/public/paper/:paperKey" element={<LegacyPaperRedirect />} />
           <Route
-            path="/public/paper/:paperKey"
+            path="/paper/:paperKey"
             element={
               <PageTransition>
                 <PublicPaperPage
@@ -554,8 +567,10 @@ function AppContent() {
         {authPromptOpen && (
           <AuthPrompt
             reason={authPromptReason}
+            restored={authPromptRestored}
             onClose={() => {
               setAuthPromptOpen(false)
+              setAuthPromptRestored(false)
               // The next door — a bounce off a protected route opens this
               // without a reason — must not inherit this one's.
               setAuthPromptReason('default')

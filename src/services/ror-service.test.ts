@@ -108,6 +108,33 @@ test('caches repeated institution searches in memory', async () => {
   }
 });
 
+test('searches in other scripts do not share one cache entry', async () => {
+  const records: Record<string, typeof ROR_RECORD> = {
+    北京大学: { ...ROR_RECORD, id: 'https://ror.org/02v51f717', names: [{ value: '北京大学', lang: 'zh', types: ['ror_display', 'label'] }] },
+    'Московский университет': { ...ROR_RECORD, id: 'https://ror.org/010pmpe69', names: [{ value: 'Московский университет', lang: 'ru', types: ['ror_display', 'label'] }] },
+  };
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async (input) => {
+    fetchCount += 1;
+    const query = new URL(String(input)).searchParams.get('query')!;
+    return ({ ok: true, status: 200, json: async () => ({ items: [records[query]] }) } as Response);
+  };
+
+  try {
+    // Both queries used to normalise to the same empty key, and to nothing
+    // the relevance filter could keep.
+    const chinese = await searchRorInstitutions('北京大学', 5);
+    const russian = await searchRorInstitutions('Московский университет', 5);
+
+    assert.equal(fetchCount, 2);
+    assert.deepEqual(chinese.map(institution => institution.display_name), ['北京大学']);
+    assert.deepEqual(russian.map(institution => institution.display_name), ['Московский университет']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('the deadline covers a ROR body that never finishes', async () => {
   // Before the fix this cleared its timer as soon as the headers landed, so a
   // dribbling body waited for ever behind a seven-second deadline.
