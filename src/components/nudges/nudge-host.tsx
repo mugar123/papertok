@@ -110,25 +110,25 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
-  const uid = user?.uid;
-  const acknowledgePrivacy = useCallback(() => {
-    if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
-    setPicked(null);
-    // The button that had focus leaves with the panel.
-    document.getElementById('main-content')?.focus({ preventScroll: true });
-  }, [uid]);
-
   const privacyShown = picked === PRIVACY_NOTICE_ID && signedIn;
 
   // Escape puts it away for this visit and does not count as reading it, so it
   // returns next time. On a phone the panel covers the bottom of the card, and
   // this is how a control focused underneath is seen again (WCAG 2.4.11).
   // The close button does the same for a touch reader, who has no Escape.
+  // Focus moves only when it was inside the panel: Safari does not focus a
+  // button on click, and a reader whose focus sits on a feed control keeps it.
   const hidePrivacyForVisit = useCallback(() => {
     const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
     setPicked(null);
     if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });
   }, []);
+
+  const uid = user?.uid;
+  const acknowledgePrivacy = useCallback(() => {
+    if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
+    hidePrivacyForVisit();
+  }, [uid, hidePrivacyForVisit]);
 
   useEffect(() => {
     if (!privacyShown) return undefined;
