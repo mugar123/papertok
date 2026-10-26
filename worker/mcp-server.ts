@@ -1,4 +1,4 @@
-import type { Paper } from '../src/models/paper.ts';
+import type { Paper, PaperAuthor } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -234,11 +234,26 @@ const PLACEHOLDER_TEXTS = new Set(['No abstract available.', 'Untitled', 'No Tit
 // No record a tool reads (`formatOpenAlexWorkAsPaper`, `mapOpenAlexWork`,
 // `arxivRecordPaper`) carries these, so a 0 or `false` here is the builder's.
 const UNSUPPLIED_COUNTS = ['referenceCount', 'hasReferences', 'hasData', 'hasSupplement'] as const;
+// The OpenAlex mappers name an authorship OpenAlex gave no name with these
+// (`mapOpenAlexWork`, `formatOpenAlexWorkAsPaper`), and the second lists one
+// such author for a work without authorships.
+const PLACEHOLDER_AUTHOR_NAMES = new Set(['Unknown', 'Unknown Author']);
+
+type RelayedAuthor = Partial<PaperAuthor> | string;
+
+// An author keeps what the source gave of it: one known by its id alone stays
+// without a name, and one the source gave nothing of goes.
+function knownAuthor(author: Paper['authors'][number]): RelayedAuthor[] {
+  if (typeof author === 'string' || !PLACEHOLDER_AUTHOR_NAMES.has(author.name)) return [author];
+  const known = Object.entries(author).filter(([key, value]) => key !== 'name' && value !== null && value !== undefined && value !== '');
+  return known.length > 0 ? [Object.fromEntries(known)] : [];
+}
 
 // What the builder wrote for a field its record did not give goes, so the
 // client reads an absent field as unknown, as INSTRUCTIONS tell it to.
 function withoutDefaults(paper: Partial<Paper>) {
   const known: Record<string, unknown> = { ...paper };
+  if (paper.authors) known.authors = paper.authors.flatMap(knownAuthor);
   for (const [key, value] of Object.entries(known)) {
     const empty = value === null || value === '' || (Array.isArray(value) && value.length === 0);
     if (empty || (typeof value === 'string' && PLACEHOLDER_TEXTS.has(value))) delete known[key];
@@ -254,7 +269,7 @@ function withoutDefaults(paper: Partial<Paper>) {
   // arXiv reads any DOI on its record as publication, a repository's included,
   // so a `true` with nothing else behind it does not show review.
   if (known.peerReviewed === true && restsOnArxivDoi(paper)) delete known.peerReviewed;
-  return known as Partial<Paper>;
+  return known as Omit<Partial<Paper>, 'authors'> & { authors?: RelayedAuthor[] };
 }
 
 // The provider's record is left behind, with what only repeats other fields
@@ -264,7 +279,7 @@ function withoutDefaults(paper: Partial<Paper>) {
 // that is not a conference paper, a repository preprint included. Every list
 // is bounded, and a list the source never gave stays absent: unknown, not empty.
 function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstract = MAX_SEARCH_ABSTRACT } = {}) {
-  const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
+  const relayed: ReturnType<typeof withoutDefaults> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
   // Compared whole, before the cuts below.
   const categories = JSON.stringify(relayed.categories || []);
   if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;

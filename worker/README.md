@@ -961,7 +961,9 @@ sends its papers in rank order while they fit in 36,000 bytes of JSON and counts
 the rest in the result's `omitted.papers`: ten papers of 2,000-author
 collaborations with near-maximum abstracts come to five papers and about 33 KB. A field the source never gave stays
 absent rather than carrying `PaperBuilder.create`'s default: no placeholder
-abstract or title, no empty list or string, no `referenceCount: 0` or `has*:
+abstract or title, no author name the OpenAlex mappers wrote for one OpenAlex
+did not give (`Unknown`, `Unknown Author`: the author keeps its id, or is left
+out when OpenAlex gave nothing of it), no empty list or string, no `referenceCount: 0` or `has*:
 false` (no record a tool reads carries them), no `citationCount` unless
 `citationCountKnown` is true, no `peerReviewed: false` on a preprint record,
 whose `publicationStatus` already says preprint, and no `peerReviewed: true`

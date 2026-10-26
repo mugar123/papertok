@@ -434,7 +434,8 @@ test('get_paper builds the paper as the paper page does, with citationCount and 
 });
 
 test('a field the source did not give stays absent, in a search and in get_paper', async () => {
-  // OpenAlex knows nothing of this work's abstract, access, citations, venue or subjects.
+  // OpenAlex knows nothing of this work's abstract, access, citations, venue or
+  // subjects, nor the names of two of its authors: one it knows by id, one not at all.
   const bare = {
     id: 'https://openalex.org/W4400000077',
     doi: null,
@@ -443,7 +444,11 @@ test('a field the source did not give stays absent, in a search and in get_paper
     type: 'article',
     publication_date: '2026-03-02',
     publication_year: 2026,
-    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' }, institutions: [] }],
+    authorships: [
+      { author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' }, institutions: [] },
+      { author: { id: 'https://openalex.org/A2', display_name: null }, institutions: [] },
+      { author: {}, institutions: [] },
+    ],
     abstract_inverted_index: null,
     primary_location: null,
     locations: [],
@@ -455,8 +460,11 @@ test('a field the source did not give stays absent, in a search and in get_paper
   const unknown = ['abstract', 'openAccess', 'citationCount', 'referenceCount', 'hasReferences', 'hasData', 'hasSupplement',
     'concepts', 'topics', 'institutions', 'biomedicalTerms', 'projectIds', 'researchResources', 'categories', 'keywords',
     'primaryCategory', 'primaryTopic', 'sourceType', 'provider'];
+  // A work OpenAlex lists without authorships.
+  const anonymous = { ...bare, id: 'https://openalex.org/W4400000078', authorships: undefined };
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/W4400000077')) return Response.json(bare);
+    if (url.startsWith('https://api.openalex.org/works/W4400000078')) return Response.json(anonymous);
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [bare] });
     if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
     throw new Error(`unexpected upstream ${url}`);
@@ -471,8 +479,14 @@ test('a field the source did not give stays absent, in a search and in get_paper
     for (const [name, relayed] of [['search', work], ['get_paper', paper]] as const) {
       assert.deepEqual(unknown.filter(key => key in relayed), [], `${name} relays only what OpenAlex gave`);
       assert.equal(relayed.citationCountKnown, false);
-      assert.deepEqual((relayed.authors as Array<{ name: string }>).map(author => author.name), ['Ana Pérez'], `${name} keeps what OpenAlex gave`);
+      const authors = relayed.authors as Array<{ name?: string; id?: string }>;
+      assert.deepEqual(authors.map(author => [author.name, author.id]), [
+        ['Ana Pérez', 'https://openalex.org/A1'],
+        [undefined, 'https://openalex.org/A2'],
+      ], `${name} keeps what OpenAlex gave of each author`);
     }
+    const unlisted = await callTool(env, 'get_paper', { id: 'W4400000078' });
+    assert.equal('authors' in (unlisted.answer.result?.structuredContent?.paper as Record<string, unknown>), false, 'no author is invented');
     // arXiv gives no citations, institutions or subjects, and a preprint record
     // says nothing of the review of a later version.
     assert.deepEqual(['citationCount', 'peerReviewed', 'institutions', 'concepts', 'topics', 'referenceCount'].filter(key => key in preprint), []);
