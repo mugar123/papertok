@@ -1421,8 +1421,9 @@ test('a notable lane drops a paper 14 days after the listing that last returned 
 
 test('a leaf no sample admitted has no OpenAlex notable listing, and a topic leaf keeps the core-source filter', () => {
   assert.equal(openAlexNotableListingFilter('chem.org', 2016), null);
-  assert.ok(openAlexVenueFilterForLeaf('econ.EM'));
-  assert.equal(openAlexNotableListingFilter('econ.EM', 2016), null, 'a venue lane alone does not admit a leaf');
+  // cs.MM's journal sample was 3 of 15 on target on 2026-10-26.
+  assert.ok(openAlexVenueFilterForLeaf('cs.MM'));
+  assert.equal(openAlexNotableListingFilter('cs.MM', 2016), null, 'a venue lane alone does not admit a leaf');
   assert.deepEqual(openAlexNotableListingFilter('cs.CV', 2016)!.split(','), [
     ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
     'from_publication_date:2016-01-01',
@@ -1432,9 +1433,21 @@ test('a leaf no sample admitted has no OpenAlex notable listing, and a topic lea
   ]);
 });
 
+test('a leaf the journal sample admitted lists its journals\' most-cited articles of each year, without the core-source filter', async () => {
+  // quant-ph's journal sample was 15 of 15 on target on 2026-10-26.
+  const filter = openAlexNotableListingFilter('quant-ph', 2016)!;
+  assert.match(filter, /^primary_location\.source\.id:S\d+(?:\|S\d+)*,type:article,/, 'the venue lane\'s journals and types');
+  assert.equal(filter, [
+    openAlexVenueFilterForLeaf('quant-ph'), 'from_publication_date:2016-01-01', 'to_publication_date:2016-12-31', 'is_retracted:false',
+  ].join(','));
+  const { binding } = testD1();
+  const jobs = await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'));
+  assert.ok(jobs.some(job => job.source === 'openalex-notable' && job.lane === 'notable:quant-ph'));
+});
+
 test('a notable job for a leaf without a notable listing fails before asking OpenAlex', async t => {
   const { urls, env } = relay(t, () => ({ results: [] }));
-  await assert.rejects(SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:econ.EM', page: 1, since: '', waits: { seconds: 0 } }), /notable:econ\.EM has no notable listing/);
+  await assert.rejects(SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.MM', page: 1, since: '', waits: { seconds: 0 } }), /notable:cs\.MM has no notable listing/);
   assert.equal(urls.length, 0);
 });
 
