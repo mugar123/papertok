@@ -606,25 +606,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // before KEPT_LISTING_DAYS run out. One that drops out of the list leaves the
   // lane when they do, even when a like or its date keeps it in the corpus
   // (paper-store.ts `evictExpired`).
-  // The arXiv side of an arXiv category's notable lane: ADS's 100 most-cited
-  // papers of the class in each of the ten completed years, preprints and
-  // their published versions alike, filed under the same lane as OpenAlex's.
-  // ADS's counts are not OpenAlex's, so the enrichment refreshes these papers.
-  'ads-notable': {
-    firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
-    fetchPage: async (env, { lane, page }) => {
-      const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
-      let docs: unknown[];
-      try {
-        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR));
-      } catch (error) {
-        // ADS answers a spent day with 429; the lane waits for the next night.
-        if ([403, 429].includes(Number((error as UpstreamError).status))) throw new SourceRefused('ads', LEDGER_REFUSAL_SECONDS);
-        throw error;
-      }
-      return pageOf(filed(docs.map(doc => mapAdsPaper(doc as Parameters<typeof mapAdsPaper>[0], [leaf])), lane), NOTABLE_PER_YEAR);
-    },
-  },
   'openalex-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true, separateListings: true,
     // The lane's page picks the year; OpenAlex is asked the first page of it.
@@ -634,6 +615,27 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const filter = openAlexNotableListingFilter(lane.slice(NOTABLE_LANE_PREFIX.length), notableListedYear(page));
       if (!filter) throw new Error(`${lane} has no notable listing`);
       return openAlexLane(env, filter, { page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories' });
+    },
+  },
+  // The arXiv side of an arXiv category's notable lane: ADS's 100 most-cited
+  // papers of the class in each of the ten completed years, preprints and
+  // published versions alike, filed under the same lane and kept as
+  // OpenAlex's are. Its listing does not renew the enrichment
+  // (`renewsEnrichment`): ADS's counts are not OpenAlex's.
+  'ads-notable': {
+    firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
+    fetchPage: async (env, { lane, page }) => {
+      const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
+      let docs: unknown[];
+      try {
+        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR));
+      } catch (error) {
+        // ADS answers a spent day with 429; the lane waits for the next night.
+        // Any other failure, a rejected token among them, stays an error.
+        if ((error as UpstreamError).status === 429) throw new SourceRefused('ads', LEDGER_REFUSAL_SECONDS);
+        throw error;
+      }
+      return pageOf(filed(docs.map(doc => mapAdsPaper(doc as Parameters<typeof mapAdsPaper>[0], [leaf])), lane), NOTABLE_PER_YEAR);
     },
   },
   // The newest journal articles of a whole area, filed under the area. On
