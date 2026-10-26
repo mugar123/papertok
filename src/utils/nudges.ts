@@ -111,6 +111,30 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
   return pending[index];
 }
 
+export const PRIVACY_NOTICE_ID = 'privacy-change';
+
+/**
+ * What the visit shows: the privacy change when it is owed, which takes the
+ * turn before any nudge, otherwise one of the pending nudges, or nothing.
+ */
+export function pickVisitNotice({ privacyOwed, eligible = [], dismissed = [], random }: { privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }) {
+  return privacyOwed ? PRIVACY_NOTICE_ID : pickNudge({ eligible, dismissed, random });
+}
+
+const OTHER_ESCAPE_OWNERS = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[aria-modal="true"]';
+
+/**
+ * Whether an Escape pressed on `target` belongs to something else: another
+ * dialog, menu or list closing itself, or a text field being cleared. Only an
+ * Escape on the page underneath puts the privacy notice away.
+ */
+export function escapeBelongsToOther(target: unknown) {
+  const element = target as { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown } | null;
+  if (!element || typeof element !== 'object') return false;
+  if (element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName ?? '')) return true;
+  return typeof element.closest === 'function' && Boolean(element.closest(OTHER_ESCAPE_OWNERS));
+}
+
 /**
  * What, if anything, is wrong with email — as reported by the service itself.
  *

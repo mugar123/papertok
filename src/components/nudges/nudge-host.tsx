@@ -7,8 +7,10 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
+  PRIVACY_NOTICE_ID,
   emailNudgeProblem,
-  pickNudge,
+  escapeBelongsToOther,
+  pickVisitNotice,
   privacyNoticeOwed,
   readDismissedNudges,
   readPrivacyNoticeAck,
@@ -30,7 +32,6 @@ import NudgePanel from './nudge-panel.tsx';
 // dismissed; utils/nudges.ts decides who is owed it. A change of
 // account remounts this component, which clears what was picked for the
 // previous reader.
-const PRIVACY_NOTICE = 'privacy-change';
 
 const COPY = {
   en: {
@@ -89,13 +90,13 @@ export default function NudgeHost() {
   // linter says so, twice. Same shape the guest interests sheet uses.
   if (openable && user && !choiceMade) {
     setChoiceMade(true);
-    const privacyOwed = privacyNoticeOwed({
-      version: PRIVACY_POLICY_VERSION,
-      acknowledged: readPrivacyNoticeAck(user.uid),
-      accountCreated: user.metadata?.creationTime,
-      signedIn,
-    });
-    const id = privacyOwed ? PRIVACY_NOTICE : pickNudge({
+    const id = pickVisitNotice({
+      privacyOwed: privacyNoticeOwed({
+        version: PRIVACY_POLICY_VERSION,
+        acknowledged: readPrivacyNoticeAck(user.uid),
+        accountCreated: user.metadata?.creationTime,
+        signedIn,
+      }),
       eligible: emailProblem ? ['email-down'] : [],
       dismissed,
     });
@@ -115,7 +116,7 @@ export default function NudgeHost() {
     document.getElementById('main-content')?.focus({ preventScroll: true });
   }, [uid]);
 
-  const privacyShown = picked === PRIVACY_NOTICE && signedIn;
+  const privacyShown = picked === PRIVACY_NOTICE_ID && signedIn;
 
   // Escape puts it away for this visit and does not count as reading it, so it
   // returns next time. On a phone the panel covers the bottom of the card, and
@@ -123,7 +124,7 @@ export default function NudgeHost() {
   useEffect(() => {
     if (!privacyShown) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || escapeBelongsToOther(event.target)) return;
       const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
       setPicked(null);
       if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });

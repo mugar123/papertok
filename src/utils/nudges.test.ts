@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
+  PRIVACY_NOTICE_ID,
   emailNudgeProblem,
+  escapeBelongsToOther,
   pickNudge,
+  pickVisitNotice,
   privacyNoticeOwed,
   readDismissedNudges,
   readPrivacyNoticeAck,
@@ -166,4 +169,32 @@ test('each account dismisses the notice separately', () => {
 test('blocked storage leaves the notice owed instead of failing', () => {
   assert.equal(readPrivacyNoticeAck('reader-a', brokenStorage()), null);
   assert.doesNotThrow(() => rememberPrivacyNotice('reader-a', '2026-10-22', brokenStorage()));
+});
+
+test('a privacy change owed to the reader takes the visit before any nudge', () => {
+  assert.equal(
+    pickVisitNotice({ privacyOwed: true, eligible: ['email-down'], dismissed: [] }),
+    PRIVACY_NOTICE_ID,
+    'the email nudge waits for a later visit',
+  );
+  assert.equal(pickVisitNotice({ privacyOwed: true }), PRIVACY_NOTICE_ID, 'also when no nudge is pending');
+  assert.equal(pickVisitNotice({ privacyOwed: false, eligible: ['email-down'], dismissed: [] }), 'email-down');
+  assert.equal(pickVisitNotice({ privacyOwed: false, eligible: ['email-down'], dismissed: ['email-down'] }), null, 'a dismissed nudge stays dismissed');
+  assert.equal(pickVisitNotice({ privacyOwed: false }), null);
+});
+
+test('an Escape that belongs to another dialog, menu or text field does not put the notice away', () => {
+  const inside = (selectors: string) => ({ tagName: 'DIV', closest: (selector: string) => (selector.includes(selectors) ? {} : null) });
+  assert.equal(escapeBelongsToOther(inside('role="dialog"')), true, 'a dialog');
+  assert.equal(escapeBelongsToOther(inside('role="alertdialog"')), true, 'an alert dialog');
+  assert.equal(escapeBelongsToOther(inside('role="menu"')), true, 'a menu');
+  assert.equal(escapeBelongsToOther(inside('role="listbox"')), true, 'a list of options');
+  assert.equal(escapeBelongsToOther(inside('aria-modal="true"')), true, 'a modal');
+  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
+    assert.equal(escapeBelongsToOther({ tagName, closest: () => null }), true, tagName);
+  }
+  assert.equal(escapeBelongsToOther({ tagName: 'DIV', isContentEditable: true, closest: () => null }), true, 'a note editor');
+  assert.equal(escapeBelongsToOther({ tagName: 'BODY', closest: () => null }), false, 'the page underneath');
+  assert.equal(escapeBelongsToOther(null), false);
+  assert.equal(escapeBelongsToOther({}), false, 'the document itself has no closest');
 });
