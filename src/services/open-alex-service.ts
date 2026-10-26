@@ -30,6 +30,7 @@ import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
 import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
 import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
+import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../utils/following.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
 import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
@@ -1433,9 +1434,9 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
   
   const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
   let filterParams = `${filterKey}:${filterId}`;
-  // Its articles, not its errata and paratext, and none dated after today,
-  // which would sort first: as worker/paper-sources.ts lists the lane.
-  if (type === 'journal') filterParams += `,type:article,to_publication_date:${new Date().toISOString().slice(0, 10)}`;
+  // Its articles and reviews, not its errata and paratext, and none dated
+  // after today, which would sort first: as worker/paper-sources.ts lists the lane.
+  if (type === 'journal') filterParams += `,${FOLLOWED_JOURNAL_TYPE_FILTER},to_publication_date:${new Date().toISOString().slice(0, 10)}`;
   
   // Advanced Filters. The Explorer still drops what `openAlexPeerReviewed`
   // does not call reviewed. Asking OpenAlex to leave out what it can name

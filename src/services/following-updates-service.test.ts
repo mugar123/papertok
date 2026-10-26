@@ -65,7 +65,8 @@ test('retrieves query-topic updates with stored metadata and preserves the full 
 
 // ENG-123 (D7): the Following page asks OpenAlex for a followed journal's
 // newest articles, as its lane in the corpus lists them: the journal as the
-// primary location (not a repository copy), articles only, none dated after
+// primary location (not a repository copy), articles and reviews (OpenAlex
+// types every paper of the Annual Review journals `review`), none dated after
 // today. Each says which journal it came from.
 test("a followed journal's updates are its newest articles, each naming the journal", async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T12:00:00Z') });
@@ -76,8 +77,11 @@ test("a followed journal's updates are its newest articles, each naming the jour
   const urls: URL[] = [];
   openAlexClient.fetchImpl = async (url) => {
     urls.push(new URL(String(url)));
-    return Response.json({ meta: { count: 1 }, results: [{
+    return Response.json({ meta: { count: 2 }, results: [{
       id: 'https://openalex.org/W7000000001', type: 'article', title: 'Monetary policy and the term structure', publication_date: '2026-10-20',
+      primary_location: { source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+    }, {
+      id: 'https://openalex.org/W7000000002', type: 'review', title: 'Fifty years of the term structure: a review', publication_date: '2026-10-18',
       primary_location: { source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
     }] });
   };
@@ -87,10 +91,13 @@ test("a followed journal's updates are its newest articles, each naming the jour
   const result = await fetchFollowingUpdates([journal]);
 
   assert.equal(urls.length, 1);
-  assert.deepEqual(urls[0].searchParams.get('filter')!.split(',').sort(), ['primary_location.source.id:S23254222', 'to_publication_date:2026-10-25', 'type:article']);
+  assert.deepEqual(urls[0].searchParams.get('filter')!.split(',').sort(), ['primary_location.source.id:S23254222', 'to_publication_date:2026-10-25', 'type:article|review']);
   assert.equal(urls[0].searchParams.get('sort'), 'publication_date:desc');
   assert.equal(result.failedEntities, 0);
-  assert.deepEqual(result.papers.map(paper => [paper.title, paper._followedEntityMatches]), [['Monetary policy and the term structure', [journal]]]);
+  assert.deepEqual(result.papers.map(paper => [paper.title, paper._followedEntityMatches]), [
+    ['Monetary policy and the term structure', [journal]],
+    ['Fifty years of the term structure: a review', [journal]],
+  ]);
   assert.deepEqual(orderFollowsForRefresh([{ type: 'author', canonicalId: 'ada lovelace', displayName: 'Ada Lovelace' }, journal]).map(follow => follow.type), ['journal', 'author'],
     'one OpenAlex request, so it answers before the follows that wait for arXiv');
 });

@@ -25,6 +25,16 @@ const JOURNAL_ID = /^S\d+$/;
  */
 export const MAX_FOLLOWED_JOURNALS = 10;
 
+/**
+ * The OpenAlex work types a followed journal's updates list (ENG-123): its
+ * research articles and its reviews, which OpenAlex types `review` (every
+ * paper of the Annual Review and Nature Reviews journals). Not its editorials,
+ * letters, errata or paratext. The Worker's lane, the paper store's filing
+ * and the Following page read the same list.
+ */
+export const FOLLOWED_JOURNAL_WORK_TYPES: readonly string[] = ['article', 'review'];
+export const FOLLOWED_JOURNAL_TYPE_FILTER = `type:${FOLLOWED_JOURNAL_WORK_TYPES.join('|')}`;
+
 export function normalizeFollowText(value: unknown) {
   return String(value || '')
     .normalize('NFD')

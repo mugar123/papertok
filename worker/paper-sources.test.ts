@@ -1144,14 +1144,21 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
 // ENG-123 (D4, Pablo 2026-10-25): a followed journal's lane lists its newest
 // articles, with or without an abstract, 100 a page: one list call, as a page
 // of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 39 articles a day,
-// Nature 12, the American Economic Review 0.3. Errata and paratext stay out.
-test("a followed journal's lane asks OpenAlex for the journal's articles, 100 a page, none dated after today", async t => {
+// Nature 12, the American Economic Review 0.3. Errata and paratext stay out;
+// reviews, which OpenAlex types `review` (every paper of the Annual Review of
+// Economics), are listed.
+test("a followed journal's lane asks OpenAlex for the journal's articles and reviews, 100 a page, none dated after today", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T02:40:00Z') });
-  const { urls, env } = relay(t, () => ({ results: [] }));
-  assert.deepEqual(followedLaneJob('source:S23254222'), { source: 'openalex-follows', lane: 'source:S23254222' });
-  await SOURCES['openalex-follows'].fetchPage(env, { lane: 'source:S23254222', page: 1, since: '', waits: { seconds: 0 } });
+  const review = {
+    id: 'https://openalex.org/W7000000002', type: 'review', title: 'Macroeconomic models of inequality: a review', publication_date: '2026-10-20',
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S2764697018', display_name: 'Annual Review of Economics', type: 'journal' } },
+  };
+  const { urls, env } = relay(t, () => ({ results: [review] }));
+  assert.deepEqual(followedLaneJob('source:S2764697018'), { source: 'openalex-follows', lane: 'source:S2764697018' });
+  const { items } = await SOURCES['openalex-follows'].fetchPage(env, { lane: 'source:S2764697018', page: 1, since: '', waits: { seconds: 0 } });
   const [url] = urls;
-  assert.deepEqual(filtersOf(url).sort(), ['primary_location.source.id:S23254222', 'to_publication_date:2026-10-25', 'type:article']);
+  assert.deepEqual(filtersOf(url).sort(), ['primary_location.source.id:S2764697018', 'to_publication_date:2026-10-25', 'type:article|review']);
+  assert.deepEqual(items.map(item => [item.paper.title, item.lanes]), [['Macroeconomic models of inequality: a review', ['source:S2764697018']]]);
   assert.equal(url.searchParams.get('per-page'), '100');
   assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
 });

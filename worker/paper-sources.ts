@@ -24,6 +24,7 @@ import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-
 import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
+import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../src/utils/following.ts';
 import { handleHarvestArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
@@ -723,10 +724,10 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
       const until = `to_publication_date:${day(new Date().toISOString())}`;
-      // A followed journal (ENG-123, D4): its articles, without its errata and
-      // paratext, 100 a page for the same list call. In the 90 days to
-      // 2026-10-25 PLOS ONE published 39 articles a day and Nature 12.
-      if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},type:article,${until}`, { page, lane, perPage: 100, part });
+      // A followed journal (ENG-123, D4): its articles and reviews, without
+      // its errata and paratext, 100 a page for the same list call. In the 90
+      // days to 2026-10-25 PLOS ONE published 39 articles a day and Nature 12.
+      if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},${FOLLOWED_JOURNAL_TYPE_FILTER},${until}`, { page, lane, perPage: 100, part });
       return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},${until}`, { page, lane, perPage: 50, part });
     },
   },
