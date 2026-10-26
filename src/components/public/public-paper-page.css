@@ -131,6 +131,28 @@
   gap: var(--space-2);
 }
 
+/* Large text scales these rem gaps and not the 32px buttons, so on a phone
+   they are what leaves the wordmark too little. Tightened here; and at the
+   narrowest widths the left track stops matching the right one, which gives
+   the wordmark the room of the one-button side at the cost of sitting a
+   little off the centre. */
+@media (max-width: 480px) {
+  .public-paper-nav {
+    gap: var(--space-1);
+    padding-inline: var(--space-3);
+  }
+
+  .public-paper-nav-actions {
+    gap: var(--space-1);
+  }
+}
+
+@media (max-width: 340px) {
+  .public-paper-nav {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
 .public-paper-nav-button {
   display: grid;
   width: 32px;
