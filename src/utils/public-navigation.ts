@@ -398,13 +398,44 @@ export function getPublicPaperPath(typeOrPaper: PaperInput, identifier?: string 
 
 /**
  * Where an address from before ENG-44, `/public/paper/<key>`, lives now, or
- * null for any other path. The router matches `/Public/Paper/…` as it matches
- * `/public/paper/…`, so this does too, and the key keeps its own spelling. A
- * trailing slash is dropped. The query and fragment are the caller's to carry.
+ * null for any other path. The router decodes each segment before it matches
+ * and ignores letter case, so `/Public/PAPER/…` and `/public/p%61per/…` are the
+ * old address too; the first two segments are compared the same way, and the key
+ * keeps its own spelling. A trailing slash is dropped. The query and fragment are
+ * the caller's to carry.
  */
 export function legacyPaperPath(pathname: string) {
-  const key = /^\/public\/paper\/([^/]+)\/*$/i.exec(pathname)?.[1];
-  return key ? `/paper/${key}` : null;
+  const [, root = '', section = '', key = '', ...rest] = pathname.split('/');
+  if (!key || rest.some(Boolean)) return null;
+  if (decodeSegment(root).toLowerCase() !== 'public' || decodeSegment(section).toLowerCase() !== 'paper') return null;
+  return `/paper/${key}`;
+}
+
+function decodeSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * The pages a guest can open without a session. A sign-in from one of their
+ * doors (like, save, follow) leaves the new account right there. Letter case
+ * is ignored because the router ignores it.
+ */
+export function isPublicRoutePath(path: string) {
+  const lower = path.toLowerCase();
+  return ['/public/', '/explorer/', '/paper/'].some(prefix => lower.startsWith(prefix));
+}
+
+/**
+ * The pages that keep the signed-in navbar: a paper, a shared list and an
+ * entity page. Letter case is ignored because the router ignores it.
+ */
+export function keepsNavbarPath(path: string) {
+  const lower = path.toLowerCase();
+  return ['/paper/', '/public/list/', '/explorer/'].some(prefix => lower.startsWith(prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

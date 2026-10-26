@@ -15,6 +15,8 @@ import {
   getShareImage,
   getSiteRootUrl,
   getViteBasePath,
+  isPublicRoutePath,
+  keepsNavbarPath,
   legacyPaperPath,
   parsePaperKey,
   encodePaperKey,
@@ -86,6 +88,28 @@ test('a paper address from before ENG-44 maps to the page it moved to, and no ot
   assert.equal(legacyPaperPath('/public/list/reading-list'), null);
   assert.equal(legacyPaperPath(`/public/paper/${key}/more`), null);
   assert.equal(legacyPaperPath('/public/paper/'), null);
+
+  // The router decodes a segment before it matches, so an encoded prefix is
+  // the old address as well; an encoded slash in the key stays as it came.
+  assert.equal(legacyPaperPath('/public/p%61per/abc'), '/paper/abc');
+  assert.equal(legacyPaperPath('/%70ublic/paper/abc'), '/paper/abc');
+  assert.equal(legacyPaperPath('/public/paper/10.1%2Fx'), '/paper/10.1%2Fx');
+  assert.equal(legacyPaperPath('/public/p%zzper/abc'), null);
+});
+
+test('a new account from a paper page door is onboarded and a signed-in reader keeps the navbar, in any letter case', () => {
+  for (const path of ['/paper/abc', '/Paper/abc', '/public/paper/abc', '/PUBLIC/list/x', '/Explorer/author/1']) {
+    assert.equal(isPublicRoutePath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/settings']) {
+    assert.equal(isPublicRoutePath(path), false, path);
+  }
+  for (const path of ['/paper/abc', '/Paper/abc', '/Public/List/x', '/EXPLORER/author/1']) {
+    assert.equal(keepsNavbarPath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/public/paper/abc']) {
+    assert.equal(keepsNavbarPath(path), false, path);
+  }
 });
 
 /**
