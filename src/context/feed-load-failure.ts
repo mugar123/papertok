@@ -58,6 +58,17 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   return { reason: 'unexpected' };
 }
 
+/**
+ * What the feed shows for a failed load. A store with no papers for these
+ * interests is an empty state, and asking again at once gets the same answer,
+ * so only a failed request retries on its own.
+ */
+export function feedLoadOutcome(error: unknown) {
+  return feedLoadFailure(error).reason === 'empty'
+    ? { error: 'FEED_EMPTY', autoRetry: false }
+    : { error: 'FEED_LOAD_FAILED', autoRetry: true };
+}
+
 /** The `app_error` a failed load owes. */
 function feedLoadFailedEvent(error: unknown) {
   const { reason, status, code } = feedLoadFailure(error);

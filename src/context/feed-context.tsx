@@ -80,7 +80,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedFailureEventStep, feedLoadFailure } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -1483,10 +1483,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     } catch (failure) {
       if (requestId === feedRequestId.current) {
-        // A store with no papers for these interests answered; asking again
-        // at once gets the same answer.
-        const empty = feedLoadFailure(failure).reason === 'empty';
-        const shownError = empty ? 'FEED_EMPTY' : 'FEED_LOAD_FAILED';
+        const { error: shownError, autoRetry } = feedLoadOutcome(failure);
         setError(shownError);
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
@@ -1502,7 +1499,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.
-        if (reset && !empty && !autoRetryUsedRef.current) {
+        if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {

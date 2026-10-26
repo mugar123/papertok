@@ -29,6 +29,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { toast } from 'sonner';
@@ -1227,7 +1228,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           title={'No papers for your topics yet'}
           actions={(
             <>
-              <Button size="sm" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
+              <Link to="/settings/discovery" className={buttonVariants({ size: 'sm' })}>{'Add topics'}</Link>
               <Button size="sm" variant="outline" onClick={handleRefresh}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
