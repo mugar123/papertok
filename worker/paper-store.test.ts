@@ -1213,6 +1213,24 @@ test("a page that asks for notable papers gets the unseen ones of the reader's c
   assert.deepEqual(next.map(paper => paper.id), recentIds(15, 30));
 });
 
+// ADS's listing cannot leave out retracted papers; the enrichment is what
+// learns that OpenAlex marks one retracted (README step 5).
+test('a notable paper ADS listed is not offered until the enrichment has asked OpenAlex about it', async () => {
+  const { env, db } = await notableCorpus();
+  const listed = mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    abstract: 'A synthetic abstract about Majorana zero modes in hybrid nanowires.', year: '2018', pubdate: '2018-04-00',
+    identifier: ['arXiv:1710.10701'], arxiv_class: ['cond-mat.mes-hall'], citation_count: 1500, doctype: 'article',
+  }, ['cs.LG'])!;
+  await ingestPapers(env, [{ paper: listed, lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  const request = parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 });
+  const offered = async () => (await readFeedPage(env, request, { now: NOW })).filter(paper => paper._notable).map(paper => paper.arxivId || paper.id);
+  assert.ok(!(await offered()).includes('1710.10701'), 'not offered before the enrichment');
+  assert.equal((await offered()).length, 3, 'the notable papers OpenAlex listed still are');
+  db.prepare("UPDATE works SET enriched_at = ? WHERE paper ->> '$.arxivId' = '1710.10701'").run(new Date(NOW).toISOString());
+  assert.ok((await offered()).includes('1710.10701'), 'offered once enriched and not retracted');
+});
+
 test('a reader who has seen every notable paper, a request that does not say what was seen or one that asks for none gets none', async () => {
   const { env } = await notableCorpus();
   const seenAll = feedSeenFilter(NOTABLE.map(paper => paper.id));
