@@ -45,7 +45,7 @@ const COPY = {
     dismiss: 'Dismiss and do not show again',
     privacy: {
       title: 'Privacy policy updated',
-      announced: 'The notice follows the feed, in a region with the same name.',
+      announced: 'The notice follows the feed, as a landmark with the same name.',
       policy: 'Read the policy',
       newTab: ' (opens in a new tab)',
       done: 'Got it',
