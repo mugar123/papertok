@@ -4,7 +4,7 @@ import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
 import { PaperBuilder } from '../src/services/paper-builder.ts';
-import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
+import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
@@ -400,7 +400,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const listed = new Map<string, Paper>();
   for (const item of items) {
     // A mapper stands "Untitled" in for a title its source left out.
-    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
     const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
@@ -434,6 +434,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
+  const withdrawn: number[] = [];
 
   for (const group of groups) {
     const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
@@ -461,7 +462,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    filings.push({ id, paper, published, lanes: group.lanes });
+    // The merged row can be one the feed does not show: a retracted paper,
+    // whether this record or the stored row says so. It is filed under no
+    // lane, and leaves those it holds, a folded row's included.
+    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
+    else withdrawn.push(id);
   }
   // Asked once the records are merged: a stored row names entities, such as
   // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
@@ -485,6 +490,9 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
     );
+  }
+  for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
@@ -529,8 +537,8 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       id,
       published,
       textChanged: embeddingText(paper) !== embeddingText(before),
-      // A book, an erratum or another type the feed does not show leaves
-      // every lane once the enrichment reveals it.
+      // A book, an erratum or another type the feed does not show, or a
+      // retracted paper, leaves every lane once the enrichment reveals it.
       offered: isFeedPublication(paper),
       keys: workKeys(paper),
       lanes: published >= since ? recordLanes(paper, followed) : [],
@@ -574,9 +582,12 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  *   area or followed lane, goes, unless readers still rank their feed by it
  *   (`liked_until`). A topic lane nobody follows keeps nothing: nearly every
  *   enriched paper names a topic, so it would keep every paper its category
- *   trimmed.
+ *   trimmed. A retracted paper, which no lane holds, stays until its keeping
+ *   date, which each listing of it renews: a later listing then finds it
+ *   retracted instead of filing it again.
  */
-// Each Workflow step scans at most 500 works, without loading their JSON.
+// Each Workflow step scans at most 500 works. It reads the JSON only of a
+// work no lane keeps, for its retraction.
 // The cursor is a primary key, so retries and deletions do not shift a page.
 export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): Promise<number | null> {
   const db = database(env);
@@ -610,8 +621,9 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
         AND lane NOT IN (SELECT lane FROM followed_lanes)`).bind(ids, JSON.stringify(PRUNED_ENTITY_LANE_KINDS)),
       db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
         AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
-          OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
-            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes))))`)
+          OR (NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
+            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))
+            AND paper ->> '$.publicationStatus' IS NOT 'retracted'))`)
         .bind(ids, cutoff, cutoff, ahead, keeping),
       db.prepare(`DELETE FROM work_keys WHERE work_id IN (SELECT value FROM json_each(?))
         AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_keys.work_id)`).bind(ids),
