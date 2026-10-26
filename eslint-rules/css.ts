@@ -54,6 +54,34 @@ export const noFocusRingRemoval: CSSRuleDefinition<{ RuleOptions: [{ allowed: Ar
   },
 }
 
+// A bare element, optionally with pseudo-classes, as the last compound of a selector.
+const BARE_SPAN = /(?:^|[\s>+~])span(?::[\w-]+(?:\([^)]*\))?)*$/i
+
+export const noBareSpanHiding: CSSRuleDefinition<{ RuleOptions: [] }> = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Disallow hiding every span inside a container' },
+    schema: [],
+    messages: {
+      hidden: '`{{selector}}` hides every span it reaches, including the focus-guard spans Base UI puts beside a Popover trigger; with them hidden Tab cannot leave the popup (WCAG 2.1.2). Give the span a class and hide that.',
+    },
+  },
+  create(context) {
+    return {
+      Declaration(node) {
+        const property = node.property.toLowerCase()
+        const value = normalise(context.sourceCode.getText(node.value)).toLowerCase()
+        const hides = property === 'display' ? value === 'none' : property === 'visibility' && value === 'hidden'
+        if (!hides) return
+        const selector = selectorOf(context.sourceCode, node) ?? ''
+        if (selector.split(',').some(part => BARE_SPAN.test(part.trim()))) {
+          context.report({ node, messageId: 'hidden', data: { selector } })
+        }
+      },
+    }
+  },
+}
+
 export const noBrandOrangeFocusRing: CSSRuleDefinition<{ RuleOptions: [] }> = {
   meta: {
     type: 'problem',

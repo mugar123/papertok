@@ -44,7 +44,9 @@
   text-decoration: none;
 }
 
-.public-list-brand span {
+/* Scoped to the label: a bare span rule also reaches the focus-guard spans
+   Base UI puts beside the Privacy trigger, and hiding those traps Tab. */
+.public-list-brand-label {
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
   text-transform: uppercase;
@@ -333,7 +335,7 @@
 
 @media (max-width: 600px) {
   .public-list-brand { padding-inline: 20px; }
-  .public-list-brand span { display: none; }
+  .public-list-brand-label { display: none; }
   .public-list-brand .public-list-auth-cta { max-width: 210px; text-align: center; }
   .public-list-content { width: calc(100% - 32px); padding-top: 40px; }
   /* Kept (not redundant): the app-mode top offset also shrinks --space-10 to

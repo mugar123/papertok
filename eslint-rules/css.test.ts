@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import { RuleTester } from 'eslint'
 import css from '@eslint/css'
 import {
-  darkThemeParity, definedCustomProperties, focusRingUnlayered, noBrandOrangeFocusRing,
+  darkThemeParity, definedCustomProperties, focusRingUnlayered, noBareSpanHiding, noBrandOrangeFocusRing,
   noExternalCssUrls, noFocusRingRemoval, noRetiredColours, tokenContrast,
 } from './css.ts'
 
@@ -24,6 +24,22 @@ tester.run('no-focus-ring-removal', noFocusRingRemoval, {
     { code: '.btn:focus { outline: none; }', errors: [{ messageId: 'removed', data: { selector: '.btn:focus' } }] },
     { code: '.btn:focus { outline: 0 !important; }', errors: [{ messageId: 'removed' }] },
     { code: '@media (hover: hover) { .btn:focus { outline-style: none; } }', errors: [{ messageId: 'removed' }] },
+  ],
+})
+
+tester.run('no-bare-span-hiding', noBareSpanHiding, {
+  valid: [
+    '.brand-label { display: none; }',
+    '.brand span.label { display: none; }',
+    '.brand span { color: red; }',
+    '.brand .spanner { display: none; }',
+  ],
+  invalid: [
+    { code: '.brand span { display: none; }', errors: [{ messageId: 'hidden', data: { selector: '.brand span' } }] },
+    { code: '@media (max-width: 600px) { .brand span { display: none; } }', errors: [{ messageId: 'hidden' }] },
+    { code: '.brand > span { visibility: hidden; }', errors: [{ messageId: 'hidden' }] },
+    { code: '.a, .brand SPAN { display: NONE !important; }', errors: [{ messageId: 'hidden' }] },
+    { code: '.brand span:first-child { display: none; }', errors: [{ messageId: 'hidden' }] },
   ],
 })
 

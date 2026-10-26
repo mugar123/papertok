@@ -138,7 +138,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               className="pdf-external-btn"
             >
               <ArrowSquareOut size={16} aria-hidden="true" />
-              <span>{'New tab'}</span>
+              <span className="pdf-external-btn-label">{'New tab'}</span>
             </a>}
           </div>
 

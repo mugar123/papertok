@@ -309,6 +309,7 @@ export default defineConfig([
       ] }],
       'papertok/no-brand-orange-focus-ring': 'error',
       'papertok/focus-ring-unlayered': 'error',
+      'papertok/no-bare-span-hiding': 'error',
       'papertok/defined-custom-properties': ['error', { injected: [
         { name: '--area-accent', setBy: 'src/components/lists/list-row.tsx', reason: 'a row, card or entity header takes the research field of its paper, so its rules are tinted by the data' },
         { name: '--prop-fill', setBy: 'src/components/onboarding/petri-flask.tsx', reason: 'each onboarding illustration fills its props with the colour of the topic it shows' },

@@ -230,7 +230,7 @@
 
 @media (max-width: 480px) {
   /* Icon-only on a phone, and both controls grow to the 44px floor. */
-  .pdf-external-btn span {
+  .pdf-external-btn-label {
     display: none;
   }
 

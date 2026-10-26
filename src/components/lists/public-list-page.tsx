@@ -228,7 +228,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
     <header className="public-list-brand">
       <Link to="/feed">{copy.brand}</Link>
       <div className="public-list-brand-actions">
-        {status === 'ready' && <span>{copy.publicList}</span>}
+        {status === 'ready' && <span className="public-list-brand-label">{copy.publicList}</span>}
         {!user && <PrivacyPopover />}
         <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
       </div>
