@@ -23,7 +23,7 @@ const COPY = {
 
 export default function NotFoundPage() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const copy = COPY.en;
   const metadata = useMemo(() => ({
     title: { en: COPY.en.documentTitle },
@@ -37,8 +37,9 @@ export default function NotFoundPage() {
     <main className="not-found-page">
       {/* A dead shared link is opened without an account more often than
           with one, and a visitor has no Settings: the analytics switch is at
-          the top, as on every other page a link opens. A session has Settings. */}
-      {!user && (
+          the top, as on every other page a link opens. A session has Settings,
+          and one still being restored is not a visitor yet. */}
+      {!user && !loading && (
         <div className="not-found-bar">
           <PrivacyPopover />
         </div>
