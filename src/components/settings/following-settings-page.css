@@ -179,6 +179,11 @@
   background: rgba(245, 158, 11, 0.07);
 }
 
+.following-settings-initials.is-journal {
+  color: var(--tint-violet-fg);
+  background: var(--tint-violet-bg);
+}
+
 .following-settings-entity-name {
   display: -webkit-box;
   min-width: 0;
@@ -347,6 +352,11 @@
 .following-unfollow-petri.is-project {
   --balloon-fill: rgba(245, 158, 11, 0.07);
   --balloon-ink: var(--tint-amber-fg);
+}
+
+.following-unfollow-petri.is-journal {
+  --balloon-fill: var(--tint-violet-bg);
+  --balloon-ink: var(--tint-violet-fg);
 }
 
 /* Closed by a button rather than a swipe, the question leaves the way

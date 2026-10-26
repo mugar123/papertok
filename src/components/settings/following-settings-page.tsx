@@ -9,6 +9,7 @@ import {
   Briefcase,
   Buildings,
   CircleNotch,
+  FileText,
   Tag,
   User,
   UserMinus,
@@ -38,6 +39,8 @@ const FOLLOW_TABS = [
   { type: 'topic', label: { en: 'Topics' }, Icon: Tag },
   { type: 'institution', label: { en: 'Institutions' }, Icon: Buildings },
   { type: 'project', label: { en: 'Projects' }, Icon: Briefcase },
+  // The Explorer's icon for a source page.
+  { type: 'journal', label: { en: 'Journals' }, Icon: FileText },
 ];
 
 function getFollowDisplayName(entity: FollowEntity) {

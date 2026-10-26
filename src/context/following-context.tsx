@@ -20,8 +20,10 @@ import { getRorInstitution, normalizeRorId } from '../services/ror-service.ts';
 import { useAuth } from './auth-context.tsx';
 import { useAnalyticsConsent } from './analytics-context.tsx';
 import {
+  JournalFollowLimitError,
   createFollowEntity,
   createFollowKey,
+  exceedsJournalFollowLimit,
   followsEntity,
   migrateLegacyAuthors,
 } from '../utils/following.ts';
@@ -260,6 +262,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     if (!entity || !user?.uid) return false;
     const pendingKey = createFollowKey(entity.type, entity.canonicalId);
     if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
+    if (exceedsJournalFollowLimit(followedEntities, entity)) throw new JournalFollowLimitError();
 
     const existingFollow = followedEntities.find((follow) => followsEntity([follow], entity));
     const wasFollowing = Boolean(existingFollow);
@@ -282,7 +285,8 @@ export function FollowingProvider({ children }: PropsWithChildren) {
         entity_type: entity.type,
         action: wasFollowing ? 'remove' : 'add',
         surface: 'other',
-        entity_id: entity.canonicalId,
+        // Which journals a reader follows stays out of analytics (ENG-123).
+        entity_id: entity.type === 'journal' ? undefined : entity.canonicalId,
         entity_name: entity.displayName,
       });
       if (!wasFollowing) void markActivation();

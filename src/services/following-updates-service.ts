@@ -111,6 +111,13 @@ async function fetchInstitutionUpdates(follow: FollowEntity) {
   return result.papers || [];
 }
 
+// A followed journal's newest articles (ENG-123, D7): fetched live like the
+// other follows, though the journal's lane in the corpus holds them too.
+async function fetchJournalUpdates(follow: FollowEntity) {
+  const result = await getWorksByEntity('journal', follow.canonicalId, 'publication_date:desc', 1);
+  return result.papers || [];
+}
+
 async function fetchProjectUpdates(follow: FollowEntity) {
   // A bare grant code answers for every funder that ever used it
   // (`grantID=100010` is three projects), and that is the shape of every
@@ -133,6 +140,7 @@ async function fetchUpdatesForFollow(follow: FollowEntity, options: FollowingOpt
   if (follow.type === 'author') return fetchAuthorUpdates(follow);
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
   if (follow.type === 'project') return fetchProjectUpdates(follow);
+  if (follow.type === 'journal') return fetchJournalUpdates(follow);
   return [];
 }
 
@@ -145,7 +153,7 @@ function resolvesThroughOpenAlex(follow: FollowEntity) {
   const id = cleanOpenAlexId(follow?.canonicalId);
   if (follow?.type === 'author') return /^A\d+$/i.test(id);
   if (follow?.type === 'topic') return /^[TC]\d+$/i.test(id);
-  return follow?.type === 'institution';
+  return follow?.type === 'institution' || follow?.type === 'journal';
 }
 
 export function orderFollowsForRefresh(follows: FollowEntity[] = []) {

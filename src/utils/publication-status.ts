@@ -71,8 +71,13 @@ const WORKING_PAPER_SOURCE_IDS = new Set([
 // does not count as a venue, so a series missing from the list stays unknown.
 const WORKING_PAPER_NAME = /\b(?:working|discussion) papers?\b|\bdiscussion (?:series|notes?)\b/i;
 
+/** Whether an OpenAlex source id (bare or as a URL) is one of the listed working-paper series. */
+export function isListedWorkingPaperSeries(sourceId: unknown) {
+  return WORKING_PAPER_SOURCE_IDS.has(String(sourceId || '').replace('https://openalex.org/', ''));
+}
+
 function isListedSeries(location: OpenAlexLocation | null | undefined) {
-  return WORKING_PAPER_SOURCE_IDS.has(String(location?.source?.id || '').replace('https://openalex.org/', ''));
+  return isListedWorkingPaperSeries(location?.source?.id);
 }
 
 function isVenue(location: OpenAlexLocation | null | undefined) {

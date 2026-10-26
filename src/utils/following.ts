@@ -10,8 +10,9 @@ const JOURNAL_ID = /^S\d+$/;
 
 /**
  * The most journals a reader follows (D3, Pablo 2026-10-25). Each one is a
- * lane the nightly harvest lists for everyone who follows it; the Worker
- * serves no more than these per request (worker/paper-store.ts).
+ * lane the nightly harvest lists for everyone who follows it. The app writes
+ * no more (`exceedsJournalFollowLimit`), and the Worker serves no more than
+ * these per request (worker/paper-store.ts) whatever a client stored.
  */
 export const MAX_FOLLOWED_JOURNALS = 10;
 
@@ -105,6 +106,21 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
     if (followName === name) return true;
     return normalized.type === 'project' && isSameProjectNameSpelling(followName, name);
   });
+}
+
+/** Whether following `entity` would take the reader past MAX_FOLLOWED_JOURNALS. An unfollow never does. */
+export function exceedsJournalFollowLimit(followedEntities: FollowEntity[], entity: FollowInput) {
+  const normalized = createFollowEntity(entity);
+  if (normalized?.type !== 'journal' || followsEntity(followedEntities, normalized)) return false;
+  return followedEntities.filter(follow => follow.type === 'journal').length >= MAX_FOLLOWED_JOURNALS;
+}
+
+/** A journal follow refused by `exceedsJournalFollowLimit`; nothing was written. */
+export class JournalFollowLimitError extends Error {
+  constructor() {
+    super(`A reader follows at most ${MAX_FOLLOWED_JOURNALS} journals.`);
+    this.name = 'JournalFollowLimitError';
+  }
 }
 
 export function migrateLegacyAuthors(authorNames: string[] = []) {

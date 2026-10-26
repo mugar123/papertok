@@ -1395,7 +1395,7 @@ const ENTITY_SCREEN_BUDGET_MS = 7000;
 
 /**
  * Fetch works for a specific entity
- * type: 'institution', 'concept', 'author'
+ * type: 'institution', 'concept', 'topic', 'source', 'journal' (a followed journal's own articles), 'author'
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
  * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
@@ -1423,12 +1423,19 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
     filterKey = 'topics.id';
   } else if (type === 'source') {
     filterKey = 'locations.source.id';
+  } else if (type === 'journal') {
+    // A followed journal's updates (ENG-123): the works it published, not
+    // its copies in repositories, as its lane in the corpus lists them.
+    filterKey = 'primary_location.source.id';
   } else {
     filterKey = 'author.id';
   }
   
   const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
   let filterParams = `${filterKey}:${filterId}`;
+  // Its articles, not its errata and paratext, and none dated after today,
+  // which would sort first: as worker/paper-sources.ts lists the lane.
+  if (type === 'journal') filterParams += `,type:article,to_publication_date:${new Date().toISOString().slice(0, 10)}`;
   
   // Advanced Filters. The Explorer still drops what `openAlexPeerReviewed`
   // does not call reviewed. Asking OpenAlex to leave out what it can name

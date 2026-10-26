@@ -479,7 +479,7 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project or topic can be followed: the Explorer header, beside a
+institution, project, topic or journal can be followed: the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press

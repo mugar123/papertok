@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createFollowEntity,
   createFollowKey,
+  exceedsJournalFollowLimit,
   followsEntity,
   migrateLegacyAuthors,
   normalizeFollowId,
@@ -204,6 +205,17 @@ test('a journal is followed by its OpenAlex source id, never by its name or ISSN
   const followed = [{ type: 'journal' as const, canonicalId: 'S23254222', displayName: 'Economic Review' }];
   assert.equal(followsEntity(followed, { type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), true);
   assert.equal(followsEntity(followed, { type: 'journal', id: 'S99999999', displayName: 'Economic Review' }), false);
+});
+
+// D3 (Pablo, 2026-10-25): ten journals at most. An eleventh is refused before
+// anything is written; unfollowing one, or following anything else, never is.
+test('a reader who follows ten journals cannot follow an eleventh, and can still unfollow one', () => {
+  const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal' as const, canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const another = { type: 'journal' as const, id: 'S23254222', displayName: 'American Economic Review' };
+  assert.equal(exceedsJournalFollowLimit(journals.slice(0, 9), another), false);
+  assert.equal(exceedsJournalFollowLimit(journals, another), true);
+  assert.equal(exceedsJournalFollowLimit(journals, { type: 'journal', id: 'S1003', displayName: 'Journal 3' }), false, 'an unfollow');
+  assert.equal(exceedsJournalFollowLimit(journals, { type: 'author', id: 'A1', displayName: 'Ada' }), false);
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
