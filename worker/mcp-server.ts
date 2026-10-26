@@ -54,7 +54,7 @@ const MAX_TOPICS = 3;
 const MAX_OA_LOCATIONS = 5;
 
 const SERVER_INFO = Object.freeze({ name: 'papertok', title: 'PaperTok', version: '1.0.0' });
-const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalizes them. Results carry abstracts and metadata, never full text. citationCount is a count only where citationCountKnown is true. A missing abstract or review status is unknown, not empty or false.';
+const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalizes them. Results carry abstracts and metadata, never full text. citationCount is given only where citationCountKnown is true. A field a paper lacks, such as its abstract, review status or open-access status, is unknown, not empty, zero or false.';
 
 const READ_ONLY = Object.freeze({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
 const PAPER_ID_SCHEMA = { type: 'string', description: 'A DOI (10.xxxx/...), arXiv id (2401.01234), OpenAlex work id (W123...) or PubMed id (pmid:123). URLs and doi:/arxiv: prefixes are accepted.' };
@@ -211,21 +211,47 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
 
 type CutList = 'authors' | 'institutions' | 'concepts' | 'topics';
 
+// Every paper reaches `publicPaper` through `PaperBuilder.create`, which fills
+// what a record lacks with these texts. They say "not given".
+const PLACEHOLDER_TEXTS = new Set(['No abstract available.', 'Untitled', 'No Title']);
+// No record a tool reads (`formatOpenAlexWorkAsPaper`, `mapOpenAlexWork`,
+// `arxivRecordPaper`) carries these, so a 0 or `false` here is the builder's.
+const UNSUPPLIED_COUNTS = ['referenceCount', 'hasReferences', 'hasData', 'hasSupplement'] as const;
+
+// What the builder wrote for a field its record did not give goes, so the
+// client reads an absent field as unknown, as INSTRUCTIONS tell it to.
+function withoutDefaults(paper: Partial<Paper>) {
+  const known: Record<string, unknown> = { ...paper };
+  for (const [key, value] of Object.entries(known)) {
+    const empty = value === null || value === '' || (Array.isArray(value) && value.length === 0);
+    if (empty || (typeof value === 'string' && PLACEHOLDER_TEXTS.has(value))) delete known[key];
+  }
+  for (const key of UNSUPPLIED_COUNTS) {
+    if (!known[key]) delete known[key];
+  }
+  // `citationCountKnown: false` stays: it says the count is unknown.
+  if (known.citationCountKnown !== true) delete known.citationCount;
+  // A preprint record's `false` is about that version; the paper may have been
+  // reviewed since (`ownAnswer` in paper-builder.ts). Its status says preprint.
+  if (known.peerReviewed === false && known.publicationStatus === 'preprint') delete known.peerReviewed;
+  return known as Partial<Paper>;
+}
+
 // The provider's record is left behind, with what only repeats other fields
 // (`summary` is the abstract, `allCategories` and `keywords` often the
 // categories) or is internal to the feed. Every list is bounded, and a list
 // the source never gave stays absent: unknown, not empty.
 function publicPaper(paper: Partial<Paper>, maxAuthors = MAX_AUTHORS) {
-  const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = { ...paper };
+  const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
   const omitted: Partial<Record<CutList, number>> = {};
   const cut = <T>(list: T[], name: CutList, max: number) => {
     if (list.length > max) omitted[name] = list.length - max;
     return list.slice(0, max);
   };
-  if (paper.authors) relayed.authors = cut(paper.authors, 'authors', maxAuthors);
-  if (paper.institutions) relayed.institutions = cut(paper.institutions, 'institutions', MAX_INSTITUTIONS);
-  if (paper.concepts) relayed.concepts = cut(paper.concepts, 'concepts', MAX_SUBJECTS);
-  if (paper.topics) relayed.topics = cut(paper.topics, 'topics', MAX_TOPICS);
+  if (relayed.authors) relayed.authors = cut(relayed.authors, 'authors', maxAuthors);
+  if (relayed.institutions) relayed.institutions = cut(relayed.institutions, 'institutions', MAX_INSTITUTIONS);
+  if (relayed.concepts) relayed.concepts = cut(relayed.concepts, 'concepts', MAX_SUBJECTS);
+  if (relayed.topics) relayed.topics = cut(relayed.topics, 'topics', MAX_TOPICS);
   if (Object.keys(omitted).length > 0) relayed.omitted = omitted;
   delete relayed.raw;
   delete relayed.summary;

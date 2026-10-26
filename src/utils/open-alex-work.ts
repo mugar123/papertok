@@ -212,7 +212,9 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
 
   const abstract = usableOpenAlexAbstract(work) || 'No abstract available.';
 
-  const isOpenAccess = work.open_access?.is_oa || false;
+  // A work without `open_access` says nothing about access: `accessStatusForPaper`
+  // reads only an explicit `false` as a paywall.
+  const isOpenAccess = typeof work.open_access?.is_oa === 'boolean' ? work.open_access.is_oa : undefined;
   const pdfUrl = work.open_access?.oa_url || null;
   const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
 

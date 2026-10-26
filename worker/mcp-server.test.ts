@@ -397,6 +397,54 @@ test('get_paper builds the paper as the paper page does, with citationCount and 
   });
 });
 
+test('a field the source did not give stays absent, in a search and in get_paper', async () => {
+  // OpenAlex knows nothing of this work's abstract, access, citations, venue or subjects.
+  const bare = {
+    id: 'https://openalex.org/W4400000077',
+    doi: null,
+    ids: {},
+    title: 'Graphene sheets without a record',
+    type: 'article',
+    publication_date: '2026-03-02',
+    publication_year: 2026,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' }, institutions: [] }],
+    abstract_inverted_index: null,
+    primary_location: null,
+    locations: [],
+    open_access: null,
+    concepts: [],
+    topics: [],
+    primary_topic: null,
+  };
+  const unknown = ['abstract', 'openAccess', 'citationCount', 'referenceCount', 'hasReferences', 'hasData', 'hasSupplement',
+    'concepts', 'topics', 'institutions', 'biomedicalTerms', 'projectIds', 'researchResources', 'categories', 'keywords',
+    'primaryCategory', 'primaryTopic'];
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000077')) return Response.json(bare);
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [bare] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene sheets' });
+    const papers = searched.answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
+    const work = papers.find(paper => paper.title === 'Graphene sheets without a record')!;
+    const preprint = papers.find(paper => paper.arxivId === '2603.01234')!;
+    const looked = await callTool(env, 'get_paper', { id: 'W4400000077' });
+    const paper = looked.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    for (const [name, relayed] of [['search', work], ['get_paper', paper]] as const) {
+      assert.deepEqual(unknown.filter(key => key in relayed), [], `${name} relays only what OpenAlex gave`);
+      assert.equal(relayed.citationCountKnown, false);
+      assert.deepEqual((relayed.authors as Array<{ name: string }>).map(author => author.name), ['Ana Pérez'], `${name} keeps what OpenAlex gave`);
+    }
+    // arXiv gives no citations, institutions or subjects, and a preprint record
+    // says nothing of the review of a later version.
+    assert.deepEqual(['citationCount', 'peerReviewed', 'institutions', 'concepts', 'topics', 'referenceCount'].filter(key => key in preprint), []);
+    assert.equal(preprint.publicationStatus, 'preprint');
+    assert.equal(preprint.openAccess, true);
+  });
+});
+
 test('get_paper asks arXiv for an arXiv id and reports an unknown id as not found', async () => {
   await withUpstream(url => {
     if (url.includes('id_list=2603.01234')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));

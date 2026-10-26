@@ -890,7 +890,12 @@ Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract and the feed's internal fields, and with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
 institutions, 5 concepts and 3 topics. A paper's `omitted` counts the entries
-each cut list left out (`{ authors: 1900 }`). A list the source never gave stays absent. A client
+each cut list left out (`{ authors: 1900 }`). A field the source never gave stays
+absent rather than carrying `PaperBuilder.create`'s default: no placeholder
+abstract or title, no empty list or string, no `referenceCount: 0` or `has*:
+false` (no record a tool reads carries them), no `citationCount` unless
+`citationCountKnown` is true, and no `peerReviewed: false` on a preprint record,
+whose `publicationStatus` already says preprint. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
 tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
