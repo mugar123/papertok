@@ -1135,8 +1135,9 @@ test("an eprint row that a working paper joins stays the working paper's when it
 });
 
 // What a reader sees of the paper's row, its stored date and the dates of the
-// lanes it holds, after `nights` of listings, one batch a night.
-async function journalRowAfter(t: import('node:test').TestContext, nights: Paper[][]) {
+// lanes it holds, after `nights` of listings, one batch a night. `afterNight`
+// can change the stored rows between nights.
+async function journalRowAfter(t: import('node:test').TestContext, nights: Paper[][], afterNight?: (night: number, db: ReturnType<typeof testD1>['db']) => void) {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-21T03:00:00Z');
   const { binding, db } = testD1();
@@ -1144,6 +1145,7 @@ async function journalRowAfter(t: import('node:test').TestContext, nights: Paper
   for (const [night, papers] of nights.entries()) {
     t.mock.timers.setTime(first + night * DAY);
     await ingestPapers(store, papers.map(paper => ({ paper, lanes: paper.workingPaper ? ['series:working-papers'] : ['econ.EM'] })), { now: first + night * DAY });
+    afterNight?.(night, db);
   }
   const works = db.prepare('SELECT id, paper, published FROM works').all() as Array<{ id: number; paper: string; published: string }>;
   assert.equal(works.length, 1);
@@ -1204,20 +1206,31 @@ test('a stored working-paper row upgraded once is not written again when the sam
 // A row that already knows the ids of both versions forms two groups when the
 // article comes back retitled beside the working paper: they share no key. Each
 // group merges the same stored row, and the last one written stands, so the
-// upgrade must not depend on which group comes last.
-test('an upgraded row stays the reviewed journal row when one batch lists its retitled article and its working paper, in either order', async t => {
+// upgrade must not depend on which group comes last. The row can be upgraded
+// already, or be one stored before ENG-133 that merged its article and stayed
+// the working paper's (here: the working paper's row put back after the
+// article's night, its keys left).
+test('a row that knows both versions becomes the reviewed journal row when one batch lists its retitled article and its working paper, in either order', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
   const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
   const article = mapOpenAlexWork(gmmArticle)!;
   const retitled = mapOpenAlexWork({ ...gmmArticle, title: 'The Efficiency and Pricing Accuracy Trade-Off in GMM Estimation of Linear Asset Pricing Models' })!;
+  let workingPaperRow = '';
+  const beforeEng133 = (night: number, db: ReturnType<typeof testD1>['db']) => {
+    if (night === 0) workingPaperRow = String((db.prepare('SELECT paper FROM works').all()[0] as { paper: string }).paper);
+    if (night === 1) db.prepare('UPDATE works SET paper = ?').run(workingPaperRow);
+  };
   const rows = [];
-  for (const batch of [[retitled, workingPaper], [workingPaper, retitled]]) {
-    const row = await journalRowAfter(t, [[workingPaper], [article], batch]);
-    assert.deepEqual(row.shown, [JBES_DOI, `https://doi.org/${JBES_DOI}`, retitled.title, article.abstract, article.journal, true, undefined, '2026-10-14T00:00:00.000Z'], batch[0].id);
-    assert.ok(!JSON.parse(row.json).workingPaper);
-    rows.push(row.shown);
+  for (const [stored, afterNight] of [['upgraded', undefined], ['stored before ENG-133', beforeEng133]] as const) {
+    for (const batch of [[retitled, workingPaper], [workingPaper, retitled]]) {
+      const name = `${stored}, ${batch[0].id} first`;
+      const row = await journalRowAfter(t, [[workingPaper], [article], batch], afterNight);
+      assert.deepEqual(row.shown, [JBES_DOI, `https://doi.org/${JBES_DOI}`, retitled.title, article.abstract, article.journal, true, undefined, '2026-10-14T00:00:00.000Z'], name);
+      assert.equal(JSON.parse(row.json).sources.peerReviewedByDoi?.['10.3386/w35104'], false, name);
+      rows.push(row.shown);
+    }
   }
-  assert.deepEqual(rows[1], rows[0]);
+  assert.deepEqual(rows.slice(1), [rows[0], rows[0], rows[0]]);
 });
 
 // The evidence is OpenAlex's own record of the journal article. An OpenAlex
