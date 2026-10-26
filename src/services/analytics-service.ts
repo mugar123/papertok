@@ -87,20 +87,20 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // Five Google apps on Android send their package name as the referrer and are filed
 // like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
 // Music as social. Other Google apps count as referral. A package names one app, not a
-// domain with subdomains, so it is matched whole: another vendor's package can end with
-// a Google app's.
+// domain with subdomains, so it is matched whole, and only in an `android-app:` referrer:
+// another vendor's package can end with a Google app's or with `t.co`.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
-  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
-  /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/,
+  /^(?:www\.|ipv6\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   'bing.com',
   'duckduckgo.com',
   /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   /^(?:www\.)?ecosia\.org$/,
   'search.brave.com',
 ];
+const ANDROID_SEARCH_PACKAGES = /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/;
+const ANDROID_SOCIAL_PACKAGES = /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/;
 const SOCIAL_HOSTS: readonly (string | RegExp)[] = [
   'bsky.app',
-  /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/,
   'facebook.com',
   'instagram.com',
   'linkedin.com',
@@ -659,6 +659,10 @@ export function inferAcquisitionChannel({
     const currentOrigin = location?.origin ? new URL(location.origin).origin : '';
     if (currentOrigin && referrerUrl.origin === currentOrigin) return 'direct';
     const hostname = referrerUrl.hostname.toLowerCase();
+    if (referrerUrl.protocol === 'android-app:') {
+      if (ANDROID_SEARCH_PACKAGES.test(hostname)) return 'organic_search';
+      return ANDROID_SOCIAL_PACKAGES.test(hostname) ? 'organic_social' : 'referral';
+    }
     if (hostnameMatches(hostname, SEARCH_ENGINE_HOSTS)) return 'organic_search';
     if (hostnameMatches(hostname, SOCIAL_HOSTS)) return 'organic_social';
     return 'referral';

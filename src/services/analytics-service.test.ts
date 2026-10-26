@@ -231,6 +231,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://books.google.com/': 'organic_search',
     'https://images.google.com/': 'organic_search',
     'https://news.google.com/': 'organic_search',
+    'https://ipv6.google.com/': 'organic_search',
     'android-app://com.google.android.googlequicksearchbox/': 'organic_search',
     'android-app://com.google.android.apps.searchlite/': 'organic_search',
     'android-app://com.google.android.apps.magazines/': 'organic_search',
@@ -265,6 +266,15 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     // A package name is matched whole: another vendor's package can end with a Google app's.
     'android-app://net.example.com.google.android.youtube/': 'referral',
     'android-app://net.example.com.google.android.googlequicksearchbox/': 'referral',
+    // Listed hosts do not apply to a package, nor packages to a web host.
+    'android-app://evil.t.co/': 'referral',
+    'android-app://com.example.x.com/': 'referral',
+    'android-app://com.example.youtube.com/': 'referral',
+    'android-app://com.example.facebook.com/': 'referral',
+    'android-app://t.co/': 'referral',
+    'https://com.google.android.youtube/': 'referral',
+    'https://com.google.android.googlequicksearchbox/': 'referral',
+
     'https://notgoogle.example.org/': 'referral',
     'https://www.yahoo.com/': 'referral',
     'https://search.yahoo.example.org/': 'referral',
