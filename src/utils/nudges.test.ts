@@ -8,6 +8,7 @@ import {
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  coveredAtEveryEdge,
   firstEdgeClearOf,
   focusAfterPanel,
   forgetPrivacyNotice,
@@ -407,9 +408,25 @@ test('a control under the bottom edge moves the panel to the top, and back when 
   assert.equal(firstEdgeClearOf(box(100, 140), edges), 'bottom', 'the next control is clear of the bottom again');
 });
 
-test('a control that both edges cover leaves no place, so the notice is put away for the visit', () => {
+test('a control that both edges cover leaves no place', () => {
   assert.equal(firstEdgeClearOf(box(300, 340), edges), null);
   assert.equal(firstEdgeClearOf(box(300, 340), []), null);
+});
+
+test('the notice is put away only for a control the panel hides entirely at both edges', () => {
+  assert.equal(coveredAtEveryEdge(box(300, 340), edges), true);
+  assert.equal(coveredAtEveryEdge(box(300, 340), []), false);
+});
+
+test('a container the panel cannot cover, or a control it covers in part, keeps the notice', () => {
+  // #main-content spans the viewport: it is what focus rests on after a route
+  // change, the skip link and a click on card text.
+  assert.equal(firstEdgeClearOf(box(0, 568, 0, 320), edges), null);
+  assert.equal(coveredAtEveryEdge(box(0, 568, 0, 320), edges), false);
+  // Partly under the bottom panel and partly under the top one: 2.4.11 is not failed.
+  assert.equal(coveredAtEveryEdge(box(380, 420), edges), false, 'hidden at the bottom, partly at the top');
+  assert.equal(coveredAtEveryEdge(box(210, 250), edges), false, 'hidden at the top, partly at the bottom');
+  assert.equal(coveredAtEveryEdge(box(300, 340, 0, 320), edges), false, 'wider than the panel');
 });
 
 test('focus is given up, not handed to a far-off control, when the panel was reached by a click', () => {

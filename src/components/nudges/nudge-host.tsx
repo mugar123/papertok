@@ -13,6 +13,7 @@ import {
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  coveredAtEveryEdge,
   firstEdgeClearOf,
   focusAfterPanel,
   noticeOnScreen,
@@ -166,8 +167,9 @@ export default function NudgeHost() {
   // The panel is fixed over the feed, so a control focused beneath it would have
   // its focus ring hidden (WCAG 2.4.11). On each focus change, and again once the
   // scroll that brought the control into view has settled, the panel moves to the
-  // other edge when that leaves the control uncovered; with neither edge free it is
-  // hidden for this visit, as Escape does. Measured at each edge in turn, with no
+  // other edge when that leaves the control uncovered; a control that fits wholly
+  // under the panel at both edges hides it for this visit, as Escape does. A control
+  // covered only in part, or a container, leaves it where it is. Measured at each edge in turn, with no
   // paint in between, so nothing flickers.
   const [edge, setEdge] = useState<'bottom' | 'top'>('bottom');
   useEffect(() => {
@@ -177,6 +179,10 @@ export default function NudgeHost() {
       const panel = document.querySelector<HTMLElement>(NUDGE_PANEL_SELECTOR);
       const active = document.activeElement;
       if (!panel || !active || active === document.body || panel.contains(active)) return;
+      // A modal sits above the panel (the reader, a sheet), so what it focuses is
+      // not covered; and 2.4.11 concerns the focus ring a keyboard reader sees, not
+      // the container a click or a route change focuses.
+      if (modalIsOpen(document) || !active.matches(':focus-visible')) return;
       const target = active.getBoundingClientRect();
       const current = panel.dataset.edge;
       const candidates = (['bottom', 'top'] as const).map(candidate => {
@@ -186,7 +192,7 @@ export default function NudgeHost() {
       panel.dataset.edge = current;
       const clear = firstEdgeClearOf(target, candidates);
       if (clear) setEdge(clear);
-      else hidePrivacyForVisit();
+      else if (coveredAtEveryEdge(target, candidates)) hidePrivacyForVisit();
     };
     const onFocusIn = () => {
       keepClear();

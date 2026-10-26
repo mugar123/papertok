@@ -283,6 +283,18 @@ export function firstEdgeClearOf<T>(target: Box, candidates: Array<{ edge: T; bo
 }
 
 /**
+ * Whether the panel at every one of `candidates` hides `target` entirely. WCAG
+ * 2.4.11 fails only when the focused component is wholly hidden, so a control the
+ * panel covers in part, and a container such as #main-content that the panel
+ * cannot cover, leave the panel where it is; only a control that fits inside the
+ * panel at both edges has no place left and is a reason to put the notice away.
+ */
+export function coveredAtEveryEdge(target: Box, candidates: Array<{ box: Box }>) {
+  const hides = (box: Box) => box.left <= target.left && box.right >= target.right && box.top <= target.top && box.bottom >= target.bottom;
+  return candidates.length > 0 && candidates.every(candidate => hides(candidate.box));
+}
+
+/**
  * What to do with focus when the panel is put away: nothing when it was not in
  * the panel; give it up when it got there by a click or tap (a button the pointer
  * pressed takes focus in Chrome and on Android, and handing it to a control the

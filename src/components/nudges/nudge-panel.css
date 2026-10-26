@@ -145,11 +145,24 @@
 
 /* Moved up under the navbar when a focused control sits beneath it at the
    bottom (NudgeHost measures both edges); the higher specificity beats the
-   narrow-screen `bottom` above. The cap is 60% of the screen, so the other edge
-   is clear of any control that one edge covers except in the middle fifth. */
+   narrow-screen `bottom` above. A band of the screen stays covered at both edges
+   (on a narrow or short screen, with the cap below, about the middle fifth to
+   half of it): a control that fits wholly inside that band hides the notice for
+   the visit, and one covered in part leaves it where it is. The height stops
+   short of the viewport's bottom, so text enlarged on a wide screen cannot push
+   the action row out of view from here either. */
 .nudge[data-edge='top'] {
   top: calc(var(--nav-total) + 8px);
   bottom: auto;
+  max-height: calc(100vh - var(--nav-total) - 20px - var(--inset-bottom));
+  max-height: calc(100dvh - var(--nav-total) - 20px - var(--inset-bottom));
+}
+
+@media (max-width: 560px), (max-height: 480px) {
+  .nudge[data-edge='top'] {
+    max-height: min(60vh, calc(100vh - var(--nav-total) - 20px - var(--inset-bottom)));
+    max-height: min(60dvh, calc(100dvh - var(--nav-total) - 20px - var(--inset-bottom)));
+  }
 }
 
 /* Fewer and gentler, not none: the panel still fades. */
