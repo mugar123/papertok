@@ -21,7 +21,7 @@
    reader, the same condition that renders the bar): the page starts below
    it, the sticky toolbar docks under it, and the hero stops reserving the
    notch, which the bar already covers. Border-box, so `min-height: 100dvh`
-   and the error's `height: 100dvh` keep meaning the whole screen with the
+   and the error's `min-height: 100dvh` keep meaning the whole screen with the
    padding inside them. Without the bar nothing here applies. */
 /* And the band OPENS; it does not appear.
 
