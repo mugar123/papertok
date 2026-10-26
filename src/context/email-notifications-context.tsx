@@ -64,7 +64,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
   // Journals do not count: a reader who follows only journals sees "Nothing
-  // followed yet", and no save, sync or opt-in sends the Worker no follows.
+  // followed yet", and no save, sync or opt-in sends an empty follow list.
   const hasFollows = hasDigestFollows(followedEntities);
 
   // The same reset `FollowingContext` does, and for the same reason: the tree
@@ -176,10 +176,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // A yes from the guest welcome, carried out here: the account is created
   // with no follows and the digest is built from them (the Worker refuses an
   // empty subscription), so the subscription starts with the first follow
-  // other than a journal, to the address the account signs in with. Once per session; a failure
-  // keeps the flag and the next session tries again. Once it exists — or the
-  // reader already turned email on themselves — the flag is spent, so a later
-  // unsubscribe in Settings is never undone.
+  // other than a journal, to the address the account signs in with. Once per
+  // session; a failure keeps the flag and the next session tries again. Once
+  // it exists — or the reader already turned email on themselves — the flag is
+  // spent, so a later unsubscribe in Settings is never undone.
   const optInAttemptedFor = useRef<string | null>(null);
   const emailServiceDown = emailServiceState(health) === 'down';
   useEffect(() => {

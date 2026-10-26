@@ -118,13 +118,15 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
 }
 
 /**
- * The follow list has not arrived yet, and the app has stopped waiting for it.
+ * The follow list has not arrived, so what this account follows is unknown.
  *
- * Not a failure: the listener is still attached and Firestore reconnects on its
- * own. It exists so consumers can tell "we do not know what this account
- * follows" from "this account follows nobody" — a distinction that decides
- * whether it is safe to write notification preferences derived from the list,
- * or to count the journals in it (`planFollowToggle`).
+ * FollowingContext sets it once it stops waiting for the first snapshot. That
+ * is not a failure: the listener is still attached and Firestore reconnects on
+ * its own. It lets consumers tell "we do not know what this account follows"
+ * from "this account follows nobody" — a distinction that decides whether it
+ * is safe to write notification preferences derived from the list.
+ * `planFollowToggle` throws it for a new journal, which cannot be counted
+ * against a list it does not have.
  */
 export class FollowsUnavailableError extends Error {
   declare code: string;

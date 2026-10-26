@@ -116,7 +116,7 @@ test('ten followed journals leave a heavy follower every other follow on the Fol
   assert.equal(asked.length, 46);
   assert.deepEqual(asked.filter(id => id.startsWith('T')).sort(), ['T100', 'T101', 'T102', 'T103', 'T104']);
   assert.equal(asked.filter(id => id.startsWith('S')).length, 10);
-  assert.equal(asked.includes('S110'), false, 'an eleventh journal, which the app does not write, is not asked for');
+  assert.equal(asked.includes('S110'), false, 'an eleventh journal, stored from two devices at once, is not asked for');
   assert.equal(result.checkedEntities, 46);
 });
 
