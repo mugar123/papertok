@@ -5,14 +5,27 @@
   display: flex;
   width: 100%;
   min-height: 100dvh;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   padding: 32px 20px;
   color: var(--text-primary);
   background: var(--bg-primary);
 }
 
+/* The visitor's Privacy switch, in the corner the other public bars keep it
+   in. In the page's flow, above the card: at large text on a narrow screen
+   the card is as tall as the page, and a button laid over it would cover the
+   drawing. The slot is there from the first paint, with the button's height
+   (2rem, the icon-sm button, so both grow with the text), so the card does not drop when the session settles
+   and the button arrives. */
+.not-found-bar {
+  align-self: flex-end;
+  min-height: 2rem;
+  margin-top: var(--inset-top);
+}
+
 .not-found-card {
+  margin-block: auto;
   display: flex;
   width: min(520px, 100%);
   flex-direction: column;
