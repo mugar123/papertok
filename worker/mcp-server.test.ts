@@ -552,6 +552,47 @@ test('get_paper keeps a hundred authors, and a cut list says how many entries it
   });
 });
 
+test('category and concept names are cut with the concepts, and the cut is counted', async () => {
+  const conceptual = {
+    ...OPENALEX_WORK,
+    id: 'https://openalex.org/W4400000040',
+    doi: null,
+    ids: {},
+    concepts: Array.from({ length: 40 }, (_, index) => ({ id: `https://openalex.org/C${index}`, display_name: `Concept ${index}`, level: 2, score: 0.9 })),
+  };
+  const crossListed = ARXIV_LAB_ENTRY.replace('<category term="cond-mat.mes-hall"/>', ['cond-mat.mes-hall', 'cond-mat.mtrl-sci', 'cond-mat.soft', 'cond-mat.stat-mech', 'physics.app-ph', 'physics.comp-ph', 'quant-ph']
+    .map(term => `<category term="${term}"/>`).join(''));
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000040')) return Response.json(conceptual);
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [conceptual] });
+    if (url.includes('id_list=2603.01234')) return new Response(arxivFeed(crossListed));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    type Relayed = Record<string, unknown> & { concepts?: unknown[]; categories?: string[]; omitted?: Record<string, number> };
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene sheets', sources: ['openalex'] });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
+    const looked = await callTool(env, 'get_paper', { id: 'W4400000040' });
+    const work = looked.answer.result?.structuredContent?.paper as Relayed;
+    for (const [name, relayed] of [['search', listed], ['get_paper', work]] as const) {
+      assert.equal(relayed.concepts?.length, 5, name);
+      assert.deepEqual(relayed.categories, ['Concept 0', 'Concept 1', 'Concept 2', 'Concept 3', 'Concept 4'], name);
+      assert.equal(relayed.omitted?.categories, 35, name);
+      for (const key of ['keywords', 'allCategories']) {
+        assert.ok(!(key in relayed) || (relayed[key] as unknown[]).length <= 5, `${name} ${key}`);
+      }
+    }
+    const preprint = await callTool(env, 'get_paper', { id: '2603.01234' });
+    const listedOnArxiv = preprint.answer.result?.structuredContent?.paper as Relayed;
+    assert.deepEqual(listedOnArxiv.categories, ['cond-mat.mes-hall', 'cond-mat.mtrl-sci', 'cond-mat.soft', 'cond-mat.stat-mech', 'physics.app-ph']);
+    assert.deepEqual(listedOnArxiv.omitted, { categories: 2 });
+    assert.equal(listedOnArxiv.primaryCategory, 'cond-mat.mes-hall');
+    for (const key of ['keywords', 'allCategories']) {
+      assert.ok(!(key in listedOnArxiv) || (listedOnArxiv[key] as unknown[]).length <= 5, `arXiv ${key}`);
+    }
+  });
+});
+
 test('get_paper asks OpenAlex for the DOI it was given, whatever characters the DOI carries', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/doi:10.1234/odd%3Fpart%23two')) return Response.json(OPENALEX_WORK);

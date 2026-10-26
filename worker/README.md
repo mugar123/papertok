@@ -897,7 +897,9 @@ adapter's `provider` label among them) and `sourceType`, which
 `mapOpenAlexWork` writes as `journal` for every work that is not a conference
 paper, a repository preprint included. They come with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
-institutions, 5 concepts and 3 topics. A search also cuts each abstract at the
+institutions, 5 concepts, 5 names in `categories` (an OpenAlex record's concept
+names, an arXiv record's categories) and in `keywords` and `allCategories`
+where they differ from it, and 3 topics. A search also cuts each abstract at the
 last space within 1,500 characters and ends it with `…`; `get_paper` sends the
 whole abstract (up to the 6,000 characters `usableOpenAlexAbstract` accepts). A
 paper's `omitted` counts the entries each cut list left out and, for the

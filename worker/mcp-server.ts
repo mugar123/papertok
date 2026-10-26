@@ -75,7 +75,7 @@ const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable".`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable".`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -92,7 +92,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text), with authors cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text), with authors cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -222,7 +222,7 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
 }
 
 // For the abstract, `omitted` counts characters.
-type CutList = 'abstract' | 'authors' | 'institutions' | 'concepts' | 'topics';
+type CutList = 'abstract' | 'authors' | 'institutions' | 'concepts' | 'topics' | 'categories' | 'keywords' | 'allCategories';
 
 // Every paper reaches `publicPaper` through `PaperBuilder.create`, which fills
 // what a record lacks with these texts. They say "not given".
@@ -258,6 +258,10 @@ function withoutDefaults(paper: Partial<Paper>) {
 // is bounded, and a list the source never gave stays absent: unknown, not empty.
 function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstract = MAX_SEARCH_ABSTRACT } = {}) {
   const relayed: Partial<Paper> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
+  // Compared whole, before the cuts below.
+  const categories = JSON.stringify(relayed.categories || []);
+  if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;
+  if (JSON.stringify(relayed.keywords || []) === categories) delete relayed.keywords;
   const omitted: Partial<Record<CutList, number>> = {};
   const cut = <T>(list: T[], name: CutList, max: number) => {
     if (list.length > max) omitted[name] = list.length - max;
@@ -273,6 +277,10 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
   if (relayed.institutions) relayed.institutions = cut(relayed.institutions, 'institutions', MAX_INSTITUTIONS);
   if (relayed.concepts) relayed.concepts = cut(relayed.concepts, 'concepts', MAX_SUBJECTS);
   if (relayed.topics) relayed.topics = cut(relayed.topics, 'topics', MAX_TOPICS);
+  // An OpenAlex record's categories and keywords are its concepts' names.
+  if (relayed.categories) relayed.categories = cut(relayed.categories, 'categories', MAX_SUBJECTS);
+  if (relayed.keywords) relayed.keywords = cut(relayed.keywords, 'keywords', MAX_SUBJECTS);
+  if (relayed.allCategories) relayed.allCategories = cut(relayed.allCategories, 'allCategories', MAX_SUBJECTS);
   if (Object.keys(omitted).length > 0) relayed.omitted = omitted;
   delete relayed.raw;
   delete relayed.summary;
@@ -280,9 +288,6 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
   delete relayed._fetchedFor;
   delete relayed.provider;
   delete relayed.sourceType;
-  const categories = JSON.stringify(relayed.categories || []);
-  if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;
-  if (JSON.stringify(relayed.keywords || []) === categories) delete relayed.keywords;
   return relayed;
 }
 
