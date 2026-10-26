@@ -41,7 +41,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
 import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, doiPathId, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1707,20 +1707,6 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeout
     console.warn('OpenAlex arXiv fallback failed', error);
     return null;
   }
-}
-
-// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
-// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
-// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
-// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
-// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
-// sent: the URL parser resolves it first, into another path. A DOI the relay
-// would refuse, or the parser rewrite, has no path id ('').
-function doiPathId(doi: string) {
-  const id = `doi:${encodeURIComponent(doi)
-    .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%2F/gi, '/')}`;
-  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 /**

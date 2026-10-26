@@ -1,14 +1,16 @@
 import type { Paper } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
 
 import { PaperBuilder } from '../src/services/paper-builder.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
 import { handleCitationGraph } from './citation-graph.ts';
+import { captureWorkerException } from './error-tracking.ts';
 import { allowedOrigins, json } from './http.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleOpenAlex } from './openalex-api.ts';
@@ -22,9 +24,11 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  *
  * Every tool asks an existing route in-process, as `paper-sources.ts` does
  * for the harvest, but as a reader: the route's validation, cache keys,
- * provider budgets and per-address allowances apply exactly as they do to the
+ * provider budgets and per-address allowances apply as they do to the
  * browser. The caller's `CF-Connecting-IP` travels with each ask, so those
- * allowances count this caller.
+ * allowances count this caller. The citation graph charges the subject all
+ * MCP callers share (`MCP_PROVIDER_SUBJECT`) where the browser charges the
+ * reader's account.
  */
 export const MCP_PATH = '/mcp';
 
@@ -34,16 +38,23 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
 const MAX_BODY_BYTES = 16 * 1024;
 // Tool calls one address may make in a UTC minute, cache hits included. The
-// routes behind them keep their own per-address limits on misses; this one
-// also covers the citation graph, which the browser reaches only signed in.
+// routes behind them keep their own per-address limits on misses.
 const MCP_CALLER_MINUTE = Object.freeze({ namespace: 'mcp', limit: 30 });
+// The browser's citation graph needs an account, and each reader's misses
+// spend their own share (PROVIDER_USER_MINUTE_LIMIT) of the app-wide minute
+// allowance of the credential-backed providers (PROVIDER_GLOBAL_MINUTE_LIMIT).
+// MCP callers have no account, so they share one such subject: together they
+// take at most one reader's share, and the app-wide ceiling sees every miss.
+// The uids Firebase generates are letters and digits (PaperTok mints no
+// custom tokens), so this one names no reader.
+const MCP_PROVIDER_SUBJECT = Object.freeze({ uid: 'mcp:agents' });
 const MAX_RESULTS = 10;
 // One paper of a large collaboration lists thousands of authors.
 const MAX_AUTHORS = 100;
 const MAX_OA_LOCATIONS = 5;
 
 const SERVER_INFO = Object.freeze({ name: 'papertok', title: 'PaperTok', version: '1.0.0' });
-const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalizes them. Results carry abstracts and metadata, never full text. A missing abstract, citation count or review status is unknown, not zero or false.';
+const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalizes them. Results carry abstracts and metadata, never full text. citationCount is a count only where citationCountKnown is true. A missing abstract or review status is unknown, not empty or false.';
 
 const READ_ONLY = Object.freeze({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
 const PAPER_ID_SCHEMA = { type: 'string', description: 'A DOI (10.xxxx/...), arXiv id (2401.01234), OpenAlex work id (W123...) or PubMed id (pmid:123). URLs and doi:/arxiv: prefixes are accepted.' };
@@ -185,7 +196,17 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   const headers = new Headers();
   const address = caller.headers.get('cf-connecting-ip');
   if (address) headers.set('cf-connecting-ip', address);
-  const response = await handler(new Request(url, { headers }), env);
+  let response: Response;
+  try {
+    response = await handler(new Request(url, { headers }), env);
+  } catch (error) {
+    // A route throws when its provider failed; the router turns that into a
+    // 429, 502 or 504 and reports it, and so does this, as a tool error.
+    captureWorkerException(error);
+    const { name, status, retryAfter } = error as UpstreamError;
+    if (status === 429) throw new ToolFailure({ code: 'UPSTREAM_RATE_LIMITED', retryAfterSeconds: Number(retryAfter) || 60 });
+    throw new ToolFailure({ code: name === 'TimeoutError' ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE', ...(status ? { upstreamStatus: status } : {}) });
+  }
   if (response.ok) return response;
   if (response.status === 404) throw new ToolFailure({ code: 'NOT_FOUND' });
   // The route's own validation: an identifier the relay cannot carry.
@@ -207,28 +228,27 @@ function publicPaper(paper: Partial<Paper>) {
   return relayed;
 }
 
-async function searchOpenAlex(query: string, since: string, limit: number, caller: Request, env: WorkerEnv) {
+// Both sources are asked for a full page whatever `limit` says, and the merged
+// list is cut afterwards: a billed OpenAlex search costs the same for one
+// result as for ten, and one question has one cache entry.
+async function searchOpenAlex(query: string, since: string, caller: Request, env: WorkerEnv) {
   const response = await ask(handleOpenAlex, '/openalex/works', {
     search: query,
     filter: since ? `from_publication_date:${since}` : '',
-    'per-page': limit,
+    'per-page': MAX_RESULTS,
     select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   }, caller, env);
   const { results = [] } = await response.json<{ results?: OpenAlexWork[] }>();
   return results.map(work => mapOpenAlexWork(work));
 }
 
+// The phrase query the app's search sends (`buildSearchQuery` in
+// src/services/arxiv-service.ts), so the same words share its cache entry.
 function arxivQuery(query: string, since: string) {
-  const terms = query.split(' ')
-    .map(term => term.replace(/[^\p{L}\p{N}.-]/gu, ''))
-    .filter(Boolean)
-    .slice(0, 12)
-    .map(term => `all:${term}`);
-  if (since) {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    terms.push(`submittedDate:[${since.replace(/-/g, '')}0000 TO ${today}2359]`);
-  }
-  return terms.join(' AND ');
+  const phrase = `all:"${query.replace(/"/g, '').trim()}"`;
+  if (!since) return phrase;
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `${phrase} AND submittedDate:[${since.replace(/-/g, '')}0000 TO ${today}2359]`;
 }
 
 async function arxivPapers(params: Record<string, string | number>, caller: Request, env: WorkerEnv) {
@@ -238,8 +258,8 @@ async function arxivPapers(params: Record<string, string | number>, caller: Requ
 
 async function searchPapers({ query, sources, since, limit }: ReturnType<typeof searchArguments>, caller: Request, env: WorkerEnv) {
   const searches: Record<string, () => Promise<Array<Partial<Paper> | null>>> = {
-    openalex: () => searchOpenAlex(query, since, limit, caller, env),
-    arxiv: () => arxivPapers({ search_query: arxivQuery(query, since), max_results: limit, sortBy: 'relevance' }, caller, env),
+    openalex: () => searchOpenAlex(query, since, caller, env),
+    arxiv: () => arxivPapers({ search_query: arxivQuery(query, since), start: 0, max_results: MAX_RESULTS, sortBy: 'relevance' }, caller, env),
   };
   const settled = await Promise.allSettled(sources.map(source => searches[source]()));
   const unavailable = settled.flatMap((outcome, index) => outcome.status === 'rejected'
@@ -265,9 +285,16 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
     if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
     return { paper: publicPaper(paper) };
   }
-  // One work by id: OpenAlex does not bill it, so it spends no budget.
-  const response = await ask(handleOpenAlex, `/openalex/works/${identity.type === 'openalex' ? identity.value : `${identity.type}:${identity.value}`}`, {}, caller, env);
-  const paper = mapOpenAlexWork(await response.json<OpenAlexWork>());
+  // One work by id, as the app's paper page asks for it (`fetchPaperByWorkId`
+  // in src/services/open-alex-service.ts): OpenAlex does not bill it, so it
+  // spends no budget. A DOI the relay cannot carry in its path is a one-work
+  // list instead, billed one unit in the essential tier.
+  const doiPath = identity.type === 'doi' ? doiPathId(identity.value) : '';
+  const response = identity.type === 'doi' && !doiPath
+    ? await ask(handleOpenAlex, '/openalex/works', { filter: `doi:${identity.value}`, 'per-page': 1 }, caller, env)
+    : await ask(handleOpenAlex, `/openalex/works/${doiPath || encodeURIComponent(identity.type === 'pmid' ? `pmid:${identity.value}` : identity.value)}`, {}, caller, env);
+  const answer = await response.json<OpenAlexWork & { results?: OpenAlexWork[] }>();
+  const paper = mapOpenAlexWork(answer.results ? answer.results[0] : answer);
   if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
   return { paper: publicPaper(paper) };
 }
@@ -296,7 +323,13 @@ function citationGraphArguments(args: Arguments) {
 }
 
 async function getCitationGraph({ doi, limit }: ReturnType<typeof citationGraphArguments>, caller: Request, env: WorkerEnv) {
-  const response = await ask(handleCitationGraph, '/citation-graph', { doi, limit }, caller, env);
+  const response = await ask(
+    (request, routeEnv) => handleCitationGraph(request, routeEnv, MCP_PROVIDER_SUBJECT),
+    '/citation-graph',
+    { doi, limit },
+    caller,
+    env,
+  );
   const graph = await response.json<{ references: Paper[]; citations: Paper[]; counts: unknown; source: string; partial: boolean; degraded: boolean }>();
   return {
     doi,
@@ -371,7 +404,7 @@ export async function handleMcpRequest(request: Request, env: WorkerEnv) {
   if (Array.isArray(message)) return rpcError(null, -32600, 'Batches are not supported', 400);
   const { jsonrpc, id, method, params = {} } = (message || {}) as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: Record<string, unknown> };
   if (jsonrpc !== '2.0') return rpcError(null, -32600, 'Invalid Request', 400);
-  // A notification, or a response to a request this server never sends.
+  // A notification. This server sends no requests, so it expects no responses.
   if (id === undefined) return new Response(null, { status: 202, headers: { 'cache-control': 'no-store' } });
   if ((typeof id !== 'string' && typeof id !== 'number') || typeof method !== 'string') {
     return rpcError(null, -32600, 'Invalid Request', 400);

@@ -570,7 +570,8 @@ minute through `RequestQuotaLedger`. Cache keys are built only from validated, o
 parameters, so arbitrary query parameters cannot bypass provider caches.
 Authentication is checked before route handling, while quota is reserved only after parameter
 validation and a cache miss. Invalid queries and cached responses therefore cannot consume the
-provider allowance.
+provider allowance. The MCP server's `get_citation_graph` calls the `/citation-graph` handler
+without a token and charges one subject shared by every MCP caller (see [MCP server](#mcp-server)).
 
 Every route that requires a token also screens it locally before asking Identity Toolkit: three
 base64url segments, an unexpired `exp`, and an `aud` matching `FIREBASE_PROJECT_ID` when that
@@ -770,10 +771,11 @@ existing secret before deploying these routes. Local requests need a test
 | `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
+| `/mcp` | 30 tool calls, cache hits included | The limits above of the routes its tools call (see [MCP server](#mcp-server)) |
 
 OpenAlex and share attach the caller as the existing reservation’s second
 subject, so a refused caller spends no shared quota. Their minute-specific
-identifiers expire with the daily ledger’s three-day cleanup. arXiv and OA have
+identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA and MCP have
 no existing shared reservation: each takes a caller-only reservation, with
 cleanup scheduled one minute after the window ends. arXiv gives that unit back
 when pacing refuses a seat. Its existing ledger-outage behavior remains
@@ -794,7 +796,8 @@ worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.
 server with no account (ENG-91, phase 1). `mcp-server.ts` implements the
 Streamable HTTP transport without sessions or server-sent events: each POST
 carries one JSON-RPC message and receives one `application/json` answer.
-Notifications receive `202`, GET and other methods receive `405`, batches
+Notifications receive `202`, GET and other methods except the router's CORS
+preflight receive `405`, batches
 receive `-32600`, and bodies above 16 KB receive `413`. It negotiates protocol
 versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A browser `Origin`
 outside the allowlist receives `403`; remote clients send none. The official
@@ -802,8 +805,8 @@ SDK is not used, so the package lock is unchanged.
 
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
-| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv` | Up to 10 papers merged with `PaperBuilder.deduplicate`, plus the sources that refused or failed |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id; `/arxiv?id_list=` for an arXiv id | One paper from `mapOpenAlexWork` or `arxivRecordPaper` |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (at most 10) papers merged with `PaperBuilder.deduplicate`, plus the sources that refused or failed |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `mapOpenAlexWork` or `arxivRecordPaper` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations |
 | `get_citation_graph(doi, limit?)` | `/citation-graph` | References, citing works, counts and `degraded` |
 
@@ -812,10 +815,15 @@ with at most 100 authors. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
 keys, OpenAlex tiers, arXiv beat and per-IP miss limits as the browser (see
 [Public lookup caller limits](#public-lookup-caller-limits)). A search is an
-exploration-tier OpenAlex search; a lookup by id is a free entity lookup.
-Unlike the browser route, the citation graph requires no Firebase identity, so
-the provider minute quota for signed-in readers does not apply; the OpenAlex
-exploration tier and the MCP allowance limit it instead.
+exploration-tier OpenAlex search. A lookup by id is a free entity lookup; a
+DOI the relay cannot carry in its path (`doiPathId`) is a one-work
+`filter=doi:` list, one essential-tier unit. The browser's citation graph
+requires a Firebase identity and charges each reader's share
+(`PROVIDER_USER_MINUTE_LIMIT`) of the credential-backed providers' app-wide
+minute allowance (`PROVIDER_GLOBAL_MINUTE_LIMIT`). MCP callers have no account,
+so they all charge one subject, `mcp:agents`: together they get one reader's
+share of that allowance, and the graph still spends the OpenAlex exploration
+tier.
 
 Arguments are validated before any reservation. Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
@@ -823,10 +831,16 @@ reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
 `isError: true` and a `code` (`PROVIDER_RATE_LIMITED` with
 `retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED`, `NOT_FOUND`,
-`INVALID_ARGUMENTS`, `UPSTREAM_UNAVAILABLE`), so the client model can read
-them. Search text and paper ids are not sent to analytics or logged.
+`INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
+`UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
+failed), so the client model can read them. A provider failure
+is reported to PostHog as the routes report theirs. The server sends no search
+text or paper id to analytics.
 
 To connect from Claude, add a custom connector with the URL
 `https://api.papertok.app/mcp` in claude.ai (Settings, Connectors). In Claude
 Code, run `claude mcp add --transport http papertok https://api.papertok.app/mcp`.
-No authentication is configured. Test with `node --test worker/mcp-server.test.ts`.
+No authentication is configured. claude.ai calls a custom connector from
+Anthropic's servers rather than the reader's device, so its users share the
+per-IP allowances of those addresses; Claude Code calls from the reader's own
+address. Test with `node --test worker/mcp-server.test.ts`.

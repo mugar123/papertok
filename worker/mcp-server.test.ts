@@ -245,8 +245,26 @@ test('search_papers merges OpenAlex and arXiv, one paper per DOI', async () => {
     assert.equal(JSON.parse(answer.result?.content?.[0].text || '{}').papers.length, 2);
     const openAlexCall = new URL(calls.find(url => url.startsWith('https://api.openalex.org/'))!);
     assert.equal(openAlexCall.searchParams.get('search'), 'graphene strain');
-    assert.equal(openAlexCall.searchParams.get('per-page'), '5');
   });
+});
+
+test('search_papers asks the same upstream questions whatever the limit', async () => {
+  const upstream: Upstream = url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    throw new Error(`unexpected upstream ${url}`);
+  };
+  // Separate environments, so the second search does not wait for arXiv's beat.
+  const search = (limit: number) => withUpstream(upstream, async calls => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', limit });
+    return { papers: answer.result?.structuredContent?.papers as unknown[], asked: [...calls].sort() };
+  });
+  const one = await search(1);
+  const seven = await search(7);
+  assert.equal(one.papers.length, 1);
+  assert.equal(seven.papers.length, 2);
+  assert.equal(one.asked.length, 2);
+  assert.deepEqual(seven.asked, one.asked);
 });
 
 test('search_papers keeps arXiv when the OpenAlex budget refuses the search', async () => {
@@ -297,6 +315,38 @@ test('get_paper asks arXiv for an arXiv id and reports an unknown id as not foun
   });
 });
 
+test('get_paper asks OpenAlex for the DOI it was given, whatever characters the DOI carries', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/doi:10.1234/odd%3Fpart%23two')) return Response.json(OPENALEX_WORK);
+    // A DOI the relay cannot carry as a path goes as a one-work list.
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [] });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    const env = routeEnv();
+    const odd = await callTool(env, 'get_paper', { id: '10.1234/odd?part#two' });
+    assert.equal((odd.answer.result?.structuredContent?.paper as { title?: string })?.title, 'Graphene sheets under strain');
+
+    // Dot segments would make the URL parser ask for another work.
+    const dotted = await callTool(env, 'get_paper', { id: '10.1234/../../works/W4400000001' });
+    assert.equal(dotted.answer.result?.structuredContent?.code, 'NOT_FOUND');
+    const listed = new URL(calls.at(-1)!);
+    assert.equal(listed.pathname, '/works');
+    assert.equal(listed.searchParams.get('filter'), 'doi:10.1234/../../works/w4400000001');
+  });
+});
+
+test('a provider failure is a tool error the client can read', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.unpaywall.org/')) return new Response('down', { status: 500 });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const { response, answer } = await callTool(routeEnv(), 'find_open_access', { doi: '10.1234/example.2026.1' });
+    assert.equal(response.status, 200);
+    assert.equal(answer.result?.isError, true);
+    assert.equal(answer.result?.structuredContent?.code, 'UPSTREAM_UNAVAILABLE');
+  });
+});
+
 test('find_open_access relays the legal copy and licence without the record around it', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.unpaywall.org/v2/10.1234%2Fexample.2026.1')) return Response.json(UNPAYWALL);
@@ -326,6 +376,28 @@ test('get_citation_graph returns references and citing works without an account'
     assert.deepEqual(graph.references, []);
     assert.deepEqual(graph.citations.map(paper => paper.title), ['A citing paper']);
     assert.equal(graph.degraded, false);
+  });
+});
+
+test('citation graphs asked through MCP share one provider allowance, whoever asks', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.opencitations.net/')) return Response.json([]);
+    if (url.startsWith('https://api.openalex.org/works/doi:')) return Response.json({ id: OPENALEX_WORK.id, referenced_works: [], cited_by_count: 0 });
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [] });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    // One miss a minute for the credential-backed providers' subject.
+    const env = routeEnv({ PROVIDER_USER_MINUTE_LIMIT: '1' });
+    const ask = (doi: string, ip: string) => rpc(env, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_citation_graph', arguments: { doi } },
+    }, { ip });
+    const first = await ask('10.1234/first', '192.0.2.7');
+    assert.equal(first.answer.result?.isError, undefined);
+    const before = calls.length;
+    const second = await ask('10.1234/second', '198.51.100.9');
+    assert.equal(second.answer.result?.isError, true);
+    assert.equal(second.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
+    assert.equal(calls.length, before, 'a refused graph asks nothing upstream');
   });
 });
 

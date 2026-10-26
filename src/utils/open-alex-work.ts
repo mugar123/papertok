@@ -83,6 +83,20 @@ function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
+// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
+// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
+// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
+// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
+// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
+// sent: the URL parser resolves it first, into another path. A DOI the relay
+// would refuse, or the parser rewrite, has no path id ('').
+export function doiPathId(doi: string) {
+  const id = `doi:${encodeURIComponent(doi)
+    .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%2F/gi, '/')}`;
+  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
+}
+
 function extractArxivId(value: unknown) {
   const text = String(value || '');
   const match = text.match(/(?:arxiv\.org\/(?:abs|pdf)\/|10\.48550\/arxiv\.|arxiv:)(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?/i);
