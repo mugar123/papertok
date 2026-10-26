@@ -17,6 +17,10 @@
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
   align-items: center;
+  /* Long copy at a large text size or a short viewport scrolls inside the
+     panel; a fixed panel cannot be scrolled to (WCAG 1.4.4, 1.4.10). */
+  max-height: calc(100dvh - 24px - var(--inset-bottom));
+  overflow-y: auto;
 }
 
 .nudge-icon {
@@ -40,6 +44,12 @@
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* The link is told from the text around it by more than its colour. */
+.nudge-copy a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Two answers take a row of their own under the copy: beside it, the copy
