@@ -1896,12 +1896,6 @@ const PaperCard = memo(function PaperCard({
           ) : categoryLabel && (
             <span className="pc-masthead-field">{categoryLabel}</span>
           )}
-          {classificationSource && (
-            <>
-              <span className="pc-meta-dot">·</span>
-              <span className="pc-date">{classificationSource}</span>
-            </>
-          )}
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the
               field then stood beside an empty date. */}
