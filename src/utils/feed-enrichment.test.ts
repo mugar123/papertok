@@ -24,7 +24,7 @@ test('normalizes arXiv versions for OpenAlex enrichment', () => {
 
 // A card that names its OpenAlex work is enriched by that work: a citation
 // graph card filed under its DOI, or a corpus row that became its journal
-// article and keeps the working paper's id or the eprint's (ENG-133).
+// article and keeps the working paper's id (ENG-133).
 test("a paper's own OpenAlex work comes before its id, arXiv id and DOI", () => {
   assert.equal(getOpenAlexEnrichmentId({ id: '10.1000/example', doi: '10.1000/example', openAlexId: 'W123' }), 'openalex:W123');
   assert.equal(getOpenAlexEnrichmentId({ id: 'openalex:W7220000104', openAlexId: 'W7221756071' }), 'openalex:W7221756071');

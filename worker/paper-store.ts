@@ -363,45 +363,29 @@ async function readWorks(db: D1Database, ids: number[]) {
 }
 
 // A working paper says it was not reviewed; its journal article says it was.
-const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
-// Whether a record's source names the journal that reviewed the paper.
-// OpenAlex states review itself (`openAlexPeerReviewed`). PubMed indexes
-// journals and types its preprints, and Europe PMC's record with a PubMed id
-// is PubMed's. An arXiv record reads reviewed on any DOI it lists, arXiv's own
-// included, or on a comment saying it was published, so it counts only when it
-// names the journal. Every other source is left out. CORE's, OSTI's and
-// NASA's `true`, and Europe PMC's for a preprint, come from a `published` type
-// alone, and a repository's copy proves no review.
-function namesReviewingJournal(paper: Paper) {
-  switch (paper.sources?.primary) {
-    case 'openalex':
-    case 'pubmed': return true;
-    case 'europepmc': return Boolean(paper.pmid);
-    case 'arxiv': return Boolean(paper.journal);
-    default: return false;
-  }
-}
+// Only OpenAlex's working-paper row becomes its OpenAlex journal article's
+// (ENG-133): OpenAlex states review itself (`openAlexPeerReviewed`), and the
+// row then follows the article's own listing (`openAlexId`). A row another
+// source started, or a journal record from another source (PubMed, Europe PMC,
+// an arXiv eprint naming its journal, a repository's copy), merges as any
+// record does (ENG-145).
+const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 'openalex' && paper.workingPaper === true && paper.peerReviewed === false;
 // A journal record lists a publisher's DOI: without one, `merge` would fill
 // the gap with the working paper's DOI, and the reviewed row would link to the
 // unreviewed version. A merged row's `true` that rests on a DOI alone
 // (`restsOnArxivDoi`) is no journal evidence either.
-const readsAsReviewed = (paper: Paper) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
-  && isPublisherDoi(normalizeDoi(paper.doi)) && namesReviewingJournal(paper);
-// OpenAlex's journal records first, which name the article's work
-// (`openAlexId`), and arXiv's last, whose journal reference is free text.
-const journalRank = (paper: Paper) => (paper.sources?.primary === 'openalex' ? 0 : paper.sources?.primary === 'arxiv' ? 2 : 1);
+const readsAsReviewed = (paper: Paper) => paper.sources?.primary === 'openalex' && paper.peerReviewed === true && paper.workingPaper !== true
+  && !restsOnArxivDoi(paper) && isPublisherDoi(normalizeDoi(paper.doi));
 const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
 
 // `merge` keeps a working paper's `false` against a journal article merged
 // into it, so the records of a working paper and its journal article read
 // reviewed only with the article first (README-openalex-leaf-venues.md). Each
-// record that reads reviewed is tried first, in turn (`journalRank`), since one
-// can still leave the row unreviewed, such as an eprint naming its journal
-// without the journal's DOI, or a record whose DOI a merged record denied
-// (`sources.peerReviewedByDoi`); such a record does not lend the row its
-// landing page, text and date. Undefined when none makes the row reviewed.
+// record that reads reviewed is tried first, in turn. One whose merge does not
+// read reviewed does not lend the row its landing page, text and date.
+// Undefined when none makes the row reviewed.
 function asJournalRow(records: Paper[]) {
-  for (const journal of records.filter(readsAsReviewed).sort((a, b) => journalRank(a) - journalRank(b))) {
+  for (const journal of records.filter(readsAsReviewed)) {
     const upgraded = mergeAll([journal, ...records.filter(record => record !== journal)]);
     if (upgraded.peerReviewed === true) return { journal, upgraded };
   }
@@ -410,19 +394,9 @@ function asJournalRow(records: Paper[]) {
 
 // The journal's row keeps the id of the working-paper row it upgrades, stored
 // or started by the page, so the id readers liked or saved it under (ENG-133).
-// Enrichment asks OpenAlex for the article's work, not the working paper's. A
-// row another source started, such as an arXiv eprint the working paper
-// joined, stays that source's, with the journal's source among those that
-// enriched it: that source listing the paper again (a new arXiv version)
-// replaces its text (`ownListing`), as when the article joins the eprint
-// directly.
-function upgradedRow(row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper {
-  const paper = { ...upgraded, id: row.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id.slice('openalex:'.length) : undefined };
-  return row.sources.primary === 'openalex' ? paper : {
-    ...paper,
-    sources: { ...upgraded.sources, primary: row.sources.primary, enrichedBy: [...new Set([...upgraded.sources.enrichedBy, upgraded.sources.primary])] },
-  };
-}
+// Enrichment and the row's own listing follow the article's work.
+const upgradedRow = (row: Paper, { journal, upgraded }: { journal: Paper; upgraded: Paper }): Paper =>
+  ({ ...upgraded, id: row.id, openAlexId: journal.id.slice('openalex:'.length) });
 
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 

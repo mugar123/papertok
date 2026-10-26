@@ -822,6 +822,7 @@ const gmmEprint = (record: Partial<ArxivRecord>) => arxivRecordPaper({
   published: '2026-10-20T12:00:00.000Z', updated: '2026-10-20T12:00:00.000Z', ...record,
 });
 const JBES_REFERENCE = 'Journal of Business and Economic Statistics 44 (2026) 1-20';
+const JBES_DOI = '10.1080/07350015.2026.2743244';
 
 // The row the working paper makes, then `paper` joins: a night later, or on
 // the same page after it. Without `paper`, the working paper's row alone.
@@ -843,12 +844,11 @@ async function workingPaperRowWith(t: import('node:test').TestContext, paper: Pa
 }
 
 // An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
-// on a comment saying it was published. Only one that names its journal beside
-// a publisher's DOI is a journal's record; the others never become the base of
-// a working paper's row. One that names its journal without the journal's DOI
-// leaves the row unreviewed, so it does not upgrade it either: `merge` keeps
-// the working paper's `false`.
-test("an arXiv eprint that does not name both its journal and the journal's DOI leaves a working paper row as it was, stored or on the same page", async t => {
+// on a comment saying it was published. Only OpenAlex's journal article makes
+// OpenAlex's working-paper row the journal's; an eprint naming its journal and
+// the journal's DOI does not either (ENG-145). `merge` keeps the working
+// paper's `false`.
+test("an arXiv eprint leaves a working paper row as it was, whatever DOI, comment or journal reference it lists, stored or on the same page", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
   for (const record of [
@@ -859,6 +859,7 @@ test("an arXiv eprint that does not name both its journal and the journal's DOI 
     { journalRef: JBES_REFERENCE },
     { journalRef: JBES_REFERENCE, doi: '10.3386/w35104' },
     { journalRef: JBES_REFERENCE, doi: '10.48550/arXiv.2610.01234' },
+    { journalRef: JBES_REFERENCE, doi: '10.1080/07350015.2026.2743244' },
   ]) {
     for (const samePage of [false, true]) {
       const name = `${JSON.stringify(record)}, ${samePage ? 'on the same page' : 'stored first'}`;
@@ -872,10 +873,11 @@ test("an arXiv eprint that does not name both its journal and the journal's DOI 
 
 // A repository's record reads reviewed by its `published` type alone: CORE's
 // copy of an author's deposit, Europe PMC's preprint record and OSTI's record,
-// here under an SSRN or Zenodo DOI. None names the journal that reviewed the
-// paper, so none makes a working paper's row the journal's. Europe PMC's
-// record of a PubMed article does.
-test("a repository's record that reads reviewed by its type alone leaves a working paper's row as it was, stored or on the same page", async t => {
+// under an SSRN or Zenodo DOI or the journal's. Europe PMC's record with a
+// PubMed id can be a preprint PubMed indexes. Only OpenAlex's journal article
+// makes OpenAlex's working-paper row the journal's; PubMed's and Europe PMC's
+// records of the article do not either (ENG-145).
+test("a record from a source other than OpenAlex leaves a working paper's row as it was, stored or on the same page, even one naming the journal and its DOI", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
   const deposit = (doi: string, journal?: string) => mapCoreWork({
@@ -888,19 +890,30 @@ test("a repository's record that reads reviewed by its type alone leaves a worki
     abstractText: 'The record Europe PMC keeps of this paper, which compares the efficiency and the pricing accuracy of GMM estimators.',
     journalInfo: pmid ? { journal: { title: 'Journal of Business and Economic Statistics' } } : undefined,
   })!;
-  const osti = mapOstiRecord({
-    osti_id: '1234567', title: gmmArticle.title, doi: '10.2139/ssrn.4999999', publication_date: '2026-10-10', authors: ['Ana Economist'],
+  const osti = (doi: string, journal: string) => mapOstiRecord({
+    osti_id: '1234567', title: gmmArticle.title, doi, publication_date: '2026-10-10', authors: ['Ana Economist'],
     description: 'The record OSTI keeps of this paper, which compares the efficiency and the pricing accuracy of GMM estimators.',
-    product_type: 'Journal Article', journal_name: 'SSRN Electronic Journal',
+    product_type: 'Journal Article', journal_name: journal,
   })!;
+  const pubmed = mapPubmedSummary({
+    uid: '41000000', title: gmmArticle.title, source: 'J Bus Econ Stat', pubdate: '2026 Oct 14', pubtype: ['Journal Article'],
+    authors: [{ name: 'Ana Economist' }], articleids: [{ idtype: 'doi', value: JBES_DOI }],
+  });
   for (const [name, record] of [
     ['CORE, SSRN DOI', deposit('10.2139/ssrn.4999999')],
     ['CORE, Zenodo DOI', deposit('10.5281/zenodo.123456')],
     ['CORE, SSRN Electronic Journal', deposit('10.2139/ssrn.4999999', 'SSRN Electronic Journal')],
+    ['CORE, the journal and its DOI', deposit(JBES_DOI, 'Journal of Business and Economic Statistics')],
     ['Europe PMC preprint, SSRN DOI', europePmc('10.2139/ssrn.4999999', 'PPR')],
-    ['OSTI, SSRN Electronic Journal', osti],
+    ['Europe PMC with a PubMed id, the journal and its DOI', europePmc(JBES_DOI, 'MED', '41000001')],
+    ['Europe PMC with a PubMed id, SSRN DOI', europePmc('10.2139/ssrn.4999999', 'MED', '41000001')],
+    ['PubMed, the journal and its DOI', pubmed],
+    ['OSTI, SSRN Electronic Journal', osti('10.2139/ssrn.4999999', 'SSRN Electronic Journal')],
+    ['OSTI, the journal and its DOI', osti(JBES_DOI, 'Journal of Business and Economic Statistics')],
   ] as const) {
-    assert.equal(record.peerReviewed, true, `${name} reads reviewed by itself`);
+    // PubMed's summary leaves review to the merge, which read its journal
+    // record reviewed before ENG-145 took it out of the upgrade.
+    if (record.sources.primary !== 'pubmed') assert.equal(record.peerReviewed, true, `${name} reads reviewed by itself`);
     for (const samePage of [false, true]) {
       const label = `${name}, ${samePage ? 'on the same page' : 'stored first'}`;
       const [before] = await workingPaperRowWith(t, null, samePage);
@@ -909,8 +922,6 @@ test("a repository's record that reads reviewed by its type alone leaves a worki
       assert.deepEqual(shown(after[0]), shown(before), label);
     }
   }
-  const [journalRow] = await workingPaperRowWith(t, europePmc('10.1080/07350015.2026.2743244', 'MED', '41000001'), false);
-  assert.deepEqual([journalRow.id, journalRow.doi, journalRow.peerReviewed, journalRow.workingPaper], ['openalex:W7220000104', '10.1080/07350015.2026.2743244', true, undefined]);
 });
 
 // A journal record without a DOI would give the reviewed row the working
@@ -934,40 +945,11 @@ test("a journal record without a DOI leaves a working paper's row as it was, sto
   }
 });
 
-// `sources.peerReviewedByDoi` can hold a `false` under the article's DOI, from
-// a record such as NASA ADS's non-refereed one. PubMed's record of the article
-// then reads unreviewed beside it, and the row stays the working paper's
-// rather than lose its tag without becoming the journal's.
-test("a journal record that a denial under its DOI leaves unreviewed does not upgrade a stored working paper's row", async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
-  const pubmed = mapPubmedSummary({
-    uid: '41000000', title: gmmArticle.title, source: 'J Bus Econ Stat', pubdate: '2026 Oct 14', pubtype: ['Journal Article'],
-    authors: [{ name: 'Ana Economist' }], articleids: [{ idtype: 'doi', value: '10.1080/07350015.2026.2743244' }],
-  });
-  const [before] = await workingPaperRowWith(t, null, false);
-  for (const denied of [false, true]) {
-    const { binding, db } = testD1();
-    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
-    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
-    await ingestPapers(store, [{ paper: mapOpenAlexWork(gmmWorkingPaperWork)!, lanes: ['econ.EM'] }], { now: Date.parse('2026-10-23T03:00:00Z') });
-    if (denied) db.prepare("UPDATE works SET paper = json_set(paper, '$.sources.peerReviewedByDoi', json(?))").run(JSON.stringify({ '10.3386/w35104': false, '10.1080/07350015.2026.2743244': false }));
-    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
-    await ingestPapers(store, [{ paper: pubmed, lanes: ['econ.EM'] }], { now: Date.parse('2026-10-24T03:00:00Z') });
-    const after = (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>)
-      .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
-    assert.equal(after.length, 1);
-    if (denied) assert.deepEqual(shown(after[0]), shown(before));
-    // Without the denial, PubMed's record makes the row the journal's.
-    else assert.deepEqual([after[0].id, after[0].doi, after[0].peerReviewed, after[0].workingPaper], ['openalex:W7220000104', '10.1080/07350015.2026.2743244', true, undefined]);
-  }
-});
-
 // A working paper can join the row of an eprint that lists no DOI, which arXiv
-// or Hugging Face started, before its journal article upgrades that row. The
-// row stays the eprint's, so arXiv's next version replaces its title and
-// abstract, as it does when the article joins the eprint directly.
-test("arXiv's new version replaces the title and abstract of an eprint's row that a working paper joined before its journal article, as without the working paper", async t => {
+// or Hugging Face started. Only OpenAlex's own working-paper row becomes its
+// journal article's, so that row stays the working paper's when the article
+// arrives (ENG-145), and arXiv's next version replaces its title and abstract.
+test("an eprint's row that a working paper joined stays the working paper's when its journal article arrives, and takes arXiv's new version", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-21T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
@@ -985,7 +967,7 @@ test("arXiv's new version replaces the title and abstract of an eprint's row tha
   for (const eprint of [gmmEprint({}), huggingFace]) {
     const name = eprint.sources.primary;
     const rows: Paper[] = [];
-    for (const nights of [[eprint, workingPaper, article, revision], [eprint, article, revision]]) {
+    for (const nights of [[eprint, workingPaper, article, revision], [eprint, workingPaper, revision]]) {
       const { binding, db } = testD1();
       const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
       for (const [night, paper] of nights.entries()) {
@@ -997,32 +979,32 @@ test("arXiv's new version replaces the title and abstract of an eprint's row tha
       rows.push(works[0]);
     }
     assert.deepEqual(shown(rows[0]), shown(rows[1]), name);
-    assert.deepEqual(shown(rows[0]).slice(1), [name, revision.title, revision.abstract, '10.1080/07350015.2026.2743244', true, undefined], name);
+    assert.deepEqual(shown(rows[0]).slice(1), [name, revision.title, revision.abstract, '10.3386/w35104', false, true], name);
   }
 });
 
 // One page can hold both records, the working paper first, and the merge of
 // the page's records reads as a working paper. The row is the journal's
 // either way, under the id of the row the working paper is in: stored, or
-// the one the page starts. OpenAlex's article is tried before an eprint that
-// names the journal and its DOI, so the row shows the article's landing page
-// and text whichever comes first.
+// the one the page starts. An eprint on the page that names the journal and
+// its DOI is never the journal's record, so the row shows the article's
+// landing page and text whichever comes first.
 test('a journal article and its working paper listed in one batch, in either order, make the reviewed journal row, over a stored working paper or none', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
   const article = mapOpenAlexWork(gmmArticle)!;
-  // It reads reviewed, yet leaves the row a working paper when tried first.
   const eprint = gmmEprint({ journalRef: JBES_REFERENCE });
   const eprintWithJournalDoi = gmmEprint({ journalRef: JBES_REFERENCE, doi: '10.1080/07350015.2026.2743244' });
   const { env } = relay(t, () => ({ results: [gmmWorkingPaperWork] }));
   const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
   // The row's [id, openAlexId] when nothing was stored: the id of the page's
-  // first record. A page that does not open with a working paper's records
-  // makes no working-paper row to upgrade, so it is tried over a stored one only.
+  // first record. A page that does not open with OpenAlex's records makes no
+  // OpenAlex working-paper row to upgrade, so it is tried over a stored one
+  // only; the next test covers the eprint's row.
   for (const [label, batch, unstored] of [
     ['working paper first', [workingPaper, article], ['openalex:W7220000104', 'W7221756071']],
     ['article first', [article, workingPaper], ['openalex:W7221756071', undefined]],
-    ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], ['2610.01234', 'W7221756071']],
+    ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], null],
     ['the working paper, then an eprint naming the journal and its DOI', [workingPaper, eprintWithJournalDoi, article], ['openalex:W7220000104', 'W7221756071']],
     ['an eprint naming the journal and its DOI, then the article', [eprintWithJournalDoi, article], null],
   ] as const) {
@@ -1055,11 +1037,12 @@ test('a journal article and its working paper listed in one batch, in either ord
 });
 
 // The row a working paper joins can be one another source started: an arXiv
-// or Hugging Face eprint without a DOI. One page listing the working paper and
-// its article gives that row what the two give it on two nights in the same
-// order, and a record that folds a separately stored working paper's row into
-// the eprint's upgrades the row that night.
-test('an eprint row that a working paper joins with its article on one page, or folded from its own row, ends as on separate nights', async t => {
+// or Hugging Face eprint without a DOI. Only OpenAlex's own working-paper row
+// becomes its journal article's, so that row stays the working paper's
+// (ENG-145), on separate nights, with the working paper and its article on
+// one page, all three on one page, or with a record that folds a separately
+// stored working paper's row into the eprint's.
+test("an eprint row that a working paper joins stays the working paper's when its article arrives, on one page, on separate nights or folded from its own row", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-21T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
@@ -1084,10 +1067,12 @@ test('an eprint row that a working paper joins with its article on one page, or 
   for (const eprint of [gmmEprint({}), huggingFace]) {
     const name = eprint.sources.primary;
     const separate = await rowAfter([[eprint], [workingPaper], [article]]);
-    assert.deepEqual([separate.sources.primary, separate.doi, separate.peerReviewed, separate.workingPaper], [name, '10.1080/07350015.2026.2743244', true, undefined], name);
+    assert.deepEqual([separate.sources.primary, separate.doi, separate.peerReviewed, separate.workingPaper], [name, '10.3386/w35104', false, true], name);
     assert.deepEqual(shown(await rowAfter([[eprint], [workingPaper, article]])), shown(separate), `${name}, working paper first`);
     assert.deepEqual(shown(await rowAfter([[eprint], [article, workingPaper]])), shown(await rowAfter([[eprint], [article], [workingPaper]])), `${name}, article first`);
   }
+  const onePage = await rowAfter([[gmmEprint({ journalRef: JBES_REFERENCE }), mapOpenAlexWork(gmmWorkingPaperWork)!, mapOpenAlexWork(gmmArticle)!]]);
+  assert.deepEqual([onePage.id, onePage.sources.primary, onePage.doi, onePage.peerReviewed, onePage.workingPaper], ['2610.01234', 'arxiv', '10.3386/w35104', false, true]);
 
   // The working paper's first author is spelled otherwise, and the eprint's
   // title differs, so the two are stored as two rows. The article joins both:
@@ -1098,7 +1083,7 @@ test('an eprint row that a working paper joins with its article on one page, or 
     [gmmEprint({ title: 'GMM estimators: efficiency against pricing accuracy' })],
     [mapOpenAlexWork({ ...gmmArticle, ...smith, ids: { arxiv: 'https://arxiv.org/abs/2610.01234' } })!],
   ]);
-  assert.deepEqual([bridged.id, bridged.sources.primary, bridged.doi, bridged.peerReviewed, bridged.workingPaper, bridged.title], ['2610.01234', 'arxiv', '10.1080/07350015.2026.2743244', true, undefined, gmmArticle.title]);
+  assert.deepEqual([bridged.id, bridged.sources.primary, bridged.doi, bridged.peerReviewed, bridged.workingPaper], ['2610.01234', 'arxiv', '10.3386/w35104', false, true]);
 });
 
 // The cost: up to five pages of 200 on a lane's first night and three on a
