@@ -2,7 +2,6 @@
    own. `width: 100%`: a route root is a flex item of PageTransition's column
    and shrinks to its content without one. */
 .not-found-page {
-  position: relative;
   display: flex;
   width: 100%;
   min-height: 100dvh;
@@ -16,9 +15,12 @@
 /* The visitor's Privacy switch, in the corner the other public bars keep it
    in. In the page's flow, above the card: at large text on a narrow screen
    the card is as tall as the page, and a button laid over it would cover the
-   drawing. */
+   drawing. The slot is there from the first paint, with the button's height
+   (the 32px icon button), so the card does not drop when the session settles
+   and the button arrives. */
 .not-found-bar {
   align-self: flex-end;
+  min-height: 2rem;
   margin-top: var(--inset-top);
 }
 

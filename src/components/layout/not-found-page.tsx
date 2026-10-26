@@ -38,12 +38,11 @@ export default function NotFoundPage() {
       {/* A dead shared link is opened without an account more often than
           with one, and a visitor has no Settings: the analytics switch is at
           the top, as on every other page a link opens. A session has Settings,
-          and one still being restored is not a visitor yet. */}
-      {!user && !loading && (
-        <div className="not-found-bar">
-          <PrivacyPopover />
-        </div>
-      )}
+          and one still being restored is not a visitor yet. The bar holds its
+          place either way, so the card stays put when that settles. */}
+      <div className="not-found-bar">
+        {!user && !loading && <PrivacyPopover />}
+      </div>
       <div className="not-found-card">
         <Petri pose="lost" code="404" className="not-found-petri" />
         <h1>{copy.title}</h1>
