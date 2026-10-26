@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import type { FollowEntity } from '../utils/following.ts';
+import { MAX_FOLLOWED_JOURNALS, type FollowEntity } from '../utils/following.ts';
 import type { fetchTopicPapers } from './topic-retrieval-service.ts';
 type TopicRetriever = (...args: Parameters<typeof fetchTopicPapers>) => Promise<Pick<Awaited<ReturnType<typeof fetchTopicPapers>>, 'papers' | 'allFailed'>>;
 interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntities: number; failedEntities: number; }
@@ -174,7 +174,16 @@ export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
  * used to wait for the last. The final value is the last delivery.
  */
 export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [], options: FollowingOptions = {}): Promise<FollowingResult> {
-  const follows = orderFollowsForRefresh(followedEntities.slice(0, MAX_FOLLOWS_PER_REFRESH));
+  // Journals are counted apart, as a page of the corpus counts them
+  // (`servedFollows`): the list arrives in document-id order, where
+  // `journal_…` sorts before `topic_…`, so one cap for both would let ten
+  // journals push a heavy follower's topics off the page.
+  const isJournal = (follow: FollowEntity) => follow.type === 'journal';
+  const refreshed = new Set([
+    ...followedEntities.filter(follow => !isJournal(follow)).slice(0, MAX_FOLLOWS_PER_REFRESH),
+    ...followedEntities.filter(isJournal).slice(0, MAX_FOLLOWED_JOURNALS),
+  ]);
+  const follows = orderFollowsForRefresh(followedEntities.filter(follow => refreshed.has(follow)));
   const fetchOne = options.fetchUpdatesForFollow || fetchUpdatesForFollow;
   const deadlineMs = Number.isFinite(options.entityTimeoutMs) ? options.entityTimeoutMs : ENTITY_DEADLINE_MS;
   const limit = options.limit || 60;

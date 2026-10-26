@@ -95,6 +95,31 @@ test("a followed journal's updates are its newest articles, each naming the jour
     'one OpenAlex request, so it answers before the follows that wait for arXiv');
 });
 
+// ENG-123: a refresh asks for up to 40 follows, and journals are counted
+// apart, up to 10. The follows arrive in Firestore document-id order, where
+// `journal_…` sorts between `institution_…` and `topic_…`.
+test('ten followed journals leave a heavy follower every other follow on the Following page', async () => {
+  const many = (type: FollowEntity['type'], prefix: string, count: number) => Array.from({ length: count }, (_, index): FollowEntity => (
+    { type, canonicalId: `${prefix}${100 + index}`, displayName: `${type} ${index}` }
+  ));
+  const follows = [
+    ...many('author', 'A', 25),
+    ...many('institution', 'I', 6),
+    ...many('journal', 'S', 11),
+    ...many('topic', 'T', 5),
+  ];
+  const asked: string[] = [];
+  const result = await fetchFollowingUpdates(follows, {
+    fetchUpdatesForFollow: async (follow) => { asked.push(follow.canonicalId); return []; },
+  });
+
+  assert.equal(asked.length, 46);
+  assert.deepEqual(asked.filter(id => id.startsWith('T')).sort(), ['T100', 'T101', 'T102', 'T103', 'T104']);
+  assert.equal(asked.filter(id => id.startsWith('S')).length, 10);
+  assert.equal(asked.includes('S110'), false, 'an eleventh journal, which the app does not write, is not asked for');
+  assert.equal(result.checkedEntities, 46);
+});
+
 test('counts a failed topic independently and returns successful topic updates', async () => {
   const follows = [
     { type: 'topic' as const, canonicalId: 'query-deadbeef', displayName: 'First', metadata: { query: 'First topic' } },
