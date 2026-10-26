@@ -29,7 +29,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
-import { buttonVariants } from '../ui/button-variants.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { toast } from 'sonner';
@@ -53,7 +52,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -1219,7 +1218,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
-  if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
+  if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
     return (
       <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <EmptyState
@@ -1228,7 +1227,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           title={'No papers for your topics yet'}
           actions={(
             <>
-              <Link to="/settings/discovery" className={buttonVariants({ size: 'sm' })}>{'Add topics'}</Link>
+              <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
               <Button size="sm" variant="outline" onClick={handleRefresh}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
@@ -1238,6 +1237,23 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         >
           {'The topics you picked have no papers in PaperTok yet. Add more topics, or check again after the next update.'}
         </EmptyState>
+      </FeedLandmark>
+    );
+  }
+
+  if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
+    return (
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
+        <div className="atom-loader">
+          <Petri pose="flask" className="petri-loader" />
+        </div>
+        <h2>{'Searching for discoveries...'}</h2>
+        <p>
+          {'There are no papers in your categories yet. Try broadening your interests.'}
+        </p>
+        <button className="feed-retry-btn" onClick={handleRefresh}>
+          {'Explore again'}
+        </button>
       </FeedLandmark>
     );
   }

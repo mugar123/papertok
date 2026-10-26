@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, getFeedDisplayState } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -55,11 +55,11 @@ test('keeps established priority for errors, cards, and source empty states', ()
 
 test('a store with no papers for the reader\'s interests is the empty state, not the error', () => {
   assert.equal(
-    getFeedDisplayState({ ...baseState, error: 'FEED_EMPTY' }),
+    getFeedDisplayState({ ...baseState, error: FEED_EMPTY }),
     FEED_DISPLAY_STATES.EMPTY,
   );
   assert.equal(
-    getFeedDisplayState({ ...baseState, error: 'FEED_EMPTY', hasPapers: true }),
+    getFeedDisplayState({ ...baseState, error: FEED_EMPTY, hasPapers: true }),
     FEED_DISPLAY_STATES.FEED,
   );
 });

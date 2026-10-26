@@ -1,4 +1,5 @@
 import { WorkerApiAuthError } from '../services/worker-api-client.ts';
+import { FEED_EMPTY } from '../utils/feed-loading-state.ts';
 
 /**
  * Why a feed load ended in "Error loading papers" (ENG-116). Every failure
@@ -65,7 +66,7 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
  */
 export function feedLoadOutcome(error: unknown) {
   return feedLoadFailure(error).reason === 'empty'
-    ? { error: 'FEED_EMPTY', autoRetry: false }
+    ? { error: FEED_EMPTY, autoRetry: false }
     : { error: 'FEED_LOAD_FAILED', autoRetry: true };
 }
 

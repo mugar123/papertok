@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyFirstPageError, feedFailureEventStep, feedLoadFailure, feedLoadOutcome } from './feed-load-failure.ts';
+import { FEED_EMPTY } from '../utils/feed-loading-state.ts';
 import { WorkerApiAuthError, sourceResponseError } from '../services/worker-api-client.ts';
 
 const refused = (status: number, code?: string) => sourceResponseError('/store/papers', status, code ? { code } : null);
@@ -22,7 +23,7 @@ test('a failed feed load keeps why it failed: deadline, network, session, HTTP r
 });
 
 test('no papers for the reader\'s interests is an empty state that does not retry; a failed request is an error that does', () => {
-  assert.deepEqual(feedLoadOutcome(emptyFirstPageError()), { error: 'FEED_EMPTY', autoRetry: false });
+  assert.deepEqual(feedLoadOutcome(emptyFirstPageError()), { error: FEED_EMPTY, autoRetry: false });
   assert.deepEqual(feedLoadOutcome(refused(503, 'PAPER_STORE_UNAVAILABLE')), { error: 'FEED_LOAD_FAILED', autoRetry: true });
   assert.deepEqual(feedLoadOutcome(new DOMException('The operation timed out.', 'TimeoutError')), { error: 'FEED_LOAD_FAILED', autoRetry: true });
 });

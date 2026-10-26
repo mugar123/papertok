@@ -7,9 +7,11 @@ export const FEED_DISPLAY_STATES = Object.freeze({
   EMPTY: 'empty',
 });
 
+/** The paper store answered with no papers for the reader's interests: not a failure to retry. */
+export const FEED_EMPTY = 'FEED_EMPTY';
+
 export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; hasSourceEmptyState?: boolean }) {
-  // The store answered with no papers for the reader's interests: not a failure to retry.
-  if (error && error !== 'FEED_EMPTY' && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
+  if (error && error !== FEED_EMPTY && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
   if (hasPapers) return FEED_DISPLAY_STATES.FEED;
   if (initialLoadPending) return FEED_DISPLAY_STATES.INITIAL_DISCOVERY;
   if (loading && !showLoader && !isRefreshing) return FEED_DISPLAY_STATES.SKELETON;
