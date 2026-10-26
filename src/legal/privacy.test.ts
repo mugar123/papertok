@@ -141,6 +141,21 @@ test('the in-app summary is one sentence that tells what the page says goes to t
   }
 });
 
+test('the in-app summary also says what changed on the page since the 20 October version, in the page\'s words', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // Brevo to Resend (#253, #308), the per-minute keyed IP identifier (#315, #327), sign-in session storage (#377) and the feed failure cause (#363).
+  const sinceThen: [summary: string, page: RegExp][] = [
+    ['emails are now sent by Resend', /<strong>Resend<\/strong> sends the emails/],
+    ['a protected identifier derived from your IP address and the current minute', /protected identifier derived from the address and the current minute/],
+    ['the tab\'s session storage briefly holds the provider and the page to return to', /this tab's session storage briefly holds the provider, the part of the app that asked and the page to return to/],
+    ['an error report for a failed feed load carries its reason, HTTP status and error code', /its error event carries the failure reason, the HTTP status and the error code/],
+  ];
+  for (const [said, onPage] of sinceThen) {
+    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), `the summary says "${said}"`);
+    assert.match(html, onPage);
+  }
+});
+
 test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
