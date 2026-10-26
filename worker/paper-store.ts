@@ -8,7 +8,7 @@ import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
-import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -1151,8 +1151,8 @@ function groupsOfCandidate(groups: FeedGroup[]) {
 /**
  * The groups a like no group names ranks, by the first evidence of its area:
  * the app's leaves its stored paper names, matched against each group's
- * `exampleCategories`; else the area its primary category names (a working
- * paper's `econ`), or else the areas whose journal lanes list it, matched
+ * `exampleCategories`; else the area its primary category or arXiv archive
+ * names, or else the areas whose journal lanes list it, matched
  * against the areas of those categories. A like of a known area no group
  * holds ranks none. The app's established group holds every leaf but the
  * ones the reader removed, so that is a like of a removed subarea, or of an
@@ -1164,7 +1164,9 @@ function groupsOfLike(groups: FeedGroup[]) {
   return (paper: Partial<Paper> | undefined, laneAreas: string[]) => {
     const leaves = [paper?.primaryCategory, ...(paper?.categories ?? [])].filter((category): category is string => !!category && LEAF_IDS.has(category));
     if (leaves.length) return groups.flatMap((group, index) => (leaves.some(leaf => group.exampleCategories.includes(leaf)) ? [index] : []));
-    const areas = paper?.primaryCategory && AREAS.has(paper.primaryCategory) ? [paper.primaryCategory] : laneAreas;
+    const primaryArea = paper?.primaryCategory && AREAS.has(paper.primaryCategory)
+      ? paper.primaryCategory : getArxivArchiveArea(paper?.primaryCategory);
+    const areas = primaryArea ? [primaryArea] : laneAreas;
     if (areas.length) return groups.flatMap((_, index) => (areas.some(area => exampleAreas[index].has(area)) ? [index] : []));
     return groups.map((_, index) => index);
   };
