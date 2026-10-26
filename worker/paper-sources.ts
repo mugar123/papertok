@@ -14,7 +14,6 @@ import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '
 import {
   domainSourceRequests,
   getDomainSourcePlan,
-  europePmcLabelQuery,
   getEligibleDomainSources,
   mapAdsPaper,
   mapBioRxivPaper,
@@ -31,7 +30,7 @@ import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provide
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
-import { EUROPE_PMC_NOTABLE_LEAVES } from './europepmc-notable-leaves.generated.ts';
+import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -305,9 +304,9 @@ const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableListingFilter(leaf.i
 // (eess.optics); these are arXiv's own codes.
 const ARXIV_CODE = /^(?:(?:cs|math|eess|econ|q-fin|stat|q-bio|nlin|astro-ph)\.[A-Z]{2}|(?:cond-mat|physics)\.[a-z]+(?:-[a-z]+)*|astro-ph|cond-mat|gr-qc|hep-(?:ex|lat|ph|th)|nucl-(?:ex|th)|quant-ph|math-ph|nlin)$/;
 const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
-// The medicine and biology leaves whose Europe PMC sample passed
-// (scripts/README-europepmc-notable.md).
-const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => EUROPE_PMC_NOTABLE_LEAVES.includes(leaf.id));
+// The medicine and biology leaves whose Europe PMC sample passed, each listed
+// with the query its sample asked (scripts/README-europepmc-notable.md).
+const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => Object.hasOwn(EUROPE_PMC_NOTABLE_QUERIES, leaf.id));
 // PubMed's records and the preprint servers' (not patents, theses or books),
 // without retracted papers, which stay cited, retraction notices and errata,
 // and, as the PubMed lane, editorials, letters and comments without an
@@ -655,19 +654,22 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     },
   },
   // The medicine and biology side of a notable lane: Europe PMC's 100
-  // most-cited records of each of the ten years whose title, abstract or
-  // keywords name the leaf, PubMed's articles and the preprint servers' alike,
-  // filed and kept as OpenAlex's are. Europe PMC's counts are not OpenAlex's
-  // either, so the listing does not renew the enrichment.
+  // most-cited records of each of the ten years that the leaf's query matches
+  // (its label, MeSH descriptors or journals, as its sample asked), PubMed's
+  // articles and the preprint servers' alike, filed and kept as OpenAlex's
+  // are. Europe PMC's counts are not OpenAlex's either, so the listing does
+  // not renew the enrichment.
   'europepmc-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
+      // A job saved by an earlier deployment can name a leaf this one no longer admits.
+      if (!Object.hasOwn(EUROPE_PMC_NOTABLE_QUERIES, leaf)) throw new Error(`${lane} has no Europe PMC notable listing`);
       const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
       // By first publication, the date the store files and reads the paper by
       // (`published`); the issue year can be the next one.
       const year = notableListedYear(page);
-      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND FIRST_PDATE:[${year}-01-01 TO ${year}-12-31] AND ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
+      url.searchParams.set('query', `${EUROPE_PMC_NOTABLE_QUERIES[leaf]} AND FIRST_PDATE:[${year}-01-01 TO ${year}-12-31] AND ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
       url.searchParams.set('format', 'json');
       url.searchParams.set('resultType', 'core');
       url.searchParams.set('pageSize', String(NOTABLE_PER_YEAR));
