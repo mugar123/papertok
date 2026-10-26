@@ -32,6 +32,8 @@ export interface InteractionEvent {
   concepts?: WeightedConcept[]; authorIds?: string[];
   // A view or a skip of a notable card.
   notable?: boolean;
+  // The card's area (areaKeyForPaper), for a card whose category is no leaf.
+  area?: string | null;
 }
 export interface ProfileSignals {
   categoryAffinities: Record<string, number>;
@@ -41,6 +43,9 @@ export interface ProfileSignals {
   categoryExposure: Record<string, CategoryExposure>;
   interactionCount: number;
   dwellMedianSeconds: number;
+  // The likes, saves and long reads the reader keeps, newest first, up to
+  // MAX_POSITIVE_EXAMPLES_PER_AREA for each area.
+  positiveExamples: PositiveExample[];
 }
 export interface StoredInteractionProfile {
   schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
@@ -91,7 +96,8 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * interest that is never touched again fades out instead of lasting forever.
  */
 import { readStoredClassification } from '../models/paper.ts';
-import { areaKeyForCategory } from './area-accent.ts';
+import { areaKeyForCategory, areaKeyForPaper } from './area-accent.ts';
+import { getCategoryArea } from '../data/category-taxonomy.ts';
 import {
   addSeenPaper,
   createSeenFilter,
@@ -145,8 +151,10 @@ const IMPACT_VIEW_TIME_MIN = IMPACT_SKIP;
 const STRONG_READ_RATIO = 2;
 
 // What the personal recommendations are asked about: the most recent examples
-// across every interest, newest first.
-const MAX_POSITIVE_EXAMPLES = 50;
+// of each area, newest first. The cap is per area so an area the reader
+// deselects keeps its examples while they read others; the examples whose
+// category has no area share one allowance of their own.
+export const MAX_POSITIVE_EXAMPLES_PER_AREA = 24;
 
 // Each event fades what the session held before it by this factor, so the last
 // dozen cards dominate and an interest from twenty cards ago is nearly gone.
@@ -362,6 +370,14 @@ function usableAuthorIds(authorIds: unknown): string[] {
   return [...new Set(authorIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
 }
 
+// What a card's exposure and examples count under (ENG-137, R14): its leaf,
+// or its area when its category names no leaf. An area lane's article (all
+// of Chemistry's cards) is filed under no category at all, and would teach
+// nothing. Its category affinity keeps the category it has.
+function learnedUnder(category: string, area: string | null | undefined) {
+  return getCategoryArea(category) || !area ? category : area;
+}
+
 function recordExposure(profile: InteractionProfile, category: string, engaged: boolean) {
   if (!category) return;
   const entry = profile.exposure.get(category) || { shown: 0, engaged: 0 };
@@ -374,11 +390,24 @@ function recordExposure(profile: InteractionProfile, category: string, engaged: 
   if (leastShown) profile.exposure.delete(leastShown[0]);
 }
 
+// Keeps the first (newest) MAX_POSITIVE_EXAMPLES_PER_AREA examples of each
+// area, in their order. A category that names no area counts toward one shared
+// allowance, as the area of its own.
+function capExamplesPerArea(examples: PositiveExample[]) {
+  const kept = new Map<string, number>();
+  return examples.filter((example) => {
+    const area = areaKeyForCategory(example.category) ?? '';
+    const count = kept.get(area) ?? 0;
+    kept.set(area, count + 1);
+    return count < MAX_POSITIVE_EXAMPLES_PER_AREA;
+  });
+}
+
 function addPositive(profile: InteractionProfile, paperId: string, category: string) {
-  profile.positives = [
+  profile.positives = capExamplesPerArea([
     { id: paperId, category },
     ...profile.positives.filter(example => example.id !== paperId),
-  ].slice(0, MAX_POSITIVE_EXAMPLES);
+  ]);
 }
 
 function removePositive(profile: InteractionProfile, paperId: string) {
@@ -425,6 +454,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     categoryExposure: {},
     interactionCount: 0,
     dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
+    positiveExamples: [],
   };
   if (!profile) return signals;
 
@@ -450,6 +480,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   });
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
+  signals.positiveExamples = profile.positives.map(example => ({ ...example }));
   return signals;
 }
 
@@ -601,6 +632,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   if (!profile || !event || typeof event.paperId !== 'string' || !event.paperId) return profile;
   const timestampMs = toTimestampMs(event.timestamp) ?? now;
   const category = typeof event.category === 'string' ? event.category : '';
+  const learned = learnedUnder(category, event.area);
   // Sampled before the switch: applying the event may add the id to a curated
   // set, which would make it look accounted for when it is not yet.
   const alreadyAccountedFor = isPaperAccountedFor(profile, event.paperId);
@@ -611,7 +643,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   switch (event.kind) {
     case 'like':
       addCurated(profile, 'liked', event.paperId);
-      addPositive(profile, event.paperId, category);
+      addPositive(profile, event.paperId, learned);
       impact = IMPACT_LIKED;
       break;
     case 'unlike':
@@ -621,7 +653,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       break;
     case 'save':
       addCurated(profile, 'saved', event.paperId);
-      addPositive(profile, event.paperId, category);
+      addPositive(profile, event.paperId, learned);
       impact = IMPACT_SAVED;
       break;
     case 'unsave':
@@ -651,7 +683,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'undoNotInterested':
       removeCurated(profile, 'notInterested', event.paperId);
       if (curatedSet(profile, 'liked')!.members.has(event.paperId) || curatedSet(profile, 'saved')!.members.has(event.paperId)) {
-        addPositive(profile, event.paperId, category);
+        addPositive(profile, event.paperId, learned);
       }
       impact = -IMPACT_NOT_INTERESTED;
       categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
@@ -664,7 +696,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       break;
     case 'skip':
       addViewed(profile, event.paperId, event.notable === true);
-      recordExposure(profile, category, false);
+      recordExposure(profile, learned, false);
       impact = IMPACT_SKIP;
       break;
     case 'viewTime': {
@@ -674,9 +706,9 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       // Judged against the median as it stood before this view moved it.
       const median = profile.dwell.median;
       impact = viewTimeImpact(seconds, median);
-      recordExposure(profile, category, seconds >= median);
+      recordExposure(profile, learned, seconds >= median);
       if (seconds >= median * STRONG_READ_RATIO && !curatedSet(profile, 'notInterested')!.members.has(event.paperId)) {
-        addPositive(profile, event.paperId, category);
+        addPositive(profile, event.paperId, learned);
       }
       observeDwell(profile.dwell, seconds);
       break;
@@ -742,6 +774,15 @@ function documentCategory(id: string, data: InteractionDocumentData) {
   return typeof data.paperCategory === 'string' ? data.paperCategory : '';
 }
 
+// The area a document shows: its stored copy's, which only a like or a save
+// keeps, or else its category's. A view or a skip of a card filed under no
+// category shows none, so a rebuild cannot count it under its area.
+function documentArea(id: string, data: InteractionDocumentData) {
+  return areaKeyForPaper(data.paper && typeof data.paper === 'object'
+    ? readStoredClassification({ ...data.paper, id })
+    : { primaryCategory: documentCategory(id, data) });
+}
+
 /**
  * Rebuilds a profile from raw interaction documents. Used by the one-off client
  * fallback and by the offline backfill script, and it is the reference the unit
@@ -767,21 +808,21 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     if (data.notInterested) addCurated(profile, 'notInterested', id);
     if (data.readLater) addCurated(profile, 'readLater', id);
 
-    const category = documentCategory(id, data);
+    const learned = learnedUnder(documentCategory(id, data), documentArea(id, data));
     const seconds = Number(data.viewTime);
     let strongRead = false;
     if (Number.isFinite(seconds) && seconds > 0) {
       const median = profile.dwell.median;
       addViewed(profile, id);
       viewImpacts.set(id, viewTimeImpact(seconds, median));
-      recordExposure(profile, category, seconds >= median);
+      recordExposure(profile, learned, seconds >= median);
       strongRead = seconds >= median * STRONG_READ_RATIO;
       observeDwell(profile.dwell, seconds);
     } else if (data.skip) {
       addViewed(profile, id);
-      recordExposure(profile, category, false);
+      recordExposure(profile, learned, false);
     }
-    if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, category);
+    if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, learned);
   }
 
   documents.forEach(({ id, data }) => {
@@ -1001,17 +1042,16 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
     profile.viewedNotable = storedIds(curated.viewedNotable, MAX_VIEWED_NOTABLE_IDS);
 
     if (Array.isArray(affinities.positives)) {
-      profile.positives = affinities.positives
+      profile.positives = capExamplesPerArea(affinities.positives
         .filter((pair): pair is [string, string] => Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length > 0)
-        .map(([id, category]) => ({ id, category: typeof category === 'string' ? category : '' }))
-        .slice(0, MAX_POSITIVE_EXAMPLES);
+        .map(([id, category]) => ({ id, category: typeof category === 'string' ? category : '' })));
     } else {
       // An aggregate written before the examples were kept: its likes and
       // saves are the examples, with no category on record for them.
       const liked = curatedIds(profile, 'liked');
       const saved = curatedIds(profile, 'saved');
       profile.positives = [...new Set([...liked, ...saved])]
-        .slice(0, MAX_POSITIVE_EXAMPLES)
+        .slice(0, MAX_POSITIVE_EXAMPLES_PER_AREA)
         .map(id => ({ id, category: '' }));
     }
   } catch {

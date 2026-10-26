@@ -10,6 +10,13 @@ import {
   scorePaperForRecommendation,
   trimScoredCandidatePool,
 } from './recommendation-engine.ts';
+import type { Paper } from '../models/paper.ts';
+import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
+import { readFileSync } from 'node:fs';
+import { mapOpenAlexWork } from './open-alex-work.ts';
+import type { RecommendationContext } from './recommendation-engine.ts';
+import { dormantCategories } from './interest-memory.ts';
+import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import {
   createEmptyInteractionProfile,
   readProfileSignals,
@@ -18,6 +25,11 @@ import {
 } from './interaction-profile.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
+const leavesOf = (area: string) => getAllLeafCategories().filter(leaf => leaf.area === area).map(leaf => leaf.id);
+
+// The preference share is a product of floats: 1 - 1 * 0.7 is not exactly 0.3.
+const assertClose = (actual: number, expected: number, message?: string) =>
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${message ?? 'expected'} ${expected}, got ${actual}`);
 
 test('corpus semantics affect the client score independently and stay bounded', () => {
   const score = (value?: number) => scorePaperForRecommendation({ id: 'candidate', _semanticScore: value }, { now: NOW });
@@ -52,15 +64,323 @@ test('selected user category dominates neutral papers', () => {
   assert.match(score.explanation, /preference/);
 });
 
-test('the selected categories give way to learned behaviour as interactions accumulate', () => {
+// ENG-137, ruling R13: an established pick (made at onboarding, or learned)
+// gives way as the reader's interactions accumulate, as it always did.
+test('an established pick gives way to learned behaviour as interactions accumulate', () => {
   const paper = { id: 'paper-a', primaryCategory: 'cs.AI', published: '2026-07-05T00:00:00Z' };
   const preferenceAfter = (interactionCount: number) => scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['cs.AI'], interactionCount,
+    now: NOW, userPreferences: ['cs.AI'], interestProgress: { 'cs.AI': 0 }, coldAdded: [], interactionCount,
   }).preference;
 
   assert.equal(preferenceAfter(0), 100);
-  assert.equal(preferenceAfter(150), 50);
+  assertClose(preferenceAfter(210), 30);
   assert.equal(preferenceAfter(5000), 30, 'never below a third of the original weight');
+});
+
+// An interest the reader added weighs by how much the app has learned of that
+// subarea or area, from full weight down to what an established pick weighs
+// for this reader (ENG-137, R23).
+test('an added interest weighs fully while new and gives way as the app learns it', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
+  const preferenceAt = (progress: number, interactionCount: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress }, coldAdded: ['econ.EM'], interactionCount,
+  }).preference;
+
+  for (const interactionCount of [300, 5000]) {
+    assert.equal(preferenceAt(0, interactionCount), 100);
+    assertClose(preferenceAt(0.5, interactionCount), 65);
+    assertClose(preferenceAt(1, interactionCount), 30, 'never below a third of the original weight');
+  }
+});
+
+// ENG-137, ruling R23: a reader with few interactions still weighs established
+// picks heavily, and an added pick never weighs less than they do: it reaches
+// their share as it is learned, so joining the established group moves nothing.
+test('an added interest never weighs less than an established pick of the same reader', () => {
+  const card = (primaryCategory: string) => ({ id: primaryCategory, primaryCategory, published: '2026-07-05T00:00:00Z' });
+  const preference = (primaryCategory: string, progress: number) => scorePaperForRecommendation(card(primaryCategory), {
+    now: NOW,
+    userPreferences: ['cs.LG', 'econ.GN'],
+    interestProgress: { 'cs.LG': 1, 'econ.GN': progress },
+    coldAdded: progress < 1 ? ['econ.GN'] : [],
+    interactionCount: 40,
+  }).preference;
+
+  const established = preference('cs.LG', 1);
+  assertClose(established, 100 * (1 - 40 / 300));
+  assert.ok(preference('econ.GN', 0.375) > established, `cold at 0.375: ${preference('econ.GN', 0.375)}`);
+  assertClose(scorePaperForRecommendation(card('econ.GN'), {
+    now: NOW, userPreferences: ['cs.LG', 'econ.GN'], interestProgress: { 'econ.GN': 1 }, coldAdded: ['econ.GN'], interactionCount: 40,
+  }).preference, established, 'learned but not yet joined:');
+  assertClose(preference('econ.GN', 1), established, 'joined:');
+});
+
+test('a card weighs by the most-learned added subarea it matches, however it matches', () => {
+  const progress = { 'econ.EM': 1, 'econ.GN': 0 };
+  const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0]) => scorePaperForRecommendation(
+    { published: '2026-07-05T00:00:00Z', ...paper },
+    // A reader past the fade, so a learned pick and a new one weigh apart.
+    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress, coldAdded: ['econ.EM', 'econ.GN'], interactionCount: 300 },
+  ).preference;
+
+  assertClose(preference({ id: 'a', primaryCategory: 'econ.EM' }), 30);
+  assert.equal(preference({ id: 'b', primaryCategory: 'econ.GN' }), 100);
+  assertClose(preference({ id: 'c', primaryCategory: 'econ.EM', allCategories: ['econ.EM', 'econ.GN'] }), 30, 'the primary category decides when it is picked');
+  assertClose(preference({ id: 'd', primaryCategory: 'math.ST', allCategories: ['math.ST', 'econ.EM', 'econ.GN'] }), 24, 'a cross-list is related, and weighs by the most-learned subarea it names');
+  assertClose(preference({ id: 'e', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.EM'] }), 30, 'a card fetched for a pick weighs as that pick');
+  assert.equal(preference({ id: 'f', primaryCategory: 'math.ST' }), 0);
+});
+
+// ENG-137, ruling R17: a card cross-listed or fetched under an established
+// pick and an added one weighs as the pick its primary category matches.
+test('a card that matches an established pick and an added one weighs as the pick its primary category matches', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0], coldAdded: string[], interactionCount: number) =>
+    scorePaperForRecommendation({ published, ...paper }, {
+      now: NOW,
+      userPreferences: ['cs.LG', 'cs.RO', 'bio.gen', 'bio.mol'],
+      interestProgress: { 'cs.LG': 1, 'cs.RO': 0, 'bio.gen': 1, 'bio.mol': 0 },
+      coldAdded,
+      interactionCount,
+    }).preference;
+  const crossListed = { allCategories: ['cs.RO', 'cs.LG'], _fetchedFor: ['cs.LG', 'cs.RO'] };
+  const robotics = { id: 'ro', primaryCategory: 'cs.RO', ...crossListed };
+  const learning = { id: 'lg', primaryCategory: 'cs.LG', ...crossListed };
+  // OpenAlex files it under a topic bio.mol lists; it was fetched for bio.gen.
+  const rna = { id: 'rna', primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' }, _fetchedFor: ['bio.gen'] };
+
+  assert.equal(preference(robotics, ['cs.RO', 'bio.mol'], 210), 100);
+  assertClose(preference(learning, ['cs.RO', 'bio.mol'], 210), 30);
+  assert.equal(preference(rna, ['cs.RO', 'bio.mol'], 210), 100);
+
+  // With no edits, every pick fades with the reader's interactions, as on main.
+  for (const paper of [robotics, learning, rna]) {
+    assert.equal(preference(paper, [], 0), 100);
+    assertClose(preference(paper, [], 150), 50);
+    assertClose(preference(paper, [], 210), 30);
+  }
+});
+
+// ENG-137: a subject the reader left keeps its examples and affinities, but
+// they must not rank anything.
+test('learned signals score nothing in a subarea the reader removed, follows still do', () => {
+  const hepTh = {
+    id: 'hep-th-1',
+    primaryCategory: 'hep-th',
+    published: '2026-07-05T00:00:00Z',
+    authors: [{ id: 'https://openalex.org/A1', name: 'A. Physicist' }],
+    openAlex: { concepts: [{ id: 'C42', score: 1 }] },
+    _semanticScore: 0.6,
+  };
+  const physicsFollow = { type: 'topic' as const, canonicalId: 'hep-th', displayName: 'High energy physics theory' };
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    interestProgress: { 'econ.EM': 0 },
+    categoryAffinities: { 'hep-th': 80 },
+    conceptAffinities: { C42: 80 },
+    authorAffinities: { A1: 40 },
+    sessionAffinities: { 'hep-th': 40, C42: 40 },
+    followedEntities: [physicsFollow],
+  };
+
+  const dormant = scorePaperForRecommendation(hepTh, { ...context, dormantCategories: dormantCategories(['econ.EM'], ['hep-th']) });
+  assert.deepEqual(
+    [dormant.affinity, dormant.semantic, dormant.corpusSimilarity, dormant.learnedAuthor, dormant.sessionInterest],
+    [0, 0, 0, 0, 0],
+  );
+  assert.equal(dormant.followBoost, 35);
+
+  const active = scorePaperForRecommendation(hepTh, { ...context, dormantCategories: dormantCategories(['econ.EM', 'hep-th'], []) });
+  assert.equal(active.affinity, 80);
+  assert.equal(active.semantic, 40);
+  assert.equal(active.corpusSimilarity, 60);
+  assert.equal(active.learnedAuthor, 30);
+  assert.equal(active.sessionInterest, 30);
+  assert.equal(active.followBoost, 35);
+
+  // Without a list of what the reader removed nothing is dormant: scoring as before.
+  assert.equal(scorePaperForRecommendation(hepTh, context).affinity, 80);
+});
+
+// A card that names no leaf of its own is still the reader's unless its area,
+// its topic or the request that fetched it says the reader removed it.
+test('cards that name no leaf stay active unless their area, topic or request was removed', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    dormantCategories: dormantCategories(['econ.EM'], ['quant-ph', 'hep-th']),
+    categoryAffinities: { econ: 60, Nitrogen: 60, 'econ.GN': 60 },
+    sessionAffinities: { Nitrogen: 40 },
+  };
+  const score = (paper: Parameters<typeof scorePaperForRecommendation>[0]) =>
+    scorePaperForRecommendation({ published, _semanticScore: 0.5, ...paper }, context);
+
+  // A working paper is filed under its area, with no leaf and nothing fetched for.
+  const workingPaper = score({ id: 'wp', primaryCategory: 'econ' });
+  assert.equal(workingPaper.corpusSimilarity, 50);
+  assert.equal(workingPaper.affinity, 60);
+
+  // An area-lane article has no category of the taxonomy, only the request that fetched it.
+  assert.equal(score({ id: 'lane', primaryCategory: '', categories: ['Panel data'], _type: 'exploit' }).corpusSimilarity, 50);
+
+  // A card fetched for a nearby leaf the reader did not pick.
+  const nearby = score({ id: 'nearby', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.GN'] });
+  assert.equal(nearby.corpusSimilarity, 50);
+  assert.equal(nearby.sessionInterest, 30);
+
+  // The same shapes in an area the reader left stay dormant.
+  assert.equal(score({ id: 'other-wp', primaryCategory: 'physics' }).corpusSimilarity, 0);
+  assert.equal(score({ id: 'other-fetched', primaryCategory: 'Nitrogen', _fetchedFor: ['hep-th'] }).sessionInterest, 0);
+});
+
+// ENG-137, rulings R12 and R18: only evidence of what the reader removed makes
+// a card dormant. A card that says nothing of its area keeps its signals.
+test('a card is dormant only when every piece of area evidence it carries was removed', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    dormantCategories: dormantCategories(['econ.EM'], ['hep-th']),
+  };
+  const similarity = (paper: Parameters<typeof scorePaperForRecommendation>[0], dormant = context.dormantCategories) =>
+    scorePaperForRecommendation({ published, _semanticScore: 0.5, ...paper }, { ...context, dormantCategories: dormant }).corpusSimilarity;
+
+  // A followed author's journal article: concept names, a topic no leaf lists, no request it was fetched for.
+  const article = {
+    id: 'followed-article',
+    primaryCategory: '',
+    categories: ['Panel data', 'Econometrics'],
+    primaryTopic: { id: 'https://openalex.org/T900003', display_name: 'Memory consolidation' },
+    _type: 'followed' as const,
+  };
+  assert.equal(similarity(article), 50);
+
+  // A primary topic that one leaf (bio.mol) lists: awake unless the reader removed that leaf.
+  const rna = { id: 'rna', categories: ['Biology', 'Genetics'], primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' }, _type: 'followed' as const };
+  assert.equal(similarity(rna), 50);
+  assert.equal(similarity(rna, dormantCategories(['econ.EM'], ['bio.mol'])), 0);
+  // Fetched for a leaf the reader keeps as well: not every piece sleeps.
+  assert.equal(similarity({ ...rna, _fetchedFor: ['bio.gen'] }, dormantCategories(['econ.EM', 'bio.gen'], ['bio.mol'])), 50);
+
+  // A leaf the reader removed, and nothing else.
+  assert.equal(similarity({ id: 'hep-th-1', primaryCategory: 'hep-th', _type: 'followed' }), 0);
+});
+
+// ENG-137, rulings R16 and R18: an arXiv category the taxonomy has no leaf
+// for (math.AC, cond-mat.dis-nn, hep-lat) belongs to its archive's area, and
+// sleeps only when the reader removed a subarea of that area and kept none.
+test('a category with no leaf of its own sleeps only with an area the reader left', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const score = (paper: Parameters<typeof scorePaperForRecommendation>[0], selected: string[], deselected: string[] = []) => scorePaperForRecommendation(
+    { published, _semanticScore: 0.5, _type: 'followed', ...paper },
+    {
+      now: NOW,
+      userPreferences: selected,
+      dormantCategories: dormantCategories(selected, deselected),
+      categoryAffinities: { 'math.AC': 40, 'cond-mat.dis-nn': 40, 'hep-lat': 40 },
+    },
+  );
+
+  // A followed author's commutative algebra, for a reader of algebraic geometry and number theory.
+  const commutativeAlgebra = score({ id: 'ac', primaryCategory: 'math.AC' }, ['math.AG', 'math.NT']);
+  assert.deepEqual([commutativeAlgebra.corpusSimilarity, commutativeAlgebra.affinity], [50, 40]);
+
+  // A Physics subarea removed and another kept: the area is still the reader's.
+  const disorderedSystems = score({ id: 'dis-nn', primaryCategory: 'cond-mat.dis-nn' }, ['quant-ph'], ['hep-th']);
+  assert.deepEqual([disorderedSystems.corpusSimilarity, disorderedSystems.affinity], [50, 40]);
+
+  // Physics left: its removed subarea and the categories it has no leaf for sleep.
+  assert.equal(score({ id: 'hep-th', primaryCategory: 'hep-th' }, ['math.AG'], ['hep-th']).corpusSimilarity, 0);
+  const lattice = score({ id: 'hep-lat', primaryCategory: 'hep-lat' }, ['math.AG'], ['hep-th']);
+  assert.deepEqual([lattice.corpusSimilarity, lattice.affinity], [0, 0]);
+});
+
+// ENG-137 (I-B): a card cross-listed in a subarea the reader removed and in
+// one they never picked is awake, but the removed subarea's affinity is not
+// counted on it.
+test("a removed subarea's affinity scores nothing on an awake card cross-listed in it", () => {
+  const card = { id: 'cross', primaryCategory: 'hep-th', allCategories: ['hep-th', 'gr-qc'], published: '2026-07-05T00:00:00Z', _semanticScore: 0.5, _type: 'followed' as const };
+  const score = (dormant: string[]) => scorePaperForRecommendation(card, {
+    now: NOW, userPreferences: ['econ.EM'], categoryAffinities: { 'hep-th': 80, 'gr-qc': 20 }, dormantCategories: dormant,
+  });
+
+  const removed = score(dormantCategories(['econ.EM'], ['hep-th']));
+  assertClose(removed.affinity, 0.35 * 20, 'only gr-qc, as a secondary category:');
+  assert.equal(removed.corpusSimilarity, 50);
+  assertClose(score([]).affinity, 80 + 0.35 * 20);
+});
+
+// ENG-137 (M-3): a card that names no area but the one OpenAlex files it
+// under (all of Chemistry's area-lane articles) sleeps by the area its
+// learning counts under (areaKeyForPaper).
+test('a card known only by its OpenAlex field sleeps when the reader removed all of that area', () => {
+  const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16');
+  const mapped = mapOpenAlexWork(work);
+  assert.ok(mapped, 'open-alex-works.fixture.json holds a Chemistry work (field 16)');
+  const card = { ...mapped, primaryCategory: '', _semanticScore: 0.5, _type: 'followed' as const };
+  const similarity = (selected: string[], deselected: string[]) => scorePaperForRecommendation(card, {
+    now: NOW, userPreferences: selected, dormantCategories: dormantCategories(selected, deselected),
+  }).corpusSimilarity;
+
+  assert.equal(similarity(['cs.LG'], leavesOf('chem')), 0);
+  assert.equal(similarity(['cs.LG'], ['hep-th']), 50, 'a reader who never selected Chemistry');
+  assert.equal(similarity(['cs.LG', 'chem.org'], ['chem.anal']), 50, 'a reader who keeps a Chemistry subarea');
+});
+
+// The feed's context is rebuilt on every call, and one re-rank's cache
+// validates it by the references it holds, so memory that changes after the
+// first pass must not be read back as the old one.
+const RERANKED_CARDS = 3;
+function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'later') => Pick<RecommendationContext, 'interestProgress' | 'dormantCategories' | 'coldAdded' | 'interactionCount'>) {
+  const cards = Array.from({ length: RERANKED_CARDS }, (_, index): Partial<Paper> => ({ id: `card-${index}`, primaryCategory: category, published: '2026-07-05T00:00:00Z' }));
+  const userPreferences = ['econ.EM'];
+  const categoryAffinities = { [category]: 50 };
+  const first = memoryOnPass('first');
+  const later = memoryOnPass('later');
+  let scored = 0;
+  return diversifiedWeightedShuffle(cards, {
+    maxConsecutiveCategory: 10,
+    random: () => 0,
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, {
+      now: NOW, userPreferences, categoryAffinities, recentPropsCount, ...(scored++ < RERANKED_CARDS ? first : later),
+    }),
+  }).at(-1)!._debugScore!;
+}
+
+test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
+  const memory = {
+    first: { interestProgress: { 'econ.EM': 0 }, coldAdded: ['econ.EM'], interactionCount: 300 },
+    later: { interestProgress: { 'econ.EM': 1 }, coldAdded: ['econ.EM'], interactionCount: 300 },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the cold-added picks it holds now, not the ones an earlier call cached', () => {
+  const progress = { 'econ.EM': 0 };
+  const memory = {
+    first: { interestProgress: progress, coldAdded: ['econ.EM'], interactionCount: 300 },
+    later: { interestProgress: progress, coldAdded: [], interactionCount: 300 },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the interaction count it holds now, not the one an earlier call cached', () => {
+  const memory = {
+    first: { interactionCount: 0 },
+    later: { interactionCount: 300 },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the removed subareas it holds now, not the ones an earlier call cached', () => {
+  const memory = {
+    first: { dormantCategories: [] },
+    later: { dormantCategories: dormantCategories(['econ.EM'], ['hep-th']) },
+  };
+  assert.equal(lastCardOfRerank('hep-th', pass => memory[pass]).affinity, 0);
 });
 
 // A specialist source's card names no category of the taxonomy, only its own
@@ -362,6 +682,20 @@ test('exploration for an AI reader stays within AI, and a CS reader explores no 
   assert.deepEqual(nearbyExplorationCategories(['cs.LG'], { 'cs.CV': -3 }), ['cs.AI', 'cs.CL', 'cs.NE']);
   assert.deepEqual(nearbyExplorationCategories(['cs.RO']).filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
   assert.ok(nearbyExplorationCategories(['cs.RO']).includes('cs.CR'));
+});
+
+test('exploration never reaches an area the reader did not pick, removals or not', () => {
+  const ai = leavesOf('ai');
+  const aiReader = nearbyExplorationCategories(['cs.LG'], {}, ['hep-th']);
+  assert.ok(aiReader.length > 0 && aiReader.every(id => ai.includes(id)));
+  const twoAreas = nearbyExplorationCategories(['cs.LG', 'quant-ph'], {}, ['hep-th']);
+  assert.ok(twoAreas.length > 0 && twoAreas.every(id => ai.includes(id) || leavesOf('physics').includes(id)));
+});
+
+test('exploration skips the subareas the reader removed', () => {
+  const nearby = nearbyExplorationCategories(['quant-ph'], {}, ['hep-th']);
+  assert.equal(nearby.includes('hep-th'), false);
+  assert.ok(['hep-ph', 'cond-mat.str-el', 'astro-ph.CO'].every(id => nearby.includes(id)));
 });
 
 test('diversified shuffle limits consecutive papers from the same category', () => {

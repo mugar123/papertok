@@ -291,6 +291,8 @@ export function getArxivArchiveArea(categoryId = '') {
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory: string) {
+  // Display-only: this category is not a selectable feed leaf.
+  if (arxivCategory === 'physics.data-an') return 'Data Analysis, Statistics and Probability';
   // Own keys only: a stored category named `constructor` or `toString` is
   // unknown, not a member inherited from Object.prototype.
   if (Object.hasOwn(CATEGORIES, arxivCategory)) {

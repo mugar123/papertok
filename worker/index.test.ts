@@ -606,11 +606,11 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
   assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 403], ['STANDARD', 200]]);
 });
 
-test('records what every view answered when Scopus refuses both of them', async () => {
+test('records what every view answered when Scopus refuses all of them', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(
-      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
-      { status: 500, headers: { 'X-ELS-ReqId': 'req-42' } },
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHORIZATION_ERROR', statusText: 'The requestor is not authorized to access the requested view' } } }),
+      { status: 401, headers: { 'X-ELS-ReqId': 'req-42' } },
     ),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
@@ -622,9 +622,31 @@ test('records what every view answered when Scopus refuses both of them', async 
   const health = await response.json<{ available: boolean; view: unknown; code: string; attempts: Array<{ view: unknown; requestId: string }> }>();
   assert.equal(health.available, false);
   assert.equal(health.view, null);
-  assert.equal(health.code, 'GENERAL_SYSTEM_ERROR');
+  assert.equal(health.code, 'AUTHORIZATION_ERROR');
   assert.deepEqual(health.attempts.map(attempt => attempt.view), ['COMPLETE', 'STANDARD', 'DEFAULT']);
   assert.equal(health.attempts[0].requestId, 'req-42');
+});
+
+test('stops at the first view when the egress refuses the Worker, and reports the egress code', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withWorkerFetchMock(
+    async url => {
+      requestedViews.push(new URL(url as string | URL).searchParams.get('view'));
+      return new Response(JSON.stringify({ code: 'PROXY_AUTH_REQUIRED' }), { status: 401 });
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), healthProbeEnv(SCOPUS_EGRESS)),
+  );
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 503);
+  const health = await response.json<{ available: boolean; status: number; code: string; attempts: Array<{ view: unknown; status: unknown }> }>();
+  assert.equal(health.available, false);
+  assert.equal(health.status, 401);
+  assert.equal(health.code, 'PROXY_AUTH_REQUIRED');
+  assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 401]]);
 });
 
 test('reports a COMPLETE view that carries the abstract', async () => {
@@ -1246,6 +1268,66 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
     assert.equal(seenSignal.aborted, false);
   });
 }
+
+// The view ladder exists for an account that lacks a view. An Elsevier outage
+// says nothing about the view, so it must not make every miss cost one call per
+// rung while Elsevier is already struggling.
+test('asks Scopus once per miss while Elsevier answers 500', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
+      { status: 500 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 500);
+});
+
+// A refused key is refused whatever the view, unlike the 401 AUTHORIZATION_ERROR
+// an account without COMPLETE gets, which the next view can answer.
+test('asks Scopus once per miss while Elsevier refuses the key', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHENTICATION_ERROR', statusText: 'Invalid API Key' } } }),
+      { status: 401 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 401);
+});
+
+// Four long terms are a query the egress refuses. It answers that itself, so no
+// view and no Elsevier call is involved, and a second or third attempt could
+// only repeat the answer.
+test('asks the egress once per miss when it refuses the query as too long', async () => {
+  const requestedViews: Array<string | null> = [];
+  const terms = ['a', 'b', 'c', 'd'].map(letter => letter.repeat(120)).join('|');
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(JSON.stringify({ code: 'INVALID_QUERY' }), { status: 400 });
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/sources/scopus?terms=${terms}`,
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 400);
+});
 
 // CORE answered in 7-8 s when measured; the shared six-second deadline cut
 // every such search into a 502 before the edge cache could keep it.
