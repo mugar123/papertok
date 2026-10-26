@@ -411,6 +411,18 @@ export function legacyPaperPath(pathname: string) {
   return `/paper/${key}`;
 }
 
+/**
+ * The redirect for a visit to the address from before ENG-44: the new path with
+ * the query and fragment of the visit, and its history state. Going Back to an
+ * old entry replays that state, and a paper opened from a saved copy carries its
+ * `paper` there, so a redirect that dropped it showed an error offline.
+ */
+export function legacyPaperRedirect(location: { pathname: string; search: string; hash: string; state: unknown }) {
+  const pathname = legacyPaperPath(location.pathname);
+  if (!pathname) return null;
+  return { to: { pathname, search: location.search, hash: location.hash }, state: location.state };
+}
+
 function decodeSegment(segment: string) {
   try {
     return decodeURIComponent(segment);
@@ -420,22 +432,30 @@ function decodeSegment(segment: string) {
 }
 
 /**
+ * Whether the path starts with these segments, which the router decodes and
+ * compares without letter case (`/p%61per/x` is `/paper/x`). A segment must
+ * follow the prefix, even an empty one, as in `/paper/`.
+ */
+function startsWithSegments(path: string, prefix: string[]) {
+  const segments = path.split('/').slice(1);
+  return segments.length > prefix.length
+    && prefix.every((name, index) => decodeSegment(segments[index]).toLowerCase() === name);
+}
+
+/**
  * The pages a guest can open without a session. A sign-in from one of their
- * doors (like, save, follow) leaves the new account right there. Letter case
- * is ignored because the router ignores it.
+ * doors (like, save, follow) leaves the new account right there.
  */
 export function isPublicRoutePath(path: string) {
-  const lower = path.toLowerCase();
-  return ['/public/', '/explorer/', '/paper/'].some(prefix => lower.startsWith(prefix));
+  return [['public'], ['explorer'], ['paper']].some(prefix => startsWithSegments(path, prefix));
 }
 
 /**
  * The pages that keep the signed-in navbar: a paper, a shared list and an
- * entity page. Letter case is ignored because the router ignores it.
+ * entity page.
  */
 export function keepsNavbarPath(path: string) {
-  const lower = path.toLowerCase();
-  return ['/paper/', '/public/list/', '/explorer/'].some(prefix => lower.startsWith(prefix));
+  return [['paper'], ['public', 'list'], ['explorer']].some(prefix => startsWithSegments(path, prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

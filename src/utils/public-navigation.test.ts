@@ -18,6 +18,7 @@ import {
   isPublicRoutePath,
   keepsNavbarPath,
   legacyPaperPath,
+  legacyPaperRedirect,
   parsePaperKey,
   encodePaperKey,
 } from './public-navigation.ts';
@@ -97,17 +98,33 @@ test('a paper address from before ENG-44 maps to the page it moved to, and no ot
   assert.equal(legacyPaperPath('/public/p%zzper/abc'), null);
 });
 
+test('the redirect from a pre-ENG-44 address keeps the query, fragment and history state', () => {
+  const state = { paper: { title: 'Saved copy' } };
+  assert.deepEqual(
+    legacyPaperRedirect({ pathname: '/Public/Paper/abc', search: '?a=1', hash: '#x', state }),
+    { to: { pathname: '/paper/abc', search: '?a=1', hash: '#x' }, state },
+  );
+  assert.equal(legacyPaperRedirect({ pathname: '/paper/abc', search: '', hash: '', state }), null);
+});
+
 test('a new account from a paper page door is onboarded and a signed-in reader keeps the navbar, in any letter case', () => {
   for (const path of ['/paper/abc', '/Paper/abc', '/public/paper/abc', '/PUBLIC/list/x', '/Explorer/author/1']) {
     assert.equal(isPublicRoutePath(path), true, path);
   }
-  for (const path of ['/feed', '/papers/abc', '/settings']) {
+  // The router decodes a segment before it matches, in every prefix.
+  for (const path of ['/p%61per/abc', '/%50ublic/list/x', '/public/p%61per/abc', '/%65xplorer/author/1']) {
+    assert.equal(isPublicRoutePath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/settings', '/paper', '/p%61pers/abc']) {
     assert.equal(isPublicRoutePath(path), false, path);
   }
   for (const path of ['/paper/abc', '/Paper/abc', '/Public/List/x', '/EXPLORER/author/1']) {
     assert.equal(keepsNavbarPath(path), true, path);
   }
-  for (const path of ['/feed', '/papers/abc', '/public/paper/abc']) {
+  for (const path of ['/p%61per/abc', '/public/l%69st/x', '/%50UBLIC/%4cist/x', '/%65xplorer/author/1']) {
+    assert.equal(keepsNavbarPath(path), true, path);
+  }
+  for (const path of ['/feed', '/papers/abc', '/public/paper/abc', '/public/l%69sts/x']) {
     assert.equal(keepsNavbarPath(path), false, path);
   }
 });

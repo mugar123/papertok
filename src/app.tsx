@@ -35,7 +35,7 @@ import NudgeHost from './components/nudges/nudge-host.tsx'
 import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
-import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperPath } from './utils/public-navigation.ts'
+import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 import './app.css'
@@ -76,11 +76,10 @@ const SearchCommand = lazyWithPreload(() => import('./components/search/search-c
 // the service worker serves offline, `npm run dev`, and an in-app navigation to
 // a stored legacy path such as an auth return saved before the move. (A
 // `#/public/paper/…` link is translated before React mounts, in
-// utils/legacy-hash-route.ts.) The query and fragment carry over.
+// utils/legacy-hash-route.ts.) The query, fragment and history state carry over.
 function LegacyPaperRedirect() {
-  const { pathname, search, hash } = useLocation()
-  const to = legacyPaperPath(pathname)
-  return to ? <Navigate to={{ pathname: to, search, hash }} replace /> : <NotFoundPage />
+  const redirect = legacyPaperRedirect(useLocation())
+  return redirect ? <Navigate to={redirect.to} state={redirect.state} replace /> : <NotFoundPage />
 }
 
 function LoginRedirect() {
