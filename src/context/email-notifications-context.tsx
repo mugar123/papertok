@@ -63,8 +63,9 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
-  // Journals do not count: a reader who follows only journals sees "Nothing
-  // followed yet", and no save, sync or opt-in sends an empty follow list.
+  // Journals do not count: a reader who follows only journals is told that
+  // journals are not in the email (emailFollowsNotice), and no save, sync or
+  // opt-in sends an empty follow list.
   const hasFollows = hasDigestFollows(followedEntities);
 
   // The same reset `FollowingContext` does, and for the same reason: the tree
