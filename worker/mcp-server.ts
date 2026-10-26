@@ -4,7 +4,7 @@ import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -294,9 +294,9 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
     ? await ask(handleOpenAlex, '/openalex/works', { filter: `doi:${identity.value}`, 'per-page': 1 }, caller, env)
     : await ask(handleOpenAlex, `/openalex/works/${doiPath || encodeURIComponent(identity.type === 'pmid' ? `pmid:${identity.value}` : identity.value)}`, {}, caller, env);
   const answer = await response.json<OpenAlexWork & { results?: OpenAlexWork[] }>();
-  const paper = mapOpenAlexWork(answer.results ? answer.results[0] : answer);
-  if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
-  return { paper: publicPaper(paper) };
+  const work = answer.results ? answer.results[0] : answer;
+  if (!work?.id) throw new ToolFailure({ code: 'NOT_FOUND' });
+  return { paper: publicPaper(formatOpenAlexWorkAsPaper(work)) };
 }
 
 function openAccessArguments(args: Arguments) {

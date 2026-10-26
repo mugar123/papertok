@@ -41,7 +41,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
 import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, doiPathId, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1626,61 +1626,6 @@ export function slimAuthorsPage(data: OpenAlexPage<OpenAlexAuthor>) {
     concepts: author.x_concepts ? author.x_concepts.slice(0, 3) : [],
   })) : [];
   return { authors, total: data?.meta?.count || 0 };
-}
-
-function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
-  // OpenAlex dates a work as a calendar day. The year is read from that text:
-  // as a Date it is midnight UTC, still the previous year west of Greenwich on
-  // 1 January, which is where OpenAlex files a work known only by its year.
-  const date = work.publication_date || '';
-  const published = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
-
-  const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
-  const institutions = [...new Map((work.authorships || [])
-    .flatMap(authorship => authorship.institutions || [])
-    .filter(Boolean)
-    .map(institution => [institution.id || institution.ror || institution.display_name, {
-      id: institution.id,
-      ror: institution.ror,
-      displayName: institution.display_name,
-    }])).values()];
-  const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
-  const openAlexId = work.id!.split('/').pop()!;
-  
-  return PaperBuilder.create({
-    id: openAlexId,
-    sources: { primary: 'openalex', enrichedBy: [] },
-    title: work.title || 'No Title',
-    abstract: usableOpenAlexAbstract(work),
-    authors,
-    institutions,
-    year: Number(published.slice(0, 4)) || undefined,
-    published,
-    publicationType: work.type || work.primary_location?.source?.type || 'journal',
-    publicationStatus: openAlexPublicationStatus(work),
-    peerReviewed: openAlexPeerReviewed(work),
-    workingPaper: openAlexIsWorkingPaper(work) || undefined,
-    openAccess: work.open_access?.is_oa,
-    pdfUrl: work.open_access?.oa_url,
-    landingPageUrl: work.primary_location?.landing_page_url || work.id,
-    doi: work.doi,
-    arxivId: getArxivIdFromWork(work) || undefined,
-    pmid: normalizePmid(work.ids?.pmid) || undefined,
-    journal: work.primary_location?.source?.display_name,
-    publisher: work.primary_location?.source?.host_organization_name,
-    citationCount: work.cited_by_count || 0,
-    citationCountKnown: Number.isFinite(work.cited_by_count),
-    concepts: work.concepts || [],
-    categories: categories,
-    keywords: categories,
-    // The work's branch of science, kept because `categories` above is a list
-    // of concept names — "Toric code", "The Imaginary" — and a concept is not a
-    // field. Without this the Explorer's rows had nothing to take a field
-    // colour from and every one of them rendered in the brand ink, while the
-    // same paper in the feed, which arrives with an arXiv category, rendered in
-    // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
-    primaryTopic: work.primary_topic || null,
-  });
 }
 
 /**

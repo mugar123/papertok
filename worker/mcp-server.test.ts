@@ -330,6 +330,26 @@ test('get_paper looks a DOI up as one OpenAlex work and returns the normalized p
   });
 });
 
+test('get_paper builds the paper as the paper page does, with citationCount and journal and no invented venue', async () => {
+  const noVenue = { ...OPENALEX_WORK, id: 'https://openalex.org/W4400000009', doi: null, ids: {}, primary_location: null };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/W4400000001')) return Response.json(OPENALEX_WORK);
+    if (url.startsWith('https://api.openalex.org/works/W4400000009')) return Response.json(noVenue);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const known = await callTool(env, 'get_paper', { id: 'W4400000001' });
+    const paper = known.answer.result?.structuredContent?.paper as { citationCount: number; citationCountKnown: boolean; journal: string; citationsCount?: number };
+    assert.equal(paper.citationCount, 4);
+    assert.equal(paper.citationCountKnown, true);
+    assert.equal(paper.journal, 'Journal of Sheets');
+
+    const missing = await callTool(env, 'get_paper', { id: 'W4400000009' });
+    assert.equal(missing.answer.result?.isError, undefined);
+    assert.doesNotMatch(JSON.stringify(missing.answer.result?.structuredContent), /Unknown Journal/);
+  });
+});
+
 test('get_paper asks arXiv for an arXiv id and reports an unknown id as not found', async () => {
   await withUpstream(url => {
     if (url.includes('id_list=2603.01234')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));

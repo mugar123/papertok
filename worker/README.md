@@ -806,7 +806,7 @@ SDK is not used, so the package lock is unchanged.
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match as the app's search does (`mergeRankedPapers`), plus the sources that refused or failed |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `mapOpenAlexWork` or `arxivRecordPaper` |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations |
 | `get_citation_graph(doi, limit?)` | `/citation-graph` | References, citing works, counts and `degraded` |
 
