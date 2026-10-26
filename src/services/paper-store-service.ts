@@ -80,7 +80,8 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       metadata: { query: metadata?.query, funder: metadata?.funder },
     })),
     positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
-    ...(groups ? { groups } : {}),
+    // Copies: the examples below may be trimmed, and the plan is the feed's.
+    ...(groups ? { groups: groups.map(group => ({ ...group, positiveIds: [...group.positiveIds] })) } : {}),
     ...(negativeIds.length ? { negativeIds: negativeIds.slice(0, 24) } : {}),
     excludedIds: [...new Set(excludedIds)].slice(0, 200),
     page,
@@ -92,10 +93,21 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
   // Trim new signals before they can push the existing request over 16 KiB.
   // Trim rejections first so the exclusion snapshot stays stable as they change.
+  // A grouped request carries each example twice, so with long ids it can
+  // still be over. Then examples go: first those of no group, then the oldest
+  // of the group holding the most, so each group keeps its newest longest.
+  // An example leaves the flat list and every group together, so both rank by
+  // the same ones.
   while (new TextEncoder().encode(JSON.stringify(body)).byteLength > 16_000) {
     if (body.negativeIds?.length) body.negativeIds.pop();
     else if (body.excludedIds.length) body.excludedIds.pop();
-    else break;
+    else if (body.groups && body.positiveIds.length) {
+      const grouped = new Set(body.groups.flatMap(group => group.positiveIds));
+      const largest = body.groups.reduce((most, group) => (group.positiveIds.length > most.positiveIds.length ? group : most));
+      const dropped = body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1);
+      body.positiveIds = body.positiveIds.filter(id => id !== dropped);
+      for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
+    } else break;
   }
   return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options);
 }

@@ -154,6 +154,46 @@ test('a page asking for notable papers with a full profile keeps the whole seen 
   assert.deepEqual(body.excludedIds ?? [], excludedIds.slice(0, body.excludedIds?.length ?? 0), 'the newest exclusions stay first');
 });
 
+// A grouped request carries each example twice, in its group and in the flat
+// list an older Worker reads, beside a group that may list every leaf. With
+// long ids, the rejections and exclusions alone cannot make room.
+test('a grouped page with long example ids fits the request body limit and keeps groups and flat examples alike', async () => {
+  const { asked, options } = harness(answered([]));
+  const ids = Array.from({ length: 24 }, (_, index) => `10.1234/${index}${'a'.repeat(283)}`);
+  const leaves = Array.from({ length: 149 }, (_, index) => `leaf.${index}`);
+  const groups = [{ categories: leaves.slice(0, 10), exampleCategories: leaves, positiveIds: ids, weight: 1 }];
+  const excludedIds = Array.from({ length: 200 }, (_, index) => `10.1234/seen-${index}`);
+  const seen = new Set(['2610.00001']);
+  await fetchCorpusPage({ groups, negativeIds: ids.map(id => `${id}b`), excludedIds, page: 0, pageSize: 15, seen, notable: 5 }, options);
+  const body = asked[0].body as { seen: string; positiveIds: string[]; groups: Array<{ positiveIds: string[] }> };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
+  assert.ok(hasSeenPaper(readFeedSeenFilter(body.seen), '2610.00001'), 'the filter arrives whole');
+  assert.ok(body.positiveIds.length > 0, 'the page still ranks by examples');
+  assert.deepEqual(body.positiveIds, ids.slice(0, body.positiveIds.length), 'the newest examples stay');
+  assert.deepEqual(body.groups[0].positiveIds, body.positiveIds, 'the group ranks by what the flat request sends');
+  assert.equal(groups[0].positiveIds.length, 24, "the caller's plan is left as it was");
+});
+
+test('trimming long examples takes those of no group first, then the oldest of the fullest group', async () => {
+  const { asked, options } = harness(answered([]));
+  const ids = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `10.1234/${prefix}${index}${'a'.repeat(283)}`);
+  const leaves = Array.from({ length: 149 }, (_, index) => `leaf.${index}`);
+  const groups = [
+    { categories: leaves.slice(0, 9), exampleCategories: leaves, positiveIds: ids('est', 20), weight: 1 },
+    { categories: ['econ.EM'], exampleCategories: ['econ.EM', 'econ.GN'], positiveIds: ids('cold', 2), weight: 2 },
+  ];
+  const unassigned = ids('none', 2);
+  await fetchCorpusPage({ groups, positiveIds: unassigned, page: 0, pageSize: 15, seen: new Set(['2610.00001']), notable: 5 }, options);
+  const body = asked[0].body as { positiveIds: string[]; groups: Array<{ positiveIds: string[] }> };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
+  assert.deepEqual(body.positiveIds.filter(id => unassigned.includes(id)), [], 'the examples of no group go first');
+  assert.deepEqual(body.groups[1].positiveIds, groups[1].positiveIds, 'the small group keeps its examples');
+  const kept = body.groups[0].positiveIds;
+  assert.ok(kept.length > 0 && kept.length < 20);
+  assert.deepEqual(kept, groups[0].positiveIds.slice(0, kept.length), 'the fullest group loses its oldest');
+  assert.deepEqual(body.positiveIds, [...kept, ...groups[1].positiveIds], 'the flat list ranks by what the groups send');
+});
+
 test("the corpus's copies of papers are asked for by the app's ids", async () => {
   const { asked, options } = harness(answered([STORED]));
   assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [STORED]);
