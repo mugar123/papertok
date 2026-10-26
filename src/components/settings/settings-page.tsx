@@ -42,6 +42,7 @@ import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { FollowingSheet } from './following-settings-page.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
+import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
 import { GithubMark } from '../ui/github-mark.tsx';
@@ -123,7 +124,6 @@ const SETTINGS_COPY = {
   dangerZone: 'Danger zone',
   dangerZoneDescription: 'Irreversible actions.',
   deleteAccount: 'Delete account',
-  deleteAccountDescription: 'Permanently deletes your account and everything in it.',
   access: 'Access',
   accessDescription: 'The ways you sign in. Each one opens the same account and the same data.',
   connectedAs: 'Connected as ',
@@ -343,7 +343,7 @@ function ProfileAccountPage() {
           <div className="settings-row">
             <div className="settings-row-content">
               <h3>{copy.deleteAccount}</h3>
-              <p>{copy.deleteAccountDescription}</p>
+              <p>{DELETE_ACCOUNT_DESCRIPTION}</p>
             </div>
             <RowAction Icon={Trash} variant="rose" label={copy.deleteAccount} onClick={() => setDeleteAccountOpen(true)} />
           </div>

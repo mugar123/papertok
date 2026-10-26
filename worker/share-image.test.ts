@@ -151,7 +151,7 @@ test('a project\'s card keeps the funder its page was looked up with', async () 
     },
   });
   assert.equal(response.status, 200);
-  assert.deepEqual((routes[0] as { lookup: unknown }).lookup, { provider: 'openaire', params: { grantID: '101147319', funder: 'EC' } });
+  assert.deepEqual((routes[0] as { lookup: unknown }).lookup, { provider: 'openaire', params: { code: '101147319', fundingShortName: 'EC' } });
 });
 
 test('an address with no looked-up entity behind it has no card and spends nothing', async () => {

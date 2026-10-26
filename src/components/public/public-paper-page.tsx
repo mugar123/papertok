@@ -228,7 +228,7 @@ export default function PublicPaperPage({
         // branch the feed filed it under, the authors and abstract as the
         // reader saw them. Without this the page showed another provider's
         // account of the same paper, unread and unliked.
-        setResult({ requestKey, paper: hydrateSeededPaper(seededPaper, loadedPaper), status: 'ready' });
+        setResult({ requestKey, paper: hydrateSeededPaper(fallback, loadedPaper), status: 'ready' });
       })
       .catch((error) => {
         if (requestId !== requestIdRef.current) return;
