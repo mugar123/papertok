@@ -1,1 +1,250 @@
-[]
+[
+  {
+    "leaf": "bio.biochem",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "hitCount": 26206
+  },
+  {
+    "leaf": "bio.biotech",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "hitCount": 27875
+  },
+  {
+    "leaf": "bio.bot",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "hitCount": 1271
+  },
+  {
+    "leaf": "bio.cell",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "hitCount": 22036
+  },
+  {
+    "leaf": "bio.comp",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "hitCount": 96778
+  },
+  {
+    "leaf": "bio.eco",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "hitCount": 60167
+  },
+  {
+    "leaf": "bio.evo",
+    "status": "insufficient-sample",
+    "sampleSize": 5,
+    "onTarget": 3,
+    "precision": 0.6,
+    "hitCount": 6
+  },
+  {
+    "leaf": "bio.gen",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "hitCount": 102160
+  },
+  {
+    "leaf": "bio.immuno",
+    "status": "insufficient-sample",
+    "sampleSize": 3,
+    "onTarget": 1,
+    "precision": 0.3333333333333333,
+    "hitCount": 3
+  },
+  {
+    "leaf": "bio.marine",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "hitCount": 915
+  },
+  {
+    "leaf": "bio.micro",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "hitCount": 73118
+  },
+  {
+    "leaf": "bio.mol",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667,
+    "hitCount": 23922
+  },
+  {
+    "leaf": "bio.neuro",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "hitCount": 38588
+  },
+  {
+    "leaf": "bio.physio",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "hitCount": 102071
+  },
+  {
+    "leaf": "bio.zoo",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "hitCount": 928
+  },
+  {
+    "leaf": "med.cardio",
+    "status": "insufficient-sample",
+    "sampleSize": 14,
+    "onTarget": 10,
+    "precision": 0.7142857142857143,
+    "hitCount": 30178
+  },
+  {
+    "leaf": "med.derma",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "hitCount": 21811
+  },
+  {
+    "leaf": "med.endo",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "hitCount": 12405
+  },
+  {
+    "leaf": "med.gen",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "hitCount": 2944
+  },
+  {
+    "leaf": "med.immuno",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "hitCount": 974
+  },
+  {
+    "leaf": "med.infect",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "hitCount": 57185
+  },
+  {
+    "leaf": "med.neuro",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "hitCount": 761
+  },
+  {
+    "leaf": "med.onco",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "hitCount": 116186
+  },
+  {
+    "leaf": "med.path",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "hitCount": 215214
+  },
+  {
+    "leaf": "med.peds",
+    "status": "insufficient-sample",
+    "sampleSize": 14,
+    "onTarget": 9,
+    "precision": 0.6428571428571429,
+    "hitCount": 42367
+  },
+  {
+    "leaf": "med.pharma",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "hitCount": 40978
+  },
+  {
+    "leaf": "med.psych",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "hitCount": 57
+  },
+  {
+    "leaf": "med.pubh",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "hitCount": 76
+  },
+  {
+    "leaf": "med.radio",
+    "status": "small-population",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "hitCount": 405
+  },
+  {
+    "leaf": "med.surg",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "hitCount": 779550
+  },
+  {
+    "leaf": "med.tox",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "hitCount": 21522
+  }
+]

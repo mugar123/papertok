@@ -1578,6 +1578,10 @@ test('every medicine and biology leaf the Europe PMC sample admitted, and no oth
   const lanes = (await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'))).filter(job => job.source === 'europepmc-notable').map(job => job.lane);
   const coverage = gateFile('europepmc-notable-coverage.json') as Array<{ leaf: string; status: string }>;
   assert.deepEqual(lanes, coverage.filter(row => row.status === 'passed').map(row => `notable:${row.leaf}`).sort());
+  // med.onco's sample was 14 of 15 on target on 2026-10-26, bio.physio's 0,
+  // med.psych's 14 of a label that matches 57 records.
+  assert.ok(lanes.includes('notable:med.onco'));
+  for (const lane of ['notable:bio.physio', 'notable:med.psych', 'notable:cs.CV']) assert.ok(!lanes.includes(lane), lane);
 });
 
 test('a year with no Europe PMC records does not end the lane', async t => {
