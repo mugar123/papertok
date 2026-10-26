@@ -118,14 +118,20 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
 
-test('the in-app summary leads with the analytics default and names the server-side changes of the page', () => {
-  // The 25 October page turned analytics on by default with a persistent identifier linked to the
-  // account (#334), keeps the feed order for 2 hours (#347) and counts requests per account (#287).
-  assert.match(PRIVACY_POLICY_CHANGE, /^Usage analytics is now on by default/);
-  assert.match(PRIVACY_POLICY_CHANGE, /identifier[^.]*across days[^.]*your account/);
-  assert.match(PRIVACY_POLICY_CHANGE, /turn it off in Settings/);
-  assert.match(PRIVACY_POLICY_CHANGE, /feed order for up to 2 hours/);
-  assert.match(PRIVACY_POLICY_CHANGE, /counts requests per account/);
+test('the in-app summary is one sentence that tells what the page says goes to the server and to providers', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.equal(PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length, 1, 'one sentence');
+  // Each provider the summary names is one the page lists.
+  for (const provider of ['PostHog', 'Resend']) {
+    if (PRIVACY_POLICY_CHANGE.includes(provider)) assert.ok(html.includes(provider), provider);
+  }
+  // What a request for more papers carries, per the page's feed paragraph, is what an account
+  // created before the 25 October page was never told: the summary says it in the page's words.
+  assert.match(PRIVACY_POLICY_CHANGE, /request for more papers/);
+  for (const carried of ['interests', 'what you follow', 'up to 24 papers', 'liked, saved or read at length', 'filter of the papers you viewed']) {
+    assert.ok(html.includes(carried), `the page says "${carried}"`);
+    assert.ok(PRIVACY_POLICY_CHANGE.includes(carried), `the summary says "${carried}"`);
+  }
 });
 
 test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {
