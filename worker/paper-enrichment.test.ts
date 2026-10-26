@@ -408,8 +408,7 @@ function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record
   });
 }
 
-// Synthetic, in the shape NASA ADS returns, but dated by day: the store cannot
-// read ADS's month form (`2018-04-00`) and files no paper without a date.
+// Synthetic, in the shape NASA ADS returns, with ADS's month form of date.
 const ADS_LISTING = mapAdsPaper({
   bibcode: '2018Natur.556...74Z',
   title: ['Quantized Majorana conductance'],
@@ -421,7 +420,7 @@ const ADS_LISTING = mapAdsPaper({
   property: ['REFEREED', 'ARTICLE'],
   doctype: 'article',
   pub: 'Nature',
-  pubdate: '2018-03-28',
+  pubdate: '2018-03-00',
   year: '2018',
   citation_count: 600,
 })!;

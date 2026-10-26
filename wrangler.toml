@@ -18,9 +18,9 @@ workers_dev = false
 # phases (about 6,000) and 38 enrichment batches (about 100 each): the step
 # failed on its first attempt and on the retries at 1, 2 and 4 minutes, all in
 # the same invocation, and ran on the fifth attempt, after 8 minutes, in a fresh
-# one. The longest run the code allows comes to about 50,000 (worker/README.md,
-# step 5); the enrichment phase alone is kept within half of this value by a
-# test. Subrequests are not billed themselves; each provider's calls stay
+# one. The longest run the code allows comes to about 58,000 (worker/README.md,
+# the paper store's limits); the enrichment phase alone is kept within half of
+# this value by a test. Subrequests are not billed themselves; each provider's calls stay
 # bounded by its budget.
 [limits]
 cpu_ms = 120_000
