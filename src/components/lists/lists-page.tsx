@@ -1071,6 +1071,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   };
 
   // A ref callback rather than `onExitComplete`: it runs when the index is committed.
+  // It sits on the block held back until the folders are released, so a return
+  // during that hold waits for the list names instead of spending the position.
   const returnToIndex = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
     indexReturn.arrive((listId) => node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(listId)}"]`));
@@ -1905,9 +1907,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           ))}
         </motion.div>
       ) : (
-        <motion.div key="index" ref={returnToIndex} {...listViewMotion}>
+        <motion.div key="index" {...listViewMotion}>
           {foldersReleased && (
-          <div className={startedHeld && !foldersArrived ? 'lists-index-arrive' : undefined}>
+          <div ref={returnToIndex} className={startedHeld && !foldersArrived ? 'lists-index-arrive' : undefined}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
