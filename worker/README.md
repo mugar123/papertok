@@ -773,12 +773,18 @@ builds the shared requests and validates the answers for the browser and the Wor
 | Project search (browser) | `/projects` by `search`, `acronym` or `title` |
 | Project page (browser), share pages (Worker) | `/projects?id=<OpenAIRE id>`, or `code=<grant code>&fundingShortName=<funder>` |
 | Project badge on a card (browser) | `/research-products?pid=<DOI>&type=publication`, with the DOI bare and in lowercase as Graph stores it; when the DOI finds no publication, `originalId=oai:arXiv.org:<id without version>` |
-| Project publications: Explorer and Following (browser), digest and followed project lanes (Worker) | `/research-products` by `relProjectId=<OpenAIRE id>`, or `relProjectCode=<grant code>&relProjectFundingShortName=<funder>`, with `type=publication&sortBy=publicationDate DESC` |
+| Project publications: Explorer and Following (browser), followed project lanes (Worker) | `/research-products` by `relProjectId=<OpenAIRE id>`, or `relProjectCode=<grant code>&relProjectFundingShortName=<funder>`, with `type=publication&sortBy=publicationDate DESC` |
+| Project follows in the digest (Worker) | The same by `relProjectId`; a bare grant code is asked as `relProjectCode=<grant code>` alone |
 
-- A grant code is not unique across funders, so a bare code is always asked with
-  the funder's short name when one is known. A publication's `projects[].funder`
-  is the funder's full name; the card reads the short name (`EC`, not `European
-  Commission`) from the publication's `isProducedBy` link.
+- A grant code is not unique across funders, so a bare code is asked with the
+  funder's short name wherever one is known: the project page, share pages, the
+  Explorer list, Following and followed project lanes. The digest does not know
+  it, because the Worker keeps no funder on a follow. A follow stored with a bare
+  code therefore gets the publications of every funder that used it (100010 is an
+  NHMRC, an SNSF and a UKRI grant). A follow stored with an OpenAIRE id names one
+  project and is not affected. A publication's `projects[].funder` is the funder's
+  full name; the card reads the short name (`EC`, not `European Commission`) from
+  the publication's `isProducedBy` link.
 - Unsorted, the first 30 of TAILOR's 1,428 publications were repository handles
   with no DOI or arXiv id; newest first, 28 of 30 had one (2026-10-23). Every
   project list is therefore sorted by publication date.
@@ -786,11 +792,12 @@ builds the shared requests and validates the answers for the browser and the Wor
   Explorer's project list ends at page 333.
 - Graph project records have no measures (citations, downloads, views) and no
   contract type. Those stay unknown: the project page has no citation stat. A
-  `granted.currency` of `null` also stays unknown, and the project page then
-  shows the budget without a currency.
+  `granted.currency` of `null` also stays unknown, and the project page and the
+  project search rows then show the amount without a currency.
 - An answer that is not a Graph list (`header.numFound` and `results`) is an
   error, not an empty project. The project page keeps the name its link carried,
-  the Explorer list reports a load failure, the digest records
+  the Explorer list reports a load failure, a share page lookup fails instead of
+  reporting a missing project, the digest records
   `EMAIL_SOURCE_OPENAIRE_INVALID_RESPONSE`, and a project lane fails its turn.
 
 Every call is anonymous. OpenAIRE documents 60 requests an hour without a token
