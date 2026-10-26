@@ -18,6 +18,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
 import { openingFollowType } from './opening-follow-type.ts';
+import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -116,7 +117,9 @@ function useFollowedView() {
         label: 'Undo',
         onClick: () => {
           if (latest.current.isFollowing(entity)) return;
-          latest.current.toggleFollow(entity).catch(() => toast.error(`Could not follow ${displayName} again`));
+          // A journal's Undo can meet the journal limit, which another
+          // device's follow may have reached in the meantime.
+          latest.current.toggleFollow(entity).catch((error: unknown) => toastFollowRefused(error, { name: displayName, following: false }));
         },
       },
     });

@@ -97,7 +97,7 @@ import { Switch } from '../ui/switch.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
-import { FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
+import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import PaperCard from '../feed/paper-card.tsx';
@@ -1514,25 +1514,12 @@ export default function EntityExplorer({
       requestAccount();
       return;
     }
-    toggleFollow(followEntity).catch((error: unknown) => {
-      // Said aloud too: the toast region is a live region.
-      if (error instanceof JournalFollowLimitError) {
-        toast.error(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${entityDisplayName}.`, {
-          action: { label: 'Open Settings', onClick: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); } },
-        });
-      } else if (error instanceof FollowsUnavailableError) {
-        // A snapshot error ends the listener, so trying again cannot help;
-        // a reload attaches a new one.
-        if (error.retryable) toast.error(`Your follows have not loaded yet, so ${entityDisplayName} was not followed. Try again in a moment.`);
-        else {
-          toast.error(`Your follows could not be loaded, so ${entityDisplayName} was not followed. Reload the page to try again.`, {
-            action: { label: 'Reload', onClick: () => { window.location.reload(); } },
-          });
-        }
-      } else {
-        console.error(error);
-      }
-    });
+    // Said aloud too: the toast region is a live region.
+    toggleFollow(followEntity).catch((error: unknown) => toastFollowRefused(error, {
+      name: entityDisplayName,
+      following: entityIsFollowing,
+      openSettings: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); },
+    }));
   };
 
   const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
