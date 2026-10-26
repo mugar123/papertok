@@ -217,11 +217,15 @@ script can send from several addresses, and one IPv6 host from a whole /64. An u
 request that arrives in a period it may not take waits for the next one, up to 3 s even when
 nobody else is asking. Its seats are 6 s apart and it waits at most 4 s, so one tab's
 back-to-back misses are not all answered. The tab's lane sends its arXiv requests one at a
-time (`src/services/arxiv-request-queue.ts`); a miss that follows one that took a seat often
-has none within 4 s. Up to about 70% of such misses (when arXiv answers in about 0.3 s;
-fewer when it is slower, none once it takes about 1.7 s) are refused with 429 while nobody
-else is asking, and the lane then refuses its own queued arXiv requests for the 4 s of that
-`retry-after`. This rate is accepted. The Worker's own callers (liked-paper lookups and the
+time (`src/services/arxiv-request-queue.ts`), 350 ms apart. While nobody else is asking, a
+tab that keeps missing alternates: when arXiv answers in about 0.3 s, the miss after an
+answered one finds the next public seat 5.35 s away and is refused at once with 429
+(`retry-after: 4`), the lane refuses its own queued arXiv requests for those 4 s, and the
+next miss then waits for that seat and takes it. So every miss that follows an answered miss
+is refused, half of the tab's misses in all, and the tab gets one answer every 6 s. When
+arXiv takes about 1.7 s or more, the next public seat is within 4 s and the miss waits for it
+instead. After 5 answers in a UTC minute the address's allowance refuses the tab with
+`retry-after` until the minute ends. This is accepted. The Worker's own callers (liked-paper lookups and the
 harvest's arXiv lanes, which ask the route in-process through `handleHarvestArxiv`, spending
 no address's allowance) and share pages may take any seat. Share pages are public, with no
 Origin check; an arXiv id OpenAlex has not indexed, real or made up, makes one ask arXiv, at
