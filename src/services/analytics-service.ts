@@ -73,13 +73,16 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // A referrer counts when its whole host is listed, or is a subdomain of a listed
 // one. A name that merely contains an entry is another site: chatgpt.com holds
 // `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
-// per country, so those two are patterns. Google's search properties (web, Scholar,
+// per country, so those two are patterns. A country is `com`, two letters, or two
+// letters under `co.` or `com.`; a generic suffix (`.xyz`) or `co.com` and `com.com`,
+// which anyone can register, is not. The patterns take any two letters, so
+// `google.com.de` counts as search. Google's search properties (web, Scholar,
 // Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. Five
 // Google apps on Android send their package name as the referrer and are filed like
 // their sites: the Google, Google Go and News apps as search, YouTube and YouTube Music
 // as social. Other Google apps count as referral.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
-  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?(?:com|cat|[a-z]{2})$/,
+  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
   'com.google.android.googlequicksearchbox',
   'com.google.android.apps.searchlite',
   'com.google.android.apps.magazines',
