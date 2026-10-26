@@ -24,6 +24,7 @@ import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexNotableFilterForLeaf
 import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../src/data/open-alex-notable-leaf-topics.generated.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
@@ -864,6 +865,35 @@ test('an arXiv eprint that does not name its journal beside a publisher DOI leav
       assert.equal(after.length, 1, name);
       assert.deepEqual(shown(after[0]), shown(before), name);
     }
+  }
+});
+
+// `sources.peerReviewedByDoi` can hold a `false` under the article's DOI, from
+// a record such as NASA ADS's non-refereed one. PubMed's record of the article
+// then reads unreviewed beside it, and the row stays the working paper's
+// rather than lose its tag without becoming the journal's.
+test("a journal record that a denial under its DOI leaves unreviewed does not upgrade a stored working paper's row", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
+  const pubmed = mapPubmedSummary({
+    uid: '41000000', title: gmmArticle.title, source: 'J Bus Econ Stat', pubdate: '2026 Oct 14', pubtype: ['Journal Article'],
+    authors: [{ name: 'Ana Economist' }], articleids: [{ idtype: 'doi', value: '10.1080/07350015.2026.2743244' }],
+  });
+  const [before] = await workingPaperRowWith(t, null, false);
+  for (const denied of [false, true]) {
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    t.mock.timers.setTime(Date.parse('2026-10-23T03:00:00Z'));
+    await ingestPapers(store, [{ paper: mapOpenAlexWork(gmmWorkingPaperWork)!, lanes: ['econ.EM'] }], { now: Date.parse('2026-10-23T03:00:00Z') });
+    if (denied) db.prepare("UPDATE works SET paper = json_set(paper, '$.sources.peerReviewedByDoi', json(?))").run(JSON.stringify({ '10.3386/w35104': false, '10.1080/07350015.2026.2743244': false }));
+    t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+    await ingestPapers(store, [{ paper: pubmed, lanes: ['econ.EM'] }], { now: Date.parse('2026-10-24T03:00:00Z') });
+    const after = (db.prepare('SELECT paper, published FROM works').all() as Array<{ paper: string; published: string }>)
+      .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
+    assert.equal(after.length, 1);
+    if (denied) assert.deepEqual(shown(after[0]), shown(before));
+    // Without the denial, PubMed's record makes the row the journal's.
+    else assert.deepEqual([after[0].id, after[0].doi, after[0].peerReviewed, after[0].workingPaper], ['openalex:W7220000104', '10.1080/07350015.2026.2743244', true, undefined]);
   }
 });
 

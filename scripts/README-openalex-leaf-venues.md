@@ -82,7 +82,7 @@ liked or saved it under. The series listing the working paper again does not
 put its title and abstract back on the row. The two records pair on the title
 and first-author key (`PaperBuilder.identityKeys`), as before, because they
 share no DOI or OpenAlex id; the upgrade now lets that join set the row's DOI,
-landing page, text and date.
+landing page, text and date, and only when the merge reads reviewed.
 
 An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
 on a comment saying it was published. It starts the upgrade only when it names

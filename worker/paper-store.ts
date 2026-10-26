@@ -376,13 +376,14 @@ const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) =
 // into it, so the records of a working paper and its journal article read
 // reviewed only with the article first (README-openalex-leaf-venues.md). Each
 // record that reads reviewed is tried first, in turn, since one can still
-// leave the row a working paper, such as an eprint naming its journal without
-// the journal's DOI; such a record does not lend the row its landing page,
-// text and date. Undefined when none makes the row the journal's.
+// leave the row unreviewed, such as an eprint naming its journal without the
+// journal's DOI, or a record whose DOI a merged record denied
+// (`sources.peerReviewedByDoi`); such a record does not lend the row its
+// landing page, text and date. Undefined when none makes the row reviewed.
 function asJournalRow(records: Paper[]) {
   for (const journal of records.filter(readsAsReviewed)) {
     const upgraded = mergeAll([journal, ...records.filter(record => record !== journal)]);
-    if (!isWorkingPaperRow(upgraded)) return { journal, upgraded };
+    if (upgraded.peerReviewed === true) return { journal, upgraded };
   }
   return undefined;
 }
