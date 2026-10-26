@@ -321,7 +321,8 @@ const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abst
   : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
-interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
+// `records` are the listed records the group merged into `paper`, in order.
+interface Group { paper: Paper; records: Paper[]; lanes: Set<string>; keys: Set<string> }
 
 // A new row's number comes from its paper id, so two writers filing the same
 // paper at once (a like looked up by two requests, a followed lane's run beside
@@ -364,6 +365,22 @@ async function readWorks(db: D1Database, ids: number[]) {
 const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
 // An arXiv record reads reviewed on a DOI alone (`restsOnArxivDoi`), which is no journal evidence.
 const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper);
+const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
+
+// `merge` keeps a working paper's `false` against a journal article merged
+// into it, so the records of a working paper and its journal article read
+// reviewed only with the article first (README-openalex-leaf-venues.md). Each
+// record that reads reviewed is tried first, in turn, since one can still
+// leave the row a working paper, such as an eprint naming its journal without
+// the journal's DOI; such a record does not lend the row its landing page,
+// text and date. Undefined when none makes the row the journal's.
+function asJournalRow(records: Paper[]) {
+  for (const journal of records.filter(readsAsReviewed)) {
+    const upgraded = mergeAll([journal, ...records.filter(record => record !== journal)]);
+    if (!isWorkingPaperRow(upgraded)) return { journal, upgraded };
+  }
+  return undefined;
+}
 
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
@@ -417,16 +434,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
     if (!group) {
-      group = { paper, lanes: new Set(), keys: new Set() };
+      group = { paper, records: [paper], lanes: new Set(), keys: new Set() };
       groups.push(group);
     } else {
       for (const other of joined.slice(1)) {
         group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        group.records.push(...other.records);
         other.lanes.forEach(lane => group.lanes.add(lane));
         other.keys.forEach(key => group.keys.add(key));
         groups.splice(groups.indexOf(other), 1);
       }
       group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
+      group.records.push(paper);
     }
     item.lanes.forEach(lane => group.lanes.add(lane));
     keys.forEach(key => group.keys.add(key));
@@ -451,25 +470,22 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     let paper = group.paper;
     let id = ids[0];
     if (id === undefined) {
+      // A page listing the working paper before its article starts the journal's row too.
+      if (isWorkingPaperRow(paper)) paper = asJournalRow(group.records)?.upgraded ?? paper;
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
-      const records = [base, ...stored.slice(1).map(other => other.paper), group.paper];
-      // `merge` keeps a working paper's `false` against a journal article
-      // merged into it. Listed the same night, the article comes first and
-      // the row reads reviewed (README-openalex-leaf-venues.md); a working
-      // paper stored earlier gets that order too, and keeps the id readers
-      // liked or saved it under (ENG-133). A record that leaves the row a
-      // working paper, such as an eprint naming its journal without the
-      // journal's DOI, does not lend it its landing page, text and date.
-      const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
-      const journal = isWorkingPaperRow(base) ? records.find(readsAsReviewed) : undefined;
-      const upgraded = journal && mergeAll([journal, ...records.filter(record => record !== journal)]);
-      paper = journal && upgraded && !isWorkingPaperRow(upgraded)
+      const others = stored.slice(1).map(other => other.paper);
+      // A working paper stored earlier becomes its journal article's row and
+      // keeps the id readers liked or saved it under (ENG-133). The group's
+      // own records are tried, since their merge reads as a working paper
+      // when the page listed the working paper first.
+      const journalRow = isWorkingPaperRow(base) ? asJournalRow([base, ...others, ...group.records]) : undefined;
+      paper = journalRow
         // The row keeps the id readers hold, and enrichment asks OpenAlex for the article's work, not the working paper's.
-        ? { ...upgraded, id: base.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined }
-        : mergeAll(records);
+        ? { ...journalRow.upgraded, id: base.id, openAlexId: /^openalex:/.test(journalRow.journal.id) ? journalRow.journal.id : undefined }
+        : mergeAll([base, ...others, group.paper]);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }

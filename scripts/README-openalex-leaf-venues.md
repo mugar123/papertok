@@ -71,7 +71,9 @@ mathematics curator did not record the core flag of its 42 sources.
 
 The nightly run harvests the venue lanes before the working-paper series, so
 a journal article and its working paper listed the same night merge into the
-journal's reviewed row (#198, PAP-85). Working papers usually appear first. A
+journal's reviewed row (#198, PAP-85). So do the two listed on one page, in
+either order: `asJournalRow` (`worker/paper-store.ts`) merges the journal
+record first. Working papers usually appear first. A
 working paper stored on an earlier night becomes the journal's reviewed row
 when its journal article arrives (`ingestPapers`, ENG-133): the row takes the
 article's DOI, landing page and answer, drops the Working paper tag, keeps the
