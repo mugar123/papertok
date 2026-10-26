@@ -414,6 +414,7 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
       const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
       // A paper the reader has not been shown, dismissed after the first page.
       const dismissedId = shown[seenIds.length];
+      if (dismissedId === undefined) throw new Error(`The ${categories.length}-category reader's lanes hold ${shown.length} papers and its seen filter ${seenIds.length}: none is left to dismiss`);
       for (const likes of [0, plan.likes]) {
         const body = { categories, positiveIds: shown.slice(plan.excluded, plan.excluded + likes), excludedIds, pageSize: PAGE_SIZE, notable: NOTABLE_ASKED };
         // Each run pages from an empty cache: the timed runs, then the memory run.

@@ -69,3 +69,11 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     [2, 4, 0, 4],
   ], 'the first page keeps each like (liked_until)');
 });
+
+test('the measurement refuses a corpus that holds no paper beyond the seen filter, which a dismissal would need', async () => {
+  // cs.LG's lane and area:ai's hold 5 papers each, the filter 10.
+  await assert.rejects(
+    measureLaneReads({ leafRows: 5, areaRows: 5, notablePerYear: 1 }, { readers: [['cs.LG']], likes: 0, excluded: 2, seen: 10, repetitions: 1 }),
+    /lanes hold 10 papers and its seen filter 10: none is left to dismiss/,
+  );
+});
