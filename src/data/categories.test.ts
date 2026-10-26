@@ -19,6 +19,20 @@ test('every leaf belongs to exactly one area', () => {
   assert.equal(new Set(leaves).size, leaves.length);
 });
 
+// A list a user publishes may carry any category string. A name that
+// Object.prototype also has is an unknown category like any other, not Physics
+// and not a missing label.
+const PROTOTYPE_NAMES = ['constructor', 'toString', 'hasOwnProperty', '__proto__'];
+
+test('a category named like an Object.prototype member has no area', () => {
+  for (const name of PROTOTYPE_NAMES) assert.equal(getCategoryArea(name), null, name);
+  assert.equal(getCategoryArea('cs.AI'), 'ai');
+});
+
+test('a category named like an Object.prototype member keeps its own name as its label', () => {
+  for (const name of PROTOTYPE_NAMES) assert.equal(getCategoryLabel(name), name, name);
+  assert.equal(getCategoryLabel('cs'), CATEGORIES.cs.label);
+});
 
 test('arXiv categories outside the selectable leaves have specific display names', () => {
   for (const [id, label] of [

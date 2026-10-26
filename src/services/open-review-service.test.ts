@@ -48,3 +48,13 @@ test('does not present a submitted OpenReview manuscript as peer reviewed', () =
   assert.equal(paper!.publicationType, 'preprint');
   assert.equal(paper!.peerReviewed, false);
 });
+
+test('an OpenReview note without a timestamp has no year', () => {
+  const content = { title: { value: 'An undated note' }, abstract: { value: 'No date.' }, authors: { value: ['Ada Researcher'] } };
+  const undated = mapOpenReviewNote({ id: 'note-3', forum: 'forum-3', content });
+  assert.equal(undated!.year, undefined);
+  assert.equal(undated!.published, '');
+
+  const dated = mapOpenReviewNote({ id: 'note-4', forum: 'forum-4', cdate: Date.parse('2025-02-03T00:00:00Z'), content });
+  assert.equal(dated!.year, 2025);
+});
