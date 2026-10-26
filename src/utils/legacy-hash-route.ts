@@ -24,7 +24,13 @@
  * NOT every fragment is a route. `#main-content` is the skip link's target;
  * `#/` is the only prefix that ever meant a route, and it is the only one this
  * module answers to.
+ *
+ * A paper's page moved from `/public/paper/<key>` to `/paper/<key>` (ENG-44),
+ * so `#/public/paper/<key>` names the new path directly (`legacyPaperPath`)
+ * rather than showing the old one for a render first.
  */
+
+import { legacyPaperPath } from './public-navigation.ts';
 
 /** Where `#/` itself used to go. Named rather than left as `/`: the app's own
     catch-all would bounce `/` here anyway, and doing it in the rewrite keeps
@@ -66,7 +72,7 @@ export function routeFromLegacyHash({ search = '', hash = '' } = {}) {
   if (pathname === '/') return `${LEGACY_ROOT_ROUTE}${ownQuery || (typeof search === 'string' ? search : '')}`;
 
   const query = ownQuery || (typeof search === 'string' ? search : '');
-  return `${pathname}${query}`;
+  return `${legacyPaperPath(pathname) ?? pathname}${query}`;
 }
 
 /**
