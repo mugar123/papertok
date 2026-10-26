@@ -113,13 +113,17 @@ export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | 
 /**
  * The journal that published a paper, as the reader links it to the
  * journal's page in the Explorer, where it can be followed (ENG-123): a
- * journal OpenAlex identifies (`venueId`), by the name the paper carries for
- * its venue. A paper mapped whole from OpenAlex, as the corpus serves one,
- * carries that name as `sourceName`.
+ * journal OpenAlex identifies (`venueId`). It is named as OpenAlex names it
+ * where the paper kept that name (`sourceName`, on a paper mapped whole from
+ * OpenAlex, as the corpus serves one), else by the paper's own `journal`,
+ * which can be another provider's, such as arXiv's journal reference
+ * ("Phys. Rev. Lett. 130, 041801 (2023)"). So the page is opened by id
+ * alone, without a `?name=` for its masthead to show before the source loads.
  */
 export function journalExplorerLink(paper: Partial<Paper> | null | undefined) {
   const id = String(paper?.venueId || '').trim();
-  const name = String(paper?.journal || paper?.sourceName || '').trim();
-  if (!/^S\d+$/.test(id) || !name || name === UNNAMED_SOURCE) return null;
-  return { name, path: `/explorer/source/${id}?name=${encodeURIComponent(name)}` };
+  const openAlexName = paper?.sourceName === UNNAMED_SOURCE ? '' : paper?.sourceName;
+  const name = String(openAlexName || paper?.journal || '').trim();
+  if (!/^S\d+$/.test(id) || !name) return null;
+  return { name, path: `/explorer/source/${id}` };
 }

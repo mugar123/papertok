@@ -16,9 +16,18 @@ const aerWork = (source: { id?: string; display_name?: string; type: string }) =
 });
 
 test("the reader links a paper's journal to the journal's Explorer page, by its OpenAlex id", () => {
-  const americanEconomicReview = { name: 'American Economic Review', path: '/explorer/source/S23254222?name=American%20Economic%20Review' };
-  assert.deepEqual(journalExplorerLink(aerWork({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' })), americanEconomicReview, 'a paper the corpus serves');
-  assert.deepEqual(journalExplorerLink({ id: '2401.12345', journal: 'American Economic Review', venueId: 'S23254222' }), americanEconomicReview, 'an arXiv paper OpenAlex enriched');
+  const corpusPaper = aerWork({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' })!;
+  const americanEconomicReview = { name: 'American Economic Review', path: '/explorer/source/S23254222' };
+  assert.deepEqual(journalExplorerLink(corpusPaper), americanEconomicReview, 'a paper the corpus serves');
+  assert.deepEqual(journalExplorerLink({ ...corpusPaper, journal: 'Am Econ Rev' }), americanEconomicReview, "OpenAlex's name before another provider's");
+  assert.deepEqual(journalExplorerLink({ id: 'openalex:W7000000001', journal: 'American Economic Review', venueId: 'S23254222' }), americanEconomicReview, 'an OpenAlex search result');
+  // An arXiv paper OpenAlex enriched keeps arXiv's journal reference as its
+  // journal; the page, opened by id, shows the source's own name. (A
+  // synthetic source id.)
+  assert.deepEqual(
+    journalExplorerLink({ id: '2301.00001', journal: 'Phys. Rev. Lett. 130, 041801 (2023)', venueId: 'S9000000001' }),
+    { name: 'Phys. Rev. Lett. 130, 041801 (2023)', path: '/explorer/source/S9000000001' },
+  );
 });
 
 test('a paper gets no journal link without a journal OpenAlex identifies, or without its name', () => {
