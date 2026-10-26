@@ -798,7 +798,9 @@ Streamable HTTP transport without sessions or server-sent events: each POST
 carries one JSON-RPC message and receives one `application/json` answer.
 Notifications receive `202`, GET and other methods except the router's CORS
 preflight receive `405`, batches
-receive `-32600`, and bodies above 16 KB receive `413`. It negotiates protocol
+receive `-32600` (a deviation from `2025-03-26`, the version assumed when a client
+sends no `MCP-Protocol-Version`, whose transport requires batches; the two later
+versions dropped them), and bodies above 16 KB receive `413`. It negotiates protocol
 versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A browser `Origin`
 outside the allowlist receives `403`; remote clients send none. The official
 SDK is not used, so the package lock is unchanged.
@@ -836,9 +838,12 @@ reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED`, `NOT_FOUND`,
 `INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
 `UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
-failed), so the client model can read them. A provider failure
-is reported to PostHog as the routes report theirs. The server sends no search
-text or paper id to analytics.
+failed), so the client model can read them. An exception inside a tool call is
+answered with `-32603` and the request's `id`, status 500. These answers are HTTP
+200, so `callTool` writes the Workers Logs line itself for a rate limit or a 5xx-class
+code, as `{route: '/mcp', tool, code, status}`, and reports the 5xx-class failures
+to PostHog as the routes report theirs. The server sends no search text, paper
+id or other argument to logs or analytics.
 
 To connect from Claude, add a custom connector with the URL
 `https://api.papertok.app/mcp` in claude.ai (Settings, Connectors). In Claude

@@ -1,7 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import reportApi from './index.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -546,5 +546,54 @@ test('without the caller secret a tool call fails closed', async () => {
     assert.equal(answer.result?.isError, true);
     assert.equal(answer.result?.structuredContent?.code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
     assert.deepEqual(calls, []);
+  });
+});
+
+test('a tool failure leaves a log line with the tool and code, never the arguments', async () => {
+  const warn = mock.method(console, 'warn', () => {});
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://api.unpaywall.org/')) return new Response('down', { status: 500 });
+      throw new Error(`unexpected upstream ${url}`);
+    }, async () => {
+      await callTool(routeEnv({ PDF_RATE_LIMIT_SECRET: undefined }), 'get_paper', { id: 'W4400000001' });
+      await callTool(routeEnv(), 'find_open_access', { doi: '10.1234/secret.doi.4242' });
+      await callTool(routeEnv(), 'get_paper', { id: 'not an id' });
+    });
+    const lines = warn.mock.calls.map(call => JSON.parse(String(call.arguments[0])));
+    assert.deepEqual(lines, [
+      { route: '/mcp', tool: 'get_paper', code: 'PROVIDER_QUOTA_NOT_CONFIGURED', status: 503 },
+      { route: '/mcp', tool: 'find_open_access', code: 'UPSTREAM_UNAVAILABLE', status: 500 },
+    ], 'a client mistake is not logged, as a 400 is not');
+  } finally {
+    warn.mock.restore();
+  }
+});
+
+test('an exception during a tool call is answered under the request id', async () => {
+  const error = mock.method(console, 'error', () => {});
+  try {
+    await withUpstream(NO_UPSTREAM, async () => {
+      const ledger = { idFromName: () => 'ledger', get: () => ({ fetch: async () => { throw new Error('ledger down'); } }) };
+      const env = routeEnv({ REQUEST_QUOTA_LEDGER: ledger as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'] });
+      const { response, answer } = await callTool(env, 'get_paper', { id: 'W4400000001' }, 42);
+      assert.equal(response.status, 500);
+      assert.equal(answer.id, 42);
+      assert.equal(answer.error?.code, -32603);
+    });
+  } finally {
+    error.mock.restore();
+  }
+});
+
+test('get_paper does not present another work as a DOI the one-work list did not match', async () => {
+  await withUpstream(url => {
+    // OpenAlex reads `,` in the filter as another clause and answers with whatever matched.
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const { answer } = await callTool(routeEnv(), 'get_paper', { id: '10.1234/../x,title.search:graphene' });
+    assert.equal(answer.result?.isError, true);
+    assert.equal(answer.result?.structuredContent?.code, 'NOT_FOUND');
   });
 });

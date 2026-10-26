@@ -10,7 +10,7 @@ import { handleArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
 import { handleCitationGraph } from './citation-graph.ts';
-import { captureWorkerException } from './error-tracking.ts';
+import { captureWorkerException, captureWorkerResponseFailure } from './error-tracking.ts';
 import { allowedOrigins, json } from './http.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleOpenAlex } from './openalex-api.ts';
@@ -317,6 +317,11 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   const answer = await response.json<OpenAlexWork & { results?: OpenAlexWork[] }>();
   const work = answer.results ? answer.results[0] : answer;
   if (!work?.id) throw new ToolFailure({ code: 'NOT_FOUND' });
+  // `,` and `|` in the DOI are filter syntax, so a list can answer with a work
+  // of another DOI: the work has to be the one asked for.
+  if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
+    throw new ToolFailure({ code: 'NOT_FOUND' });
+  }
   return { paper: publicPaper(formatOpenAlexWorkAsPaper(work)) };
 }
 
@@ -378,24 +383,43 @@ const RUN: Record<ToolName, ReturnType<typeof tool>> = {
   get_citation_graph: tool(citationGraphArguments, getCitationGraph),
 };
 
+// A tool failure is an HTTP 200 answer, so `index.ts` never sees it. This writes
+// the line it writes for a 429 or 5xx (route and status, here with the tool and
+// code) and reports a 5xx the way it reports one. The arguments stay out of it.
+function recordFailure(tool: string, details: Record<string, unknown>) {
+  const code = String(details.code);
+  const upstreamStatus = Number(details.upstreamStatus) || 0;
+  const status = details.retryAfterSeconds !== undefined ? 429
+    : upstreamStatus >= 500 ? upstreamStatus
+      : /^(?:UPSTREAM_|SOURCES_UNAVAILABLE$|PROVIDER_QUOTA_NOT_CONFIGURED$)/.test(code) ? 503 : 0;
+  if (!status) return;
+  console.warn(JSON.stringify({ route: MCP_PATH, tool, code, status }));
+  captureWorkerResponseFailure(status);
+}
+
 // The arguments are checked before the reservation, so a malformed call costs
 // nothing; the reservation comes before any route, so a refused call asks nothing.
 async function callTool(params: Record<string, unknown>, request: Request, env: WorkerEnv) {
+  const name = String(params.name);
+  const failed = (details: Record<string, unknown>) => {
+    recordFailure(name, details);
+    return toolResult(details, true);
+  };
   const args = params.arguments ?? {};
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
-    return toolResult({ code: 'INVALID_ARGUMENTS', message: 'arguments must be an object' }, true);
+    return failed({ code: 'INVALID_ARGUMENTS', message: 'arguments must be an object' });
   }
   try {
-    const run = RUN[params.name as ToolName](args as Arguments);
+    const run = RUN[name as ToolName](args as Arguments);
     const caller = await reserveCallerMinute(request, env, MCP_CALLER_MINUTE.namespace, MCP_CALLER_MINUTE.limit);
-    if (caller.reading.code) return toolResult({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, true);
+    if (caller.reading.code) return failed({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
     if (!caller.reading.accepted) {
-      return toolResult({ code: 'PROVIDER_RATE_LIMITED', retryAfterSeconds: Number(caller.retryAfter) }, true);
+      return failed({ code: 'PROVIDER_RATE_LIMITED', retryAfterSeconds: Number(caller.retryAfter) });
     }
     return toolResult(await run(request, env));
   } catch (error) {
-    if (error instanceof InvalidArguments) return toolResult({ code: 'INVALID_ARGUMENTS', message: error.message }, true);
-    if (error instanceof ToolFailure) return toolResult(error.details, true);
+    if (error instanceof InvalidArguments) return failed({ code: 'INVALID_ARGUMENTS', message: error.message });
+    if (error instanceof ToolFailure) return failed(error.details);
     throw error;
   }
 }
@@ -446,7 +470,15 @@ export async function handleMcpRequest(request: Request, env: WorkerEnv) {
     if (!params || typeof params !== 'object' || !Object.hasOwn(RUN, String(params.name))) {
       return rpcError(id, -32602, 'Unknown tool');
     }
-    return rpcResult(id, await callTool(params, request, env));
+    try {
+      return rpcResult(id, await callTool(params, request, env));
+    } catch (error) {
+      // The ledger or a provider answered with something the tool cannot read.
+      // The client matches this reply to its request by `id`.
+      captureWorkerException(error);
+      console.error('MCP tool call failed', error);
+      return rpcError(id, -32603, 'Internal error', 500);
+    }
   }
   return rpcError(id, -32601, 'Method not found');
 }
