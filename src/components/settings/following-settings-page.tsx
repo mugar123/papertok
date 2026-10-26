@@ -19,6 +19,7 @@ import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
 import { openingFollowType } from './opening-follow-type.ts';
 import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -168,9 +169,11 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 
 /** The follows of the type on show, or its loading or empty state. */
 function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
-  const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
+  const { activeType, activeTab, language, loading, followedEntities, followedByType, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
+  const limitNote = activeType === 'journal' ? journalLimitNote(followedByType.journal?.length ?? 0) : null;
   return (
     <>
+      {limitNote && <p className="following-settings-note">{limitNote}</p>}
       {loading && followedEntities.length === 0 ? (
         <div className="following-settings-loading" role="status">
           <CircleNotch size={24} />

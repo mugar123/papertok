@@ -113,6 +113,17 @@
   font-size: 12px;
 }
 
+/* More journals followed than the feeds read (journal-limit-note.ts). */
+.following-settings-note {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-amber-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+  font-size: var(--fs-sm);
+}
+
 .following-settings-list {
   display: grid;
 }
