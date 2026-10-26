@@ -30,6 +30,7 @@ import { Button } from '../ui/button.tsx';
 import { useEntitySearch } from '../../hooks/use-entity-search.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
@@ -185,14 +186,15 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.preventDefault();
     event.stopPropagation();
     setPendingEntity(entity.id);
+    const following = isFollowing(entity);
     try {
       await toggleFollow(entity);
     } catch (error) {
-      console.error('Could not update follow state', error);
+      toastFollowRefused(error, { name: entity.displayName || 'this', following });
     } finally {
       setPendingEntity(null);
     }
-  }, [toggleFollow]);
+  }, [isFollowing, toggleFollow]);
 
   // Type positions stay fixed while the result groups retain relevance ordering.
   const orderedSections = SECTIONS;
