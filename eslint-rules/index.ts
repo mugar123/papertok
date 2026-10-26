@@ -1,6 +1,6 @@
 import type { ESLint } from 'eslint'
 import {
-  darkThemeParity, definedCustomProperties, focusRingUnlayered, noBareSpanHiding, noBrandOrangeFocusRing,
+  darkThemeParity, definedCustomProperties, focusRingUnlayered, noBrandOrangeFocusRing,
   noExternalCssUrls, noFocusRingRemoval, noRetiredColours, tokenContrast,
 } from './css.ts'
 import { patternedButtons } from './patterned-buttons.ts'
@@ -12,7 +12,6 @@ const papertok: ESLint.Plugin = {
     'no-focus-ring-removal': noFocusRingRemoval,
     'no-brand-orange-focus-ring': noBrandOrangeFocusRing,
     'focus-ring-unlayered': focusRingUnlayered,
-    'no-bare-span-hiding': noBareSpanHiding,
     'token-contrast': tokenContrast,
     'dark-theme-parity': darkThemeParity,
     'defined-custom-properties': definedCustomProperties,

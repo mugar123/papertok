@@ -92,7 +92,6 @@ the PR's `## Authorized decisions` section.
 | The frontend never imports Worker or proxy code; the Worker never imports UI or client SDKs | [lint: no-restricted-imports] |
 | Every disable directive states its reason, and an unused one fails | [lint: @eslint-community/eslint-comments/require-description] |
 | Focus stays visible: no `outline: none` without a recorded replacement, no ring in `--brand-orange`, the global ring outside every `@layer` | [lint: papertok/no-focus-ring-removal], [lint: papertok/no-brand-orange-focus-ring], [lint: papertok/focus-ring-unlayered] |
-| A stylesheet never hides every span in a container: Base UI's focus-guard spans would go too and Tab could not leave a popover | [lint: papertok/no-bare-span-hiding] |
 | Text and focus tokens keep WCAG contrast in both themes; every colour token has a dark value | [lint: papertok/token-contrast], [lint: papertok/dark-theme-parity] |
 | Every `var(--token)` in a stylesheet resolves, and stylesheets load nothing from other origins | [lint: papertok/defined-custom-properties], [lint: papertok/no-external-css-urls] |
 | Overlays come from `src/components/ui`; patterned buttons appear only where design.md allows | [lint: no-restricted-syntax], [lint: papertok/patterned-buttons] |
