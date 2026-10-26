@@ -33,3 +33,20 @@ test('a category named like an Object.prototype member keeps its own name as its
   for (const name of PROTOTYPE_NAMES) assert.equal(getCategoryLabel(name), name, name);
   assert.equal(getCategoryLabel('cs'), CATEGORIES.cs.label);
 });
+
+test('arXiv categories outside the selectable leaves have specific display names', () => {
+  for (const [id, label] of [
+    ['astro-ph.IM', 'Instrumentation and Methods for Astrophysics'],
+    ['cs.IT', 'Information Theory'],
+    ['eess.AS', 'Audio and Speech Processing'],
+    ['math.AC', 'Commutative Algebra'],
+    ['q-bio.NC', 'Neurons and Cognition'],
+    ['physics.data-an', 'Data Analysis, Statistics and Probability'],
+    ['q-fin.EC', 'Economics'],
+    ['stat.OT', 'Other Statistics'],
+  ]) {
+    assert.equal(getCategoryLabel(id), label);
+    assert.equal(getCategoryArea(id), null, 'display names do not create selectable feed leaves');
+  }
+  assert.equal(getCategoryLabel('unknown-code'), 'unknown-code');
+});

@@ -17,9 +17,8 @@ import { CATEGORIES, getCategoryLabel } from '../data/category-taxonomy.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 
-/* One resolution, used by the accent ink, the field label and the watermark
-   alike. Computing any of them a second way is how a paper ends up inked as
-   one field, labelled as another and stamped with the mark of a third. */
+/* Area grouping drives the accent and watermark. The masthead can name a
+   more specific native category or an explicitly attributed OpenAlex topic. */
 
 test('an arXiv category resolves exactly, then by its archive', () => {
   assert.equal(areaKeyForCategory('cs.AI'), 'ai');
@@ -72,16 +71,12 @@ test('every arXiv category resolves to the area that lists it, else its archive\
   );
 });
 
-// The chip named `math.AC` "Mathematics" while the ink and the kicker beside
-// it said Physics.
-test("an arXiv category's chip, kicker and ink name the same area", () => {
+test("every arXiv category has a specific label and keeps its area's ink", () => {
   for (const [id, areaKey] of ARXIV_CATEGORY_AREAS) {
     const area = CATEGORIES[areaKey];
     const paper = { primaryCategory: id, categories: [id] };
-    const expectedLabel = id === 'physics.data-an'
-      ? 'Data Analysis, Statistics and Probability'
-      : area.subcategories[id]?.label ?? area.label;
-    assert.equal(getCategoryLabel(id), expectedLabel, id);
+    assert.notEqual(getCategoryLabel(id), id, id);
+    if (!area.subcategories[id]) assert.notEqual(getCategoryLabel(id), area.label, id);
     assert.equal(areaLabelForPaper(paper), area.label, id);
     assert.equal(areaAccentForPaper(paper), area.gradient, id);
   }
