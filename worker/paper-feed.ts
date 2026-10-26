@@ -40,7 +40,8 @@ const FOLLOW_REFRESH_MS = 7 * 86_400_000;
 // app's. Runs spend the new follows' shares of OpenAlex and Workers AI
 // (paper-sources.ts, paper-store.ts), but an author known by name is searched
 // on the arXiv beat the app's readers share, and a project asks OpenAIRE,
-// without a share: counted by lane, since one request can bring 20, this is
+// without a share: counted by lane, since one request can bring 30 (20 follows
+// and 10 journals), this is
 // what bounds them in a day. Past it a new follow is still registered, and the
 // nightly run harvests it.
 const NEW_LANES_HARVESTED_PER_READER = 20;
@@ -50,14 +51,15 @@ const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // in the nightly refresh (paper-harvest.ts), and a lane stays live for 14 days
 // after it was last written, so this bounds the lanes one account keeps live,
 // and the wait they add, to about 14 days' worth. A request reads at most 20
-// follows and a lane asked for again is written once in FOLLOW_REFRESH_MS at
-// most, so the follows a reader asks for again take at most 20 of their 40 on
-// any day, and none on most days, leaving 20 for new ones. Past it a new
+// follows and 10 journals (`servedFollows` in src/utils/follow-lanes.ts) and a
+// lane asked for again is written once in FOLLOW_REFRESH_MS at most, so the
+// follows a reader asks for again take at most 30 of their 50 on any day, and
+// none on most days, leaving 20 for new ones. Past it a new
 // follow is not added: of the lanes nobody follows, only an OpenAlex topic's
 // holds papers (paper-store.ts `recordLanes`), so any other new follow has an
 // empty lane until a later request writes it. A lane asked for again keeps its
 // last write.
-const LANES_WRITTEN_PER_READER = 40;
+const LANES_WRITTEN_PER_READER = 50;
 const LANES_WRITTEN_PER_DAY = 4_000;
 
 /**
