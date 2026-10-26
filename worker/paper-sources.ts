@@ -27,7 +27,7 @@ import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
-import { OPENALEX_LEAF_VENUES } from './openalex-leaf-venues.generated.ts';
+import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -291,9 +291,10 @@ async function withShortWaits<T>(waits: LaneWaits, attempt: () => Promise<T>) {
 const LEAVES = getAllLeafCategories();
 // The leaves the precision gate admitted to OpenAlex topic lanes.
 const TOPIC_LEAVES = LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id));
-// The leaves with a notable lane: those, and the leaves the notable sample
-// admitted (ENG-129, part B), which get no topic lane.
-const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableFilterForLeaf(leaf.id));
+// The leaves with an OpenAlex notable lane: those, the leaves the notable
+// sample admitted (ENG-129, part B), which get no topic lane, and the leaves
+// the journal sample admitted (`openAlexNotableListingFilter`).
+const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableListingFilter(leaf.id, notableListedYear(1)) !== null);
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -334,6 +335,21 @@ export function openAlexVenueFilterForLeaf(leaf: string) {
   if (!Object.hasOwn(OPENALEX_LEAF_VENUES, leaf)) return null;
   const { sources, filters } = OPENALEX_LEAF_VENUES[leaf];
   return [`primary_location.source.id:${sources.join('|')}`, ...filters].join(',');
+}
+
+/**
+ * The works filter of one year of a leaf's OpenAlex notable lane: the articles
+ * of its topics from core sources (`openAlexNotableFilterForLeaf`), or, once
+ * its journal sample passed, the articles of its venue lane's journals. Those
+ * passed the venue gate already, and the core-source filter would drop the
+ * reviewed ones OpenAlex does not call core (ICPP in cs.DC, ACM TOIS in
+ * cs.IR). Null when no sample admitted the leaf.
+ */
+export function openAlexNotableListingFilter(leaf: string, year: number) {
+  const window = [`from_publication_date:${year}-01-01`, `to_publication_date:${year}-12-31`, 'is_retracted:false'];
+  const topics = openAlexNotableFilterForLeaf(leaf);
+  if (topics) return [topics, ...window, 'primary_location.source.is_core:true'].join(',');
+  return OPENALEX_NOTABLE_VENUE_LEAVES.includes(leaf) ? [openAlexVenueFilterForLeaf(leaf), ...window].join(',') : null;
 }
 
 export type SourceName =
@@ -585,16 +601,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   'openalex-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true, separateListings: true,
     // The lane's page picks the year; OpenAlex is asked the first page of it.
-    fetchPage: (env, { lane, page }) => {
-      const year = notableListedYear(page);
-      return openAlexLane(env, [
-        openAlexNotableFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
-        `from_publication_date:${year}-01-01`,
-        `to_publication_date:${year}-12-31`,
-        'is_retracted:false',
-        'primary_location.source.is_core:true',
-      ].join(','), { page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories' });
-    },
+    fetchPage: (env, { lane, page }) => openAlexLane(env, openAlexNotableListingFilter(lane.slice(NOTABLE_LANE_PREFIX.length), notableListedYear(page))!, {
+      page: 1, lane, perPage: NOTABLE_PER_YEAR, sort: 'cited_by_count:desc', part: 'categories',
+    }),
   },
   // The newest journal articles of a whole area, filed under the area. On
   // 2026-10-23 a page of 200 with an abstract held the last one or two days of
