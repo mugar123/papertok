@@ -10,6 +10,11 @@ export const FEED_DISPLAY_STATES = Object.freeze({
 /** The paper store answered with no papers for the reader's interests: not a failure to retry. */
 export const FEED_EMPTY = 'FEED_EMPTY';
 
+/** A failed first load is not over: its retry is still the first wait, under the veil. An empty answer is over. */
+export function firstLoadSettled({ hasPapers, loadStarted, loading, error }: { hasPapers: boolean; loadStarted: boolean; loading: boolean; error: unknown }) {
+  return hasPapers || (loadStarted && !loading && (!error || error === FEED_EMPTY));
+}
+
 export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; hasSourceEmptyState?: boolean }) {
   if (error && error !== FEED_EMPTY && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
   if (hasPapers) return FEED_DISPLAY_STATES.FEED;
