@@ -301,10 +301,19 @@ test('a notable sample out of citation order, outside the window or with an unla
   }
 });
 
-test('a leaf with a notable lane from its topics, or without a venue lane, cannot take a journal notable sample', t => {
+test('a leaf with a notable lane from its topics cannot take a passing journal notable sample, nor a leaf without a venue lane any', t => {
   const { write, run } = setup(t);
   write({ 'cs.CV': { sample: sample() } }, sources, { 'cs.CV': notableSample() });
   assert.match(run().stderr, /cs\.CV: has a notable lane from its topics/);
   write({ 'econ.GN': { sample: sample({ onTarget: 9 }) } }, sources, { 'econ.GN': notableSample() });
   assert.match(run().stderr, /econ\.GN: a notable sample needs the leaf's venue lane/);
+});
+
+test('a rejected journal notable sample stays as evidence for a leaf with a notable lane from its topics', t => {
+  const { write, run, coverage, output } = setup(t);
+  write({ 'cs.CV': { sample: sample() } }, sources, { 'cs.CV': notableSample({ onTarget: 9 }) });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(coverage()[0].notable, { status: 'rejected', sampleSize: 15, onTarget: 9 });
+  assert.deepEqual(notableLeavesIn(readFileSync(output, 'utf8')), [], 'the topics keep the only listing');
 });

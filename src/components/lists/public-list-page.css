@@ -1,6 +1,10 @@
 .public-list-page {
   min-height: 100vh;
   min-height: 100dvh;
+  /* The wait and outcome states fill what the header leaves, whatever height
+     it wraps to. */
+  display: flex;
+  flex-direction: column;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
@@ -24,7 +28,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  /* Wraps rather than overflows: at 320px or 200% text the wordmark, Privacy
+     and the sign-in button no longer share a line. */
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-2);
   background: var(--bg-secondary);
 }
 
@@ -36,16 +44,21 @@
   text-decoration: none;
 }
 
-.public-list-brand span {
+/* Scoped to the label: a bare span rule also reaches the focus-guard spans
+   Base UI puts beside the Privacy trigger, and hiding those traps Tab. */
+.public-list-brand-label {
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
   text-transform: uppercase;
 }
 
 .public-list-brand-actions {
+  /* Right-aligned when the header wraps onto a second row. */
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
 }
 
 .public-list-brand .public-list-auth-cta {
@@ -267,7 +280,7 @@
 
 .public-list-status {
   width: min(560px, calc(100% - 40px));
-  min-height: calc(100dvh - 58px);
+  flex: 1;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -321,8 +334,8 @@
 }
 
 @media (max-width: 600px) {
-  .public-list-brand { padding: 0 20px; }
-  .public-list-brand span { display: none; }
+  .public-list-brand { padding-inline: 20px; }
+  .public-list-brand-label { display: none; }
   .public-list-brand .public-list-auth-cta { max-width: 210px; text-align: center; }
   .public-list-content { width: calc(100% - 32px); padding-top: 40px; }
   /* Kept (not redundant): the app-mode top offset also shrinks --space-10 to

@@ -104,8 +104,8 @@ harvest's 4,000 units a day that the category lanes share with the notable
 lanes: with the topic lanes (195 at most), the area lanes (9) and the
 working-paper series (4), a night's category calls are at most 448, and the
 notable lanes add ten for each new lane on its first night (440 for the 44
-journal lanes of 2026-10-26) and at most 180 a night for re-listings (18 of
-123 lanes; a new lane whose first listing failed is listed again beside
+journal lanes of 2026-10-26) and at most 190 a night for re-listings (19 of
+129 lanes; a new lane whose first listing failed is listed again beside
 them).
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
@@ -149,9 +149,11 @@ labelled as in the gate above.
 without doubt. A passing leaf joins `OPENALEX_NOTABLE_VENUE_LEAVES`, the second
 export of `worker/openalex-leaf-venues.generated.ts`, and the report gives each
 sampled leaf `notable: { status, sampleSize, onTarget }`. The generator stops
-on a notable sample for a leaf without a venue lane, or for a leaf with a
-notable lane from its topics (`openAlexNotableFilterForLeaf`): a notable lane
-has one OpenAlex listing. Each batch of admitted leaves changes what every
+on a notable sample for a leaf without a venue lane, or on a passing one for a
+leaf with a notable lane from its topics (`openAlexNotableFilterForLeaf`): a
+notable lane has one OpenAlex listing. A rejected sample lists nothing and
+stays as evidence when a topic sample admits the leaf later, as mech.auto's
+did. Each batch of admitted leaves changes what every
 reader of those leaves is shown and adds ten OpenAlex list calls a week per
 leaf, so it is authorized under AGENTS.md before it is committed.
 
@@ -187,7 +189,9 @@ cs.MM 12, mostly computer vision and medical image analysis; math.CA 8, mostly
 neural-network approximation and number theory; math.GT 10, mostly algebraic
 K-theory, quantum algebra and mathematical physics, with some symplectic and
 algebraic geometry; mech.auto 6 of railway vehicle dynamics. These leaves keep
-their venue lanes and get no notable lane from their journals.
+their venue lanes and get no notable lane from their journals. Later on
+2026-10-26 a topic sample gave mech.auto a notable lane from its vehicle
+topics (`scripts/README-openalex-leaf-topics.md`).
 
 The sample is evidence about the head of each lane's ten-year population with
 an abstract (`meta.count` of its response); the listing takes up to 100 works

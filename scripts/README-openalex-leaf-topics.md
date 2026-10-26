@@ -163,9 +163,12 @@ leaf without a topic lane, the OpenAlex subfield IDs whose catalogue topics
 stand for it, and, where OpenAlex files a fitting topic under another subfield
 (quantum information under Artificial Intelligence), that topic's ID. It is
 hand-written from the catalogue's subfield list; `[]` records that nothing
-fits. The candidates are the catalogue topics of those subfields and IDs, not
-label matches: on 2026-10-23 the label selector proposed `T14414` for `cs.AI`,
-which returned 8 of its 15 articles, none on target. The map must name only
+fits. An entry can also name topics only: the ten leaves proposed again on
+2026-10-26 name topics chosen from the catalogue and from their 2026-10-25
+samples (their section below). The candidates are the
+catalogue topics of those subfields and IDs, not label matches: on 2026-10-23
+the label selector proposed `T14414` for `cs.AI`, which returned 8 of its 15
+articles, none on target. The map must name only
 leaves without a topic lane; a leaf it leaves out is reported `not-mapped`.
 OpenAlex ORs at most 100 values in one filter, so a proposal of more topics is
 reported `too-many-candidates` and must name fewer subfields. The candidates
@@ -348,6 +351,100 @@ science and meat quality beside behaviour and taxonomy). The four lanes ask
 for 17 topics and spend 40 units a week; with 79 notable lanes the nightly
 share is twelve (120 units). This closes the 110 leaves: 40 admitted, 70
 rejected. Authorized by Nicolás on 2026-10-25 (ENG-138).
+
+### 2026-10-26: topic proposals for the ten leaves without a notable lane
+
+After the journal and Europe PMC samples of 2026-10-26, ten leaves had no
+notable lane: `mech.auto`, `med.tox`, `med.peds`, `med.surg`, `med.immuno`,
+`med.path`, `bio.zoo`, `chem.anal`, `chem.org` and `chem.spectro`. Their
+2026-10-25 proposals were mostly whole subfields. `chem.anal`, `chem.org` and
+`med.immuno` had 9 of 15 on target, `med.peds` 7 and `med.tox` 6; the other
+five had 2 to 4, their most-cited articles mostly another subject: battery
+cells and additive manufacturing under Automotive Engineering, lipid and
+coronary guidelines under Surgery, proteomics repositories under Spectroscopy.
+
+This is a second attempt for these leaves. Each new proposal names topics
+only and was written before its new sample, from the pinned catalogue's
+names, keywords and descriptions and from the 2026-10-25 samples: of the 44
+topics those samples returned with no article on target without doubt, the
+proposals leave out 39; of the 24 with one, they keep 22 (`med.peds` drops
+`T10209`, global maternal and child health, and `med.path` `T10185`,
+lymphoma diagnosis and treatment). `mech.auto` asks for the vehicle topics of
+Automotive Engineering and leaves out its battery, manufacturing, spatial
+cognition and shared-mobility topics; `med.surg` asks for operations, their
+complications and perioperative and trauma surgery, and leaves out the Surgery
+subfield's drug-treatment and cardiology topics; `chem.org` asks for
+synthesis, reaction and mechanism topics and leaves out polymer, colloid,
+materials and organometallic ones. The new proposals and their samples
+replace the leaves' 2026-10-25 entries, which stay in Git history
+(`024305bf`).
+
+Ten anonymous requests at 20:05 UTC on 2026-10-26, all answered 200 with 15
+articles. **An agent labelled them, not a person**, under the procedure above
+at Nicolás's request: four fresh agent contexts (chemistry; toxicology,
+paediatrics and surgery; clinical immunology and pathology; automotive
+engineering and zoology), each given only its own sheets, which named the leaf
+and held shuffled opaque row IDs, titles and the first 1,500 characters of the
+decoded abstract. Two `chem.anal` rows' abstracts were publisher page text
+that names the journal (`pubs.acs.org/doi/10.1021/acs.analchem…`), which
+the procedure hides; their titles read as analytical chemistry alone. The
+agents report reading their sheets only, which the files cannot prove. Six
+pass; each lane asks for the sampled topics with an article on target:
+
+| Leaf | On target, of 15 | The lane's topics |
+| --- | --- | --- |
+| `mech.auto` | 13 | `T10808` electric and hybrid vehicles, `T11099` automated driving, `T12095` vehicle emissions |
+| `bio.zoo` | 12 | `T10089` birds, `T10174` animal behaviour, `T10332` amphibians and reptiles, `T10699` primates, `T11387` sharks and rays, `T11665` vocal communication, `T12319` fish biology, `T14399` invertebrate taxonomy |
+| `chem.spectro` | 12 | `T11111` laser spectroscopy and spectroscopic databases, `T11324` Raman and infrared, `T12039` electron and X-ray spectroscopy |
+| `med.peds` | 12 | `T10549` neonatal lung, `T10979` breastfeeding, `T11060` preterm care, `T11892` Kawasaki disease and the multisystem inflammatory syndrome in children, `T12484` retinopathy of prematurity, `T12823` transition to adult care |
+| `chem.anal` | 11 | `T10180` sample preparation, `T10212` electrochemical sensors, `T10640` chemometrics, `T10683` mass spectrometry, `T11434` electroanalysis |
+| `chem.org` | 10 | `T10013` asymmetric synthesis, `T10701` photochemical and photoredox reactions, `T12191` reaction mechanisms |
+
+The passing leaves' misses were mostly at their edge: for `chem.org`,
+medicinal chemistry reviews, an in situ click-chemistry drug-discovery paper
+and frustrated Lewis pairs; for `chem.anal`, a general machine-learning paper
+on splitting training and validation data, a sweat-glucose device, an
+impedance-spectroscopy tutorial and a routine HPLC impurity-method
+validation; for `chem.spectro`, the same machine-learning paper, an FTIR
+reading guide and a DFT study of infrared bands; for `bio.zoo`, acoustic
+monitoring and a parasitoid wasp's host choice; for `mech.auto`, a survey of
+human motion prediction for robots and a transport-policy study; and, for
+`med.peds`, two guidelines for adults with congenital heart disease and a
+review of antenatal corticosteroids. `chem.org` passes at exactly 10 of 15.
+Four are rejected:
+`med.tox` at 9 (four PFAS occurrence and policy papers doubted as
+environmental chemistry), `med.surg` at 9 (three anterior cruciate ligament
+papers doubted as sports medicine, joint-replacement projections and a
+revascularization guideline doubted), `med.immuno` at 9 (psoriasis,
+psoriatic arthritis and systemic sclerosis papers doubted as other
+specialties, a small cohort and a case report off target) and `med.path` at
+3 (desmoid, salivary gland and histiocytosis papers read as clinical oncology
+and haematology).
+
+The new pages repeat 54 of the 150 articles of the 2026-10-25 pages, and 37
+of the 90 of the passing leaves: `chem.anal` 11 of 15, `chem.org` 11,
+`bio.zoo` 7, `mech.auto` and `med.peds` 3, `chem.spectro` 2. For `chem.anal`
+and `chem.org`, rejected at 9 on 2026-10-25, the pass is mostly the same head
+of citations labelled again once its off-target topics were left out. The two
+labellings differ on 15 of the 54 repeated articles, 9 of them on whether the
+article counts: with the 2026-10-25 labels on the repeated articles, `med.tox`
+would have 10 and `med.immuno` 11, both passing, `chem.org` 13 and `chem.anal`
+12. The agents' disagreement is about as large as the gate's margin.
+
+The six lanes ask for 28 topic entries (`T11434` also serves `chem.electro`,
+`T10089` and `T10332` `bio.eco`, and `T10174` `bio.evo`) and spend 60 units a
+week; with 129 OpenAlex notable lanes the nightly share is 19 (190 units). Six
+keyless `group_by=publication_year` requests at 20:22–20:23 UTC over each
+lane's filter found 1,353 to 15,729 articles a year from core sources, so a
+year's listing of 100 does not reach its uncited tail; ranks below the
+sample's 15 are not measured. Their first night lists up to 6,000 papers: at
+the 7.5M-token embedding ceiling, about 11,000 papers a day of which the day's
+about 5,000 new ones go first, their first embedding takes about one night.
+`mech.auto` keeps its venue lane; its journal sample (9 of 15,
+`scripts/README-openalex-leaf-venues.md`) stays as evidence, and its notable
+lane lists its topics. Authorized by Nicolás on 2026-10-26, as a second
+attempt for these leaves, in two batches: the three chemistry leaves, and
+`med.peds`, `mech.auto` and `bio.zoo`.
 
 ## The 2026-10-23 sample (PAP-99)
 

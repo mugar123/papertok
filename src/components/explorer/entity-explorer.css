@@ -21,7 +21,7 @@
    reader, the same condition that renders the bar): the page starts below
    it, the sticky toolbar docks under it, and the hero stops reserving the
    notch, which the bar already covers. Border-box, so `min-height: 100dvh`
-   and the error's `height: 100dvh` keep meaning the whole screen with the
+   and the error's `min-height: 100dvh` keep meaning the whole screen with the
    padding inside them. Without the bar nothing here applies. */
 /* And the band OPENS; it does not appear.
 
@@ -88,8 +88,11 @@
 }
 
 .explorer-error {
-  height: 100vh;
-  height: 100dvh;
+  position: relative;
+  /* Grows past the screen when large text needs it; a fixed height would clip
+     the top of a centred column, under the Privacy bar. */
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -105,6 +108,20 @@
      animation copied byte for byte, so the error resolves exactly like
      every other arrival in the hero instead of being its own special case. */
   animation: settle var(--motion-base) var(--ease-out) both;
+}
+
+/* The visitor's Privacy switch, in the corner the hero keeps it in. The page
+   reserves the bar's height below, so large text cannot run its content
+   under the button. The button is `.ehc-share`, fixed at 40px whatever the
+   root font size, so the reserve is in px too. */
+.explorer-error:has(> .explorer-error-bar) {
+  padding-top: calc(var(--inset-top) + var(--space-3) + 40px + var(--space-2));
+}
+
+.explorer-error-bar {
+  position: absolute;
+  top: calc(var(--inset-top) + var(--space-3));
+  right: var(--space-3);
 }
 
 .explorer-error h1 {
@@ -148,8 +165,16 @@
 .explorer-hero-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-1);
   margin-bottom: var(--space-5);
+}
+
+/* Back at one end, the actions and Privacy at the other. Pushed from the Back
+   side: with its popup open the Privacy trigger gains focus-guard spans as
+   siblings, so a rule keyed to the trigger's neighbours would stop matching
+   and the button would jump next to Back. */
+.explorer-hero-top > .eht-left {
+  margin-right: auto;
 }
 
 .eht-left {

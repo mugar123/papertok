@@ -7,16 +7,16 @@ import test from 'node:test';
 
 // Synthetic samples; these do not establish live precision.
 interface Options {
-  label?: string; onTarget?: number; size?: number; uncertain?: number; capturedAt?: string;
+  label?: string; leafQuery?: string; onTarget?: number; size?: number; uncertain?: number; capturedAt?: string;
   years?: string; sort?: string; abstract?: boolean; params?: Record<string, string>; hitCount?: number;
 }
 
-// The 15 most-cited records of a label over the ten completed years before
-// the capture, citations falling from 9,000, the first `onTarget` on target
-// and the next `uncertain` doubted.
-function sample({ label = 'Genetics', onTarget = 12, size = 15, uncertain = 0, capturedAt = '2026-10-26T12:00:00Z', years = '2016 TO 2025', sort = 'sort_cited:y', abstract = true, params = {}, hitCount = 5000 }: Options = {}) {
+// The 15 most-cited records of a label (or of `leafQuery`) over the ten
+// completed years before the capture, citations falling from 9,000, the first
+// `onTarget` on target and the next `uncertain` doubted.
+function sample({ label = 'Genetics', leafQuery = `(TITLE_ABS:"${label}" OR KW:"${label}")`, onTarget = 12, size = 15, uncertain = 0, capturedAt = '2026-10-26T12:00:00Z', years = '2016 TO 2025', sort = 'sort_cited:y', abstract = true, params = {}, hitCount = 5000 }: Options = {}) {
   const query = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
-  query.searchParams.set('query', `(TITLE_ABS:"${label}" OR KW:"${label}") AND PUB_YEAR:[${years}]${abstract ? ' AND HAS_ABSTRACT:y' : ''} ${sort}`);
+  query.searchParams.set('query', `${leafQuery} AND PUB_YEAR:[${years}]${abstract ? ' AND HAS_ABSTRACT:y' : ''} ${sort}`);
   query.searchParams.set('format', 'json');
   query.searchParams.set('resultType', 'core');
   query.searchParams.set('pageSize', '15');
@@ -43,8 +43,9 @@ function setup(t: import('node:test').TestContext) {
     'scripts/generate-europepmc-notable-leaves.ts', '--reviews', reviews, '--out', output, '--report', report, ...extra,
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{ leaf: string; status: string; sampleSize: number; onTarget: number }>;
-  const admitted = () => [...readFileSync(output, 'utf8').matchAll(/^ {2}'([^']+)',$/gm)].map(match => match[1]);
-  return { write, run, coverage, admitted, output };
+  const queries = () => Object.fromEntries([...readFileSync(output, 'utf8').matchAll(/^ {2}'([^']+)': '(.+)',$/gm)].map(match => [match[1], match[2]]));
+  const admitted = () => Object.keys(queries());
+  return { write, run, coverage, admitted, queries, output };
 }
 
 test('the checked-in Europe PMC notable leaves are reproducible from the default inputs', () => {
@@ -91,6 +92,45 @@ test("a sample must be the leaf's own query over the ten completed years before 
     write({ 'bio.gen': value });
     assert.notEqual(run().status, 0, value.query);
     assert.deepEqual(admitted(), ['bio.gen'], 'a refused input leaves the output as it was');
+  }
+});
+
+test("a leaf's listing asks the query its sample asked: its label, MeSH descriptors or journals", t => {
+  const { write, run, queries } = setup(t);
+  const mesh = '(KW:"General Surgery" OR KW:"Postoperative Complications" OR KW:"Desensitization, Immunologic")';
+  const journals = '(ISSN:"0893-3952" OR ISSN:"1934-662X")';
+  write({ 'bio.gen': sample(), 'med.surg': sample({ leafQuery: mesh }), 'med.path': sample({ leafQuery: journals }) });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(queries(), { 'bio.gen': '(TITLE_ABS:"Genetics" OR KW:"Genetics")', 'med.path': journals, 'med.surg': mesh });
+});
+
+test('a sample query of free text other than the leaf\'s label, of mixed or other fields, or with more clauses is refused', t => {
+  const { write, run, admitted } = setup(t);
+  write({ 'med.surg': sample({ leafQuery: '(KW:"General Surgery")' }) });
+  assert.equal(run().status, 0);
+  const broken = [
+    '(TITLE_ABS:"Surgery" OR KW:"General Surgery")',
+    '(TITLE_ABS:"cancer surgery")',
+    '(KW:"General Surgery" OR ISSN:"0893-3952")',
+    '(KW:"General Surgery") OR ALL_FIELDS:"surgery"',
+    '(KW:"General Surgery" NOT KW:"Laparoscopy")',
+    '(ISSN:"0893-39521")',
+    '(JOURNAL:"Surgery")',
+    'KW:"General Surgery"',
+    // An escaped quote may not end a phrase in Europe PMC, as in Lucene, and
+    // could carry a field, a NOT and a top-level OR past the year window; a
+    // line break would break the generated string.
+    '(KW:"a\\" OR KW:"b) OR (ALL_FIELDS:cancer" OR KW:"c\\")',
+    '(KW:"a\\" OR KW:"b) NOT (KW:x" OR KW:"c\\")',
+    '(KW:"General\nSurgery")',
+  ];
+  for (const leafQuery of broken) {
+    write({ 'med.surg': sample({ leafQuery }) });
+    const result = run();
+    assert.notEqual(result.status, 0, leafQuery);
+    assert.match(result.stderr, /label, MeSH or journal query/, leafQuery);
+    assert.deepEqual(admitted(), ['med.surg'], 'a refused input leaves the output as it was');
   }
 });
 

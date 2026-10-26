@@ -1421,7 +1421,8 @@ test('a notable lane drops a paper 14 days after the listing that last returned 
 });
 
 test('a leaf no sample admitted has no OpenAlex notable listing, and a topic leaf keeps the core-source filter', () => {
-  assert.equal(openAlexNotableListingFilter('chem.org', 2016), null);
+  // med.path's topic sample was 3 of 15 on target on 2026-10-26.
+  assert.equal(openAlexNotableListingFilter('med.path', 2016), null);
   // cs.MM's journal sample was 3 of 15 on target on 2026-10-26.
   assert.ok(openAlexVenueFilterForLeaf('cs.MM'));
   assert.equal(openAlexNotableListingFilter('cs.MM', 2016), null, 'a venue lane alone does not admit a leaf');
@@ -1558,19 +1559,43 @@ const europePmcRecord = (index: number, extra: Record<string, unknown> = {}) => 
   ...extra,
 });
 
-test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited records of each year that name the leaf", async t => {
+test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited records of each year that its sampled query matches", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
   const { urls, env } = relay(t, () => ({ resultList: { result: [europePmcRecord(1)] } }));
-  const page = (n: number) => SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:bio.gen', page: n, since: '', waits: { seconds: 0 } });
+  const page = (n: number) => SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:med.onco', page: n, since: '', waits: { seconds: 0 } });
   await page(1);
   const { items } = await page(3);
   assert.deepEqual(urls.map(url => `${url.origin}${url.pathname}`), Array(2).fill('https://www.ebi.ac.uk/europepmc/webservices/rest/search'));
+  // med.onco's sample asked its label, as the category lanes do.
   assert.deepEqual(urls.map(url => url.searchParams.get('query')), [
-    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2016-01-01 TO 2016-12-31] AND ${europePmcRecords} sort_cited:y`,
-    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2018-01-01 TO 2018-12-31] AND ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Oncology" OR KW:"Oncology") AND FIRST_PDATE:[2016-01-01 TO 2016-12-31] AND ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Oncology" OR KW:"Oncology") AND FIRST_PDATE:[2018-01-01 TO 2018-12-31] AND ${europePmcRecords} sort_cited:y`,
   ]);
   assert.deepEqual(['pageSize', 'resultType', 'format'].map(name => urls[0].searchParams.get(name)), ['100', 'core', 'json']);
-  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:bio.gen']]]);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:med.onco']]]);
+});
+
+test('a leaf whose MeSH or journal sample passed lists with that query, not with its label', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ resultList: { result: [] } }));
+  for (const leaf of ['med.surg', 'med.path']) {
+    await SOURCES['europepmc-notable'].fetchPage(env, { lane: `notable:${leaf}`, page: 10, since: '', waits: { seconds: 0 } });
+  }
+  const [surgery, pathology] = urls.map(url => url.searchParams.get('query')!);
+  // med.surg's sample asked MeSH descriptors on 2026-10-26, med.path's its journals.
+  assert.ok(surgery.startsWith('(KW:"General Surgery" OR KW:"Surgeons" OR KW:"Surgical Procedures"'), surgery);
+  assert.ok(pathology.startsWith('(ISSN:"0893-3952" OR ISSN:"0147-5185"'), pathology);
+  for (const query of [surgery, pathology]) {
+    assert.ok(!query.includes('TITLE_ABS'), 'no label text');
+    assert.ok(query.endsWith(`) AND FIRST_PDATE:[2025-01-01 TO 2025-12-31] AND ${europePmcRecords} sort_cited:y`), query);
+  }
+});
+
+test('a Europe PMC notable job for a leaf no sample admitted fails before asking Europe PMC', async t => {
+  const { urls, env } = relay(t, () => ({ resultList: { result: [europePmcRecord(1)] } }));
+  // bio.gen's sample was 7 of 15 on target on 2026-10-26.
+  await assert.rejects(SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:bio.gen', page: 1, since: '', waits: { seconds: 0 } }), /notable:bio\.gen has no Europe PMC notable listing/);
+  assert.deepEqual(urls, []);
 });
 
 test('every medicine and biology leaf the Europe PMC sample admitted, and no other leaf, has a Europe PMC notable job', async () => {
@@ -1602,10 +1627,10 @@ test('a preprint Europe PMC and bioRxiv both list is one work, in the notable la
   const { env } = relay(t, () => ({ resultList: { result: [preprint] } }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding };
-  await ingestPapers(store, [{ paper: mapBioRxivPaper({ doi, title: preprint.title, abstract: preprint.abstractText, authors: 'Doe, J.', category: 'genetics', date: '2018-03-14', version: '1' })!, lanes: ['bio.gen'] }], { keepUntil: daysFromNow(14, now), now });
-  await harvestLane(store, { source: 'europepmc-notable', lane: 'notable:bio.gen' }, now);
+  await ingestPapers(store, [{ paper: mapBioRxivPaper({ doi, title: preprint.title, abstract: preprint.abstractText, authors: 'Doe, J.', category: 'microbiology', date: '2018-03-14', version: '1' })!, lanes: ['bio.micro'] }], { keepUntil: daysFromNow(14, now), now });
+  await harvestLane(store, { source: 'europepmc-notable', lane: 'notable:bio.micro' }, now);
   const rows = db.prepare('SELECT work_id, lane FROM work_lanes ORDER BY lane').all() as Array<{ work_id: number; lane: string }>;
-  assert.deepEqual(rows.map(row => row.lane), ['bio.gen', 'notable:bio.gen']);
+  assert.deepEqual(rows.map(row => row.lane), ['bio.micro', 'notable:bio.micro']);
   assert.equal(new Set(rows.map(row => row.work_id)).size, 1);
   assert.deepEqual(db.prepare("SELECT paper ->> '$.publicationStatus' AS status FROM works").all().map(row => row.status), ['preprint'], 'still a preprint after the Europe PMC listing');
 });
