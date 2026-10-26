@@ -13,6 +13,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deploy-flags.ts'
+import { installStartupGuard } from './src/startup-guard.ts'
 
 // Shared with the `base` field below and with the service-worker precache
 // derivation, which needs to strip this same prefix off every asset URL
@@ -183,6 +184,24 @@ export default defineConfig(({ command, mode }) => {
   return {
     base: BASE_PATH,
     plugins: [
+      {
+        name: 'startup-guard',
+        transformIndexHtml: {
+          order: 'post',
+          handler(html, context) {
+            if (!context.filename.endsWith('/index.html')) return html
+            // Head stylesheets can block both painting and the classic guard
+            // script. Keep their order and native module readiness, but start
+            // them after the recovery screen and its watchdog exist.
+            const stylesheets: string[] = []
+            const document = html.replace(/<link\b[^>]*\brel="stylesheet"[^>]*>/g, (link) => {
+              stylesheets.push(link)
+              return ''
+            })
+            return document.replace('</body>', `<script>(${installStartupGuard.toString()})();</script>\n${stylesheets.join('\n')}\n</body>`)
+          },
+        },
+      },
       react(),
       tailwindcss(),
       VitePWA({
