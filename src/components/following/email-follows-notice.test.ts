@@ -10,8 +10,9 @@ const author = { type: 'author' as const, canonicalId: 'A10', displayName: 'Ana 
 // say why there is no digest instead of "Nothing followed yet".
 test('the email settings tell a reader who follows only journals that journals are not in the email', () => {
   const notice = emailFollowsNotice([journal], false);
-  assert.equal(notice?.heading, 'Journals are not in the email yet');
-  assert.doesNotMatch(notice!.body, /nothing/i);
+  assert.ok(notice);
+  assert.equal(notice.heading, 'Journals are not in the email yet');
+  assert.doesNotMatch(notice.body, /nothing/i);
   assert.equal(emailFollowsNotice([journal], true)?.heading, 'Journals are not in the email yet', 'whether or not they asked for the digest when they joined');
 });
 
