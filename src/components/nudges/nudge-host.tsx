@@ -32,8 +32,9 @@ import NudgePanel from './nudge-panel.tsx';
 //
 // A privacy policy change takes the visit's turn before any nudge. Only
 // signed-in accounts are told, and it returns on later visits until it is
-// dismissed; utils/nudges.ts decides who is owed it. Once picked it is shown
-// on the feed only: on a route with a modal paper it would cover the card and
+// dismissed; utils/nudges.ts decides who is owed it. Whatever was picked, the
+// email nudge too, is shown on the feed only and comes back when the reader
+// returns to it: on a route with a modal paper it would cover the card and
 // take the Escape meant for the notice. A change of account remounts this
 // component, which clears what was picked for the previous reader.
 
@@ -42,6 +43,7 @@ const COPY = {
     dismiss: 'Dismiss and do not show again',
     privacy: {
       title: 'Privacy policy updated',
+      announced: 'The details are in the notice at the bottom of the screen.',
       policy: 'Read the policy',
       newTab: ' (opens in a new tab)',
       done: 'Got it',
@@ -155,9 +157,11 @@ export default function NudgeHost() {
   return (
     <>
     {/* Always mounted, outside the panel: a live region speaks when its text
-        changes, and one that arrives already holding text is often not read. */}
+        changes, and one that arrives already holding text is often not read.
+        It says only that the notice is there; the summary is read once, in the
+        panel, instead of a second time from here. */}
     <p className="visually-hidden" role="status">
-      {privacyShown ? `${copy.privacy.title}. ${PRIVACY_POLICY_CHANGE}` : ''}
+      {privacyShown ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
     </p>
     <AnimatePresence>
       {privacyShown ? (

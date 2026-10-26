@@ -11,9 +11,11 @@ import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 import './nudge-panel.css';
 
-// An aside, not a dialog: it takes no focus, traps nothing, and covers no
-// control. Someone reading a paper can ignore it to the end of the page, and
-// the X is the only thing it asks for.
+// An aside, not a dialog: it takes no focus and traps nothing, so someone
+// reading a paper can ignore it to the end of the page. On a small screen it
+// can cover the bottom of the card, which is why it carries an X; the host
+// decides what the X remembers (the privacy notice hides for the visit and
+// also answers Escape, the email nudge is dismissed for good).
 //
 // The motion, measured on its twin (2026-09-12): opacity runs straight and
 // lands first, movement keeps easing underneath it. One curve for all three
