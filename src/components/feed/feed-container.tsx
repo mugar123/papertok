@@ -25,7 +25,7 @@ interface FeedContainerProps {
   landmark?: { label: string; heading: string } | null;
 }
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
@@ -1221,16 +1221,22 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
       <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
-        <div className="atom-loader">
-          <Petri pose="flask" className="petri-loader" />
-        </div>
-        <h2>{'Searching for discoveries...'}</h2>
-        <p>
-          {'There are no papers in your categories yet. Try broadening your interests.'}
-        </p>
-        <button className="feed-retry-btn" onClick={handleRefresh}>
-          {'Explore again'}
-        </button>
+        <EmptyState
+          role="status"
+          art={<Petri pose="flask" className="feed-error-petri" />}
+          title={'No papers for your topics yet'}
+          actions={(
+            <>
+              <Button size="sm" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
+              <Button size="sm" variant="outline" onClick={handleRefresh}>
+                <ArrowsClockwise size={16} aria-hidden="true" />
+                {'Check again'}
+              </Button>
+            </>
+          )}
+        >
+          {'The topics you picked have no papers in PaperTok yet. Add more topics, or check again after the next update.'}
+        </EmptyState>
       </FeedLandmark>
     );
   }

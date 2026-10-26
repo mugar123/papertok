@@ -80,7 +80,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedFailureEventStep } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedFailureEventStep, feedLoadFailure } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -1483,7 +1483,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     } catch (failure) {
       if (requestId === feedRequestId.current) {
-        setError('FEED_LOAD_FAILED');
+        // A store with no papers for these interests answered; asking again
+        // at once gets the same answer.
+        const empty = feedLoadFailure(failure).reason === 'empty';
+        const shownError = empty ? 'FEED_EMPTY' : 'FEED_LOAD_FAILED';
+        setError(shownError);
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
@@ -1491,14 +1495,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
           kind: 'load_failed',
           failure,
-          screen: { feedVisible: feedRouteActiveRef.current, error: 'FEED_LOAD_FAILED', shownPapers: papersRef.current.length },
+          screen: { feedVisible: feedRouteActiveRef.current, error: shownError, shownPapers: papersRef.current.length },
         });
         pendingFailureEventRef.current = hold;
         if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.
-        if (reset && !autoRetryUsedRef.current) {
+        if (reset && !empty && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {

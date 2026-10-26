@@ -53,6 +53,17 @@ test('keeps established priority for errors, cards, and source empty states', ()
   );
 });
 
+test('a store with no papers for the reader\'s interests is the empty state, not the error', () => {
+  assert.equal(
+    getFeedDisplayState({ ...baseState, error: 'FEED_EMPTY' }),
+    FEED_DISPLAY_STATES.EMPTY,
+  );
+  assert.equal(
+    getFeedDisplayState({ ...baseState, error: 'FEED_EMPTY', hasPapers: true }),
+    FEED_DISPLAY_STATES.FEED,
+  );
+});
+
 /**
  * The atom screen no longer swaps out for the cards in one frame: it stays up
  * as a veil over the feed and recedes as the first paper composes. This says
