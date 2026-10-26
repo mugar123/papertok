@@ -29,6 +29,13 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // allowance, can still hold every seat. Spacing towards arXiv is unchanged:
 // still one call every three seconds.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
+// Whole seconds from `now` to the start of the next public seat after the
+// current period: 1 to 6.
+function nextPublicSeatSeconds(now: number) {
+  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS) + 1;
+  while (!PUBLIC_SEAT(slot)) slot += 1;
+  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000));
+}
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
@@ -136,10 +143,15 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
         await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
       }
       // After the window it was refused within, which is at least this period.
+      // A caller that looks less than a period ahead is told when the next
+      // seat it can take starts instead: from a public period, the period
+      // after it is not one, and a retry there would be refused again.
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
-        'retry-after': paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
+        'retry-after': perCaller && maxWaitMs < ARXIV_PACE_PERIOD_MS
+          ? nextPublicSeatSeconds(Date.now())
+          : paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }
     if (seat.code) console.warn(`arXiv beat unavailable (${seat.code}); sending unpaced`);

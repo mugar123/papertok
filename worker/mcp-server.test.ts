@@ -922,7 +922,8 @@ test("a tool takes arXiv's seat only when no reader has booked it, and books non
       const refused = await callTool(env, 'get_paper', { id: '2603.09999' });
       assert.equal(refused.answer.result?.isError, true);
       assert.equal(refused.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
-      assert.equal(refused.answer.result?.structuredContent?.retryAfterSeconds, 3);
+      // The next public seat starts 3,001 ms away.
+      assert.equal(refused.answer.result?.structuredContent?.retryAfterSeconds, 4);
       const searched = await callTool(env, 'search_papers', { query: 'graphene strain' });
       const unavailable = searched.answer.result?.structuredContent?.unavailable as Array<{ source: string; code: string }>;
       assert.deepEqual(unavailable.map(entry => [entry.source, entry.code]), [['arxiv', 'PROVIDER_RATE_LIMITED']]);
@@ -952,6 +953,34 @@ test("a tool takes only a public seat of arXiv's beat, as a reader's request doe
       assert.equal(searched.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
       assert.equal(searched.answer.result?.structuredContent?.retryAfterSeconds, 3);
       assert.deepEqual(calls, []);
+    });
+  } finally {
+    clock.mock.restore();
+  }
+});
+
+test("a tool refused arXiv's seat is told to wait until the next seat it can take", async () => {
+  let frozen = EVEN_ARXIV_PERIOD + 1;
+  const clock = mock.method(Date, 'now', () => frozen);
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+      throw new Error(`unexpected upstream ${url}`);
+    }, async calls => {
+      const env = routeEnv();
+      const search = (query: string) => callTool(env, 'search_papers', { query, sources: ['arxiv'] });
+      assert.equal((await search('graphene strain')).answer.result?.isError, undefined, 'a free seat is taken');
+
+      // This public period's seat is taken, and the period after it is not
+      // public: the next seat starts 5,999 ms away.
+      const refused = await search('strained graphene');
+      assert.equal(refused.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+      const wait = refused.answer.result?.structuredContent?.retryAfterSeconds as number;
+      assert.equal(wait, 6);
+
+      frozen += wait * 1000;
+      assert.equal((await search('graphene in the lab')).answer.result?.isError, undefined, 'waiting as told gets the seat');
+      assert.equal(calls.length, 2);
     });
   } finally {
     clock.mock.restore();

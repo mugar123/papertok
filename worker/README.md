@@ -986,10 +986,14 @@ points:
   period, never one ahead, and like any request from outside the Worker only a
   public (even) seat. Readers book seats up to four seconds ahead, so an
   agent gets only a seat no reader booked, and a search's own arXiv miss takes
-  the seat of its period. A refused seat is `PROVIDER_RATE_LIMITED` with
-  `retryAfterSeconds: 3`, under `unavailable` in a search; `get_paper` then
-  asks OpenAlex, and logs arXiv's refusal with `source: 'arxiv'` when OpenAlex
-  has the paper.
+  the seat of its period. An odd period is never an agent's, so even on an
+  idle Worker every agent arXiv miss in an odd period is refused: about half
+  of uncached arXiv lookups, which a search lists under `unavailable` and
+  `get_paper` answers from OpenAlex for one billed unit. A refused seat is
+  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of
+  the next public seat (1 to 6 seconds), under `unavailable` in a search;
+  `get_paper` then asks OpenAlex, and logs arXiv's refusal with
+  `source: 'arxiv'` when OpenAlex has the paper.
 
 Arguments are validated before any reservation; `sources` is read in any case
 (`arXiv`, `OpenAlex`). Each `tools/call` then
