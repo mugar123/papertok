@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 25 October 2026.</p>
+      <p class="lp-updated">Last updated 26 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -62,7 +62,7 @@
           <li>You can use PaperTok without an account. The feed, search and the public pages work signed out. Usage analytics uses a persistent browser identifier unless you turn it off.</li>
           <li>Usage analytics is on by default. It uses cookies and local storage to connect visits across days and links product activity to your account when you sign in. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen. Sessions are not recorded.</li>
           <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
-          <li>You can delete your account, and everything in it, from Settings → Account → Delete account.</li>
+          <li>You can delete your account, and everything in it, from Settings → Account → Delete account. The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page.</li>
           <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
         </ul>
       </section>
@@ -124,7 +124,7 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 you viewed on a card marked as highly cited</td>
+              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 highly cited papers the feed offered you that you viewed</td>
               <td>Your use of the app</td>
               <td>Not showing you the same paper twice, and ordering the feed</td>
             </tr>
@@ -160,8 +160,8 @@
         or when you skip it. Besides your interactions with each paper, your account keeps a
         list of the last 500 papers you viewed, so that the feed on the other devices where
         you sign in does not show them again. Once the list is full, each new view pushes the
-        oldest one off the list. A second list keeps the last 1,200 papers you viewed on a
-        card marked as highly cited, so that the feed does not offer them again. Only your
+        oldest one off the list. A second list keeps the last 1,200 highly cited papers the
+        feed offered you that you viewed, so that it does not offer them again. Only your
         account can read these lists.
       </p>
 
@@ -263,8 +263,9 @@
         <strong>Error reports</strong> from the browser and backend also go to PostHog.
         Reports contain a standard error type, code locations, software version and fixed
         labels. Browser reports use the same identity and stripped page addresses as
-        product events. Error messages, paper content, notes and account profile details
-        are removed. Turning analytics off stops new browser error reports. Backend
+        product events. When the feed fails to load, its error event carries the failure
+        reason, the HTTP status and the error code. Error messages, paper content, notes
+        and account profile details are removed. Turning analytics off stops new browser error reports. Backend
         reports contain no reader identity and continue independently of this choice.
       </p>
       <p>
@@ -315,11 +316,17 @@
         papers sends it your interests in groups, each with a weight that gives a subject
         you added recently more of the page and the subjects whose likes may rank it, which
         leave out the subjects you removed, what you follow, the identifiers of up to 24
-        papers you liked, saved or read at length, and a compact filter of the papers you viewed or were
-        already shown, and of the highly cited papers it offered that you had already liked,
-        saved, read or dismissed, which the server checks papers against to offer only highly cited
+        papers you liked, saved or read at length, and a compact filter of the papers you
+        viewed or were already shown, and of the papers it offered that you had already
+        liked, saved, read or dismissed, which the server checks papers against to offer only
         papers you have not seen; liking, saving or opening a paper also asks it for papers
-        related to that one, by its identifier. They are used to choose and rank that page;
+        related to that one, by its identifier. They are used to choose and rank that page.
+        So the feed can go on from where you stopped, the server keeps the order it ranked
+        for you, and how far down it you got, for up to 2 hours after your last page. It is
+        kept in the cache of the Cloudflare data center that answered you, under a key
+        derived from your account, and is not copied elsewhere. It holds the papers of that
+        order, not the list of papers you liked, saved or read at length. Deleting your
+        account does not remove it sooner; it expires on its own. Apart from that order,
         which papers you liked, saved, opened or viewed is not stored there, and neither is
         the filter. A paper you liked, saved or opened that the catalogue does not have yet
         is added to it without any link to you. An author, institution, topic, search or project
@@ -358,7 +365,10 @@
         papers and the lists of papers you viewed, your preferences, the email subscription and
         the sign-in account, along with what earlier versions of PaperTok kept for you: your
         public profile, the photo you uploaded, the people you followed, your comments, the
-        content reports you filed and those filed about your comments.
+        content reports you filed and those filed about your comments. The feed order the
+        server keeps for you (see Scientific sources and AI features) is not deleted with
+        the account: that cache cannot be searched by account, so the order expires on its
+        own, at most 2 hours after your last page.
       </p>
 
       <h2>Your rights</h2>
@@ -387,7 +397,10 @@
         data, the viewed papers also when you sign out, and the analytics marks also when
         you turn analytics off. While usage analytics is enabled, PostHog also keeps an
         identifier and your choice in a cookie and in local storage, as described under
-        Analytics.
+        Analytics. When the browser blocks the Google or GitHub sign-in window, the tab goes
+        to the provider and comes back; during that trip this tab's session storage briefly
+        holds the provider, the part of the app that asked and the page to return to, and they
+        are removed when the page comes back or when the browser restores it after Back.
       </p>
 
       <h2>Changes</h2>

@@ -41,7 +41,12 @@
       "S172501725",
       "S4210170572",
       "S4210222121"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "astro-ph.GA",
@@ -117,7 +122,12 @@
       "S151564723",
       "S171368329",
       "S54167817"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10
+    }
   },
   {
     "leaf": "chemeng.energy",
@@ -227,7 +237,12 @@
       "S197355279",
       "S24000496",
       "S69753523"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12
+    }
   },
   {
     "leaf": "civil.mat",
@@ -256,7 +271,12 @@
       "S187103194",
       "S29980478",
       "S31518343"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "civil.trans",
@@ -316,7 +336,12 @@
       "S4210181853",
       "S59780895",
       "S79990064"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "cond-mat.mes-hall",
@@ -369,7 +394,12 @@
       "S26018076",
       "S2786256796",
       "S4210232664"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "cond-mat.quant-gas",
@@ -396,7 +426,12 @@
       "S164566984",
       "S4210195687",
       "S4210237713"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11
+    }
   },
   {
     "leaf": "cond-mat.soft",
@@ -485,7 +520,12 @@
     "sources": [
       "S139930977",
       "S196139623"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9
+    }
   },
   {
     "leaf": "cs.CL",
@@ -538,7 +578,12 @@
     "sources": [
       "S12529635",
       "S4210174050"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "cs.DB",
@@ -562,7 +607,12 @@
       "S4387289859",
       "S78926909",
       "S90119964"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "cs.DC",
@@ -587,7 +637,12 @@
     "sources": [
       "S157146593",
       "S4210174133"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12
+    }
   },
   {
     "leaf": "cs.DS",
@@ -631,7 +686,12 @@
       "S137436721",
       "S185367456",
       "S67831204"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "cs.GT",
@@ -673,7 +733,12 @@
     "sources": [
       "S4210183893",
       "S89276529"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "cs.IR",
@@ -697,7 +762,12 @@
     "sources": [
       "S4387284325",
       "S4394735545"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12
+    }
   },
   {
     "leaf": "cs.LG",
@@ -747,7 +817,12 @@
     "sources": [
       "S112262039",
       "S19610489"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 3
+    }
   },
   {
     "leaf": "cs.NE",
@@ -798,7 +873,12 @@
       "S41449414",
       "S4210216081",
       "S7407086162"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "cs.RO",
@@ -826,7 +906,12 @@
       "S4210169774",
       "S4210213233",
       "S73484101"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "cs.SI",
@@ -880,7 +965,12 @@
       "S156578089",
       "S51360982",
       "S56603566"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "econ.EM",
@@ -904,7 +994,12 @@
       "S18095783",
       "S33519306",
       "S49389958"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "econ.GN",
@@ -942,7 +1037,12 @@
       "S203860005",
       "S23254222",
       "S45992627"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "econ.TH",
@@ -967,7 +1067,12 @@
       "S202934171",
       "S579031",
       "S94044085"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "eess.IV",
@@ -1017,7 +1122,12 @@
     "sources": [
       "S154637859",
       "S64117906"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "eess.SY",
@@ -1044,7 +1154,12 @@
       "S156578089",
       "S51360982",
       "S56603566"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "eess.electro",
@@ -1117,7 +1232,12 @@
     "sources": [
       "S171172751",
       "S63240003"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "hep-ex",
@@ -1215,7 +1335,12 @@
       "S158241587",
       "S27783554",
       "S99746170"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12
+    }
   },
   {
     "leaf": "math.AG",
@@ -1261,7 +1386,12 @@
       "S185232611",
       "S2477993565",
       "S74141806"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11
+    }
   },
   {
     "leaf": "math.CA",
@@ -1283,7 +1413,12 @@
     "sources": [
       "S35440848",
       "S77852275"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 7
+    }
   },
   {
     "leaf": "math.DG",
@@ -1304,7 +1439,12 @@
     "sources": [
       "S100028386",
       "S198157528"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12
+    }
   },
   {
     "leaf": "math.FA",
@@ -1331,7 +1471,12 @@
       "S7365561",
       "S76385772",
       "S90281530"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10
+    }
   },
   {
     "leaf": "math.GR",
@@ -1376,7 +1521,12 @@
       "S50220091",
       "S55337115",
       "S71154276"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5
+    }
   },
   {
     "leaf": "math.LO",
@@ -1405,7 +1555,12 @@
       "S177675236",
       "S29890666",
       "S30880287"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "math.MP",
@@ -1427,7 +1582,12 @@
     "sources": [
       "S158241587",
       "S27783554"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11
+    }
   },
   {
     "leaf": "math.NA",
@@ -1456,7 +1616,12 @@
       "S165512578",
       "S203348814",
       "S4210205683"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "math.NT",
@@ -1484,7 +1649,12 @@
       "S169946948",
       "S40813394",
       "S4210215925"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "math.OC",
@@ -1514,7 +1684,12 @@
       "S55826652",
       "S897311980",
       "S928796702"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "math.PR",
@@ -1542,7 +1717,12 @@
       "S180803011",
       "S182850260",
       "S40212770"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "math.ST",
@@ -1567,7 +1747,12 @@
       "S4210183802",
       "S72071028",
       "S989097277"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "mech.acoustics",
@@ -1597,7 +1782,12 @@
       "S4210179158",
       "S971171794",
       "S99182027"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "mech.auto",
@@ -1624,7 +1814,12 @@
       "S16239639",
       "S53651343",
       "S59320183"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9
+    }
   },
   {
     "leaf": "mech.cad",
@@ -1653,7 +1848,12 @@
       "S165651092",
       "S40006715",
       "S89333158"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13
+    }
   },
   {
     "leaf": "mech.dyn",
@@ -1767,7 +1967,12 @@
       "S4210173186",
       "S62159105",
       "S78376336"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8
+    }
   },
   {
     "leaf": "nucl-th",
@@ -1792,7 +1997,12 @@
       "S190936833",
       "S4210168441",
       "S78376336"
-    ]
+    ],
+    "notable": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8
+    }
   },
   {
     "leaf": "physics.atom-ph",
@@ -1841,7 +2051,12 @@
       "S4387291267",
       "S728652",
       "S98085912"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11
+    }
   },
   {
     "leaf": "physics.comp-ph",
@@ -1863,7 +2078,12 @@
     "sources": [
       "S142305363",
       "S148709879"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "physics.flu-dyn",
@@ -1942,7 +2162,12 @@
     "sources": [
       "S133992056",
       "S57082650"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11
+    }
   },
   {
     "leaf": "q-fin.GN",
@@ -1989,7 +2214,12 @@
       "S133335107",
       "S172526255",
       "S75627377"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "q-fin.PM",
@@ -2081,7 +2311,12 @@
       "S4210177720",
       "S4210195673",
       "S4210226432"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "stat.AP",
@@ -2106,7 +2341,12 @@
       "S17114410",
       "S2764642956",
       "S2765037494"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "stat.CO",
@@ -2156,7 +2396,12 @@
       "S12967704",
       "S145009937",
       "S55189604"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   },
   {
     "leaf": "stat.ML",
@@ -2178,7 +2423,12 @@
     "sources": [
       "S2734669121",
       "S4210229561"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14
+    }
   },
   {
     "leaf": "stat.TH",
@@ -2202,6 +2452,11 @@
       "S119757635",
       "S72071028",
       "S989097277"
-    ]
+    ],
+    "notable": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15
+    }
   }
 ]

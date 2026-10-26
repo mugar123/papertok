@@ -15,8 +15,8 @@ import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus
 // the only ones a search asks for (`select=`). A works page used to arrive
 // whole: 455 KB uncompressed, 65–82 KB on the wire, most of it fields nothing
 // here reads (`referenced_works`, `keywords`, `counts_by_year`, the second
-// half of `authorships`). Measured 2026-09-16 with this list: 326 KB and
-// 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
+// half of `authorships`). Measured 2026-09-16 with this list, before
+// `is_retracted` joined it: 326 KB and 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
 // selection is not something OpenAlex offers, so `authorships` and
 // `locations` still travel whole. open-alex-adapter.test.ts holds the guard:
 // a work stripped to these fields must map to the same paper as the full one.
@@ -37,6 +37,10 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'concepts',
   'topics',
   'primary_topic',
+  // `openAlexPublicationStatus` reads it: a search and the lanes of followed
+  // authors, institutions, topics and concepts, of the working-paper series
+  // and of projects list retracted works too.
+  'is_retracted',
 ]);
 
 
@@ -53,6 +57,9 @@ export const OPENALEX_ENRICHMENT_SELECT = [
   'locations',
   'primary_location',
   'type',
+  // `openAlexPublicationStatus` reads it. No other source's mapper marks a
+  // paper retracted, so this is how one another source listed is found to be.
+  'is_retracted',
   'open_access',
   // The ids that decide which door a card's author link opens: with one, the
   // explorer asks for the profile once; without, it has to find the author

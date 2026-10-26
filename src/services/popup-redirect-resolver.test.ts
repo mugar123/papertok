@@ -120,7 +120,19 @@ function controlledLoad() {
   return { load: () => promise, finish: () => finish() };
 }
 
-const turnsReady = (readiness: PopupReadiness) => new Promise<void>(resolve => readiness.subscribe(resolve));
+// Resolves once `readiness` reaches `wanted`.
+const reaches = (readiness: PopupReadiness, wanted: PopupReadiness['state']) => new Promise<void>((resolve) => {
+  if (readiness.state === wanted) {
+    resolve();
+    return;
+  }
+  const unsubscribe = readiness.subscribe(() => {
+    if (readiness.state !== wanted) return;
+    unsubscribe();
+    resolve();
+  });
+});
+const turnsReady = (readiness: PopupReadiness) => reaches(readiness, 'ready');
 
 test('on a phone, controls wait for the load and are let through the moment it finishes', async (t) => {
   const load = controlledLoad();
@@ -128,44 +140,49 @@ test('on a phone, controls wait for the load and are let through the moment it f
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
 
   const readiness = preparePopupRedirectResolver(auth);
-  assert.equal(readiness.ready, false, 'not ready before Auth has even reported');
+  assert.equal(readiness.state, 'preparing', 'not ready before Auth has even reported');
   const ready = turnsReady(readiness);
   await auth.authStateReady();
   await nextTurn();
   assert.deepEqual(phone.loads, [auth]);
-  assert.equal(readiness.ready, false, 'not ready while the scripts load');
+  assert.equal(readiness.state, 'preparing', 'not ready while the scripts load');
 
   load.finish();
   assert.equal(await settleWithin(100, () => ready), 'resolved');
-  assert.equal(readiness.ready, true);
+  assert.equal(readiness.state, 'ready');
 });
 
-test('a failed load lets presses through, leaving the load and its error to Firebase', async (t) => {
+test('a failed load is reported as failed, never as ready, and a retry loads again', async (t) => {
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => unhandled.push(reason);
   process.on('unhandledRejection', onUnhandled);
   t.after(() => process.off('unhandledRejection', onUnhandled));
 
+  let loads = 0;
   const phone = firebaseResolver({
     load: async () => {
-      throw new Error('apis.google.com unreachable');
+      loads += 1;
+      if (loads === 1) throw new Error('apis.google.com unreachable');
     },
   });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   const readiness = preparePopupRedirectResolver(auth);
-  const ready = turnsReady(readiness);
 
-  assert.equal(await settleWithin(2000, () => ready), 'resolved');
+  assert.equal(await settleWithin(2000, () => reaches(readiness, 'failed')), 'resolved');
   // A rejection nobody handled is reported after this turn.
   await nextTurn();
-
-  assert.equal(readiness.ready, true);
-  assert.deepEqual(phone.loads, [auth]);
+  assert.equal(readiness.state, 'failed', 'a press now would load inside the tap, too late for Safari');
   assert.deepEqual(unhandled, []);
+
+  readiness.retry();
+  assert.equal(readiness.state, 'preparing');
+  assert.equal(await settleWithin(2000, () => turnsReady(readiness)), 'resolved');
+  assert.deepEqual(phone.loads, [auth, auth]);
 });
 
-test('a load that never finishes holds the controls for a bounded time only', async (t) => {
-  const phone = firebaseResolver();
+test('a load that never finishes is reported as failed after a bounded wait', async (t) => {
+  const load = controlledLoad();
+  const phone = firebaseResolver({ load: load.load });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   await auth.authStateReady();
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -177,10 +194,16 @@ test('a load that never finishes holds the controls for a bounded time only', as
   // About as long as the load took on an emulated mid-range phone over Slow
   // 4G: still worth waiting for.
   t.mock.timers.tick(2_000);
-  assert.equal(readiness.ready, false);
-  // Nobody is held for half a minute.
+  assert.equal(readiness.state, 'preparing');
+  // Nobody is held for half a minute, and nobody is told it is ready.
   t.mock.timers.tick(28_000);
-  assert.equal(readiness.ready, true);
+  assert.equal(readiness.state, 'failed');
+
+  // A retry waits on the load still running, and its end makes the controls usable.
+  readiness.retry();
+  assert.equal(readiness.state, 'preparing');
+  load.finish();
+  assert.equal(await settleWithin(100, () => turnsReady(readiness)), 'resolved');
 });
 
 test('where Firebase loads the resolver at the tap, nothing loads and no control waits', async (t) => {
@@ -188,11 +211,13 @@ test('where Firebase loads the resolver at the tap, nothing loads and no control
   const auth = startAuth(t, deferPopupRedirectResolver(desktop.resolver));
 
   const readiness = preparePopupRedirectResolver(auth);
-  assert.equal(readiness.ready, true);
+  assert.equal(readiness.state, 'ready');
   await auth.authStateReady();
   await nextTurn();
 
   assert.deepEqual(desktop.loads, []);
+  readiness.retry();
+  assert.deepEqual(desktop.loads, [], 'nothing to retry');
 });
 
 // What Auth had reported each time the resolver started loading.

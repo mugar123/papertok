@@ -24,18 +24,24 @@ export function arxivCommentSaysPublished(comment: unknown) {
 // is the rule the enrichment mapper already kept; the card mappers now share it.
 const OPENALEX_PREPRINT_TYPES = new Set(['preprint', 'posted-content']);
 
-type OpenAlexStatusFields = Pick<OpenAlexWork, 'type' | 'primary_location' | 'locations'> | null | undefined;
+type OpenAlexStatusFields = Pick<OpenAlexWork, 'type' | 'primary_location' | 'locations' | 'is_retracted'> | null | undefined;
 
 function openAlexType(work: OpenAlexStatusFields) {
   return String(work?.type || '').trim().toLowerCase();
 }
 
+function hasPublishedCopy(work: OpenAlexStatusFields) {
+  return Boolean(work?.primary_location?.is_published
+    || (Array.isArray(work?.locations) && work.locations.some(location => location?.is_published)));
+}
+
+// OpenAlex's `is_retracted` outranks the type. A record without the field (a
+// select that leaves it out) says nothing about a retraction.
 export function openAlexPublicationStatus(work: OpenAlexStatusFields) {
+  if (work?.is_retracted === true) return 'retracted';
   const type = openAlexType(work);
   if (type && !OPENALEX_PREPRINT_TYPES.has(type)) return 'published';
-  const published = work?.primary_location?.is_published
-    || (Array.isArray(work?.locations) && work.locations.some(location => location?.is_published));
-  return published ? 'published' : 'preprint';
+  return hasPublishedCopy(work) ? 'published' : 'preprint';
 }
 
 // OpenAlex has no peer-review field. The evidence it does carry is the venue:
@@ -100,7 +106,7 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
   if (openAlexIsWorkingPaper(work)) return false;
   const type = openAlexType(work);
   if (OPENALEX_PREPRINT_TYPES.has(type)) {
-    if (openAlexPublicationStatus(work) === 'preprint') return false;
+    if (!hasPublishedCopy(work)) return false;
   } else if (!OPENALEX_REVIEWED_TYPES.has(type)) {
     return undefined;
   }

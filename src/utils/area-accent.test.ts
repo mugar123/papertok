@@ -17,15 +17,25 @@ import { CATEGORIES, getCategoryLabel } from '../data/category-taxonomy.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 
-/* One resolution, used by the accent ink, the field label and the watermark
-   alike. Computing any of them a second way is how a paper ends up inked as
-   one field, labelled as another and stamped with the mark of a third. */
+/* Area grouping drives the accent and watermark. The masthead can name a
+   more specific native category or an explicitly attributed OpenAlex topic. */
 
 test('an arXiv category resolves exactly, then by its archive', () => {
   assert.equal(areaKeyForCategory('cs.AI'), 'ai');
   assert.equal(areaKeyForCategory('quant-ph'), 'physics');
   // Not listed explicitly, reached by its archive.
   assert.equal(areaKeyForCategory('cs.IT'), 'cs');
+});
+
+// `constructor` is not an area, so the paper keeps what OpenAlex says of its
+// field. The topic is synthetic; OpenAlex was not queried.
+test('a category named like an Object.prototype member names no area', () => {
+  for (const name of ['constructor', 'toString', '__proto__']) {
+    assert.equal(areaKeyForCategory(name), null, name);
+    const paper = { primaryCategory: name, categories: [name], primaryTopic: { id: 'https://openalex.org/T1', field: { id: 'https://openalex.org/fields/33', display_name: 'Social Sciences' } } };
+    assert.equal(areaKeyForPaper(paper), null, name);
+    assert.equal(areaLabelForPaper(paper), 'Social Sciences', name);
+  }
 });
 
 /* Every category in arXiv's taxonomy (arxiv.org/category_taxonomy, 155 as of
@@ -61,16 +71,12 @@ test('every arXiv category resolves to the area that lists it, else its archive\
   );
 });
 
-// The chip named `math.AC` "Mathematics" while the ink and the kicker beside
-// it said Physics.
-test("an arXiv category's chip, kicker and ink name the same area", () => {
+test("every arXiv category has a specific label and keeps its area's ink", () => {
   for (const [id, areaKey] of ARXIV_CATEGORY_AREAS) {
     const area = CATEGORIES[areaKey];
     const paper = { primaryCategory: id, categories: [id] };
-    const expectedLabel = id === 'physics.data-an'
-      ? 'Data Analysis, Statistics and Probability'
-      : area.subcategories[id]?.label ?? area.label;
-    assert.equal(getCategoryLabel(id), expectedLabel, id);
+    assert.notEqual(getCategoryLabel(id), id, id);
+    if (!area.subcategories[id]) assert.notEqual(getCategoryLabel(id), area.label, id);
     assert.equal(areaLabelForPaper(paper), area.label, id);
     assert.equal(areaAccentForPaper(paper), area.gradient, id);
   }

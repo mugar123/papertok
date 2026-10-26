@@ -21,7 +21,7 @@ test('returns null for self-titled and unknown routes', () => {
   for (const page of ['profile', 'discovery', 'reading', 'notifications', 'privacy']) {
     assert.equal(routeTitle(`/settings/${page}`), null, `/settings/${page}`)
   }
-  assert.equal(routeTitle('/public/paper/x'), null)
+  assert.equal(routeTitle('/paper/x'), null)
   assert.equal(routeTitle('/nonsense'), null)
 })
 

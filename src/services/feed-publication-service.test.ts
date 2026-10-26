@@ -366,3 +366,13 @@ test('after a dismissal, a book left out after the reader leaves the next notabl
   const met = [...shown.slice(0, dismissedAt + 2), ...kept.slice(kept.indexOf(reader) + 1)];
   assert.deepEqual(met.flatMap((work, index) => (work._notable ? [index + 1] : [])), [15, 30, 45]);
 });
+
+// A retracted paper is the research record itself, which the feed leaves out;
+// a retraction notice is its own type (`retraction`).
+test('a card marked retracted is not shown, whatever its type, and the same card unmarked is', () => {
+  for (const publicationType of ['article', 'review', 'preprint']) {
+    const card = paper('10.1038/nature26142', publicationType);
+    assert.equal(isFeedPublication({ ...card, publicationStatus: 'retracted' }), false, publicationType);
+    assert.equal(isFeedPublication(card), true, publicationType);
+  }
+});

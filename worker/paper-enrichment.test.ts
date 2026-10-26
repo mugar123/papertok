@@ -5,10 +5,11 @@ import type { Paper } from '../src/models/paper.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
-import { embedWorks, ingestPapers } from './paper-store.ts';
+import { embedWorks, evictExpired, ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapAdsPaper } from '../src/services/domain-source-records.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -228,6 +229,24 @@ test("Crossref's JATS loses its heading and a formula's MathML twin, keeps the f
   assert.equal(works['openalex:W4410000004'].paper.abstract, 'Only the text of this abstract is kept here. Measuring $\\alpha$: Done.');
 });
 
+for (const prefix of ['', 'jats:']) {
+  test(`Crossref preserves CDATA formulas in ${prefix || 'unprefixed'} abstracts and section titles`, async t => {
+    const asked = recoveryProviders(t, {
+      crossref: () => Response.json({ message: { items: [{
+        DOI: '10.5555/cdata', type: 'journal-article',
+        abstract: `<${prefix}abstract><${prefix}sec><${prefix}title>Measuring <${prefix}alternatives><${prefix}tex-math><![CDATA[$\\alpha$]]></${prefix}tex-math><mml:math><mml:mi>α</mml:mi></mml:math></${prefix}alternatives> when $a&lt;b&gt;c$</${prefix}title><${prefix}p>We measure a production cross section at <${prefix}alternatives><mml:math><mml:mn>13</mml:mn></mml:math><${prefix}tex-math><![CDATA[$$\\sqrt{s}=13$$]]></${prefix}tex-math></${prefix}alternatives> TeV.</${prefix}p><${prefix}p>The result has p &lt; 0.05 and remains significant.</${prefix}p></${prefix}sec></${prefix}abstract>`,
+      }] } }),
+    });
+    const { env, db, ids } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/cdata')]);
+    await enrichPending(env, 50, NOW);
+    const { paper } = stored(db)['openalex:W4410000001'];
+    assert.equal(paper.abstract, 'Measuring $\\alpha$ when $a<b>c$: We measure a production cross section at $$\\sqrt{s}=13$$ TeV. The result has p < 0.05 and remains significant.');
+    assert.ok(paper.sources.enrichedBy.includes('crossref'));
+    assert.equal(vectorOf(db, ids['openalex:W4410000001']), undefined);
+    assert.deepEqual(semanticScholarCalls(asked), []);
+  });
+}
+
 test('what Crossref has no abstract for is asked of Semantic Scholar in one batch per step, matched by DOI', async t => {
   const asked = recoveryProviders(t, {
     crossref: () => Response.json({ message: { items: [
@@ -347,4 +366,152 @@ test('an editorial has no abstract: it is not asked for one, and none it is offe
   assert.equal(paper.publicationType, 'editorial');
   assert.equal(paper.abstract, NO_ABSTRACT);
   assert.deepEqual(paper.sources.enrichedBy.filter(source => source === 'crossref' || source === 'semanticscholar'), []);
+});
+
+// Captured from OpenAlex on 2026-10-26 (`works/doi:10.1038/nature26142`,
+// keyless) and trimmed to fields the enrichment and the OpenAlex lanes
+// select: a Nature article of 2018, retracted in 2021, with its arXiv eprint
+// among the locations.
+const NATURE_SOURCE = { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal', host_organization_name: 'Nature Portfolio' };
+const RETRACTED_WORK = {
+  id: 'https://openalex.org/W2766253867',
+  doi: 'https://doi.org/10.1038/nature26142',
+  ids: { openalex: 'https://openalex.org/W2766253867', doi: 'https://doi.org/10.1038/nature26142', mag: '2766253867', pmid: 'https://pubmed.ncbi.nlm.nih.gov/29590094' },
+  title: 'RETRACTED ARTICLE: Quantized Majorana conductance',
+  publication_date: '2018-03-27',
+  type: 'article',
+  is_retracted: true,
+  cited_by_count: 522,
+  primary_location: { landing_page_url: 'https://doi.org/10.1038/nature26142', pdf_url: null, is_oa: false, is_published: true, source: NATURE_SOURCE },
+  locations: [
+    { landing_page_url: 'https://doi.org/10.1038/nature26142', pdf_url: null, is_oa: false, is_published: true, source: NATURE_SOURCE },
+    { landing_page_url: 'http://arxiv.org/abs/1710.10701', pdf_url: 'https://arxiv.org/pdf/1710.10701', is_oa: true, is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository', host_organization_name: 'Cornell University' } },
+  ],
+};
+
+// OpenAlex answering every works list with these works, as it answers: only
+// the fields the request selects. Every other provider answers empty.
+function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record<string, unknown>>) {
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const selected = url.searchParams.get('select')?.split(',') ?? [];
+    return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+}
+
+// Synthetic, in the shape NASA ADS returns, with ADS's month form of date.
+const ADS_LISTING = mapAdsPaper({
+  bibcode: '2018Natur.556...74Z',
+  title: ['Quantized Majorana conductance'],
+  author: ['Zhang, Hao', 'Liu, Chun-Xiao', 'Kouwenhoven, Leo P.'],
+  abstract: 'Majorana zero-modes hold promise for topological quantum computing.',
+  doi: ['10.1038/nature26142'],
+  identifier: ['arXiv:1710.10701'],
+  arxiv_class: ['cond-mat.mes-hall'],
+  property: ['REFEREED', 'ARTICLE'],
+  doctype: 'article',
+  pub: 'Nature',
+  pubdate: '2018-03-00',
+  year: '2018',
+  citation_count: 600,
+})!;
+const EPRINT_LISTING = arxivRecordPaper({
+  arxivId: '1710.10701',
+  title: 'Quantized Majorana conductance',
+  abstract: 'Majorana zero-modes hold promise for topological quantum computing.',
+  authors: ['Hao Zhang', 'Chun-Xiao Liu', 'Leo P. Kouwenhoven'],
+  categories: ['cond-mat.mes-hall', 'cond-mat.supr-con'],
+  doi: '10.1038/nature26142', journalRef: 'Nature 556, 74-79 (2018)', comments: null,
+  published: '2017-10-29T18:00:00.000Z',
+  updated: '2017-10-29T18:00:00.000Z',
+});
+const NOTABLE_LANE = 'notable:cond-mat.mes-hall';
+// The keeping date a listing of a lane that keeps old papers gives them.
+const keptFrom = (now: number) => new Date(now + 14 * DAY_MS).toISOString();
+const laneRows = (db: ReturnType<typeof testD1>['db']) => db.prepare('SELECT lane FROM work_lanes ORDER BY lane').all().map(row => (row as { lane: string }).lane);
+async function evictAll(env: WorkerEnv, now: number) {
+  let after: number | null = 0;
+  while (after !== null) after = await evictExpired(env, now, after);
+}
+
+test('a paper OpenAlex marks retracted leaves its lanes, and no later listing of it files it again while the store keeps it', async t => {
+  openAlexAnswers(t, [RETRACTED_WORK]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: ADS_LISTING, lanes: [NOTABLE_LANE] }], { now: NOW, keepUntil: keptFrom(NOW) });
+  assert.deepEqual(laneRows(db), [NOTABLE_LANE]);
+
+  await enrichPending(env, 50, NOW);
+  assert.equal(stored(db)['ads:2018Natur.556...74Z'].paper.publicationStatus, 'retracted');
+  assert.deepEqual(laneRows(db), [], 'it leaves the lane it was listed in');
+  // The night's eviction keeps it, in no lane, until its keeping date.
+  await evictAll(env, NOW);
+  assert.deepEqual(Object.keys(stored(db)), ['ads:2018Natur.556...74Z']);
+
+  // The listing a week later, and arXiv's listing of the eprint under a
+  // followed author's name, both kept whatever their age.
+  const later = NOW + 7 * DAY_MS;
+  await ingestPapers(env, [{ paper: ADS_LISTING, lanes: [NOTABLE_LANE] }], { now: later, keepUntil: keptFrom(later) });
+  await ingestPapers(env, [{ paper: EPRINT_LISTING, lanes: ['author-name:Hao Zhang'] }], { now: later, keepUntil: keptFrom(later) });
+  await evictAll(env, later);
+  const works = stored(db);
+  assert.deepEqual(Object.keys(works), ['ads:2018Natur.556...74Z'], 'one paper');
+  assert.equal(works['ads:2018Natur.556...74Z'].paper.publicationStatus, 'retracted');
+  assert.deepEqual(laneRows(db), []);
+  // Listed no more, it goes with its keeping date.
+  await evictAll(env, later + 15 * DAY_MS);
+  assert.deepEqual(stored(db), {});
+});
+
+// OpenAlex can also file the eprint as a work of its own, typed `preprint`
+// under arXiv's DOI, and list it before or after the journal's: it answers
+// the arXiv id twice. Synthetic, beside the captured work.
+const EPRINT_WORK = {
+  id: 'https://openalex.org/W4400000002',
+  doi: 'https://doi.org/10.48550/arxiv.1710.10701',
+  ids: { openalex: 'https://openalex.org/W4400000002', doi: 'https://doi.org/10.48550/arxiv.1710.10701' },
+  type: 'preprint',
+  is_retracted: false,
+  cited_by_count: 3,
+  primary_location: { landing_page_url: 'https://arxiv.org/abs/1710.10701', pdf_url: 'https://arxiv.org/pdf/1710.10701', is_oa: true, is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository', host_organization_name: 'Cornell University' } },
+};
+
+for (const [order, works] of [['first', [RETRACTED_WORK, EPRINT_WORK]], ['last', [EPRINT_WORK, RETRACTED_WORK]]] as const) {
+  test(`a paper OpenAlex answers with two works is retracted when the retracted one comes ${order}`, async t => {
+    openAlexAnswers(t, [...works]);
+    const { binding, db } = testD1();
+    const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+    await ingestPapers(env, [{ paper: ADS_LISTING, lanes: [NOTABLE_LANE] }], { now: NOW, keepUntil: keptFrom(NOW) });
+    await enrichPending(env, 50, NOW);
+    assert.equal(stored(db)['ads:2018Natur.556...74Z'].paper.publicationStatus, 'retracted');
+    assert.deepEqual(laneRows(db), []);
+  });
+}
+
+// A search, a reader's lookup of a liked paper by DOI and the lanes of
+// followed entities ask OpenAlex without leaving retracted works out.
+test("OpenAlex's own record of a retracted paper is stored under no lane: a filed copy leaves its lanes, and a reader's like of it is kept", async () => {
+  const record = mapOpenAlexWork(RETRACTED_WORK)!;
+  const filed = testD1();
+  const filedEnv = { PAPER_STORE: filed.binding };
+  await ingestPapers(filedEnv, [{ paper: EPRINT_LISTING, lanes: ['author-name:Hao Zhang'] }], { now: NOW, keepUntil: keptFrom(NOW) });
+  assert.deepEqual(laneRows(filed.db), ['author-name:Hao Zhang']);
+  await ingestPapers(filedEnv, [{ paper: record, lanes: ['author:A5000000001'] }], { now: NOW, keepUntil: keptFrom(NOW) });
+  assert.deepEqual(Object.values(stored(filed.db)).map(work => [work.paper.id, work.paper.publicationStatus]), [['1710.10701', 'retracted']]);
+  assert.deepEqual(laneRows(filed.db), []);
+
+  // A like ranks a reader's feed only once the store holds it.
+  const liked = testD1();
+  await ingestPapers({ PAPER_STORE: liked.binding }, [{ paper: record, lanes: [] }], { now: NOW, keepUntil: new Date(NOW + 30 * DAY_MS).toISOString() });
+  assert.deepEqual(Object.values(stored(liked.db)).map(work => [work.paper.id, work.paper.publicationStatus]), [['openalex:W2766253867', 'retracted']]);
+  assert.deepEqual(laneRows(liked.db), []);
 });
