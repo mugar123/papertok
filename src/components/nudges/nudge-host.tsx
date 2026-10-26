@@ -7,6 +7,7 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
+  NUDGE_PANEL_SELECTOR,
   isNudgePath,
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
@@ -17,6 +18,7 @@ import {
   readDismissedNudges,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
+  trackFocusOutsideNotice,
 } from '../../utils/nudges.ts';
 import NudgePanel from './nudge-panel.tsx';
 
@@ -127,27 +129,23 @@ export default function NudgeHost() {
   // Where focus was on the page before it went into the panel: Got it and the
   // close button hand it back there, so the next Tab continues from the card the
   // reader was on and not from the top of the page.
-  const focusBeforePanel = useRef<Element | null>(null);
+  const focusTracker = useRef<ReturnType<typeof trackFocusOutsideNotice> | null>(null);
   useEffect(() => {
     if (!privacyShown) return undefined;
-    const rememberFocus = (event: FocusEvent) => {
-      const target = event.target as Element | null;
-      if (target instanceof HTMLElement && !target.closest('.nudge')) focusBeforePanel.current = target;
-    };
-    document.addEventListener('focusin', rememberFocus);
+    const tracker = trackFocusOutsideNotice(document);
+    focusTracker.current = tracker;
     return () => {
-      document.removeEventListener('focusin', rememberFocus);
-      focusBeforePanel.current = null;
+      tracker.stop();
+      focusTracker.current = null;
     };
   }, [privacyShown]);
 
   const hidePrivacyForVisit = useCallback(() => {
-    const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
-    const before = focusBeforePanel.current;
+    const focusWasInside = Boolean(document.querySelector(NUDGE_PANEL_SELECTOR)?.contains(document.activeElement));
+    const before = focusTracker.current?.target();
     setPicked(null);
     if (!focusWasInside) return;
-    const back = before instanceof HTMLElement && before.isConnected ? before : document.getElementById('main-content');
-    back?.focus({ preventScroll: true });
+    (before ?? document.getElementById('main-content'))?.focus({ preventScroll: true });
   }, []);
 
   const uid = user?.uid;

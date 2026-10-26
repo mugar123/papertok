@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
+  NUDGE_PANEL_SELECTOR,
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
@@ -17,6 +18,7 @@ import {
   readPrivacyNoticeAck,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
+  trackFocusOutsideNotice,
 } from './nudges.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
 
@@ -267,6 +269,70 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   }
   assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+// What the focus tracker reads of the page: an element on it, the body that holds
+// focus when nothing does, an element inside the panel; and a document whose
+// focusin listeners the test can fire.
+const pageElement = (tagName = 'BUTTON', { connected = true, inPanel = false } = {}) => ({
+  tagName,
+  isConnected: connected,
+  focus: () => undefined,
+  closest: (selector: string) => (inPanel && selector === NUDGE_PANEL_SELECTOR ? {} : null),
+});
+
+type FocusInListener = (event: { target: unknown }) => void;
+const focusSource = (activeElement: unknown) => {
+  const listeners = new Set<FocusInListener>();
+  return {
+    activeElement,
+    addEventListener: (type: 'focusin', listener: FocusInListener) => { listeners.add(listener); },
+    removeEventListener: (type: 'focusin', listener: FocusInListener) => { listeners.delete(listener); },
+    focusIn: (target: unknown) => { for (const listener of listeners) listener({ target }); },
+  };
+};
+
+test('a control that already holds focus when the notice appears is where Got it returns focus to', () => {
+  const control = pageElement();
+  const source = focusSource(control);
+  const tracker = trackFocusOutsideNotice(source);
+  // The reader's next Tab lands in the notice. That focus event is inside it, so
+  // the control focused before is the only thing the tracker has to go on.
+  source.focusIn(pageElement('A', { inPanel: true }));
+  assert.equal(tracker.target(), control);
+});
+
+test('the last control on the page that took focus is remembered, and nothing inside the notice replaces it', () => {
+  const source = focusSource(pageElement());
+  const tracker = trackFocusOutsideNotice(source);
+  const later = pageElement('A');
+  source.focusIn(later);
+  assert.equal(tracker.target(), later, 'focus moved to another control after the notice appeared');
+  source.focusIn(pageElement('BUTTON', { inPanel: true }));
+  source.focusIn(pageElement('BODY'));
+  source.focusIn({ tagName: 'DIV' });
+  source.focusIn({});
+  source.focusIn(null);
+  assert.equal(tracker.target(), later, 'the notice, the body, something that cannot take focus and a non-element are not places to return to');
+});
+
+test('with no control focused outside the notice there is nothing to return to', () => {
+  const source = focusSource(pageElement('BODY'));
+  const tracker = trackFocusOutsideNotice(source);
+  source.focusIn(pageElement('BUTTON', { inPanel: true }));
+  assert.equal(tracker.target(), null, 'nothing was focused: the page is the active element');
+  assert.equal(trackFocusOutsideNotice(focusSource(null)).target(), null, 'no active element at all');
+  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { inPanel: true }))).target(), null, 'focus already in the notice');
+});
+
+test('a remembered control the feed has unmounted is not returned to, and a stopped tracker remembers nothing more', () => {
+  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { connected: false }))).target(), null);
+  const first = pageElement();
+  const source = focusSource(first);
+  const tracker = trackFocusOutsideNotice(source);
+  tracker.stop();
+  source.focusIn(pageElement('A'));
+  assert.equal(tracker.target(), first, 'a focus event after the notice went away');
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {

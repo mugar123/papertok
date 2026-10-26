@@ -203,6 +203,46 @@ export function escapeBelongsToOther(target: unknown) {
   return typeof element.closest === 'function' && Boolean(element.closest(OTHER_ESCAPE_OWNERS));
 }
 
+/** The panel's own element: focus inside it is not a place to hand focus back to. */
+export const NUDGE_PANEL_SELECTOR = '.nudge';
+
+interface FocusSource {
+  activeElement: unknown;
+  addEventListener(type: 'focusin', listener: (event: { target: unknown }) => void): void;
+  removeEventListener(type: 'focusin', listener: (event: { target: unknown }) => void): void;
+}
+
+// An element on the page, not the body that holds focus when nothing does and
+// not anything inside the panel.
+function isFocusToRestore(candidate: unknown): candidate is HTMLElement {
+  const element = candidate as { tagName?: string; focus?: unknown; closest?: (selector: string) => unknown } | null;
+  if (!element || typeof element !== 'object' || typeof element.focus !== 'function') return false;
+  if (element.tagName === 'BODY' || element.tagName === 'HTML') return false;
+  return !(typeof element.closest === 'function' && element.closest(NUDGE_PANEL_SELECTOR));
+}
+
+/**
+ * Remembers where focus is on the page outside the panel, from the moment the
+ * panel appears: the element that already holds focus then, and every one that
+ * receives it after. Without the first, a reader whose next Tab goes straight
+ * into the panel would have no place to come back to, because the focus event
+ * that put them there is inside the panel. `target` is that element while it is
+ * still on the page; a feed that unmounted it leaves nothing to return to.
+ */
+export function trackFocusOutsideNotice(source: FocusSource) {
+  let remembered: HTMLElement | null = null;
+  const remember = (candidate: unknown) => {
+    if (isFocusToRestore(candidate)) remembered = candidate;
+  };
+  const onFocusIn = (event: { target: unknown }) => remember(event.target);
+  remember(source.activeElement);
+  source.addEventListener('focusin', onFocusIn);
+  return {
+    target: () => (remembered?.isConnected ? remembered : null),
+    stop: () => source.removeEventListener('focusin', onFocusIn),
+  };
+}
+
 /**
  * What, if anything, is wrong with email — as reported by the service itself.
  *
