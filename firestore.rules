@@ -269,8 +269,9 @@ service cloud.firestore {
           && validString(request.resource.data.canonicalId, 500)
           // A journal is its OpenAlex source id (`createFollowEntity` in
           // src/utils/following.ts). How many a reader follows is not counted
-          // here, since rules cannot count a collection: the Worker serves
-          // the first MAX_FOLLOWED_JOURNALS and the app writes no more.
+          // here, since rules cannot count a collection: the app counts them
+          // in the list it holds (`planFollowToggle`), and the Worker serves
+          // the first MAX_FOLLOWED_JOURNALS of whatever was stored.
           && (request.resource.data.type != 'journal'
             || request.resource.data.canonicalId.matches('^S[0-9]+$'))
           && validString(request.resource.data.displayName, 500)

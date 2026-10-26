@@ -18,9 +18,10 @@ const JOURNAL_ID = /^S\d+$/;
 
 /**
  * The most journals a reader follows (D3, Pablo 2026-10-25). Each one is a
- * lane the nightly harvest lists for everyone who follows it. The app writes
- * no more (`exceedsJournalFollowLimit`), and the Worker serves no more than
- * these per request (worker/paper-store.ts) whatever a client stored.
+ * lane the nightly harvest lists for everyone who follows it. A session writes
+ * no more than its follow list allows (`planFollowToggle`), though two devices
+ * following at once can store an eleventh, and the Worker serves no more than
+ * these per request (`servedFollows`) whatever a client stored.
  */
 export const MAX_FOLLOWED_JOURNALS = 10;
 
@@ -116,19 +117,50 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
   });
 }
 
-/** Whether following `entity` would take the reader past MAX_FOLLOWED_JOURNALS. An unfollow never does. */
-export function exceedsJournalFollowLimit(followedEntities: FollowEntity[], entity: FollowInput) {
-  const normalized = createFollowEntity(entity);
-  if (normalized?.type !== 'journal' || followsEntity(followedEntities, normalized)) return false;
-  return followedEntities.filter(follow => follow.type === 'journal').length >= MAX_FOLLOWED_JOURNALS;
+/**
+ * The follow list has not arrived yet, and the app has stopped waiting for it.
+ *
+ * Not a failure: the listener is still attached and Firestore reconnects on its
+ * own. It exists so consumers can tell "we do not know what this account
+ * follows" from "this account follows nobody" — a distinction that decides
+ * whether it is safe to write notification preferences derived from the list,
+ * or to count the journals in it (`planFollowToggle`).
+ */
+export class FollowsUnavailableError extends Error {
+  declare code: string;
+  declare retryable: boolean;
+  constructor() {
+    super('The follow list has not arrived yet.');
+    this.name = 'FollowsUnavailableError';
+    this.code = 'FOLLOWS_UNAVAILABLE';
+    this.retryable = true;
+  }
 }
 
-/** A journal follow refused by `exceedsJournalFollowLimit`; nothing was written. */
+/** A journal follow refused by `planFollowToggle`; nothing was written. */
 export class JournalFollowLimitError extends Error {
   constructor() {
     super(`A reader follows at most ${MAX_FOLLOWED_JOURNALS} journals.`);
     this.name = 'JournalFollowLimitError';
   }
+}
+
+/**
+ * What a press of Follow does to the follow list in hand: unfollows `entity`
+ * when the list has it, and follows it otherwise. A new journal is counted
+ * against the journals in the list, since Firestore rules cannot count them,
+ * so it is refused, with nothing written, past MAX_FOLLOWED_JOURNALS (D3) and
+ * while the list is not the one Firestore sent (`listed`): before the first
+ * snapshot, or once a snapshot error put the legacy authors in its place.
+ */
+export function planFollowToggle(followedEntities: FollowEntity[], entity: FollowEntity, { listed }: { listed: boolean }) {
+  const existing = followedEntities.find(follow => followsEntity([follow], entity));
+  if (existing) return { existing, next: followedEntities.filter(follow => !followsEntity([follow], entity)) };
+  if (entity.type === 'journal') {
+    if (!listed) throw new FollowsUnavailableError();
+    if (followedEntities.filter(follow => follow.type === 'journal').length >= MAX_FOLLOWED_JOURNALS) throw new JournalFollowLimitError();
+  }
+  return { existing, next: [...followedEntities, entity] };
 }
 
 export function migrateLegacyAuthors(authorNames: string[] = []) {

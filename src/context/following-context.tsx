@@ -20,12 +20,12 @@ import { getRorInstitution, normalizeRorId } from '../services/ror-service.ts';
 import { useAuth } from './auth-context.tsx';
 import { useAnalyticsConsent } from './analytics-context.tsx';
 import {
-  JournalFollowLimitError,
+  FollowsUnavailableError,
   createFollowEntity,
   createFollowKey,
-  exceedsJournalFollowLimit,
   followsEntity,
   migrateLegacyAuthors,
+  planFollowToggle,
 } from '../utils/following.ts';
 import { finishLegacyAuthorsMigration } from '../utils/following-migration.ts';
 
@@ -36,25 +36,6 @@ const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze<Record<string, Record<st
  * blocking on it. Long enough that a healthy connection never sees it.
  */
 const FIRST_SNAPSHOT_GRACE_MS = 6500;
-
-/**
- * The follow list has not arrived yet, and the app has stopped waiting for it.
- *
- * Not a failure: the listener is still attached and Firestore reconnects on its
- * own. It exists so consumers can tell "we do not know what this account
- * follows" from "this account follows nobody" — a distinction that decides
- * whether it is safe to write notification preferences derived from the list.
- */
-class FollowsUnavailableError extends Error {
-  declare code: string;
-  declare retryable: boolean;
-  constructor() {
-    super('The follow list has not arrived yet.');
-    this.name = 'FollowsUnavailableError';
-    this.code = 'FOLLOWS_UNAVAILABLE';
-    this.retryable = true;
-  }
-}
 
 export function FollowingProvider({ children }: PropsWithChildren) {
   const { user, followedAuthors } = useAuth();
@@ -75,9 +56,11 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   // Mirrored in an effect, like the other stale-closure guards in this app
   // (see FeedContext): a ref must not be written during render.
   useEffect(() => { followedAuthorsRef.current = followedAuthors; }, [followedAuthors]);
-  // True once a snapshot for the account below has actually arrived. A ref, not
-  // state: the migration effect only needs to read it, and writing it from the
-  // snapshot callback keeps it correct before the re-render it triggers.
+  // True while the follows in hand are a snapshot Firestore sent for the
+  // account below: false before the first one arrives, and again once a
+  // snapshot error puts the legacy authors in its place. A ref, not state: the
+  // migration effect and toggleFollow only need to read it, and writing it from
+  // the snapshot callback keeps it correct before the re-render it triggers.
   const followsArrived = useRef(false);
   const localizedInstitutionNames = institutionLocalizationState.userId === user?.uid
     ? institutionLocalizationState.names
@@ -144,6 +127,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       setLoading(false);
     }, (snapshotError) => {
       window.clearTimeout(loadingTimeout);
+      followsArrived.current = false;
       console.error('Error loading follows', snapshotError);
       setError(snapshotError);
       setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
@@ -262,14 +246,10 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     if (!entity || !user?.uid) return false;
     const pendingKey = createFollowKey(entity.type, entity.canonicalId);
     if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
-    if (exceedsJournalFollowLimit(followedEntities, entity)) throw new JournalFollowLimitError();
 
-    const existingFollow = followedEntities.find((follow) => followsEntity([follow], entity));
+    const { existing: existingFollow, next } = planFollowToggle(followedEntities, entity, { listed: followsArrived.current });
     const wasFollowing = Boolean(existingFollow);
     const previous = followedEntities;
-    const next = wasFollowing
-      ? previous.filter((follow) => !followsEntity([follow], entity))
-      : [...previous, entity];
     setFollowedEntities(next);
     setError(null);
     setPendingFollowKeys(current => new Set(current).add(pendingKey));

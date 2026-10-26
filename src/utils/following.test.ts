@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  FollowsUnavailableError,
+  JournalFollowLimitError,
   createFollowEntity,
   createFollowKey,
-  exceedsJournalFollowLimit,
   followsEntity,
   migrateLegacyAuthors,
   normalizeFollowId,
+  planFollowToggle,
 } from './following.ts';
 import { getProjectDisplayName } from './entity-metadata.ts';
 
@@ -207,15 +209,34 @@ test('a journal is followed by its OpenAlex source id, never by its name or ISSN
   assert.equal(followsEntity(followed, { type: 'journal', id: 'S99999999', displayName: 'Economic Review' }), false);
 });
 
-// D3 (Pablo, 2026-10-25): ten journals at most. An eleventh is refused before
-// anything is written; unfollowing one, or following anything else, never is.
+// D3 (Pablo, 2026-10-25): ten journals at most. A press of Follow plans the
+// list the provider shows and writes; an eleventh journal is refused before
+// anything is written, and unfollowing one, or following anything else, never is.
 test('a reader who follows ten journals cannot follow an eleventh, and can still unfollow one', () => {
-  const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal' as const, canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
-  const another = { type: 'journal' as const, id: 'S23254222', displayName: 'American Economic Review' };
-  assert.equal(exceedsJournalFollowLimit(journals.slice(0, 9), another), false);
-  assert.equal(exceedsJournalFollowLimit(journals, another), true);
-  assert.equal(exceedsJournalFollowLimit(journals, { type: 'journal', id: 'S1003', displayName: 'Journal 3' }), false, 'an unfollow');
-  assert.equal(exceedsJournalFollowLimit(journals, { type: 'author', id: 'A1', displayName: 'Ada' }), false);
+  const listed = { listed: true };
+  const journals = Array.from({ length: 10 }, (_, index) => createFollowEntity({ type: 'journal', id: `S${1000 + index}`, displayName: `Journal ${index}` })!);
+  const another = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
+
+  assert.equal(planFollowToggle(journals.slice(0, 9), another, listed).next.at(-1)?.canonicalId, 'S23254222');
+  assert.throws(() => planFollowToggle(journals, another, listed), JournalFollowLimitError);
+  const unfollow = planFollowToggle(journals, journals[3], listed);
+  assert.equal(unfollow.existing, journals[3]);
+  assert.deepEqual(unfollow.next.map(follow => follow.canonicalId), ['S1000', 'S1001', 'S1002', 'S1004', 'S1005', 'S1006', 'S1007', 'S1008', 'S1009']);
+  assert.equal(planFollowToggle(journals, author, listed).next.length, 11);
+});
+
+// The journals are counted in the list Firestore sent. Before its first
+// snapshot the list is empty, and after a snapshot error it holds only the
+// legacy authors, so either would let an eleventh journal through.
+test('a journal is not followed while the follow list has not arrived', () => {
+  const unlisted = { listed: false };
+  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  assert.throws(() => planFollowToggle([], journal, unlisted), FollowsUnavailableError);
+  assert.throws(() => planFollowToggle(migrateLegacyAuthors(['Ada Lovelace']), journal, unlisted), FollowsUnavailableError);
+  // Any other follow is written as before the list arrives.
+  const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
+  assert.deepEqual(planFollowToggle([], author, unlisted).next, [author]);
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {

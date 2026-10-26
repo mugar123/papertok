@@ -97,7 +97,7 @@ import { Switch } from '../ui/switch.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
-import { JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
+import { FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import PaperCard from '../feed/paper-card.tsx';
@@ -1511,6 +1511,8 @@ export default function EntityExplorer({
       // Said aloud too: the toast region is a live region.
       if (error instanceof JournalFollowLimitError) {
         toast.error(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${entityDisplayName}.`);
+      } else if (error instanceof FollowsUnavailableError) {
+        toast.error(`Your follows have not loaded yet, so ${entityDisplayName} was not followed. Try again in a moment.`);
       } else {
         console.error(error);
       }
