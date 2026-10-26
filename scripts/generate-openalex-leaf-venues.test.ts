@@ -265,6 +265,28 @@ test("a notable sample must ask the leaf's own journals, types and extra filter 
   }
 });
 
+test("a notable sample of a lane with a topic filter asks for the lane's topics, and every work is on one of them", t => {
+  const { write, run, output } = setup(t);
+  const onTopics = <T extends { works: object[] }>(value: T) => ({ ...value, works: value.works.map((work, index) => ({ ...work, primary_topic: index % 2 ? 'T1' : 'T2' })) });
+  const lane = { sample: onTopics(sample({ extra: ['primary_topic.id:T2|T1'] })) };
+  write({ 'econ.TH': lane }, sources, { 'econ.TH': onTopics(notableSample({ extra: ['primary_topic.id:T1|T2'] })) });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(notableLeavesIn(readFileSync(output, 'utf8')), ['econ.TH']);
+  const before = readFileSync(output, 'utf8');
+  const good = onTopics(notableSample({ extra: ['primary_topic.id:T1|T2'] }));
+  const broken = [
+    onTopics(notableSample()),
+    onTopics(notableSample({ extra: ['primary_topic.id:T2|T1'] })),
+    { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, primary_topic: 'T3' } : work)) },
+  ];
+  for (const value of broken) {
+    write({ 'econ.TH': lane }, sources, { 'econ.TH': value });
+    assert.notEqual(run().status, 0, value.query);
+    assert.equal(readFileSync(output, 'utf8'), before);
+  }
+});
+
 test('a notable sample out of citation order, outside the window or with an unlabelled work is refused', t => {
   const { write, run } = setup(t);
   const good = notableSample();
