@@ -394,7 +394,10 @@
         data, the viewed papers also when you sign out, and the analytics marks also when
         you turn analytics off. While usage analytics is enabled, PostHog also keeps an
         identifier and your choice in a cookie and in local storage, as described under
-        Analytics.
+        Analytics. When the browser blocks the Google or GitHub sign-in window, the tab goes
+        to the provider and comes back; during that trip this tab's session storage briefly
+        holds the provider, the part of the app that asked and the page to return to, and they
+        are removed when the page comes back or when the browser restores it after Back.
       </p>
 
       <h2>Changes</h2>

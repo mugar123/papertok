@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/auth-context.tsx';
-import { authPromptCopy, normalizeAuthReason } from './auth-prompt-copy.ts';
+import { authPromptCopy, authPromptViewParams } from './auth-prompt-copy.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import SignInMethods from './sign-in-methods.tsx';
 import { Button } from '../ui/button.tsx';
@@ -21,7 +21,9 @@ import './auth-prompt.css';
 // Escape, the scrim, or a session appearing — flips it, Base UI plays the
 // leave, and only then `onOpenChangeComplete(false)` tells the parent to
 // unmount. That is the one place `onClose` is called, so it reaches App once.
-export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: () => void; reason?: unknown }) {
+// `restored` marks the dialog a redirect sign-in returned without a session
+// reopens: the reader's own open already counted a prompt view.
+export default function AuthPrompt({ onClose, reason = 'default', restored = false }: { onClose: () => void; reason?: unknown; restored?: boolean }) {
   const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   // What opened the door decides what it says (auth-prompt-copy.ts).
@@ -37,8 +39,9 @@ export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: (
   useEffect(() => {
     if (!isOpen || viewTracked.current) return;
     viewTracked.current = true;
-    void trackEvent('auth_prompt_view', { surface: 'auth_prompt', reason: normalizeAuthReason(reason) });
-  }, [isOpen, reason, trackEvent]);
+    const params = authPromptViewParams(reason, restored);
+    if (params) void trackEvent('auth_prompt_view', params);
+  }, [isOpen, reason, restored, trackEvent]);
 
 
   return (
