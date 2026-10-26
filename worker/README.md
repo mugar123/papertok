@@ -345,7 +345,8 @@ the browser's old per-tab limiter counted per caller, so N tabs were N times the
 
 `/share/{paper,list,entity}/…` answers HTML: the page a crawler reads for a shared link
 (`worker/share-pages.ts`). `vercel.json`
-rewrites crawler user agents from `/public/{paper,list,entity}/…` here, so the routes are
+rewrites crawler user agents from `/paper/…` and `/public/{list,entity}/…` here. A paper link from
+before ENG-44, `/public/paper/…`, gets a 308 to `/paper/…` from Vercel before any rewrite. The routes are
 public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin gate. Each answers
 the deployed shell (`https://papertok.app/index.html`, kept five minutes) with the page's own
 head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a page whose source
@@ -364,7 +365,14 @@ free and reserves nothing; only the arXiv landing-page lookup reserves a unit.
 Identical requests in one isolate share one lookup; a refused admission is not cached, and a
 failure never replaces a record another request found. Lists are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the
-Worker before the frontend, and check them with a crawler user agent.
+Worker before the frontend, and check them with a crawler user agent. The release that moved a
+paper's page to `/paper/…` (ENG-44) reverses that order once: the Worker's canonical and list links
+name `/paper/…`, which a frontend from before it answers with its 404 page, so deploy the frontend
+first. Deploy the Worker at least 5 minutes after Vercel publishes: the HTML shell can stay cached
+for 5 minutes, and a shell from before the release would run old JavaScript against the new
+`/paper/…` links. Do not wait much longer than that, because until the Worker is deployed a crawler
+on `/paper/…` gets the old Worker's page, whose canonical still names the redirecting
+`/public/paper/…`.
 
 A looked-up entity previews with its own card: `/share/image/entity/:type/:id`, a 1200x630
 PNG this Worker draws (`worker/share-image.ts`, laid out in `worker/share-card.ts`, drawn with
