@@ -258,17 +258,18 @@ export function resolvePaperTopic(value: TopicInput | string | null | undefined)
   const label = cleanTopicText(
     concept?.display_name || concept?.displayName || concept?.name || concept?.label || value,
   );
+  // An OpenAlex topic ID carries more evidence than a coincidentally matching local name.
+  const rawId = concept?.id || concept?.openAlexId || '';
+  const externalId = String(rawId).split('/').pop()!;
+  if (/^T\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
+    return { id: externalId, label, type: 'topic', reliable: false };
+  }
   const local = findLocalTopic(concept?.categoryId || label)
     || (typeof value === 'string' ? findLocalTopic(value) : null);
   if (local) return local;
 
-  const rawId = concept?.id || concept?.openAlexId || '';
-  const externalId = String(rawId).split('/').pop()!;
   if (/^C\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
     return { id: externalId, label, type: 'concept', reliable: false };
-  }
-  if (/^T\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
-    return { id: externalId, label, type: 'topic', reliable: false };
   }
   const queryTopic = createQueryTopic(concept || label);
   if (isOpaqueQueryTopicText(rawId)) {
@@ -277,9 +278,9 @@ export function resolvePaperTopic(value: TopicInput | string | null | undefined)
   return queryTopic;
 }
 
-export function topicExplorerPath(topic: TopicTarget | null | undefined) {
+export function topicExplorerPath(topic: TopicTarget | null | undefined, publicMode = false) {
   if (!topic) return null;
-  const basePath = `/explorer/${topic.type}/${encodeURIComponent(topic.id)}`;
+  const basePath = `${publicMode ? '/public/entity' : '/explorer'}/${topic.type}/${encodeURIComponent(topic.id)}`;
   if (!topic._queryTopic) return basePath;
 
   const query = cleanTopicText(topic.metadata?.query || topic.query);

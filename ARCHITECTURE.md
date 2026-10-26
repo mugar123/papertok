@@ -111,6 +111,13 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
 separate bounded steps; the diagram summarizes the resulting data flow.
 
+Paper cards display native category names, including arXiv categories outside the
+selectable feed leaves. When no native category is available, the masthead names
+OpenAlex's primary topic and labels its source. Area grouping still controls
+colour and feed selection. Hydrating a stored or shared copy preserves known
+arXiv categories when OpenAlex supplies the fallback; fresh arXiv metadata can
+replace a copy's concept-only classification.
+
 A leaf's own lane (`cs.LG`, `econ.EM`) also holds OpenAlex journal articles:
 those of the topics or the journals and proceedings a labelled sample admitted
 for that leaf ([topic lanes](scripts/README-openalex-leaf-topics.md),
