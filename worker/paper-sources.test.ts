@@ -739,6 +739,27 @@ test('a journal article a venue lane lists a night after its working paper makes
   assert.match(again.abstract, /^Even though a multifactor/);
 });
 
+// The article can name a coauthor the working paper did not; a reader who
+// follows that coauthor finds the upgraded row on its first listing.
+test("a journal article that adds a followed coauthor to a stored working paper reaches that coauthor's followers on its first listing", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const ben = { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] };
+  const article = { ...gmmArticle, authorships: [...gmmArticle.authorships, ben] };
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const { env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [article] : [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5000000777', ?)").run(new Date().toISOString());
+  const following = async () => (await readFeedPage(store, parseFeedRequest({ categories: [], follows: [{ type: 'author', canonicalId: 'A5000000777', displayName: 'Ben Coauthor' }] })))
+    .map(paper => [paper.id, paper.peerReviewed]);
+
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-series')!);
+  assert.deepEqual(await following(), []);
+  t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-venues' && job.lane === 'econ.EM')!);
+  assert.deepEqual(await following(), [['openalex:W7220000104', true]]);
+});
+
 // The row keeps the working paper's id, yet its text is the article's, so the
 // article's corrected title and abstract reach it in either order of arrival.
 test('OpenAlex listing a journal article again with a corrected title and abstract updates its row whichever of the article and its working paper arrived first', async t => {

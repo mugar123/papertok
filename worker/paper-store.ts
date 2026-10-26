@@ -402,7 +402,8 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
 /**
  * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
  * record of `articles` was filed under (by the article's work id or DOI) the
- * journal's reviewed row, with its date in every lane it holds. An upgraded row
+ * journal's reviewed row, with its date in every lane it holds, and filed
+ * under the lanes the article's record adds (`recordLanes`). An upgraded row
  * is no working paper, so the step applies once whatever the order of the
  * records and however often they are listed. Returns how many rows changed.
  */
@@ -411,7 +412,8 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
   const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
   const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
   const works = await readWorks(db, [...new Set(found.values())]);
-  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean }> = [];
+  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: string[] }> = [];
+  const since = daysFromNow(-CORPUS_DAYS, now);
   // In id order, so the same records upgrade a row the same way in any order.
   for (const [id, work] of [...works].sort(([a], [b]) => a - b)) {
     const row = JSON.parse(work.paper) as Paper;
@@ -429,10 +431,18 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
       published,
       keptUntil: [daysFromNow(CORPUS_DAYS, Date.parse(published)), work.kept_until].sort().at(-1)!,
       textChanged: embeddingText(upgraded) !== embeddingText(row),
+      lanes: [],
     });
   }
-  // One batch a chunk: the row, its date in each of its lanes, its keys and
-  // its vector change together.
+  // The article can name entities the working paper did not (a coauthor it
+  // added): the upgraded row is filed under its own record's lanes, as
+  // `ingestPapers` files a merged row.
+  const upgradedRows = upgrades.map(upgrade => ({ upgrade, paper: JSON.parse(upgrade.paper) as Paper }))
+    .filter(({ upgrade, paper }) => upgrade.published >= since && isFeedPublication(paper));
+  const followed = await followedLanesAmong(db, upgradedRows.flatMap(({ paper }) => followOnlyLanes(paper)));
+  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed);
+  // One batch a chunk: the row, its date in each of its lanes, its lanes,
+  // keys and vector change together.
   for (let start = 0; start < upgrades.length; start += WRITE_CHUNK) {
     const slice = upgrades.slice(start, start + WRITE_CHUNK);
     const chunk = JSON.stringify(slice);
@@ -441,6 +451,8 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
         kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
       db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
         WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
         .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
