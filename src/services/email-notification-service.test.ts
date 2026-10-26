@@ -55,7 +55,7 @@ test('the digest leaves journals out before it cuts follows and previews', () =>
   const byAuthor = { id: 'a1', title: 'A1', _followedEntityMatches: [journal(1), author(1)] };
   const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [...Array.from({ length: 20 }, (_, index) => journalOnly(index)), byAuthor] as never);
   assert.deepEqual(previewItems.map(item => item.id), ['a1']);
-  assert.deepEqual(previewItems[0]!.matches.map(match => match.type), ['author']);
+  assert.deepEqual(previewItems[0].matches.map(match => match.type), ['author']);
 });
 
 test('serializes only the follow metadata required by notification digests', () => {
