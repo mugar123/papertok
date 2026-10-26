@@ -1758,8 +1758,11 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className={`explorer-error${appChromeClass}`}>
-        {/* A dead or failing shared link is a visitor's first page too. */}
-        {publicMode && <div className="explorer-error-bar"><PrivacyPopover /></div>}
+        {/* A dead or failing shared link is a visitor's first page too. The
+            bar is the skeleton's `.explorer-hero > ExplorerHeroTop` path, so
+            Privacy opened while the entity was coming stays open when it
+            fails, and on Try again. No Back here: the page has its own. */}
+        {publicMode && <div className="explorer-error-bar"><ExplorerHeroTop privacy={explorerPrivacy} /></div>}
         <div className="empty-state-art" aria-hidden="true">
           <Petri pose={entityError ? 'upset' : 'lost'} />
         </div>
