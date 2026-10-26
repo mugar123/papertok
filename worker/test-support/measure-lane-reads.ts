@@ -32,7 +32,7 @@
 // first page's papers added to the filter, as the app does, and goes on from the
 // order the cache kept. Three more second pages show what a kept order saves only
 // while it is still good: one asked 16 minutes later (RANKING_KEPT_MS), one from
-// a reader who has since dismissed a card (a negative) and one whose lean has
+// a reader who has since dismissed a card of the first page (a negative) and one whose lean has
 // moved to `relevance`, as a like past -0.3 does (`order`). The last two change
 // `rankedBy`. Each ranks again, at about a first page's cost.
 //
@@ -328,12 +328,13 @@ const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floo
 // the timed runs' median, memory in use as their most, and live memory from
 // the memory run. `seen` is the filter's papers before the first page; a second
 // page adds the first's.
-function summary(categories: number, likes: number, page: number, after: Later, timed: Run[], memory: Run, seen: string[]) {
+function summary(categories: number, likes: number, page: number, after: Later, timed: Run[], memory: Run, seen: string[], dismissed: string | null) {
   const [{ tally, papers, ids }] = timed;
   return {
     categories,
     ids,
     seen,
+    dismissed,
     likes,
     page,
     after,
@@ -368,26 +369,28 @@ type Later = '' | 'after 16 min' | 'after a dismissal' | 'after the lean moved';
 // A first page and the one after it from one empty cache. The second asks with
 // the first's papers added to the filter, as the app does. Three more seconds
 // start from the order the first kept, a copy each: one 16 minutes later, one
-// with `dismissedId` among the negatives, one asking for `relevance`.
-async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'>, seenIds: string[], dismissedId: string, collectGarbage: () => void, memoryRun: boolean) {
+// with the first page's first paper among the negatives (Not interested exists
+// only on a card the reader was served), one asking for `relevance`.
+async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'>, seenIds: string[], collectGarbage: () => void, memoryRun: boolean) {
   const kept = new Map<string, string>();
   const cache = keptRankings(kept);
   const seen = [...seenIds];
   const ask = (page: number, cache: RankingCache, extra: Partial<FeedRequestBody> = {}, now = NOW) =>
     request(db, { ...body, ...extra, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun, now);
   const first = await ask(0, cache);
+  const dismissedIds = first.ids.slice(0, 1);
   seen.push(...first.ids);
   const afterFirst = new Map(kept);
   const next = await ask(1, cache);
   const later = await ask(1, keptRankings(new Map(afterFirst)), {}, NOW + LATER_MS);
-  const dismissed = await ask(1, keptRankings(new Map(afterFirst)), { negativeIds: [dismissedId] });
+  const dismissed = await ask(1, keptRankings(new Map(afterFirst)), { negativeIds: dismissedIds });
   const moved = await ask(1, keptRankings(new Map(afterFirst)), { order: 'relevance' });
   return [
-    { run: first, page: 0, after: '' as Later },
-    { run: next, page: 1, after: '' as Later },
-    { run: later, page: 1, after: 'after 16 min' as Later },
-    { run: dismissed, page: 1, after: 'after a dismissal' as Later },
-    { run: moved, page: 1, after: 'after the lean moved' as Later },
+    { run: first, page: 0, after: '' as Later, dismissed: null },
+    { run: next, page: 1, after: '' as Later, dismissed: null },
+    { run: later, page: 1, after: 'after 16 min' as Later, dismissed: null },
+    { run: dismissed, page: 1, after: 'after a dismissal' as Later, dismissed: dismissedIds[0] ?? null },
+    { run: moved, page: 1, after: 'after the lean moved' as Later, dismissed: null },
   ];
 }
 
@@ -412,18 +415,15 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
       const shown = shownBy(categories, papersOf);
       const excludedIds = shown.slice(0, plan.excluded);
       const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
-      // A paper the reader has not been shown, dismissed after the first page.
-      const dismissedId = shown[seenIds.length];
-      if (dismissedId === undefined) throw new Error(`The ${categories.length}-category reader's lanes hold ${shown.length} papers and its seen filter ${seenIds.length}: none is left to dismiss`);
       for (const likes of [0, plan.likes]) {
         const body = { categories, positiveIds: shown.slice(plan.excluded, plan.excluded + likes), excludedIds, pageSize: PAGE_SIZE, notable: NOTABLE_ASKED };
         // Each run pages from an empty cache: the timed runs, then the memory run.
         const timed: Run[][] = [[], [], [], [], []];
         for (let repetition = 0; repetition < plan.repetitions; repetition += 1) {
-          (await pages(db, body, seenIds, dismissedId, collectGarbage, false)).forEach(({ run }, index) => timed[index].push(run));
+          (await pages(db, body, seenIds, collectGarbage, false)).forEach(({ run }, index) => timed[index].push(run));
         }
-        const memory = await pages(db, body, seenIds, dismissedId, collectGarbage, true);
-        rows.push(...memory.map(({ run, page, after }, index) => summary(categories.length, likes, page, after, timed[index], run, seenIds)));
+        const memory = await pages(db, body, seenIds, collectGarbage, true);
+        rows.push(...memory.map(({ run, page, after, dismissed }, index) => summary(categories.length, likes, page, after, timed[index], run, seenIds, dismissed)));
       }
     }
     return rows;
