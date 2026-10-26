@@ -21,6 +21,11 @@ test('a failed feed load keeps why it failed: deadline, network, session, HTTP r
   assert.deepEqual(feedLoadFailure('a string'), { reason: 'unexpected' });
 });
 
+test('a build with no allowed Worker origin is not a session failure, and keeps its code', () => {
+  assert.deepEqual(feedLoadFailure(new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED')), { reason: 'unexpected', code: 'WORKER_ORIGIN_NOT_ALLOWED' });
+  assert.deepEqual(feedLoadFailure(new WorkerApiAuthError('WORKER_AUTH_REQUIRED')), { reason: 'session', code: 'WORKER_AUTH_REQUIRED' });
+});
+
 test('a TypeError thrown by our own code is not a network failure', () => {
   assert.deepEqual(feedLoadFailure(new TypeError("Cannot read properties of undefined (reading 'id')")), { reason: 'unexpected' });
 });

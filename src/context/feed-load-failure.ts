@@ -38,7 +38,10 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   if (knownCode === EMPTY_FIRST_PAGE) return { reason: 'empty' };
   // AbortSignal.timeout rejects with a TimeoutError (utils/request-deadline.ts).
   if (error.name === 'TimeoutError' || error.name === 'AbortError') return { reason: 'timeout' };
-  if (error instanceof WorkerApiAuthError) return { reason: 'session', code: error.code };
+  // A build with no allowed Worker origin is a deployment fault, not the reader's session.
+  if (error instanceof WorkerApiAuthError) {
+    return { reason: error.code === 'WORKER_ORIGIN_NOT_ALLOWED' ? 'unexpected' : 'session', code: error.code };
+  }
   if (typeof status === 'number' && Number.isInteger(status) && status >= 400) {
     return { reason: httpReason(status), status, ...(knownCode ? { code: knownCode } : {}) };
   }
@@ -90,7 +93,8 @@ type FeedFailureChange =
  * returns to /feed. A new load drops the event a previous attempt still held.
  */
 export function feedFailureEventStep(held: FeedLoadFailedEvent | null, change: FeedFailureChange) {
-  if (change.kind === 'load_started') return { send: null, hold: null };  const owed = change.kind === 'load_failed' ? feedLoadFailedEvent(change.failure) : held;
+  if (change.kind === 'load_started') return { send: null, hold: null };
+  const owed = change.kind === 'load_failed' ? feedLoadFailedEvent(change.failure) : held;
   if (!owed) return { send: null, hold: null };
   return feedErrorOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
 }
