@@ -10,18 +10,20 @@
 //
 // The corpus. Each asked leaf lane holds FEED_CANDIDATE_LIMIT papers, the most
 // eviction keeps, PAPERS_PER_DAY apart; each area lane of their areas as many;
-// each leaf's notable lane NOTABLE_PER_YEAR papers of each of the NOTABLE_YEARS
-// years. No paper is in two lanes, so every lane row is a distinct candidate:
-// the most a request of that size reads. Papers go in through `ingestPapers`,
+// each leaf's notable lane NOTABLE_LISTINGS x NOTABLE_PER_YEAR papers of each of
+// the NOTABLE_YEARS years: the leaves measured are arXiv's, which list OpenAlex's
+// most-cited papers and ADS's. No paper is in two lanes, so every lane row is a
+// distinct candidate: the most a request of that size reads. Papers go in through `ingestPapers`,
 // the store's own writer, and each gets a vector in the stored form
 // (`quantize`), pseudo-random from its work id.
 //
 // The request is the app's main page (`fetchCorpusPage`): the categories as one
-// group, no follows, `excluded` papers (the reader's newest, as if shown), the
-// same papers as the seen filter, NOTABLE_ASKED notable papers, pages of
-// PAGE_SIZE, and no likes or `likes` of the papers after the excluded ones. A
-// first page is ranked with an empty ranking cache, and the second is read from
-// the order it kept.
+// group, no follows, `excluded` papers (the reader's newest, as if shown), a seen
+// filter of `seen` papers with `skipsSeen`, NOTABLE_ASKED notable papers, pages
+// of PAGE_SIZE, and no likes or `likes` of the papers after the excluded ones.
+// A first page is ranked with an empty ranking cache; the second asks with the
+// first page's papers added to the filter, as the app does, and goes on from the
+// order the cache kept.
 //
 // Reported per request: D1 calls (a batch is one); rows read, as D1 counts them,
 // by kind of statement; rows written; the rows the lane and vector reads
@@ -29,6 +31,9 @@
 // process (the median of `repetitions` runs); and memory (`request`) from one
 // more, untimed run. Times and memory are Node's on this machine, without the
 // network between a Worker and D1.
+//
+// `unstable_splitSqlQuery` is wrangler's, and the only use of it in the repo: a
+// wrangler upgrade that moves it breaks this file and its test.
 import type { GCProfilerResult } from 'node:v8';
 import type { FeedRequestBody, KeptRanking, RankingCache } from '../paper-store.ts';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -49,17 +54,24 @@ import {
 } from '../paper-store.ts';
 
 interface Corpus { leafRows: number; areaRows: number; notablePerYear: number }
-interface Plan { readers: string[][]; likes: number; excluded: number; repetitions: number }
+interface Plan { readers: string[][]; likes: number; excluded: number; seen: number; repetitions: number }
 
 const SIX = ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.RO', 'cs.NE'];
-const PRODUCTION: Corpus = { leafRows: FEED_CANDIDATE_LIMIT, areaRows: FEED_CANDIDATE_LIMIT, notablePerYear: NOTABLE_PER_YEAR };
+// arXiv leaves list OpenAlex's most-cited papers and ADS's (`ADS_NOTABLE_LEAVES`
+// in paper-sources.ts), so a lane holds up to 2 x NOTABLE_PER_YEAR a year, more
+// while rows that left a listing wait out their 14 days. All the leaves measured
+// are arXiv's. A leaf with one listing reads half the notable rows.
+const NOTABLE_LISTINGS = 2;
+const PRODUCTION: Corpus = { leafRows: FEED_CANDIDATE_LIMIT, areaRows: FEED_CANDIDATE_LIMIT, notablePerYear: NOTABLE_LISTINGS * NOTABLE_PER_YEAR };
 // The six are the 2026-10-25 access audit's reader (ENG-128). The app asks for
 // at most 10 categories (MAIN_CATEGORIES); 12 is the most the Worker reads. A
-// request carries at most 24 likes and 200 excluded papers (fetchCorpusPage).
+// request carries at most 24 likes and 200 excluded papers (fetchCorpusPage);
+// its seen filter holds every paper the reader was shown, 2,000 here.
 const PLAN: Plan = {
   readers: [['cs.LG'], SIX, [...SIX, 'cs.CR', 'cs.SE', 'cs.DS', 'cs.DC', 'cs.IR', 'cs.HC']],
   likes: SEMANTIC_PROFILE_POSITIVE_CAP,
   excluded: 200,
+  seen: 2_000,
   repetitions: 3,
 };
 const NOW = Date.parse('2026-10-25T12:00:00Z');
@@ -231,15 +243,18 @@ function metered(db: D1Database, tally: Tally) {
   return binding as unknown as D1Database;
 }
 
-// The order a first page keeps, as the Worker's cache keeps it: as JSON.
+// The order a first page keeps, as the Worker's cache keeps it: as JSON, and
+// written again by `update` as the route's does (`handleCorpusFeed`).
 function keptRankings(): RankingCache {
   const kept = new Map<string, string>();
+  const put: RankingCache['put'] = async (key, ranking) => { kept.set(key, JSON.stringify(ranking)); };
   return {
     get: async key => {
       const json = kept.get(key);
       return json === undefined ? null : JSON.parse(json) as KeptRanking;
     },
-    put: async (key, ranking) => { kept.set(key, JSON.stringify(ranking)); },
+    put,
+    update: put,
   };
 }
 
@@ -276,6 +291,7 @@ async function request(db: D1Database, body: FeedRequestBody, cache: RankingCach
   return {
     tally,
     papers: papers.length,
+    ids: papers.map(paper => paper.id),
     wallMs,
     cpuMs: (user + system) / 1_000,
     inUseMb: (Math.max(before, after.heapUsed + after.external, ...collections.map(({ beforeGC }) => held(beforeGC.heapStatistics))) - before) / MB,
@@ -291,9 +307,10 @@ const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floo
 // the timed runs' median, memory in use as their most, and live memory from
 // the memory run.
 function summary(categories: number, likes: number, page: number, timed: Run[], memory: Run) {
-  const [{ tally, papers }] = timed;
+  const [{ tally, papers, ids }] = timed;
   return {
     categories,
+    ids,
     likes,
     page,
     papers,
@@ -312,6 +329,20 @@ function summary(categories: number, likes: number, page: number, timed: Run[], 
 
 // The leaves' papers taking turns, each leaf's newest first, as a feed shows them.
 const inTurns = (lists: string[][]) => Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.flatMap(list => list.slice(index, index + 1))).flat();
+
+// A first page and the one after it from one empty cache. The second asks with
+// the first's papers added to the filter, as the app does.
+async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'>, seenIds: string[], collectGarbage: () => void, memoryRun: boolean) {
+  const cache = keptRankings();
+  const seen = [...seenIds];
+  const runs: Run[] = [];
+  for (const page of [0, 1]) {
+    const run = await request(db, { ...body, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun);
+    seen.push(...run.ids);
+    runs.push(run);
+  }
+  return runs;
+}
 
 export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan = PLAN) {
   // The local D1 needs no request metadata; without this, Miniflare asks
@@ -333,17 +364,15 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
     for (const categories of plan.readers) {
       const shown = inTurns(categories.map(leaf => papersOf.get(leaf) ?? []));
       const excludedIds = shown.slice(0, plan.excluded);
+      const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
       for (const likes of [0, plan.likes]) {
-        const body = { categories, positiveIds: shown.slice(plan.excluded, plan.excluded + likes), excludedIds, pageSize: PAGE_SIZE, seen: feedSeenFilter(excludedIds), notable: NOTABLE_ASKED };
+        const body = { categories, positiveIds: shown.slice(plan.excluded, plan.excluded + likes), excludedIds, pageSize: PAGE_SIZE, notable: NOTABLE_ASKED };
         // Each run pages from an empty cache: the timed runs, then the memory run.
         const timed: Run[][] = [[], []];
         for (let repetition = 0; repetition < plan.repetitions; repetition += 1) {
-          const cache = keptRankings();
-          for (const page of [0, 1]) timed[page].push(await request(db, { ...body, page }, cache, collectGarbage, false));
+          (await pages(db, body, seenIds, collectGarbage, false)).forEach((run, page) => timed[page].push(run));
         }
-        const cache = keptRankings();
-        const memory: Run[] = [];
-        for (const page of [0, 1]) memory.push(await request(db, { ...body, page }, cache, collectGarbage, true));
+        const memory = await pages(db, body, seenIds, collectGarbage, true);
         rows.push(...memory.map((run, page) => summary(categories.length, likes, page, timed[page], run)));
       }
     }

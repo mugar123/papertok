@@ -8,7 +8,7 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
   // of its ten years: under each lane's share, so each read returns the lane.
   const rows = await measureLaneReads(
     { leafRows: 40, areaRows: 40, notablePerYear: 3 },
-    { readers: [['cs.LG'], ['cs.LG', 'cs.RO']], likes: 4, excluded: 10, repetitions: 1 },
+    { readers: [['cs.LG'], ['cs.LG', 'cs.RO']], likes: 4, excluded: 10, seen: 30, repetitions: 1 },
   );
   const returned = rows.map(row => [row.categories, row.likes, row.page, row.returned.lanes, row.returned.notable, row.returned.vectors, row.papers]);
   assert.deepEqual(returned, [
@@ -24,6 +24,14 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     [2, 4, 0, 160, 60, 210, 20],
     [2, 4, 1, 0, 0, 0, 20],
   ]);
+  // The request is the app's: with `skipsSeen`, the walk sends none of the 30
+  // newest papers of cs.LG that the filter holds (seeded as 2610.00001 on), and
+  // the second page none of the first's.
+  const heldBySeenFilter = new Set(Array.from({ length: 30 }, (_, index) => `2610.${String(index + 1).padStart(5, '0')}`));
+  rows.forEach((row, index) => {
+    if (row.categories === 1) assert.deepEqual(row.ids.filter(id => heldBySeenFilter.has(id)), [], `page ${row.page + 1} of ${row.likes} likes`);
+    if (row.page === 1) assert.deepEqual(row.ids.filter(id => rows[index - 1].ids.includes(id)), [], 'a next page repeats no paper');
+  });
   for (const row of rows) {
     assert.equal(row.rowsReadBy.other, 0, 'every row read comes from a statement of a known kind');
     assert.ok(row.rowsReadBy.lanes >= row.returned.lanes && row.rowsReadBy.notable >= row.returned.notable);
