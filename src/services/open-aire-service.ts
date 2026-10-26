@@ -168,9 +168,11 @@ async function lookUpPublication(lookup: Record<string, string>) {
 /**
  * Get project info from OpenAIRE using arXiv ID or DOI.
  *
- * Every answer is kept for the session, a miss or a failure included: the card
- * asks when it settles, and asking again on each render only paid the same
- * empty answer again.
+ * Every answer is kept for the session, a miss or a failure included (a refusal,
+ * a rate limit, a network error, or an answer that is not a Graph list): the
+ * card asks when it settles, and asking again on each render only paid the
+ * same empty answer again. A failed DOI lookup does not fall through to the
+ * arXiv one: only a DOI that Graph answered with no publication does.
  *
  * The DOI goes to Graph bare and in lowercase, the way Graph stores it
  * (`10.48550/arxiv.2203.10143`): the paper may carry `10.48550/arXiv.…`, an

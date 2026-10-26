@@ -298,7 +298,7 @@ test("a page past Graph's 10,000-result window ends the list without a request, 
     await withStubbedFetch(graphFetch(requests, () => publications([MONETIZATION_PUBLICATION], 20_000)), async () => {
       // The project has 20,000 publications, so 0 would be a count nobody asked for.
       assert.deepEqual(await getPapersByProject(TAILOR_PROJECT.id, 334), { arxivIds: [], dois: [], total: null });
-      assert.equal(requests.length, 0, 'page 334 would start at result 10,021: Graph answers 400');
+      assert.equal(requests.length, 0, 'page 334 would end at result 10,020: Graph answers 400');
       assert.equal((await getPapersByProject(TAILOR_PROJECT.id, 333)).arxivIds.length, 1);
       assert.equal(requests[0].searchParams.get('page'), '333');
     });
@@ -776,6 +776,39 @@ test('a card does not ask OpenAIRE twice after a refusal or a rate limit', async
     } finally {
       CACHE.clear();
     }
+  }
+});
+
+test('a card stops at an answer that is not a Graph list: no badge, no arXiv retry, no second ask', async () => {
+  const unreadable = [{ response: { results: { result: [] } } }, { results: [] }, {}];
+  const papers: [string | undefined, string | null][] = [['2203.10143', '10.1145/3555174'], ['2203.10143', null], [undefined, '10.1145/3555174']];
+  for (const payload of unreadable) {
+    for (const [arxivId, doi] of papers) {
+      let calls = 0;
+      CACHE.clear();
+      try {
+        await withStubbedFetch(async () => { calls++; return Response.json(payload); }, async () => {
+          assert.equal(await getProjectForPaper(arxivId, doi), null);
+          assert.equal(await getProjectForPaper(arxivId, doi), null);
+        });
+        assert.equal(calls, 1, `${JSON.stringify(payload)} for ${arxivId} ${doi}`);
+      } finally {
+        CACHE.clear();
+      }
+    }
+  }
+  // A DOI Graph answered with no publication still falls through to the arXiv
+  // copy, and an unreadable answer there is remembered too.
+  const requests: URL[] = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(graphFetch(requests, url => (url.searchParams.has('pid') ? publications([]) : Response.json({}))), async () => {
+      assert.equal(await getProjectForPaper('2203.10143', '10.1145/3555174'), null);
+      assert.equal(await getProjectForPaper('2203.10143', '10.1145/3555174'), null);
+    });
+    assert.deepEqual(requests.map(request => [...request.searchParams.keys()][0]), ['pid', 'originalId']);
+  } finally {
+    CACHE.clear();
   }
 });
 

@@ -799,6 +799,9 @@ builds the shared requests and validates the answers for the browser and the Wor
   the Explorer list reports a load failure, a share page lookup fails instead of
   reporting a missing project, the digest records
   `EMAIL_SOURCE_OPENAIRE_INVALID_RESPONSE`, and a project lane fails its turn.
+  The card shows no badge and keeps that failure, like a `429`, for 24 hours
+  without asking again. It does not try the arXiv id after a failed DOI lookup,
+  only after a DOI that Graph answered with no publication.
 
 Every call is anonymous. OpenAIRE documents 60 requests an hour without a token
 and 7,200 with a personal access token, but anonymous answers on 17, 23 and 25
