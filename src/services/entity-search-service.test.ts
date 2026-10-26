@@ -4,11 +4,57 @@ import { searchEntities } from './entity-search-service.ts';
 import type { SearchProviders, SearchSection, SearchSnapshot } from './entity-search-service.ts';
 import type { Paper } from '../models/paper.ts';
 import type { Project } from './open-aire-service.ts';
+import { openAlexClient } from './open-alex-client.ts';
 
 const paper: Paper = { id: 'openalex:W1', title: 'Segment Anything', authors: [], abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
 const emptySources = { papers: async () => [paper], authors: async () => [], institutions: async () => [], topics: async () => [], projects: async () => [] };
 const timeouts = { papers: 100, authors: 100, institutions: 100, topics: 100, projects: 10 };
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('author suggestions answer while both background OpenAlex slots are occupied', async t => {
+  for (const query of ['张伟', 'Geofrey Hin']) {
+    await t.test(query, async t => {
+      const release: Array<() => void> = [];
+      const searches: string[] = [];
+      const originalFetch = openAlexClient.fetchImpl;
+      t.after(() => { openAlexClient.fetchImpl = originalFetch; });
+      openAlexClient.fetchImpl = async rawUrl => {
+        const url = new URL(rawUrl instanceof Request ? rawUrl.url : rawUrl);
+        if (url.pathname.startsWith('/works/W')) {
+          await new Promise<void>(resolve => release.push(resolve));
+          return Response.json({ id: url.pathname.slice(1) });
+        }
+        searches.push(url.pathname);
+        // Synthetic provider pages: Chinese matches the index; the typo
+        // needs the byline fallback, which must have a turn of its own too.
+        return Response.json({ results: url.pathname === '/authors'
+          ? (query === '张伟' ? [{ id: 'https://openalex.org/A90001', display_name: '张伟' }] : [])
+          : [{ authorships: [{ author: { id: 'https://openalex.org/A90002', display_name: 'Geoffrey E. Hinton' } }] }],
+        });
+      };
+      const background = [1, 2].map(id => openAlexClient.json(`https://api.openalex.org/works/W9000${id}`, { cacheTtlMs: 0 }));
+      try {
+        await settle();
+        assert.equal(release.length, 2, 'both background requests are still waiting for their response');
+        const keepAlive = setTimeout(() => {}, 2000);
+        t.after(() => clearTimeout(keepAlive));
+        const result = await searchEntities(query, {
+          signal: new AbortController().signal,
+          timeouts: { ...timeouts, authors: 1000 },
+          onUpdate: () => {},
+        }).ask('authors');
+        assert.deepEqual(result.issues, []);
+        assert.deepEqual(result.results.authors.map(author => author.display_name),
+          [query === '张伟' ? '张伟' : 'Geoffrey E. Hinton']);
+        assert.deepEqual(searches, query === '张伟' ? ['/authors'] : ['/authors', '/works']);
+      } finally {
+        release.forEach(resolve => resolve());
+        await Promise.all(background);
+        await settle();
+      }
+    });
+  }
+});
 
 test('papers publish before a slow project lookup and late replies cannot replace them', async t => {
   const keepAlive = setTimeout(() => {}, 1000);
