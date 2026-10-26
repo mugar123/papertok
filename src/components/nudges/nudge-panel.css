@@ -18,7 +18,8 @@
   box-shadow: var(--shadow-lg);
   align-items: center;
   /* Long copy at a large text size or a short viewport scrolls inside the
-     panel; a fixed panel cannot be scrolled to (WCAG 1.4.4, 1.4.10). */
+     panel (on narrow or short screens, only the copy does, below);
+     a fixed panel cannot be scrolled to (WCAG 1.4.4, 1.4.10). */
   max-height: calc(100vh - 24px - var(--inset-bottom));
   max-height: calc(100dvh - 24px - var(--inset-bottom));
   overflow-y: auto;
@@ -83,26 +84,34 @@
 }
 
 /* Narrow or short screens, and large text on them: the copy takes the width and
-   the action gets a row of its own, pinned to the bottom edge while the copy
-   scrolls, so the way out is in view whatever the text size. Beside the copy
-   it would squeeze it to a column of single words. */
+   the action gets a row of its own under it. Beside the copy it would squeeze
+   it to a column of single words. Only the copy scrolls; the row stays below
+   the scroll area instead of pinned over it, so it cannot cover a link that
+   has just been focused (WCAG 2.4.11) and the way out is in view whatever the
+   text size. */
 @media (max-width: 560px), (max-height: 480px) {
   .nudge {
     grid-template-columns: 40px minmax(0, 1fr);
-    column-gap: 0;
-    row-gap: 12px;
+    grid-template-rows: minmax(0, 1fr) auto;
     align-items: start;
   }
 
   .nudge-icon {
     grid-column: 1;
     grid-row: 1;
-    margin-right: 12px;
   }
 
   .nudge-copy {
     grid-column: 2;
     grid-row: 1;
+    align-self: stretch;
+    min-height: 0;
+    overflow-y: auto;
+    /* A scroll area clips at its edge, and the focus ring of the link sits 4px
+       outside the link (2px outline, 2px offset): the padding keeps it whole,
+       the negative margin keeps the text where it was. */
+    margin: -4px;
+    padding: 4px;
   }
 
   .nudge-actions {
@@ -110,11 +119,6 @@
     grid-row: 2;
     justify-self: stretch;
     justify-content: flex-end;
-    position: sticky;
-    bottom: 0;
-    margin-bottom: calc(var(--nudge-pad) * -1);
-    padding: 8px 0 var(--nudge-pad);
-    background: var(--bg-elevated);
   }
 }
 
