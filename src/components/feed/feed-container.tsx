@@ -52,7 +52,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -642,7 +642,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   useEffect(() => {
     if (loading) initialLoadStartedRef.current = true;
-    if (papers.length > 0 || error || (initialLoadStartedRef.current && !loading)) {
+    if (firstLoadSettled({ hasPapers: papers.length > 0, loadStarted: initialLoadStartedRef.current, loading, error })) {
       setInitialFeedReady(true);
     }
   }, [error, loading, papers.length]);
