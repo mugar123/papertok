@@ -847,7 +847,7 @@ async function workingPaperRowWith(t: import('node:test').TestContext, paper: Pa
 // a working paper's row. One that names its journal without the journal's DOI
 // leaves the row unreviewed, so it does not upgrade it either: `merge` keeps
 // the working paper's `false`.
-test('an arXiv eprint that does not name its journal beside a publisher DOI leaves a working paper row as it was, stored or on the same page', async t => {
+test("an arXiv eprint that does not name both its journal and the journal's DOI leaves a working paper row as it was, stored or on the same page", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const shown = (paper: Awaited<ReturnType<typeof workingPaperRowWith>>[number]) => [paper.id, paper.sources.primary, paper.doi, paper.landingPageUrl, paper.storedPublished, paper.journal, paper.peerReviewed, paper.workingPaper, paper.title, paper.abstract];
   for (const record of [

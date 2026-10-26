@@ -79,10 +79,10 @@ when its journal article arrives (`ingestPapers`, ENG-133): the row takes the
 article's DOI, landing page and answer, drops the Working paper tag, keeps the
 working paper's `false` under its own DOI, and keeps its row and the id readers
 liked or saved it under. A page that lists the working paper before its
-article starts the row the same way, under the working paper's id. The series
-listing the working paper again does not put its title and abstract back on
-the row. The two records pair on the title and first-author key
-(`PaperBuilder.identityKeys`), as before, because they share no DOI or
+article starts the row the same way, under the id of the page's first record.
+The series listing the working paper again does not put its title and
+abstract back on the row. The two records pair on the title and first-author
+key (`PaperBuilder.identityKeys`), as before, because they share no DOI or
 OpenAlex id; the upgrade now lets that join set the row's DOI, landing page,
 text and date, and only when the merge reads reviewed.
 
