@@ -155,7 +155,7 @@ function AppContent() {
   // which cannot work it out for itself, because it is kept mounted inside a
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
-  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
@@ -199,6 +199,18 @@ function AppContent() {
   if (authArrivalKey && authArrivalKey !== consumedAuthArrival) {
     setConsumedAuthArrival(authArrivalKey)
     if (!user) setAuthPromptOpen(true)
+  }
+  // A sign-in that went through this tab and came back without a session
+  // (auth-context.tsx) finds its dialog open again, as a closed popup leaves it,
+  // with the destination it carried still waiting. Once: the flag clears on
+  // the next attempt, and a session remounts this component. The restored
+  // dialog sends no auth_prompt_view: the reader's own open counted one.
+  const [reopenedSignIn, setReopenedSignIn] = useState(false)
+  const [authPromptRestored, setAuthPromptRestored] = useState(false)
+  if (reopenSignIn && !user && !reopenedSignIn) {
+    setReopenedSignIn(true)
+    setAuthPromptOpen(true)
+    setAuthPromptRestored(true)
   }
   useEffect(() => {
     if (!authArrivalKey) return
@@ -554,8 +566,10 @@ function AppContent() {
         {authPromptOpen && (
           <AuthPrompt
             reason={authPromptReason}
+            restored={authPromptRestored}
             onClose={() => {
               setAuthPromptOpen(false)
+              setAuthPromptRestored(false)
               // The next door — a bounce off a protected route opens this
               // without a reason — must not inherit this one's.
               setAuthPromptReason('default')

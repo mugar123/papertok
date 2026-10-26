@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { settleWithin } from '../test-support/deadline-harness.ts';
+import { clearAuthReturn, offerAuthReturn, peekAuthReturn } from '../utils/auth-return.ts';
 import {
   EmailAlreadyUsedError,
   IdentityAlreadyLinkedError,
   SIGN_IN_PROVIDERS,
+  abandonRedirectTrip,
+  completeRedirectSignIn,
   hasSignInProvider,
   linkSignInProvider,
   providerIdsOf,
   reauthenticateCurrentUser,
+  signInEvents,
   signInWithProvider,
 } from './auth-identity-service.ts';
 
@@ -157,6 +162,222 @@ test('F5: every other popup failure passes through untranslated', async () => {
 
   assert.equal(caught.code, 'auth/popup-closed-by-user');
   assert.ok(!(caught instanceof EmailAlreadyUsedError));
+});
+
+// --- a blocked window: the sign-in goes through this tab ------------------
+
+// This tab's sessionStorage: what survives the trip to the provider and back.
+function tabStorage() {
+  const items = new Map<string, string>();
+  return {
+    items,
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => { items.set(key, String(value)); },
+    removeItem: (key: string) => { items.delete(key); },
+  };
+}
+
+// A browser that refuses the popup window, as Mobile Safari does when the
+// window opens too long after the tap. Its redirect leaves the page, so the
+// promise Firebase returns never settles.
+function blockingBrowser(tab: ReturnType<typeof tabStorage> | null, overrides: IdentityApi = {}) {
+  return fakeApi({
+    popupSignIn: async () => { throw authError('auth/popup-blocked'); },
+    redirectSignIn: async () => new Promise<never>(() => {}),
+    tripStorage: tab,
+    ...overrides,
+  });
+}
+
+// The page the redirect comes back to, after Firebase has finished the sign-in.
+function returningPage(tab: ReturnType<typeof tabStorage>, redirectResult: IdentityApi['redirectResult'], overrides: IdentityApi = {}) {
+  const results: string[] = [];
+  const { api } = fakeApi({
+    tripStorage: tab,
+    redirectResult: async (authentication) => {
+      results.push('read');
+      return redirectResult!(authentication);
+    },
+    ...overrides,
+  });
+  return { api, results };
+}
+
+test('a blocked popup window sends the sign-in through this tab, and the page leaves', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  const redirects: unknown[] = [];
+  const { api } = blockingBrowser(tab, {
+    redirectSignIn: async (_authentication, provider) => {
+      redirects.push(provider);
+      return new Promise<never>(() => {});
+    },
+  });
+
+  const signIn = signInWithProvider(GOOGLE, api, { surface: 'auth_prompt' });
+
+  assert.equal(await settleWithin(100, () => signIn), 'still waiting', 'no error reaches the buttons while the page leaves');
+  assert.deepEqual(redirects, ['google-provider'], 'the provider the reader chose');
+});
+
+test('the page the redirect comes back to learns the provider, the place and the destination once', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  // A guest bounced off /lists pressed GitHub in the sign-in dialog.
+  offerAuthReturn('/lists');
+  void signInWithProvider(GITHUB, blockingBrowser(tab).api, { surface: 'auth_prompt' });
+  await settleWithin(50, () => undefined);
+  // The reload forgets what lived in memory.
+  clearAuthReturn();
+
+  const page = returningPage(tab, async () => ({ user: { uid: 'user-1', providerData: [{ providerId: GITHUB }] } }), {
+    additionalUserInfo: () => ({ isNewUser: true }),
+  });
+  const outcome = await completeRedirectSignIn(page.api);
+
+  assert.deepEqual(outcome, { providerId: GITHUB, surface: 'auth_prompt', returnTo: '/lists', result: 'success', isNewUser: true });
+  assert.equal(peekAuthReturn(), '/lists', 'the bounced guest still ends on /lists');
+  assert.equal(await completeRedirectSignIn(page.api), null, 'a second read, or a reload, finds no sign-in to report');
+  assert.deepEqual(page.results, ['read'], 'Firebase is asked once');
+});
+
+test('a reader who backs out of the provider page comes back cancelled, not failed', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  void signInWithProvider(GOOGLE, blockingBrowser(tab).api, { surface: 'onboarding' });
+  await settleWithin(50, () => undefined);
+
+  const outcome = await completeRedirectSignIn(returningPage(tab, async () => null).api);
+
+  assert.deepEqual(outcome, { providerId: GOOGLE, surface: 'onboarding', returnTo: null, result: 'cancelled' });
+});
+
+test('a page shown again after Back, from Safari\'s cache, abandons its trip: a later load reports nothing', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  offerAuthReturn('/lists');
+  void signInWithProvider(GITHUB, blockingBrowser(tab).api, { surface: 'auth_prompt' });
+  await settleWithin(50, () => undefined);
+
+  // The page was left for the provider and comes back as it was left, in the
+  // same tab, with its trip still in the storage.
+  const abandoned = abandonRedirectTrip({ tripStorage: tab });
+
+  assert.deepEqual(abandoned, { providerId: GITHUB, surface: 'auth_prompt', returnTo: '/lists', result: 'cancelled' });
+  assert.equal(peekAuthReturn(), '/lists', 'the page still shows its dialog and keeps its destination');
+  assert.equal(abandonRedirectTrip({ tripStorage: tab }), null, 'the trip ends once');
+  const later = returningPage(tab, async () => null);
+  assert.equal(await completeRedirectSignIn(later.api), null, 'a later load of this tab finds no sign-in to report');
+  assert.deepEqual(later.results, [], 'and does not ask Firebase for one');
+});
+
+test('a page that left for no provider has no trip to abandon', () => {
+  assert.equal(abandonRedirectTrip({ tripStorage: tabStorage() }), null);
+  assert.equal(abandonRedirectTrip({ tripStorage: null }), null);
+});
+
+test('a redirect refused for an address another door owns comes back as the collision', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  void signInWithProvider(GITHUB, blockingBrowser(tab).api, { surface: 'auth_prompt' });
+  await settleWithin(50, () => undefined);
+
+  const outcome = await completeRedirectSignIn(returningPage(tab, async () => {
+    throw authError('auth/account-exists-with-different-credential', 'nico@gmail.com');
+  }).api);
+
+  assert.deepEqual(outcome, { providerId: GITHUB, surface: 'auth_prompt', returnTo: null, result: 'error', code: 'AUTH_EMAIL_ALREADY_USED' });
+});
+
+test('a page that no redirect sign-in left reads nothing from Firebase', async () => {
+  const page = returningPage(tabStorage(), async () => null);
+
+  assert.equal(await completeRedirectSignIn(page.api), null);
+  assert.deepEqual(page.results, []);
+});
+
+test('a redirect that cannot start reports its own error and leaves nothing to report later', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  const { api } = blockingBrowser(tab, {
+    redirectSignIn: async () => { throw authError('auth/unauthorized-domain'); },
+  });
+
+  const caught = await signInWithProvider(GOOGLE, api).catch(failure => failure);
+
+  assert.equal(caught.code, 'auth/unauthorized-domain');
+  assert.equal(await completeRedirectSignIn(returningPage(tab, async () => null).api), null);
+});
+
+test('without this tab\'s storage the blocked window is reported as blocked, with no redirect', async () => {
+  const redirects: unknown[] = [];
+  const { api } = blockingBrowser(null, {
+    redirectSignIn: async (_authentication, provider) => {
+      redirects.push(provider);
+      return new Promise<never>(() => {});
+    },
+  });
+
+  const caught = await signInWithProvider(GOOGLE, api).catch(failure => failure);
+
+  assert.equal(caught.code, 'auth/popup-blocked');
+  assert.deepEqual(redirects, []);
+});
+
+test('a popup that opens never goes through this tab', async () => {
+  const tab = tabStorage();
+  const redirects: unknown[] = [];
+  const { api } = fakeApi({
+    redirectSignIn: async (_authentication, provider) => {
+      redirects.push(provider);
+      return new Promise<never>(() => {});
+    },
+    tripStorage: tab,
+  });
+
+  await signInWithProvider(GOOGLE, api, { surface: 'auth_prompt' });
+
+  assert.deepEqual(redirects, []);
+  assert.equal(await completeRedirectSignIn(returningPage(tab, async () => null).api), null);
+});
+
+test('a stored trip is checked before it is trusted', async (t) => {
+  t.after(clearAuthReturn);
+  // Whatever the trip is stored under, a tampered or outdated value replaces it.
+  const tamperedTrip = async (trip: unknown) => {
+    const tab = tabStorage();
+    void signInWithProvider(GOOGLE, blockingBrowser(tab).api);
+    await settleWithin(50, () => undefined);
+    for (const key of tab.items.keys()) tab.items.set(key, JSON.stringify(trip));
+    return completeRedirectSignIn(returningPage(tab, async () => null).api);
+  };
+
+  assert.equal(await tamperedTrip({ providerId: 'twitter.com', surface: 'auth_prompt', returnTo: '/lists' }), null, 'an unknown provider is no sign-in of ours');
+  const offSite = await tamperedTrip({ providerId: GOOGLE, surface: 'auth_prompt', returnTo: '//evil.example' });
+  assert.equal(offSite?.returnTo, null, 'a destination off the site is dropped');
+  assert.equal(peekAuthReturn(), null);
+});
+
+// --- what a finished sign-in reports ------------------------------------------
+
+test('a redirect sign-in reports what the popup would have: one result, one sign-up', () => {
+  assert.deepEqual(signInEvents(GITHUB, 'auth_prompt', { result: 'success', isNewUser: true }), [
+    ['auth_result', { method: 'github', surface: 'auth_prompt', result: 'success' }],
+    ['sign_up', { method: 'github' }],
+  ]);
+  assert.deepEqual(signInEvents(GOOGLE, 'onboarding', { result: 'success', isNewUser: false }), [
+    ['auth_result', { method: 'google', surface: 'onboarding', result: 'success' }],
+    ['login', { method: 'google' }],
+  ]);
+});
+
+test('a cancellation is reported apart from an error, and neither counts a sign-up', () => {
+  assert.deepEqual(signInEvents(GOOGLE, 'auth_prompt', { result: 'cancelled' }), [
+    ['auth_result', { method: 'google', surface: 'auth_prompt', result: 'cancelled' }],
+  ]);
+  assert.deepEqual(signInEvents(GOOGLE, 'auth_prompt', { result: 'error', code: 'auth/network-request-failed' }), [
+    ['auth_result', { method: 'google', surface: 'auth_prompt', result: 'error', error_code: 'auth/network-request-failed' }],
+  ]);
 });
 
 // --- linking a second door -------------------------------------------------

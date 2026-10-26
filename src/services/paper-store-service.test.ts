@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
+import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 const WORKER = 'https://papertok-report-api.example';
@@ -241,4 +242,46 @@ test("the corpus's copies of papers are asked for by the app's ids", async () =>
   const { asked, options } = harness(answered([STORED]));
   assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [STORED]);
   assert.deepEqual(asked.map(entry => entry.body), [{ ids: ['pmid:41000001', 'W4391234567'] }]);
+});
+
+// ENG-116: the Worker says why it refused a page (worker/router.ts), and the
+// feed reported every refusal as the same "Error loading papers".
+test("a store refusal keeps the Worker's status and code", async () => {
+  const { options } = harness(async () => new Response(JSON.stringify({ code: 'LANES_REQUIRED' }), { status: 400 }));
+  await assert.rejects(
+    fetchCorpusPage({ categories: [], page: 0, pageSize: 15 }, options),
+    { status: 400, code: 'LANES_REQUIRED' },
+  );
+  const { options: unreadable } = harness(async () => new Response('<html>Bad gateway</html>', { status: 502 }));
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, unreadable), (error: { status?: number; code?: string }) => {
+    assert.equal(error.status, 502);
+    assert.equal(error.code, undefined);
+    return true;
+  });
+});
+
+test('a request that got no answer is marked unreachable, while a deadline or a session failure keeps its own error', async () => {
+  const { options: offline } = harness(async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, offline), { code: 'STORE_UNREACHABLE' });
+  const timeout = new DOMException('The operation timed out.', 'TimeoutError');
+  const { options: late } = harness(async () => { throw timeout; });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, late), (error) => error === timeout);
+  const signedOut = new WorkerApiAuthError();
+  const { options: noSession } = harness(async () => { throw signedOut; });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, noSession), (error) => error === signedOut);
+});
+
+test('a connection lost while the answer arrives is marked unreachable too', async () => {
+  const cut = new ReadableStream({ start(controller) { controller.error(new TypeError('network error')); } });
+  const { options } = harness(async () => new Response(cut, { status: 200 }));
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { code: 'STORE_UNREACHABLE' });
+});
+
+test('an answer without a papers list is an invalid response, not an empty page', async () => {
+  for (const body of ['null', '{}', '{"papers":null}', '{"papers":{}}']) {
+    const { options } = harness(async () => new Response(body, { status: 200 }));
+    await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { code: 'STORE_RESPONSE_INVALID' });
+  }
+  const { options } = harness(answered([]));
+  assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { papers: [], skipsSeen: false });
 });

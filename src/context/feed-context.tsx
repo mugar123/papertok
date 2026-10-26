@@ -80,6 +80,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { emptyFirstPageError, feedFailureEventStep } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -277,6 +278,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // (measured 2026-09-11, ~200 ms of React work at each card change).
   const papersRef = useRef(papers);
   useEffect(() => { papersRef.current = papers; }, [papers]);
+  // Read when a load fails, which can be after the reader left /feed.
+  const feedRouteActiveRef = useRef(feedRouteActive);
+  useEffect(() => { feedRouteActiveRef.current = feedRouteActive; }, [feedRouteActive]);
+  // The app_error of a failed load the reader has not seen yet (off /feed, or
+  // behind cards), sent once they do.
+  const pendingFailureEventRef = useRef<ReturnType<typeof feedFailureEventStep>['hold']>(null);
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
@@ -327,6 +334,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, []);
 
   const { trackEvent } = useAnalyticsConsent();
+  useEffect(() => {
+    const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
+      kind: 'screen_changed', screen: { feedVisible: feedRouteActive, error, shownPapers: papers.length },
+    });
+    pendingFailureEventRef.current = hold;
+    if (send) void trackEvent('app_error', send);
+  }, [feedRouteActive, error, papers.length, trackEvent]);
   const engagementWindow = useRef(emptyEngagementWindow());
   // Only cards of this feed count: the Following feed reports its views
   // through the same handlers.
@@ -1144,7 +1158,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
-    
+    pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
+
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
     const currentPage = pageOverride ?? (reset ? 0 : page);
@@ -1273,7 +1288,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           )
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
-        let mainFailed = false;
+        let mainFailure: { error: unknown } | null = null;
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
@@ -1289,7 +1304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           workerSkipsSeen.current = skipsSeen;
         } catch (e) {
           console.error('Error fetching main papers:', e);
-          mainFailed = true;
+          mainFailure = { error: e };
         }
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
@@ -1299,8 +1314,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // Only give up when the follows cannot bootstrap the feed either, nor
         // the seen papers carried from an earlier page.
         const explorationPapers = (await Promise.all(explorationRequests)).flat();
-        if (mainFailed && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
-          throw new Error('The paper store returned no usable papers.');
+        if (mainFailure && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
+          // The store's own error, so the reader's error state keeps its cause.
+          throw mainFailure.error;
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
@@ -1361,7 +1377,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
-          throw new Error('The paper store has no papers for these interests yet.');
+          throw emptyFirstPageError();
         }
         if (plan.kind === 'next-page') {
           const nextPageToFetch = plan.page;
@@ -1465,9 +1481,20 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }, 0);
       }
 
-    } catch {
+    } catch (failure) {
       if (requestId === feedRequestId.current) {
         setError('FEED_LOAD_FAILED');
+        // One event per failed attempt, sent where the load runs: a remounted
+        // feed screen showing the same error must not send it again. Off /feed,
+        // or behind a card that still hides the error, it is held until the
+        // reader sees the error.
+        const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
+          kind: 'load_failed',
+          failure,
+          screen: { feedVisible: feedRouteActiveRef.current, error: 'FEED_LOAD_FAILED', shownPapers: papersRef.current.length },
+        });
+        pendingFailureEventRef.current = hold;
+        if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.
@@ -1489,7 +1516,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady,
+    calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent,
   ]);
 
   // The account and interests whose snapshot is on screen. Both effects below

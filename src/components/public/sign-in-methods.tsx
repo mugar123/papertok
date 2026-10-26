@@ -13,11 +13,13 @@ import './auth-prompt.css';
  * failure. They count as the `auth_prompt` surface.
  */
 export default function SignInMethods() {
-  const { pendingProvider, collision, error, preparing, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
+  const { pendingProvider, collision, error, readiness, retry, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
+  const preparing = readiness === 'preparing';
+  const waiting = readiness !== 'ready';
   const preparingId = useId();
   return (
     <>
-      {/* While preparing, the buttons stay focusable and say why they do
+      {/* Until ready, the buttons stay focusable and say why they do
           nothing (useProviderSignIn). */}
       <div className="auth-modal-methods">
         <Button
@@ -25,9 +27,9 @@ export default function SignInMethods() {
           size="lg"
           className="auth-provider w-full"
           onClick={() => { void handleSignIn('google'); }}
-          disabled={preparing}
+          disabled={waiting}
           focusableWhenDisabled
-          aria-describedby={preparing ? preparingId : undefined}
+          aria-describedby={waiting ? preparingId : undefined}
           id="google-sign-in-btn"
         >
           {preparing || pendingProvider === 'google' ? (
@@ -43,9 +45,9 @@ export default function SignInMethods() {
           size="lg"
           className="auth-provider w-full"
           onClick={() => { void handleSignIn('github'); }}
-          disabled={preparing}
+          disabled={waiting}
           focusableWhenDisabled
-          aria-describedby={preparing ? preparingId : undefined}
+          aria-describedby={waiting ? preparingId : undefined}
           id="github-sign-in-btn"
         >
           {preparing || pendingProvider === 'github' ? (
@@ -55,7 +57,7 @@ export default function SignInMethods() {
           )}
           <span>{'Continue with GitHub'}</span>
         </Button>
-        <PreparingNote id={preparingId} preparing={preparing} />
+        <PreparingNote id={preparingId} state={readiness} onRetry={retry} />
       </div>
 
       {collision ? (
