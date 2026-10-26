@@ -10,7 +10,7 @@ const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'proje
  * can take a follow slot or a preview from the others.
  */
 export const DIGEST_FOLLOW_TYPES: readonly string[] = ['author', 'topic', 'institution', 'project'];
-export const isDigestFollow = (follow: { type?: unknown } | null | undefined) => DIGEST_FOLLOW_TYPES.includes(String(follow?.type));
+export const isDigestFollow = (follow: unknown) => DIGEST_FOLLOW_TYPES.includes(String((follow as { type?: unknown } | null | undefined)?.type));
 
 // A journal is followed by its OpenAlex source id. Its name is not unique in
 // OpenAlex, and its ISSN-L only resolves to the id (ENG-123).
