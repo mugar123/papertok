@@ -174,6 +174,18 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
 }
 
 /**
+ * Whether the status message is in the live region. It is set once, when the
+ * notice is on screen and no modal is open, and then left alone: a polite region
+ * speaks on every change of text, so clearing it for each modal that opens would
+ * read the whole message again after each one closes. `announced` is the value
+ * this returned on the previous render; leaving the feed (`shown` false) resets
+ * it, so the message is spoken again on coming back.
+ */
+export function statusIsSet({ shown, modalOpen, announced }: { shown: boolean; modalOpen: boolean; announced: boolean }) {
+  return shown && (announced || !modalOpen);
+}
+
+/**
  * The picked notice, while it may be on screen: for a signed-in reader, on the
  * feed. Elsewhere the panel would sit over a modal paper, which traps focus and
  * takes the Escape meant for the notice. It comes back when the reader returns.

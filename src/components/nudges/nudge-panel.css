@@ -94,6 +94,9 @@
     grid-template-columns: 40px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     align-items: start;
+    /* At most 60% of the screen, so the feed stays in view behind it. */
+    max-height: 60vh;
+    max-height: 60dvh;
   }
 
   .nudge-icon {

@@ -19,6 +19,7 @@ import {
   readDismissedNudges,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
+  statusIsSet,
   trackFocusOutsideNotice,
 } from '../../utils/nudges.ts';
 import NudgePanel from './nudge-panel.tsx';
@@ -173,8 +174,14 @@ export default function NudgeHost() {
 
   // A status set while a modal is open is never spoken (everything outside it is
   // hidden from assistive technology), and closing the modal would not change the
-  // text again. So the message waits for the modal to close.
-  const modalOpen = useSyncExternalStore(subscribeToModals, () => modalIsOpen(document), () => false);
+  // text again. So the message waits for the modal to close, and once set it stays
+  // set: clearing it for each later modal would have it read after every one.
+  // Modals are watched only while the notice is shown.
+  const subscribe = useCallback((onChange: () => void) => (privacyShown ? subscribeToModals(onChange) : () => undefined), [privacyShown]);
+  const modalOpen = useSyncExternalStore(subscribe, () => privacyShown && modalIsOpen(document), () => false);
+  const [announced, setAnnounced] = useState(false);
+  const statusSet = statusIsSet({ shown: privacyShown, modalOpen, announced });
+  if (statusSet !== announced) setAnnounced(statusSet);
 
   const handleSettings = useCallback(() => {
     close('email-down');
@@ -191,7 +198,7 @@ export default function NudgeHost() {
         It says only that the notice is there; the summary is read once, in the
         panel, instead of a second time from here. */}
     <p className="visually-hidden" role="status">
-      {privacyShown && !modalOpen ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
+      {statusSet ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
     </p>
     <AnimatePresence>
       {privacyShown ? (

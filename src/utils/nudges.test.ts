@@ -9,7 +9,7 @@ import {
   emailNudgeProblem,
   escapeBelongsToOther,
   forgetPrivacyNotice,
-  modalIsOpen,
+  statusIsSet,
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
@@ -282,10 +282,43 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
 });
 
-test('a modal anywhere on the page holds the status message back', () => {
-  const page = (open: boolean) => ({ querySelector: (selector: string) => (open && selector === '[aria-modal="true"]' ? {} : null) });
-  assert.equal(modalIsOpen(page(true)), true, 'a paper, the PDF viewer or the Similar layer is open');
-  assert.equal(modalIsOpen(page(false)), false, 'nothing modal');
+test('the status message is set once, held back while a modal is open, and not set again after one closes', () => {
+  // The text the live region holds after each step; it speaks when the text changes.
+  const steps = (events: Array<{ shown: boolean; modalOpen: boolean }>) => {
+    let announced = false;
+    return events.map(event => (announced = statusIsSet({ ...event, announced })));
+  };
+  assert.deepEqual(
+    steps([
+      { shown: true, modalOpen: false },
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: false },
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: false },
+    ]),
+    [true, true, true, true, true],
+    'a paper, the authors sheet or a list dialog opening and closing never changes the text',
+  );
+  assert.deepEqual(
+    steps([
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: false },
+      { shown: true, modalOpen: true },
+    ]),
+    [false, false, true, true],
+    'arriving while a modal is open waits for it to close',
+  );
+  assert.deepEqual(
+    steps([
+      { shown: true, modalOpen: false },
+      { shown: false, modalOpen: false },
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: false },
+    ]),
+    [true, false, false, true],
+    'leaving the feed and coming back announces it again',
+  );
 });
 
 // What the focus tracker reads of the page: an element on it, the body that holds
