@@ -698,6 +698,27 @@ test('invalid arguments are a tool error and reach no provider', async () => {
   });
 });
 
+test("search_papers reads a source named in the provider's own spelling", async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    const hosts = (from: number) => calls.slice(from).map(url => new URL(url).hostname).sort();
+    // Separate environments, so each search finds arXiv's seat free.
+    const arxiv = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arXiv'] });
+    assert.equal(arxiv.answer.result?.isError, undefined);
+    assert.deepEqual(hosts(0), ['export.arxiv.org']);
+    const before = calls.length;
+    const both = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['OpenAlex', 'ARXIV'] });
+    assert.equal(both.answer.result?.isError, undefined);
+    assert.deepEqual(hosts(before), ['api.openalex.org', 'export.arxiv.org']);
+
+    const twice = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arxiv', 'arXiv'] });
+    assert.equal(twice.answer.result?.structuredContent?.code, 'INVALID_ARGUMENTS', 'one source named twice');
+  });
+});
+
 test('a caller past its minute allowance is refused before any provider is asked', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/W')) return Response.json(OPENALEX_WORK);

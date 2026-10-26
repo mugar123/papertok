@@ -81,7 +81,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         query: { type: 'string', minLength: 2, maxLength: 300, description: 'Search words.' },
-        sources: { type: 'array', items: { type: 'string', enum: ['openalex', 'arxiv'] }, minItems: 1, uniqueItems: true, description: 'Defaults to both.' },
+        sources: { type: 'array', items: { type: 'string', enum: ['openalex', 'arxiv'] }, minItems: 1, uniqueItems: true, description: 'Defaults to both. Case does not matter.' },
         since: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Only papers published or submitted on or after this date (YYYY-MM-DD).' },
         limit: { type: 'integer', minimum: 1, maximum: MAX_RESULTS, default: DEFAULT_SEARCH_LIMIT },
       },
@@ -171,7 +171,10 @@ function searchArguments(args: Arguments) {
   if (query.length < 2 || query.length > 300 || !/[\p{L}\p{N}]/u.test(query)) {
     throw new InvalidArguments('query must be 2 to 300 characters with a letter or digit');
   }
-  const sources = args.sources === undefined ? ['openalex', 'arxiv'] : args.sources;
+  // Read in any case: a model writes the providers' own "OpenAlex" and "arXiv".
+  const sources = args.sources === undefined ? ['openalex', 'arxiv']
+    : Array.isArray(args.sources) ? args.sources.map(source => (typeof source === 'string' ? source.toLowerCase() : source))
+      : args.sources;
   if (!Array.isArray(sources) || !sources.length || new Set(sources).size !== sources.length
     || sources.some(source => source !== 'openalex' && source !== 'arxiv')) {
     throw new InvalidArguments('sources must list "openalex" and/or "arxiv" once each');

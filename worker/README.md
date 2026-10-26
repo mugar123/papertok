@@ -933,7 +933,8 @@ points:
   `PROVIDER_RATE_LIMITED` with `retryAfterSeconds: 3`, under `unavailable` in a
   search.
 
-Arguments are validated before any reservation. Each `tools/call` then
+Arguments are validated before any reservation; `sources` is read in any case
+(`arXiv`, `OpenAlex`). Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `reserveCallerMinute`; cache hits count too. A refusal, a missing
 `PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
