@@ -621,9 +621,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // papers of the class in each of the ten completed years, preprints and
   // published versions alike, filed under the same lane and kept as
   // OpenAlex's are. Its listing does not renew the enrichment
-  // (`renewsEnrichment`), so the 14-day refresh still asks OpenAlex for these
-  // papers; a paper both list shows the higher count, as for any two sources
-  // (`PaperBuilder.merge`).
+  // (`renewsEnrichment`), so the 14-day refresh asks OpenAlex for a paper only
+  // ADS lists; a paper both list shows the higher count, as for any two
+  // sources (`PaperBuilder.merge`).
   'ads-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {

@@ -40,15 +40,16 @@ async function fetchAdsLiterature(context: SourceContext, query: string, env: Wo
  * the classes of its arXiv version, chosen by its authors.
  */
 export async function fetchAdsNotable(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, arxivClass: string, year: number, rows: number) {
-  // Journal articles, arXiv's records and conference papers: not ADS's
-  // abstracts, catalogues, software, theses or other records that are not papers.
-  const data = await adsSearch(env, { q: `arxiv_class:"${arxivClass}" year:${year} doctype:(article OR eprint OR inproceedings)`, sort: 'citation_count desc', rows, start: 0 });
+  const data = await adsSearch(env, { q: `arxiv_class:"${arxivClass}" year:${year}`, sort: 'citation_count desc', rows, start: 0 });
   return { docs: data.response.docs };
 }
 
 async function adsSearch(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, { q, sort, rows, start }: { q: string; sort: string; rows: number; start: number }) {
   const url = new URL('https://api.adsabs.harvard.edu/v1/search/query');
-  url.searchParams.set('q', q);
+  // Journal articles, arXiv's records and conference papers: not ADS's meeting
+  // abstracts, circulars, catalogues, proposals, software or theses. Both
+  // queries are clauses joined by AND, so the type is one more.
+  url.searchParams.set('q', `${q} doctype:(article OR eprint OR inproceedings)`);
   url.searchParams.set('rows', String(rows));
   url.searchParams.set('start', String(start));
   url.searchParams.set('sort', sort);
