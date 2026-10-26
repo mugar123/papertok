@@ -214,6 +214,7 @@ const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
 // a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
+const DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> = Object.freeze({
   // Each miss spends three E-utilities calls, six if every one is refused once
   // and retried -- what NCBI actually refuses is per-second bursts, which no
@@ -226,6 +227,13 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/enrich/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  // Each figures miss fetches arxiv.org/html and ar5iv at once, and anyone can
+  // ask without an Origin. Nothing is billed; the ceiling keeps one script from
+  // sending arXiv unbounded traffic under PaperTok's user agent, which the
+  // harvest also uses. Its own namespace, so card backdrops cannot starve
+  // another route. Missing figures are cosmetic, so a spent minute (or a
+  // missing ledger) leaves cards without them.
+  '/resources/figures': { namespace: 'figures', variable: 'FIGURES_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT },
 });
 
 // The key is built from the values the handler is about to send upstream, never

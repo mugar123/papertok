@@ -35,12 +35,12 @@
    `both` holds opacity 0 until the animation starts, so a bar mounted in a
    frame the main thread is busy in does not flash before its fade. */
 .navbar--arriving {
-  animation: fadeIn 0.24s ease-out both;
+  animation: fadeIn 0.24s var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .navbar--arriving {
-    animation: none;
+    animation: fadeIn 120ms linear both;
   }
 }
 
