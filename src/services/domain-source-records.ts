@@ -541,8 +541,13 @@ export function sourceQuery(categories: readonly string[]) {
  */
 export function europePmcQuery(categories: readonly string[]) {
   const today = new Date().toISOString().slice(0, 10);
+  return `${europePmcLabelQuery(categories)} AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+}
+
+/** The categories' labels where a paper states its subject: title, abstract and keywords. */
+export function europePmcLabelQuery(categories: readonly string[]) {
   const labels = categories.map(categoryLabel).map(label => `TITLE_ABS:"${label}" OR KW:"${label}"`);
-  return `(${labels.join(' OR ')}) AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+  return `(${labels.join(' OR ')})`;
 }
 
 export function getDomainSourcePlan(categories: readonly string[] = []) {
