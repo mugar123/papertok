@@ -87,9 +87,13 @@ function checkSample(leaf: string, value: unknown) {
   if (idOf.size !== workIds.size) invalid('two sampled records share an id');
   if (labelled.size !== workIds.size) invalid('label every sampled record; do not omit misses');
   // A paper two journals publish (a joint guideline) is two records and one
-  // work for its readers (worker/paper-store.ts merges them by title): it
-  // counts once, on target only when every copy is.
-  const titleOf = (work: Work) => work.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  // work for its readers: it counts once, on target only when every copy is.
+  // As the store joins records (worker/paper-store.ts `workKeys`), only a
+  // title of 30 or more letters and digits names one paper on its own.
+  const titleOf = (work: Work) => {
+    const key = work.title.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return key.length >= 30 ? key : `${work.source}:${work.id}`;
+  };
   const hit = new Map(sample!.labels.map(label => [String(label.workId), label.label === 'on-target' && !label.uncertain]));
   const byTitle = new Map<string, boolean>();
   for (const work of sample!.works) byTitle.set(titleOf(work), (byTitle.get(titleOf(work)) ?? true) && hit.get(String(work.id))!);

@@ -1549,7 +1549,7 @@ test('a year with no ADS papers does not end the lane', async t => {
 
 // PubMed's records and the preprint servers', without retracted papers and the
 // notices, errata and opinion pieces around research.
-const europePmcRecords = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT PUB_TYPE:"editorial" NOT PUB_TYPE:"letter" NOT PUB_TYPE:"comment"';
+const europePmcRecords = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT ((PUB_TYPE:"editorial" OR PUB_TYPE:"letter" OR PUB_TYPE:"comment") AND HAS_ABSTRACT:n)';
 // Synthetic Europe PMC search records in the shape the core search returns; not captured.
 const europePmcRecord = (index: number, extra: Record<string, unknown> = {}) => ({
   id: String(29000000 + index), source: 'MED', pmid: String(29000000 + index), doi: `10.5555/genetics.${index}`,
@@ -1566,8 +1566,8 @@ test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited re
   const { items } = await page(3);
   assert.deepEqual(urls.map(url => `${url.origin}${url.pathname}`), Array(2).fill('https://www.ebi.ac.uk/europepmc/webservices/rest/search'));
   assert.deepEqual(urls.map(url => url.searchParams.get('query')), [
-    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND PUB_YEAR:2016 ${europePmcRecords} sort_cited:y`,
-    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND PUB_YEAR:2018 ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2016-01-01 TO 2016-12-31] AND ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2018-01-01 TO 2018-12-31] AND ${europePmcRecords} sort_cited:y`,
   ]);
   assert.deepEqual(['pageSize', 'resultType', 'format'].map(name => urls[0].searchParams.get(name)), ['100', 'core', 'json']);
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:bio.gen']]]);
@@ -1582,7 +1582,7 @@ test('every medicine and biology leaf the Europe PMC sample admitted, and no oth
 
 test('a year with no Europe PMC records does not end the lane', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
-  const yearOf = (url: URL) => Number(url.searchParams.get('query')!.match(/PUB_YEAR:(\d{4})/)![1]);
+  const yearOf = (url: URL) => Number(url.searchParams.get('query')!.match(/FIRST_PDATE:\[(\d{4})-/)![1]);
   const { urls, env } = relay(t, url => ({ resultList: { result: yearOf(url) === 2016 ? [] : [europePmcRecord(yearOf(url), { firstPublicationDate: `${yearOf(url)}-03-14` })] } }));
   const { binding, db } = testD1();
   await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'europepmc-notable', lane: 'notable:med.onco' }, Date.now());

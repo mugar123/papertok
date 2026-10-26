@@ -309,9 +309,10 @@ const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
 // (scripts/README-europepmc-notable.md).
 const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => EUROPE_PMC_NOTABLE_LEAVES.includes(leaf.id));
 // PubMed's records and the preprint servers' (not patents, theses or books),
-// without retracted papers, which stay cited, and the notices, errata and
-// opinion pieces around research.
-const EUROPE_PMC_NOTABLE_RECORDS = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT PUB_TYPE:"editorial" NOT PUB_TYPE:"letter" NOT PUB_TYPE:"comment"';
+// without retracted papers, which stay cited, retraction notices and errata,
+// and, as the PubMed lane, editorials, letters and comments without an
+// abstract: one with an abstract can be research.
+const EUROPE_PMC_NOTABLE_RECORDS = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT ((PUB_TYPE:"editorial" OR PUB_TYPE:"letter" OR PUB_TYPE:"comment") AND HAS_ABSTRACT:n)';
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -662,7 +663,10 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, page }) => {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
       const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
-      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND PUB_YEAR:${notableListedYear(page)} ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
+      // By first publication, the date the store files and reads the paper by
+      // (`published`); the issue year can be the next one.
+      const year = notableListedYear(page);
+      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND FIRST_PDATE:[${year}-01-01 TO ${year}-12-31] AND ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
       url.searchParams.set('format', 'json');
       url.searchParams.set('resultType', 'core');
       url.searchParams.set('pageSize', String(NOTABLE_PER_YEAR));

@@ -23,7 +23,7 @@ function sample({ label = 'Genetics', onTarget = 12, size = 15, uncertain = 0, c
   query.searchParams.set('page', '1');
   for (const [name, value] of Object.entries(params)) query.searchParams.set(name, value);
   const works = Array.from({ length: size }, (_, index) => ({
-    id: `3${String(index).padStart(7, '0')}`, source: index === 3 ? 'PPR' : 'MED', title: `Synthetic landmark ${index}`,
+    id: `3${String(index).padStart(7, '0')}`, source: index === 3 ? 'PPR' : 'MED', title: `A synthetic landmark of the field, number ${index}`,
     pubYear: String(2016 + (index % 10)), citedByCount: 9000 - index * 10,
   }));
   const labels = works.map((work, index) => (index < onTarget
@@ -102,13 +102,23 @@ test('a leaf whose label matches fewer records than its listing takes is not adm
   assert.deepEqual(admitted(), ['bio.mol']);
 });
 
-test('a record listed twice, as two journals publish one guideline, counts once', t => {
+test('a record listed twice, as two journals publish one guideline, counts once, on target only if both copies are', t => {
   const { write, run, coverage } = setup(t);
   const twice = sample({ onTarget: 11 });
-  twice.works[1] = { ...twice.works[1], title: twice.works[0].title.toUpperCase() };
+  twice.works[1] = { ...twice.works[1], title: `${twice.works[0].title.toUpperCase()}.` };
+  twice.labels[1] = { workId: twice.works[1].id, label: 'off-target' };
   write({ 'bio.gen': twice });
   assert.equal(run().status, 0);
-  assert.deepEqual(coverage().map(row => [row.status, row.onTarget, row.sampleSize]), [['insufficient-sample', 10, 14]]);
+  assert.deepEqual(coverage().map(row => [row.status, row.onTarget, row.sampleSize]), [['insufficient-sample', 9, 14]]);
+});
+
+test('records whose title is too short to name one paper are not joined, as the store does not join them', t => {
+  const { write, run, coverage } = setup(t);
+  const annual = sample();
+  for (const index of [0, 1, 2]) annual.works[index] = { ...annual.works[index], title: 'Marine natural products.' };
+  write({ 'bio.gen': annual });
+  assert.equal(run().status, 0);
+  assert.deepEqual(coverage().map(row => [row.status, row.sampleSize]), [['passed', 15]]);
 });
 
 test('only a medicine or biology leaf of the taxonomy takes a Europe PMC sample', t => {
