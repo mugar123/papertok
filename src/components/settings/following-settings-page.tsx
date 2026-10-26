@@ -231,16 +231,20 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
         </section>
       ) : (
         <section className="following-settings-empty">
+          {/* Search finds no journals, so the Journals tab says where one is
+              followed instead of sending the reader there. */}
           <EmptyState
             art={<Petri pose="compass" className="following-settings-empty-petri" />}
             title={'Nothing followed here yet'}
-            actions={(
+            actions={activeType !== 'journal' && (
               <Button size="sm" onClick={onExplore}>
                 {'Explore PaperTok'}
               </Button>
             )}
           >
-            {'What you follow shows up here and shapes your feed.'}
+            {activeType === 'journal'
+              ? 'A journal you follow from its page in the Explorer shows up here, and its new articles join your feed.'
+              : 'What you follow shows up here and shapes your feed.'}
           </EmptyState>
         </section>
       )}
