@@ -39,7 +39,7 @@ function chipText(topic: TopicTarget, providerLabel: string, translatedLabel: st
   return { label: providerLabel, lang: 'en', identity: normalizedLabel(providerLabel) };
 }
 
-/** The masthead names a native category, or explicitly attributes an OpenAlex topic. */
+/** The masthead names a native category or an OpenAlex topic; source details are separate. */
 export function getPaperClassification(paper: Partial<Paper>) {
   const category = [paper.primaryCategory, ...(paper.categories || [])]
     .find(id => id && !isTechnicalClassification(id) && getCategoryLabel(id) !== id);
