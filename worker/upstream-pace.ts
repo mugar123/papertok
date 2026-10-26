@@ -42,16 +42,22 @@ const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolv
 // seconds (its published policy), so it passes 3 000. The slot index is the
 // period the clock is in, `floor(t / periodMs)`, which for a one-second beat is
 // the second itself -- the arithmetic below is unchanged, only the unit.
+//
+// `accepts` limits a caller to some of the slots: one it does not accept is
+// passed over without asking the ledger, and stays free for a caller that
+// accepts it. The beat itself is unchanged, still one call per period.
 export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
+  accepts = () => true,
   now = Date.now,
   sleep = realSleep,
 }: {
   namespace?: string;
   periodMs?: number;
   maxWaitMs?: number;
+  accepts?: (slot: number) => boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 } = {}) {
@@ -64,6 +70,10 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
   // as bounded as a plain per-period counter always was.
   let slot = Math.floor(started / periodMs);
   while (slot * periodMs - started <= maxWaitMs) {
+    if (!accepts(slot)) {
+      slot += 1;
+      continue;
+    }
     const reservation = await reserveRequestQuota(ledger, {
       periodKey: `${namespace}:pace`,
       subject: `${namespace}:slot:${slot}`,
