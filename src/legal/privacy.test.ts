@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -116,4 +116,22 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
+});
+
+test('the in-app summary leads with the analytics default and names the server-side changes of the page', () => {
+  // The 25 October page turned analytics on by default with a persistent identifier linked to the
+  // account (#334), keeps the feed order for 2 hours (#347) and counts requests per account (#287).
+  assert.match(PRIVACY_POLICY_CHANGE, /^Usage analytics is now on by default/);
+  assert.match(PRIVACY_POLICY_CHANGE, /identifier[^.]*across days[^.]*your account/);
+  assert.match(PRIVACY_POLICY_CHANGE, /turn it off in Settings/);
+  assert.match(PRIVACY_POLICY_CHANGE, /feed order for up to 2 hours/);
+  assert.match(PRIVACY_POLICY_CHANGE, /counts requests per account/);
+});
+
+test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
+  assert.match(html, /When you choose Got it, this browser remembers that version/);
+  assert.match(html, /Hiding it with Escape only hides it for that visit/);
 });

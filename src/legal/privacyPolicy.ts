@@ -7,10 +7,13 @@
  *
  * Whoever makes such a change to privacy.html sets the version to its new date
  * and rewrites the change to say what changed since the previous version, in
- * one sentence. privacy.test.ts fails while the version and the page's date
+ * one sentence that leads with the change a reader would most want to know.
+ * Raising the date means re-reading `git diff <previous version>..HEAD --
+ * privacy.html`, not only the commits you made: a merge brings in others'
+ * edits to the page. privacy.test.ts fails while the version and the page's date
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who dismissed the first notice still hear of it.
  */
 export const PRIVACY_POLICY_VERSION = '2026-10-25';
 
-export const PRIVACY_POLICY_CHANGE = 'Error reports now go to PostHog instead of Sentry, Resend sends the emails you subscribe to, and the policy describes your saved plain-words summaries and the papers you viewed.';
+export const PRIVACY_POLICY_CHANGE = 'Usage analytics is now on by default: PostHog keeps an identifier in this browser that connects your visits across days and links them to your account (turn it off in Settings). Error reports go to PostHog, Resend sends the emails you subscribe to, the server keeps your feed order for up to 2 hours and counts requests per account, and the policy lists your saved summaries and viewed papers.';
