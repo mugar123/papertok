@@ -11,7 +11,7 @@
   width: min(520px, calc(100vw - 40px));
   grid-template-columns: 40px minmax(0, 1fr) auto auto;
   gap: 12px;
-  padding: 16px;
+  padding: var(--nudge-pad);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
@@ -19,8 +19,10 @@
   align-items: center;
   /* Long copy at a large text size or a short viewport scrolls inside the
      panel; a fixed panel cannot be scrolled to (WCAG 1.4.4, 1.4.10). */
+  max-height: calc(100vh - 24px - var(--inset-bottom));
   max-height: calc(100dvh - 24px - var(--inset-bottom));
   overflow-y: auto;
+  --nudge-pad: 16px;
 }
 
 .nudge-icon {
@@ -79,17 +81,67 @@
 
 }
 
+/* Narrow or short screens, and large text on them: the copy takes the width and
+   the action gets a row of its own, pinned to the bottom edge while the copy
+   scrolls, so the way out is in view whatever the text size. Beside the copy
+   it would squeeze it to a column of single words. */
+@media (max-width: 560px), (max-height: 480px) {
+  .nudge {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    column-gap: 0;
+    row-gap: 12px;
+    align-items: start;
+  }
+
+  .nudge-icon {
+    grid-column: 1;
+    grid-row: 1;
+    margin-right: 12px;
+  }
+
+  .nudge-copy {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .nudge-dismiss {
+    grid-column: 3;
+    grid-row: 1;
+    margin-left: 8px;
+  }
+
+  .nudge-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    justify-content: flex-end;
+    position: sticky;
+    bottom: 0;
+    margin-bottom: calc(var(--nudge-pad) * -1);
+    padding: 8px 0 var(--nudge-pad);
+    background: var(--bg-elevated);
+  }
+}
+
 @media (max-width: 560px) {
   .nudge {
+    --nudge-pad: 14px;
     right: 12px;
     bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
-    padding: 14px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .nudge-icon {
     display: none;
+  }
+
+  .nudge-copy {
+    grid-column: 1;
+  }
+
+  .nudge-dismiss {
+    grid-column: 2;
   }
 }
 

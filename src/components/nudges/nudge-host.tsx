@@ -41,6 +41,7 @@ const COPY = {
       policy: 'Read the policy',
       newTab: ' (opens in a new tab)',
       done: 'Got it',
+      hide: 'Hide for now (shows again next visit)',
     },
     'email-down': {
       'not-configured': {
@@ -121,17 +122,22 @@ export default function NudgeHost() {
   // Escape puts it away for this visit and does not count as reading it, so it
   // returns next time. On a phone the panel covers the bottom of the card, and
   // this is how a control focused underneath is seen again (WCAG 2.4.11).
+  // The close button does the same for a touch reader, who has no Escape.
+  const hidePrivacyForVisit = useCallback(() => {
+    const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
+    setPicked(null);
+    if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });
+  }, []);
+
   useEffect(() => {
     if (!privacyShown) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || escapeBelongsToOther(event.target)) return;
-      const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
-      setPicked(null);
-      if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });
+      hidePrivacyForVisit();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [privacyShown]);
+  }, [privacyShown, hidePrivacyForVisit]);
 
   const handleSettings = useCallback(() => {
     close('email-down');
@@ -164,6 +170,8 @@ export default function NudgeHost() {
             </>
           )}
           action={{ label: copy.privacy.done, onClick: acknowledgePrivacy }}
+          dismissLabel={copy.privacy.hide}
+          onDismiss={hidePrivacyForVisit}
         />
       ) : picked === 'email-down' && emailCopy && (
         <NudgePanel

@@ -139,5 +139,5 @@ test('the page lists the notice key among what the browser keeps, and says only 
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
   assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
   assert.match(html, /When you choose Got it, this browser remembers that version/);
-  assert.match(html, /Hiding it with Escape only hides it for that visit/);
+  assert.match(html, /Hiding it with Escape or its close button only hides it for that visit/);
 });
