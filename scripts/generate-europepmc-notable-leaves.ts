@@ -17,6 +17,8 @@ interface Sample {
   capturedAt: string;
   // The search URL as sent.
   query: string;
+  // The response's `hitCount`: every record the query matched.
+  hitCount: number;
   works: Work[];
   // `uncertain` marks a call the labeller doubted; it counts as a miss.
   labels: Array<{ workId: string; label?: 'on-target' | 'off-target'; uncertain?: true }>;
@@ -28,8 +30,12 @@ const leaves = getAllLeafCategories();
 // on target without doubt.
 const minimumSample = 15;
 const minimumPrecision = 2 / 3;
-// The years the notable lanes list (worker/paper-store.ts `NOTABLE_YEARS`).
+// The years the notable lanes list (worker/paper-store.ts `NOTABLE_YEARS`),
+// 100 records a year (worker/paper-sources.ts `NOTABLE_PER_YEAR`). A label
+// that matches fewer records than the listing takes would list nearly all of
+// them, uncited ones included, of which the sample's head says little.
 const notableYears = 10;
+const minimumPopulation = notableYears * 100;
 const EUROPE_PMC_SEARCH = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 
 function checkSample(leaf: string, value: unknown) {
@@ -54,6 +60,7 @@ function checkSample(leaf: string, value: unknown) {
   }
 
   if (sample!.works.length > minimumSample) invalid('a sample is one page of 15');
+  if (!Number.isInteger(sample!.hitCount) || sample!.hitCount < sample!.works.length) invalid('missing or impossible hitCount');
   const workIds = new Set<string>();
   let previous = Infinity;
   for (const work of sample!.works) {
@@ -79,10 +86,19 @@ function checkSample(leaf: string, value: unknown) {
   }
   if (idOf.size !== workIds.size) invalid('two sampled records share an id');
   if (labelled.size !== workIds.size) invalid('label every sampled record; do not omit misses');
-  const onTarget = sample!.labels.filter(label => label.label === 'on-target' && !label.uncertain).length;
-  const sampleSize = workIds.size;
-  const status = sampleSize < minimumSample ? 'insufficient-sample' : onTarget / sampleSize >= minimumPrecision ? 'passed' : 'rejected';
-  return { status, sampleSize, onTarget, precision: sampleSize ? onTarget / sampleSize : null };
+  // A paper two journals publish (a joint guideline) is two records and one
+  // work for its readers (worker/paper-store.ts merges them by title): it
+  // counts once, on target only when every copy is.
+  const titleOf = (work: Work) => work.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const hit = new Map(sample!.labels.map(label => [String(label.workId), label.label === 'on-target' && !label.uncertain]));
+  const byTitle = new Map<string, boolean>();
+  for (const work of sample!.works) byTitle.set(titleOf(work), (byTitle.get(titleOf(work)) ?? true) && hit.get(String(work.id))!);
+  const onTarget = [...byTitle.values()].filter(Boolean).length;
+  const sampleSize = byTitle.size;
+  const status = sampleSize < minimumSample ? 'insufficient-sample'
+    : sample!.hitCount < minimumPopulation ? 'small-population'
+      : onTarget / sampleSize >= minimumPrecision ? 'passed' : 'rejected';
+  return { status, sampleSize, onTarget, precision: sampleSize ? onTarget / sampleSize : null, hitCount: sample!.hitCount };
 }
 
 const { values } = parseArgs({ options: {

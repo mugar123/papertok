@@ -8,13 +8,13 @@ import test from 'node:test';
 // Synthetic samples; these do not establish live precision.
 interface Options {
   label?: string; onTarget?: number; size?: number; uncertain?: number; capturedAt?: string;
-  years?: string; sort?: string; abstract?: boolean; params?: Record<string, string>;
+  years?: string; sort?: string; abstract?: boolean; params?: Record<string, string>; hitCount?: number;
 }
 
 // The 15 most-cited records of a label over the ten completed years before
 // the capture, citations falling from 9,000, the first `onTarget` on target
 // and the next `uncertain` doubted.
-function sample({ label = 'Genetics', onTarget = 12, size = 15, uncertain = 0, capturedAt = '2026-10-26T12:00:00Z', years = '2016 TO 2025', sort = 'sort_cited:y', abstract = true, params = {} }: Options = {}) {
+function sample({ label = 'Genetics', onTarget = 12, size = 15, uncertain = 0, capturedAt = '2026-10-26T12:00:00Z', years = '2016 TO 2025', sort = 'sort_cited:y', abstract = true, params = {}, hitCount = 5000 }: Options = {}) {
   const query = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
   query.searchParams.set('query', `(TITLE_ABS:"${label}" OR KW:"${label}") AND PUB_YEAR:[${years}]${abstract ? ' AND HAS_ABSTRACT:y' : ''} ${sort}`);
   query.searchParams.set('format', 'json');
@@ -29,7 +29,7 @@ function sample({ label = 'Genetics', onTarget = 12, size = 15, uncertain = 0, c
   const labels = works.map((work, index) => (index < onTarget
     ? { workId: work.id, label: 'on-target' }
     : index < onTarget + uncertain ? { workId: work.id, uncertain: true } : { workId: work.id, label: 'off-target' }));
-  return { capturedAt, query: query.href, works, labels };
+  return { capturedAt, query: query.href, hitCount, works, labels };
 }
 
 function setup(t: import('node:test').TestContext) {
@@ -94,6 +94,23 @@ test("a sample must be the leaf's own query over the ten completed years before 
   }
 });
 
+test('a leaf whose label matches fewer records than its listing takes is not admitted, however precise its sample', t => {
+  const { write, run, coverage, admitted } = setup(t);
+  write({ 'bio.gen': sample({ onTarget: 15, hitCount: 999 }), 'bio.mol': sample({ label: 'Molecular Biology', hitCount: 1000 }) });
+  assert.equal(run().status, 0);
+  assert.deepEqual(coverage().map(row => [row.leaf, row.status]), [['bio.gen', 'small-population'], ['bio.mol', 'passed']]);
+  assert.deepEqual(admitted(), ['bio.mol']);
+});
+
+test('a record listed twice, as two journals publish one guideline, counts once', t => {
+  const { write, run, coverage } = setup(t);
+  const twice = sample({ onTarget: 11 });
+  twice.works[1] = { ...twice.works[1], title: twice.works[0].title.toUpperCase() };
+  write({ 'bio.gen': twice });
+  assert.equal(run().status, 0);
+  assert.deepEqual(coverage().map(row => [row.status, row.onTarget, row.sampleSize]), [['insufficient-sample', 10, 14]]);
+});
+
 test('only a medicine or biology leaf of the taxonomy takes a Europe PMC sample', t => {
   const { write, run } = setup(t);
   write({ 'cs.CV': sample({ label: 'Computer Vision' }) });
@@ -112,6 +129,7 @@ test('records out of citation order, outside the window, repeated or unlabelled 
     { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, pubYear: '2026' } : work)) },
     { ...good, works: good.works.map((work, index) => (index === 3 ? { ...work, id: good.works[2].id } : work)) },
     { ...good, labels: good.labels.slice(1) },
+    { ...good, hitCount: 10 },
   ];
   for (const value of broken) {
     write({ 'bio.gen': value });
