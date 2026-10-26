@@ -282,7 +282,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const feedRouteActiveRef = useRef(feedRouteActive);
   useEffect(() => { feedRouteActiveRef.current = feedRouteActive; }, [feedRouteActive]);
   // A failure that happened off /feed, owed to the reader who comes back to it.
-  const pendingFailureEventRef = useRef<ReturnType<typeof feedLoadFailedEvent>>(null);
+  const pendingFailureEventRef = useRef<ReturnType<typeof feedLoadFailedEvent> | null>(null);
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
@@ -1483,11 +1483,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (requestId === feedRequestId.current) {
         setError('FEED_LOAD_FAILED');
         // One event per failed attempt, sent where the load runs: a remounted
-        // feed screen showing the same error must not send it again. Off /feed
-        // it is held until the reader returns and still sees the error.
-        const event = feedLoadFailedEvent(failure, papersRef.current.length);
-        if (event && feedRouteActiveRef.current) void trackEvent('app_error', event);
-        else pendingFailureEventRef.current = event;
+        // feed screen showing the same error must not send it again. Off /feed,
+        // or behind a card that still hides the error, it is held until the
+        // reader sees the error.
+        const event = feedLoadFailedEvent(failure);
+        if (feedErrorOnScreen({ feedVisible: feedRouteActiveRef.current, error: 'FEED_LOAD_FAILED', shownPapers: papersRef.current.length })) {
+          void trackEvent('app_error', event);
+        } else {
+          pendingFailureEventRef.current = event;
+        }
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.

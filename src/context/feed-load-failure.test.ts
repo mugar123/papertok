@@ -32,12 +32,16 @@ test('a failed Firebase token keeps its code: offline is network, throttled is r
   assert.deepEqual(feedLoadFailure(firebase('auth/user-token-expired')), { reason: 'session', code: 'auth/user-token-expired' });
 });
 
-test('a failed load owes an event only while no card hides the error', () => {
-  const failure = refused(503, 'AUTH_UNAVAILABLE');
-  assert.deepEqual(feedLoadFailedEvent(failure, 0), {
+test('a failed load owes an event, also when a card hides the error until the reader dismisses it', () => {
+  const event = feedLoadFailedEvent(refused(503, 'AUTH_UNAVAILABLE'));
+  assert.deepEqual(event, {
     kind: 'feed_load_failed', reason: 'server', status: 503, error_code: 'AUTH_UNAVAILABLE',
   });
-  assert.equal(feedLoadFailedEvent(failure, 3), null);
+  // Reload and retry fail with one card left: the event waits, not dropped.
+  const base = { feedVisible: true, error: 'FEED_LOAD_FAILED' };
+  assert.equal(feedErrorOnScreen({ ...base, shownPapers: 1 }), false);
+  // The last card is dismissed: the reader now sees the error.
+  assert.equal(feedErrorOnScreen({ ...base, shownPapers: 0 }), true);
 });
 
 test('the error is on screen only on /feed, with the error still set and no cards', () => {
