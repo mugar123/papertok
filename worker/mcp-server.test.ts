@@ -1162,6 +1162,17 @@ test('search_papers asks OpenAlex for the work types the app searches', async ()
   });
 });
 
+test('search_papers bounds arXiv by submission date when since is given', async () => {
+  await withUpstream(url => {
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async calls => {
+    await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arxiv'], since: '2026-01-01' });
+    const asked = new URL(calls.find(url => url.startsWith('https://export.arxiv.org/'))!);
+    assert.match(asked.searchParams.get('search_query') ?? '', /^all:"graphene strain" AND submittedDate:\[202601010000 TO \d{8}2359\]$/);
+  });
+});
+
 test('one OpenAlex work has one id, whichever tool and identifier found it', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });
