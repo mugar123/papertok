@@ -76,3 +76,39 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     [2, 4, 0, 4],
   ], 'the first page keeps each like (liked_until)');
 });
+
+// A page that serves no paper, or falls back on papers the filter holds, is not
+// the walk the rows measure, and the dismissal rows would have nothing to
+// dismiss or would not dismiss a paper the first page served.
+test('the measurement stops when page 1 serves no paper', async () => {
+  await assert.rejects(
+    measureLaneReads({ leafRows: 0, areaRows: 0, notablePerYear: 0 }, { readers: [['cs.LG']], likes: 0, excluded: 0, seen: 0, repetitions: 1 }),
+    /Page 1 served 0 papers, 0 of them held by the seen filter/,
+  );
+});
+
+test('the measurement stops when the seen filter holds every paper of the lanes and page 1 falls back on them', async () => {
+  // cs.LG's lane and area:ai's hold 5 papers each, and the filter all 10; the 2
+  // excluded ones are left out of the 8 the page falls back on.
+  await assert.rejects(
+    measureLaneReads({ leafRows: 5, areaRows: 5, notablePerYear: 0 }, { readers: [['cs.LG']], likes: 0, excluded: 2, seen: 10, repetitions: 1 }),
+    /Page 1 served 8 papers, 8 of them held by the seen filter/,
+  );
+});
+
+test('the measurement stops when the lanes run out on page 2', async () => {
+  // The lanes hold 12 papers and the filter 2: page 1 serves the other 10 and
+  // page 2 finds none.
+  await assert.rejects(
+    measureLaneReads({ leafRows: 6, areaRows: 6, notablePerYear: 0 }, { readers: [['cs.LG']], likes: 0, excluded: 2, seen: 2, repetitions: 1 }),
+    /Page 2 served 0 papers, 0 of them held by the seen filter/,
+  );
+});
+
+test('the measurement stops when the corpus holds fewer papers than its seen filter, excluded papers and likes ask for', async () => {
+  // 10 papers in the lanes; 2 excluded and 20 liked.
+  await assert.rejects(
+    measureLaneReads({ leafRows: 5, areaRows: 5, notablePerYear: 1 }, { readers: [['cs.LG']], likes: 20, excluded: 2, seen: 4, repetitions: 1 }),
+    /1-category reader's lanes hold 10 papers, fewer than the 22 its seen filter, excluded papers and likes ask for/,
+  );
+});

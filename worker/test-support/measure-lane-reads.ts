@@ -1,6 +1,7 @@
-// What one For You request reads from D1 and costs the Worker, for readers of
-// 1, 6 and 12 categories with and without likes: ENG-128's measurement before
-// any change to how lanes are read. Node only, and nothing leaves the machine:
+// What the For You main page request reads from D1 and costs the Worker, for
+// readers of 1, 6 and 12 categories with and without likes: ENG-128's measurement
+// before any change to how lanes are read. A For You load sends other requests
+// too (see Limits in the record). Node only, and nothing leaves the machine:
 // the store is wrangler's local D1, in memory in workerd, which reports the rows
 // each statement read and wrote as D1 does, seeded with synthetic papers at the
 // sizes the code keeps. The results and how to read them:
@@ -375,21 +376,28 @@ async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'
   const kept = new Map<string, string>();
   const cache = keptRankings(kept);
   const seen = [...seenIds];
-  const ask = (page: number, cache: RankingCache, extra: Partial<FeedRequestBody> = {}, now = NOW) =>
-    request(db, { ...body, ...extra, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun, now);
+  // With no paper left beyond the filter, a page serves none, or falls back on
+  // papers the filter holds (`readFeedPage`): not the walk measured here, and
+  // none for the dismissal row to dismiss.
+  const ask = async (page: number, cache: RankingCache, extra: Partial<FeedRequestBody> = {}, now = NOW) => {
+    const run = await request(db, { ...body, ...extra, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun, now);
+    const held = new Set(seen);
+    if (run.papers === 0 || run.ids.some(id => held.has(id))) throw new Error(`Page ${page + 1} served ${run.papers} papers, ${run.ids.filter(id => held.has(id)).length} of them held by the seen filter: no paper is left beyond it`);
+    return run;
+  };
   const first = await ask(0, cache);
-  const dismissedIds = first.ids.slice(0, 1);
+  const dismissedId = first.ids[0];
   seen.push(...first.ids);
   const afterFirst = new Map(kept);
   const next = await ask(1, cache);
   const later = await ask(1, keptRankings(new Map(afterFirst)), {}, NOW + LATER_MS);
-  const dismissed = await ask(1, keptRankings(new Map(afterFirst)), { negativeIds: dismissedIds });
+  const dismissed = await ask(1, keptRankings(new Map(afterFirst)), { negativeIds: [dismissedId] });
   const moved = await ask(1, keptRankings(new Map(afterFirst)), { order: 'relevance' });
   return [
     { run: first, page: 0, after: '' as Later, dismissed: null },
     { run: next, page: 1, after: '' as Later, dismissed: null },
     { run: later, page: 1, after: 'after 16 min' as Later, dismissed: null },
-    { run: dismissed, page: 1, after: 'after a dismissal' as Later, dismissed: dismissedIds[0] ?? null },
+    { run: dismissed, page: 1, after: 'after a dismissal' as Later, dismissed: dismissedId },
     { run: moved, page: 1, after: 'after the lean moved' as Later, dismissed: null },
   ];
 }
@@ -413,6 +421,9 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
     const rows: Array<ReturnType<typeof summary>> = [];
     for (const categories of plan.readers) {
       const shown = shownBy(categories, papersOf);
+      // A smaller corpus would send fewer seen, excluded or liked papers than the rows say.
+      const needed = Math.max(plan.seen, plan.excluded + plan.likes);
+      if (shown.length < needed) throw new Error(`The ${categories.length}-category reader's lanes hold ${shown.length} papers, fewer than the ${needed} its seen filter, excluded papers and likes ask for`);
       const excludedIds = shown.slice(0, plan.excluded);
       const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
       for (const likes of [0, plan.likes]) {
