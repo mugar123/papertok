@@ -8,6 +8,7 @@ interface BioRxivRecord { doi?: string; title?: string; version?: string | numbe
 interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
 interface EuropePmcSearchRecord extends EuropePmcRecord {
   title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
+  pubTypeList?: { pubType?: string[] };
   source?: string; authorString?: string;
   journalInfo?: { journal?: { title?: string; issn?: string; essn?: string; nlmid?: string }; yearOfPublication?: number | string };
 }
@@ -238,7 +239,9 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
   const published = scheduled ? '' : date;
   const journal = raw.journalInfo?.journal;
   const chapter = isProtocolBookSeries({ issn: journal?.issn, essn: journal?.essn, nlmId: journal?.nlmid });
-  const preprint = raw.source === 'PPR';
+  // PPR is Europe PMC's preprint source; PubMed also indexes NIH-funded
+  // preprints, typed Preprint.
+  const preprint = raw.source === 'PPR' || (raw.pubTypeList?.pubType || []).some(type => /^preprint$/i.test(type));
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
@@ -254,7 +257,6 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     year: scheduled ? undefined : safeYear(published || (raw.journalInfo?.yearOfPublication ? `${raw.journalInfo.yearOfPublication}-01-01` : undefined)),
     published,
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
-    // Europe PMC's PPR source is its preprints.
     publicationType: chapter ? 'book-chapter' : preprint ? 'preprint' : 'article',
     sourceType: chapter ? 'book-series' : undefined,
     publicationStatus: preprint ? 'preprint' : 'published',

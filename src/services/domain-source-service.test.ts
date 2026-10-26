@@ -113,6 +113,9 @@ test('a Europe PMC preprint maps as a preprint, and a PubMed record as published
   assert.deepEqual([preprint!.publicationType, preprint!.publicationStatus], ['preprint', 'preprint']);
   const article = mapEuropePmcSearchResult({ id: '123', source: 'MED', pmid: '123', title: 'An article', firstPublicationDate: '2020-03-14' });
   assert.deepEqual([article!.publicationType, article!.publicationStatus], ['article', 'published']);
+  // PubMed indexes NIH-funded preprints, typed Preprint.
+  const indexed = mapEuropePmcSearchResult({ id: '124', source: 'MED', pmid: '124', title: 'An indexed preprint', firstPublicationDate: '2020-03-14', pubTypeList: { pubType: ['Preprint'] } });
+  assert.deepEqual([indexed!.publicationType, indexed!.publicationStatus], ['preprint', 'preprint']);
 });
 
 test('maps Europe PMC search results including free full text and biomedical terms', () => {

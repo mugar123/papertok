@@ -308,6 +308,10 @@ const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
 // The medicine and biology leaves whose Europe PMC sample passed
 // (scripts/README-europepmc-notable.md).
 const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => EUROPE_PMC_NOTABLE_LEAVES.includes(leaf.id));
+// PubMed's records and the preprint servers' (not patents, theses or books),
+// without retracted papers, which stay cited, and the notices, errata and
+// opinion pieces around research.
+const EUROPE_PMC_NOTABLE_RECORDS = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT PUB_TYPE:"editorial" NOT PUB_TYPE:"letter" NOT PUB_TYPE:"comment"';
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -658,11 +662,12 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, page }) => {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
       const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
-      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND PUB_YEAR:${notableListedYear(page)} sort_cited:y`);
+      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND PUB_YEAR:${notableListedYear(page)} ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
       url.searchParams.set('format', 'json');
       url.searchParams.set('resultType', 'core');
       url.searchParams.set('pageSize', String(NOTABLE_PER_YEAR));
-      const data = await fetchJsonUpstream<{ resultList?: { result?: Array<Parameters<typeof mapEuropePmcSearchResult>[0]> } }>(url);
+      // A core page of 100 is about 1.4 MB: the enrichment's deadline, not a reader's.
+      const data = await fetchJsonUpstream<{ resultList?: { result?: Array<Parameters<typeof mapEuropePmcSearchResult>[0]> } }>(url, {}, 15_000);
       return pageOf(filed((data.resultList?.result || []).map(record => mapEuropePmcSearchResult(record, [leaf])), lane), NOTABLE_PER_YEAR);
     },
   },
@@ -760,7 +765,8 @@ export function categoryLaneJobs(): LaneJob[] {
 /**
  * The notable jobs a night lists: OpenAlex's listing of each leaf with a topic
  * lane or admitted by the topic or journal notable sample (`NOTABLE_LEAVES`),
- * and ADS's of each arXiv category (`ADS_NOTABLE_LEAVES`). Every job never
+ * ADS's of each arXiv category (`ADS_NOTABLE_LEAVES`), and Europe PMC's of
+ * each medicine and biology leaf its sample admitted. Every job never
  * harvested, by source and lane id, then each source's at most
  * `notableLanesPerNight` of its own jobs not harvested in the last
  * NOTABLE_LANE_DAYS days, the oldest harvest first.

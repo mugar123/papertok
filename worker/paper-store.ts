@@ -204,9 +204,9 @@ export const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
 // A notable lane holds its weekly listing of 1,000, 100 of each of those ten
-// years (NOTABLE_PER_YEAR in paper-sources.ts), or 2,000 for an arXiv
-// category ADS lists too, and, for 14 days, what dropped out of the two
-// listings before it (`work_lanes.listed_until`), whatever else keeps the
+// years (NOTABLE_PER_YEAR in paper-sources.ts), or 2,000 for a leaf with two
+// listings (OpenAlex's and ADS's or Europe PMC's), and, for 14 days, what
+// dropped out of the two listings before it (`work_lanes.listed_until`), whatever else keeps the
 // paper in the corpus (a like, its date, another lane). A page reads
 // NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
 // that moves on by that many rows each UTC day, taken modulo the year's own
