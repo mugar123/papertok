@@ -603,8 +603,9 @@ they ask Identity Toolkit on every request: account deletion purges the
 subscription before it deletes Auth and once more after, and a cached identity
 would let the deleted account's token create the subscription again. The method
 decides, because telling a background sync from a save would mean reading the
-body before authenticating, so the sync the app sends about two seconds after
-each load for a digest subscriber costs one more lookup than the cache would.
+body before authenticating, so the background sync the app sends 1.8 s after a
+digest subscriber's follows, previews or settings change (including each load)
+costs one more lookup than the cache would.
 They still require
 an email address whose ownership Firebase proves. Invalid credentials remain
 `401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
