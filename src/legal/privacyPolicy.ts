@@ -17,13 +17,14 @@
 export const PRIVACY_POLICY_VERSION = '2026-10-26';
 
 /**
- * When this version went live, as an ISO UTC instant on the day of the version.
- * An account created before it is told; one created at or after it is not. Set
- * it to the deploy time of the change, and keep it at or before the actual
- * deploy: an instant after the deploy leaves accounts created in between
- * untold of a policy they did not start under; an earlier one only tells a few
- * accounts that started under it.
+ * When this version goes live, as an ISO UTC instant on the day of the version.
+ * An account created before it is told; one created at or after it is not. Keep
+ * it at or AFTER the moment the new privacy.html is live in production, never
+ * before: an earlier instant skips the accounts created between it and the
+ * deploy, who read the old policy and are never told; a later one only tells
+ * the few accounts created in between a second time. If it ends up long
+ * before the deploy, raise it before merging.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T05:00:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T23:59:59Z';
 
 export const PRIVACY_POLICY_CHANGE = 'Usage analytics is now on by default: PostHog keeps an identifier in this browser that connects your visits across days and links them to your account (turn it off in Settings), error reports go to PostHog, each request for more papers now sends the server your interests, what you follow, up to 24 papers you liked, saved or read at length, and a filter of the papers you viewed or were shown, to rank the page, and the server keeps your feed order for up to 2 hours and counts requests per account.';

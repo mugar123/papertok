@@ -124,8 +124,8 @@ a session can finish, lints the files changed on the branch and in the working t
 - Write user-facing copy in English.
 - Explain any API quota, caching, privacy, or fallback implications.
 - When a change to `privacy.html` needs announcing, update its "Last updated" date and set
-  `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (the deploy time, at or before the
-  actual deploy) and the one-sentence summary in `src/legal/privacyPolicy.ts`. The
+  `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (at or after the actual deploy, never
+  before: a later instant only tells a few new accounts too, an earlier one skips accounts that read the old page) and the one-sentence summary in `src/legal/privacyPolicy.ts`. The
   app shows that summary to each signed-in account on /feed, after onboarding and a minute of
   reading, until the account chooses Got it; Escape only hides it for that visit. Guests and
   accounts created at or after that time do not see it.
