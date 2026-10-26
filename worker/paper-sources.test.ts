@@ -7,6 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
+import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -1544,6 +1545,44 @@ test('a year with no ADS papers does not end the lane', async t => {
   await harvestLane({ ...adsEnv(env), PAPER_STORE: binding }, { source: 'ads-notable', lane: 'notable:quant-ph' }, Date.now());
   assert.deepEqual(urls.map(adsYear), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:quant-ph'").get() as { n: number }).n, 9);
+});
+
+// Synthetic Europe PMC search records in the shape the core search returns; not captured.
+const europePmcRecord = (index: number, extra: Record<string, unknown> = {}) => ({
+  id: String(29000000 + index), source: 'MED', pmid: String(29000000 + index), doi: `10.5555/genetics.${index}`,
+  title: `A genetics landmark, number ${index}`, abstractText: 'A synthetic abstract about genome-wide association studies of complex traits.',
+  authorString: 'Doe J, Roe R.', firstPublicationDate: '2018-03-14', pubYear: '2018', citedByCount: 5000 - index,
+  ...extra,
+});
+
+test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited records of each year that name the leaf", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ resultList: { result: [europePmcRecord(1)] } }));
+  const page = (n: number) => SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:bio.gen', page: n, since: '', waits: { seconds: 0 } });
+  await page(1);
+  const { items } = await page(3);
+  assert.deepEqual(urls.map(url => `${url.origin}${url.pathname}`), Array(2).fill('https://www.ebi.ac.uk/europepmc/webservices/rest/search'));
+  assert.deepEqual(urls.map(url => url.searchParams.get('query')), [
+    '(TITLE_ABS:"Genetics" OR KW:"Genetics") AND PUB_YEAR:2016 sort_cited:y',
+    '(TITLE_ABS:"Genetics" OR KW:"Genetics") AND PUB_YEAR:2018 sort_cited:y',
+  ]);
+  assert.deepEqual(['pageSize', 'resultType', 'format'].map(name => urls[0].searchParams.get(name)), ['100', 'core', 'json']);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:bio.gen']]]);
+});
+
+test('a preprint Europe PMC and bioRxiv both list is one work, in the notable lane and the category lane', async t => {
+  const now = Date.parse('2026-10-26T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const doi = '10.1101/2018.03.14.123456';
+  const preprint = europePmcRecord(2, { id: 'PPR12345', source: 'PPR', pmid: undefined, doi, firstPublicationDate: '2018-03-14' });
+  const { env } = relay(t, () => ({ resultList: { result: [preprint] } }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await ingestPapers(store, [{ paper: mapBioRxivPaper({ doi, title: preprint.title, abstract: preprint.abstractText, authors: 'Doe, J.', category: 'genetics', date: '2018-03-14', version: '1' })!, lanes: ['bio.gen'] }], { keepUntil: daysFromNow(14, now), now });
+  await harvestLane(store, { source: 'europepmc-notable', lane: 'notable:bio.gen' }, now);
+  const rows = db.prepare('SELECT work_id, lane FROM work_lanes ORDER BY lane').all() as Array<{ work_id: number; lane: string }>;
+  assert.deepEqual(rows.map(row => row.lane), ['bio.gen', 'notable:bio.gen']);
+  assert.equal(new Set(rows.map(row => row.work_id)).size, 1);
 });
 
 test('a leaf the notable sample admitted gets a notable lane asking for its sampled topics, and no topic lane', async t => {

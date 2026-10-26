@@ -14,9 +14,11 @@ import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '
 import {
   domainSourceRequests,
   getDomainSourcePlan,
+  europePmcLabelQuery,
   getEligibleDomainSources,
   mapAdsPaper,
   mapBioRxivPaper,
+  mapEuropePmcSearchResult,
 } from '../src/services/domain-source-records.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
@@ -25,10 +27,11 @@ import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-stat
 import { handleHarvestArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
-import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
+import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
+import { EUROPE_PMC_NOTABLE_LEAVES } from './europepmc-notable-leaves.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -302,6 +305,9 @@ const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableListingFilter(leaf.i
 // (eess.optics); these are arXiv's own codes.
 const ARXIV_CODE = /^(?:(?:cs|math|eess|econ|q-fin|stat|q-bio|nlin|astro-ph)\.[A-Z]{2}|(?:cond-mat|physics)\.[a-z]+(?:-[a-z]+)*|astro-ph|cond-mat|gr-qc|hep-(?:ex|lat|ph|th)|nucl-(?:ex|th)|quant-ph|math-ph|nlin)$/;
 const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
+// The medicine and biology leaves whose Europe PMC sample passed
+// (scripts/README-europepmc-notable.md).
+const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => EUROPE_PMC_NOTABLE_LEAVES.includes(leaf.id));
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -362,7 +368,7 @@ export function openAlexNotableListingFilter(leaf: string, year: number) {
 export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-series'
   | 'openalex-follows' | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface'
-  | 'ads-notable';
+  | 'ads-notable' | 'europepmc-notable';
 
 // `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
 export interface LaneJob { source: SourceName; lane: string; newFollow?: boolean }
@@ -642,6 +648,24 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       return pageOf(filed(docs.map(doc => mapAdsPaper(doc as Parameters<typeof mapAdsPaper>[0], [leaf])), lane), NOTABLE_PER_YEAR);
     },
   },
+  // The medicine and biology side of a notable lane: Europe PMC's 100
+  // most-cited records of each of the ten years whose title, abstract or
+  // keywords name the leaf, PubMed's articles and the preprint servers' alike,
+  // filed and kept as OpenAlex's are. Europe PMC's counts are not OpenAlex's
+  // either, so the listing does not renew the enrichment.
+  'europepmc-notable': {
+    firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
+    fetchPage: async (env, { lane, page }) => {
+      const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
+      const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
+      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND PUB_YEAR:${notableListedYear(page)} sort_cited:y`);
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('resultType', 'core');
+      url.searchParams.set('pageSize', String(NOTABLE_PER_YEAR));
+      const data = await fetchJsonUpstream<{ resultList?: { result?: Array<Parameters<typeof mapEuropePmcSearchResult>[0]> } }>(url);
+      return pageOf(filed((data.resultList?.result || []).map(record => mapEuropePmcSearchResult(record, [leaf])), lane), NOTABLE_PER_YEAR);
+    },
+  },
   // The newest journal articles of a whole area, filed under the area. On
   // 2026-10-23 a page of 200 with an abstract held the last one or two days of
   // each area but finance's nine: about 22 (finance) to 370 (electrical
@@ -748,7 +772,7 @@ export function categoryLaneJobs(): LaneJob[] {
  * last week's.
  */
 export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise<LaneJob[]> {
-  const { results } = await db.prepare("SELECT source, lane, harvested_through FROM lane_state WHERE source IN ('openalex-notable', 'ads-notable')")
+  const { results } = await db.prepare("SELECT source, lane, harvested_through FROM lane_state WHERE source IN ('openalex-notable', 'ads-notable', 'europepmc-notable')")
     .all<{ source: string; lane: string; harvested_through: string }>();
   const key = (job: LaneJob) => `${job.source} ${job.lane}`;
   const harvested = new Map(results.map(row => [`${row.source} ${row.lane}`, row.harvested_through]));
@@ -757,6 +781,7 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
   const jobs: LaneJob[] = [
     ...lanesOf(NOTABLE_LEAVES).map(lane => ({ source: 'openalex-notable' as const, lane })),
     ...lanesOf(ADS_NOTABLE_LEAVES).map(lane => ({ source: 'ads-notable' as const, lane })),
+    ...lanesOf(EUROPE_PMC_LEAVES).map(lane => ({ source: 'europepmc-notable' as const, lane })),
   ];
   const byThrough = (a: { through: string }, b: { through: string }) => (a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
   const due = jobs.flatMap(job => {
