@@ -34,8 +34,11 @@ export interface AuthContextValue {
   profileLoadError: string | null;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
-  signInWithGoogle: () => Promise<{ isNewUser: boolean; providerId: string }>;
-  signInWithGitHub: () => Promise<{ isNewUser: boolean; providerId: string }>;
+  /** A redirect sign-in came back without a session: the sign-in dialog opens again. */
+  reopenSignIn: boolean;
+  /** `surface` names the place that asked, for analytics (auth-identity-service.ts). */
+  signInWithGoogle: (surface?: string) => Promise<{ isNewUser: boolean; providerId: string }>;
+  signInWithGitHub: (surface?: string) => Promise<{ isNewUser: boolean; providerId: string }>;
   linkSignInMethod: typeof linkSignInProvider;
   linkInstitution: typeof linkInstitutionAccount;
   completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
@@ -55,12 +58,18 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
 import { auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import type { RedirectSignInOutcome } from '../services/auth-identity-service.ts';
 import {
   SIGN_IN_PROVIDERS,
+  abandonRedirectTrip,
+  completeRedirectSignIn,
   linkSignInProvider,
   providerIdsOf,
+  signInEvents,
+  signInFailure,
   signInWithProvider,
 } from '../services/auth-identity-service.ts';
+import { trackProductEvent } from '../services/analytics-service.ts';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   linkInstitution as linkInstitutionAccount,
@@ -89,6 +98,11 @@ import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
 
+// The redirect sign-in this page load comes back from, if any, read once and
+// at import: its destination is back in auth-return.ts before the first
+// render, so before any session can arrive (auth-identity-service.ts).
+const returningSignIn = completeRedirectSignIn();
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,6 +128,39 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // (institution-link.js) and read here with the rest of the user document.
   const [institution, setInstitution] = useState<ReturnType<typeof normalizeInstitution>>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
+  const [reopenSignIn, setReopenSignIn] = useState(false);
+
+  // A redirect sign-in reports here what a popup's press reports in
+  // useProviderSignIn, on the one provider that lives as long as the page.
+  // Without a session the dialog it left from opens again (app.tsx), as it
+  // stays open after a closed or failed popup.
+  useEffect(() => {
+    let live = true;
+    const report = (outcome: RedirectSignInOutcome) => {
+      for (const [name, params] of signInEvents(outcome.providerId, outcome.surface, outcome)) {
+        void trackProductEvent(name, params);
+      }
+    };
+    void returningSignIn.then((outcome) => {
+      if (!live || !outcome) return;
+      report(outcome);
+      if (outcome.result === 'error') setError(outcome.code);
+      if (outcome.result !== 'success' && !auth.currentUser) setReopenSignIn(true);
+    });
+    // Back from the provider, Safari can show this page again from its
+    // back/forward cache instead of loading it: no load reads the trip, and
+    // the dialog is still on screen, so the trip ends here as cancelled.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      const abandoned = abandonRedirectTrip();
+      if (abandoned) report(abandoned);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      live = false;
+      window.removeEventListener('pageshow', onPageShow);
+    };
+  }, []);
 
   useEffect(() => {
 
@@ -136,6 +183,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
+        setReopenSignIn(false);
         const storedOnboarding = openAccountSession(currentUser.uid);
         if (storedOnboarding?.complete) {
           setOnboardingComplete(true);
@@ -247,15 +295,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // No reactive read besides state setters and module-level constants, so this
   // never needs to be recreated — every context consumer that depends on it
   // (both sign-in buttons below) inherits that stability.
-  const signInWith = useCallback(async (providerId: string) => {
+  const signInWith = useCallback(async (providerId: string, surface?: string) => {
     setError(null);
+    setReopenSignIn(false);
 
     try {
-      return await signInWithProvider(providerId);
+      return await signInWithProvider(providerId, undefined, { surface });
     } catch (err) {
       // Closing the window, or pressing again so a new one replaces it, is the
       // reader's own choice, not a failure to report.
-      if ((err as { code?: string } | null)?.code !== 'auth/popup-closed-by-user' && (err as { code?: string } | null)?.code !== 'auth/cancelled-popup-request') {
+      if (signInFailure(err).result === 'error') {
         setError((err as { code?: string } | null)?.code || 'AUTH_FAILED');
       }
       throw err;
@@ -263,11 +312,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signInWithGoogle = useCallback(
-    () => signInWith(SIGN_IN_PROVIDERS.google),
+    (surface?: string) => signInWith(SIGN_IN_PROVIDERS.google, surface),
     [signInWith],
   );
   const signInWithGitHub = useCallback(
-    () => signInWith(SIGN_IN_PROVIDERS.github),
+    (surface?: string) => signInWith(SIGN_IN_PROVIDERS.github, surface),
     [signInWith],
   );
 
@@ -462,6 +511,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     profileLoadError,
     signInProviders,
     institution,
+    reopenSignIn,
     signInWithGoogle,
     signInWithGitHub,
     linkSignInMethod,
@@ -479,7 +529,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }), [
     addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
     linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
-    retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
+    reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,
   ]);

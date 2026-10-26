@@ -244,8 +244,9 @@ Five pass at exactly 10 of 15 (`cond-mat.str-el`, `hep-th`, `hep-ph`, `hep-ex`,
 `T10037`, `T10048` and `T11090` serve two lanes each) and spend 170 units a
 week; with 56 notable lanes the nightly share stays at eight. Their first
 night lists and embeds about 17,000 papers against the 7.5M-token embedding
-ceiling (about 5,000 papers a day), so the first embedding spreads over about
-three nights behind the day's new papers. The most-cited articles of a
+ceiling (a paper is at most about 670 estimated tokens, so about 11,000 a day,
+of which the day's about 5,000 new papers go first), so the first embedding
+spreads over about three nights behind the day's new papers. The most-cited articles of a
 subfield are often its tools and reference works: `quant-ph` returned
 quantum-chemistry codes and `physics.comp-ph` scientific-software papers
 (SciPy, NumPy, Astropy beside those codes), the statistics leaves
@@ -269,6 +270,80 @@ Astropy, QuPath and two quantum-computing papers beside its surveys; `cs.CR`
 returned federated-learning and blockchain surveys; `cs.IR` returned
 language-model papers; `cs.SY` returned machine fault diagnosis. Authorized by
 Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 3: mathematics
+
+The 14 leaves of mathematics without a topic lane (`math.MP` shares its page
+with `math-ph`, `math.ST` with `stat.TH`), labelled by the same agent under
+the same procedure. None passes: `math.NA` at 9 of 15, `math.OC` at 7,
+`math.AP` at 6, the rest at 5 or fewer; nothing is admitted, so no reader
+sees a change and no authorization applies. The head of each subfield's
+citations was mostly other things: optimal-transport papers for `math.DG`,
+Bayesian software (Stan, PyMC, dynesty) for `math.PR`, fixed-point theorems
+in generalized metric spaces for `math.FA`, two-dimensional QFT symmetry
+papers for `math.AG` and `math.GR`, program-verification papers for
+`math.LO`, numerical fractional calculus and time-frequency transforms for
+`math.CA`.
+
+### Batch 4: medicine
+
+The 11 medicine leaves without a topic lane, labelled by the same agent under
+the same procedure. Five pass: `med.endo` at 14 of 15, `med.infect` at 13,
+`med.gen` and `med.cardio` at 12, `med.radio` at 11. Six are rejected:
+`med.immuno` at 9 (basic-immunology reviews doubted), `med.peds` at 7
+(maternal and perinatal epidemiology), `med.tox` at 6 (air-pollution
+epidemiology), `med.pharma` at 4 (pain and obesity epidemiology, genome-mining
+software), `med.path` and `med.surg` at 2 (multiple-sclerosis neurology;
+lipid and coronary guidelines filed under Surgery). The five lanes ask for 22
+topics and spend 50 units a week; with 66 notable lanes the nightly share is
+ten (100 units). `med.infect`'s page is the COVID-19 literature of 2020 and
+`med.gen`'s is nephrology and hepatology; `med.cardio` and `med.endo` are
+guidelines and outcome trials. Authorized by Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 5: quantitative finance
+
+The seven finance leaves without a topic lane, labelled by the same agent
+under the same procedure. None passes: `q-fin.PM` at 8 of 15, the rest at 6
+or fewer, with 4 to 8 doubted calls each; nothing is admitted. The Finance
+subfield's most-cited articles of the decade are connectedness and spillover
+econometrics, COVID-19 and cryptocurrency market studies, which appear on five
+to seven of the seven pages, and news-based uncertainty indices on two; the
+leaves' own matter (option pricing, portfolio theory, microstructure) is a
+minority on each.
+
+### Batch 6: mechanical, electrical and chemical engineering
+
+The 16 leaves of the three areas without a topic lane (`eess.SY` shares its
+page with `cs.SY`), labelled by the same agent under the same procedure.
+Nine pass: `mech.solid`, `eess.IV` and `eess.telecom` at 15 of 15,
+`chemeng.energy` at 14, `mech.dyn` at 12, `eess.electro`, `chemeng.metal` and
+`chemeng.nano` at 11, `mech.thermo` at 10. Seven are rejected: `eess.SP` at
+8 (medical-image denoising doubted between signal and image processing),
+`chemeng.sep` at 7 (MOF chemistry beside the separations), `mech.acoustics`
+and `chemeng.bio` at 6 (cavity magnomechanics and quantum optics; drug
+delivery beside wearables and biochar), `mech.auto` at 3 (battery science
+and additive manufacturing), `eess.SY` at 2 and `mech.cad` at 0 (neural
+rendering and point-cloud learning). The nine lanes ask for 39 topics and
+spend 90 units a week; with 75 notable lanes the nightly share is eleven
+(110 units). Authorized by Nicolás on 2026-10-25 (ENG-138).
+
+### Batch 7: biology and civil engineering
+
+The seven leaves of biology and civil engineering without a topic lane,
+labelled by the same agent under the same procedure. Four pass:
+`bio.biotech` at 14 of 15 (CRISPR tools and nucleic-acid detection),
+`civil.trans` at 12 (traffic forecasting, connected vehicles, mobility
+services), `bio.micro` at 11 (gut microbiota, antimicrobial resistance
+databases) and `bio.immuno` at 10 (innate immunity, macrophages, interferon
+and COVID-19; psoriasis and atherosclerosis doubted as clinical). Three are
+rejected: `civil.mat` at 9 (3D concrete printing and self-healing concrete on
+target; cement emissions accounting and microbial carbonate doubted),
+`civil.urban` at 8 (urban heat islands, green space and street networks on
+target; nature-and-health epidemiology doubted) and `bio.zoo` at 4 (animal
+science and meat quality beside behaviour and taxonomy). The four lanes ask
+for 17 topics and spend 40 units a week; with 79 notable lanes the nightly
+share is twelve (120 units). This closes the 110 leaves: 40 admitted, 70
+rejected. Authorized by Nicolás on 2026-10-25 (ENG-138).
 
 ## The 2026-10-23 sample (PAP-99)
 
