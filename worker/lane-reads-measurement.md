@@ -63,15 +63,18 @@ level just before the request.
 | 12 | 24 | 2 | 2 | 2 | 176 | 78 | 1.2 | 2.1 |
 
 Every page returned 20 papers: its 15 and 5 notable ones. An earlier run of
-the measurement gave the same rows, memory within 1.5 MB, wall times within 15%
-and CPU times within a factor of two.
+the measurement gave the same rows, memory within 1.5 MB and wall times within
+15%. CPU on Windows ticks at about 15.6 ms (every value above is a multiple of
+it), so the page 2 CPU figures are 1 to 5 ticks, at the floor of what it
+resolves, and differ between runs by up to about 5 times.
 
 ## What the numbers show
 
 - **The notable scan is most of a first page's rows.** The local D1 counts
   8,023 rows read for a notable lane of 1,000 papers, so the scan is 48,138 of
   54,800 rows for a 6-category reader without likes. For a 12-category reader
-  with likes it is 96,275 of 126,031. The ENG-128 design estimated 1,000 a lane. The
+  with likes it is 96,275 of 126,031. The code's own comment (`paper-store.ts`, `NOTABLE_READ_PER_YEAR`) and the
+  README estimated about 1,000 a lane. The
   window functions that number each year's rows sort them into temporary
   tables, and D1 counts those rows too. On one lane of 1,000 rows, a separate
   local check outside the script gave 1,000 rows read for the index range
@@ -91,13 +94,14 @@ and CPU times within a factor of two.
   rows per id for a join on `json_each`.
 - **A next page ranks nothing.** It reads 660 rows, all from `works`, and no
   lane or vector rows, because the order kept by the first page serves it.
-- **Memory stays well under the 128 MB Cloudflare gives a Worker isolate.**
-  The live peak is 22 to
-  35 MB with likes and at most 6 MB without. Garbage included, it is 83 to 95 MB,
-  but V8 collects garbage before it fails for lack of memory. These are Node's
-  figures; the Worker's own were not measured.
+- **One first page holds 22 to 35 MB with likes and at most 6 MB without.**
+  Those are per-request figures for the Worker side, live after a garbage
+  collection. Garbage included, it is 83 to 95 MB, but V8 collects garbage
+  before it fails for lack of memory. They are Node's figures; the Worker's own
+  were not measured. They do not show headroom against the 128 MB of an isolate
+  (see Limits).
 - **CPU is far from `cpu_ms`.** A first page takes 0.4 to 0.7 s of this
-  process's CPU with likes and 0.1 to 0.3 s without, against `limits.cpu_ms` of
+  process's CPU with likes and 0.1 to 0.15 s without, against `limits.cpu_ms` of
   120,000 ms in `wrangler.toml`. That CPU includes decoding D1's answers.
 - **Time here does not predict production.** D1's own statement time is under
   100 ms. Wall time reaches 2.9 s for 12 categories with likes. D1's statements
@@ -143,14 +147,33 @@ and CPU times within a factor of two.
 
 ## Limits
 
-- The corpus is an upper bound for its reader sizes. Every asked leaf has
-  4,000 papers and a notable lane. Production has notable lanes only for the
-  leaves its listings cover ([worker/README.md](README.md#paper-store), step
-  3), and quieter leaves hold fewer papers. A cross-listed paper reads as a
-  row in each of its lanes but is one candidate and one vector.
-- The request has no follows, negatives, extra interest groups or
-  `waitForLikes` lookups, and it leaves out the route's sign-in and quota
-  checks.
+- The corpus is an upper bound for lane reads, not strictly for the notable
+  scan. Every asked leaf has 4,000 papers and a notable lane. Production has
+  notable lanes only for the leaves its listings cover
+  ([worker/README.md](README.md#paper-store), step 3), and quieter leaves hold
+  fewer papers. But a production notable lane keeps rows that left the last two
+  listings for 14 days, so it can exceed 1,000 rows, and the scan costs about 8
+  rows read per row. The run's seen filter holds no notable ids, so the notable
+  check always stops after one chunk of 200 papers (600 rows). A real filter
+  carries the account's last 1,200 notable cards, the closest-ranked ones, so a
+  regular reader can need two or more chunks on every page, page 2 included,
+  at 600 rows per further chunk. A cross-listed paper reads as a row in each of
+  its lanes but is one candidate and one vector.
+- The request has no follows, negatives or extra interest groups, and it
+  leaves out the route's sign-in and quota checks. It has no `waitForLikes`
+  lookups. The route's first page with likes and no follows also checks the
+  likes' vectors (`addMissingPositives`), about 200 more rows by the same
+  3-per-id pattern, which the run leaves out. Page 2 serves from the kept order
+  only once that follow-up work has finished; the run stores the whole order
+  at once, so a page 2 that arrives earlier ranks again.
+- An isolate shares its 128 MB across the concurrent requests it serves and its
+  own bundle baseline. Three or four concurrent first pages of 12 categories
+  with likes (35 MB live, 83 to 95 MB with garbage) could reach that limit.
+- D1-side memory was not measured or reproduced. The production
+  `SQLITE_NOMEM` case happens in D1's SQLite, where the notable statement's
+  window-function sorts and the `json_each` temporary indexes allocate; this
+  measurement cannot see that memory, and the cause of `SQLITE_NOMEM` remains
+  unproven.
 - The stored papers carry no enrichment, so their JSON is smaller than that of
   production rows. That affects only the 20 papers a page reads and the 200
   that the notable check reads.

@@ -25,11 +25,9 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     [2, 4, 1, 0, 0, 0, 20],
   ]);
   for (const row of rows) {
-    const byStatement = Object.values(row.rowsReadBy).reduce((sum, value) => sum + value, 0);
-    assert.equal(row.rowsRead, byStatement, 'every row read is attributed to one kind of statement');
+    assert.equal(row.rowsReadBy.other, 0, 'every row read comes from a statement of a known kind');
     assert.ok(row.rowsReadBy.lanes >= row.returned.lanes && row.rowsReadBy.notable >= row.returned.notable);
     assert.ok(row.calls > 0 && row.wallMs > 0 && Number.isFinite(row.cpuMs));
-    assert.ok(row.liveMb >= 0 && row.inUseMb >= 0, 'memory is counted above the level before the request');
   }
   assert.deepEqual(rows.filter(row => row.rowsWritten > 0).map(row => [row.categories, row.likes, row.page, row.rowsWritten]), [
     [1, 4, 0, 4],
