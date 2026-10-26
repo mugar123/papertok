@@ -175,34 +175,34 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
   return true;
 }
 
-// How long a reader's ranked candidates serve the pages after the first: about
-// a reading session. A like changes the request, and so the ranking.
-const RANKING_CACHE_SECONDS = 15 * 60;
-
 /**
  * The reader's ranking in this location's cache, under a key built from the
- * verified uid and the request: one reader's order is never another's.
+ * verified uid and the request: one reader's order is never another's. Each
+ * write keeps it for the time readFeedPage gives (WALK_KEPT_MS for a walk,
+ * RANKING_KEPT_MS otherwise). Nothing can list the entries by reader, so
+ * deleting an account leaves them to expire (privacy.html).
  *
  * The path names the entry's shape. Workers before KeptRanking keep a plain
  * list under `store-ranking/` and slice whatever they find there, so a
  * rollback reading this shape would throw; under its own path, neither
  * version reads the other's entries, and the next page is ranked again.
+ * `store-ranking-v4/` holds the shape before `walked` and `rankedBy`.
  */
 function rankingCache(uid: string): RankingCache | undefined {
   if (typeof caches === 'undefined') return undefined;
   const keyFor = async (key: string) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${key}`));
     const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return new Request(`https://papertok.internal/cache/store-ranking-v4/${hex}`);
+    return new Request(`https://papertok.internal/cache/store-ranking-v5/${hex}`);
   };
   return {
     async get(key) {
       const cached = await caches.default.match(await keyFor(key));
       return cached ? cached.json<KeptRanking>() : null;
     },
-    async put(key, ranking) {
+    async put(key, ranking, keptMs) {
       await caches.default.put(await keyFor(key), new Response(JSON.stringify(ranking), {
-        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${RANKING_CACHE_SECONDS}` },
+        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${keptMs / 1_000}` },
       }));
     },
   };
@@ -227,9 +227,15 @@ async function settlesWithin(work: Promise<unknown>, ms: number) {
 }
 
 const LOOKUP_MAX_IDS = 30;
+// The app keeps a page's request under 16,000 bytes and sends the 20 follows
+// the page reads. Bundles before that send every follow as stored, with no
+// `seen` filter: this holds about 160 followed authors or 101 followed
+// searches (worker/README.md), and past it a 413 leaves their feed without
+// the follows' papers.
+const MAX_BODY_BYTES = 20_480;
 
 function readBody<T>(request: Request) {
-  return readBoundedJson<T>(request, 16_384, {
+  return readBoundedJson<T>(request, MAX_BODY_BYTES, {
     tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
     invalid: () => new PaperStoreError('INVALID_JSON', 400),
   });
@@ -237,7 +243,10 @@ function readBody<T>(request: Request) {
 
 /**
  * `POST /store/papers`: a page of corpus papers for the reader's categories,
- * follows and likes, or with `ids`, the corpus's copies of those papers.
+ * follows and likes, or with `ids`, the corpus's copies of those papers. A
+ * page asked with `seen` and `skipsSeen` says `skipsSeen`: it passed over the
+ * papers the filter holds, so the app has no later page to try for unseen
+ * ones.
  */
 export async function handleCorpusFeed(
   request: Request,
@@ -245,7 +254,7 @@ export async function handleCorpusFeed(
   identity: Pick<VerifiedIdentity, 'uid'>,
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
-): Promise<{ papers: Paper[] }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true }> {
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
   if (Array.isArray(body?.ids)) {
     const ids = [...new Set(body.ids.map(id => String(id ?? '').trim().slice(0, 300)).filter(Boolean))].slice(0, LOOKUP_MAX_IDS);
@@ -287,16 +296,23 @@ export async function handleCorpusFeed(
   // Finished in time: the ranking below reads what it stored.
   if (lookup && await settlesWithin(lookup, LIKES_WAIT_MS)) lookup = null;
   const cache = rankingCache(identity.uid);
-  let kept: [string, KeptRanking] | null = null;
+  let kept: [string, KeptRanking, number] | null = null;
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
-      // The ranks served, at once, so that a next page asked before the work
-      // below ends goes on after them.
-      put: async (key, ranking) => {
-        kept = [key, ranking];
-        await cache.put(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false });
+      // The ranks served and walked past, and the notable papers walked past,
+      // at once, so that a next page asked before the work below ends goes on
+      // after them.
+      put: async (key, ranking, keptMs) => {
+        kept = [key, ranking, keptMs];
+        await cache.put(key, {
+          ...ranking,
+          ranks: ranking.ranks.slice(0, Math.max(ranking.served, ranking.walked)),
+          notable: ranking.notable.slice(0, ranking.notableWalked),
+          final: false,
+        }, keptMs);
       },
+      update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
     },
   });
   // Otherwise after the page, not before it: a lookup can take seconds
@@ -312,5 +328,5 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers };
+  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
 }

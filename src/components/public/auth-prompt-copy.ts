@@ -35,6 +35,12 @@ export function normalizeAuthReason(value: unknown) {
   return typeof value === 'string' && Object.hasOwn(COPY, value) ? value as keyof typeof COPY : 'default';
 }
 
+// The prompt-view event for a dialog mount, or null when the mount is the
+// sign-in a redirect return restored: that reader opened sign-in once already.
+export function authPromptViewParams(reason: unknown, restored: boolean) {
+  return restored ? null : { surface: 'auth_prompt', reason: normalizeAuthReason(reason) };
+}
+
 export function authPromptCopy(reason: unknown) {
   return COPY[normalizeAuthReason(reason)]['en'];
 }

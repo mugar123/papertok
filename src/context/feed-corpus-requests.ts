@@ -25,7 +25,7 @@ export interface FeedPlan {
   coldAdded: string[];
 }
 
-type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds'>;
+type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds' | 'seen'>;
 
 /**
  * The plan for a page: a new one on a list's first page, and the list's own

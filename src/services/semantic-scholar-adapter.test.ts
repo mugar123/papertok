@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SemanticScholarAdapter } from './adapters/semantic-scholar-adapter.ts';
+import { PaperBuilder } from './paper-builder.ts';
+import { accessStatusForPaper } from '../utils/paper-status.ts';
 
 // This adapter reached `api.semanticscholar.org` with a bare `fetch(url)` -- no
 // key, no signal -- and a three-attempt backoff of its own, which every open tab
@@ -105,6 +107,38 @@ test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing inven
   assert.equal(bare.arxivId, undefined);
   const absent = adapter.mapToStandard({ paperId: 'abc', title: 'One' });
   assert.equal(absent.doi, null);
+});
+
+// Synthetic records (Semantic Scholar was not queried). The mapper wrote the
+// current year for `year: null`, which sorted that work first under newest and
+// let it through "Last year". A missing citation count read as a confirmed
+// zero, and a missing open-access flag as a paywall.
+test('a Semantic Scholar record that omits its year, citations and open-access flag stays unknown', () => {
+  const adapter = new SemanticScholarAdapter();
+  const [row] = PaperBuilder.deduplicate([
+    adapter.mapToStandard({ paperId: 'a'.repeat(40), title: 'An undated work', year: null, citationCount: null }),
+  ]);
+
+  assert.equal(row.year, undefined);
+  assert.equal(row.citationCountKnown, false);
+  assert.equal(row.openAccess, undefined);
+  assert.equal(accessStatusForPaper(row), null);
+});
+
+test('a Semantic Scholar record keeps the year and the zero it reports, and only isOpenAccess: true says open', () => {
+  const adapter = new SemanticScholarAdapter();
+  const build = (isOpenAccess: boolean) => PaperBuilder.deduplicate([
+    adapter.mapToStandard({ paperId: 'b'.repeat(40), title: 'A reported work', year: 2019, citationCount: 0, isOpenAccess }),
+  ])[0];
+
+  const noOpenCopy = build(false);
+  assert.equal(noOpenCopy.year, 2019);
+  assert.equal(noOpenCopy.citationCount, 0);
+  assert.equal(noOpenCopy.citationCountKnown, true);
+  // `isOpenAccess: false` means Semantic Scholar found no open copy, not that the paper is paywalled.
+  assert.equal(noOpenCopy.openAccess, undefined);
+  assert.equal(accessStatusForPaper(noOpenCopy), null);
+  assert.equal(accessStatusForPaper(build(true)), 'open');
 });
 
 test('strips boolean operators as words, not as letters inside words', async () => {

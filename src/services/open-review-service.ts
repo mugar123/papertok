@@ -104,7 +104,7 @@ export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: str
     openReviewUrl: fallbackUrl,
     openReviewVenueId: venueId || undefined,
     conference: venue || undefined,
-    year: published ? new Date(published).getUTCFullYear() : new Date().getUTCFullYear(),
+    year: published ? new Date(published).getUTCFullYear() : undefined,
     published,
     ...publication,
     openAccess: true,

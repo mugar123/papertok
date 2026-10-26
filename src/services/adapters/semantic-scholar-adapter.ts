@@ -82,14 +82,17 @@ export class SemanticScholarAdapter {
       abstract: raw.abstract || 'No abstract available.',
       authors: raw.authors?.map(a => ({ name: a.name, id: a.authorId })) || [],
       publishedDate: raw.year ? `${raw.year}-01-01` : null,
-      year: raw.year || new Date().getFullYear(),
+      year: raw.year || undefined,
       sourceName: raw.venue || '',
       sourceType: 'journal',
       publicationStatus: isPreprint ? 'preprint' : 'published',
-      openAccess: !!raw.isOpenAccess,
+      // `isOpenAccess: false` means Semantic Scholar found no open copy, not that
+      // the paper is paywalled.
+      openAccess: raw.isOpenAccess === true ? true : undefined,
       pdfUrl: raw.openAccessPdf?.url || null,
       landingPageUrl: raw.paperId ? `https://www.semanticscholar.org/paper/${raw.paperId}` : null,
-      citationsCount: raw.citationCount || 0,
+      // An absent count is not zero.
+      citationsCount: raw.citationCount ?? undefined,
       referenceCount: raw.referenceCount || 0,
       provider: this.name,
       raw

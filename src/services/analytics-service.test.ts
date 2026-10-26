@@ -639,6 +639,15 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   }), { action: 'add', entity_type: 'author', entity_id: 'A123' });
 });
 
+test('a feed load error says why it failed with fixed labels only', () => {
+  assert.deepEqual(sanitizeProductEventParams('app_error', {
+    kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED', message: 'Paper store returned 400',
+  }), { kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED' });
+  assert.deepEqual(sanitizeProductEventParams('app_error', {
+    kind: 'feed_load_failed', reason: 'made up', error_code: 'Paper 10.1234/x not found',
+  }), { kind: 'feed_load_failed', error_code: 'other' });
+});
+
 test('time on a paper is whole seconds, and a tab left open counts four hours at most', () => {
   assert.equal(sanitizeProductEventParams('paper_dwell', { seconds: 12.4 }).seconds, 12);
   assert.equal(sanitizeProductEventParams('reader_time', { seconds: 1_000_000 }).seconds, 4 * 60 * 60);

@@ -4,6 +4,7 @@ import { deleteAccount } from '../../services/account-deletion-service.ts';
 import { reauthenticateCurrentUser } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
+import useRetryFocus from '../../hooks/use-retry-focus.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import {
   AlertDialog,
@@ -30,6 +31,8 @@ const COPY = {
     confirm: 'Delete my account',
     signingIn: 'Sign in again in the new window to continue.',
     preparing: 'Preparing sign-in…',
+    loadFailed: 'Sign-in could not load.',
+    retry: 'Try again',
     working: 'Deleting the account…',
     cancel: 'Cancel',
   },
@@ -58,8 +61,18 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const working = step !== '';
   // Until the sign-in window can open inside the press (usePopupReady), a
   // confirmed delete waits, focusable and described by the status line.
-  const popupReady = usePopupReady(popupReadiness);
-  const held = confirmed && !popupReady;
+  const readiness = usePopupReady(popupReadiness);
+  const held = confirmed && readiness !== 'ready';
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  // Try again leaves as the load restarts, or when a slow load ends by itself,
+  // so the focus goes to the delete button, disabled until the load ends:
+  // first when Try again is pressed, and by useRetryFocus when it leaves on
+  // its own.
+  const retryFocus = useRetryFocus(held && readiness === 'failed', () => confirmRef.current);
+  const retryLoad = () => {
+    confirmRef.current?.focus();
+    popupReadiness.retry();
+  };
 
   // The input and buttons are disabled while the sign-in window and the
   // deletion run, so focus falls out of the dialog. On an error it goes back to
@@ -143,20 +156,26 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
         </div>
         <p
           id={errorId}
-          className={`delete-account-status${working || held ? ' is-working' : ''}`}
+          className={`delete-account-status${working || (held && readiness === 'preparing') ? ' is-working' : ''}`}
           role="status"
           aria-live="polite"
         >
           {step === 'signingIn' && copy.signingIn}
           {step === 'deleting' && copy.working}
-          {held && copy.preparing}
+          {held && (readiness === 'failed' ? copy.loadFailed : copy.preparing)}
           {error}
         </p>
+        {held && readiness === 'failed' && (
+          <Button variant="outline" size="sm" onClick={retryLoad} {...retryFocus}>
+            {copy.retry}
+          </Button>
+        )}
         <div className="delete-account-actions">
           <AlertDialogCancel disabled={working}>
             {copy.cancel}
           </AlertDialogCancel>
           <Button
+            ref={confirmRef}
             variant="outline"
             className="delete-account-confirm"
             onClick={() => { void handleDelete(); }}
@@ -164,7 +183,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
             focusableWhenDisabled={held}
             aria-describedby={held ? errorId : undefined}
           >
-            {working || held ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
+            {working || (held && readiness === 'preparing') ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
             {copy.confirm}
           </Button>
         </div>

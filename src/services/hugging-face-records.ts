@@ -96,7 +96,7 @@ export function mapHuggingFacePaper(raw: HuggingFaceRecord, requestedCategories:
     huggingFaceId: arxivId,
     huggingFaceUrl: `https://huggingface.co/papers/${encodeURIComponent(arxivId)}`,
     huggingFaceUpvotes: Number(paper?.upvotes ?? raw?.upvotes) || 0,
-    year: published ? new Date(published).getUTCFullYear() : new Date().getUTCFullYear(),
+    year: published ? new Date(published).getUTCFullYear() || undefined : undefined,
     published,
     publicationType: 'preprint',
     publicationStatus: 'preprint',

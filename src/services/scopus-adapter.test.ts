@@ -71,3 +71,12 @@ test('falls back to the shared placeholder when the Scopus view carries no abstr
   assert.equal(paper!.abstract, 'No abstract available.');
 });
 
+test('a Scopus record without a cover date has no year', () => {
+  const undated = new ScopusAdapter().mapToStandard({ eid: '2-s2.0-1', 'dc:title': 'An undated record' });
+  assert.equal(undated!.year, undefined);
+  assert.equal(undated!.published, '');
+
+  const dated = new ScopusAdapter().mapToStandard({ eid: '2-s2.0-2', 'dc:title': 'A dated record', 'prism:coverDate': '2019-05-01' });
+  assert.equal(dated!.year, 2019);
+});
+

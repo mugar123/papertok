@@ -228,6 +228,24 @@ test("Crossref's JATS loses its heading and a formula's MathML twin, keeps the f
   assert.equal(works['openalex:W4410000004'].paper.abstract, 'Only the text of this abstract is kept here. Measuring $\\alpha$: Done.');
 });
 
+for (const prefix of ['', 'jats:']) {
+  test(`Crossref preserves CDATA formulas in ${prefix || 'unprefixed'} abstracts and section titles`, async t => {
+    const asked = recoveryProviders(t, {
+      crossref: () => Response.json({ message: { items: [{
+        DOI: '10.5555/cdata', type: 'journal-article',
+        abstract: `<${prefix}abstract><${prefix}sec><${prefix}title>Measuring <${prefix}alternatives><${prefix}tex-math><![CDATA[$\\alpha$]]></${prefix}tex-math><mml:math><mml:mi>α</mml:mi></mml:math></${prefix}alternatives> when $a&lt;b&gt;c$</${prefix}title><${prefix}p>We measure a production cross section at <${prefix}alternatives><mml:math><mml:mn>13</mml:mn></mml:math><${prefix}tex-math><![CDATA[$$\\sqrt{s}=13$$]]></${prefix}tex-math></${prefix}alternatives> TeV.</${prefix}p><${prefix}p>The result has p &lt; 0.05 and remains significant.</${prefix}p></${prefix}sec></${prefix}abstract>`,
+      }] } }),
+    });
+    const { env, db, ids } = await recoveryCorpus([awaitingAbstract('W4410000001', '10.5555/cdata')]);
+    await enrichPending(env, 50, NOW);
+    const { paper } = stored(db)['openalex:W4410000001'];
+    assert.equal(paper.abstract, 'Measuring $\\alpha$ when $a<b>c$: We measure a production cross section at $$\\sqrt{s}=13$$ TeV. The result has p < 0.05 and remains significant.');
+    assert.ok(paper.sources.enrichedBy.includes('crossref'));
+    assert.equal(vectorOf(db, ids['openalex:W4410000001']), undefined);
+    assert.deepEqual(semanticScholarCalls(asked), []);
+  });
+}
+
 test('what Crossref has no abstract for is asked of Semantic Scholar in one batch per step, matched by DOI', async t => {
   const asked = recoveryProviders(t, {
     crossref: () => Response.json({ message: { items: [

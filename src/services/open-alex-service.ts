@@ -621,7 +621,7 @@ async function searchAuthorIndex(query: string, signal: AbortSignal): Promise<Op
   // lookups can land on another split profile than the row the reader chose.
   url.searchParams.set('select', 'id,display_name,works_count,cited_by_count,last_known_institutions');
   const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url.toString(), {
-    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal,
+    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal, priority: true,
   });
   return (data.results || []).filter(author => author.id && author.display_name).map(author => {
     const institution = author.last_known_institutions?.[0];
@@ -643,7 +643,7 @@ async function searchAuthorBylines(expression: string, signal: AbortSignal): Pro
   // before a well-established surname completion reaches the client.
   url.searchParams.set('sort', 'cited_by_count:desc');
   const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
-    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal,
+    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal, priority: true,
   });
   const authors = new Map<string, OpenAlexAuthor>();
   for (const work of data.results || []) {

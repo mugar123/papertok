@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authPromptCopy, normalizeAuthReason } from './auth-prompt-copy.ts';
+import { authPromptCopy, authPromptViewParams, normalizeAuthReason } from './auth-prompt-copy.ts';
 import { isSignInRequiredError } from '../../utils/sign-in-required.ts';
 import { WorkerApiAuthError } from '../../services/worker-api-client.ts';
 
@@ -25,6 +25,11 @@ test('each door says why it opened', () => {
   // A reason the table does not know falls back to the general copy, not to
   // an empty dialog.
   assert.equal(authPromptCopy({ type: 'click' }).title, 'Join PaperTok');
+});
+
+test('a sign-in restored after a redirect return sends no prompt view; a normal open sends one', () => {
+  assert.equal(authPromptViewParams('default', true), null);
+  assert.deepEqual(authPromptViewParams('related', false), { surface: 'auth_prompt', reason: 'related' });
 });
 
 test('a missing session is told apart from a failure', () => {

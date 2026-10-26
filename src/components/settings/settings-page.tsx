@@ -42,6 +42,7 @@ import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { FollowingSheet } from './following-settings-page.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
+import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
 import { GithubMark } from '../ui/github-mark.tsx';
@@ -123,7 +124,6 @@ const SETTINGS_COPY = {
   dangerZone: 'Danger zone',
   dangerZoneDescription: 'Irreversible actions.',
   deleteAccount: 'Delete account',
-  deleteAccountDescription: 'Permanently deletes your account and everything in it.',
   access: 'Access',
   accessDescription: 'The ways you sign in. Each one opens the same account and the same data.',
   connectedAs: 'Connected as ',
@@ -213,7 +213,9 @@ function ProfileAccountPage() {
   const [linking, setLinking] = useState<string | null>(null);
   // Until the window can open inside the press (usePopupReady), Connect is
   // disabled but keeps focus.
-  const preparing = !usePopupReady(popupReadiness);
+  const readiness = usePopupReady(popupReadiness);
+  const preparing = readiness === 'preparing';
+  const waiting = readiness !== 'ready';
   const preparingId = useId();
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
@@ -279,7 +281,7 @@ function ProfileAccountPage() {
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
                 {!method.linked && (
                   <>
-                    <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} keepLine={false} />
+                    <PreparingNote id={`${preparingId}-${method.id}`} state={readiness} onRetry={() => popupReadiness.retry()} keepLine={false} />
                     <span id={`${preparingId}-${method.id}-hint`} className="visually-hidden">{copy.methodUnlinked}</span>
                   </>
                 )}
@@ -297,10 +299,10 @@ function ProfileAccountPage() {
                   size="sm"
                   className="settings-row-action"
                   onClick={() => { void handleLink(method); }}
-                  disabled={Boolean(linking) || preparing}
-                  focusableWhenDisabled={preparing}
+                  disabled={Boolean(linking) || waiting}
+                  focusableWhenDisabled={waiting}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
+                  aria-describedby={waiting ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
@@ -343,7 +345,7 @@ function ProfileAccountPage() {
           <div className="settings-row">
             <div className="settings-row-content">
               <h3>{copy.deleteAccount}</h3>
-              <p>{copy.deleteAccountDescription}</p>
+              <p>{DELETE_ACCOUNT_DESCRIPTION}</p>
             </div>
             <RowAction Icon={Trash} variant="rose" label={copy.deleteAccount} onClick={() => setDeleteAccountOpen(true)} />
           </div>

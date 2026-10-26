@@ -318,7 +318,9 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
   const [accountOpen, setAccountOpen] = useState(false);
-  const { pendingProvider, collision, error: signInError, preparing, signIn } = useProviderSignIn('onboarding');
+  const { pendingProvider, collision, error: signInError, readiness, retry, signIn } = useProviderSignIn('onboarding');
+  const preparing = readiness === 'preparing';
+  const waiting = readiness !== 'ready';
   const preparingId = useId();
   const [selected, setSelected] = useState(() => new Set<string>());
   const [selectedTopics, setSelectedTopics] = useState(() => new Set<string>());
@@ -478,9 +480,9 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     size="lg"
                     className="w-full"
                     onClick={() => { void signIn('github'); }}
-                    disabled={preparing}
+                    disabled={waiting}
                     focusableWhenDisabled
-                    aria-describedby={preparing ? preparingId : undefined}
+                    aria-describedby={waiting ? preparingId : undefined}
                   >
                     {preparing || pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
                     {copy.welcome.github}
@@ -490,14 +492,14 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     size="lg"
                     className="w-full"
                     onClick={() => { void signIn('google'); }}
-                    disabled={preparing}
+                    disabled={waiting}
                     focusableWhenDisabled
-                    aria-describedby={preparing ? preparingId : undefined}
+                    aria-describedby={waiting ? preparingId : undefined}
                   >
                     {preparing || pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
-                  <PreparingNote id={preparingId} preparing={preparing} keepLine={false} />
+                  <PreparingNote id={preparingId} state={readiness} onRetry={retry} keepLine={false} />
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">

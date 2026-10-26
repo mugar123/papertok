@@ -89,7 +89,7 @@ function getTaxonomyIndex() {
 
 function findLocalTopic(value: string|undefined) {
   if (!value) return null;
-  if (CATEGORIES[value as keyof typeof CATEGORIES]) {
+  if (Object.hasOwn(CATEGORIES, value)) {
     const area = CATEGORIES[value as keyof typeof CATEGORIES];
     return {
       id: value,
@@ -128,8 +128,8 @@ function findLocalTopic(value: string|undefined) {
 
 export function isScientificCategoryId(value: string|undefined) {
   if (!value) return false;
-  if (CATEGORIES[value as keyof typeof CATEGORIES]) return true;
-  if (Object.values(CATEGORIES).some(area => Boolean((area.subcategories as Record<string, { label: string }>)?.[value]))) return true;
+  if (Object.hasOwn(CATEGORIES, value)) return true;
+  if (Object.values(CATEGORIES).some(area => Object.hasOwn(area.subcategories, value))) return true;
   return /^[a-z][a-z-]*(?:\.[A-Za-z][A-Za-z-]*)+$/.test(value) || /^(?:astro|cond|hep|nucl|nlin)-[a-z-]+$/i.test(value);
 }
 
@@ -258,17 +258,18 @@ export function resolvePaperTopic(value: TopicInput | string | null | undefined)
   const label = cleanTopicText(
     concept?.display_name || concept?.displayName || concept?.name || concept?.label || value,
   );
+  // An OpenAlex topic ID carries more evidence than a coincidentally matching local name.
+  const rawId = concept?.id || concept?.openAlexId || '';
+  const externalId = String(rawId).split('/').pop()!;
+  if (/^T\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
+    return { id: externalId, label, type: 'topic', reliable: false };
+  }
   const local = findLocalTopic(concept?.categoryId || label)
     || (typeof value === 'string' ? findLocalTopic(value) : null);
   if (local) return local;
 
-  const rawId = concept?.id || concept?.openAlexId || '';
-  const externalId = String(rawId).split('/').pop()!;
   if (/^C\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
     return { id: externalId, label, type: 'concept', reliable: false };
-  }
-  if (/^T\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
-    return { id: externalId, label, type: 'topic', reliable: false };
   }
   const queryTopic = createQueryTopic(concept || label);
   if (isOpaqueQueryTopicText(rawId)) {
@@ -277,9 +278,9 @@ export function resolvePaperTopic(value: TopicInput | string | null | undefined)
   return queryTopic;
 }
 
-export function topicExplorerPath(topic: TopicTarget | null | undefined) {
+export function topicExplorerPath(topic: TopicTarget | null | undefined, publicMode = false) {
   if (!topic) return null;
-  const basePath = `/explorer/${topic.type}/${encodeURIComponent(topic.id)}`;
+  const basePath = `${publicMode ? '/public/entity' : '/explorer'}/${topic.type}/${encodeURIComponent(topic.id)}`;
   if (!topic._queryTopic) return basePath;
 
   const query = cleanTopicText(topic.metadata?.query || topic.query);

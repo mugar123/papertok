@@ -151,3 +151,26 @@ test('does not record a Crossref preprint as published', () => {
   assert.equal(preprint!.publicationType, 'preprint');
   assert.equal(preprint!.publicationStatus, 'preprint');
 });
+
+// Synthetic records (Crossref was not queried): an undated work as
+// `issued: {"date-parts": [[null]]}`. An OpenAlex failure is what sends an
+// institution page to this fallback.
+test('an undated Crossref work stays undated and no date range keeps it', async () => {
+  const thisYear = new Date().getFullYear();
+  const items = JSON.parse(`[
+    { "DOI": "10.5555/undated", "title": ["An undated work"], "type": "journal-article", "issued": { "date-parts": [[null]] } },
+    { "DOI": "10.5555/dated", "title": ["A dated work"], "type": "journal-article", "issued": { "date-parts": [[${thisYear}, 3, 1]] } }
+  ]`);
+  const request = async () => new Response(JSON.stringify({ message: { items } }), { status: 200 });
+
+  const undated = mapCrossrefInstitutionWork(items[0])!;
+  assert.equal(undated.year, undefined);
+  assert.equal(undated.published, '');
+
+  const unfiltered = await getInstitutionWorksFromCrossref('U', 1, '', {}, request);
+  assert.deepEqual(unfiltered.papers.map(paper => paper.doi), ['10.5555/undated', '10.5555/dated']);
+  for (const dateRange of ['last_year', 'last_5_years']) {
+    const result = await getInstitutionWorksFromCrossref('U', 1, '', { dateRange }, request);
+    assert.deepEqual(result.papers.map(paper => paper.doi), ['10.5555/dated'], dateRange);
+  }
+});

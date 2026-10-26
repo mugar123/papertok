@@ -29,6 +29,11 @@ test('maps a Hugging Face paper without claiming peer review, citations or a fie
   assert.equal(paper!.researchResources![0].kind, 'software');
 });
 
+test('a Hugging Face paper without a publication date keeps the year unknown', () => {
+  const paper = mapHuggingFacePaper({ paper: { id: '2607.12345', title: 'Undated', summary: 'S.' } });
+  assert.equal(paper!.year, undefined);
+});
+
 test('maps linked Hugging Face models and datasets as research resources', () => {
   const resources = mapHuggingFaceResources({
     linkedModels: [{ id: 'paper/model', downloads: 12, likes: 3 }],

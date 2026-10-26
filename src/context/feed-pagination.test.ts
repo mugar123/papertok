@@ -1,8 +1,9 @@
 import type { Paper } from '../models/paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { joinFeedPage } from './feed-notable-cards.ts';
+import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 
 const page = (index: number, count = 15) => Array.from({ length: count }, (_, n) => ({ id: `page-${index}-${n}` }) as Paper);
 
@@ -126,4 +127,69 @@ test('when the next page is empty the carried seen page is shown without a notab
   const plan = planUnshowablePage({ candidateCount: 0, currentPage: 1, seenFallback: { page: 0, papers: page(0) }, shownBeforeHere: [], notableHere: [] });
   assert.deepEqual(plan, { kind: 'show-seen', papers: page(0) });
   assert.deepEqual(notableAt(shownWith(plan.kind === 'show-seen' ? plan.papers : [])), []);
+});
+
+// A Worker that skips seen papers (PAP-103) answers each page with the next
+// papers of the reader's ranking the request's filter does not hold, so a
+// reload is one request however many pages the reader saw, and sends seen
+// papers only when the ranking has no other.
+const ids = (papers: Paper[]) => papers.map(paper => paper.id);
+
+test('a reload whose whole ranking the reader has seen shows its first page again from one request, and the reader can scroll on', () => {
+  const seen = new Set(ids(page(0)));
+  assert.equal(hasSeenRanking({ papers: page(0), skipsSeen: true }, seen), true);
+  assert.deepEqual(
+    planUnshowablePage({ candidateCount: 15, currentPage: 0, seenFallback: undefined, shownBeforeHere: page(0), rankingSeen: true }),
+    { kind: 'show-seen', papers: page(0) },
+    'no later page would have an unseen paper',
+  );
+  assert.deepEqual(pageAfterLoad(15, 0, undefined), { nextPage: 1, hasMore: true });
+  // Its unseen notable cards still take their places among the papers shown again.
+  const plan = planUnshowablePage({ candidateCount: 17, currentPage: 0, seenFallback: undefined, shownBeforeHere: [...page(0), ...notableOn(0)], notableHere: notableOn(0), rankingSeen: true });
+  assert.deepEqual(notableAt(shownWith(plan.kind === 'show-seen' ? plan.papers : [])), [[14, 'notable-0-0']]);
+});
+
+test('a page whose unseen papers the reader all knows goes one page on, and the Worker passes over them next', () => {
+  // Liked on another device: the filter does not hold them, and the feed leaves them out.
+  const seen = new Set(['seen-before']);
+  assert.equal(hasSeenRanking({ papers: page(0), skipsSeen: true }, seen), false);
+  assert.deepEqual(
+    planUnshowablePage({ candidateCount: 15, currentPage: 0, seenFallback: undefined, shownBeforeHere: [], rankingSeen: false }),
+    { kind: 'next-page', page: 1, seenFallback: undefined },
+  );
+});
+
+test('a page of papers the reader saw before the 2,000 most recent is not their whole ranking: the Worker was not told of them', () => {
+  const later = Array.from({ length: 2_000 }, (_, n) => ({ id: `later-${n}` }) as Paper);
+  // Oldest first, the way the session lists the papers it has seen.
+  const held = new Set(feedSeenIds([...ids(page(0)), ...ids(later)], true));
+  assert.equal(hasSeenRanking({ papers: page(0), skipsSeen: true }, held), false, 'the request left them out, so the Worker sent them as unseen');
+  assert.equal(hasSeenRanking({ papers: later.slice(-15), skipsSeen: true }, held), true, 'the request held these');
+});
+
+test('a seen notable card, or a Worker that pages by number, does not say the reader saw their ranking', () => {
+  const seen = new Set([...ids(page(0)), 'notable-0-0']);
+  assert.equal(hasSeenRanking({ papers: [...page(1), ...notableOn(0)], skipsSeen: true }, seen), false, 'the ranking has unseen papers');
+  assert.equal(hasSeenRanking({ papers: page(0), skipsSeen: false }, seen), false, 'the app walks the pages itself, as before');
+  assert.deepEqual(
+    planUnshowablePage({ candidateCount: 15, currentPage: 0, seenFallback: undefined, shownBeforeHere: page(0), rankingSeen: false }),
+    { kind: 'next-page', page: 1, seenFallback: { page: 0, papers: page(0) } },
+  );
+});
+
+// ENG-103: a follow change keeps the cards through the one the reader is on
+// and asks for the first page again. From a Worker that skips seen papers,
+// that page goes on with the session's walk, under the session's exclusion
+// snapshot, so the Worker finds the order it kept for the session.
+test("only a follow change's first page goes on with the walk, and only from a Worker that skips seen papers", () => {
+  const followChange = { reset: true, keepThroughVisible: true, currentPage: 0, relaxExclusions: false, workerSkipsSeen: true };
+  assert.equal(continuesWalk(followChange), true);
+  const others = {
+    'a refresh, an interests edit or a reload': { keepThroughVisible: false },
+    'a later page, which goes on anyway': { reset: false, currentPage: 3 },
+    "the follow change's next page": { currentPage: 1 },
+    'the first page again without exclusions': { relaxExclusions: true },
+    'a Worker that pages by number': { workerSkipsSeen: false },
+  };
+  for (const [name, other] of Object.entries(others)) assert.equal(continuesWalk({ ...followChange, ...other }), false, name);
 });

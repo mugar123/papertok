@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 
+import { getArxivArchiveArea } from '../data/category-taxonomy.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
 
@@ -80,14 +81,22 @@ export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydr
   if (!seed || typeof seed !== 'object') return hydrated;
   const keep = <K extends keyof Paper>(field: K) => (present(seed[field]) ? seed[field] : hydrated[field]);
   const fresh = <K extends keyof Paper>(field: K) => (present(hydrated[field]) ? hydrated[field] : seed[field]);
+  // Native arXiv metadata can replace a concept-only copy. An OpenAlex fallback
+  // cannot replace known native categories; keep the category lists together.
+  const classification = hydrated.sources?.primary === 'arxiv' && hydrated.primaryCategory
+    && getArxivArchiveArea(hydrated.primaryCategory)
+    ? hydrated
+    : present(seed.categories) || present(seed.primaryCategory) ? seed : hydrated;
   return {
     ...hydrated,
     id: keep('id'),
     title: keep('title'),
     authors: hydratedAuthors(seed.authors, hydrated.authors),
     abstract: hydratedAbstract(seed.abstract, hydrated.abstract),
-    primaryCategory: keep('primaryCategory'),
-    categories: keep('categories'),
+    primaryCategory: classification.primaryCategory,
+    categories: classification.categories,
+    allCategories: classification.allCategories ?? classification.categories,
+    primaryTopic: fresh('primaryTopic'),
     doi: keep('doi'),
     arxivId: keep('arxivId'),
     journal: keep('journal'),
