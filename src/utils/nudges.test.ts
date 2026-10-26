@@ -18,6 +18,7 @@ import {
   rememberNudgeDismissal,
   rememberPrivacyNotice,
 } from './nudges.ts';
+import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
 
 const fakeStorage = (seed: Record<string, string> = {}) => {
   const map = new Map(Object.entries(seed));
@@ -265,14 +266,21 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {
-  const version = '2026-10-26';
-  const effectiveAt = '2026-10-26T18:00:00Z';
+  // The shipped instant is 05:00:00Z on 26 October: #363, the last announced
+  // privacy.html change, was merged at 04:51:54Z and its Vercel deployment
+  // succeeded at 04:52:18Z. Whoever signed up on that text has nothing to be
+  // told, even though the notice itself deploys later.
+  const version = PRIVACY_POLICY_VERSION;
+  const effectiveAt = PRIVACY_POLICY_EFFECTIVE_AT;
   const owed = (user: { uid: string; metadata?: { creationTime?: string | null } } | null, storage = fakeStorage(), signedIn = true) =>
     privacyOwedFor({ user, signedIn, version, effectiveAt, storage });
   assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }), true, 'an older account');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 17:59:59 GMT' } }), true, 'a second before');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 18:00:00 GMT' } }), false, 'the effective instant');
-  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 20:00:00 GMT' } }), false, 'a new account');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 04:51:53 GMT' } }), true, 'created before #363 was merged');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 04:59:59 GMT' } }), true, 'a second before');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 05:00:00 GMT' } }), false, 'the effective instant');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 05:00:01 GMT' } }), false, 'a second after');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 15:00:00 GMT' } }), false, 'a new account, hours before the notice deploys');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Tue, 27 Oct 2026 09:00:00 GMT' } }), false, 'a new account the next day');
   assert.equal(owed({ uid: 'a' }), true, 'no metadata: told');
   assert.equal(owed(null), false, 'nobody');
   assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }, fakeStorage(), false), false, 'not signed in');

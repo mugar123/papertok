@@ -17,17 +17,22 @@
 export const PRIVACY_POLICY_VERSION = '2026-10-26';
 
 /**
- * When this version goes live, as an ISO UTC instant on the day of the version.
- * An account created before it is told; one created at or after it is not. Keep
- * it at or AFTER the moment the new privacy.html is live in production, never
- * before: an earlier instant skips the accounts created between it and the
- * deploy, who read the old policy and are never told; a later one only tells
- * the few accounts created in between, who did not need it. If it ends up
- * before the deploy, raise it before merging. Once the deploy is live it may be
- * lowered to the actual deploy time, so later sign-ups stop seeing the notice.
- * If the deploy lands on a later UTC day, bump the page's date,
+ * When the announced policy text went live, as an ISO UTC instant on the day of
+ * the version. An account created before it read an older policy and is told;
+ * one created at or after it started under the announced text and is not. Keep
+ * it at or AFTER the moment the announced policy text is live in production,
+ * never before: an earlier instant skips the accounts created between it and
+ * that moment, who read the old policy and are never told; a later one only
+ * tells a few accounts that did not need it. Only the text's deploy counts, not
+ * the deploy of this notice. When the text ships in the same PR, that moment is
+ * not known yet: set a time after the merge, raise it before merging if the
+ * merge slips, and lower it to the deployment's success time once it is live.
+ * If the text goes live on a later UTC day, bump the page's date,
  * PRIVACY_POLICY_VERSION and this instant together.
+ *
+ * 2026-10-26T05:00Z: #363, the last announced privacy.html change, finished
+ * deploying at 04:52:18Z (the Vercel status of its merge commit).
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T18:00:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T05:00:00Z';
 
 export const PRIVACY_POLICY_CHANGE = 'Usage analytics is now on by default: PostHog keeps an identifier in this browser that connects your visits across days and links them to your account (turn it off in Settings), error reports go to PostHog, each request for more papers now sends the server your interests, what you follow, up to 24 papers you liked, saved or read at length, and a filter of the papers you viewed or were shown, to rank the page, and the server keeps your feed order for up to 2 hours and counts requests per account.';
