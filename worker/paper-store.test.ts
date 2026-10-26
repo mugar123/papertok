@@ -1697,6 +1697,21 @@ test('an erratum the enrichment reveals leaves every lane; a letter stays', asyn
   assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'publicationType' = 'letter' AND id IN (SELECT work_id FROM work_lanes)").length, 1);
 });
 
+test('a record that folds a retracted row into a filed one takes the paper out of every lane', async () => {
+  const { env, db } = corpus();
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: journal, lanes: ['bio.comp'] }], { now: NOW });
+  // The enrichment finds the journal version retracted.
+  const [retracted] = rows(db, "SELECT id, paper FROM works WHERE paper ->> '$.id' = 'openalex:W1'").map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, [{ ...retracted, after: { ...retracted.before, publicationStatus: 'retracted' } }], NOW);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG']);
+  // Another source's record of both folds them into the arXiv row.
+  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: ['bio.comp'] }], { now: NOW });
+  const works = rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)) as Paper);
+  assert.deepEqual(works.map(paper => [paper.id, paper.publicationStatus]), [['2610.11111', 'retracted']]);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes'), []);
+});
+
 test('a review or a conference paper the enrichment reveals keeps every lane', async () => {
   const { env, db } = corpus();
   const record = { ...arxivRecord, allCategories: [], categories: [] };

@@ -103,8 +103,9 @@ from its store the second time. The lanes spend from the 3,000 of the
 harvest's 4,000 units a day that the category lanes share with the notable
 lanes: with the topic lanes (195 at most), the area lanes (9) and the
 working-paper series (4), a night's category calls are at most 448, and the
-notable lanes add 390 on their first night and at most 80 a night for
-re-listings (a new lane whose first listing failed is listed again beside
+notable lanes add ten for each new lane on its first night (440 for the 44
+journal lanes of 2026-10-26) and at most 180 a night for re-listings (18 of
+123 lanes; a new lane whose first listing failed is listed again beside
 them).
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
@@ -153,6 +154,58 @@ notable lane from its topics (`openAlexNotableFilterForLeaf`): a notable lane
 has one OpenAlex listing. Each batch of admitted leaves changes what every
 reader of those leaves is shown and adds ten OpenAlex list calls a week per
 leaf, so it is authorized under AGENTS.md before it is committed.
+
+## The 2026-10-26 journal notable sample
+
+Every leaf with a venue lane and no notable lane from its topics was sampled:
+51 leaves, with one keyless request each between 09:31 and 09:33 UTC on
+2026-10-26 (50 requests: cs.SY and eess.SY have the same lane, and share one
+page and its labels). Each sheet named the leaf in its heading and held
+shuffled opaque row IDs, the title and the first 1,500 characters of the
+decoded abstract, and nothing else. The samples were labelled by the agent at
+Nicolás's request: five fresh agent contexts, one per group below, each given
+only its own sheets (that a labeller read nothing else cannot be proved from
+the files), answering whether a researcher who chose the leaf would recognise
+the article as a notable work of their field. The labels were joined to the
+work IDs afterwards. 44 leaves passed; the counts are articles on target
+without doubt, of 15.
+
+| Group | Passed | Rejected |
+| --- | --- | --- |
+| Physics | astro-ph.EP 15, cond-mat.mtrl-sci 15, cond-mat.quant-gas 11, gr-qc 14, math-ph 12, physics.bio-ph 11, physics.comp-ph 14, physics.plasm-ph 11 (one doubted), quant-ph 15 | nucl-ex 8, nucl-th 8 |
+| Economics, finance and statistics | econ.EM 13, econ.GN 14, econ.TH 13, q-fin.MF 15, stat.AP 15, stat.ME 15, stat.ML 14, stat.TH 15 | none |
+| Computer science and electrical engineering | cs.CR 15, cs.DB 14, cs.DC 12, cs.GR 14, cs.HC 15, cs.IR 12, cs.PL 13, cs.RO 13, cs.SY and eess.SY 15, eess.SP 13 | cs.AI 9, cs.MM 3 |
+| Mathematics | math.AP 11 (one doubted), math.DG 12, math.FA 10, math.LO 14, math.MP 11 (one doubted), math.NA 15, math.NT 15, math.OC 15, math.PR 14, math.ST 15 | math.CA 7, math.GT 5 |
+| Engineering | chemeng.bio 10, chemeng.sep 12, civil.mat 13, civil.urban 13, mech.acoustics 14, mech.cad 13 | mech.auto 9 |
+
+What the off-target articles of the rejected leaves were about, by their
+labellers: nucl-ex and nucl-th, whose lanes share Physical Review C and the
+Journal of Physics G, 7 each, mostly particle physics, astroparticle and
+cosmology reports (PDF4LHC, KM3NeT, IceCube-Gen2, JUNO); cs.AI 6 of natural
+language processing and machine learning, which arXiv's cs.AI leaves out;
+cs.MM 12, mostly computer vision and medical image analysis; math.CA 8, mostly
+neural-network approximation and number theory; math.GT 10, mostly algebraic
+K-theory, quantum algebra and mathematical physics, with some symplectic and
+algebraic geometry; mech.auto 6 of railway vehicle dynamics. These leaves keep
+their venue lanes and get no notable lane from their journals.
+
+The sample is evidence about the head of each lane's ten-year population with
+an abstract (`meta.count` of its response); the listing takes up to 100 works
+a year, with or without an abstract. For eight admitted leaves that population
+is under 1,000: math.DG 180, eess.SP 357, stat.ML 683, q-fin.MF 804, econ.TH
+838, cs.CR 846, math.FA 994 and cs.DC 995. Their listing reaches beyond what
+the sample measured: in a year with fewer than 100 works it lists every work
+the lane's journals published, uncited ones included, and, for a lane that
+publishes about 100 or fewer a year, the listing of the year just ended can
+hold its last months' works, which the feed then offers only as notable cards
+until the next listing. Ten more are under 2,000: cs.IR, cs.DB, stat.AP,
+physics.comp-ph, mech.acoustics, econ.EM, stat.TH, math.ST, physics.bio-ph and
+math.LO. As for the topic notables, the check after the lanes deploy covers
+the rest: count each admitted lane's works and citations a year. The 44 lanes
+bring up to about 41,000 new papers on their first night (44 lanes of up to
+1,000, less the near-identical listings of cs.SY and eess.SY, math-ph and
+math.MP, math.ST and stat.TH) for the nightly enrichment and embedding to
+reach.
 
 ## The 2026-10-23 and 2026-10-24 samples
 
