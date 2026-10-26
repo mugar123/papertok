@@ -692,6 +692,47 @@ test('a paper with a DOI is looked up by the DOI first, and falls back to the OA
   }
 });
 
+test('a card asks Graph for the DOI as Graph stores it: bare and lowercase', async () => {
+  // Graph lists the arXiv DOI as `10.48550/arxiv.2203.10143`, while an arXiv
+  // or Crossref record can carry `10.48550/arXiv.…` or an uppercase publisher DOI.
+  const forms: [string, string][] = [
+    ['10.48550/arXiv.2203.10143', '10.48550/arxiv.2203.10143'],
+    ['10.1016/J.CELL.2020.01.001', '10.1016/j.cell.2020.01.001'],
+    ['https://doi.org/10.1145/3555174', '10.1145/3555174'],
+    ['https://dx.doi.org/10.1016/J.Cell.2020.01.001', '10.1016/j.cell.2020.01.001'],
+    ['doi:10.1145/3555174', '10.1145/3555174'],
+    ['  10.1145/3555174  ', '10.1145/3555174'],
+  ];
+  for (const [stored, sent] of forms) {
+    const requests: URL[] = [];
+    CACHE.clear();
+    try {
+      await withStubbedFetch(graphFetch(requests, () => publications([])), () => getProjectForPaper(undefined, stored));
+      assert.deepEqual(requests.map(request => request.searchParams.get('pid')), [sent], stored);
+    } finally {
+      CACHE.clear();
+    }
+  }
+});
+
+test('the same DOI in another spelling is one card lookup, and a string that is no DOI is not asked for', async () => {
+  const requests: URL[] = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(graphFetch(requests, () => publications([MONETIZATION_PUBLICATION])), async () => {
+      await getProjectForPaper(undefined, '10.1016/J.CELL.2020.01.001');
+      await getProjectForPaper(undefined, 'https://doi.org/10.1016/j.cell.2020.01.001');
+      assert.equal(requests.length, 1, 'the second spelling is the first one answered');
+      assert.equal(await getProjectForPaper(undefined, 'not a DOI'), null);
+      assert.equal(requests.length, 1, 'no pid for a string that is no DOI');
+      await getProjectForPaper('2203.10143', 'not a DOI');
+      assert.deepEqual(requests.slice(1).map(request => [...request.searchParams.keys()][0]), ['originalId'], 'the arXiv id is still looked up');
+    });
+  } finally {
+    CACHE.clear();
+  }
+});
+
 test('a DOI record with no project is the answer: its arXiv copy is not asked for', async () => {
   // OpenAIRE deduplicates the two into one record (10.1145/3555174 and
   // 2203.10143 answer the same doi_dedup___ id), so a second lookup would

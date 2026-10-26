@@ -26,6 +26,7 @@ export interface Project {
 interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number | null; }
 
 import { deduplicateProjectParticipants } from '../utils/entity-metadata.ts';
+import { normalizeDoi } from '../utils/public-navigation.ts';
 import { withEnforcedDeadline } from '../utils/request-deadline.ts';
 import { readSourceCache, writeSourceCache } from '../utils/source-cache.ts';
 import { normalizeSearchText, scoreSearchMatch, withinOneEdit } from '../utils/search-relevance.ts';
@@ -170,11 +171,16 @@ async function lookUpPublication(lookup: Record<string, string>) {
  * Every answer is kept for the session, a miss or a failure included: the card
  * asks when it settles, and asking again on each render only paid the same
  * empty answer again.
+ *
+ * The DOI goes to Graph bare and in lowercase, the way Graph stores it
+ * (`10.48550/arxiv.2203.10143`): the paper may carry `10.48550/arXiv.…`, an
+ * uppercase publisher DOI or a `doi.org` URL.
  */
 export async function getProjectForPaper(arxivId: string | undefined, doi: string | null | undefined) {
-  if (!arxivId && !doi) return null;
+  const pid = normalizeDoi(doi);
+  if (!arxivId && !pid) return null;
 
-  const cacheKey = `project_${arxivId || doi}`;
+  const cacheKey = `project_${arxivId || pid}`;
   if (CACHE.has(cacheKey)) {
     const cached = CACHE.get(cacheKey)!;
     if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data as Project | null;
@@ -182,7 +188,7 @@ export async function getProjectForPaper(arxivId: string | undefined, doi: strin
 
   let project: Project | null = null;
   try {
-    let lookup = doi ? await lookUpPublication({ pid: doi }) : null;
+    let lookup = pid ? await lookUpPublication({ pid }) : null;
     // The arXiv record only when the DOI finds no publication at all. A
     // publication with no project is the usual answer, and its arXiv copy is
     // the same deduplicated record (10.1145/3555174 and 2203.10143 are one,

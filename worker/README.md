@@ -772,7 +772,7 @@ builds the shared requests and validates the answers for the browser and the Wor
 | --- | --- |
 | Project search (browser) | `/projects` by `search`, `acronym` or `title` |
 | Project page (browser), share pages (Worker) | `/projects?id=<OpenAIRE id>`, or `code=<grant code>&fundingShortName=<funder>` |
-| Project badge on a card (browser) | `/research-products?pid=<DOI>&type=publication`; when the DOI finds no publication, `originalId=oai:arXiv.org:<id without version>` |
+| Project badge on a card (browser) | `/research-products?pid=<DOI>&type=publication`, with the DOI bare and in lowercase as Graph stores it; when the DOI finds no publication, `originalId=oai:arXiv.org:<id without version>` |
 | Project publications: Explorer and Following (browser), digest and followed project lanes (Worker) | `/research-products` by `relProjectId=<OpenAIRE id>`, or `relProjectCode=<grant code>&relProjectFundingShortName=<funder>`, with `type=publication&sortBy=publicationDate DESC` |
 
 - A grant code is not unique across funders, so a bare code is always asked with
