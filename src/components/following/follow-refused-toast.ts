@@ -4,9 +4,9 @@ import { FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS
 /**
  * Says why a press of Follow or Unfollow changed nothing, when `toggleFollow`
  * rejects. The toast stays until it is closed: the toast region comes before
- * the page in the tab order, so a keyboard reaches its action only through
- * the region's hotkey, and a toast that left after 4 s took the action and a
- * 25-word message with it (WCAG 2.2.1).
+ * the page in the tab order, so Tab from the button never reaches its action,
+ * and a toast that left after 4 s took the action and a 25-word message with
+ * it before a keyboard or screen-reader user could get there (WCAG 2.2.1).
  */
 export function toastFollowRefused(error: unknown, { name, following, openSettings }: {
   name: string;

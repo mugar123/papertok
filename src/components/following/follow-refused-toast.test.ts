@@ -14,9 +14,9 @@ function shown(id: string | number) {
 }
 
 // ENG-123: the Explorer's Follow is refused for a journal past the limit, or
-// while the follow list is not in hand. Each toast stays until it is closed,
-// so a keyboard, which reaches the toast region only through its hotkey, can
-// still reach the action.
+// while the follow list is not in hand. Each toast stays until it is closed:
+// Tab from the button does not reach the toast region, which comes first in
+// the page, so a keyboard user needs time to get to the action.
 test('a journal past the limit is refused in a toast that stays, with a way to Settings', () => {
   let opened = 0;
   const toastShown = shown(toastFollowRefused(new JournalFollowLimitError(), {
