@@ -61,18 +61,18 @@ export default function NudgePanel({
       </div>
       <div className="nudge-actions">
         <Button size="sm" onClick={action.onClick}>{action.label}</Button>
+        {onDismiss && (
+          <button
+            type="button"
+            className="nudge-dismiss"
+            onClick={onDismiss}
+            aria-label={dismissLabel}
+            title={dismissLabel}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
       </div>
-      {onDismiss && (
-        <button
-          type="button"
-          className="nudge-dismiss"
-          onClick={onDismiss}
-          aria-label={dismissLabel}
-          title={dismissLabel}
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
-      )}
     </motion.aside>
   );
 }

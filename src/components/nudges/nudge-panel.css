@@ -9,7 +9,7 @@
   bottom: calc(20px + var(--inset-bottom));
   display: grid;
   width: min(520px, calc(100vw - 40px));
-  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   gap: 12px;
   padding: var(--nudge-pad);
   border: 1px solid var(--border-strong);
@@ -54,11 +54,12 @@
   text-underline-offset: 2px;
 }
 
-/* Two answers take a row of their own under the copy: beside it, the copy
-   would be squeezed to a column of single words. */
+/* Got it and the close button share one container, in the order they are read
+   and tabbed, so the layout can move them together. */
 .nudge-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .nudge-dismiss {
@@ -87,7 +88,7 @@
    it would squeeze it to a column of single words. */
 @media (max-width: 560px), (max-height: 480px) {
   .nudge {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr);
     column-gap: 0;
     row-gap: 12px;
     align-items: start;
@@ -102,12 +103,6 @@
   .nudge-copy {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .nudge-dismiss {
-    grid-column: 3;
-    grid-row: 1;
-    margin-left: 8px;
   }
 
   .nudge-actions {
@@ -129,7 +124,7 @@
     right: 12px;
     bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .nudge-icon {
@@ -138,10 +133,6 @@
 
   .nudge-copy {
     grid-column: 1;
-  }
-
-  .nudge-dismiss {
-    grid-column: 2;
   }
 }
 
