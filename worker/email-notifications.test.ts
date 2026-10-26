@@ -3648,6 +3648,37 @@ test('gives the identity lookup and both provider probes a deadline', async () =
   }
 });
 
+test('an Identity Toolkit outage on a notification route is a retryable 503, not a sign-out', async t => {
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new TypeError('network connection lost');
+  });
+
+  await assert.rejects(
+    () => withIdentityCache(() => handleEmailNotificationRequest(
+      preferencesRequest(),
+      identityEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    )),
+    error => (error as { code?: string }).code === 'EMAIL_UNAVAILABLE' && (error as { status?: number }).status === 503,
+  );
+});
+
+test('a Worker without the Firebase web key answers a notification route 503 EMAIL_NOT_CONFIGURED and asks nobody', async t => {
+  const lookup = t.mock.method(globalThis, 'fetch', async () => jsonResponse(200, {
+    users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
+  }));
+
+  await assert.rejects(
+    () => withIdentityCache(() => handleEmailNotificationRequest(
+      preferencesRequest(),
+      emailEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    )),
+    error => (error as { code?: string }).code === 'EMAIL_NOT_CONFIGURED' && (error as { status?: number }).status === 503,
+  );
+  assert.equal(lookup.mock.callCount(), 0);
+});
+
 test('sends the Resend digest with one-click unsubscribe headers', async () => {
   const now = new Date('2026-08-10T08:00:00Z');
   const subscriptionKey = 'notification:subscription:resend-reader';
