@@ -57,6 +57,11 @@ test('the digest leaves journals out before it cuts follows and previews', () =>
   const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [...Array.from({ length: 20 }, (_, index) => journalOnly(index)), byAuthor] as never);
   assert.deepEqual(previewItems.map(item => item.id), ['a1']);
   assert.deepEqual(previewItems[0].matches.map(match => match.type), ['author']);
+
+  // `_followedEntityMatches` may still hold a legacy string match: the paper
+  // stays a preview, as it did before journals.
+  const legacy = { id: 'p3', title: 'P3', _followedEntityMatches: ['project-3'] };
+  assert.deepEqual(buildNotificationPreferencesPayload({ enabled: true }, [], [legacy]).previewItems.map(item => item.id), ['p3']);
 });
 
 // ENG-123 (D6): the email settings, the guest opt-in and the background sync

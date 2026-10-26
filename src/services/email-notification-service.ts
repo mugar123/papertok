@@ -1,4 +1,4 @@
-import type { Paper, PaperAuthor } from '../models/paper.ts';
+import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
 import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
@@ -175,6 +175,8 @@ export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
   return follows.some(isDigestFollow);
 }
 
+const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 'string' && match.type === 'journal';
+
 /**
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
@@ -195,9 +197,11 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English-only must not keep the emails in Spanish.
     language: 'en',
     follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
-    // A paper that matches journals only is not in the digest.
+    // A paper that matches journals only is not in the digest. Any other
+    // match keeps it, a legacy string match included: the Worker drops that
+    // match (`sanitizeFollow`) and keeps the paper, as before journals.
     previewItems: previewItems
-      .filter(paper => !paper._followedEntityMatches?.length || paper._followedEntityMatches.some(isDigestFollow))
+      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
       .slice(0, 20)
       .map(paper => serializeUpdateForNotifications(paper)),
   };
