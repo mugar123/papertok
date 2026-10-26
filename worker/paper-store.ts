@@ -1308,11 +1308,14 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     .map(follow => ({ follow, lane: followLane(follow) }))
     .filter(({ lane }) => lane);
   // The first MAX_FOLLOWED_JOURNALS journals only, whatever a client stored:
-  // each is a lane the nightly harvest lists.
-  const pastJournalCap = new Set(served.filter(({ lane }) => lane.startsWith('source:')).slice(MAX_FOLLOWED_JOURNALS));
+  // each is a lane the nightly harvest lists. They come on top of the
+  // FEED_MAX_FOLLOWS other follows, which a client sends in document-id order
+  // with the journals ahead of its projects and topics.
+  const isJournal = ({ lane }: { lane: string }) => lane.startsWith('source:');
+  const journals = new Set(served.filter(isJournal).slice(0, MAX_FOLLOWED_JOURNALS));
+  const others = new Set(served.filter(entry => !isJournal(entry)).slice(0, FEED_MAX_FOLLOWS));
   const follows = served
-    .filter(entry => !pastJournalCap.has(entry))
-    .slice(0, FEED_MAX_FOLLOWS)
+    .filter(entry => journals.has(entry) || others.has(entry))
     .map(({ follow, lane }) => ({
       type: text(follow.type) as PaperFollowMatch['type'],
       canonicalId: text(follow.canonicalId).slice(0, 200),

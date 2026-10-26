@@ -504,6 +504,17 @@ test('a request serves at most 10 followed journals, and still its other follows
   ]);
 });
 
+test("a request's journals do not take the lanes of its 20 other follows", () => {
+  const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const others = [
+    ...Array.from({ length: 8 }, (_, index) => ({ type: 'author', canonicalId: `A${5000 + index}`, displayName: `Author ${index}` })),
+    ...Array.from({ length: 14 }, (_, index) => ({ type: 'topic', canonicalId: `T${2000 + index}`, displayName: `Topic ${index}` })),
+  ];
+  const { follows } = parseFeedRequest({ categories: [], follows: [...journals, ...others] });
+  assert.equal(follows.filter(follow => follow.type === 'journal').length, 10);
+  assert.equal(follows.filter(follow => follow.type !== 'journal').length, 20);
+});
+
 test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
   assert.deepEqual(parseFeedRequest(null).negativeIds, []);
   assert.deepEqual(parseFeedRequest(null).excludedIds, []);
