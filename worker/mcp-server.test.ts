@@ -274,10 +274,52 @@ test('search_papers ranks the merged list, so an arXiv-only title match survives
     if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(llama));
     throw new Error(`unexpected upstream ${url}`);
   }, async () => {
-    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'llama 2' });
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'llama 2', limit: 10 });
     const papers = answer.result?.structuredContent?.papers as Array<{ arxivId?: string }>;
     assert.equal(papers.length, 10);
     assert.equal(papers[0].arxivId, '2307.09288');
+  });
+});
+
+test('a search of large collaborations stays inside what an MCP client reads', async () => {
+  const abstract = Object.fromEntries(Array.from({ length: 220 }, (_, index) => [`word${index}`, [index]]));
+  const collaboration = (index: number) => ({
+    ...OPENALEX_WORK,
+    id: `https://openalex.org/W44000002${index}0`,
+    doi: `https://doi.org/10.1234/collab.${index}`,
+    ids: {},
+    title: `Graphene collaboration ${index}`,
+    abstract_inverted_index: abstract,
+    authorships: Array.from({ length: 2_000 }, (_, author) => ({
+      author: { id: `https://openalex.org/A${index}${author}`, display_name: `Author ${author}` },
+      institutions: [{ id: `https://openalex.org/I${index}${author % 180}`, ror: `https://ror.org/${author % 180}`, display_name: `Institute ${author % 180} of Physics` }],
+    })),
+    concepts: Array.from({ length: 12 }, (_, concept) => ({ id: `https://openalex.org/C${concept}`, display_name: `Concept ${concept}`, level: 2, score: 0.9, wikidata: `https://www.wikidata.org/wiki/Q${concept}` })),
+    topics: Array.from({ length: 8 }, (_, topic) => ({
+      id: `https://openalex.org/T${topic}`,
+      display_name: `Topic ${topic}`,
+      score: 0.9,
+      subfield: { id: 'https://openalex.org/subfields/3104', display_name: 'Condensed Matter Physics' },
+      field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+      domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+    })),
+  });
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: Array.from({ length: 10 }, (_, index) => collaboration(index)) });
+    return new Response(arxivFeed(''));
+  }, async () => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
+    const papers = answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
+    assert.equal(papers.length, 5, 'the default limit');
+    // The text block and structuredContent each carry the payload. Claude Code
+    // stops reading a tool result at about 25,000 tokens, which JSON spends at
+    // roughly three bytes each.
+    const bytes = new TextEncoder().encode(answer.result?.content?.[0].text).length;
+    assert.ok(bytes < 40_000, `${bytes} bytes for the default search`);
+    for (const paper of papers) {
+      assert.equal(paper.summary, undefined, 'the abstract is not sent twice');
+      assert.equal(paper.raw, undefined);
+    }
   });
 });
 

@@ -49,8 +49,15 @@ const MCP_CALLER_MINUTE = Object.freeze({ namespace: 'mcp', limit: 30 });
 // custom tokens), so this one names no reader.
 const MCP_PROVIDER_SUBJECT = Object.freeze({ uid: 'mcp:agents' });
 const MAX_RESULTS = 10;
-// One paper of a large collaboration lists thousands of authors.
-const MAX_AUTHORS = 100;
+const DEFAULT_SEARCH_LIMIT = 5;
+// A client reads a tool result up to a ceiling (Claude Code's default is about
+// 25,000 tokens), and the payload travels twice, as text and as structured
+// content. One paper of a large collaboration lists thousands of authors and
+// hundreds of institutions, so each list a paper carries is cut.
+const MAX_AUTHORS = 20;
+const MAX_INSTITUTIONS = 10;
+const MAX_SUBJECTS = 5;
+const MAX_TOPICS = 3;
 const MAX_OA_LOCATIONS = 5;
 
 const SERVER_INFO = Object.freeze({ name: 'papertok', title: 'PaperTok', version: '1.0.0' });
@@ -64,14 +71,14 @@ const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with author lists cut at ${MAX_AUTHORS} names. A source that is unavailable or over its budget is listed in "unavailable".`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI or arXiv id. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with author lists cut at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, and concepts and topics at ${MAX_SUBJECTS} and ${MAX_TOPICS}. A source that is unavailable or over its budget is listed in "unavailable".`,
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', minLength: 2, maxLength: 300, description: 'Search words.' },
         sources: { type: 'array', items: { type: 'string', enum: ['openalex', 'arxiv'] }, minItems: 1, uniqueItems: true, description: 'Defaults to both.' },
         since: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Only papers published or submitted on or after this date (YYYY-MM-DD).' },
-        limit: { type: 'integer', minimum: 1, maximum: MAX_RESULTS, default: MAX_RESULTS },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_RESULTS, default: DEFAULT_SEARCH_LIMIT },
       },
       required: ['query'],
       additionalProperties: false,
@@ -183,7 +190,7 @@ function searchArguments(args: Arguments) {
     if (!valid) throw new InvalidArguments('since must be a date as YYYY-MM-DD');
     since = args.since as string;
   }
-  return { query, sources: sources as string[], since, limit: integerArgument(args.limit, MAX_RESULTS, 'limit') };
+  return { query, sources: sources as string[], since, limit: integerArgument(args.limit, DEFAULT_SEARCH_LIMIT, 'limit') };
 }
 
 // ─── Asking the routes ───
@@ -221,10 +228,24 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   throw new ToolFailure({ code: answer?.code || 'UPSTREAM_UNAVAILABLE', upstreamStatus: response.status });
 }
 
-// The provider's record is left behind, and an author list is bounded.
+// The provider's record is left behind, with what only repeats other fields
+// (`summary` is the abstract, `allCategories` and `keywords` often the
+// categories) or is internal to the feed, and every list is bounded.
 function publicPaper(paper: Partial<Paper>) {
-  const relayed = { ...paper, authors: (paper.authors || []).slice(0, MAX_AUTHORS) };
+  const relayed: Partial<Paper> = {
+    ...paper,
+    authors: (paper.authors || []).slice(0, MAX_AUTHORS),
+    institutions: (paper.institutions || []).slice(0, MAX_INSTITUTIONS),
+    concepts: (paper.concepts || []).slice(0, MAX_SUBJECTS),
+    topics: (paper.topics || []).slice(0, MAX_TOPICS),
+  };
   delete relayed.raw;
+  delete relayed.summary;
+  delete relayed._followedEntityMatches;
+  delete relayed._fetchedFor;
+  const categories = JSON.stringify(relayed.categories || []);
+  if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;
+  if (JSON.stringify(relayed.keywords || []) === categories) delete relayed.keywords;
   return relayed;
 }
 
