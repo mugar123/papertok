@@ -932,7 +932,7 @@ SDK is not used, so the package lock is unchanged.
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when arXiv refuses or fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
@@ -976,16 +976,18 @@ agents in the lowest budget tier, so the tools call the relays' agent entry
 points:
 
 - `handleAgentOpenAlex` bills every OpenAlex miss in the `exploration` tier: a
-  search's ten units, and the one unit of the one-work `filter=doi:` list that
-  `get_paper` asks for a DOI the relay cannot carry in its path (`doiPathId`),
-  which a reader opening a paper spends in `essential`. A lookup by id is a
-  free entity lookup.
+  search's ten units, and the one unit of each one-work list `get_paper` asks
+  for, which a reader opening a paper spends in `essential`: the arXiv
+  fallback, and the `filter=doi:` list for a DOI the relay cannot carry in its
+  path (`doiPathId`). A lookup by id is a free entity lookup.
 - `handleAgentArxiv` takes the beat's seat only for the current three-second
   period, never one ahead, and like any request from outside the Worker only a
   public (even) seat. Readers book seats up to four seconds ahead, so an
-  agent gets only a seat no reader booked. A refused seat is
-  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds: 3`, under `unavailable` in a
-  search.
+  agent gets only a seat no reader booked, and a search's own arXiv miss takes
+  the seat of its period. A refused seat is `PROVIDER_RATE_LIMITED` with
+  `retryAfterSeconds: 3`, under `unavailable` in a search; `get_paper` then
+  asks OpenAlex, and logs arXiv's refusal with `source: 'arxiv'` when OpenAlex
+  has the paper.
 
 Arguments are validated before any reservation; `sources` is read in any case
 (`arXiv`, `OpenAlex`). Each `tools/call` then
@@ -1006,7 +1008,10 @@ code, as `{route: '/mcp', tool, code, status}`, and reports the 5xx-class failur
 to PostHog as the routes report theirs. A search writes that line for each
 source that failed, with its `source`, whether or not the other source answered,
 and none for `SOURCES_UNAVAILABLE` itself, so a search its sources only rate
-limited is a 429 and never a server error. The server sends no search text, paper
+limited is a 429 and never a server error. `get_paper` writes one with a
+`source` for each failure its answer does not carry: arXiv's when the OpenAlex
+fallback found the paper, OpenAlex's when the fallback failed and the answer is
+arXiv's error. The server sends no search text, paper
 id or other argument to logs or analytics.
 
 To connect from Claude, add a custom connector with the URL

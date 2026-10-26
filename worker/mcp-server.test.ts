@@ -69,6 +69,18 @@ const ARXIV_PREPRINT_ENTRY = `
     <category term="cond-mat.mtrl-sci"/>
   </entry>`;
 const ARXIV_FEED = arxivFeed(ARXIV_LAB_ENTRY + ARXIV_PREPRINT_ENTRY);
+// OpenAlex's record of the first entry, known by its arXiv landing page (synthetic).
+const ARXIV_LANDING = { landing_page_url: 'https://arxiv.org/abs/2603.01234', source: { display_name: 'arXiv (Cornell University)', type: 'repository' } };
+const OPENALEX_LAB_PREPRINT = {
+  ...OPENALEX_WORK,
+  id: 'https://openalex.org/W4400000123',
+  doi: null,
+  ids: { openalex: 'https://openalex.org/W4400000123' },
+  title: 'Strained graphene in the lab',
+  type: 'preprint',
+  primary_location: ARXIV_LANDING,
+  locations: [ARXIV_LANDING],
+};
 
 const UNPAYWALL = {
   doi: '10.1234/example.2026.1',
@@ -543,6 +555,83 @@ test('get_paper asks arXiv for an arXiv id and reports an unknown id as not foun
     assert.equal(missing.answer.result?.isError, true);
     assert.equal(missing.answer.result?.structuredContent?.code, 'NOT_FOUND');
   });
+});
+
+// The `/mcp` lines a run wrote, read off a stubbed `console.warn`.
+async function mcpLines(run: () => Promise<void>) {
+  const warn = mock.method(console, 'warn', () => {});
+  try {
+    await run();
+    return warn.mock.calls.map(call => String(call.arguments[0]))
+      .filter(line => line.startsWith('{"route":"/mcp"'))
+      .map(line => JSON.parse(line) as Record<string, unknown>);
+  } finally {
+    warn.mock.restore();
+  }
+}
+
+test("get_paper opens an arXiv result through OpenAlex when the search has just taken arXiv's seat, as the paper page does", async () => {
+  let calls: string[] = [];
+  const lines = await mcpLines(() => withUpstream(url => {
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+    if (url.startsWith('https://api.openalex.org/works?') && url.includes('search=')) return Response.json({ results: [] });
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_LAB_PREPRINT] });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async asked => {
+    calls = asked;
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'strained graphene' });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Array<{ id: string; arxivId?: string }>;
+    assert.equal(listed.arxivId, '2603.01234', 'only arXiv found it');
+    const { answer } = await callTool(env, 'get_paper', { id: listed.id });
+    assert.equal(answer.result?.isError, undefined);
+    const paper = answer.result?.structuredContent?.paper as { id: string; arxivId: string; title: string };
+    assert.deepEqual([paper.id, paper.arxivId, paper.title], ['openalex:W4400000123', '2603.01234', 'Strained graphene in the lab']);
+  }));
+  assert.equal(calls.filter(url => url.startsWith('https://export.arxiv.org/')).length, 1, 'arXiv is asked once, by the search');
+  const fallback = new URL(calls.at(-1)!);
+  assert.equal(fallback.searchParams.get('filter'), 'locations.landing_page_url:http://arxiv.org/abs/2603.01234|https://arxiv.org/abs/2603.01234');
+  assert.deepEqual(lines, [{ route: '/mcp', tool: 'get_paper', source: 'arxiv', code: 'PROVIDER_RATE_LIMITED', status: 429 }]);
+});
+
+test("get_paper falls back to OpenAlex whenever arXiv fails, and keeps arXiv's answer when OpenAlex has not the paper", async () => {
+  // An OpenAlex work of another preprint.
+  const elsewhere = { landing_page_url: 'https://arxiv.org/abs/2603.07777', source: ARXIV_LANDING.source };
+  const otherPreprint = { ...OPENALEX_LAB_PREPRINT, id: 'https://openalex.org/W4400000124', primary_location: elsewhere, locations: [elsewhere] };
+  const filtered = (url: string, id: string) => url.startsWith('https://api.openalex.org/works?') && url.includes(id);
+  let calls: string[] = [];
+  const lines = await mcpLines(() => withUpstream(url => {
+    // arXiv's own rate limit, then its outage, then an id it does not know.
+    if (url.includes('id_list=2603.01234')) return new Response('Rate exceeded.', { status: 429, headers: { 'retry-after': '30' } });
+    if (url.includes('id_list=2603.04321') || url.includes('id_list=2603.06666')) return new Response('down', { status: 503 });
+    if (url.includes('id_list=2603.05555')) return new Response(arxivFeed(''));
+    if (filtered(url, '2603.01234')) return Response.json({ results: [OPENALEX_LAB_PREPRINT] });
+    if (filtered(url, '2603.04321')) return Response.json({ results: [otherPreprint] });
+    if (filtered(url, '2603.06666')) return Response.json({ error: 'Service unavailable' }, { status: 503 });
+    throw new Error(`unexpected upstream ${url}`);
+  }, async asked => {
+    calls = asked;
+    // Separate environments, so each arXiv request finds the beat's seat free.
+    const limited = await callTool(routeEnv(), 'get_paper', { id: '2603.01234' });
+    assert.equal((limited.answer.result?.structuredContent?.paper as { id?: string })?.id, 'openalex:W4400000123');
+
+    const another = await callTool(routeEnv(), 'get_paper', { id: '2603.04321' });
+    assert.equal(another.answer.result?.isError, true, 'a work of another arXiv id is not the paper');
+    assert.deepEqual(another.answer.result?.structuredContent, { code: 'UPSTREAM_UNAVAILABLE', upstreamStatus: 503 });
+
+    const bothDown = await callTool(routeEnv(), 'get_paper', { id: '2603.06666' });
+    assert.deepEqual(bothDown.answer.result?.structuredContent, { code: 'UPSTREAM_UNAVAILABLE', upstreamStatus: 503 });
+
+    const unknown = await callTool(routeEnv(), 'get_paper', { id: '2603.05555' });
+    assert.equal(unknown.answer.result?.structuredContent?.code, 'NOT_FOUND');
+  }));
+  assert.equal(calls.some(url => filtered(url, '2603.05555')), false, "arXiv's word that it has no such paper stands");
+  assert.deepEqual(lines.map(line => [line.source, line.code, line.status]), [
+    ['arxiv', 'UPSTREAM_RATE_LIMITED', 429],
+    [undefined, 'UPSTREAM_UNAVAILABLE', 503],
+    ['openalex', 'UPSTREAM_UNAVAILABLE', 503],
+    [undefined, 'UPSTREAM_UNAVAILABLE', 503],
+  ]);
 });
 
 test('get_paper keeps a hundred authors, and a cut list says how many entries it left out', async () => {

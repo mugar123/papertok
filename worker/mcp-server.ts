@@ -5,7 +5,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 import { restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
-import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
 import { handleAgentArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -93,7 +93,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text), with authors cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id or OpenAlex work id and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv, or on OpenAlex when arXiv is busy or failing. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -324,6 +324,14 @@ function arxivQuery(query: string, since: string) {
   return `${phrase} AND submittedDate:[${since.replace(/-/g, '')}0000 TO ${today}2359]`;
 }
 
+// What a source that failed is listed as. An answer the tool could not read is
+// reported as any exception is.
+function sourceFailure(source: string, error: unknown): Record<string, unknown> {
+  if (error instanceof ToolFailure) return { source, ...error.details };
+  captureWorkerException(error);
+  return { source, code: 'UPSTREAM_UNAVAILABLE' };
+}
+
 async function arxivPapers(params: Record<string, string | number>, caller: Request, env: WorkerEnv) {
   const response = await ask(handleAgentArxiv, '/arxiv', params, caller, env);
   return parseArxivAtom(await response.text()).map(arxivRecordPaper);
@@ -335,12 +343,9 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     arxiv: () => arxivPapers({ search_query: arxivQuery(query, since), start: 0, max_results: MAX_RESULTS, sortBy: 'relevance' }, caller, env),
   };
   const settled = await Promise.allSettled(sources.map(source => searches[source]()));
-  const unavailable = settled.flatMap((outcome, index): Array<Record<string, unknown>> => {
-    if (outcome.status === 'fulfilled') return [];
-    // An answer the tool could not read is reported as any exception is.
-    if (!(outcome.reason instanceof ToolFailure)) captureWorkerException(outcome.reason);
-    return [{ source: sources[index], ...(outcome.reason instanceof ToolFailure ? outcome.reason.details : { code: 'UPSTREAM_UNAVAILABLE' }) }];
-  });
+  const unavailable = settled.flatMap(
+    (outcome, index) => (outcome.status === 'fulfilled' ? [] : [sourceFailure(sources[index], outcome.reason)]),
+  );
   // Each failed source leaves the line and report that the browser's own
   // request to its route would, whether or not the other source answered.
   for (const entry of unavailable) recordFailure('search_papers', entry);
@@ -375,13 +380,48 @@ function getPaperArguments(args: Arguments) {
   return identity;
 }
 
-async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: Request, env: WorkerEnv) {
-  if (identity.type === 'arxiv') {
-    const arxivId = identity.value.replace(/v\d+$/, '');
-    const [paper] = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
-    if (!paper) throw new ToolFailure({ code: 'NOT_FOUND' });
-    return { paper: publicPaper(paper, PAPER_BOUNDS) };
+// `formatOpenAlexWorkAsPaper` ids a work as `W…`, `mapOpenAlexWork` as
+// `openalex:W…`; a search returns the second, so the same work keeps one id
+// whichever tool returned it and whatever identifier found it.
+function openAlexPaper(work: OpenAlexWork) {
+  const paper = formatOpenAlexWorkAsPaper(work);
+  return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
+}
+
+// arXiv refuses an agent whenever the beat's current seat is taken
+// (`handleAgentArxiv`), by a search's own arXiv miss too. OpenAlex indexes the
+// same preprints, so a refusal or failure asks it for the work at the arXiv
+// landing page, as the app's paper page does (`fetchPaperByArxivIdViaOpenAlex`):
+// one billed unit, in the agent tier. arXiv's answer that it has no such
+// paper stands.
+async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
+  let papers: Paper[];
+  try {
+    papers = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
+  } catch (error) {
+    if (!(error instanceof ToolFailure) || error.details.code === 'INVALID_ARGUMENTS') throw error;
+    const work = await ask(handleAgentOpenAlex, '/openalex/works', {
+      filter: `locations.landing_page_url:http://arxiv.org/abs/${arxivId}|https://arxiv.org/abs/${arxivId}`,
+      per_page: 1,
+    }, caller, env)
+      .then(response => response.json<{ results?: OpenAlexWork[] }>())
+      // The paper's `arxivId` is read off the work, so it has to be this one.
+      .then(({ results = [] }) => results.find(found => getArxivIdFromWork(found).toLowerCase() === arxivId))
+      .catch((failure: unknown) => {
+        recordFailure('get_paper', sourceFailure('openalex', failure));
+        return undefined;
+      });
+    if (!work?.id) throw error;
+    // The tool answers, so its failure would leave no line of its own.
+    recordFailure('get_paper', { source: 'arxiv', ...error.details });
+    return openAlexPaper(work);
   }
+  if (!papers[0]) throw new ToolFailure({ code: 'NOT_FOUND' });
+  return { paper: publicPaper(papers[0], PAPER_BOUNDS) };
+}
+
+async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: Request, env: WorkerEnv) {
+  if (identity.type === 'arxiv') return getArxivPaper(identity.value.replace(/v\d+$/, ''), caller, env);
   // One work by id, as the app's paper page asks for it (`fetchPaperByWorkId`
   // in src/services/open-alex-service.ts): OpenAlex does not bill it, so it
   // spends no budget. A DOI the relay cannot carry in its path is a one-work
@@ -398,11 +438,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
     throw new ToolFailure({ code: 'NOT_FOUND' });
   }
-  // `formatOpenAlexWorkAsPaper` ids a work as `W…`, `mapOpenAlexWork` as
-  // `openalex:W…`; a search returns the second, so the same work keeps one id
-  // whichever tool returned it and whatever identifier found it.
-  const paper = formatOpenAlexWorkAsPaper(work);
-  return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
+  return openAlexPaper(work);
 }
 
 function openAccessArguments(args: Arguments) {
