@@ -2369,7 +2369,11 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
 export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
   let verified;
   try {
-    verified = await verifyFirebaseIdentity(request, env);
+    // Only the settings read may use the 60 s identity cache. A write stores the
+    // reader's address and name or sends mail, and account deletion purges the
+    // subscription before it deletes Auth, so a cached identity would let a
+    // deleted account's token create the subscription again.
+    verified = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
   } catch (error) {
     if (!(error instanceof WorkerAuthError)) throw error;
     const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
@@ -2378,7 +2382,8 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
   }
   if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
   if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
-  const identity = { uid: verified.uid, email: verified.email, displayName: cleanText(verified.displayName, 160) };
+  // The verifier already collapsed and capped the name.
+  const identity = { uid: verified.uid, email: verified.email, displayName: verified.displayName ?? '' };
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 

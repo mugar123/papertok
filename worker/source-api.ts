@@ -387,6 +387,11 @@ export async function handleHuggingFaceResources(request: Request, env: WorkerEn
   }, { canonicalParams: { arxiv_id: arxivId } });
 }
 
+// The misses one address may send in a UTC minute: 20 of the route's 60
+// (`FIGURES_GLOBAL_MINUTE_LIMIT`), so one address cannot spend the whole minute
+// for every reader; three can, and everyone behind one NAT shares these 20.
+const FIGURES_CALLER_MINUTE = Object.freeze({ namespace: 'figures', limit: 20 });
+
 export async function handlePaperFigures(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -404,7 +409,7 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
     env,
     (payload) => (payload?.figures?.length ? FIGURE_CACHE_SECONDS : FIGURE_EMPTY_CACHE_SECONDS),
     () => fetchPaperFigures(arxivId),
-    { canonicalParams: { arxiv_id: arxivId } },
+    { canonicalParams: { arxiv_id: arxivId }, callerMinute: FIGURES_CALLER_MINUTE },
   );
 }
 

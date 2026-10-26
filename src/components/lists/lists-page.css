@@ -155,6 +155,11 @@
   animation: listCardArrive 200ms var(--ease-out) both;
 }
 
+/* The page is still sliding in: only its movement, the block just fades. */
+.lists-index-arrive.is-resumed {
+  animation: listCardFade var(--motion-base) linear both;
+}
+
 @keyframes listCardArrive {
   from {
     opacity: 0;
@@ -225,6 +230,32 @@
 
 .list-card-sheet[data-pos="0"] > * {
   visibility: hidden;
+}
+
+/* The papers rise out of their folder when the index opens: held a little
+   down while the page travels (paused), then let go once it has landed, one
+   folder after another. `translate`, so the pose and the hover keep
+   `transform`. */
+@media (prefers-reduced-motion: no-preference) {
+  .lists-grid[data-sheets] .list-card-sheet {
+    animation: listSheetRise 300ms var(--ease-out) backwards;
+    animation-delay: calc(var(--card-index, 0) * 40ms);
+  }
+
+  .lists-grid[data-sheets="waiting"] .list-card-sheet {
+    animation-play-state: paused;
+  }
+
+  /* A block that rises on its own already is the arrival; the sheets stay. */
+  .lists-index-arrive:not(.is-resumed) .lists-grid[data-sheets] .list-card-sheet {
+    animation: none;
+  }
+}
+
+@keyframes listSheetRise {
+  from {
+    translate: 0 14px;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {

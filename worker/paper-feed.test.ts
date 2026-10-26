@@ -14,7 +14,7 @@ import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
 import { followedCorpusRequest } from '../src/context/feed-corpus-requests.ts';
-import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
+import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleHarvestArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
@@ -309,12 +309,9 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const { env, db } = store();
   Object.assign(env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
-  // Two readers' arXiv searches take this period's seat and the next one:
+  // Two in-process arXiv searches take this period's seat and the next one:
   // the first goes to arXiv, the second waits for its seat.
-  Object.assign(env, { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes' });
-  const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`, {
-    headers: { 'cf-connecting-ip': '192.0.2.1' },
-  }), env));
+  const searches = ['all:attention', 'all:sparsity'].map(query => handleHarvestArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
   await flush();
   t.mock.timers.tick(cacheReadMs);
   for (let turn = 0; arxivAsked < 1; turn += 1) {

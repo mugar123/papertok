@@ -1534,8 +1534,8 @@
     ]
   },
   "bio.zoo": {
-    "capturedAt": "2026-10-25T16:54:27.535Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10152%7CT10174%7CT10333%7CT10659%7CT11228%7CT11494%7CT11495%7CT11656%7CT11665%7CT12132%7CT12365%7CT12674%7CT12691%7CT13294%7CT13338%7CT14399%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:09.077Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10089%7CT10174%7CT10332%7CT10699%7CT10702%7CT11004%7CT11228%7CT11387%7CT11494%7CT11656%7CT11665%7CT12001%7CT12132%7CT12142%7CT12319%7CT12361%7CT12447%7CT12596%7CT12606%7CT12637%7CT13269%7CT13781%7CT13950%7CT14399%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
         "id": "https://openalex.org/W2346578806",
@@ -1548,13 +1548,13 @@
         }
       },
       {
-        "id": "https://openalex.org/W2977082078",
+        "id": "https://openalex.org/W2974449448",
         "type": "article",
-        "title": "A Comprehensive Review on Lipid Oxidation in Meat and Meat Products",
-        "publication_date": "2019-09-25",
-        "cited_by_count": 1935,
+        "title": "Decline of the North American avifauna",
+        "publication_date": "2019-09-19",
+        "cited_by_count": 2122,
         "primary_topic": {
-          "id": "https://openalex.org/T10333"
+          "id": "https://openalex.org/T10089"
         }
       },
       {
@@ -1572,59 +1572,69 @@
         "type": "article",
         "title": "ASAP: assemble species by automatic partitioning",
         "publication_date": "2020-10-15",
-        "cited_by_count": 1742,
+        "cited_by_count": 1743,
         "primary_topic": {
           "id": "https://openalex.org/T14399"
         }
       },
       {
-        "id": "https://openalex.org/W3088495079",
+        "id": "https://openalex.org/W2581828022",
         "type": "article",
-        "title": "Hypothermia in newly born piglets: Mechanisms of thermoregulation and pathophysiology of death",
-        "publication_date": "2020-08-30",
-        "cited_by_count": 985,
+        "title": "Impending extinction crisis of the world’s primates: Why primates matter",
+        "publication_date": "2017-01-06",
+        "cited_by_count": 1464,
         "primary_topic": {
-          "id": "https://openalex.org/T12365"
+          "id": "https://openalex.org/T10699"
         }
       },
       {
-        "id": "https://openalex.org/W3128638349",
+        "id": "https://openalex.org/W2924886534",
         "type": "article",
-        "title": "The soundscape of the Anthropocene ocean",
-        "publication_date": "2021-02-04",
-        "cited_by_count": 954,
+        "title": "Amphibian fungal panzootic causes catastrophic and ongoing loss of biodiversity",
+        "publication_date": "2019-03-28",
+        "cited_by_count": 1371,
         "primary_topic": {
-          "id": "https://openalex.org/T10659"
+          "id": "https://openalex.org/T10332"
         }
       },
       {
-        "id": "https://openalex.org/W2282823150",
+        "id": "https://openalex.org/W4213419599",
         "type": "article",
-        "title": "How Muscle Structure and Composition Influence Meat and Flesh Quality",
-        "publication_date": "2016-01-01",
-        "cited_by_count": 876,
+        "title": "AVONET: morphological, ecological and geographical data for all birds",
+        "publication_date": "2022-02-24",
+        "cited_by_count": 1243,
         "primary_topic": {
-          "id": "https://openalex.org/T10333"
+          "id": "https://openalex.org/T10089"
         }
       },
       {
-        "id": "https://openalex.org/W2754001138",
+        "id": "https://openalex.org/W3197252187",
         "type": "article",
-        "title": "Invited review: Effects of heat stress on dairy cattle welfare",
-        "publication_date": "2017-09-13",
-        "cited_by_count": 839,
+        "title": "Overfishing drives over one-third of all sharks and rays toward a global extinction crisis",
+        "publication_date": "2021-09-06",
+        "cited_by_count": 1079,
         "primary_topic": {
-          "id": "https://openalex.org/T12365"
+          "id": "https://openalex.org/T11387"
         }
       },
       {
-        "id": "https://openalex.org/W2606222025",
+        "id": "https://openalex.org/W2727370449",
         "type": "article",
-        "title": "Global poultry production: current state and future outlook and challenges",
-        "publication_date": "2017-04-11",
-        "cited_by_count": 793,
+        "title": "Phylogenetic classification of bony fishes",
+        "publication_date": "2017-07-06",
+        "cited_by_count": 947,
         "primary_topic": {
-          "id": "https://openalex.org/T13294"
+          "id": "https://openalex.org/T12319"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4387344519",
+        "type": "article",
+        "title": "Ongoing declines for the world’s amphibians in the face of emerging threats",
+        "publication_date": "2023-10-04",
+        "cited_by_count": 831,
+        "primary_topic": {
+          "id": "https://openalex.org/T10332"
         }
       },
       {
@@ -1632,7 +1642,7 @@
         "type": "article",
         "title": "The biology of color",
         "publication_date": "2017-08-03",
-        "cited_by_count": 767,
+        "cited_by_count": 768,
         "primary_topic": {
           "id": "https://openalex.org/T10174"
         }
@@ -1668,35 +1678,24 @@
         }
       },
       {
-        "id": "https://openalex.org/W2807598220",
+        "id": "https://openalex.org/W2607259890",
         "type": "article",
-        "title": "The role of probiotics, prebiotics and synbiotics in animal nutrition",
-        "publication_date": "2018-06-06",
-        "cited_by_count": 707,
+        "title": "The use of bioacoustics in anuran taxonomy: theory, terminology, methods and recommendations for best practice",
+        "publication_date": "2017-04-10",
+        "cited_by_count": 673,
         "primary_topic": {
-          "id": "https://openalex.org/T10152"
-        }
-      },
-      {
-        "id": "https://openalex.org/W4235804341",
-        "type": "article",
-        "title": "Emerging coronaviruses: Genome structure, replication, and pathogenesis",
-        "publication_date": "2020-08-02",
-        "cited_by_count": 696,
-        "primary_topic": {
-          "id": "https://openalex.org/T11495"
+          "id": "https://openalex.org/T11665"
         }
       }
     ],
     "labels": [
       {
         "workId": "https://openalex.org/W2346578806",
-        "label": "on-target",
-        "uncertain": true
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2977082078",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2974449448",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W2788593837",
@@ -1707,25 +1706,28 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3088495079",
-        "uncertain": true
+        "workId": "https://openalex.org/W2581828022",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3128638349",
-        "uncertain": true
+        "workId": "https://openalex.org/W2924886534",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2282823150",
-        "label": "off-target"
+        "workId": "https://openalex.org/W4213419599",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2754001138",
-        "label": "on-target",
-        "uncertain": true
+        "workId": "https://openalex.org/W3197252187",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2606222025",
-        "uncertain": true
+        "workId": "https://openalex.org/W2727370449",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4387344519",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W2745089499",
@@ -1733,7 +1735,8 @@
       },
       {
         "workId": "https://openalex.org/W3042211652",
-        "label": "on-target"
+        "label": "off-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W2900884109",
@@ -1742,30 +1745,37 @@
       },
       {
         "workId": "https://openalex.org/W2894847505",
+        "label": "on-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2807598220",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W4235804341",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2607259890",
+        "label": "on-target"
       }
     ]
   },
   "chem.anal": {
-    "capturedAt": "2026-10-25T16:54:34.315Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10180%7CT10212%7CT10532%7CT10640%7CT10683%7CT10908%7CT11460%7CT11630%7CT13079%7CT13128%7CT13325%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:11.674Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10180%7CT10212%7CT10640%7CT10683%7CT10908%7CT11434%7CT11460%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
-        "id": "https://openalex.org/W2802621137",
+        "id": "https://openalex.org/W2766085136",
         "type": "article",
-        "title": "Techniques for extraction and isolation of natural products: a comprehensive review",
-        "publication_date": "2018-04-17",
-        "cited_by_count": 2313,
+        "title": "A Practical Beginner’s Guide to Cyclic Voltammetry",
+        "publication_date": "2017-11-03",
+        "cited_by_count": 4256,
         "primary_topic": {
-          "id": "https://openalex.org/T13128"
+          "id": "https://openalex.org/T11434"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4323544162",
+        "type": "article",
+        "title": "Electrochemical Impedance Spectroscopy─A Tutorial",
+        "publication_date": "2023-03-08",
+        "cited_by_count": 3174,
+        "primary_topic": {
+          "id": "https://openalex.org/T11434"
         }
       },
       {
@@ -1849,33 +1859,23 @@
         }
       },
       {
-        "id": "https://openalex.org/W2519022573",
-        "type": "article",
-        "title": "Azo dyes and human health: A review",
-        "publication_date": "2016-09-16",
-        "cited_by_count": 999,
-        "primary_topic": {
-          "id": "https://openalex.org/T13325"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2522989562",
-        "type": "article",
-        "title": "Fluorescent Probes for Sensing and Imaging within Specific Cellular Organelles",
-        "publication_date": "2016-09-23",
-        "cited_by_count": 987,
-        "primary_topic": {
-          "id": "https://openalex.org/T10532"
-        }
-      },
-      {
         "id": "https://openalex.org/W4295591987",
         "type": "article",
         "title": "Electrochemical Sensors and Their Applications: A Review",
         "publication_date": "2022-09-09",
-        "cited_by_count": 986,
+        "cited_by_count": 987,
         "primary_topic": {
           "id": "https://openalex.org/T10212"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2986200519",
+        "type": "article",
+        "title": "Recent Advances in Photoelectrochemical Sensing: From Engineered Photoactive Materials to Sensing Devices and Detection Modes",
+        "publication_date": "2019-11-18",
+        "cited_by_count": 979,
+        "primary_topic": {
+          "id": "https://openalex.org/T11434"
         }
       },
       {
@@ -1889,13 +1889,13 @@
         }
       },
       {
-        "id": "https://openalex.org/W2512484144",
+        "id": "https://openalex.org/W3194172516",
         "type": "article",
-        "title": "Discerning the Chemistry in Individual Organelles with Small‐Molecule Fluorescent Probes",
-        "publication_date": "2016-08-29",
-        "cited_by_count": 810,
+        "title": "Reducing the resistance for the use of electrochemical impedance spectroscopy analysis in materials chemistry",
+        "publication_date": "2021-01-01",
+        "cited_by_count": 850,
         "primary_topic": {
-          "id": "https://openalex.org/T10532"
+          "id": "https://openalex.org/T11434"
         }
       },
       {
@@ -1911,12 +1911,17 @@
     ],
     "labels": [
       {
-        "workId": "https://openalex.org/W2802621137",
-        "uncertain": true
+        "workId": "https://openalex.org/W2766085136",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4323544162",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W4205765055",
-        "label": "on-target"
+        "label": "off-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W3126951392",
@@ -1932,6 +1937,7 @@
       },
       {
         "workId": "https://openalex.org/W2594844894",
+        "label": "on-target",
         "uncertain": true
       },
       {
@@ -1940,23 +1946,19 @@
       },
       {
         "workId": "https://openalex.org/W2898280479",
-        "label": "off-target"
+        "label": "on-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W2770676323",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2519022573",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2522989562",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
         "workId": "https://openalex.org/W4295591987",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2986200519",
         "label": "on-target"
       },
       {
@@ -1964,7 +1966,7 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2512484144",
+        "workId": "https://openalex.org/W3194172516",
         "label": "on-target",
         "uncertain": true
       },
@@ -2413,8 +2415,8 @@
     ]
   },
   "chem.org": {
-    "capturedAt": "2026-10-25T16:54:39.262Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10013%7CT10092%7CT10274%7CT10354%7CT10405%7CT10548%7CT10578%7CT10701%7CT10721%7CT10817%7CT10835%7CT10871%7CT10909%7CT10956%7CT11298%7CT11440%7CT11441%7CT11549%7CT11611%7CT11746%7CT11748%7CT11790%7CT11831%7CT11989%7CT12189%7CT12191%7CT12228%7CT12240%7CT12251%7CT12270%7CT12318%7CT12410%7CT12458%7CT12526%7CT12527%7CT12562%7CT12570%7CT12653%7CT12852%7CT12893%7CT12973%7CT13013%7CT13105%7CT13115%7CT13124%7CT13160%7CT13208%7CT13230%7CT13239%7CT13265%7CT13304%7CT13489%7CT13568%7CT13649%7CT13833%7CT13859%7CT13876%7CT14099%7CT14297%7CT14318%7CT14459%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:13.782Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10013%7CT10274%7CT10354%7CT10548%7CT10701%7CT10817%7CT10835%7CT10871%7CT11298%7CT11440%7CT11441%7CT11549%7CT11611%7CT11748%7CT11790%7CT11831%7CT11989%7CT12189%7CT12191%7CT12251%7CT12318%7CT12410%7CT12527%7CT12562%7CT12653%7CT12893%7CT12973%7CT13105%7CT13115%7CT13124%7CT13160%7CT13208%7CT13230%7CT13239%7CT13265%7CT13304%7CT13489%7CT13649%7CT13859%7CT13876%7CT14099%7CT14459%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
         "id": "https://openalex.org/W2586637063",
@@ -2457,16 +2459,6 @@
         }
       },
       {
-        "id": "https://openalex.org/W2356997838",
-        "type": "article",
-        "title": "Photochemical route for synthesizing atomically dispersed palladium catalysts",
-        "publication_date": "2016-05-12",
-        "cited_by_count": 2007,
-        "primary_topic": {
-          "id": "https://openalex.org/T12240"
-        }
-      },
-      {
         "id": "https://openalex.org/W2736178248",
         "type": "article",
         "title": "Analyzing Reaction Rates with the Distortion/Interaction‐Activation Strain Model",
@@ -2487,16 +2479,6 @@
         }
       },
       {
-        "id": "https://openalex.org/W2276073028",
-        "type": "article",
-        "title": "Nanoemulsions: formation, properties and applications",
-        "publication_date": "2016-01-01",
-        "cited_by_count": 1631,
-        "primary_topic": {
-          "id": "https://openalex.org/T10721"
-        }
-      },
-      {
         "id": "https://openalex.org/W2793967588",
         "type": "article",
         "title": "Electrifying Organic Synthesis",
@@ -2504,26 +2486,6 @@
         "cited_by_count": 1535,
         "primary_topic": {
           "id": "https://openalex.org/T10701"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2759655425",
-        "type": "article",
-        "title": "50th Anniversary Perspective : RAFT Polymerization─A User Guide",
-        "publication_date": "2017-09-27",
-        "cited_by_count": 1504,
-        "primary_topic": {
-          "id": "https://openalex.org/T10405"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2915400200",
-        "type": "article",
-        "title": "Photopolymerization in 3D Printing",
-        "publication_date": "2019-02-20",
-        "cited_by_count": 1449,
-        "primary_topic": {
-          "id": "https://openalex.org/T12570"
         }
       },
       {
@@ -2565,12 +2527,52 @@
         "primary_topic": {
           "id": "https://openalex.org/T10701"
         }
+      },
+      {
+        "id": "https://openalex.org/W2520813356",
+        "type": "article",
+        "title": "Radicals: Reactive Intermediates with Translational Potential",
+        "publication_date": "2016-09-15",
+        "cited_by_count": 1103,
+        "primary_topic": {
+          "id": "https://openalex.org/T10701"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2801305065",
+        "type": "article",
+        "title": "Modern Electrochemical Aspects for the Synthesis of Value‐Added Organic Products",
+        "publication_date": "2018-01-23",
+        "cited_by_count": 1099,
+        "primary_topic": {
+          "id": "https://openalex.org/T10701"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2227068583",
+        "type": "article",
+        "title": "Pot economy and one-pot synthesis",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 1098,
+        "primary_topic": {
+          "id": "https://openalex.org/T10013"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2347015396",
+        "type": "article",
+        "title": "Synthetic Organic Electrochemistry: An Enabling and Innately Sustainable Method",
+        "publication_date": "2016-05-05",
+        "cited_by_count": 1070,
+        "primary_topic": {
+          "id": "https://openalex.org/T10701"
+        }
       }
     ],
     "labels": [
       {
         "workId": "https://openalex.org/W2586637063",
-        "label": "on-target",
+        "label": "off-target",
         "uncertain": true
       },
       {
@@ -2583,10 +2585,7 @@
       },
       {
         "workId": "https://openalex.org/W2331484215",
-        "label": "on-target"
-      },
-      {
-        "workId": "https://openalex.org/W2356997838",
+        "label": "off-target",
         "uncertain": true
       },
       {
@@ -2595,33 +2594,21 @@
       },
       {
         "workId": "https://openalex.org/W3016762617",
-        "label": "on-target"
-      },
-      {
-        "workId": "https://openalex.org/W2276073028",
-        "label": "off-target"
+        "label": "off-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W2793967588",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2759655425",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2915400200",
-        "uncertain": true
-      },
-      {
         "workId": "https://openalex.org/W2560096417",
-        "label": "on-target",
         "uncertain": true
       },
       {
         "workId": "https://openalex.org/W3112064743",
-        "label": "on-target"
+        "label": "off-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W3010504693",
@@ -2629,6 +2616,22 @@
       },
       {
         "workId": "https://openalex.org/W2803844243",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2520813356",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2801305065",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2227068583",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2347015396",
         "label": "on-target"
       }
     ]
@@ -2853,8 +2856,8 @@
     ]
   },
   "chem.spectro": {
-    "capturedAt": "2026-10-25T16:54:42.535Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10519%7CT10532%7CT10683%7CT10908%7CT11111%7CT11809%7CT12195%7CT12748%7CT12967%7CT13604%7CT13675%7CT14068%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:15.956Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10640%7CT11111%7CT11177%7CT11324%7CT11733%7CT11809%7CT12039%7CT12381%7CT12603%7CT12748%7CT12967%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
         "id": "https://openalex.org/W2133151341",
@@ -2864,36 +2867,6 @@
         "cited_by_count": 7717,
         "primary_topic": {
           "id": "https://openalex.org/T11111"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2899760200",
-        "type": "article",
-        "title": "The PRIDE database and related tools and resources in 2019: improving support for quantification data",
-        "publication_date": "2018-10-22",
-        "cited_by_count": 6698,
-        "primary_topic": {
-          "id": "https://openalex.org/T10519"
-        }
-      },
-      {
-        "id": "https://openalex.org/W3208691473",
-        "type": "article",
-        "title": "The PRIDE database resources in 2022: a hub for mass spectrometry-based proteomics evidences",
-        "publication_date": "2021-10-15",
-        "cited_by_count": 6116,
-        "primary_topic": {
-          "id": "https://openalex.org/T10519"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2613629789",
-        "type": "article",
-        "title": "A subcellular map of the human proteome",
-        "publication_date": "2017-05-11",
-        "cited_by_count": 2805,
-        "primary_topic": {
-          "id": "https://openalex.org/T10519"
         }
       },
       {
@@ -2907,103 +2880,133 @@
         }
       },
       {
-        "id": "https://openalex.org/W4404046121",
+        "id": "https://openalex.org/W2965295081",
         "type": "article",
-        "title": "The PRIDE database at 20 years: 2025 update",
-        "publication_date": "2024-10-16",
-        "cited_by_count": 2051,
+        "title": "X-ray photoelectron spectroscopy: Towards reliable binding energy referencing",
+        "publication_date": "2019-07-30",
+        "cited_by_count": 2541,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T12039"
         }
       },
       {
-        "id": "https://openalex.org/W2910730299",
+        "id": "https://openalex.org/W2953361421",
         "type": "article",
-        "title": "iProX: an integrated proteome resource",
-        "publication_date": "2018-09-14",
-        "cited_by_count": 1992,
+        "title": "How to Read and Interpret FTIR Spectroscope of Organic Material",
+        "publication_date": "2019-03-07",
+        "cited_by_count": 2368,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T11324"
         }
       },
       {
-        "id": "https://openalex.org/W2757254843",
+        "id": "https://openalex.org/W2612369154",
         "type": "article",
-        "title": "The human protein atlas: A spatial map of the human proteome",
-        "publication_date": "2017-09-23",
-        "cited_by_count": 1297,
+        "title": "Advanced analysis of copper X‐ray photoelectron spectra",
+        "publication_date": "2017-05-12",
+        "cited_by_count": 2268,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T12039"
         }
       },
       {
-        "id": "https://openalex.org/W2969655219",
+        "id": "https://openalex.org/W3044232881",
         "type": "article",
-        "title": "Experimental methods in chemical engineering: specific surface area and pore size distribution measurements—BET, BJH, and DFT",
-        "publication_date": "2019-08-23",
-        "cited_by_count": 1167,
+        "title": "A review on C1s XPS-spectra for some kinds of carbon materials",
+        "publication_date": "2020-07-21",
+        "cited_by_count": 1762,
         "primary_topic": {
-          "id": "https://openalex.org/T13604"
+          "id": "https://openalex.org/T12039"
         }
       },
       {
-        "id": "https://openalex.org/W4200608270",
+        "id": "https://openalex.org/W2291688091",
         "type": "article",
-        "title": "iProX in 2021: connecting proteomics data sharing with big data",
-        "publication_date": "2021-10-22",
-        "cited_by_count": 1141,
+        "title": "FTIR Spectroscopy for Carbon Family Study",
+        "publication_date": "2016-03-03",
+        "cited_by_count": 1407,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T11324"
         }
       },
       {
-        "id": "https://openalex.org/W2285468881",
+        "id": "https://openalex.org/W3166170553",
         "type": "article",
-        "title": "MetFrag relaunched: incorporating strategies beyond in silico fragmentation",
-        "publication_date": "2016-01-25",
-        "cited_by_count": 1059,
+        "title": "Systematic and collaborative approach to problem solving using X-ray photoelectron spectroscopy",
+        "publication_date": "2021-06-15",
+        "cited_by_count": 1404,
         "primary_topic": {
-          "id": "https://openalex.org/T10683"
+          "id": "https://openalex.org/T12039"
         }
       },
       {
-        "id": "https://openalex.org/W2770676323",
+        "id": "https://openalex.org/W2592941099",
         "type": "article",
-        "title": "Mass Spectrometry Imaging: A Review of Emerging Advancements and Future Insights",
-        "publication_date": "2017-11-20",
+        "title": "C 1s Peak of Adventitious Carbon Aligns to the Vacuum Level: Dire Consequences for Material's Bonding Assignment by Photoelectron Spectroscopy",
+        "publication_date": "2017-03-10",
+        "cited_by_count": 1068,
+        "primary_topic": {
+          "id": "https://openalex.org/T12039"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2898280479",
+        "type": "article",
+        "title": "On Splitting Training and Validation Set: A Comparative Study of Cross-Validation, Bootstrap and Systematic Sampling for Estimating the Generalization Performance of Supervised Learning",
+        "publication_date": "2018-07-01",
         "cited_by_count": 1039,
         "primary_topic": {
-          "id": "https://openalex.org/T10683"
+          "id": "https://openalex.org/T10640"
         }
       },
       {
-        "id": "https://openalex.org/W2887294942",
+        "id": "https://openalex.org/W4382989442",
         "type": "article",
-        "title": "Data‐independent acquisition‐based SWATH‐MS for quantitative proteomics: a tutorial",
-        "publication_date": "2018-08-01",
-        "cited_by_count": 1011,
+        "title": "Interpretation of Oxygen 1s X-ray Photoelectron Spectroscopy of ZnO",
+        "publication_date": "2023-07-03",
+        "cited_by_count": 934,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T12039"
         }
       },
       {
-        "id": "https://openalex.org/W2533894695",
+        "id": "https://openalex.org/W2982482221",
         "type": "article",
-        "title": "Proteomics: Technologies and Their Applications",
-        "publication_date": "2016-10-18",
-        "cited_by_count": 1007,
+        "title": "Rapid identification of pathogenic bacteria using Raman spectroscopy and deep learning",
+        "publication_date": "2019-10-30",
+        "cited_by_count": 886,
         "primary_topic": {
-          "id": "https://openalex.org/T10519"
+          "id": "https://openalex.org/T11324"
         }
       },
       {
-        "id": "https://openalex.org/W2522989562",
+        "id": "https://openalex.org/W3015915882",
         "type": "article",
-        "title": "Fluorescent Probes for Sensing and Imaging within Specific Cellular Organelles",
-        "publication_date": "2016-09-23",
-        "cited_by_count": 987,
+        "title": "DFT-Calculated IR Spectrum Amide I, II, and III Band Contributions of N -Methylacetamide Fine Components",
+        "publication_date": "2020-04-08",
+        "cited_by_count": 820,
         "primary_topic": {
-          "id": "https://openalex.org/T10532"
+          "id": "https://openalex.org/T11177"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4283740148",
+        "type": "article",
+        "title": "A step-by-step guide to perform x-ray photoelectron spectroscopy",
+        "publication_date": "2022-07-01",
+        "cited_by_count": 810,
+        "primary_topic": {
+          "id": "https://openalex.org/T12039"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2959236235",
+        "type": "article",
+        "title": "Raman Techniques: Fundamentals and Frontiers",
+        "publication_date": "2019-07-12",
+        "cited_by_count": 809,
+        "primary_topic": {
+          "id": "https://openalex.org/T11324"
         }
       }
     ],
@@ -3013,62 +3016,62 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2899760200",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W3208691473",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2613629789",
-        "label": "off-target"
-      },
-      {
         "workId": "https://openalex.org/W4200599926",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W4404046121",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2965295081",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2910730299",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2757254843",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2969655219",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W4200608270",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2285468881",
+        "workId": "https://openalex.org/W2953361421",
         "label": "on-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2770676323",
+        "workId": "https://openalex.org/W2612369154",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3044232881",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2291688091",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3166170553",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2592941099",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2898280479",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W4382989442",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2982482221",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3015915882",
         "label": "on-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2887294942",
-        "uncertain": true
+        "workId": "https://openalex.org/W4283740148",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2533894695",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2522989562",
-        "uncertain": true
+        "workId": "https://openalex.org/W2959236235",
+        "label": "on-target"
       }
     ]
   },
@@ -16034,59 +16037,9 @@
     ]
   },
   "mech.auto": {
-    "capturedAt": "2026-10-25T16:53:51.481Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10663%7CT10783%7CT10805%7CT10808%7CT11099%7CT11904%7CT11942%7CT12095%7CT12197%7CT12759%7CT13858%7CT13990%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:18.109Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10805%7CT10808%7CT11099%7CT12095%7CT12197%7CT12759%7CT12907%7CT13990%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
-      {
-        "id": "https://openalex.org/W3127891378",
-        "type": "article",
-        "title": "A review of lithium-ion battery safety concerns: The issues, strategies, and testing standards",
-        "publication_date": "2020-11-02",
-        "cited_by_count": 2170,
-        "primary_topic": {
-          "id": "https://openalex.org/T10663"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2741574707",
-        "type": "article",
-        "title": "Additive manufacturing: scientific and technological challenges, market uptake and opportunities",
-        "publication_date": "2017-07-29",
-        "cited_by_count": 2147,
-        "primary_topic": {
-          "id": "https://openalex.org/T10783"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2967464127",
-        "type": "article",
-        "title": "An Overview on 3D Printing Technology: Technological, Materials, and Applications",
-        "publication_date": "2019-01-01",
-        "cited_by_count": 2057,
-        "primary_topic": {
-          "id": "https://openalex.org/T10783"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2563343938",
-        "type": "article",
-        "title": "Degradation diagnostics for lithium ion cells",
-        "publication_date": "2016-12-12",
-        "cited_by_count": 1939,
-        "primary_topic": {
-          "id": "https://openalex.org/T10663"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2388726286",
-        "type": "article",
-        "title": "Additive manufacturing and sustainability: an exploratory study of the advantages and challenges",
-        "publication_date": "2016-05-10",
-        "cited_by_count": 1894,
-        "primary_topic": {
-          "id": "https://openalex.org/T10783"
-        }
-      },
       {
         "id": "https://openalex.org/W2953303875",
         "type": "article",
@@ -16108,26 +16061,6 @@
         }
       },
       {
-        "id": "https://openalex.org/W2903223816",
-        "type": "article",
-        "title": "Temperature effect and thermal impact in lithium-ion batteries: A review",
-        "publication_date": "2018-11-28",
-        "cited_by_count": 1665,
-        "primary_topic": {
-          "id": "https://openalex.org/T10663"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2967686386",
-        "type": "article",
-        "title": "Lithium-ion battery fast charging: A review",
-        "publication_date": "2019-08-01",
-        "cited_by_count": 1588,
-        "primary_topic": {
-          "id": "https://openalex.org/T10663"
-        }
-      },
-      {
         "id": "https://openalex.org/W3008115128",
         "type": "article",
         "title": "Deep Multi-Modal Object Detection and Semantic Segmentation for Autonomous Driving: Datasets, Methods, and Challenges",
@@ -16138,79 +16071,127 @@
         }
       },
       {
-        "id": "https://openalex.org/W4221095855",
+        "id": "https://openalex.org/W3135991645",
         "type": "article",
-        "title": "Direct Ink Writing: A 3D Printing Technology for Diverse Materials",
-        "publication_date": "2022-03-05",
-        "cited_by_count": 1343,
+        "title": "Sensor and Sensor Fusion Technology in Autonomous Vehicles: A Review",
+        "publication_date": "2021-03-18",
+        "cited_by_count": 1044,
         "primary_topic": {
-          "id": "https://openalex.org/T10783"
+          "id": "https://openalex.org/T11099"
         }
       },
       {
-        "id": "https://openalex.org/W2790625295",
+        "id": "https://openalex.org/W3016600231",
         "type": "article",
-        "title": "Long Short-Term Memory Recurrent Neural Network for Remaining Useful Life Prediction of Lithium-Ion Batteries",
-        "publication_date": "2018-02-12",
-        "cited_by_count": 1324,
+        "title": "Lidar for Autonomous Driving: The Principles, Challenges, and Trends for Automotive Lidar and Perception Systems",
+        "publication_date": "2020-06-29",
+        "cited_by_count": 886,
         "primary_topic": {
-          "id": "https://openalex.org/T10663"
+          "id": "https://openalex.org/T11099"
         }
       },
       {
-        "id": "https://openalex.org/W3008891024",
+        "id": "https://openalex.org/W2805439952",
         "type": "article",
-        "title": "Modeling and Applications of Electrochemical Impedance Spectroscopy (EIS) for Lithium-ion Batteries",
-        "publication_date": "2020-02-26",
-        "cited_by_count": 1215,
+        "title": "Autonomous Vehicles That Interact With Pedestrians: A Survey of Theory and Practice",
+        "publication_date": "2019-03-15",
+        "cited_by_count": 872,
         "primary_topic": {
-          "id": "https://openalex.org/T10663"
+          "id": "https://openalex.org/T11099"
         }
       },
       {
-        "id": "https://openalex.org/W3139510216",
+        "id": "https://openalex.org/W2259684855",
         "type": "article",
-        "title": "Lithium ion battery degradation: what you need to know",
-        "publication_date": "2021-01-01",
-        "cited_by_count": 1201,
+        "title": "Help or hindrance? The travel, energy and carbon impacts of highly automated vehicles",
+        "publication_date": "2016-02-26",
+        "cited_by_count": 857,
         "primary_topic": {
-          "id": "https://openalex.org/T10663"
+          "id": "https://openalex.org/T12095"
         }
       },
       {
-        "id": "https://openalex.org/W2565919573",
+        "id": "https://openalex.org/W3033920763",
         "type": "article",
-        "title": "On-demand high-capacity ride-sharing via dynamic trip-vehicle assignment",
-        "publication_date": "2017-01-03",
-        "cited_by_count": 1191,
+        "title": "Human motion trajectory prediction: a survey",
+        "publication_date": "2020-06-07",
+        "cited_by_count": 788,
         "primary_topic": {
-          "id": "https://openalex.org/T11942"
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2466636338",
+        "type": "article",
+        "title": "Energy Management in Plug-in Hybrid Electric Vehicles: Recent Progress and a Connected Vehicles Perspective",
+        "publication_date": "2016-06-23",
+        "cited_by_count": 718,
+        "primary_topic": {
+          "id": "https://openalex.org/T10808"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2589456662",
+        "type": "article",
+        "title": "Fuel consumption and CO 2 emissions from passenger cars in Europe – Laboratory versus real-world emissions",
+        "publication_date": "2017-02-21",
+        "cited_by_count": 686,
+        "primary_topic": {
+          "id": "https://openalex.org/T12095"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4226239849",
+        "type": "article",
+        "title": "A Survey on Trajectory-Prediction Methods for Autonomous Driving",
+        "publication_date": "2022-04-13",
+        "cited_by_count": 683,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2997958396",
+        "type": "article",
+        "title": "Deep Learning-Based Vehicle Behavior Prediction for Autonomous Driving Applications: A Review",
+        "publication_date": "2020-08-04",
+        "cited_by_count": 675,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2946231253",
+        "type": "article",
+        "title": "A Review of Motion Planning for Highway Autonomous Driving",
+        "publication_date": "2019-05-15",
+        "cited_by_count": 673,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2948135491",
+        "type": "article",
+        "title": "Hydrogen Fuel Cell Vehicles; Current Status and Future Prospect",
+        "publication_date": "2019-06-04",
+        "cited_by_count": 663,
+        "primary_topic": {
+          "id": "https://openalex.org/T10808"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3112288498",
+        "type": "article",
+        "title": "Deep Learning for Safe Autonomous Driving: Current Challenges and Future Directions",
+        "publication_date": "2020-12-07",
+        "cited_by_count": 661,
+        "primary_topic": {
+          "id": "https://openalex.org/T11099"
         }
       }
     ],
     "labels": [
-      {
-        "workId": "https://openalex.org/W3127891378",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2741574707",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2967464127",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2563343938",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2388726286",
-        "label": "off-target"
-      },
       {
         "workId": "https://openalex.org/W2953303875",
         "label": "on-target"
@@ -16220,37 +16201,58 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2903223816",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2967686386",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
         "workId": "https://openalex.org/W3008115128",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W4221095855",
-        "label": "off-target"
+        "workId": "https://openalex.org/W3135991645",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2790625295",
+        "workId": "https://openalex.org/W3016600231",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2805439952",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2259684855",
+        "label": "on-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W3008891024",
+        "workId": "https://openalex.org/W3033920763",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W3139510216",
-        "uncertain": true
+        "workId": "https://openalex.org/W2466636338",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2565919573",
-        "uncertain": true
+        "workId": "https://openalex.org/W2589456662",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W4226239849",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2997958396",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2946231253",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2948135491",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3112288498",
+        "label": "on-target"
       }
     ]
   },
@@ -17790,17 +17792,17 @@
     ]
   },
   "med.immuno": {
-    "capturedAt": "2026-10-25T16:54:19.253Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10200%7CT10308%7CT10469%7CT10580%7CT10634%7CT10831%7CT10877%7CT11616%7CT11725%7CT12328%7CT13410%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:20.186Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10051%7CT10200%7CT10308%7CT10469%7CT10634%7CT10697%7CT10877%7CT10993%7CT11033%7CT11092%7CT11117%7CT11330%7CT11576%7CT11616%7CT11724%7CT11725%7CT11917%7CT12328%7CT12438%7CT12538%7CT12600%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
-        "id": "https://openalex.org/W2336656712",
+        "id": "https://openalex.org/W3118577024",
         "type": "article",
-        "title": "Trained immunity: A program of innate immune memory in health and disease",
-        "publication_date": "2016-04-21",
-        "cited_by_count": 2762,
+        "title": "Plasma Hsp90 levels in patients with systemic sclerosis and relation to lung and skin involvement: a cross-sectional and longitudinal study",
+        "publication_date": "2021-01-07",
+        "cited_by_count": 5036,
         "primary_topic": {
-          "id": "https://openalex.org/T13410"
+          "id": "https://openalex.org/T11330"
         }
       },
       {
@@ -17808,7 +17810,7 @@
         "type": "article",
         "title": "2019 European League Against Rheumatism/American College of Rheumatology Classification Criteria for Systemic Lupus Erythematosus",
         "publication_date": "2019-08-06",
-        "cited_by_count": 2668,
+        "cited_by_count": 2670,
         "primary_topic": {
           "id": "https://openalex.org/T10308"
         }
@@ -17818,7 +17820,7 @@
         "type": "article",
         "title": "Pathophysiology, Clinical Presentation, and Treatment of Psoriasis",
         "publication_date": "2020-05-19",
-        "cited_by_count": 2352,
+        "cited_by_count": 2353,
         "primary_topic": {
           "id": "https://openalex.org/T10469"
         }
@@ -17838,19 +17840,19 @@
         "type": "article",
         "title": "Psoriasis Pathogenesis and Treatment",
         "publication_date": "2019-03-23",
-        "cited_by_count": 2075,
+        "cited_by_count": 2076,
         "primary_topic": {
           "id": "https://openalex.org/T10469"
         }
       },
       {
-        "id": "https://openalex.org/W2787835497",
+        "id": "https://openalex.org/W2803941918",
         "type": "article",
-        "title": "NK Cells Stimulate Recruitment of cDC1 into the Tumor Microenvironment Promoting Cancer Immune Control",
-        "publication_date": "2018-02-01",
-        "cited_by_count": 1852,
+        "title": "Dupilumab Efficacy and Safety in Moderate-to-Severe Uncontrolled Asthma",
+        "publication_date": "2018-05-21",
+        "cited_by_count": 1995,
         "primary_topic": {
-          "id": "https://openalex.org/T10580"
+          "id": "https://openalex.org/T10051"
         }
       },
       {
@@ -17884,13 +17886,53 @@
         }
       },
       {
-        "id": "https://openalex.org/W4376133743",
+        "id": "https://openalex.org/W2945521814",
         "type": "article",
-        "title": "Personalized RNA neoantigen vaccines stimulate T cells in pancreatic cancer",
-        "publication_date": "2023-05-10",
-        "cited_by_count": 1422,
+        "title": "Nintedanib for Systemic Sclerosis–Associated Interstitial Lung Disease",
+        "publication_date": "2019-05-20",
+        "cited_by_count": 1649,
         "primary_topic": {
-          "id": "https://openalex.org/T10580"
+          "id": "https://openalex.org/T11330"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4241915332",
+        "type": "article",
+        "title": "Psoriatic Arthritis",
+        "publication_date": "2017-03-08",
+        "cited_by_count": 1470,
+        "primary_topic": {
+          "id": "https://openalex.org/T11092"
+        }
+      },
+      {
+        "id": "https://openalex.org/W4319053765",
+        "type": "article",
+        "title": "Overlapping DRESS and Stevens-Johnson Syndrome: Case Report and Review of the Literature",
+        "publication_date": "2017-05-08",
+        "cited_by_count": 1466,
+        "primary_topic": {
+          "id": "https://openalex.org/T11117"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2810953097",
+        "type": "article",
+        "title": "The EAACI/GA²LEN/EDF/WAO guideline for the definition, classification, diagnosis and management of urticaria",
+        "publication_date": "2018-01-16",
+        "cited_by_count": 1445,
+        "primary_topic": {
+          "id": "https://openalex.org/T12438"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2737436316",
+        "type": "article",
+        "title": "Trial of Tocilizumab in Giant-Cell Arteritis",
+        "publication_date": "2017-07-26",
+        "cited_by_count": 1395,
+        "primary_topic": {
+          "id": "https://openalex.org/T10697"
         }
       },
       {
@@ -17902,53 +17944,12 @@
         "primary_topic": {
           "id": "https://openalex.org/T10308"
         }
-      },
-      {
-        "id": "https://openalex.org/W2559953355",
-        "type": "article",
-        "title": "T-Cell Transfer Therapy Targeting Mutant KRAS in Cancer",
-        "publication_date": "2016-12-07",
-        "cited_by_count": 1364,
-        "primary_topic": {
-          "id": "https://openalex.org/T10580"
-        }
-      },
-      {
-        "id": "https://openalex.org/W3171954900",
-        "type": "article",
-        "title": "2021 American College of Rheumatology Guideline for the Treatment of Rheumatoid Arthritis",
-        "publication_date": "2021-06-08",
-        "cited_by_count": 1352,
-        "primary_topic": {
-          "id": "https://openalex.org/T10200"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2613529089",
-        "type": "article",
-        "title": "Renal-Limited “Lupus-Like” Nephritis: How Much of a Lupus",
-        "publication_date": "2017-05-08",
-        "cited_by_count": 1299,
-        "primary_topic": {
-          "id": "https://openalex.org/T10308"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2781617771",
-        "type": "article",
-        "title": "Human dendritic cell subsets: an update",
-        "publication_date": "2018-01-03",
-        "cited_by_count": 1298,
-        "primary_topic": {
-          "id": "https://openalex.org/T10580"
-        }
       }
     ],
     "labels": [
       {
-        "workId": "https://openalex.org/W2336656712",
-        "label": "on-target",
-        "uncertain": true
+        "workId": "https://openalex.org/W3118577024",
+        "label": "off-target"
       },
       {
         "workId": "https://openalex.org/W2965565685",
@@ -17956,7 +17957,8 @@
       },
       {
         "workId": "https://openalex.org/W3028355101",
-        "label": "on-target"
+        "label": "on-target",
+        "uncertain": true
       },
       {
         "workId": "https://openalex.org/W2895590824",
@@ -17964,11 +17966,12 @@
       },
       {
         "workId": "https://openalex.org/W2924895007",
-        "label": "on-target"
+        "label": "on-target",
+        "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2787835497",
-        "uncertain": true
+        "workId": "https://openalex.org/W2803941918",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W4210529991",
@@ -17983,30 +17986,30 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W4376133743",
+        "workId": "https://openalex.org/W2945521814",
+        "label": "on-target",
         "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4241915332",
+        "label": "on-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W4319053765",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2810953097",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2737436316",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W2995521654",
         "label": "on-target"
-      },
-      {
-        "workId": "https://openalex.org/W2559953355",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W3171954900",
-        "label": "on-target"
-      },
-      {
-        "workId": "https://openalex.org/W2613529089",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2781617771",
-        "label": "on-target",
-        "uncertain": true
       }
     ]
   },
@@ -18231,246 +18234,280 @@
     ]
   },
   "med.path": {
-    "capturedAt": "2026-10-25T16:54:22.494Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10137%7CT10185%7CT10238%7CT10277%7CT10925%7CT11057%7CT11134%7CT11154%7CT11207%7CT11318%7CT11330%7CT11369%7CT11411%7CT11538%7CT11730%7CT12193%7CT12429%7CT13363%7CT13383%7CT13779%7CT13834%7CT14199%7CT14415%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:22.324Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11035%7CT11868%7CT11909%7CT11991%7CT12296%7CT12379%7CT12695%7CT12866%7CT12992%7CT13363%7CT13383%7CT13569%7CT13759%7CT14199%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
-        "id": "https://openalex.org/W2310716991",
+        "id": "https://openalex.org/W2573152477",
         "type": "article",
-        "title": "The 2016 revision of the World Health Organization classification of lymphoid neoplasms",
-        "publication_date": "2016-03-15",
-        "cited_by_count": 7833,
+        "title": "The Eighth Edition AJCC Cancer Staging Manual: Continuing to build a bridge from a population‐based to a more “personalized” approach to cancer staging",
+        "publication_date": "2017-01-17",
+        "cited_by_count": 6528,
         "primary_topic": {
-          "id": "https://openalex.org/T10185"
+          "id": "https://openalex.org/T12379"
         }
       },
       {
-        "id": "https://openalex.org/W3118577024",
+        "id": "https://openalex.org/W2295097092",
         "type": "article",
-        "title": "Plasma Hsp90 levels in patients with systemic sclerosis and relation to lung and skin involvement: a cross-sectional and longitudinal study",
-        "publication_date": "2021-01-07",
-        "cited_by_count": 5036,
+        "title": "Revised classification of histiocytoses and neoplasms of the macrophage-dendritic cell lineages",
+        "publication_date": "2016-03-10",
+        "cited_by_count": 1598,
         "primary_topic": {
-          "id": "https://openalex.org/T11330"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W4283381496",
+        "id": "https://openalex.org/W2802582740",
         "type": "article",
-        "title": "The 5th edition of the World Health Organization Classification of Haematolymphoid Tumours: Lymphoid Neoplasms",
-        "publication_date": "2022-06-22",
-        "cited_by_count": 4045,
+        "title": "Consensus recommendations for the diagnosis and clinical management of Rosai-Dorfman-Destombes disease",
+        "publication_date": "2018-05-02",
+        "cited_by_count": 646,
         "primary_topic": {
-          "id": "https://openalex.org/T10185"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W2889517514",
+        "id": "https://openalex.org/W2587847258",
         "type": "article",
-        "title": "Alcohol use and burden for 195 countries and territories, 1990–2016: a systematic analysis for the Global Burden of Disease Study 2016",
-        "publication_date": "2018-08-23",
-        "cited_by_count": 3525,
+        "title": "Langerhans-Cell Histiocytosis",
+        "publication_date": "2018-08-29",
+        "cited_by_count": 572,
         "primary_topic": {
-          "id": "https://openalex.org/T11207"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W3099273656",
+        "id": "https://openalex.org/W3004209283",
         "type": "article",
-        "title": "Rising prevalence of multiple sclerosis worldwide: Insights from the Atlas of MS, third edition",
-        "publication_date": "2020-11-11",
-        "cited_by_count": 2680,
+        "title": "The management of desmoid tumours: A joint global consensus-based guideline approach for adult and paediatric patients",
+        "publication_date": "2020-01-28",
+        "cited_by_count": 507,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T11991"
         }
       },
       {
-        "id": "https://openalex.org/W4253381763",
+        "id": "https://openalex.org/W3010697991",
         "type": "article",
-        "title": "Multiple Sclerosis",
-        "publication_date": "2018-01-10",
-        "cited_by_count": 2484,
+        "title": "Autopsy in suspected COVID-19 cases",
+        "publication_date": "2020-03-20",
+        "cited_by_count": 478,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T12296"
         }
       },
       {
-        "id": "https://openalex.org/W2598700764",
+        "id": "https://openalex.org/W2905567470",
         "type": "article",
-        "title": "Single-Agent Pixantrone as a Bridge to Autologous Stem Cell Transplantation in a Patient with Refractory Diffuse Large B-Cell Lymphoma",
-        "publication_date": "2017-01-01",
-        "cited_by_count": 2327,
+        "title": "Sorafenib for Advanced and Refractory Desmoid Tumors",
+        "publication_date": "2018-12-19",
+        "cited_by_count": 463,
         "primary_topic": {
-          "id": "https://openalex.org/T10185"
+          "id": "https://openalex.org/T11991"
         }
       },
       {
-        "id": "https://openalex.org/W4361000000",
+        "id": "https://openalex.org/W3157336873",
         "type": "article",
-        "title": "Global burden of liver disease: 2023 update",
-        "publication_date": "2023-03-27",
-        "cited_by_count": 2252,
+        "title": "Management of Salivary Gland Malignancy: ASCO Guideline",
+        "publication_date": "2021-04-26",
+        "cited_by_count": 444,
         "primary_topic": {
-          "id": "https://openalex.org/T11207"
+          "id": "https://openalex.org/T11035"
         }
       },
       {
-        "id": "https://openalex.org/W2797584152",
+        "id": "https://openalex.org/W2669144980",
         "type": "article",
-        "title": "Genetics and Pathogenesis of Diffuse Large B-Cell Lymphoma",
-        "publication_date": "2018-04-11",
-        "cited_by_count": 2238,
+        "title": "An update on the management of sporadic desmoid-type fibromatosis: a European Consensus Initiative between Sarcoma PAtients EuroNet (SPAEN) and European Organization for Research and Treatment of Cancer (EORTC)/Soft Tissue and Bone Sarcoma Group (STBSG)",
+        "publication_date": "2017-06-22",
+        "cited_by_count": 422,
         "primary_topic": {
-          "id": "https://openalex.org/T10185"
+          "id": "https://openalex.org/T11991"
         }
       },
       {
-        "id": "https://openalex.org/W2896014118",
+        "id": "https://openalex.org/W3011169548",
         "type": "article",
-        "title": "Multiple sclerosis – a review",
-        "publication_date": "2018-10-10",
-        "cited_by_count": 2161,
+        "title": "Erdheim-Chester disease: consensus recommendations for evaluation, diagnosis, and treatment in the molecular era",
+        "publication_date": "2020-03-18",
+        "cited_by_count": 418,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W3013463190",
+        "id": "https://openalex.org/W2770975168",
         "type": "article",
-        "title": "Evidence that Vitamin D Supplementation Could Reduce Risk of Influenza and COVID-19 Infections and Deaths",
-        "publication_date": "2020-04-02",
-        "cited_by_count": 2068,
+        "title": "Vemurafenib for BRAF V600–Mutant Erdheim-Chester Disease and Langerhans Cell Histiocytosis",
+        "publication_date": "2017-11-29",
+        "cited_by_count": 416,
         "primary_topic": {
-          "id": "https://openalex.org/T10277"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W4205972999",
+        "id": "https://openalex.org/W2607355358",
         "type": "article",
-        "title": "Longitudinal analysis reveals high prevalence of Epstein-Barr virus associated with multiple sclerosis",
-        "publication_date": "2022-01-14",
-        "cited_by_count": 2040,
+        "title": "Cancer and cure: A critical analysis",
+        "publication_date": "2016-01-01",
+        "cited_by_count": 409,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T12379"
         }
       },
       {
-        "id": "https://openalex.org/W2561881161",
+        "id": "https://openalex.org/W3007428404",
         "type": "article",
-        "title": "Ocrelizumab versus Interferon Beta-1a in Relapsing Multiple Sclerosis",
-        "publication_date": "2016-12-21",
-        "cited_by_count": 2020,
+        "title": "Langerhans cell histiocytosis",
+        "publication_date": "2020-02-27",
+        "cited_by_count": 370,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W2565433170",
+        "id": "https://openalex.org/W2474782031",
         "type": "article",
-        "title": "Ocrelizumab versus Placebo in Primary Progressive Multiple Sclerosis",
-        "publication_date": "2016-12-21",
-        "cited_by_count": 1906,
+        "title": "BRAF Mutation Correlates With High-Risk Langerhans Cell Histiocytosis and Increased Resistance to First-Line Therapy",
+        "publication_date": "2016-07-05",
+        "cited_by_count": 346,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T11909"
         }
       },
       {
-        "id": "https://openalex.org/W2587498331",
+        "id": "https://openalex.org/W2274032786",
         "type": "article",
-        "title": "Autonomic Dysregulation, Cognitive Impairment, and Symptoms of Psychosis as an Unusual Presentation in an Anti-Aquaporin 4-Positive Patient",
-        "publication_date": "2017-02-06",
-        "cited_by_count": 1762,
+        "title": "What hides behind the MASC: clinical response and acquired resistance to entrectinib after ETV6-NTRK3 identification in a mammary analogue secretory carcinoma (MASC)",
+        "publication_date": "2016-02-16",
+        "cited_by_count": 307,
         "primary_topic": {
-          "id": "https://openalex.org/T10137"
+          "id": "https://openalex.org/T11035"
         }
       }
     ],
     "labels": [
       {
-        "workId": "https://openalex.org/W2310716991",
+        "workId": "https://openalex.org/W2573152477",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3118577024",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W4283381496",
+        "workId": "https://openalex.org/W2295097092",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2889517514",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W3099273656",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W4253381763",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2598700764",
+        "workId": "https://openalex.org/W2802582740",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W4361000000",
+        "workId": "https://openalex.org/W2587847258",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2797584152",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2896014118",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W3013463190",
+        "workId": "https://openalex.org/W3004209283",
         "label": "off-target"
       },
       {
-        "workId": "https://openalex.org/W4205972999",
+        "workId": "https://openalex.org/W3010697991",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2905567470",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3157336873",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2669144980",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3011169548",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2561881161",
+        "workId": "https://openalex.org/W2770975168",
         "label": "off-target"
       },
       {
-        "workId": "https://openalex.org/W2565433170",
+        "workId": "https://openalex.org/W2607355358",
         "label": "off-target"
       },
       {
-        "workId": "https://openalex.org/W2587498331",
+        "workId": "https://openalex.org/W3007428404",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2474782031",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2274032786",
         "label": "off-target"
       }
     ]
   },
   "med.peds": {
-    "capturedAt": "2026-10-25T16:54:15.767Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10209%7CT10978%7CT11060%7CT11141%7CT11174%7CT11184%7CT11292%7CT11389%7CT11629%7CT11633%7CT11732%7CT12068%7CT12229%7CT12235%7CT12547%7CT12552%7CT13091%7CT13847%7CT14437%7CT14495%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:24.403Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10300%7CT10549%7CT10979%7CT11060%7CT11141%7CT11174%7CT11184%7CT11292%7CT11294%7CT11586%7CT11633%7CT11892%7CT11961%7CT12068%7CT12150%7CT12235%7CT12237%7CT12272%7CT12460%7CT12484%7CT12547%7CT12552%7CT12716%7CT12823%7CT13206%7CT13289%7CT13813%7CT13883%7CT14437%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
-        "id": "https://openalex.org/W2549697535",
+        "id": "https://openalex.org/W2604027935",
         "type": "article",
-        "title": "Global, regional, and national causes of under-5 mortality in 2000–15: an updated systematic analysis with implications for the Sustainable Development Goals",
-        "publication_date": "2016-11-10",
-        "cited_by_count": 3450,
+        "title": "Diagnosis, Treatment, and Long-Term Management of Kawasaki Disease: A Scientific Statement for Health Professionals From the American Heart Association",
+        "publication_date": "2017-03-29",
+        "cited_by_count": 3734,
         "primary_topic": {
-          "id": "https://openalex.org/T10209"
+          "id": "https://openalex.org/T11892"
         }
       },
       {
-        "id": "https://openalex.org/W2266050978",
+        "id": "https://openalex.org/W2169101968",
         "type": "article",
-        "title": "Stillbirths: rates, risk factors, and acceleration towards 2030",
-        "publication_date": "2016-01-18",
-        "cited_by_count": 1777,
+        "title": "Antenatal corticosteroids for accelerating fetal lung maturation for women at risk of preterm birth",
+        "publication_date": "2017-03-20",
+        "cited_by_count": 2813,
         "primary_topic": {
-          "id": "https://openalex.org/T10209"
+          "id": "https://openalex.org/T10549"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3038003713",
+        "type": "article",
+        "title": "Multisystem Inflammatory Syndrome in U.S. Children and Adolescents",
+        "publication_date": "2020-06-29",
+        "cited_by_count": 2646,
+        "primary_topic": {
+          "id": "https://openalex.org/T11892"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3082168186",
+        "type": "article",
+        "title": "2020 ESC Guidelines for the management of adult congenital heart disease",
+        "publication_date": "2020-08-29",
+        "cited_by_count": 2326,
+        "primary_topic": {
+          "id": "https://openalex.org/T10300"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3034016318",
+        "type": "article",
+        "title": "Clinical Characteristics of 58 Children With a Pediatric Inflammatory Multisystem Syndrome Temporally Associated With SARS-CoV-2",
+        "publication_date": "2020-06-08",
+        "cited_by_count": 1997,
+        "primary_topic": {
+          "id": "https://openalex.org/T11892"
         }
       },
       {
@@ -18484,16 +18521,6 @@
         }
       },
       {
-        "id": "https://openalex.org/W3211777249",
-        "type": "article",
-        "title": "Global, regional, and national causes of under-5 mortality in 2000–19: an updated systematic analysis with implications for the Sustainable Development Goals",
-        "publication_date": "2021-11-17",
-        "cited_by_count": 1656,
-        "primary_topic": {
-          "id": "https://openalex.org/T10209"
-        }
-      },
-      {
         "id": "https://openalex.org/W4387381283",
         "type": "article",
         "title": "National, regional, and global estimates of preterm birth in 2020, with trends from 2010: a systematic analysis",
@@ -18504,23 +18531,53 @@
         }
       },
       {
-        "id": "https://openalex.org/W2786382895",
+        "id": "https://openalex.org/W2936595371",
         "type": "article",
-        "title": "Practice Bulletin No. 183: Postpartum Hemorrhage",
-        "publication_date": "2017-09-22",
-        "cited_by_count": 1403,
+        "title": "European Consensus Guidelines on the Management of Respiratory Distress Syndrome – 2019 Update",
+        "publication_date": "2019-01-01",
+        "cited_by_count": 1615,
         "primary_topic": {
-          "id": "https://openalex.org/T11389"
+          "id": "https://openalex.org/T10549"
         }
       },
       {
-        "id": "https://openalex.org/W3025111443",
+        "id": "https://openalex.org/W2887210117",
         "type": "article",
-        "title": "Early estimates of the indirect effects of the COVID-19 pandemic on maternal and child mortality in low-income and middle-income countries: a modelling study",
-        "publication_date": "2020-05-12",
-        "cited_by_count": 1380,
+        "title": "2018 AHA/ACC Guideline for the Management of Adults With Congenital Heart Disease: A Report of the American College of Cardiology/American Heart Association Task Force on Clinical Practice Guidelines",
+        "publication_date": "2018-10-16",
+        "cited_by_count": 1601,
         "primary_topic": {
-          "id": "https://openalex.org/T10209"
+          "id": "https://openalex.org/T10300"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2568585884",
+        "type": "article",
+        "title": "Screening Examination of Premature Infants for Retinopathy of Prematurity",
+        "publication_date": "2018-11-26",
+        "cited_by_count": 1462,
+        "primary_topic": {
+          "id": "https://openalex.org/T12484"
+        }
+      },
+      {
+        "id": "https://openalex.org/W1962894711",
+        "type": "article",
+        "title": "Supporting the Health Care Transition From Adolescence to Adulthood in the Medical Home",
+        "publication_date": "2018-10-22",
+        "cited_by_count": 1414,
+        "primary_topic": {
+          "id": "https://openalex.org/T12823"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3037731101",
+        "type": "article",
+        "title": "Multisystem Inflammatory Syndrome in Children in New York State",
+        "publication_date": "2020-06-29",
+        "cited_by_count": 1353,
+        "primary_topic": {
+          "id": "https://openalex.org/T11892"
         }
       },
       {
@@ -18534,92 +18591,50 @@
         }
       },
       {
-        "id": "https://openalex.org/W2945316679",
+        "id": "https://openalex.org/W2935685937",
         "type": "article",
-        "title": "National, regional, and worldwide estimates of low birthweight in 2015, with trends from 2000: a systematic analysis",
-        "publication_date": "2019-05-15",
-        "cited_by_count": 1242,
+        "title": "The Diagnosis of Bronchopulmonary Dysplasia in Very Preterm Infants. An Evidence-based Approach",
+        "publication_date": "2019-04-17",
+        "cited_by_count": 1249,
         "primary_topic": {
-          "id": "https://openalex.org/T10209"
+          "id": "https://openalex.org/T10549"
         }
       },
       {
-        "id": "https://openalex.org/W4210761116",
+        "id": "https://openalex.org/W4283588834",
         "type": "article",
-        "title": "The Generation R Study: design and cohort update 2017",
-        "publication_date": "2016-12-01",
-        "cited_by_count": 1218,
+        "title": "Policy Statement: Breastfeeding and the Use of Human Milk",
+        "publication_date": "2022-06-27",
+        "cited_by_count": 1223,
         "primary_topic": {
-          "id": "https://openalex.org/T11629"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2529846601",
-        "type": "article",
-        "title": "Global, regional, and national levels of maternal mortality, 1990–2015: a systematic analysis for the Global Burden of Disease Study 2015",
-        "publication_date": "2016-10-01",
-        "cited_by_count": 1162,
-        "primary_topic": {
-          "id": "https://openalex.org/T10209"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2534880975",
-        "type": "article",
-        "title": "Glossary of terms used in developmental and reproductive toxicology (IUPAC Recommendations 2016)",
-        "publication_date": "2016-08-01",
-        "cited_by_count": 1080,
-        "primary_topic": {
-          "id": "https://openalex.org/T12229"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2144896208",
-        "type": "article",
-        "title": "National, regional, and worldwide estimates of stillbirth rates in 2015, with trends from 2000: a systematic analysis",
-        "publication_date": "2016-01-18",
-        "cited_by_count": 1060,
-        "primary_topic": {
-          "id": "https://openalex.org/T10209"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2910154696",
-        "type": "article",
-        "title": "Pregnancy-Related Mortality in the United States, 2011–2013",
-        "publication_date": "2017-07-11",
-        "cited_by_count": 1044,
-        "primary_topic": {
-          "id": "https://openalex.org/T11389"
-        }
-      },
-      {
-        "id": "https://openalex.org/W3033628182",
-        "type": "article",
-        "title": "Global burden of preterm birth",
-        "publication_date": "2020-06-10",
-        "cited_by_count": 1009,
-        "primary_topic": {
-          "id": "https://openalex.org/T11060"
+          "id": "https://openalex.org/T10979"
         }
       }
     ],
     "labels": [
       {
-        "workId": "https://openalex.org/W2549697535",
+        "workId": "https://openalex.org/W2604027935",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2266050978",
+        "workId": "https://openalex.org/W2169101968",
         "label": "on-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W1528409549",
+        "workId": "https://openalex.org/W3038003713",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3211777249",
+        "workId": "https://openalex.org/W3082168186",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W3034016318",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1528409549",
         "label": "on-target"
       },
       {
@@ -18627,46 +18642,35 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2786382895",
-        "uncertain": true
+        "workId": "https://openalex.org/W2936595371",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3025111443",
-        "label": "on-target",
-        "uncertain": true
+        "workId": "https://openalex.org/W2887210117",
+        "label": "off-target"
+      },
+      {
+        "workId": "https://openalex.org/W2568585884",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W1962894711",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3037731101",
+        "label": "on-target"
       },
       {
         "workId": "https://openalex.org/W2164580180",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2945316679",
+        "workId": "https://openalex.org/W2935685937",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W4210761116",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2529846601",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2534880975",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2144896208",
-        "label": "on-target",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2910154696",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W3033628182",
+        "workId": "https://openalex.org/W4283588834",
         "label": "on-target"
       }
     ]
@@ -19113,97 +19117,17 @@
     ]
   },
   "med.surg": {
-    "capturedAt": "2026-10-25T16:54:17.521Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10189%7CT10193%7CT10276%7CT10280%7CT10394%7CT10442%7CT10458%7CT10512%7CT10562%7CT10569%7CT10599%7CT10619%7CT10630%7CT10760%7CT10776%7CT10839%7CT10916%7CT10926%7CT10961%7CT10980%7CT10999%7CT11030%7CT11035%7CT11054%7CT11055%7CT11069%7CT11080%7CT11189%7CT11218%7CT11258%7CT11267%7CT11293%7CT11364%7CT11381%7CT11453%7CT11509%7CT11518%7CT11562%7CT11586%7CT11618%7CT11625%7CT11658%7CT11669%7CT11700%7CT11713%7CT11728%7CT11785%7CT11812%7CT11855%7CT11865%7CT11866%7CT11892%7CT11950%7CT11951%7CT12020%7CT12053%7CT12064%7CT12089%7CT12108%7CT12117%7CT12150%7CT12154%7CT12173%7CT12183%7CT12237%7CT12264%7CT12342%7CT12352%7CT12426%7CT12453%7CT12459%7CT12460%7CT12476%7CT12518%7CT12538%7CT12578%7CT12598%7CT12631%7CT12654%7CT12695%7CT12716%7CT12769%7CT12830%7CT12906%7CT12930%7CT13110%7CT13248%7CT13314%7CT13323%7CT13533%7CT13639%7CT13775%7CT13828%7CT13878%7CT14020%7CT14486%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:26.628Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10280%7CT10442%7CT10455%7CT10512%7CT10562%7CT10569%7CT10599%7CT10630%7CT10776%7CT10916%7CT10961%7CT10999%7CT11030%7CT11055%7CT11080%7CT11189%7CT11218%7CT11258%7CT11267%7CT11293%7CT11427%7CT11453%7CT11467%7CT11473%7CT11509%7CT11518%7CT11562%7CT11586%7CT11658%7CT11669%7CT11728%7CT11731%7CT11812%7CT11865%7CT11866%7CT11930%7CT11951%7CT12020%7CT12053%7CT12064%7CT12089%7CT12150%7CT12154%7CT12173%7CT12183%7CT12237%7CT12333%7CT12411%7CT12453%7CT12459%7CT12460%7CT12518%7CT12548%7CT12598%7CT12622%7CT12631%7CT12654%7CT12716%7CT12769%7CT12830%7CT12900%7CT12906%7CT13697%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
-      {
-        "id": "https://openalex.org/W3183857127",
-        "type": "article",
-        "title": "2019 ESC/EAS Guidelines for the management of dyslipidaemias: lipid modification to reduce cardiovascular risk",
-        "publication_date": "2019-08-31",
-        "cited_by_count": 8976,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
-        }
-      },
-      {
-        "id": "https://openalex.org/W3011371150",
-        "type": "article",
-        "title": "2019 ESC Guidelines for the diagnosis and management of chronic coronary syndromes",
-        "publication_date": "2019-08-31",
-        "cited_by_count": 7179,
-        "primary_topic": {
-          "id": "https://openalex.org/T10193"
-        }
-      },
       {
         "id": "https://openalex.org/W2916912835",
         "type": "article",
         "title": "2018 ESC/EACTS Guidelines on myocardial revascularization",
         "publication_date": "2018-08-25",
-        "cited_by_count": 7168,
+        "cited_by_count": 7169,
         "primary_topic": {
           "id": "https://openalex.org/T11055"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2900034165",
-        "type": "article",
-        "title": "2018 AHA/ACC/AACVPR/AAPA/ABC/ACPM/ADA/AGS/APhA/ASPC/NLA/PCNA Guideline on the Management of Blood Cholesterol: A Report of the American College of Cardiology/American Heart Association Task Force on Clinical Practice Guidelines",
-        "publication_date": "2019-01-17",
-        "cited_by_count": 6192,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2596179513",
-        "type": "article",
-        "title": "Evolocumab and Clinical Outcomes in Patients with Cardiovascular Disease",
-        "publication_date": "2017-03-17",
-        "cited_by_count": 6136,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2953804067",
-        "type": "article",
-        "title": "2019 ESC/EAS guidelines for the management of dyslipidaemias: Lipid modification to reduce cardiovascular risk",
-        "publication_date": "2019-08-31",
-        "cited_by_count": 4854,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2609543937",
-        "type": "article",
-        "title": "Low-density lipoproteins cause atherosclerotic cardiovascular disease. 1. Evidence from genetic, epidemiologic, and clinical studies. A consensus statement from the European Atherosclerosis Society Consensus Panel",
-        "publication_date": "2017-03-08",
-        "cited_by_count": 3963,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2604027935",
-        "type": "article",
-        "title": "Diagnosis, Treatment, and Long-Term Management of Kawasaki Disease: A Scientific Statement for Health Professionals From the American Heart Association",
-        "publication_date": "2017-03-29",
-        "cited_by_count": 3734,
-        "primary_topic": {
-          "id": "https://openalex.org/T11892"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2899997727",
-        "type": "article",
-        "title": "Alirocumab and Cardiovascular Outcomes after Acute Coronary Syndrome",
-        "publication_date": "2018-11-07",
-        "cited_by_count": 3631,
-        "primary_topic": {
-          "id": "https://openalex.org/T10394"
         }
       },
       {
@@ -19227,83 +19151,130 @@
         }
       },
       {
-        "id": "https://openalex.org/W2588916311",
+        "id": "https://openalex.org/W2915948028",
         "type": "article",
-        "title": "Pembrolizumab as Second-Line Therapy for Advanced Urothelial Carcinoma",
-        "publication_date": "2017-02-17",
-        "cited_by_count": 3394,
+        "title": "Bariatric Surgery versus Intensive Medical Therapy for Diabetes — 5-Year Outcomes",
+        "publication_date": "2017-02-15",
+        "cited_by_count": 2929,
         "primary_topic": {
-          "id": "https://openalex.org/T10458"
+          "id": "https://openalex.org/T10569"
         }
       },
       {
-        "id": "https://openalex.org/W1603593764",
+        "id": "https://openalex.org/W2804724448",
         "type": "article",
-        "title": "Robbins and Cotran Pathologic Basis of Disease",
-        "publication_date": "2020-08-13",
-        "cited_by_count": 3367,
+        "title": "International guidelines for groin hernia management",
+        "publication_date": "2018-01-11",
+        "cited_by_count": 2311,
         "primary_topic": {
-          "id": "https://openalex.org/T14020"
+          "id": "https://openalex.org/T10961"
         }
       },
       {
-        "id": "https://openalex.org/W3081655479",
+        "id": "https://openalex.org/W2890318547",
         "type": "article",
-        "title": "Pathophysiology of Type 2 Diabetes Mellitus",
-        "publication_date": "2020-08-30",
-        "cited_by_count": 3341,
+        "title": "Projected Volume of Primary Total Joint Arthroplasty in the U.S., 2014 to 2030",
+        "publication_date": "2018-09-05",
+        "cited_by_count": 2164,
         "primary_topic": {
-          "id": "https://openalex.org/T10839"
+          "id": "https://openalex.org/T10562"
         }
       },
       {
-        "id": "https://openalex.org/W2975859535",
+        "id": "https://openalex.org/W4211229530",
         "type": "article",
-        "title": "2017 ESC Guidelines on the Diagnosis and Treatment of Peripheral Arterial Diseases, in collaboration with the European Society for Vascular Surgery (ESVS)",
-        "publication_date": "2017-08-26",
-        "cited_by_count": 3316,
+        "title": "Guidelines for Perioperative Care in Elective Colorectal Surgery: Enhanced Recovery After Surgery (ERAS ® ) Society Recommendations: 2018",
+        "publication_date": "2018-11-13",
+        "cited_by_count": 2134,
         "primary_topic": {
-          "id": "https://openalex.org/T10926"
+          "id": "https://openalex.org/T12020"
+        }
+      },
+      {
+        "id": "https://openalex.org/W3017264036",
+        "type": "article",
+        "title": "Diagnosis and treatment of acute appendicitis: 2020 update of the WSES Jerusalem guidelines",
+        "publication_date": "2020-04-15",
+        "cited_by_count": 1442,
+        "primary_topic": {
+          "id": "https://openalex.org/T11473"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2896049653",
+        "type": "article",
+        "title": "Guidelines for enhanced recovery after lung surgery: recommendations of the Enhanced Recovery After Surgery (ERAS®) Society and the European Society of Thoracic Surgeons (ESTS)",
+        "publication_date": "2018-08-03",
+        "cited_by_count": 1380,
+        "primary_topic": {
+          "id": "https://openalex.org/T12020"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2499214176",
+        "type": "article",
+        "title": "The American Association of Endocrine Surgeons Guidelines for Definitive Management of Primary Hyperparathyroidism",
+        "publication_date": "2016-08-17",
+        "cited_by_count": 1347,
+        "primary_topic": {
+          "id": "https://openalex.org/T11728"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2255548996",
+        "type": "article",
+        "title": "Laparoscopic Nephrectomy: Initial Case Report",
+        "publication_date": "2016-12-22",
+        "cited_by_count": 1341,
+        "primary_topic": {
+          "id": "https://openalex.org/T12053"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2278417395",
+        "type": "article",
+        "title": "Risk of Secondary Injury in Younger Athletes After Anterior Cruciate Ligament Reconstruction",
+        "publication_date": "2016-01-15",
+        "cited_by_count": 1340,
+        "primary_topic": {
+          "id": "https://openalex.org/T10442"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2276225265",
+        "type": "article",
+        "title": "Incidence of Anterior Cruciate Ligament Tears and Reconstruction",
+        "publication_date": "2016-02-26",
+        "cited_by_count": 1322,
+        "primary_topic": {
+          "id": "https://openalex.org/T10442"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2346975471",
+        "type": "article",
+        "title": "Simple decision rules can reduce reinjury risk by 84% after ACL reconstruction: the Delaware-Oslo ACL cohort study",
+        "publication_date": "2016-05-09",
+        "cited_by_count": 1307,
+        "primary_topic": {
+          "id": "https://openalex.org/T10442"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2783324876",
+        "type": "article",
+        "title": "Effect of Laparoscopic Sleeve Gastrectomy vs Laparoscopic Roux-en-Y Gastric Bypass on Weight Loss in Patients With Morbid Obesity",
+        "publication_date": "2018-01-16",
+        "cited_by_count": 1267,
+        "primary_topic": {
+          "id": "https://openalex.org/T10569"
         }
       }
     ],
     "labels": [
       {
-        "workId": "https://openalex.org/W3183857127",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W3011371150",
-        "label": "off-target"
-      },
-      {
         "workId": "https://openalex.org/W2916912835",
-        "label": "on-target",
         "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2900034165",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2596179513",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2953804067",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2609543937",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2604027935",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W2899997727",
-        "label": "off-target"
       },
       {
         "workId": "https://openalex.org/W2573978544",
@@ -19314,27 +19285,62 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2588916311",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2915948028",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W1603593764",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2804724448",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W3081655479",
-        "label": "off-target"
+        "workId": "https://openalex.org/W2890318547",
+        "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2975859535",
+        "workId": "https://openalex.org/W4211229530",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3017264036",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2896049653",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2499214176",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2255548996",
         "label": "on-target",
         "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2278417395",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2276225265",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2346975471",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2783324876",
+        "label": "on-target"
       }
     ]
   },
   "med.tox": {
-    "capturedAt": "2026-10-25T16:54:14.113Z",
-    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10122%7CT10190%7CT10447%7CT10686%7CT10692%7CT10790%7CT10800%7CT10819%7CT11002%7CT11244%7CT11493%7CT11931%7CT11943%7CT11972%7CT12356%7CT12705%7CT13563%7CT14169%7CT14324%7CT14393%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
+    "capturedAt": "2026-10-26T20:05:29.039Z",
+    "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10122%7CT10433%7CT10447%7CT10686%7CT10790%7CT10800%7CT10819%7CT11353%7CT11465%7CT11635%7CT11869%7CT11972%7CT11985%7CT12429%7CT12756%7CT12962%7CT12963%7CT13467%7CT13639%7CT14072%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count",
     "works": [
       {
         "id": "https://openalex.org/W2909240409",
@@ -19344,26 +19350,6 @@
         "cited_by_count": 8494,
         "primary_topic": {
           "id": "https://openalex.org/T10122"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2607350314",
-        "type": "article",
-        "title": "Estimates and 25-year trends of the global burden of disease attributable to ambient air pollution: an analysis of data from the Global Burden of Diseases Study 2015",
-        "publication_date": "2017-04-10",
-        "cited_by_count": 6582,
-        "primary_topic": {
-          "id": "https://openalex.org/T10190"
-        }
-      },
-      {
-        "id": "https://openalex.org/W3007246056",
-        "type": "article",
-        "title": "Environmental and Health Impacts of Air Pollution: A Review",
-        "publication_date": "2020-02-20",
-        "cited_by_count": 5259,
-        "primary_topic": {
-          "id": "https://openalex.org/T10190"
         }
       },
       {
@@ -19391,7 +19377,7 @@
         "type": "article",
         "title": "Toxic Mechanisms of Five Heavy Metals: Mercury, Lead, Chromium, Cadmium, and Arsenic",
         "publication_date": "2021-04-13",
-        "cited_by_count": 3142,
+        "cited_by_count": 3143,
         "primary_topic": {
           "id": "https://openalex.org/T10790"
         }
@@ -19407,43 +19393,33 @@
         }
       },
       {
-        "id": "https://openalex.org/W2890701797",
+        "id": "https://openalex.org/W3096321011",
         "type": "article",
-        "title": "Global estimates of mortality associated with long-term exposure to outdoor fine particulate matter",
-        "publication_date": "2018-09-04",
-        "cited_by_count": 2504,
+        "title": "An overview of the uses of per- and polyfluoroalkyl substances (PFAS)",
+        "publication_date": "2020-01-01",
+        "cited_by_count": 2443,
         "primary_topic": {
-          "id": "https://openalex.org/T10190"
+          "id": "https://openalex.org/T11869"
         }
       },
       {
-        "id": "https://openalex.org/W2990705976",
+        "id": "https://openalex.org/W3091745167",
         "type": "article",
-        "title": "Drivers of improved PM 2.5 air quality in China from 2013 to 2017",
-        "publication_date": "2019-11-18",
-        "cited_by_count": 2213,
+        "title": "Per- and Polyfluoroalkyl Substance Toxicity and Human Health Review: Current State of Knowledge and Strategies for Informing Future Research",
+        "publication_date": "2020-10-05",
+        "cited_by_count": 2432,
         "primary_topic": {
-          "id": "https://openalex.org/T10190"
+          "id": "https://openalex.org/T11869"
         }
       },
       {
-        "id": "https://openalex.org/W4280493402",
+        "id": "https://openalex.org/W4210795660",
         "type": "article",
-        "title": "Pollution and health: a progress update",
-        "publication_date": "2022-05-17",
-        "cited_by_count": 2139,
+        "title": "Per- and polyfluoroalkyl substances in the environment",
+        "publication_date": "2022-02-03",
+        "cited_by_count": 2138,
         "primary_topic": {
-          "id": "https://openalex.org/T10190"
-        }
-      },
-      {
-        "id": "https://openalex.org/W2560688864",
-        "type": "article",
-        "title": "Real-World Evidence — What Is It and What Can It Tell Us?",
-        "publication_date": "2016-12-07",
-        "cited_by_count": 2081,
-        "primary_topic": {
-          "id": "https://openalex.org/T11943"
+          "id": "https://openalex.org/T11869"
         }
       },
       {
@@ -19457,49 +19433,70 @@
         }
       },
       {
-        "id": "https://openalex.org/W2964203982",
+        "id": "https://openalex.org/W2589816650",
         "type": "article",
-        "title": "Nature and mental health: An ecosystem service perspective",
-        "publication_date": "2019-07-05",
-        "cited_by_count": 1994,
+        "title": "A Never-Ending Story of Per- and Polyfluoroalkyl Substances (PFASs)?",
+        "publication_date": "2017-02-22",
+        "cited_by_count": 1912,
         "primary_topic": {
-          "id": "https://openalex.org/T10692"
+          "id": "https://openalex.org/T11869"
         }
       },
       {
-        "id": "https://openalex.org/W3095961138",
+        "id": "https://openalex.org/W3108318864",
         "type": "article",
-        "title": "Air pollution and COVID-19 mortality in the United States: Strengths and limitations of an ecological regression analysis",
-        "publication_date": "2020-11-04",
-        "cited_by_count": 1977,
+        "title": "A ubiquitous tire rubber–derived chemical induces acute mortality in coho salmon",
+        "publication_date": "2020-12-03",
+        "cited_by_count": 1600,
         "primary_topic": {
-          "id": "https://openalex.org/T10190"
+          "id": "https://openalex.org/T10447"
         }
       },
       {
-        "id": "https://openalex.org/W2289270062",
+        "id": "https://openalex.org/W3001369673",
         "type": "article",
-        "title": "Extinction of experience: the loss of human–nature interactions",
-        "publication_date": "2016-03-01",
-        "cited_by_count": 1800,
+        "title": "Nickel: Human Health and Environmental Toxicology",
+        "publication_date": "2020-01-21",
+        "cited_by_count": 1599,
         "primary_topic": {
-          "id": "https://openalex.org/T10692"
+          "id": "https://openalex.org/T10790"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2696164464",
+        "type": "article",
+        "title": "Prevalence of exposure of heavy metals and their impact on health consequences",
+        "publication_date": "2017-06-23",
+        "cited_by_count": 1581,
+        "primary_topic": {
+          "id": "https://openalex.org/T10790"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2497102241",
+        "type": "article",
+        "title": "Detection of Poly- and Perfluoroalkyl Substances (PFASs) in U.S. Drinking Water Linked to Industrial Sites, Military Fire Training Areas, and Wastewater Treatment Plants",
+        "publication_date": "2016-08-09",
+        "cited_by_count": 1332,
+        "primary_topic": {
+          "id": "https://openalex.org/T11869"
+        }
+      },
+      {
+        "id": "https://openalex.org/W2769853272",
+        "type": "article",
+        "title": "The CompTox Chemistry Dashboard: a community data resource for environmental chemistry",
+        "publication_date": "2017-11-28",
+        "cited_by_count": 1155,
+        "primary_topic": {
+          "id": "https://openalex.org/T10447"
         }
       }
     ],
     "labels": [
       {
         "workId": "https://openalex.org/W2909240409",
-        "label": "on-target"
-      },
-      {
-        "workId": "https://openalex.org/W2607350314",
-        "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W3007246056",
-        "label": "on-target",
-        "uncertain": true
+        "label": "off-target"
       },
       {
         "workId": "https://openalex.org/W3084100763",
@@ -19518,37 +19515,49 @@
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2890701797",
+        "workId": "https://openalex.org/W3096321011",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2990705976",
-        "uncertain": true
+        "workId": "https://openalex.org/W3091745167",
+        "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W4280493402",
-        "label": "on-target",
+        "workId": "https://openalex.org/W4210795660",
+        "label": "off-target",
         "uncertain": true
-      },
-      {
-        "workId": "https://openalex.org/W2560688864",
-        "label": "off-target"
       },
       {
         "workId": "https://openalex.org/W4210708207",
         "label": "on-target"
       },
       {
-        "workId": "https://openalex.org/W2964203982",
-        "label": "off-target"
-      },
-      {
-        "workId": "https://openalex.org/W3095961138",
+        "workId": "https://openalex.org/W2589816650",
+        "label": "off-target",
         "uncertain": true
       },
       {
-        "workId": "https://openalex.org/W2289270062",
-        "label": "off-target"
+        "workId": "https://openalex.org/W3108318864",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W3001369673",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2696164464",
+        "label": "on-target"
+      },
+      {
+        "workId": "https://openalex.org/W2497102241",
+        "label": "off-target",
+        "uncertain": true
+      },
+      {
+        "workId": "https://openalex.org/W2769853272",
+        "label": "on-target",
+        "uncertain": true
       }
     ]
   },

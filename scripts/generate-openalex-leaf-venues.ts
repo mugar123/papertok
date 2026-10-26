@@ -261,11 +261,14 @@ const report = Object.keys(reviews.leaves).sort().map(leaf => {
   if (!known) throw new Error(`Review must name a taxonomy leaf: ${leaf}`);
   const row = { leaf, label: known.label, ...checkLeaf(leaf, reviews.leaves[leaf], reviews.sources) };
   if (!Object.hasOwn(notableSamples, leaf)) return row;
-  // A leaf with a topic notable lane lists its topics' most cited; a second
-  // OpenAlex listing for the same lane would only repeat or blur it.
   if (row.status !== 'passed') throw new Error(`${leaf}: a notable sample needs the leaf's venue lane`);
-  if (openAlexNotableFilterForLeaf(leaf) !== null) throw new Error(`${leaf}: has a notable lane from its topics`);
-  return { ...row, notable: checkNotableSample(leaf, notableSamples[leaf], row) };
+  const notable = checkNotableSample(leaf, notableSamples[leaf], row);
+  // A leaf with a topic notable lane lists its topics' most cited; a second
+  // OpenAlex listing for the same lane would only repeat or blur it. A
+  // rejected journal sample lists nothing, so it stays as evidence when a
+  // topic sample admits the leaf later.
+  if (notable.status === 'passed' && openAlexNotableFilterForLeaf(leaf) !== null) throw new Error(`${leaf}: has a notable lane from its topics`);
+  return { ...row, notable };
 });
 const lanes = report.filter(row => row.status === 'passed');
 const notableLeaves = report.flatMap(row => ('notable' in row && row.notable.status === 'passed' ? [row.leaf] : []));

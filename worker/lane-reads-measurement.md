@@ -316,8 +316,11 @@ of CPU, and the other pages that rank with the same reader 625 to 843 ms.
   script on 400 of them gave 0.0624, a largest cosine of 0.264 and none above
   0.4. In `rankBySimilarity` the semantic score (zero below a cosine of 0.4),
   the penalty for a rejected paper and the MMR penalty (both from 0.75) are
-  therefore always zero, and with likes the order is the largest cosine to a
-  like (about 0.12 on average, noise) plus the recency term, not topical fit.
+  therefore almost always zero. The generator can repeat a vector (the
+  outside review of #396 found two synthetic papers with the same one, a
+  cosine of 1), so a rare pair scores in full; the row counts do not depend on
+  it. With likes the order is the largest cosine to a like (about 0.12 on
+  average, noise) plus the recency term, not topical fit.
   The vectors read, CPU and memory do not depend on these values. The walk's
   works rows do when the reader has likes (1,380 and 2,580 for a first page),
   and so do the papers served with likes: real vectors cluster, and a reader's
