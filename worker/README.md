@@ -908,7 +908,7 @@ paper's `omitted` counts the entries each cut list left out and, for the
 abstract, the characters (`{ abstract: 4300, authors: 1900 }`). A search then
 sends its papers in rank order while they fit in 36,000 bytes of JSON and counts
 the rest in the result's `omitted.papers`: ten papers of 2,000-author
-collaborations with near-maximum abstracts come to five papers and about 34 KB. A field the source never gave stays
+collaborations with near-maximum abstracts come to five papers and about 33 KB. A field the source never gave stays
 absent rather than carrying `PaperBuilder.create`'s default: no placeholder
 abstract or title, no empty list or string, no `referenceCount: 0` or `has*:
 false` (no record a tool reads carries them), no `citationCount` unless
