@@ -1661,7 +1661,7 @@ const PaperCard = memo(function PaperCard({
     </Button>
   );
   const projectLabel = project
-    && ([project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder') || 'Project');
+    && ([project.funderLevel, project.funder].find(Boolean) || 'Project');
   const openProject = (event: MouseEvent) => {
     event.stopPropagation();
     if (!project) return;
@@ -1895,12 +1895,6 @@ const PaperCard = memo(function PaperCard({
             </button>
           ) : categoryLabel && (
             <span className="pc-masthead-field">{categoryLabel}</span>
-          )}
-          {classificationSource && (
-            <>
-              <span className="pc-meta-dot">·</span>
-              <span className="pc-date">{classificationSource}</span>
-            </>
           )}
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the

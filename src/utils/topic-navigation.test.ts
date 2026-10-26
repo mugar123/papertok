@@ -2,11 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getQueryTopicMetadata,
+  isScientificCategoryId,
   resolvePaperTopic,
   resolveQueryTopicRoute,
   topicExplorerPath,
 } from './topic-navigation.ts';
 import { CATEGORIES } from '../data/categories.ts';
+
+test('inherited object keys are not local topics or category ids', () => {
+  assert.equal(isScientificCategoryId('constructor'), false);
+  assert.equal(isScientificCategoryId('toString'), false);
+  assert.equal(resolvePaperTopic('constructor')?.reliable, false);
+});
 
 test('resolves a PaperTok category id as a reliable topic', () => {
   const topic = resolvePaperTopic('astro-ph.CO');

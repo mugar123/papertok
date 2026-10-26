@@ -113,7 +113,7 @@ separate bounded steps; the diagram summarizes the resulting data flow.
 
 Paper cards display native category names, including arXiv categories outside the
 selectable feed leaves. When no native category is available, the masthead names
-OpenAlex's primary topic and labels its source. Area grouping still controls
+OpenAlex's primary topic; its source appears in About this paper. Area grouping still controls
 colour and feed selection. Hydrating a stored or shared copy preserves known
 arXiv categories when OpenAlex supplies the fallback; fresh arXiv metadata can
 replace a copy's concept-only classification.

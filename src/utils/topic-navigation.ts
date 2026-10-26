@@ -89,7 +89,7 @@ function getTaxonomyIndex() {
 
 function findLocalTopic(value: string|undefined) {
   if (!value) return null;
-  if (CATEGORIES[value as keyof typeof CATEGORIES]) {
+  if (Object.hasOwn(CATEGORIES, value)) {
     const area = CATEGORIES[value as keyof typeof CATEGORIES];
     return {
       id: value,
@@ -128,8 +128,8 @@ function findLocalTopic(value: string|undefined) {
 
 export function isScientificCategoryId(value: string|undefined) {
   if (!value) return false;
-  if (CATEGORIES[value as keyof typeof CATEGORIES]) return true;
-  if (Object.values(CATEGORIES).some(area => Boolean((area.subcategories as Record<string, { label: string }>)?.[value]))) return true;
+  if (Object.hasOwn(CATEGORIES, value)) return true;
+  if (Object.values(CATEGORIES).some(area => Object.hasOwn(area.subcategories, value))) return true;
   return /^[a-z][a-z-]*(?:\.[A-Za-z][A-Za-z-]*)+$/.test(value) || /^(?:astro|cond|hep|nucl|nlin)-[a-z-]+$/i.test(value);
 }
 
