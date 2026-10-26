@@ -135,9 +135,12 @@ arXiv-primary row up by `arxivId`, as `ownListing` does for a Hugging Face row,
 is left as a follow-up (ENG-145).
 
 A row stored before ENG-133 that already merged its journal article changes
-when a lane lists that article again (the venue, topic or area lane). No
-backfill is needed: the corpus began on 2026-10-22, so every such row falls
-inside those lanes' overlap.
+only when a lane lists that article again. Each night the venue lane rereads
+the 600 newest articles of its sources within 90 days, and the topic and area
+lanes reread their last 14 days. A venue that publishes more than 600 articles
+in 90 days drops its older ones from that listing, and a row whose article
+no lane lists again stays the working paper's. No backfill is run (Pablo,
+2026-10-25).
 
 A venue lane's article reaches its leaf's readers. When its area's lane
 (`openalex-areas`) listed it too, `fileAreaPapers` (`worker/leaf-filing.ts`)
