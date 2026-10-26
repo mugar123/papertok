@@ -34,7 +34,7 @@ export interface PaperCardProps {
 
 import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { CATEGORIES } from '../../data/categories.ts';
+import { CATEGORIES, getCategoryLabel } from '../../data/categories.ts';
 import {
   ArrowLeft,
   ArrowRight,
@@ -1254,10 +1254,8 @@ const PaperCard = memo(function PaperCard({
   // Get area info for the gradient background
   const getCategoryLabelText = () => {
     const cat = visiblePrimaryCategory;
-    const area = Object.values(CATEGORIES).find(a => a.subcategories && (a.subcategories as Record<string, { label: string }>)[cat]);
-    if (area) {
-      return (area.subcategories as Record<string, { label: string }>)[cat].label || (area.subcategories as Record<string, { label: string }>)[cat].label;
-    }
+    const label = getCategoryLabel(cat);
+    if (label !== cat) return label;
     // Not `cat` raw. For anything from OpenAlex that is a concept, not a
     // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
     // it meant to announce a branch of science, and disagreed with the colour
