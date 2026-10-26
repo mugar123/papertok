@@ -939,23 +939,29 @@ test("arXiv's new version replaces the title and abstract of an eprint's row tha
 // One page can hold both records, the working paper first, and the merge of
 // the page's records reads as a working paper. The row is the journal's
 // either way, under the id of the row the working paper is in: stored, or
-// the one the page starts.
+// the one the page starts. OpenAlex's article is tried before an eprint that
+// names the journal and its DOI, so the row shows the article's landing page
+// and text whichever comes first.
 test('a journal article and its working paper listed in one batch, in either order, make the reviewed journal row, over a stored working paper or none', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
   const article = mapOpenAlexWork(gmmArticle)!;
   // It reads reviewed, yet leaves the row a working paper when tried first.
   const eprint = gmmEprint({ journalRef: JBES_REFERENCE });
+  const eprintWithJournalDoi = gmmEprint({ journalRef: JBES_REFERENCE, doi: '10.1080/07350015.2026.2743244' });
   const { env } = relay(t, () => ({ results: [gmmWorkingPaperWork] }));
   const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
   // The row's [id, openAlexId] when nothing was stored: the id of the page's
-  // first record.
+  // first record. A page that does not open with a working paper's records
+  // makes no working-paper row to upgrade, so it is tried over a stored one only.
   for (const [label, batch, unstored] of [
     ['working paper first', [workingPaper, article], ['openalex:W7220000104', 'openalex:W7221756071']],
     ['article first', [article, workingPaper], ['openalex:W7221756071', undefined]],
     ['an eprint naming the journal, then the working paper', [eprint, workingPaper, article], ['2610.01234', 'openalex:W7221756071']],
+    ['the working paper, then an eprint naming the journal and its DOI', [workingPaper, eprintWithJournalDoi, article], ['openalex:W7220000104', 'openalex:W7221756071']],
+    ['an eprint naming the journal and its DOI, then the article', [eprintWithJournalDoi, article], null],
   ] as const) {
-    for (const storedFirst of [true, false]) {
+    for (const storedFirst of unstored ? [true, false] : [true]) {
       const name = `${storedFirst ? 'stored working paper' : 'nothing stored'}, ${label}`;
       const { binding, db } = testD1();
       const store = { ...env, PAPER_STORE: binding };
@@ -975,7 +981,7 @@ test('a journal article and its working paper listed in one batch, in either ord
       );
       assert.deepEqual(
         [after[0].id, paper.id, paper.openAlexId],
-        storedFirst ? [before[0].id, 'openalex:W7220000104', 'openalex:W7221756071'] : [after[0].id, ...unstored],
+        storedFirst ? [before[0].id, 'openalex:W7220000104', 'openalex:W7221756071'] : [after[0].id, ...unstored!],
         name,
       );
     }

@@ -370,18 +370,21 @@ const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true
 // rests on a DOI alone (`restsOnArxivDoi`) is no journal evidence either.
 const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true && !restsOnArxivDoi(paper)
   && (paper.sources?.primary !== 'arxiv' || (Boolean(paper.journal) && isPublisherDoi(normalizeDoi(paper.doi))));
+// OpenAlex's journal records first, which name the article's work
+// (`openAlexId`), and arXiv's last, whose journal reference is free text.
+const journalRank = (paper: Paper) => (paper.sources?.primary === 'openalex' ? 0 : paper.sources?.primary === 'arxiv' ? 2 : 1);
 const mergeAll = (ordered: Paper[]) => ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
 
 // `merge` keeps a working paper's `false` against a journal article merged
 // into it, so the records of a working paper and its journal article read
 // reviewed only with the article first (README-openalex-leaf-venues.md). Each
-// record that reads reviewed is tried first, in turn, since one can still
-// leave the row unreviewed, such as an eprint naming its journal without the
-// journal's DOI, or a record whose DOI a merged record denied
+// record that reads reviewed is tried first, in turn (`journalRank`), since one
+// can still leave the row unreviewed, such as an eprint naming its journal
+// without the journal's DOI, or a record whose DOI a merged record denied
 // (`sources.peerReviewedByDoi`); such a record does not lend the row its
 // landing page, text and date. Undefined when none makes the row reviewed.
 function asJournalRow(records: Paper[]) {
-  for (const journal of records.filter(readsAsReviewed)) {
+  for (const journal of records.filter(readsAsReviewed).sort((a, b) => journalRank(a) - journalRank(b))) {
     const upgraded = mergeAll([journal, ...records.filter(record => record !== journal)]);
     if (upgraded.peerReviewed === true) return { journal, upgraded };
   }

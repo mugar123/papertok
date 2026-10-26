@@ -91,6 +91,9 @@ on a comment saying it was published. It starts the upgrade only when it names
 its journal beside a publisher's DOI. One with a journal reference and no DOI,
 or only arXiv's, never does. An SSRN or Zenodo DOI beside a journal reference
 reads the same as the journal's DOI, so such an eprint does upgrade the row.
+When a page lists the article and an eprint naming it, OpenAlex's record is
+tried first and arXiv's last, so the row shows the article's landing page and
+text whichever comes first.
 
 The row keeps the working paper's id. Only an OpenAlex journal record sets
 `openAlexId`: when the record is an OpenAlex work, whichever lane listed it
