@@ -79,7 +79,7 @@ export default function PublicPaperPage({
     trackSkip,
     trackPdfOpened,
   } = useFeed();
-  const handleSaveToList = useQuickSave(onSaveToList!);
+  const handleSaveToList = useQuickSave(onSaveToList!, 'other');
   const [result, setResult] = useState<{ requestKey: string; paper: Partial<Paper> | null; status: string }>({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const requestIdRef = useRef(0);
@@ -201,7 +201,7 @@ export default function PublicPaperPage({
 
   const canonicalRoute = identity
     ? getPublicPaperPath(identity.type, identity.value)
-    : `/public/paper/${encodeURIComponent(paperKey)}`;
+    : `/paper/${encodeURIComponent(paperKey)}`;
   // Built from the paper on screen, seed included: a page painted from a seed
   // is the paper from its first render, never a noindex «loading».
   const metadata = useMemo(() => publicPaperMetadata(paper, canonicalRoute), [canonicalRoute, paper]);
@@ -228,7 +228,7 @@ export default function PublicPaperPage({
         // branch the feed filed it under, the authors and abstract as the
         // reader saw them. Without this the page showed another provider's
         // account of the same paper, unread and unliked.
-        setResult({ requestKey, paper: hydrateSeededPaper(seededPaper, loadedPaper), status: 'ready' });
+        setResult({ requestKey, paper: hydrateSeededPaper(fallback, loadedPaper), status: 'ready' });
       })
       .catch((error) => {
         if (requestId !== requestIdRef.current) return;

@@ -72,6 +72,7 @@ import {
 import { openSearchScope, scopeAnswerPaints, searchPageIssue } from './search-page-run.ts';
 import type { SearchRun } from './search-page-run.ts';
 import { visibleSearchResults } from './search-visible-results.ts';
+import { formatProjectAmount } from '../../utils/format-project-amount.ts';
 import './search-page.css';
 
 const SEARCH_DEBOUNCE_MS = 320;
@@ -252,7 +253,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
-  const handleSaveToList = useQuickSave(onSaveToList);
+  const handleSaveToList = useQuickSave(onSaveToList, 'search');
   
   // Seeded from the URL, so a search is a place you can be sent to. The
   // palette needs this for the one paper in fifty that carries neither a DOI
@@ -908,7 +909,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
                       <p className="list-row-byline">
                         {[
                           project.funder,
-                          project.budget! > 0 && (() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })(),
+                          project.budget! > 0 && formatProjectAmount(project.budget!, project.currency, locale),
                         ].filter(Boolean).join(' · ')}
                       </p>
                     )}

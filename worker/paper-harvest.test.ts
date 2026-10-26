@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { carryArxivVectors, runPaperHarvest } from './paper-harvest.ts';
+import { ENRICH_STEPS, carryArxivVectors, runPaperHarvest } from './paper-harvest.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -133,6 +135,84 @@ test('open and closed articles are embedded before backfill and maintenance with
   assert.equal(observed, true);
   assert.deepEqual(texts.map(value => value.split('\n')[0]).sort(), ['Closed article', 'Open article']);
   assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+});
+
+// What Cloudflare counts against `limits.subrequests` of wrangler.toml, per
+// Worker invocation: fetches, D1 calls (a batch is one), Workers AI calls, the
+// quota ledger's Durable Object and the cache. A run's steps share one
+// invocation until a wait longer than the engine's 5-minute grace period
+// (2026-10-25: the retries at 1, 2 and 4 minutes failed in the invocation that
+// had reached the limit; the one after 8 minutes ran in a new one), so the
+// enrichment phase at its longest must leave room for the phases before it.
+function subrequestLimit() {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const limits = /^\[limits\]\n((?:[^[\n][^\n]*\n|\n)*)/m.exec(config)?.[1] ?? '';
+  const value = /^subrequests\s*=\s*([\d_]+)/m.exec(limits)?.[1];
+  assert.ok(value, 'wrangler.toml sets [limits] subrequests');
+  return Number(value.replace(/_/g, ''));
+}
+
+test("the longest enrichment phase fits in half of an invocation's subrequests", async t => {
+  const calls = { fetch: 0, d1: 0, ai: 0, ledger: 0, cache: 0 };
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  // Every provider answers empty; iCite and Europe PMC through the Worker's cache.
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls.fetch += 1;
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname === 'api.crossref.org') return Response.json({ message: { items: [] } });
+    if (url.hostname === 'api.semanticscholar.org') return Response.json([]);
+    if (url.hostname === 'icite.od.nih.gov') return Response.json({ data: [] });
+    if (url.hostname === 'www.ebi.ac.uk') return Response.json({ resultList: { result: [] } });
+    return Response.json({ results: [] });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => { calls.cache += 1; return null; }, put: async () => { calls.cache += 1; } } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  const { binding } = testD1();
+  const counted = (statement: D1PreparedStatement): D1PreparedStatement => new Proxy(statement, {
+    get(target, key: keyof D1PreparedStatement) {
+      if (key === 'bind') return (...values: unknown[]) => counted(target.bind(...values));
+      if (key === 'all' || key === 'first' || key === 'run') return () => { calls.d1 += 1; return target[key](); };
+      return target[key];
+    },
+  });
+  const ledger = inMemoryQuotaLedger();
+  const env = {
+    PAPER_STORE: { prepare: (sql: string) => counted(binding.prepare(sql)), batch: (statements: D1PreparedStatement[]) => { calls.d1 += 1; return binding.batch(statements); } },
+    REQUEST_QUOTA_LEDGER: ledger.binding,
+    OPENALEX_API_KEY: 'test-key',
+    AI: { run: async (_model: string, { text }: { text: string[] }) => { calls.ai += 1; return { data: text.map(() => Array.from({ length: 1024 }, (_, dimension) => Math.cos(dimension))) }; } },
+  } as unknown as WorkerEnv;
+  // A batch that asks every source: arXiv preprints, which OpenAlex is asked
+  // about by arXiv id, and OpenAlex's own records without an abstract, with a
+  // DOI and a PubMed id, for which Crossref, iCite, Europe PMC and Semantic
+  // Scholar are asked.
+  await ingestPapers(env, [
+    ...Array.from({ length: 250 }, (_, index) => ({ paper: paper(`2610.${50_000 + index}`, `Preprint ${index}`), lanes: ['cs.CL'] })),
+    ...Array.from({ length: 251 }, (_, index) => ({
+      paper: mapOpenAlexWork({
+        id: `https://openalex.org/W44${String(index).padStart(8, '0')}`, doi: `https://doi.org/10.5555/journal.${index}`, ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${40_000_000 + index}` },
+        title: `Journal article ${index}`, type: 'article', publication_date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+      })!,
+      lanes: ['med.gen'],
+    })),
+  ]);
+  const total = () => calls.fetch + calls.d1 + calls.ai + calls.cache + ledger.calls.length;
+  const seen: number[] = [];
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (/^enrich [01]$/.test(name)) seen.push(total());
+    return name === 'enrich 1';
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(seen.length, 2);
+  const batch = seen[1] - seen[0];
+  assert.ok(calls.fetch >= 10 && calls.ai >= 16 && calls.cache >= 1 && ledger.calls.length >= 1, `every kind of call was counted: ${JSON.stringify(calls)}`);
+  assert.ok(batch * ENRICH_STEPS <= subrequestLimit() / 2, `${batch} subrequests a batch, ${batch * ENRICH_STEPS} in ${ENRICH_STEPS} batches, against ${subrequestLimit()}`);
 });
 
 test('an enriched batch is usable before the next batch starts, without embedding later records early', async t => {
@@ -407,7 +487,8 @@ test('outages cost no followed lane a wait: the first night after one refreshes 
   };
   let outageNow: string | null = null;
   providers(t, url => (outageNow && providerOutages[outageNow] ? providerOutages[outageNow](url) : undefined)
-    ?? (url.hostname === 'export.arxiv.org' ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>') : undefined));
+    ?? (url.hostname === 'export.arxiv.org' ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>') : undefined)
+    ?? (url.hostname === 'api.openaire.eu' ? Response.json({ header: { numFound: 0 }, results: [] }) : undefined));
   const lanes = [
     ...Array.from({ length: 10 }, (_, index) => `query:search ${index}`),
     ...Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`),

@@ -30,7 +30,7 @@ import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
 import { emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
-import { INTEREST_AREAS } from '../../data/categories.ts';
+import { CATEGORIES } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';
 import GoogleMark from '../public/google-mark.tsx';
@@ -42,6 +42,7 @@ import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { FollowingSheet } from './following-settings-page.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
+import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
 import { GithubMark } from '../ui/github-mark.tsx';
@@ -112,9 +113,7 @@ const SETTINGS_COPY = {
   usageAnalytics: 'Usage analytics',
   usageAnalyticsDescription: 'Control what PaperTok measures to improve the app.',
   analyticsToggleLabel: 'Allow usage analytics',
-  analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
-  detailedAnalyticsLabel: 'Detailed analytics',
-  detailedAnalyticsHint: 'Links what you do to your account: the papers you open, how long you read, what you search, and recordings of your sessions with typed text hidden. Uses cookies.',
+  analyticsHint: 'Measures repeat visits, papers viewed and opened, and reading time. Uses a persistent browser identifier linked to your account when signed in. Saved in this browser.',
   institution: 'University',
   institutionDescription: 'Verify your university email to link your library.',
   institutionLinked: (name: string) => `Verified with ${name}.`,
@@ -125,7 +124,6 @@ const SETTINGS_COPY = {
   dangerZone: 'Danger zone',
   dangerZoneDescription: 'Irreversible actions.',
   deleteAccount: 'Delete account',
-  deleteAccountDescription: 'Permanently deletes your account and everything in it.',
   access: 'Access',
   accessDescription: 'The ways you sign in. Each one opens the same account and the same data.',
   connectedAs: 'Connected as ',
@@ -215,7 +213,9 @@ function ProfileAccountPage() {
   const [linking, setLinking] = useState<string | null>(null);
   // Until the window can open inside the press (usePopupReady), Connect is
   // disabled but keeps focus.
-  const preparing = !usePopupReady(popupReadiness);
+  const readiness = usePopupReady(popupReadiness);
+  const preparing = readiness === 'preparing';
+  const waiting = readiness !== 'ready';
   const preparingId = useId();
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
@@ -281,7 +281,7 @@ function ProfileAccountPage() {
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
                 {!method.linked && (
                   <>
-                    <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} keepLine={false} />
+                    <PreparingNote id={`${preparingId}-${method.id}`} state={readiness} onRetry={() => popupReadiness.retry()} keepLine={false} />
                     <span id={`${preparingId}-${method.id}-hint`} className="visually-hidden">{copy.methodUnlinked}</span>
                   </>
                 )}
@@ -299,10 +299,10 @@ function ProfileAccountPage() {
                   size="sm"
                   className="settings-row-action"
                   onClick={() => { void handleLink(method); }}
-                  disabled={Boolean(linking) || preparing}
-                  focusableWhenDisabled={preparing}
+                  disabled={Boolean(linking) || waiting}
+                  focusableWhenDisabled={waiting}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
+                  aria-describedby={waiting ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
@@ -345,7 +345,7 @@ function ProfileAccountPage() {
           <div className="settings-row">
             <div className="settings-row-content">
               <h3>{copy.deleteAccount}</h3>
-              <p>{copy.deleteAccountDescription}</p>
+              <p>{DELETE_ACCOUNT_DESCRIPTION}</p>
             </div>
             <RowAction Icon={Trash} variant="rose" label={copy.deleteAccount} onClick={() => setDeleteAccountOpen(true)} />
           </div>
@@ -381,22 +381,7 @@ function PrivacyPage() {
             checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
             aria-label={copy.analyticsToggleLabel}
             onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED,
-            ); }}
-          />
-        </Label>
-        {/* Turning this on also turns analytics on; off leaves it anonymous. */}
-        <Label className="profile-switch">
-          <span className="profile-switch-copy">
-            <span className="profile-switch-label">{copy.detailedAnalyticsLabel}</span>
-            <span className="profile-switch-hint">{copy.detailedAnalyticsHint}</span>
-          </span>
-          <Switch
-            className="settings-toggle"
-            checked={analyticsConsent === ANALYTICS_CONSENT.DETAILED}
-            aria-label={copy.detailedAnalyticsLabel}
-            onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.DETAILED : ANALYTICS_CONSENT.ANONYMOUS,
+              checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
             ); }}
           />
         </Label>
@@ -416,7 +401,7 @@ function DiscoveryPage() {
 
   const selectedAreas = useMemo(() => {
     const selected = new Set(userPreferences || []);
-    return Object.entries(INTEREST_AREAS)
+    return Object.entries(CATEGORIES)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
         return count > 0 ? { id, label: area.label, accent: area.gradient, count } : null;

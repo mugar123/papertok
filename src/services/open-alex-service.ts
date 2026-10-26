@@ -26,14 +26,14 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
 import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
-import { openAlexFilterForArea } from '../data/open-alex-areas.ts';
+import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
 import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
 import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
 import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
-import { withRequestDeadline } from '../utils/request-deadline.ts';
+import { withEnforcedDeadline, withRequestDeadline } from '../utils/request-deadline.ts';
 import {
   applyInstitutionWorksFallback,
   calculateEntityRecentImpact,
@@ -64,6 +64,7 @@ import {
   filterRelevantSearchResults,
   institutionProminenceWeight,
   institutionSearchValues,
+  normalizeSearchText,
   scoreSearchMatch,
   authorSearchValues,
 } from '../utils/search-relevance.ts';
@@ -585,9 +586,55 @@ export async function enrichAuthorInstitutionLocalization<T extends OpenAlexAuth
   };
 }
 
-/** Author-name search does not support fuzzy operators; work bylines do. */
+/**
+ * The author index holds every namesake but takes no fuzzy or prefix
+ * operators; work bylines take both, but a page of them sorted by citations
+ * keeps only the most cited namesakes (ENG-130). So the index answers first
+ * and bylines only recover a typo or an unfinished name it cannot match.
+ */
 async function searchAuthorSuggestions(query: string, options: RequestOptions): Promise<OpenAlexAuthor[]> {
-  const expression = openAlexTypeaheadExpression(query) || JSON.stringify(query);
+  const { signal } = withEnforcedDeadline({ signal: options.signal }, 5000);
+  const relevant = (authors: OpenAlexAuthor[]) => filterRelevantSearchResults(query, authors, authorSearchValues, { minimumScore: 80 }).slice(0, 10);
+  try {
+    const indexed = relevant(await searchAuthorIndex(query, signal));
+    if (indexed.length > 0) return indexed;
+    signal.throwIfAborted();
+    const expression = openAlexTypeaheadExpression(query);
+    return expression ? relevant(await searchAuthorBylines(expression, signal)) : [];
+  } catch (error) {
+    if (options.throwOnError) throw error;
+    return [];
+  }
+}
+
+async function searchAuthorIndex(query: string, signal: AbortSignal): Promise<OpenAlexAuthor[]> {
+  const url = new URL('https://api.openalex.org/authors');
+  // OpenAlex reads | as OR and an uppercase AND, OR or NOT as an operator;
+  // without them, case and spacing do not change the answer, so variants
+  // share one cached URL.
+  url.searchParams.set('search', query.replaceAll('|', ' ').replace(/\s+/g, ' ').trim().toLowerCase());
+  // OpenAlex ranks "Teresa Martín González" above a Teresa Martín, who came
+  // 72nd of 402. A hundred candidates cost the same single search and let
+  // the name score bring exact namesakes forward.
+  url.searchParams.set('per-page', '100');
+  // No orcid: the palette links a row by ORCID when it has one, and ORCID
+  // lookups can land on another split profile than the row the reader chose.
+  url.searchParams.set('select', 'id,display_name,works_count,cited_by_count,last_known_institutions');
+  const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url.toString(), {
+    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal, priority: true,
+  });
+  return (data.results || []).filter(author => author.id && author.display_name).map(author => {
+    const institution = author.last_known_institutions?.[0];
+    return {
+      id: author.id, display_name: author.display_name,
+      institution: institution?.display_name || null,
+      institutionData: institution,
+      works_count: author.works_count ?? null, cited_by_count: author.cited_by_count ?? null,
+    };
+  });
+}
+
+async function searchAuthorBylines(expression: string, signal: AbortSignal): Promise<OpenAlexAuthor[]> {
   const url = new URL('https://api.openalex.org/works');
   url.searchParams.set('filter', `raw_author_name.search:${expression}`);
   url.searchParams.set('per-page', '25');
@@ -595,29 +642,24 @@ async function searchAuthorSuggestions(query: string, options: RequestOptions): 
   // A short exact surname can otherwise fill the page with fuzzy first names
   // before a well-established surname completion reaches the client.
   url.searchParams.set('sort', 'cited_by_count:desc');
-  try {
-    const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
-      timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal: options.signal,
-    });
-    const authors = new Map<string, OpenAlexAuthor>();
-    for (const work of data.results || []) {
-      for (const authorship of work.authorships || []) {
-        const author = authorship.author;
-        if (!author?.id || !author.display_name || authors.has(author.id)) continue;
-        const institution = authorship.institutions?.[0];
-        authors.set(author.id, {
-          id: author.id, display_name: author.display_name,
-          institution: institution?.display_name || null,
-          institutionData: institution,
-          works_count: null, cited_by_count: null,
-        });
-      }
+  const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
+    timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal, priority: true,
+  });
+  const authors = new Map<string, OpenAlexAuthor>();
+  for (const work of data.results || []) {
+    for (const authorship of work.authorships || []) {
+      const author = authorship.author;
+      if (!author?.id || !author.display_name || authors.has(author.id)) continue;
+      const institution = authorship.institutions?.[0];
+      authors.set(author.id, {
+        id: author.id, display_name: author.display_name,
+        institution: institution?.display_name || null,
+        institutionData: institution,
+        works_count: null, cited_by_count: null,
+      });
     }
-    return filterRelevantSearchResults(query, [...authors.values()], authorSearchValues, { minimumScore: 80 }).slice(0, 10);
-  } catch (error) {
-    if (options.throwOnError) throw error;
-    return [];
   }
+  return [...authors.values()];
 }
 
 export async function searchAuthors(query: string, options: RequestOptions = {}) {
@@ -794,23 +836,14 @@ export async function searchInstitutions(query: string, options: InstitutionOpti
   return [];
 }
 
-function normalizeTopicSearchValue(value = '') {
-  return String(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
 function scoreTopicMatch(query: string, values: Array<string | undefined>) {
-  const normalizedQuery = normalizeTopicSearchValue(query);
+  const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return -1;
 
   const queryTokens = normalizedQuery.split(' ').filter(Boolean);
   let bestScore = -1;
   values.forEach((value: string|undefined, index: number) => {
-    const normalizedValue = normalizeTopicSearchValue(value);
+    const normalizedValue = normalizeSearchText(value);
     if (!normalizedValue) return;
     const sourceWeight = Math.max(0, 4 - index);
     const approximate = scoreSearchMatch(normalizedQuery, [normalizedValue]);
@@ -910,12 +943,12 @@ export async function searchConcepts(query: string, options: RequestOptions = {}
     });
 
     const seen = new Set(localTopics.flatMap(topic => [
-      normalizeTopicSearchValue(topic.display_name),
-      normalizeTopicSearchValue(topic.label),
+      normalizeSearchText(topic.display_name),
+      normalizeSearchText(topic.label),
     ]).filter(Boolean));
     const remoteTopics = (data?.topics || data?.results || []).flatMap(topic => {
       const id = String(topic?.id || '').split('/').pop()!;
-      const nameKey = normalizeTopicSearchValue(topic?.display_name);
+      const nameKey = normalizeSearchText(topic?.display_name);
       if (!/^T\d+$/i.test(id) || !nameKey || seen.has(nameKey)) return [];
       seen.add(nameKey);
       return [{
@@ -1404,7 +1437,8 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
     filterParams += `,primary_location.is_published:true,${OPENALEX_PEER_REVIEWED_FILTER}`;
   }
   if (filters.category) {
-    const areaFilter = openAlexFilterForArea(areaKeyForCategory(filters.category));
+    const areaKey = areaKeyForCategory(filters.category);
+    const areaFilter = areaKey && openAlexLabelFilterForArea(areaKey);
     if (areaFilter) filterParams += `,${areaFilter}`;
   }
   if (filters.dateRange) {

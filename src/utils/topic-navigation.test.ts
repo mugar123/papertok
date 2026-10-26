@@ -2,11 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getQueryTopicMetadata,
+  isScientificCategoryId,
   resolvePaperTopic,
   resolveQueryTopicRoute,
   topicExplorerPath,
 } from './topic-navigation.ts';
 import { CATEGORIES } from '../data/categories.ts';
+
+test('inherited object keys are not local topics or category ids', () => {
+  assert.equal(isScientificCategoryId('constructor'), false);
+  assert.equal(isScientificCategoryId('toString'), false);
+  assert.equal(resolvePaperTopic('constructor')?.reliable, false);
+});
 
 test('resolves a PaperTok category id as a reliable topic', () => {
   const topic = resolvePaperTopic('astro-ph.CO');
@@ -18,6 +25,12 @@ test('maps an OpenAlex concept name to the local taxonomy when possible', () => 
   const topic = resolvePaperTopic({ id: 'https://openalex.org/C123', display_name: 'Cosmology' });
   assert.equal(topic!.id, 'astro-ph.CO');
   assert.equal(topic!.reliable, true);
+});
+
+test('a concept named like both an area and its leaf opens the leaf; the area id opens the area', () => {
+  const concept = resolvePaperTopic({ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence' });
+  assert.equal(concept!.id, 'cs.AI');
+  assert.equal(resolvePaperTopic('ai')!.id, 'ai');
 });
 
 test('keeps a stable external OpenAlex concept navigable', () => {
@@ -152,14 +165,16 @@ function findLocalTopicTheOldWay(value: string|null|undefined) {
     return { id: value, label: area.label, type: 'topic', reliable: true };
   }
   const normalized = normalizeLabel(value);
-  for (const [areaId, area] of Object.entries(CATEGORIES)) {
-    if (normalizeLabel(area.label) === normalized) {
-      return { id: areaId, label: area.label, type: 'topic', reliable: true };
-    }
+  for (const area of Object.values(CATEGORIES)) {
     for (const [categoryId, category] of Object.entries(area.subcategories || {})) {
       if (categoryId === value || normalizeLabel(category.label) === normalized) {
         return { id: categoryId, label: category.label, type: 'topic', reliable: true };
       }
+    }
+  }
+  for (const [areaId, area] of Object.entries(CATEGORIES)) {
+    if (normalizeLabel(area.label) === normalized) {
+      return { id: areaId, label: area.label, type: 'topic', reliable: true };
     }
   }
   return null;
@@ -189,4 +204,23 @@ test('the indexed taxonomy answers exactly what the per-call walk answered', () 
     }
   }
   assert.ok(matched > 30, `the comparison actually exercised the taxonomy (${matched} local hits)`);
+});
+
+
+test('an OpenAlex topic ID is retained when its name also matches a local category', () => {
+  const topic = resolvePaperTopic({ id: 'https://openalex.org/T12345', display_name: 'Machine Learning' });
+  assert.equal(topic?.id, 'T12345');
+  assert.equal(topicExplorerPath(topic), '/explorer/topic/T12345');
+});
+
+
+test('public category links preserve the metadata required to restore a query topic', () => {
+  const topic = resolvePaperTopic({ categoryId: 'cs.IT', categoryIds: ['cs.IT'], display_name: 'Information Theory', query: 'cs.IT', source: 'category' });
+  const path = topicExplorerPath(topic, true)!;
+  const url = new URL(path, 'https://papertok.test');
+  assert.equal(url.pathname, `/public/entity/topic/${topic!.id}`);
+  const restored = resolveQueryTopicRoute(topic!.id, url.searchParams);
+  assert.equal(restored?.label, 'Information Theory');
+  assert.equal(restored?.query, 'cs.IT');
+  assert.deepEqual(restored?.categoryIds, ['cs.IT']);
 });

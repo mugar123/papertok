@@ -5,8 +5,9 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
+import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -18,7 +19,9 @@ import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xml-dom-shim.ts';
 import { readPubmedEfetch } from '../src/utils/pubmed-efetch.ts';
-import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../src/data/open-alex-notable-leaf-topics.generated.ts';
+import { OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
@@ -266,9 +269,10 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   assert.equal(urls[0].searchParams.has('search'), false);
   const topics = filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
   assert.ok(topics.length > 0 && topics.every(id => leavesForOpenAlexTopic(id).join() === 'bio.mol'));
-  for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true', 'to_publication_date:2026-10-21']) {
+  for (const filter of ['type:article', 'is_retracted:false', 'primary_location.source.is_core:true', 'to_publication_date:2026-10-21']) {
     assert.ok(filters.includes(filter), filter);
   }
+  assert.equal(filters.some(filter => filter.startsWith('has_abstract')), false, 'an article without an abstract is listed too');
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7222916812', ['bio.mol']]]);
   assert.equal(items[0].paper.primaryCategory, undefined, 'filed under the lane, not given it as its field');
 
@@ -277,10 +281,37 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
 });
 
+test("a topic lane's article without an abstract is filed saying it has none, and embedded by its title", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const { env } = relay(t, () => ({ results: [{ ...splicingWork, abstract_inverted_index: null }] }));
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7222916812', ['bio.mol']]]);
+  const [{ paper }] = items;
+  assert.equal(paper.abstract, 'No abstract available.');
+  assert.equal(hasUsableAIAbstract(paper.abstract), false, 'its abstract stays unknown');
+
+  const { binding, db } = testD1();
+  const embedded: string[] = [];
+  const AI = { run: async (_model: string, { text }: { text: string[] }) => {
+    embedded.push(...text);
+    return { data: text.map(() => Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))) };
+  } };
+  const store = { ...env, PAPER_STORE: binding, AI } as Parameters<typeof embedPending>[0];
+  await ingestPapers(store, items);
+  assert.equal(await embedPending(store, 10), 1);
+  assert.deepEqual(embedded, [splicingWork.title]);
+  const filed = db.prepare("SELECT work_id FROM work_lanes WHERE lane = 'bio.mol'").all();
+  assert.equal(filed.length, 1);
+  assert.deepEqual(db.prepare('SELECT work_id FROM work_vectors').all(), filed, 'the filed article has a vector');
+});
+
 // ─── Which leaves get an OpenAlex topic lane: the precision gate's decisions ───
 
 const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/data/${name}`, import.meta.url), 'utf8'));
 const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
+// The leaves with a notable lane: those with a topic lane and those the topic
+// or journal notable sample admitted.
+const notableLeaves = () => [...topicLanes(), ...Object.keys(OPENALEX_NOTABLE_LEAF_TOPICS), ...OPENALEX_NOTABLE_VENUE_LEAVES].sort();
 const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
 
 // OpenAlex W7223183626 as returned to the gate's q-fin.GN sample on 2026-10-23
@@ -329,9 +360,12 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
     const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
     assert.deepEqual(topicsOf(filters), topics, leaf);
     assert.ok(topics.every(id => topicsOf(sampled).includes(id)), `${leaf} asks only for topics its sample asked for`);
-    for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+    for (const filter of ['type:article', 'is_retracted:false', 'primary_location.source.is_core:true']) {
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }
+    // Labelling the sample needed abstracts; the lane takes articles without one.
+    assert.ok(sampled.includes('has_abstract:true'), leaf);
+    assert.equal(filters.some(filter => filter.startsWith('has_abstract')), false, leaf);
   }
   const { items } = await SOURCES['openalex-topics'].fetchPage(env, { lane: 'q-fin.GN', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
@@ -434,7 +468,8 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
   assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), [], 'no leaf is claimed for it');
 
   // Engineering is read as electrical engineering unless a subfield names
-  // mechanical or civil work, and Economics as economics unless it is finance:
+  // mechanical or civil work, Economics as economics unless it is finance, and
+  // Computer Science as such unless it is AI or computer vision:
   // each lane asks for what its label reads, and no paper twice. Electrical
   // engineering's lane also leaves out Biomedical Engineering (2204), 60 of its
   // 200 newest on 2026-10-23: sensor materials, biomass conversion, tissue
@@ -450,6 +485,8 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
   assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
   assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
   assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
+  assert.deepEqual(await areaFilters('area:cs'), ['primary_topic.field.id:17', 'primary_topic.subfield.id:!1702', 'primary_topic.subfield.id:!1707']);
+  assert.deepEqual(await areaFilters('area:ai'), ['primary_topic.subfield.id:1702|1707']);
 });
 
 test("an area's journal lane leaves out the working-paper series OpenAlex lists as core journal articles, whose cards say Working paper", async t => {
@@ -476,9 +513,9 @@ test("an area's journal lane leaves out the working-paper series OpenAlex lists 
 // Statistics' label covers OpenAlex's Decision Sciences: of its 200 newest
 // articles on 2026-10-23, 107 were operations research and 40 information
 // systems, all labelled Statistics.
-test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
+test('the areas the feed fills from arXiv and chemistry get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
   const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
-  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
+  assert.deepEqual(lanes, ['area:ai', 'area:chem', 'area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
 });
 
 // The cost of the lanes: one list call an area a night, two on a lane's first run.
@@ -780,7 +817,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
   for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
-  assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
+  // Any record with an abstract, and one without unless it is an editorial, a letter or a comment; the backfill's day last.
+  const admitted = ' NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)';
+  assert.ok(terms.every(term => term.endsWith(`)${admitted} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
 
   t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
@@ -794,6 +833,18 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   terms.length = 0;
   await backfillLane(store, job);
   assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
+});
+
+// `/sources/pubmed` turns away a query over 500 characters (`safeSourceQuery`).
+test("every PubMed lane's query, a backfill's included, fits the route's 500 characters", async t => {
+  const { urls, env } = relay(t, url => (url.pathname.endsWith('/esearch.fcgi') ? { esearchresult: { count: '0', idlist: [] } } : { result: {} }));
+  const lanes = categoryLaneJobs().filter(job => job.source === 'pubmed').map(job => job.lane);
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: String(lanes.length) });
+  for (const lane of lanes) await SOURCES.pubmed.fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 }, until: '2026-10-24' });
+  const terms = urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).map(url => url.searchParams.get('term')!);
+  assert.equal(terms.length, lanes.length);
+  const longest = terms.reduce((a, b) => (b.length > a.length ? b : a));
+  assert.ok(longest.length <= 500, `${longest.length} characters: ${longest}`);
 });
 
 test("a refused page ends the lane's backfill for the run, which goes on from that page next run", async t => {
@@ -877,18 +928,30 @@ test('a backfill stops once its lane holds as many papers as the feed reads', as
   assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
 });
 
-test("a followed project's lane asks OpenAIRE by its id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/Genetics/IYAG290' }] } } } }] } } }
-    : { results: [splicingWork] }));
+// The newest publications Graph lists for a project, as it spells their
+// identifiers (synthetic record): a DOI to look up, a handle that is not one.
+const PROJECT_PUBLICATIONS = { header: { numFound: 2 }, results: [{ pids: [{ scheme: 'doi', value: '10.1093/Genetics/IYAG290' }, { scheme: 'pmid', value: '41234567' }] }, { pids: [{ scheme: 'handle', value: '11585/952308' }] }] };
+
+test("a followed project's lane asks Graph for its newest publications by id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [splicingWork] }));
   await SOURCES.openaire.fetchPage(env, { lane: 'project:EC|corda__h2020::0123456789abcdef', page: 1, since: '', waits: { seconds: 0 } });
   await SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   const openAire = urls.filter(url => url.hostname === 'api.openaire.eu');
-  assert.equal(openAire[0].searchParams.get('openaireProjectID'), 'corda__h2020::0123456789abcdef');
-  assert.equal(openAire[0].searchParams.has('funder'), false, 'an OpenAIRE id names its funder already');
-  assert.equal(openAire[1].searchParams.get('projectID'), '2047484');
-  assert.equal(openAire[1].searchParams.get('funder'), 'NSF');
+  assert.equal(openAire[0].pathname, '/graph/v3/research-products');
+  assert.deepEqual(Object.fromEntries(openAire[0].searchParams), {
+    relProjectId: 'corda__h2020::0123456789abcdef', type: 'publication', sortBy: 'publicationDate DESC', page: '1', pageSize: '30',
+  }, 'an OpenAIRE id names its funder already');
+  assert.equal(openAire[1].searchParams.get('relProjectCode'), '2047484');
+  assert.equal(openAire[1].searchParams.get('relProjectFundingShortName'), 'NSF');
   assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
+});
+
+test("a project lane whose OpenAIRE answer is not a Graph page fails its turn instead of finding no papers", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [splicingWork] }));
+  await assert.rejects(SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), /Invalid OpenAIRE response/);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 0);
 });
 
 test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
@@ -934,6 +997,8 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  const firstPage = urls.find(url => url.pathname.endsWith('/esearch.fcgi'))!.searchParams.get('term')!;
+  assert.ok(firstPage.endsWith(') NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)'), 'a record without an abstract is listed too, unless it is an editorial, a letter or a comment');
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
@@ -941,9 +1006,7 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
 // reader who follows something new after it has finished must still have the
 // follow harvested at once, not the next night.
 test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
-    : { results: [] }));
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
@@ -1026,9 +1089,7 @@ test('a paper a reader liked, looked up by id, stays for them whatever its age, 
 // can come at any hour, so the harvest spends its own share up to 95 % and
 // leaves the rest to papers being opened.
 test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/genetics/iyag290' }] } } } }] } } }
-    : { results: [] }));
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   const ceiling = 1_000;
   const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
   Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
@@ -1106,48 +1167,82 @@ const plsiWork = {
   primary_topic: subscriptionArticle.primary_topic,
 };
 
-test("an admitted leaf's notable lane asks for its topics' most-cited articles of the last ten years, and keeps their year, citations and access", async t => {
+test("an admitted leaf's notable lane lists each of the ten completed years before this one, most cited first, and never the current year", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
-  const { items } = await SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: 1, since: '', waits: { seconds: 0 } });
-  assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
-  // The leaf's own topics and types, as its journal lane asks, over ten years.
+  // OpenAlex lists the recorded work, of 2017, for its own year only.
+  const { urls, env } = relay(t, url => ({ results: filtersOf(url).includes('from_publication_date:2017-01-01') ? [plsiWork] : [] }));
+  const page = (n: number) => SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: n, since: '', waits: { seconds: 0 } });
+  await page(1); await page(10);
   assert.deepEqual(filtersOf(urls[0]).sort(), [
     ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
     'from_publication_date:2016-01-01',
-    'to_publication_date:2026-10-23',
-    'has_abstract:true',
+    'to_publication_date:2016-12-31',
     'is_retracted:false',
     'primary_location.source.is_core:true',
   ].sort());
+  assert.ok(filtersOf(urls[0]).includes('from_publication_date:2016-01-01') && filtersOf(urls[0]).includes('to_publication_date:2016-12-31'));
+  assert.ok(filtersOf(urls[1]).includes('from_publication_date:2025-01-01') && filtersOf(urls[1]).includes('to_publication_date:2025-12-31'));
+  assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
+  assert.equal(urls[0].searchParams.get('per-page'), '100');
+  assert.equal(urls[1].searchParams.get('page'), '1', 'the lane page chooses the year; OpenAlex is asked its first page');
+  assert.ok(!filtersOf(urls[0]).some(f => f.startsWith('has_abstract')));
+  const { items } = await page(2);
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W2107743791', ['notable:cs.CV']]]);
   const [{ paper }] = items;
   assert.equal(paper.year, 2017);
   assert.equal(paper.citationsCount, 3988);
   assert.equal(paper.citationCountKnown, true);
   assert.equal(paper.openAccess, false, 'a closed article stays closed');
-
-  // The window is whole years: in January it starts ten years before that one.
   t.mock.timers.setTime(Date.parse('2027-01-02T03:00:00Z'));
-  await SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: 1, since: '', waits: { seconds: 0 } });
-  assert.ok(filtersOf(urls[1]).includes('from_publication_date:2017-01-01'));
+  await page(1);
+  assert.ok(filtersOf(urls[3]).includes('from_publication_date:2017-01-01'), 'in January the oldest listed year moves on');
 });
 
-test('a notable lane is one OpenAlex call a week, and its papers stay whatever their age until a listing lapses', async t => {
+// Synthetic variants of the recorded work: `count` distinct articles of one year.
+const notableYear = (year: number, count: number) => Array.from({ length: count }, (_, index) => ({
+  ...plsiWork,
+  id: `https://openalex.org/W9${year}${index}`,
+  doi: `https://doi.org/10.1/plsi${year}.${index}`,
+  title: `Probabilistic Latent Semantic Indexing, ${year} part ${index}`,
+  publication_date: `${year}-08-02`,
+  publication_year: year,
+}));
+const listedYear = (url: URL) => Number(filtersOf(url).find(filter => filter.startsWith('from_publication_date:'))!.slice('from_publication_date:'.length, -'-01-01'.length));
+
+test('a notable lane is ten OpenAlex calls a week, one a year; a short year does not end the lane, and a lapsed listing leaves', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const now = Date.now();
-  const full = Array.from({ length: 100 }, (_, index) => ({ ...plsiWork, id: `https://openalex.org/W9${index}`, doi: `https://doi.org/10.1/plsi${index}`, title: `Probabilistic Latent Semantic Indexing, part ${index}` }));
-  const { urls, env } = relay(t, () => ({ results: full }));
+  const { urls, env } = relay(t, url => ({ results: notableYear(listedYear(url), listedYear(url) === 2019 ? 3 : 100) }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
   await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, now);
-  assert.equal(urls.length, 1, 'a full page is not followed by another');
+  assert.deepEqual(urls.map(listedYear), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
   const count = () => (db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:cs.CV'").get() as { n: number }).n;
-  assert.equal(count(), 100, 'nine years old and filed');
+  assert.equal(count(), 903, 'up to ten years old and filed, the years after the short one too');
   await evictExpired(store, now + 13 * 86_400_000);
-  assert.equal(count(), 100, 'the next weekly listing comes before they lapse');
+  assert.equal(count(), 903, 'the next weekly listing comes before they lapse');
   await evictExpired(store, now + 15 * 86_400_000);
   assert.equal(count(), 0, 'two weeks unlisted, they leave');
+});
+
+test('a page refused mid-lane leaves the lane due again and keeps the pages already stored', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const now = Date.now();
+  const { env } = relay(t, url => ({ results: notableYear(listedYear(url), 100) }));
+  // Readers have spent all but three units of the harvest tier's share of the day.
+  const ceiling = 1_000;
+  Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
+  await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `openalex:day:${new Date(now).toISOString().slice(0, 10)}`, subject: 'readers', subjectLimit: ceiling, globalLimit: ceiling,
+    amount: Math.floor(ceiling * OPENALEX_TIER_PERCENT.feed / 100) - 3,
+  });
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  await assert.rejects(harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, now), SourceRefused);
+  assert.deepEqual(db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-notable'").all(), [], 'the lane is due again');
+  const rows = db.prepare("SELECT listed_until FROM work_lanes WHERE lane = 'notable:cs.CV'").all() as Array<{ listed_until: string }>;
+  assert.equal(rows.length, 300, 'the three years listed before the refusal stay filed');
+  assert.ok(rows.every(row => row.listed_until === daysFromNow(14, now)));
 });
 
 test("a notable lane's weekly listing renews its papers' counts, so the enrichment's refresh asks OpenAlex only for one it no longer lists", async t => {
@@ -1184,14 +1279,16 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
 
 test("a notable lane's listing renews only the papers it returned, though the corpus keeps one it dropped for longer", async t => {
   const DAY = 86_400_000;
-  const first = Date.parse('2026-10-23T03:00:00Z');
+  // In January, so that last year's articles are both listed and recent.
+  const first = Date.parse('2027-01-05T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
   // Synthetic variants of the recorded work. A recent article is kept 90 days
   // from its date, past the listing's 14.
-  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-12-20', publication_year: 2026 };
   const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
-  let listing: unknown[] = [plsiWork, recent];
-  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  let listing = [plsiWork, recent];
+  // Each year's listing names that year's articles.
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing.filter(work => work.publication_year === listedYear(url)) } : { results: [] }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
   const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
@@ -1220,6 +1317,31 @@ test("a notable lane's listing renews only the papers it returned, though the co
     'openalex:W2107743791': new Date(next).toISOString(),
     'openalex:W1000000003': enriched,
     'openalex:W1000000002': null,
+  });
+});
+
+test("a notable lane's listing does not renew a paper without an abstract, so the refresh still asks for one", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // A synthetic variant of the recorded work that OpenAlex lists without an abstract.
+  const withoutAbstract = { ...plsiWork, id: 'https://openalex.org/W1000000004', doi: 'https://doi.org/10.5555/cited-without-abstract', title: 'A most-cited article OpenAlex lists without its abstract', abstract_inverted_index: null };
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: [plsiWork, withoutAbstract] } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  // That night's enrichment, which found no abstract.
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000004': enriched,
   });
 });
 
@@ -1257,14 +1379,16 @@ test("a notable lane's listing renews the row a record merged into, and not one 
 
 test('a notable lane drops a paper 14 days after the listing that last returned it, though a like or its date keeps it in the corpus', async t => {
   const DAY = 86_400_000;
-  const first = Date.parse('2026-10-23T03:00:00Z');
+  // In January, so that last year's articles are both listed and recent.
+  const first = Date.parse('2027-01-05T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
   // Synthetic variants of the recorded work: an older one a reader liked, and
   // a recent one its category lane also holds, kept 90 days from its date.
   const liked = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
-  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
-  let listing: unknown[] = [plsiWork, liked, recent];
-  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-12-20', publication_year: 2026 };
+  let listing = [plsiWork, liked, recent];
+  // Each year's listing names that year's articles.
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing.filter(work => work.publication_year === listedYear(url)) } : { results: [] }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
   const lane = { source: 'openalex-notable' as const, lane: 'notable:cs.CV' };
@@ -1296,11 +1420,43 @@ test('a notable lane drops a paper 14 days after the listing that last returned 
   assert.deepEqual(page.map(paper => [paper.id, paper._notable === true]), [['openalex:W1000000003', false], ['openalex:W2107743791', true]]);
 });
 
+test('a leaf no sample admitted has no OpenAlex notable listing, and a topic leaf keeps the core-source filter', () => {
+  assert.equal(openAlexNotableListingFilter('chem.org', 2016), null);
+  // cs.MM's journal sample was 3 of 15 on target on 2026-10-26.
+  assert.ok(openAlexVenueFilterForLeaf('cs.MM'));
+  assert.equal(openAlexNotableListingFilter('cs.MM', 2016), null, 'a venue lane alone does not admit a leaf');
+  assert.deepEqual(openAlexNotableListingFilter('cs.CV', 2016)!.split(','), [
+    ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
+    'from_publication_date:2016-01-01',
+    'to_publication_date:2016-12-31',
+    'is_retracted:false',
+    'primary_location.source.is_core:true',
+  ]);
+});
+
+test('a leaf the journal sample admitted lists its journals\' most-cited articles of each year, without the core-source filter', async () => {
+  // quant-ph's journal sample was 15 of 15 on target on 2026-10-26.
+  const filter = openAlexNotableListingFilter('quant-ph', 2016)!;
+  assert.match(filter, /^primary_location\.source\.id:S\d+(?:\|S\d+)*,type:article,/, 'the venue lane\'s journals and types');
+  assert.equal(filter, [
+    openAlexVenueFilterForLeaf('quant-ph'), 'from_publication_date:2016-01-01', 'to_publication_date:2016-12-31', 'is_retracted:false',
+  ].join(','));
+  const { binding } = testD1();
+  const jobs = await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'));
+  assert.ok(jobs.some(job => job.source === 'openalex-notable' && job.lane === 'notable:quant-ph'));
+});
+
+test('a notable job for a leaf without a notable listing fails before asking OpenAlex', async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  await assert.rejects(SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.MM', page: 1, since: '', waits: { seconds: 0 } }), /notable:cs\.MM has no notable listing/);
+  assert.equal(urls.length, 0);
+});
+
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {
   const { binding, db } = testD1();
   const now = Date.parse('2026-10-30T02:40:00Z');
-  const lanes = async () => (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`);
-  assert.deepEqual((await lanes()).sort(), topicLanes().map(leaf => `openalex-notable notable:${leaf}`).sort());
+  const lanes = async () => (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`).filter(job => job.startsWith('openalex-notable '));
+  assert.deepEqual(await lanes(), notableLeaves().map(leaf => `openalex-notable notable:${leaf}`), 'the first night lists every lane, by lane id');
   const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-notable', ?, ?)");
   // Last week's run reached cs.CV later in the night than this run has.
   harvested.run('notable:cs.CV', '2026-10-23T04:10:00.000Z');
@@ -1308,5 +1464,236 @@ test('every admitted leaf has a notable lane, asked again once a week has passed
   const due = await lanes();
   assert.ok(due.includes('openalex-notable notable:cs.CV'), 'seven days on');
   assert.ok(!due.includes('openalex-notable notable:cs.SE'), 'six days on');
-  assert.equal(due.length, topicLanes().length - 1);
+  assert.equal(due.length, notableLeaves().length - 1);
+});
+
+// Synthetic ADS records in the shape `fetchAdsNotable` returns; not captured.
+const adsDoc = (year: number, index: number, extra: Record<string, unknown> = {}) => ({
+  bibcode: `${year}PhRvL.${100 + index}A`,
+  title: [`A quantum landmark of ${year}, number ${index}`],
+  author: ['Doe, J.'],
+  abstract: 'A synthetic abstract about entanglement in many-body systems.',
+  year: String(year),
+  pubdate: `${year}-03-00`,
+  identifier: [`arXiv:${String(year).slice(2)}03.${10000 + index}`],
+  arxiv_class: ['quant-ph'],
+  citation_count: 1000 - index,
+  doctype: 'article',
+  ...extra,
+});
+const adsYear = (url: URL) => Number(url.searchParams.get('q')!.match(/year:(\d{4})/)![1]);
+const adsEnv = (env: WorkerEnv) => ({ ...env, NASA_ADS_API_TOKEN: 'ads-test-token' }) as WorkerEnv;
+
+test("an arXiv category's notable lane also lists ADS's most-cited papers of each of the ten years, under the same lane", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, url => ({ response: { docs: adsYear(url) === 2018 ? [adsDoc(2018, 1)] : [] } }));
+  const page = (n: number) => SOURCES['ads-notable'].fetchPage(adsEnv(env), { lane: 'notable:quant-ph', page: n, since: '', waits: { seconds: 0 } });
+  await page(1); await page(10);
+  assert.deepEqual(urls.map(url => url.searchParams.get('q')), [
+    'arxiv_class:"quant-ph" year:2016 doctype:(article OR eprint OR inproceedings)',
+    'arxiv_class:"quant-ph" year:2025 doctype:(article OR eprint OR inproceedings)',
+  ]);
+  assert.equal(urls[0].searchParams.get('sort'), 'citation_count desc');
+  assert.equal(urls[0].searchParams.get('rows'), '100');
+  const { items } = await page(3);
+  assert.deepEqual(items.map(item => [item.paper.arxivId, item.lanes]), [['1803.10001', ['notable:quant-ph']]]);
+  assert.equal(items[0].paper.openAccess, true, 'a paper with an arXiv version is open');
+});
+
+test('every arXiv category, and no other leaf, has an ADS notable job on its first night', async () => {
+  const { binding } = testD1();
+  const jobs = await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'));
+  const ads = jobs.filter(job => job.source === 'ads-notable').map(job => job.lane);
+  assert.equal(ads.length, 83, 'the 83 leaves that are arXiv categories');
+  for (const lane of ['notable:quant-ph', 'notable:cs.RO', 'notable:econ.EM', 'notable:astro-ph.EP', 'notable:physics.plasm-ph', 'notable:cs.CV']) assert.ok(ads.includes(lane), lane);
+  for (const lane of ['notable:eess.optics', 'notable:med.onco', 'notable:mech.aero', 'notable:chem.org']) assert.ok(!ads.includes(lane), lane);
+});
+
+test('without its token, an ADS notable listing fails before asking ADS', async t => {
+  const { urls, env } = relay(t, () => ({ response: { docs: [] } }));
+  await assert.rejects(SOURCES['ads-notable'].fetchPage(env, { lane: 'notable:quant-ph', page: 1, since: '', waits: { seconds: 0 } }), /NASA_ADS_API_TOKEN/);
+  assert.equal(urls.length, 0);
+});
+
+test('a refused ADS listing is not marked harvested, so the lane is listed again the next night', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  t.mock.method(globalThis, 'fetch', async () => new Response('Too many requests', { status: 429 }));
+  const { binding, db } = testD1();
+  const store = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, NASA_ADS_API_TOKEN: 'ads-test-token', PAPER_STORE: binding } as never;
+  await assert.rejects(harvestLane(store, { source: 'ads-notable', lane: 'notable:quant-ph' }, Date.now()), SourceRefused);
+  assert.deepEqual(db.prepare("SELECT lane FROM lane_state WHERE source = 'ads-notable'").all(), []);
+});
+
+test('a paper ADS and OpenAlex both list is one work in the lane, kept until the later listing', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const first = Date.now();
+  const { env } = relay(t, url => (url.hostname === 'api.adsabs.harvard.edu'
+    ? { response: { docs: adsYear(url) === 2017 ? [adsDoc(2017, 1, { doi: ['10.1145/3130348.3130370'], arxiv_class: ['cs.CV'] })] : [] } }
+    : { results: filtersOf(url).includes('from_publication_date:2017-01-01') ? [plsiWork] : [] }));
+  const { binding, db } = testD1();
+  const store = { ...adsEnv(env), PAPER_STORE: binding } as never;
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  await harvestLane(store, { source: 'ads-notable', lane: 'notable:cs.CV' }, first + 86_400_000);
+  const rows = db.prepare("SELECT listed_until FROM work_lanes WHERE lane = 'notable:cs.CV'").all() as Array<{ listed_until: string }>;
+  assert.deepEqual(rows.map(row => row.listed_until), [daysFromNow(14, first + 86_400_000)]);
+});
+
+test('a year with no ADS papers does not end the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, url => ({ response: { docs: adsYear(url) === 2016 ? [] : [adsDoc(adsYear(url), 1)] } }));
+  const { binding, db } = testD1();
+  await harvestLane({ ...adsEnv(env), PAPER_STORE: binding }, { source: 'ads-notable', lane: 'notable:quant-ph' }, Date.now());
+  assert.deepEqual(urls.map(adsYear), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:quant-ph'").get() as { n: number }).n, 9);
+});
+
+// PubMed's records and the preprint servers', without retracted papers and the
+// notices, errata and opinion pieces around research.
+const europePmcRecords = '(SRC:MED OR SRC:PPR) NOT PUB_TYPE:"retracted publication" NOT PUB_TYPE:"retraction of publication" NOT PUB_TYPE:"published erratum" NOT ((PUB_TYPE:"editorial" OR PUB_TYPE:"letter" OR PUB_TYPE:"comment") AND HAS_ABSTRACT:n)';
+// Synthetic Europe PMC search records in the shape the core search returns; not captured.
+const europePmcRecord = (index: number, extra: Record<string, unknown> = {}) => ({
+  id: String(29000000 + index), source: 'MED', pmid: String(29000000 + index), doi: `10.5555/genetics.${index}`,
+  title: `A genetics landmark, number ${index}`, abstractText: 'A synthetic abstract about genome-wide association studies of complex traits.',
+  authorString: 'Doe J, Roe R.', firstPublicationDate: '2018-03-14', pubYear: '2018', citedByCount: 5000 - index,
+  ...extra,
+});
+
+test("a medicine or biology leaf's notable lane lists Europe PMC's most-cited records of each year that name the leaf", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ resultList: { result: [europePmcRecord(1)] } }));
+  const page = (n: number) => SOURCES['europepmc-notable'].fetchPage(env, { lane: 'notable:bio.gen', page: n, since: '', waits: { seconds: 0 } });
+  await page(1);
+  const { items } = await page(3);
+  assert.deepEqual(urls.map(url => `${url.origin}${url.pathname}`), Array(2).fill('https://www.ebi.ac.uk/europepmc/webservices/rest/search'));
+  assert.deepEqual(urls.map(url => url.searchParams.get('query')), [
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2016-01-01 TO 2016-12-31] AND ${europePmcRecords} sort_cited:y`,
+    `(TITLE_ABS:"Genetics" OR KW:"Genetics") AND FIRST_PDATE:[2018-01-01 TO 2018-12-31] AND ${europePmcRecords} sort_cited:y`,
+  ]);
+  assert.deepEqual(['pageSize', 'resultType', 'format'].map(name => urls[0].searchParams.get(name)), ['100', 'core', 'json']);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['pmid:29000001', ['notable:bio.gen']]]);
+});
+
+test('every medicine and biology leaf the Europe PMC sample admitted, and no other leaf, has a Europe PMC notable job', async () => {
+  const { binding } = testD1();
+  const lanes = (await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'))).filter(job => job.source === 'europepmc-notable').map(job => job.lane);
+  const coverage = gateFile('europepmc-notable-coverage.json') as Array<{ leaf: string; status: string }>;
+  assert.deepEqual(lanes, coverage.filter(row => row.status === 'passed').map(row => `notable:${row.leaf}`).sort());
+  // med.onco's sample was 14 of 15 on target on 2026-10-26, bio.physio's 0,
+  // med.psych's 14 of a label that matches 57 records.
+  assert.ok(lanes.includes('notable:med.onco'));
+  for (const lane of ['notable:bio.physio', 'notable:med.psych', 'notable:cs.CV']) assert.ok(!lanes.includes(lane), lane);
+});
+
+test('a year with no Europe PMC records does not end the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const yearOf = (url: URL) => Number(url.searchParams.get('query')!.match(/FIRST_PDATE:\[(\d{4})-/)![1]);
+  const { urls, env } = relay(t, url => ({ resultList: { result: yearOf(url) === 2016 ? [] : [europePmcRecord(yearOf(url), { firstPublicationDate: `${yearOf(url)}-03-14` })] } }));
+  const { binding, db } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'europepmc-notable', lane: 'notable:med.onco' }, Date.now());
+  assert.deepEqual(urls.map(yearOf), [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:med.onco'").get() as { n: number }).n, 9);
+});
+
+test('a preprint Europe PMC and bioRxiv both list is one work, in the notable lane and the category lane', async t => {
+  const now = Date.parse('2026-10-26T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const doi = '10.1101/2018.03.14.123456';
+  const preprint = europePmcRecord(2, { id: 'PPR12345', source: 'PPR', pmid: undefined, doi, firstPublicationDate: '2018-03-14' });
+  const { env } = relay(t, () => ({ resultList: { result: [preprint] } }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await ingestPapers(store, [{ paper: mapBioRxivPaper({ doi, title: preprint.title, abstract: preprint.abstractText, authors: 'Doe, J.', category: 'genetics', date: '2018-03-14', version: '1' })!, lanes: ['bio.gen'] }], { keepUntil: daysFromNow(14, now), now });
+  await harvestLane(store, { source: 'europepmc-notable', lane: 'notable:bio.gen' }, now);
+  const rows = db.prepare('SELECT work_id, lane FROM work_lanes ORDER BY lane').all() as Array<{ work_id: number; lane: string }>;
+  assert.deepEqual(rows.map(row => row.lane), ['bio.gen', 'notable:bio.gen']);
+  assert.equal(new Set(rows.map(row => row.work_id)).size, 1);
+  assert.deepEqual(db.prepare("SELECT paper ->> '$.publicationStatus' AS status FROM works").all().map(row => row.status), ['preprint'], 'still a preprint after the Europe PMC listing');
+});
+
+test('a leaf the notable sample admitted gets a notable lane asking for its sampled topics, and no topic lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const { binding } = testD1();
+  const lanes = (await notableLaneJobs(binding as never)).filter(job => job.source === 'openalex-notable').map(job => job.lane);
+  assert.deepEqual(lanes, notableLeaves().map(leaf => `notable:${leaf}`), 'the topic-lane leaves and the notable-sample leaves, no others');
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  for (const [leaf, topics] of Object.entries(OPENALEX_NOTABLE_LEAF_TOPICS)) {
+    assert.ok(!topicLanes().includes(leaf), `${leaf} gets no topic lane`);
+    assert.equal(openAlexTopicFilterForLeaf(leaf), null);
+    await SOURCES['openalex-notable'].fetchPage(env, { lane: `notable:${leaf}`, page: 10, since: '', waits: { seconds: 0 } });
+    const filters = filtersOf(urls.at(-1)!);
+    assert.deepEqual(topicsOf(filters), [...topics].sort(), `${leaf}'s listing asks for the topics its sample found on target`);
+    assert.ok(filters.includes('type:article') && filters.includes('from_publication_date:2025-01-01'));
+  }
+  // A topic-lane leaf's notable lane asks for its topic lane's topics.
+  assert.equal(openAlexNotableFilterForLeaf('cs.CV'), openAlexTopicFilterForLeaf('cs.CV'));
+  assert.equal(openAlexNotableFilterForLeaf('nlin.CD'), null, 'a leaf neither sample admitted has no lane');
+});
+
+// The generators propose each sample over the years the lane lists, and check
+// a review's query against its capture year; both are written apart from the
+// Worker, so this ties them to the lane's own years.
+test("a notable sample's query covers the ten completed years the lane lists, before its capture year", () => {
+  const { year, leaves } = gateFile('openalex-notable-candidates.json') as { year: number; leaves: Array<{ leaf: string; sampleUrl?: string }> };
+  const reviews = gateFile('openalex-notable-reviews.json') as Record<string, { capturedAt: string; query: string }>;
+  const queries = [
+    ...leaves.filter(row => row.sampleUrl).map(row => ({ leaf: row.leaf, url: row.sampleUrl!, now: Date.UTC(year, 5, 1) })),
+    ...Object.entries(reviews).map(([leaf, review]) => ({ leaf, url: review.query, now: Date.parse(review.capturedAt) })),
+  ];
+  assert.ok(queries.length > 0);
+  for (const { leaf, url, now } of queries) {
+    const filters = filtersOf(new URL(url));
+    assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${leaf} starts at the oldest listed year`);
+    assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${leaf} ends with the last completed year`);
+    assert.ok(filters.includes('type:article') && filters.includes('is_retracted:false') && filters.includes('primary_location.source.is_core:true'));
+  }
+  // A journal notable sample asks the venue lane's own types and no core filter.
+  const { notableSamples } = gateFile('openalex-venue-reviews.json') as { notableSamples: Record<string, { capturedAt: string; query: string }> };
+  for (const [leaf, sample] of Object.entries(notableSamples)) {
+    const now = Date.parse(sample.capturedAt);
+    const filters = filtersOf(new URL(sample.query));
+    assert.ok(filters.includes(`from_publication_date:${notableListedYear(1, now)}-01-01`), `${leaf} starts at the oldest listed year`);
+    assert.ok(filters.includes(`to_publication_date:${notableListedYear(NOTABLE_YEARS, now)}-12-31`), `${leaf} ends with the last completed year`);
+  }
+});
+
+test('a night re-lists eight due notable lanes, or a seventh of them once there are more than 56, so every lane stays weekly', () => {
+  assert.equal(notableLanesPerNight(39), NOTABLE_LANES_PER_NIGHT);
+  assert.equal(notableLanesPerNight(56), 8);
+  assert.equal(notableLanesPerNight(57), 9);
+  assert.equal(notableLanesPerNight(149), 22);
+});
+
+test("a night lists every never-harvested notable job, then each source's share of its jobs due again, the longest unlisted first", async () => {
+  const now = Date.parse('2026-10-30T02:40:00Z');
+  const nightWith = async (rows: Array<[string, string]>) => {
+    const { binding, db } = testD1();
+    const harvested = db.prepare('INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)');
+    for (const [job, through] of rows) harvested.run(...job.split(' '), through);
+    return (await notableLaneJobs(binding, now)).map(job => `${job.source} ${job.lane}`);
+  };
+  // The first night: OpenAlex's lanes, then ADS's, then Europe PMC's, each by lane id.
+  const jobs = await nightWith([]);
+  const openAlex = jobs.filter(job => job.startsWith('openalex-notable '));
+  const ads = jobs.filter(job => job.startsWith('ads-notable '));
+  const europePmc = jobs.filter(job => job.startsWith('europepmc-notable '));
+  assert.deepEqual(jobs, [...notableLeaves().map(leaf => `openalex-notable notable:${leaf}`), ...[...ads].sort(), ...[...europePmc].sort()]);
+  const share = (source: string[]) => notableLanesPerNight(source.length);
+  // Harvested eight days ago, each a minute after the next job, so the longest unlisted is the last job.
+  const eightDaysAgo = (index: number) => new Date(Date.parse('2026-10-22T03:00:00Z') + (jobs.length - index) * 60_000).toISOString();
+  const fresh = 'ads-notable notable:quant-ph';
+  const others = (source: string[]) => source.filter(job => job !== fresh);
+
+  assert.deepEqual(
+    await nightWith(jobs.filter(job => job !== fresh).map(job => [job, '2026-10-22T03:00:00.000Z'])),
+    [fresh, ...others(openAlex).slice(0, share(openAlex)), ...others(ads).slice(0, share(ads)), ...europePmc.slice(0, share(europePmc))],
+    'the new job, then each source\'s share of those due again, a tie by source and lane id',
+  );
+  // The later sources' jobs are the oldest, as when their listings keep
+  // failing: OpenAlex still gets its own share.
+  assert.deepEqual(
+    await nightWith(jobs.map((job, index) => [job, eightDaysAgo(index)])),
+    [...europePmc.slice(-share(europePmc)).reverse(), ...ads.slice(-share(ads)).reverse(), ...openAlex.slice(-share(openAlex)).reverse()],
+    'each source\'s share of its own jobs due again, the oldest harvest first',
+  );
+  assert.deepEqual(await nightWith(jobs.map(job => [job, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
 });

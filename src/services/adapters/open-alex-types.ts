@@ -13,6 +13,7 @@ export interface OpenAlexWork {
   publication_year?: number | null;
   publication_date?: string;
   type?: string;
+  is_retracted?: boolean;
   primary_location?: OpenAlexLocation | null;
   best_oa_location?: OpenAlexLocation | null;
   locations?: OpenAlexLocation[];
@@ -70,8 +71,6 @@ export interface OpenAlexInstitution extends EntityMetrics {
 
 export interface OpenAlexAuthor extends EntityMetrics {
   source?: string;
-  last_known_institution?: Partial<OpenAlexInstitution>;
-  localizedInstitutionName?: string;
   id: string;
   display_name: string;
   h_index?: number | null;

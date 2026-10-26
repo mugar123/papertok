@@ -53,43 +53,108 @@ const BROWSERS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/129.0.0.0 Safari/537.36',
 ];
 
-async function shareRewrite() {
-  const config = JSON.parse(await readFile(VERCEL, 'utf8'));
-  const index = config.rewrites.findIndex((rule: { destination: string }) => String(rule.destination).startsWith('https://api.papertok.app/share/'));
-  return { config, index, rule: config.rewrites[index] };
+type Condition = { type: string; key?: string; value: string };
+type Rule = { source: string; destination: string; has?: Condition[]; permanent?: boolean };
+
+async function vercelConfig(): Promise<{ redirects: Rule[]; rewrites: Rule[] }> {
+  return JSON.parse(await readFile(VERCEL, 'utf8'));
 }
 
-test('public pages reach the Worker share route, one path for the three current kinds', async () => {
-  const { rule } = await shareRewrite();
-  assert.ok(rule, 'the crawler rewrite is gone');
-  assert.equal(rule.source, '/public/:kind(paper|list|entity)/:rest*');
-  assert.equal(rule.destination, 'https://api.papertok.app/share/:kind/:rest*');
-});
+async function shareRewrites() {
+  const config = await vercelConfig();
+  const rules = config.rewrites.filter(rule => rule.destination.startsWith('https://api.papertok.app/share/'));
+  return { config, rules };
+}
 
-test('the crawler rewrite comes before the SPA catch-all, which would otherwise take it', async () => {
-  const { config, index } = await shareRewrite();
-  assert.ok(index >= 0, 'the crawler rewrite is gone');
-  const spa = config.rewrites.findIndex((rule: { source: string; }) => rule.source.startsWith('/:path('));
-  assert.ok(spa >= 0, 'the SPA rewrite is gone');
-  assert.ok(index < spa, 'Vercel takes the first rewrite that matches');
-});
+// Enough of path-to-regexp, which Vercel compiles `source` with, for the
+// redirects and the Worker rewrites: `:name` is one segment, `:name*` any
+// number of them, `:name(pattern)` a pattern of its own.
+function applyRule(rule: Rule, path: string, userAgent: string) {
+  const conditionsHold = (rule.has || []).every(condition => (
+    condition.type === 'header' && condition.key === 'user-agent' && new RegExp(`^${condition.value}$`).test(userAgent)
+  ));
+  if (!conditionsHold) return null;
+  const names: string[] = [];
+  const pattern = rule.source.replace(/\/:(\w+)(\*|\(([^()]*)\))?/g, (_match, name: string, modifier?: string, custom?: string) => {
+    names.push(name);
+    return modifier === '*' ? '(?:/(.*))?' : `/(${custom ?? '[^/]+'})`;
+  });
+  const match = path.match(new RegExp(`^${pattern}$`));
+  if (!match) return null;
+  return names.reduce((destination, name, index) => destination.replace(new RegExp(`:${name}\\*?`), match[index + 1] ?? ''), rule.destination);
+}
 
-test('only a crawler user agent is rewritten; a person gets the static app', async () => {
-  const { config, rule } = await shareRewrite();
-  const conditions = rule.has || [];
-  assert.equal(conditions.length, 1);
-  assert.equal(conditions[0].type, 'header');
-  assert.equal(conditions[0].key, 'user-agent');
-  assert.equal(
-    config.rewrites.filter((candidate: { destination: string }) => String(candidate.destination).includes('api.papertok.app')).length,
-    1,
-    'no second, unconditional way to the Worker',
+// Vercel's order: the first redirect that matches answers on its own, and
+// only a request no redirect took goes on to the first matching rewrite.
+async function route(path: string, userAgent: string) {
+  const { config, rules } = await shareRewrites();
+  for (const rule of config.redirects) {
+    const location = applyRule(rule, path, userAgent);
+    if (location) return { redirect: location, permanent: rule.permanent === true };
+  }
+  for (const rule of rules) {
+    const destination = applyRule(rule, path, userAgent);
+    if (destination) return { rewrite: destination };
+  }
+  return {};
+}
+
+const KEY = 'ZG9pOjEwLjExNDUvMzU1NTE3NA';
+const CRAWLER = CRAWLERS[0];
+const BROWSER = BROWSERS[0];
+
+test('public pages reach the Worker share route: a paper at /paper/, the other kinds under /public/', async () => {
+  assert.deepEqual(await route(`/paper/${KEY}`, CRAWLER), { rewrite: `https://api.papertok.app/share/paper/${KEY}` });
+  assert.deepEqual(await route('/public/list/x7Kq2mPz', CRAWLER), { rewrite: 'https://api.papertok.app/share/list/x7Kq2mPz' });
+  assert.deepEqual(
+    await route('/public/entity/author/A5018713931', CRAWLER),
+    { rewrite: 'https://api.papertok.app/share/entity/author/A5018713931' },
   );
 });
 
+/**
+ * ENG-44: paper links were minted as /public/paper/<key> until the page moved
+ * to /paper/<key>, and the old ones are in messages, bookmarks and indexes.
+ * The redirect runs before any rewrite, so a crawler is moved too and then
+ * reaches the Worker at the new address. The query string is not modelled
+ * here: Vercel passes the request's query on to a redirect's destination by
+ * default (Vercel KB, "How do I perform Vercel redirects based on query
+ * strings?"), so `?utm_source=…` survives the move.
+ */
+test('an old /public/paper/ link is moved permanently to /paper/, for people and crawlers alike', async () => {
+  for (const userAgent of [BROWSER, CRAWLER]) {
+    assert.deepEqual(await route(`/public/paper/${KEY}`, userAgent), { redirect: `/paper/${KEY}`, permanent: true });
+  }
+  assert.deepEqual(await route(`/paper/${KEY}`, BROWSER), {}, 'a person on the new address gets the static app');
+  assert.deepEqual(await route('/public/list/x7Kq2mPz', BROWSER), {}, 'lists keep their address');
+});
+
+test('the crawler rewrites come before the SPA catch-all, which would otherwise take them', async () => {
+  const { config, rules } = await shareRewrites();
+  assert.ok(rules.length > 0, 'the crawler rewrites are gone');
+  const spa = config.rewrites.findIndex(rule => rule.source.startsWith('/:path('));
+  assert.ok(spa >= 0, 'the SPA rewrite is gone');
+  for (const rule of rules) {
+    assert.ok(config.rewrites.indexOf(rule) < spa, `${rule.source}: Vercel takes the first rewrite that matches`);
+  }
+});
+
+test('only a crawler user agent is rewritten; a person gets the static app', async () => {
+  const { config, rules } = await shareRewrites();
+  const workerRules = config.rewrites.filter(candidate => candidate.destination.includes('api.papertok.app'));
+  assert.deepEqual(workerRules, rules, 'no other way to the Worker');
+  for (const rule of rules) {
+    const conditions = rule.has || [];
+    assert.equal(conditions.length, 1, `${rule.source} is not conditional on the user agent alone`);
+    assert.equal(conditions[0].type, 'header');
+    assert.equal(conditions[0].key, 'user-agent');
+    assert.equal(conditions[0].value, rules[0].has![0].value, `${rule.source} lists different crawlers`);
+  }
+});
+
 test('the user-agent pattern matches the crawlers and not the browsers, anchored or not', async () => {
-  const { rule } = await shareRewrite();
-  const value = rule.has[0].value;
+  const { rules } = await shareRewrites();
+  const value = rules[0].has![0].value;
   // Written for JavaScript's RegExp, the engine Vercel's routing compiles
   // `has` values with: no inline flags, so case is spelled out per token.
   assert.doesNotMatch(value, /\(\?[a-z]/i, 'no inline flag group');

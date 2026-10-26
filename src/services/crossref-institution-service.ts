@@ -15,6 +15,7 @@ import { openLicenseFromCrossref } from '../utils/crossref-license.ts';
 const CROSSREF_WORKS_LIMIT = 30;
 const CROSSREF_AUTHORS_WORKS_LIMIT = 100;
 
+// Crossref's abstracts are JATS XML; the text without its tags.
 function stripMarkup(value: unknown) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
@@ -61,7 +62,7 @@ export function mapCrossrefInstitutionWork(work: CrossrefWork): Paper | null {
   const title = work?.title?.[0] || '';
   if (!doi || !title) return null;
   const published = getCrossrefPublishedDate(work);
-  const year = Number(published.slice(0, 4)) || new Date().getFullYear();
+  const year = Number(published.slice(0, 4)) || undefined;
   // Not the first licence with a URL: Elsevier lists its text-mining licence
   // first, and that read every subscription article as open access.
   const openLicense = openLicenseFromCrossref(work);

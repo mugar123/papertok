@@ -128,6 +128,7 @@ import { nameInitials } from '../../utils/name-initials.ts';
 import 'katex/dist/katex.min.css';
 import './entity-explorer.css';
 import { EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
+import { formatProjectAmount } from '../../utils/format-project-amount.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
@@ -307,7 +308,7 @@ export default function EntityExplorer({
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
-  const handleSaveToList = useQuickSave(onSaveToList);
+  const handleSaveToList = useQuickSave(onSaveToList, 'explorer');
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
@@ -1096,7 +1097,8 @@ export default function EntityExplorer({
            // these identifiers still have to be resolved into papers below,
            // and what OpenAIRE returned is not what the reader ends up seeing.
            projectUsableIds = arxivIds.length + dois.length;
-           total = res.total;
+           // No total means the page was past what OpenAIRE lists, so it ends here.
+           total = res.total ?? page * 30;
         } else if (type === 'author') {
             let papersFromOA: Paper[] = [];
             let arxPapersFromNative: Paper[] = [];
@@ -1909,7 +1911,7 @@ export default function EntityExplorer({
       {type === 'project' && (entity.budget as number) > 0 && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return entity.budget!.toLocaleString(locale); } })()}
+            {formatProjectAmount(entity.budget!, entity.currency, locale)}
           </span>
           <span className="ehc-stat-label">{'Total budget'}</span>
         </div>
@@ -1917,7 +1919,7 @@ export default function EntityExplorer({
       {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return entity.fundedAmount!.toLocaleString(locale); } })()}
+            {formatProjectAmount(entity.fundedAmount!, entity.currency, locale)}
           </span>
           <span className="ehc-stat-label">{'Funding'}</span>
         </div>
@@ -1926,12 +1928,6 @@ export default function EntityExplorer({
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">{entity.participants!.length}</span>
           <span className="ehc-stat-label">{'Participants'}</span>
-        </div>
-      )}
-      {type === 'project' && (entity.measures?.citations as number) > 0 && (
-        <div className="ehc-stat-box">
-          <span className="ehc-stat-value">{entity.measures!.citations!.toLocaleString(locale)}</span>
-          <span className="ehc-stat-label">{'Citations'}</span>
         </div>
       )}
     </div>

@@ -48,9 +48,7 @@ interface ArxivEntry {
 type DigestOpenAlexWork = OpenAlexWork & { keywords?: PaperSubject[]; categories?: string[] };
 interface OpenAlexPayload { results: DigestOpenAlexWork[] }
 export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
-type OpenAirePid = { '@classname'?: unknown; '$'?: unknown };
-type OpenAireResult = { metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: OpenAirePid | OpenAirePid[] } } } };
-interface OpenAirePayload { response?: { results?: { result?: OpenAireResult | OpenAireResult[] } } }
+type OpenAlexReservation = (url: URL) => Promise<void>;
 interface DeliveryOptions { test?: boolean; now?: number }
 interface CollectOptions extends DeliveryOptions { openAlexRequests?: OpenAlexRequests | null }
 // `editionAt` is when the papers were selected: a held edition keeps its own week.
@@ -75,14 +73,19 @@ interface ScheduleSummary {
 }
 
 import type { WorkerEnv } from './env.ts';
+import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
+import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
+import { openAlexCostFor } from './openalex-api.ts';
+import { reserveOpenAlexBudget } from './provider-runtime.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -103,6 +106,11 @@ const MAX_PREVIEW_ITEMS = 20;
 const MAX_SENT_PAPER_KEYS = 400;
 const MAX_PREFERENCES_REQUEST_BYTES = 96 * 1024;
 const DEFAULT_DAILY_SEND_LIMIT = 100;
+// Test emails share the daily send limit with the digest and verification
+// emails, so one account may send 3 a day and all accounts together 20, a
+// fifth of production's 100 (Pablo, 2026-10-24).
+const TEST_ACCOUNT_DAILY_LIMIT = 3;
+const TEST_GLOBAL_DAILY_LIMIT = 20;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -171,6 +179,12 @@ export class EmailDigestTransientError extends EmailNotificationError {
     this.sourceReport = sourceReport;
   }
 }
+
+// A test email's OpenAlex request that the ledger would not take (429
+// `EMAIL_TEST_OPENALEX_BUDGET`) or could not be asked about (503
+// `EMAIL_UNAVAILABLE`). It ends the whole test: a digest built from the sources
+// that did answer would reach the reader as if it were complete.
+class TestOpenAlexBudgetError extends EmailNotificationError {}
 
 class DigestSourceError extends Error {
   declare source: string | undefined;
@@ -590,7 +604,7 @@ function recordSourceFailure(report: SourceReport | null | undefined, source: st
 }
 
 function digestSourceError(source: string, error: unknown) {
-  if (error instanceof DigestSourceError) return error;
+  if (error instanceof DigestSourceError || error instanceof TestOpenAlexBudgetError) return error;
   return new DigestSourceError(
     source,
     `EMAIL_SOURCE_${sourceCodeName(source)}_INVALID_RESPONSE`,
@@ -616,13 +630,18 @@ function wait(delayMs: number) {
   return new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
+// `beforeAttempt` runs ahead of every attempt, the retry too, so a source that
+// is metered counts each call it will receive. What it throws ends the call
+// without another attempt.
 async function fetchDigestSource(input: RequestInfo | URL, init: RequestInit | undefined, {
   source,
   report,
   timeoutMs = DIGEST_SOURCE_TIMEOUT_MS,
-}: { source?: string; report?: SourceReport | null; timeoutMs?: number } = {}) {
+  beforeAttempt,
+}: { source?: string; report?: SourceReport | null; timeoutMs?: number; beforeAttempt?: () => Promise<void> } = {}) {
   let lastError;
   for (let attempt = 0; attempt < DIGEST_SOURCE_MAX_ATTEMPTS; attempt += 1) {
+    await beforeAttempt?.();
     if (report) {
       const bucket = sourceBucket(report, source!)!;
       report.requestAttempts += 1;
@@ -703,11 +722,13 @@ function isArxivCategory(value: unknown) {
   ));
 }
 
+function followCategoryIds(follow: FollowInput = {}) {
+  return getAreaLeaves(follow.canonicalId) ?? (Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : []);
+}
+
 function arxivCategoriesForFollow(follow: FollowInput = {}) {
-  const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
-    ? follow.metadata.categoryIds
-    : [];
-  const candidates = metadataCategories.length ? metadataCategories : [follow.canonicalId];
+  const categoryIds = followCategoryIds(follow);
+  const candidates = categoryIds.length ? categoryIds : [follow.canonicalId];
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 
@@ -854,7 +875,7 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
     follow.canonicalId,
     follow.externalIds?.ror || '',
     follow.metadata?.query || '',
-    [...new Set(follow.metadata?.categoryIds || [])].sort(),
+    [...new Set(followCategoryIds(follow))].sort(),
   ])).sort();
   return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
 }
@@ -1077,17 +1098,21 @@ function openAlexRequestKey(url: string | URL) {
 // retries it would have had on its own. Without a map (the test email), every
 // call goes upstream as before. Answers stay whole and in memory for the rest
 // of the run, so the map is capped; once full, a new question is asked unshared
-// rather than pushing out an answer a later reader may still need.
+// rather than pushing out an answer a later reader may still need. `reserve`
+// is the test email's ledger gate (`reserveOpenAlexForTest`), run before every
+// attempt of a request.
 function fetchOpenAlexDigestPayload(
   url: URL,
   sourceReport: SourceReport | null | undefined,
   openAlexRequests: OpenAlexRequests | null,
   limit = MAX_SHARED_OPENALEX_REQUESTS,
+  reserve: OpenAlexReservation | null = null,
 ) {
   const request = async () => {
     const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
       source: 'openalex',
       report: sourceReport,
+      beforeAttempt: reserve ? () => reserve(url) : undefined,
     });
     const payload = await response.json<OpenAlexPayload>();
     if (!Array.isArray(payload?.results)) {
@@ -1108,7 +1133,7 @@ function fetchOpenAlexDigestPayload(
   return shared;
 }
 
-async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
+async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null, reserve: OpenAlexReservation | null = null) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - DIGEST_FRESHNESS_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -1133,7 +1158,7 @@ async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.n
   url.searchParams.set('sort', 'publication_date:desc');
   url.searchParams.set('per-page', '6');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests);
+    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests, undefined, reserve);
     let works = payload?.results || [];
     if (follow.type === 'topic' && isQueryTopicId(id)) {
       const query = topicSearchQuery(follow);
@@ -1162,36 +1187,23 @@ async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceR
   });
 }
 
-async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
-  const requestUrl = new URL('https://api.openaire.eu/search/publications');
-  requestUrl.searchParams.set('format', 'json');
-  requestUrl.searchParams.set('size', '10');
-  requestUrl.searchParams.set('page', '1');
-  requestUrl.searchParams.set(follow.canonicalId.includes('::') ? 'openaireProjectID' : 'projectID', follow.canonicalId);
-  const payload = await trackDigestSource(sourceReport, 'openaire', async () => {
+async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null, reserve: OpenAlexReservation | null = null) {
+  const requestUrl = openAireProjectPublicationsUrl(follow.canonicalId, { pageSize: 10 });
+  const { results } = await trackDigestSource(sourceReport, 'openaire', async () => {
     const response = await fetchDigestSource(requestUrl, { headers: { accept: 'application/json' } }, {
       source: 'openaire',
       report: sourceReport,
     });
-    return response.json<OpenAirePayload>();
+    return readOpenAirePage<OpenAireProduct>(await response.json());
   });
-  let rows = payload?.response?.results?.result || [];
-  if (!Array.isArray(rows)) rows = [rows];
-  const dois = rows.flatMap((row) => {
-    let pids = row?.metadata?.['oaf:entity']?.['oaf:result']?.pid || [];
-    if (!Array.isArray(pids)) pids = [pids];
-    return pids
-      .filter(pid => ['doi', 'digital object identifier'].includes(cleanText(pid?.['@classname'], 60).toLowerCase()))
-      .map(pid => cleanText(pid?.['$'], 300))
-      .filter(Boolean);
-  }).slice(0, 10);
+  const dois = results.flatMap(row => openAirePids(row, 'doi').map(doi => cleanText(doi, 300)).filter(Boolean)).slice(0, 10);
   if (!dois.length) return [];
 
   const openAlexUrl = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   openAlexUrl.searchParams.set('filter', `doi:${dois.map(doi => doi.replace(/^https?:\/\/doi\.org\//i, '')).join('|')}`);
   openAlexUrl.searchParams.set('per-page', '10');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const openAlexPayload = await fetchOpenAlexDigestPayload(openAlexUrl, sourceReport, openAlexRequests);
+    const openAlexPayload = await fetchOpenAlexDigestPayload(openAlexUrl, sourceReport, openAlexRequests, undefined, reserve);
     return (openAlexPayload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
   });
 }
@@ -1366,6 +1378,31 @@ function digestFollowsForWindow(follows: Follow[] | undefined, now = Date.now())
   return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
 }
 
+// A test email reserves every OpenAlex attempt in the day's ledger at the
+// exploration tier before sending it, so test emails stop together with readers'
+// searches at that tier's share of the day's ceiling and leave the tiers above
+// it theirs. `now` names the day, as it does for the test's own limits.
+async function reserveOpenAlexForTest(env: WorkerEnv, url: URL, now: number) {
+  const { units, kind } = openAlexCostFor(url);
+  const reservation = await reserveOpenAlexBudget(env, '', { units, kind, tier: 'exploration' }, new Date(now).toISOString())
+    .catch((error: unknown) => {
+      console.warn('OpenAlex ledger unreachable for a test email', error);
+      return null;
+    });
+  if (reservation && !reservation.error) return;
+  throw reservation?.error?.status === 429
+    ? new TestOpenAlexBudgetError('EMAIL_TEST_OPENALEX_BUDGET', 429)
+    : new TestOpenAlexBudgetError('EMAIL_UNAVAILABLE', 503);
+}
+
+// `mapWithConcurrency` settles every follow, which would turn the refusal into
+// one failed source among others.
+function rethrowTestOpenAlexBudgetError(results: PromiseSettledResult<unknown>[]) {
+  for (const result of results) {
+    if (result.status === 'rejected' && result.reason instanceof TestOpenAlexBudgetError) throw result.reason;
+  }
+}
+
 async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   test = false,
   now = Date.now(),
@@ -1376,10 +1413,24 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
+  // A test fails whole on its first refusal and the ledger remembers none: a
+  // one-unit list asked after a ten-unit search was refused would be accepted,
+  // billing readers' share and calling OpenAlex for an email that is never sent.
+  // Requests already waiting on the ledger keep their own answer.
+  let testRefusal: unknown = null;
+  const reserve: OpenAlexReservation | null = test ? async (url) => {
+    if (testRefusal) throw testRefusal;
+    try {
+      await reserveOpenAlexForTest(env, url, now);
+    } catch (error) {
+      testRefusal ??= error;
+      throw error;
+    }
+  } : null;
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
     follow.type === 'project'
-      ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests)
-      : fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests)
+      ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests, reserve)
+      : fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests, reserve)
   ));
   const arxivFreshPromise = (async () => {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
@@ -1393,8 +1444,9 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
       const fallbackResults = await mapWithConcurrency(
         arxivFollows,
         2,
-        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests),
+        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests, reserve),
       );
+      rethrowTestOpenAlexBudgetError(fallbackResults);
       return {
         papers: fallbackResults
           .filter(result => result.status === 'fulfilled')
@@ -1404,6 +1456,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
     }
   })();
   const [indexedResults, arxivResult] = await Promise.all([indexedFreshPromise, arxivFreshPromise]);
+  rethrowTestOpenAlexBudgetError(indexedResults);
   const indexedFresh = indexedResults
     .filter(result => result.status === 'fulfilled')
     .flatMap(result => result.value);
@@ -2260,17 +2313,34 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
 
+// The ledger holds these units by uid, so unsubscribing, which deletes the
+// delivery state and its `lastTestAt`, cannot reset them, and concurrent
+// requests cannot all pass. They are taken before any source is read and are
+// not given back: a test that fails after its reservation has already made its
+// source calls.
+async function reserveTestEmail(env: WorkerEnv, uid: string, now: number) {
+  // The minute paces one account and counts nothing app-wide (`globalAmount`
+  // 0), so a burst across accounts is refused by the day's limit, with its code.
+  for (const [periodKey, subjectLimit, globalAmount, code] of [
+    [`email-test:minute:${Math.floor(now / TEST_IDEMPOTENCY_WINDOW_MS)}`, 1, 0, 'EMAIL_TEST_RATE_LIMIT'],
+    [`email-test:day:${utcDay(now)}`, TEST_ACCOUNT_DAILY_LIMIT, 1, 'EMAIL_TEST_DAILY_LIMIT'],
+  ] as const) {
+    const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      periodKey, subject: uid, subjectLimit, globalLimit: TEST_GLOBAL_DAILY_LIMIT, globalAmount,
+    });
+    if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    if (!quota.accepted) throw new EmailNotificationError(code, 429);
+  }
+}
+
 async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  const lastTestAt = Date.parse((subscription.lastTestAt || 0) as string);
-  if (lastTestAt && Date.now() - lastTestAt < 60_000) {
-    throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
-  }
   const now = Date.now();
+  await reserveTestEmail(env, identity.uid, now);
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
   const result = await sendDigest(subscription, papers, env, {
     test: true,
