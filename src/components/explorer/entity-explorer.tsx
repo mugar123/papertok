@@ -1652,6 +1652,9 @@ export default function EntityExplorer({
             Tab (axe's `aria-hidden-focus`). Each decorative placeholder is
             hidden on its own instead, so the Back button is the one thing in
             here a screen reader still announces. */}
+        {/* `.explorer-hero` stays this root's first child, and the bar its
+            first child: that position is what keeps an open Privacy popover
+            mounted when the hero or the error page replaces the skeleton. */}
         <div className="explorer-hero">
           <ExplorerHeroTop onBack={handleBack} privacy={explorerPrivacy} />
 
@@ -2183,7 +2186,9 @@ export default function EntityExplorer({
 
   return (
     <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
-      {/* Immersive Hero */}
+      {/* Immersive Hero. First child, with the bar its first child: the
+          skeleton's position, which keeps an open Privacy popover mounted
+          across the swap. */}
       <div className="explorer-hero">
         
         {/* Every page keeps its actions in the bar, across from the way
