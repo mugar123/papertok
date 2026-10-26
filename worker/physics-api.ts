@@ -26,11 +26,30 @@ function adsQueryFromTerms(query: string) {
 }
 
 async function fetchAdsLiterature(context: SourceContext, query: string, env: WorkerEnv) {
+  return adsSearch(env, {
+    q: adsQueryFromTerms(query),
+    sort: context.sort === 'recent' ? 'date desc' : 'score desc',
+    rows: context.limit,
+    start: (context.page - 1) * context.limit,
+  });
+}
+
+/**
+ * The year's most-cited papers of one arXiv category, for a notable lane
+ * (worker/paper-sources.ts `ads-notable`): ADS files a published paper under
+ * the classes of its arXiv version, chosen by its authors.
+ */
+export async function fetchAdsNotable(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, arxivClass: string, year: number, rows: number) {
+  const data = await adsSearch(env, { q: `arxiv_class:"${arxivClass}" year:${year}`, sort: 'citation_count desc', rows, start: 0 });
+  return { docs: data.response.docs };
+}
+
+async function adsSearch(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, { q, sort, rows, start }: { q: string; sort: string; rows: number; start: number }) {
   const url = new URL('https://api.adsabs.harvard.edu/v1/search/query');
-  url.searchParams.set('q', adsQueryFromTerms(query));
-  url.searchParams.set('rows', String(context.limit));
-  url.searchParams.set('start', String((context.page - 1) * context.limit));
-  url.searchParams.set('sort', context.sort === 'recent' ? 'date desc' : 'score desc');
+  url.searchParams.set('q', q);
+  url.searchParams.set('rows', String(rows));
+  url.searchParams.set('start', String(start));
+  url.searchParams.set('sort', sort);
   url.searchParams.set('fl', [
     'bibcode',
     'title',
