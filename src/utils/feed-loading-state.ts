@@ -7,6 +7,11 @@ export const FEED_DISPLAY_STATES = Object.freeze({
   EMPTY: 'empty',
 });
 
+/** A failed first load is not over: its retry is still the first wait, under the veil. */
+export function firstLoadSettled({ hasPapers, loadStarted, loading, error }: { hasPapers: boolean; loadStarted: boolean; loading: boolean; error: unknown }) {
+  return hasPapers || (loadStarted && !loading && !error);
+}
+
 export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; hasSourceEmptyState?: boolean }) {
   if (error && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
   if (hasPapers) return FEED_DISPLAY_STATES.FEED;
