@@ -8,9 +8,11 @@ import {
   emailNudgeProblem,
   escapeBelongsToOther,
   forgetPrivacyNotice,
+  noticeOnScreen,
   pickNudge,
   pickVisitNotice,
   privacyNoticeOwed,
+  privacyOwedFor,
   readDismissedNudges,
   readPrivacyNoticeAck,
   rememberNudgeDismissal,
@@ -242,4 +244,40 @@ test('an Escape that belongs to another dialog, menu or text field does not put 
   assert.equal(escapeBelongsToOther({ tagName: 'BODY', closest: () => null }), false, 'the page underneath');
   assert.equal(escapeBelongsToOther(null), false);
   assert.equal(escapeBelongsToOther({}), false, 'the document itself has no closest');
+});
+
+test('an Escape that closes a tooltip or popover from its trigger does not put the notice away', () => {
+  const inside = (selectors: string) => ({ tagName: 'BUTTON', closest: (selector: string) => (selector.includes(selectors) ? {} : null) });
+  assert.equal(escapeBelongsToOther(inside('data-popup-open')), true, 'a trigger whose tooltip is open');
+  assert.equal(escapeBelongsToOther({ tagName: 'BUTTON', closest: () => null }), false, 'a trigger with nothing open');
+});
+
+test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
+  const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname });
+  assert.equal(on(PRIVACY_NOTICE_ID, true, '/feed'), PRIVACY_NOTICE_ID);
+  assert.equal(on('email-down', true, '/feed'), 'email-down');
+  for (const pathname of ['/search', '/lists', '/explore', '/settings', '/paper/abc', '/feed/x', '/']) {
+    assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), null, `a paper may be open as a modal on ${pathname}`);
+    assert.equal(on('email-down', true, pathname), null, `the email nudge too on ${pathname}`);
+  }
+  assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
+  assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {
+  const version = '2026-10-26';
+  const effectiveAt = '2026-10-26T18:00:00Z';
+  const owed = (user: { uid: string; metadata?: { creationTime?: string | null } } | null, storage = fakeStorage(), signedIn = true) =>
+    privacyOwedFor({ user, signedIn, version, effectiveAt, storage });
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }), true, 'an older account');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 17:59:59 GMT' } }), true, 'a second before');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 18:00:00 GMT' } }), false, 'the effective instant');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Mon, 26 Oct 2026 20:00:00 GMT' } }), false, 'a new account');
+  assert.equal(owed({ uid: 'a' }), true, 'no metadata: told');
+  assert.equal(owed(null), false, 'nobody');
+  assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }, fakeStorage(), false), false, 'not signed in');
+  const storage = fakeStorage();
+  rememberPrivacyNotice('a', version, storage);
+  assert.equal(owed({ uid: 'a' }, storage), false, 'dismissed by this account');
+  assert.equal(owed({ uid: 'b' }, storage), true, 'another account on the same browser');
 });

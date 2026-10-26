@@ -7,13 +7,14 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
+  NUDGE_PATH,
   PRIVACY_NOTICE_ID,
   emailNudgeProblem,
   escapeBelongsToOther,
+  noticeOnScreen,
   pickVisitNotice,
-  privacyNoticeOwed,
+  privacyOwedFor,
   readDismissedNudges,
-  readPrivacyNoticeAck,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
 } from '../../utils/nudges.ts';
@@ -27,11 +28,14 @@ import NudgePanel from './nudge-panel.tsx';
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
 //
+//   · Guests are out entirely: they already have one thing being asked of them.
+//
 // A privacy policy change takes the visit's turn before any nudge. Only
 // signed-in accounts are told, and it returns on later visits until it is
-// dismissed; utils/nudges.ts decides who is owed it. A change of
-// account remounts this component, which clears what was picked for the
-// previous reader.
+// dismissed; utils/nudges.ts decides who is owed it. Once picked it is shown
+// on the feed only: on a route with a modal paper it would cover the card and
+// take the Escape meant for the notice. A change of account remounts this
+// component, which clears what was picked for the previous reader.
 
 const COPY = {
   en: {
@@ -84,7 +88,7 @@ export default function NudgeHost() {
 
   const openable = dwellDone
     && signedIn
-    && location.pathname === '/feed';
+    && location.pathname === NUDGE_PATH;
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
@@ -92,12 +96,11 @@ export default function NudgeHost() {
   if (openable && user && !choiceMade) {
     setChoiceMade(true);
     const id = pickVisitNotice({
-      privacyOwed: privacyNoticeOwed({
+      privacyOwed: privacyOwedFor({
+        user,
+        signedIn,
         version: PRIVACY_POLICY_VERSION,
         effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-        acknowledged: readPrivacyNoticeAck(user.uid),
-        accountCreated: user.metadata?.creationTime,
-        signedIn,
       }),
       eligible: emailProblem ? ['email-down'] : [],
       dismissed,
@@ -110,7 +113,8 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
-  const privacyShown = picked === PRIVACY_NOTICE_ID && signedIn;
+  const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname });
+  const privacyShown = onScreen === PRIVACY_NOTICE_ID;
 
   // Escape puts it away for this visit and does not count as reading it, so it
   // returns next time. On a phone the panel covers the bottom of the card, and
@@ -174,7 +178,7 @@ export default function NudgeHost() {
           dismissLabel={copy.privacy.hide}
           onDismiss={hidePrivacyForVisit}
         />
-      ) : picked === 'email-down' && emailCopy && (
+      ) : onScreen === 'email-down' && emailCopy && (
         <NudgePanel
           key="nudge-email-down"
           icon={<EnvelopeSimple size={19} />}

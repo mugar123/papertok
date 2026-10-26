@@ -136,6 +136,34 @@ export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountC
   return created.getTime() < new Date(effectiveAt).getTime();
 }
 
+/**
+ * What NudgeHost asks of the policy: the signed-in account, when it was
+ * created and what this browser has stored for its uid. Kept here so the
+ * arguments that decide who is told are tested, not only the rule itself.
+ */
+export function privacyOwedFor({ user, signedIn, version, effectiveAt, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; storage?: NudgeStorage | null }) {
+  if (!user) return false;
+  return privacyNoticeOwed({
+    version,
+    effectiveAt,
+    acknowledged: readPrivacyNoticeAck(user.uid, storage),
+    accountCreated: user.metadata?.creationTime,
+    signedIn,
+  });
+}
+
+/** The only route a nudge is picked on and shown on. */
+export const NUDGE_PATH = '/feed';
+
+/**
+ * The picked notice, while it may be on screen: for a signed-in reader, on the
+ * feed. Elsewhere the panel would sit over a modal paper, which traps focus and
+ * takes the Escape meant for the notice. It comes back when the reader returns.
+ */
+export function noticeOnScreen({ picked, signedIn, pathname }: { picked: string | null; signedIn: boolean; pathname: string }) {
+  return signedIn && pathname === NUDGE_PATH ? picked : null;
+}
+
 /** One of the pending ones, at random, or nothing at all. */
 export function pickNudge({ eligible = [], dismissed = [], random = Math.random }: { eligible?: string[]; dismissed?: string[]; random?: () => number } = {}) {
   const pending = eligible.filter(id => !dismissed.includes(id));
@@ -154,11 +182,13 @@ export function pickVisitNotice({ privacyOwed, eligible = [], dismissed = [], ra
   return privacyOwed ? PRIVACY_NOTICE_ID : pickNudge({ eligible, dismissed, random });
 }
 
-const OTHER_ESCAPE_OWNERS = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[aria-modal="true"]';
+// `data-popup-open` is what Base UI puts on the trigger of an open tooltip,
+// popover or menu, which Escape closes while focus is still on the trigger.
+const OTHER_ESCAPE_OWNERS = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[aria-modal="true"],[data-popup-open]';
 
 /**
  * Whether an Escape pressed on `target` belongs to something else: another
- * dialog, menu or list closing itself, or a text field being cleared. Only an
+ * dialog, menu, list or tooltip closing itself, or a text field being cleared. Only an
  * Escape on the page underneath puts the privacy notice away.
  */
 export function escapeBelongsToOther(target: unknown) {
