@@ -22,27 +22,56 @@ Rows read are the local D1's own count (`meta.rows_read`), split by statement:
 - the notable scan is `readNotableCandidates`;
 - vectors are `readVectors`;
 - keys are `findWorks`;
-- works are `readWorks`, `unseenNotable` and `keepLiked`.
+- works are every statement that reads `works`: `readWorks`, the walk's paper-id
+  reads over the regular ranking and the notable order (`unseenRanks`, with
+  `walkPastDropped`) and `keepLiked`.
 
 Page 2 is the next page of the same request: the app's, with page 1's papers
-added to the seen filter, served from the order that page 1 kept. Every lane
+added to the seen filter, served from the order that page 1 kept. That holds
+only while the kept order is still good, so three more page 2 rows ask for it
+when it is not: "after 16 min" 16 minutes after the ranking (past
+`RANKING_KEPT_MS`), "after a dismissal" from a reader who has since marked a
+card Not interested (a negative), and "after the lean moved" with
+`order: 'relevance'`, as a like that moves the lean past -0.3 asks. Each changes
+what `readFeedPage` ranks by or the order's age, so it ranks again. Every lane
 holds the corpus described under Method: a notable lane of 2,000 rows, as an
-arXiv category has with OpenAlex's and ADS's listings.
+arXiv category has with OpenAlex's and ADS's listings. cs.AI is the exception
+in production: its notable lane holds only ADS's listing, about 1,000 rows, so
+the 6- and 12-category scans here are about 8,000 rows (4% to 8%) above what
+current listings can produce.
 
 | Categories | Likes | Page | Rows read | Lane reads | Notable scan | Vectors | Keys | Works | Vectors returned | Rows written |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 0 | 1 | 23,283 | 4,800 | 16,023 | 0 | 1,200 | 1,260 | 0 | 0 |
 | 1 | 0 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 1 | 0 | 2 after 16 min | 23,238 | 4,800 | 16,023 | 0 | 1,200 | 1,215 | 0 | 0 |
+| 1 | 0 | 2 after a dismissal | 37,794 | 4,800 | 16,023 | 14,550 | 1,206 | 1,215 | 4,850 | 0 |
+| 1 | 0 | 2 after the lean moved | 23,238 | 4,800 | 16,023 | 0 | 1,200 | 1,215 | 0 | 0 |
 | 1 | 24 | 1 | 38,097 | 4,800 | 16,023 | 14,550 | 1,344 | 1,380 | 4,850 | 24 |
 | 1 | 24 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 1 | 24 | 2 after 16 min | 38,005 | 4,800 | 16,023 | 14,550 | 1,344 | 1,288 | 4,850 | 0 |
+| 1 | 24 | 2 after a dismissal | 38,011 | 4,800 | 16,023 | 14,550 | 1,350 | 1,288 | 4,850 | 0 |
+| 1 | 24 | 2 after the lean moved | 38,005 | 4,800 | 16,023 | 14,550 | 1,344 | 1,288 | 4,850 | 0 |
 | 6 | 0 | 1 | 104,600 | 4,802 | 96,138 | 0 | 1,200 | 2,460 | 0 | 0 |
 | 6 | 0 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 6 | 0 | 2 after 16 min | 103,598 | 4,802 | 96,138 | 0 | 1,200 | 1,458 | 0 | 0 |
+| 6 | 0 | 2 after a dismissal | 121,910 | 4,802 | 96,138 | 18,306 | 1,206 | 1,458 | 6,102 | 0 |
+| 6 | 0 | 2 after the lean moved | 103,598 | 4,802 | 96,138 | 0 | 1,200 | 1,458 | 0 | 0 |
 | 6 | 24 | 1 | 121,970 | 4,802 | 96,138 | 18,306 | 1,344 | 1,380 | 6,102 | 24 |
 | 6 | 24 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 6 | 24 | 2 after 16 min | 121,827 | 4,802 | 96,138 | 18,306 | 1,344 | 1,237 | 6,102 | 0 |
+| 6 | 24 | 2 after a dismissal | 121,833 | 4,802 | 96,138 | 18,306 | 1,350 | 1,237 | 6,102 | 0 |
+| 6 | 24 | 2 after the lean moved | 121,827 | 4,802 | 96,138 | 18,306 | 1,344 | 1,237 | 6,102 | 0 |
 | 12 | 0 | 1 | 203,143 | 4,808 | 192,275 | 0 | 1,200 | 4,860 | 0 | 0 |
 | 12 | 0 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 12 | 0 | 2 after 16 min | 200,539 | 4,808 | 192,275 | 0 | 1,200 | 2,256 | 0 | 0 |
+| 12 | 0 | 2 after a dismissal | 223,369 | 4,808 | 192,275 | 22,824 | 1,206 | 2,256 | 7,608 | 0 |
+| 12 | 0 | 2 after the lean moved | 200,539 | 4,808 | 192,275 | 0 | 1,200 | 2,256 | 0 | 0 |
 | 12 | 24 | 1 | 222,631 | 4,808 | 192,275 | 22,824 | 1,344 | 1,380 | 7,608 | 24 |
 | 12 | 24 | 2 | 60 | 0 | 0 | 0 | 0 | 60 | 0 | 0 |
+| 12 | 24 | 2 after 16 min | 222,524 | 4,808 | 192,275 | 22,824 | 1,344 | 1,273 | 7,608 | 0 |
+| 12 | 24 | 2 after a dismissal | 222,530 | 4,808 | 192,275 | 22,824 | 1,350 | 1,273 | 7,608 | 0 |
+| 12 | 24 | 2 after the lean moved | 222,524 | 4,808 | 192,275 | 22,824 | 1,344 | 1,273 | 7,608 | 0 |
 
 The times below are from Node 24.18 on a Windows laptop, with D1 in a local
 workerd process. D1 ms is the statements' own time as D1 reports it. Wall and
@@ -51,31 +80,52 @@ memory the request still held after a garbage collection, so garbage is left
 out. In use MB is the most it held with garbage. Both are counted above the
 level just before the request.
 
-| Categories | Likes | Page | D1 calls | D1 ms | Wall ms | CPU ms | Live MB | In use MB |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0 | 1 | 6 | 19 | 511 | 219 | 1.8 | 22.9 |
-| 1 | 0 | 2 | 1 | 0 | 89 | 78 | 0.8 | 0 |
-| 1 | 24 | 1 | 9 | 73 | 1,564 | 484 | 22.3 | 83.8 |
-| 1 | 24 | 2 | 1 | 0 | 83 | 15 | 0.9 | 1.6 |
-| 6 | 0 | 1 | 7 | 51 | 1,234 | 93 | 6.1 | 33.7 |
-| 6 | 0 | 2 | 1 | 1 | 89 | 15 | 1 | 0 |
-| 6 | 24 | 1 | 9 | 105 | 2,420 | 687 | 28.3 | 90.8 |
-| 6 | 24 | 2 | 1 | 1 | 84 | 32 | 1.1 | 1.8 |
-| 12 | 0 | 1 | 8 | 100 | 1,975 | 156 | 7.3 | 47.6 |
-| 12 | 0 | 2 | 1 | 1 | 85 | 0 | 1.2 | 2 |
-| 12 | 24 | 1 | 9 | 159 | 3,338 | 766 | 35.6 | 99.1 |
-| 12 | 24 | 2 | 1 | 0 | 84 | 0 | 1.2 | 2.1 |
+| Categories | Likes | Page | Papers | D1 calls | D1 ms | Wall ms | CPU ms | Live MB | In use MB |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0 | 1 | 20 | 6 | 25 | 576 | 79 | 0.1 | 21.9 |
+| 1 | 0 | 2 | 20 | 1 | 1 | 86.7 | 47 | 0.8 | 0 |
+| 1 | 0 | 2 after 16 min | 20 | 6 | 21 | 534 | 125 | 3.2 | 22.9 |
+| 1 | 0 | 2 after a dismissal | 20 | 8 | 107 | 1,595 | 532 | 23.1 | 82.1 |
+| 1 | 0 | 2 after the lean moved | 20 | 6 | 20 | 545 | 156 | 3.1 | 22.8 |
+| 1 | 24 | 1 | 20 | 9 | 75 | 1,465 | 625 | 22.2 | 83.8 |
+| 1 | 24 | 2 | 20 | 1 | 0 | 79.2 | 16 | 0.9 | 1.5 |
+| 1 | 24 | 2 after 16 min | 20 | 9 | 79 | 1,521 | 562 | 23 | 83.7 |
+| 1 | 24 | 2 after a dismissal | 20 | 9 | 71 | 1,470 | 656 | 23.1 | 83.6 |
+| 1 | 24 | 2 after the lean moved | 20 | 9 | 76 | 1,436 | 609 | 23 | 83.6 |
+| 6 | 0 | 1 | 20 | 7 | 55 | 1,217 | 297 | 2.6 | 33.4 |
+| 6 | 0 | 2 | 20 | 1 | 1 | 90 | 31 | 1 | 0 |
+| 6 | 0 | 2 after 16 min | 20 | 6 | 34 | 1,083 | 109 | 7 | 33.7 |
+| 6 | 0 | 2 after a dismissal | 20 | 8 | 146 | 2,189 | 656 | 29.3 | 87.2 |
+| 6 | 0 | 2 after the lean moved | 20 | 6 | 37 | 1,082 | 93 | 7 | 33.2 |
+| 6 | 24 | 1 | 20 | 9 | 121 | 2,266 | 625 | 28.2 | 90.7 |
+| 6 | 24 | 2 | 20 | 1 | 0 | 80.5 | 15 | 0.8 | 1.9 |
+| 6 | 24 | 2 after 16 min | 20 | 9 | 113 | 2,343 | 609 | 29.3 | 90.6 |
+| 6 | 24 | 2 after a dismissal | 20 | 9 | 119 | 2,343 | 704 | 29.2 | 90.6 |
+| 6 | 24 | 2 after the lean moved | 20 | 9 | 121 | 2,342 | 704 | 29.2 | 90.6 |
+| 12 | 0 | 1 | 20 | 8 | 94 | 1,955 | 109 | 5.5 | 46.5 |
+| 12 | 0 | 2 | 20 | 1 | 0 | 87.1 | 15 | 1.2 | 2 |
+| 12 | 0 | 2 after 16 min | 20 | 6 | 92 | 1,772 | 156 | 12.5 | 47.1 |
+| 12 | 0 | 2 after a dismissal | 20 | 8 | 180 | 3,186 | 719 | 36.9 | 93.2 |
+| 12 | 0 | 2 after the lean moved | 20 | 6 | 80 | 1,752 | 125 | 12.5 | 47 |
+| 12 | 24 | 1 | 20 | 9 | 185 | 3,173 | 969 | 35.7 | 99.1 |
+| 12 | 24 | 2 | 20 | 1 | 0 | 80.4 | 16 | 1.2 | 2 |
+| 12 | 24 | 2 after 16 min | 20 | 9 | 161 | 3,251 | 766 | 36.9 | 98.9 |
+| 12 | 24 | 2 after a dismissal | 20 | 9 | 172 | 3,141 | 719 | 36.8 | 98.9 |
+| 12 | 24 | 2 after the lean moved | 20 | 9 | 188 | 3,420 | 1,265 | 36.9 | 98.9 |
 
-Every page returned 20 papers: its 15 and 5 notable ones. The row counts do not
-change between runs. CPU on Windows ticks at about 15.6 ms (every value above
-is a multiple of it), so the page 2 CPU figures are 0 to 5 ticks, at the floor
-of what it resolves.
+Every page returned 20 papers: its 15 and 5 notable ones. The row counts repeat
+for the same seeded corpus and can move by a row when it changes (one lane of
+2,000 reads 16,022 or 16,023). CPU on Windows ticks at about 15.6 ms, so the
+values above are close to multiples of it and the page 2 CPU figures are 0 to 3
+ticks, at the floor of what it resolves. One run of 12 categories with likes
+measured 1,265 ms of CPU against 719 to 969 ms for the others; CPU and wall
+times vary from run to run.
 
 ## What the numbers show
 
 - **The notable scan is most of a first page's rows.** The local D1 counts
-  8,023 rows read for a notable lane of 1,000 papers and 16,023 for one of
-  2,000, about 8 per row. The scan is 16,023 of 23,283 rows for a 1-category
+  about 8,020 rows read for a notable lane of 1,000 papers and about 16,020 for
+  one of 2,000, about 8 per row. The scan is 16,023 of 23,283 rows for a 1-category
   reader without likes, 96,138 of 104,600 for 6 categories, and 192,275 of
   222,631 for 12 categories with likes. The code comment (`paper-store.ts`,
   `NOTABLE_READ_PER_YEAR`) and the README say about 1,000 a lane, 2,000 with
@@ -104,21 +154,33 @@ of what it resolves.
   is by similarity. Without likes the ranking starts with the newest papers,
   which the seen filter holds, so the walk passes 200, 600 and 1,400 ranks for
   1, 6 and 12 categories: 600, 1,800 and 4,200 rows.
-- **A next page reads its own papers.** It reads 60 rows from `works`, in one D1
-  call, and no lane, vector or key rows. The order page 1 kept holds the paper
-  id of every rank the walk read, so page 2 reads none of them again.
-- **One first page holds 22 to 36 MB with likes and at most 7.3 MB without.**
+- **A next page reads its own papers only from a good kept order.** It reads 60
+  rows from `works`, in one D1 call, and no lane, vector or key rows. The order
+  page 1 kept holds the paper id of every rank the walk read, so page 2 reads
+  none of them again. That assumes the order was ranked less than 15 minutes
+  earlier, with the negatives and `order` unchanged. The app builds `negativeIds`
+  and `order` again on every load, so a Not interested dismissal, a lean that
+  crosses -0.3 or 15 minutes since the ranking makes the next page rank again:
+  the lane reads, the notable scan, the vectors (with likes, or with a negative,
+  whose vector is read too) and the walk's id reads. It costs about a first
+  page's rows: 23,238 to 37,794 for 1 category, 103,598 to 121,910 for 6 and
+  200,539 to 223,369 for 12, and the same time and memory as a first page. The
+  60-row page 2 is the cheapest case, not the usual one in a session longer than
+  15 minutes or with a dismissal.
+- **One first page holds 22 to 36 MB with likes and at most 5.5 MB without.** A
+  page that ranks again holds 23 to 37 MB with likes, 3 to 12.5 MB without and
+  23 to 37 MB after a dismissal, whose vectors are read even without likes.
   Those are per-request figures for the Worker side, live after a garbage
   collection. Garbage included, it is 84 to 99 MB with likes, but V8 collects garbage
   before it fails for lack of memory. They are Node's figures; the Worker's own
   were not measured. They do not show headroom against the 128 MB of an isolate
   (see Limits).
-- **CPU is far from `cpu_ms`.** A first page takes 0.5 to 0.8 s of this
-  process's CPU with likes and 0.1 to 0.2 s without, against `limits.cpu_ms` of
+- **CPU is far from `cpu_ms`.** A first page takes 0.6 to 1.0 s of this
+  process's CPU with likes and 0.1 to 0.3 s without, against `limits.cpu_ms` of
   120,000 ms in `wrangler.toml`. That CPU includes decoding D1's answers.
-- **Time here does not predict production.** D1's own statement time is under
-  100 ms. Wall time reaches 3.3 s for 12 categories with likes. D1's statements
-  and this process's CPU account for under 1 s of that. The rest is spent
+- **Time here does not predict production.** D1's own statement time is at
+  most 188 ms. Wall time reaches 3.4 s for 12 categories with likes. D1's
+  statements and this process's CPU account for 1.5 s or less of that. The rest is spent
   waiting on the local workerd process and the proxy that carries its answers,
   about 7,600 vectors among them. Production replaces that proxy with the
   network between the Worker and D1.
@@ -136,8 +198,9 @@ of what it resolves.
   intake, measured for ENG-127). Each area lane of their areas also holds 4,000
   OpenAlex articles. Each leaf has a notable lane of 200 articles a year for
   2016 to 2025 (`NOTABLE_PER_YEAR` for each of two listings, `NOTABLE_YEARS`),
-  2,000 rows: every leaf measured is an arXiv category, which lists OpenAlex's
-  most-cited papers and ADS's (`ADS_NOTABLE_LEAVES`). They go in through
+  2,000 rows: the leaves measured are arXiv categories, which list OpenAlex's
+  most-cited papers and ADS's (`ADS_NOTABLE_LEAVES`). Every leaf is given both,
+  though cs.AI has only ADS's in the corpus, so its lane here is an upper bound. They go in through
   `ingestPapers`, and every work gets a pseudo-random vector in the stored form
   (`quantize`). No paper is in two lanes.
 - **Readers.**
@@ -154,7 +217,9 @@ of what it resolves.
   24 likes, taken from the papers after the excluded ones. Each first page
   starts from an empty ranking cache that keeps the order as JSON and writes it
   again on `update`, as the Worker's does. Page 2 adds page 1's papers to the
-  filter, as the app does.
+  filter, as the app does. The three later page 2 rows start from a copy of the
+  order page 1 kept: one asks with `now` 16 minutes later, one adds a paper to
+  `negativeIds`, one asks with `order: 'relevance'`.
 - **Memory.** V8's heap plus external memory, which holds the typed arrays
   (`process.memoryUsage`, `v8.GCProfiler`), above the level after a full
   collection just before the request. In use is the most held before any
@@ -169,7 +234,7 @@ of what it resolves.
   Production has notable lanes only for the leaves its listings cover
   ([worker/README.md](README.md#paper-store), step 3), and quieter leaves hold
   fewer papers. A leaf with one listing holds about 1,000 rows and costs about
-  8,023 scan rows a lane, half of the figures here. A leaf with two (the arXiv
+  8,020 scan rows a lane, half of the figures here. A leaf with two (the arXiv
   categories, and the medicine and biology leaves Europe PMC lists) can hold
   2,000. A production lane also keeps rows that left the listings for 14 days,
   so it can exceed 2,000, and the scan grows about 8 rows per row. The run's
@@ -188,8 +253,10 @@ of what it resolves.
   lookups. The route's first page with likes and no follows also checks the
   likes' vectors (`addMissingPositives`), about 200 more rows by the same
   3-per-id pattern, which the run leaves out. Page 2 serves from the kept order
-  only once that follow-up work has finished; the run stores the whole order
-  at once, so a page 2 that arrives earlier ranks again.
+  only once that follow-up work has finished, and only while the order is under
+  15 minutes old with unchanged negatives and `order`; the run stores the whole
+  order at once, so a page 2 that arrives earlier ranks again, as the rows
+  "after 16 min", "after a dismissal" and "after the lean moved" show.
 - An isolate shares its 128 MB across the concurrent requests it serves and its
   own bundle baseline. Three or four concurrent first pages of 12 categories
   with likes (36 MB live, 99 MB with garbage) could reach that limit.
@@ -224,6 +291,6 @@ node worker/test-support/measure-lane-reads.ts
 
 It prints the two tables, without thousands separators, with an Other column
 for rows read by any statement of no kind above (none here) and the papers each
-page returned. The run takes several minutes. The row counts do not change
-between runs; times and memory do. `worker/test-support/measure-lane-reads.test.ts`
+page returned. The run takes several minutes. The row counts repeat for the same
+seeded corpus; times and memory vary. `worker/test-support/measure-lane-reads.test.ts`
 runs the same script on a small corpus.

@@ -11,8 +11,9 @@
 // The corpus. Each asked leaf lane holds FEED_CANDIDATE_LIMIT papers, the most
 // eviction keeps, PAPERS_PER_DAY apart; each area lane of their areas as many;
 // each leaf's notable lane NOTABLE_LISTINGS x NOTABLE_PER_YEAR papers of each of
-// the NOTABLE_YEARS years: the leaves measured are arXiv's, which list OpenAlex's
-// most-cited papers and ADS's. No paper is in two lanes, so every lane row is a
+// the NOTABLE_YEARS years: the leaves measured are arXiv's, and all but cs.AI
+// list OpenAlex's most-cited papers and ADS's (cs.AI only ADS's), so cs.AI's lane
+// here is an upper bound. No paper is in two lanes, so every lane row is a
 // distinct candidate: the most a request of that size reads. Papers go in through `ingestPapers`,
 // the store's own writer, and each gets a vector in the stored form
 // (`quantize`), pseudo-random from its work id.
@@ -23,7 +24,11 @@
 // of PAGE_SIZE, and no likes or `likes` of the papers after the excluded ones.
 // A first page is ranked with an empty ranking cache; the second asks with the
 // first page's papers added to the filter, as the app does, and goes on from the
-// order the cache kept.
+// order the cache kept. Three more second pages show what a kept order saves only
+// while it is still good: one asked 16 minutes later (RANKING_KEPT_MS), one from
+// a reader who has since dismissed a card (a negative) and one whose lean has
+// moved to `relevance`, as a like past -0.3 does (`order`). The last two change
+// `rankedBy`. Each ranks again, at about a first page's cost.
 //
 // Reported per request: D1 calls (a batch is one); rows read, as D1 counts them,
 // by kind of statement; rows written; the rows the lane and vector reads
@@ -59,8 +64,9 @@ interface Plan { readers: string[][]; likes: number; excluded: number; seen: num
 const SIX = ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.RO', 'cs.NE'];
 // arXiv leaves list OpenAlex's most-cited papers and ADS's (`ADS_NOTABLE_LEAVES`
 // in paper-sources.ts), so a lane holds up to 2 x NOTABLE_PER_YEAR a year, more
-// while rows that left a listing wait out their 14 days. All the leaves measured
-// are arXiv's. A leaf with one listing reads half the notable rows.
+// while rows that left a listing wait out their 14 days. Every leaf measured is
+// given both, though cs.AI has only ADS's in the corpus. A leaf with one listing
+// reads half the notable rows.
 const NOTABLE_LISTINGS = 2;
 const PRODUCTION: Corpus = { leafRows: FEED_CANDIDATE_LIMIT, areaRows: FEED_CANDIDATE_LIMIT, notablePerYear: NOTABLE_LISTINGS * NOTABLE_PER_YEAR };
 // The six are the 2026-10-25 access audit's reader (ENG-128). The app asks for
@@ -75,6 +81,8 @@ const PLAN: Plan = {
   repetitions: 3,
 };
 const NOW = Date.parse('2026-10-25T12:00:00Z');
+// A little past RANKING_KEPT_MS (15 minutes), after which a kept order ranks again.
+const LATER_MS = 16 * 60_000;
 // cs.LG's papers a day, measured for ENG-127 on 2026-10-24.
 const PAPERS_PER_DAY = 194;
 const DAY_MS = 86_400_000;
@@ -245,8 +253,7 @@ function metered(db: D1Database, tally: Tally) {
 
 // The order a first page keeps, as the Worker's cache keeps it: as JSON, and
 // written again by `update` as the route's does (`handleCorpusFeed`).
-function keptRankings(): RankingCache {
-  const kept = new Map<string, string>();
+function keptRankings(kept = new Map<string, string>()): RankingCache {
   const put: RankingCache['put'] = async (key, ranking) => { kept.set(key, JSON.stringify(ranking)); };
   return {
     get: async key => {
@@ -271,7 +278,7 @@ const MB = 2 ** 20;
  * answer, so `liveMb` comes close to the most the request holds at once,
  * garbage left out; its times are not used.
  */
-async function request(db: D1Database, body: FeedRequestBody, cache: RankingCache, collectGarbage: () => void, memoryRun: boolean) {
+async function request(db: D1Database, body: FeedRequestBody, cache: RankingCache, collectGarbage: () => void, memoryRun: boolean, now = NOW) {
   const tally: Tally = { calls: 0, rowsRead: byKind(), returned: byKind(), rowsWritten: 0, d1Ms: 0, answered: memoryRun ? collectGarbage : () => {} };
   const env = { PAPER_STORE: metered(db, tally) } as Parameters<typeof readFeedPage>[0];
   collectGarbage();
@@ -282,7 +289,7 @@ async function request(db: D1Database, body: FeedRequestBody, cache: RankingCach
   if (memoryRun) setFlagsFromString('--gc-global');
   const cpu = process.cpuUsage();
   const started = performance.now();
-  const papers = await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache })
+  const papers = await readFeedPage(env, parseFeedRequest(body), { now, cache })
     .finally(() => { if (memoryRun) setFlagsFromString('--no-gc-global'); });
   const wallMs = performance.now() - started;
   const { user, system } = process.cpuUsage(cpu);
@@ -306,13 +313,14 @@ const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floo
 // Rows from the first timed run (a later one writes no like again), times as
 // the timed runs' median, memory in use as their most, and live memory from
 // the memory run.
-function summary(categories: number, likes: number, page: number, timed: Run[], memory: Run) {
+function summary(categories: number, likes: number, page: number, after: Later, timed: Run[], memory: Run) {
   const [{ tally, papers, ids }] = timed;
   return {
     categories,
     ids,
     likes,
     page,
+    after,
     papers,
     calls: tally.calls,
     rowsRead: Object.values(tally.rowsRead).reduce((sum, value) => sum + value, 0),
@@ -330,18 +338,34 @@ function summary(categories: number, likes: number, page: number, timed: Run[], 
 // The leaves' papers taking turns, each leaf's newest first, as a feed shows them.
 const inTurns = (lists: string[][]) => Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.flatMap(list => list.slice(index, index + 1))).flat();
 
+// What makes the second page ask again: nothing (the kept order serves it), the
+// order's age, a card the reader dismissed since (a negative) or a lean that moved.
+type Later = '' | 'after 16 min' | 'after a dismissal' | 'after the lean moved';
+
 // A first page and the one after it from one empty cache. The second asks with
-// the first's papers added to the filter, as the app does.
-async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'>, seenIds: string[], collectGarbage: () => void, memoryRun: boolean) {
-  const cache = keptRankings();
+// the first's papers added to the filter, as the app does. Three more seconds
+// start from the order the first kept, a copy each: one 16 minutes later, one
+// with `dismissedId` among the negatives, one asking for `relevance`.
+async function pages(db: D1Database, body: Omit<FeedRequestBody, 'page' | 'seen'>, seenIds: string[], dismissedId: string, collectGarbage: () => void, memoryRun: boolean) {
+  const kept = new Map<string, string>();
+  const cache = keptRankings(kept);
   const seen = [...seenIds];
-  const runs: Run[] = [];
-  for (const page of [0, 1]) {
-    const run = await request(db, { ...body, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun);
-    seen.push(...run.ids);
-    runs.push(run);
-  }
-  return runs;
+  const ask = (page: number, cache: RankingCache, extra: Partial<FeedRequestBody> = {}, now = NOW) =>
+    request(db, { ...body, ...extra, page, seen: feedSeenFilter(seen), skipsSeen: true }, cache, collectGarbage, memoryRun, now);
+  const first = await ask(0, cache);
+  seen.push(...first.ids);
+  const afterFirst = new Map(kept);
+  const next = await ask(1, cache);
+  const later = await ask(1, keptRankings(new Map(afterFirst)), {}, NOW + LATER_MS);
+  const dismissed = await ask(1, keptRankings(new Map(afterFirst)), { negativeIds: [dismissedId] });
+  const moved = await ask(1, keptRankings(new Map(afterFirst)), { order: 'relevance' });
+  return [
+    { run: first, page: 0, after: '' as Later },
+    { run: next, page: 1, after: '' as Later },
+    { run: later, page: 1, after: 'after 16 min' as Later },
+    { run: dismissed, page: 1, after: 'after a dismissal' as Later },
+    { run: moved, page: 1, after: 'after the lean moved' as Later },
+  ];
 }
 
 export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan = PLAN) {
@@ -365,15 +389,17 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
       const shown = inTurns(categories.map(leaf => papersOf.get(leaf) ?? []));
       const excludedIds = shown.slice(0, plan.excluded);
       const seenIds = shown.slice(0, Math.max(plan.seen, plan.excluded));
+      // A paper the reader has not been shown, dismissed after the first page.
+      const dismissedId = shown[seenIds.length];
       for (const likes of [0, plan.likes]) {
         const body = { categories, positiveIds: shown.slice(plan.excluded, plan.excluded + likes), excludedIds, pageSize: PAGE_SIZE, notable: NOTABLE_ASKED };
         // Each run pages from an empty cache: the timed runs, then the memory run.
-        const timed: Run[][] = [[], []];
+        const timed: Run[][] = [[], [], [], [], []];
         for (let repetition = 0; repetition < plan.repetitions; repetition += 1) {
-          (await pages(db, body, seenIds, collectGarbage, false)).forEach((run, page) => timed[page].push(run));
+          (await pages(db, body, seenIds, dismissedId, collectGarbage, false)).forEach(({ run }, index) => timed[index].push(run));
         }
-        const memory = await pages(db, body, seenIds, collectGarbage, true);
-        rows.push(...memory.map((run, page) => summary(categories.length, likes, page, timed[page], run)));
+        const memory = await pages(db, body, seenIds, dismissedId, collectGarbage, true);
+        rows.push(...memory.map(({ run, page, after }, index) => summary(categories.length, likes, page, after, timed[index], run)));
       }
     }
     return rows;
@@ -384,20 +410,22 @@ export async function measureLaneReads(corpus: Corpus = PRODUCTION, plan: Plan =
 
 const round = (value: number) => (value >= 100 ? Math.round(value) : Math.round(value * 10) / 10);
 
+const pageLabel = (row: { page: number; after: Later }) => `${row.page + 1}${row.after && ` ${row.after}`}`;
+
 function tables(rows: Awaited<ReturnType<typeof measureLaneReads>>) {
   const line = (cells: Array<string | number>) => `| ${cells.join(' | ')} |`;
   return [
     line(['Categories', 'Likes', 'Page', 'Rows read', 'Lane reads', 'Notable scan', 'Vectors', 'Keys', 'Works', 'Other', 'Vectors returned', 'Rows written']),
     line(Array.from({ length: 12 }, () => '---:')),
     ...rows.map(row => line([
-      row.categories, row.likes, row.page + 1, row.rowsRead, row.rowsReadBy.lanes, row.rowsReadBy.notable, row.rowsReadBy.vectors,
+      row.categories, row.likes, pageLabel(row), row.rowsRead, row.rowsReadBy.lanes, row.rowsReadBy.notable, row.rowsReadBy.vectors,
       row.rowsReadBy.keys, row.rowsReadBy.works, row.rowsReadBy.other, row.returned.vectors, row.rowsWritten,
     ])),
     '',
     line(['Categories', 'Likes', 'Page', 'Papers', 'D1 calls', 'D1 ms', 'Wall ms', 'CPU ms', 'Live MB', 'In use MB']),
     line(Array.from({ length: 10 }, () => '---:')),
     ...rows.map(row => line([
-      row.categories, row.likes, row.page + 1, row.papers, row.calls, round(row.d1Ms), round(row.wallMs), round(row.cpuMs), round(row.liveMb), round(row.inUseMb),
+      row.categories, row.likes, pageLabel(row), row.papers, row.calls, round(row.d1Ms), round(row.wallMs), round(row.cpuMs), round(row.liveMb), round(row.inUseMb),
     ])),
   ].join('\n');
 }
