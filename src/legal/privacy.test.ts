@@ -120,3 +120,9 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
+
+test('the page says analytics records opening a paper\'s connections or similar papers and what is done in the connections map', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // connections_open, similar_open and connections_interact in analytics-service.ts.
+  assert.match(html, /also record when you open a paper's connections or its similar papers, and what you do in the connections map, such as switching to the list or centring the graph on another paper/);
+});

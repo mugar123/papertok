@@ -156,7 +156,7 @@ const STATUS_CHIP_ICONS = {
   subscription: LockKey,
 };
 import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts';
-import { hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
+import { getCitationGraphDoi, hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
 import { resolveWithin } from '../../utils/async-timing.ts';
 import {
@@ -1191,11 +1191,6 @@ const PaperCard = memo(function PaperCard({
   }, []);
 
   const selectRelatedPaper = useCallback((relatedPaper: Paper) => {
-    void trackEvent('select_content', {
-      content_type: 'paper',
-      surface: analyticsSurface,
-      position,
-    });
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
@@ -1213,7 +1208,7 @@ const PaperCard = memo(function PaperCard({
       setSelectedRelatedPaper((preparedPaper || relatedPaper) as Paper);
       setPendingRelatedPaper(null);
     });
-  }, [analyticsSurface, position, prepareRelatedPaper, trackEvent]);
+  }, [prepareRelatedPaper]);
 
   const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
@@ -1373,6 +1368,7 @@ const PaperCard = memo(function PaperCard({
       requireAuthentication('related');
       return;
     }
+    void trackEvent('connections_open', { surface: analyticsSurface, graph_available: Boolean(getCitationGraphDoi(paper)) });
     setShowRelated(true);
   };
 
@@ -2300,6 +2296,7 @@ const PaperCard = memo(function PaperCard({
             title={'Similar papers'}
             onClick={(event) => {
               event.stopPropagation();
+              void trackEvent('similar_open', { surface: analyticsSurface });
               openSimilar(paper, event.currentTarget);
             }}
           >
@@ -2502,7 +2499,7 @@ const PaperCard = memo(function PaperCard({
                 hideScrollHint
                 publicMode={publicMode}
                 onAuthRequired={onAuthRequired}
-                analyticsSurface={analyticsSurface}
+                analyticsSurface="connections"
                 position={position}
               />
             </div>

@@ -33,6 +33,7 @@ import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
 import { Button } from '../ui/button.tsx';
 import Petri from '../onboarding/petri.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { usePopupOpenOnMount } from '../../hooks/use-popup-open-on-mount.ts';
 import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.tsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.tsx';
@@ -184,6 +185,13 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
   const prefersReducedMotion = useReducedMotion();
+  const { trackEvent } = useAnalyticsConsent();
+  // Sent from press handlers only, never from an effect, so a re-render, the
+  // graph's load or a StrictMode remount cannot send one twice. `inView` is
+  // the view the press happened in; a switch reports the view it switched to.
+  const track = useCallback((action: string, inView = view) => {
+    void trackEvent('connections_interact', { action, view: inView });
+  }, [trackEvent, view]);
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => { onPreparePaperRef.current = onPreparePaper; }, [onPreparePaper]);
@@ -244,6 +252,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
 
   const requestPaper = useCallback((relatedPaper: Partial<Paper>, paperKey: string) => {
     if (closingRef.current) return;
+    track('open_paper');
     onPreparePaperRef.current?.(relatedPaper as Paper);
     pendingSelectionRef.current = { paper: relatedPaper as Paper, key: paperKey };
     closingRef.current = true;
@@ -252,7 +261,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     setOpen(false);
     // Inline there is no exit to wait for.
     if (inline) finishSelection();
-  }, [setOpen, inline, finishSelection]);
+  }, [setOpen, inline, finishSelection, track]);
 
   // The primitive has finished the exit — the parent hears of it here and
   // nowhere else. A paper chosen from the sheet is handed over; anything
@@ -355,6 +364,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const requestCentre = useCallback((targetPaper: Partial<Paper>, origin: { x: number; y: number } | null, currentCenter: { x: number; y: number }) => {
     if (walkingRef.current || closingRef.current) return;
     if (!getCitationGraphDoi(targetPaper)) return;
+    track('centre');
     setIsMapReturning(false);
     walkTimersRef.current.forEach(clearTimeout);
     walkTimersRef.current = [];
@@ -386,10 +396,11 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
         walkingRef.current = false;
       });
     });
-  }, [appendToTrail, later, prefersReducedMotion]);
+  }, [appendToTrail, later, prefersReducedMotion, track]);
 
   const goBackTo = useCallback((index: number) => {
     if (walkingRef.current) return;
+    if (index < trail.length - 1) track('back');
     walkTimersRef.current.forEach(clearTimeout);
     walkTimersRef.current = [];
     setPhase('idle');
@@ -399,7 +410,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     // Going back is not a discovery: it does not get the travelling animation.
     setIsMapReturning(false);
     setTrail(previous => (index < previous.length - 1 ? previous.slice(0, index + 1) : previous));
-  }, []);
+  }, [trail.length, track]);
 
   const isWalking = trail.length > 1;
   const previousCentre = isWalking ? trail[trail.length - 2] : null;
@@ -461,7 +472,10 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               data-side={node.side}
               data-relation={node.relation}
               style={style}
-              onClick={() => setFocusedKey(isFocused ? null : node.key)}
+              onClick={() => {
+                if (!isFocused) track('select_node');
+                setFocusedKey(isFocused ? null : node.key);
+              }}
               disabled={Boolean(selectedPaperKey) || isLeaving}
               pressed={isFocused}
               aria-label={`${node.paper.title} · ${node.paper.year} · ${citations}`}
@@ -550,6 +564,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     if (graphStatus !== 'ready' || selectedPaperKey || isLeaving) return;
     if (event.target instanceof Element && event.target.closest('.graph-node')) return;
     const key = linkAt(event, 20);
+    if (key && key !== focusedKey) track('select_node');
     setFocusedKey(key && key !== focusedKey ? key : null);
   };
   const hoverLink = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -561,6 +576,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
 
   // The link goes with the map, so focus lands on the switch it pressed.
   const showList = () => {
+    track('switch_view', 'list');
     setHasSwitched(true);
     setView('list');
     viewToggleRef.current?.focus();
@@ -697,7 +713,10 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               <Toggle
                 key={key}
                 className={`related-item ${focusedKey === listKey ? 'is-selected' : ''}`}
-                onClick={() => setFocusedKey(focusedKey === listKey ? null : listKey)}
+                onClick={() => {
+                  if (focusedKey !== listKey) track('select_node');
+                  setFocusedKey(focusedKey === listKey ? null : listKey);
+                }}
                 disabled={Boolean(selectedPaperKey)}
                 pressed={focusedKey === listKey}
               >
@@ -765,6 +784,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               className="graph-view-button"
               pressed={view === 'list'}
               onPressedChange={(next) => {
+                track('switch_view', next ? 'list' : 'map');
                 if (!next) setIsMapReturning(true);
                 setHasSwitched(true);
                 setView(next ? 'list' : 'map');
@@ -779,7 +799,10 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               <button
                 type="button"
                 className="graph-view-button"
-                onClick={() => downloadCitationFile(citationGraphExportPapers(graph), 'bibtex', 'papertok-citations')}
+                onClick={() => {
+                  track('export');
+                  downloadCitationFile(citationGraphExportPapers(graph), 'bibtex', 'papertok-citations');
+                }}
                 aria-label={'Download these papers as BibTeX'}
                 title={'Download BibTeX'}
               >
