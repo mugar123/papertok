@@ -24,6 +24,7 @@ import { areaAccentForPaper } from '../../utils/area-accent.ts';
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
+  stepRelatedPaperTrail,
 } from '../../utils/related-paper-transition.ts';
 import ScientificText from '../scientific-text.ts';
 import { Toggle } from '../ui/toggle.tsx';
@@ -355,18 +356,17 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
 
   const appendToTrail = useCallback((next: Partial<Paper>) => {
     setIsMapReturning(false);
-    setTrail(previous => {
-      const identity = getRelatedPaperIdentity(next);
-      const seen = previous.findIndex(item => getRelatedPaperIdentity(item) === identity);
-      // A citation graph has cycles; a trail of breadcrumbs must not.
-      return seen >= 0 ? previous.slice(0, seen + 1) : [...previous, next];
-    });
+    setTrail(previous => stepRelatedPaperTrail(previous, next));
   }, []);
 
   const requestCentre = useCallback((targetPaper: Partial<Paper>, origin: { x: number; y: number } | null, currentCenter: { x: number; y: number }) => {
     if (walkingRef.current || closingRef.current) return;
     if (!getCitationGraphDoi(targetPaper)) return;
-    track('centre');
+    // Centring on a paper already on the trail returns to it, as Back does,
+    // so it counts as a return rather than a discovery.
+    const nextLength = stepRelatedPaperTrail(trail, targetPaper).length;
+    if (nextLength > trail.length) track('centre');
+    else if (nextLength < trail.length) track('back');
     setIsMapReturning(false);
     walkTimersRef.current.forEach(clearTimeout);
     walkTimersRef.current = [];
@@ -398,7 +398,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
         walkingRef.current = false;
       });
     });
-  }, [appendToTrail, later, prefersReducedMotion, track]);
+  }, [appendToTrail, later, prefersReducedMotion, track, trail]);
 
   const goBackTo = useCallback((index: number) => {
     if (walkingRef.current) return;
