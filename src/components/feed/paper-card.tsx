@@ -14,7 +14,8 @@ export interface PaperCardProps {
   trackViewTime?: (paper: Paper, seconds: number) => void | Promise<void>;
   trackSkip?: (paper: Paper) => void | Promise<void>;
   onOpenPdf?: (paper: Paper) => void | Promise<void>;
-  onSaveToList?: (paper: Paper) => void | Promise<void>;
+  /** `surface` overrides the one a quick-save handler reports its saves under. */
+  onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
    * Holding Save on a touch screen. Where a tap on Save already opens the list
    * picker it does the same; the feed, whose tap quick-saves to Read later,
@@ -1209,6 +1210,13 @@ const PaperCard = memo(function PaperCard({
       setPendingRelatedPaper(null);
     });
   }, [prepareRelatedPaper]);
+
+  // The host's quick save reports the host's surface; the paper opened from
+  // Connections saves under `connections`, where its views are counted.
+  const saveRelatedPaper = useCallback(
+    (relatedPaper: Paper) => onSaveToList(relatedPaper, 'connections'),
+    [onSaveToList],
+  );
 
   const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
@@ -2494,7 +2502,7 @@ const PaperCard = memo(function PaperCard({
                 trackViewTime={trackViewTime}
                 trackSkip={trackSkip}
                 onOpenPdf={onOpenPdf}
-                onSaveToList={onSaveToList}
+                onSaveToList={saveRelatedPaper}
                 getInteractionState={getInteractionState}
                 hideScrollHint
                 publicMode={publicMode}
