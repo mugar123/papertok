@@ -17,7 +17,9 @@ function boot() {
       this.rel = rel;
       this.essential = essential;
     }
+    readonly attributes = new Map<string, string>();
     getAttribute(name: string) { return name === 'data-startup' ? (this.essential ? 'essential' : null) : this.rel; }
+    setAttribute(name: string, value: string) { this.attributes.set(name, value); }
     hasChildNodes() { return this.children > 0; }
     remove() { this.connected = false; }
   }
@@ -78,6 +80,7 @@ function boot() {
 test('startup remains readable before the application renders', () => {
   const page = boot();
   assert.equal(page.title.textContent, 'Loading PaperTok');
+  assert.equal(page.panel.attributes.get('data-state'), 'loading');
   assert.equal(page.panel.connected, true);
 });
 
@@ -87,6 +90,7 @@ test('missing startup scripts and styles present an error with a working retry',
     page.resourceError(tag, rel, true);
     assert.equal(page.title.textContent, 'PaperTok could not start');
     assert.match(page.message.textContent, /Reload the page/);
+    assert.equal(page.panel.attributes.get('data-state'), 'failed');
     const click = new Event('click', { cancelable: true });
     page.retry.dispatchEvent(click);
     assert.equal(click.defaultPrevented, true);
@@ -121,6 +125,7 @@ test('a stalled startup offers retry without claiming a known cause', () => {
   page.advance(30000);
   assert.equal(page.title.textContent, 'PaperTok is taking longer than expected');
   assert.match(page.message.textContent, /keep waiting or reload/);
+  assert.equal(page.panel.attributes.get('data-state'), 'slow');
   page.retry.dispatchEvent(new Event('click'));
   assert.equal(page.reloads(), 1);
 });
