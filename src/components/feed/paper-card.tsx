@@ -2508,7 +2508,6 @@ const PaperCard = memo(function PaperCard({
                 publicMode={publicMode}
                 onAuthRequired={onAuthRequired}
                 analyticsSurface="connections"
-                position={position}
               />
             </div>
           ) : activeRelatedPaper ? (
