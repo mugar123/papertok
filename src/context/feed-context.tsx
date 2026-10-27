@@ -195,7 +195,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [autoRetryPending, setAutoRetryPending] = useState(false);
+  // The request whose automatic retry is due. A retry's timer clears only its
+  // own: an older timer that fires after a newer failure must not end its wait.
+  const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
+  const autoRetryPending = autoRetryFor !== null;
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1161,7 +1164,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
-    setAutoRetryPending(false);
+    setAutoRetryFor(null);
     pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
 
     // A fresh load starts on the corpus's first page, the follows' included:
@@ -1507,9 +1510,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // While the retry is due, the feed shows its first wait, not the error.
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
-          setAutoRetryPending(true);
+          setAutoRetryFor(requestId);
           setTimeout(() => {
-            setAutoRetryPending(false);
+            setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
               void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
