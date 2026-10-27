@@ -148,6 +148,13 @@
       }
       #startup-status[data-state="failed"] .startup-thinking,
       #startup-status:not([data-state="failed"]) .startup-upset { display: none; }
+      /* Preserve the native fallback if the inline guard itself cannot run. */
+      #startup-status[data-state="pending"] > * {
+        visibility: hidden;
+        animation: startup-unmonitored 0s 1s forwards;
+      }
+      @keyframes startup-unmonitored { to { visibility: visible; } }
+      #startup-status[data-state="loading"] #startup-retry { visibility: hidden; }
       #startup-status h1 {
         max-width: 18ch;
         margin: 0 0 12px;
@@ -177,22 +184,17 @@
         text-decoration: none;
         transition: scale 150ms ease-out, background-color 150ms ease-out;
       }
-      #startup-status[data-state="loading"] #startup-retry { background: transparent; color: var(--text-primary); }
       #startup-retry:active { scale: 0.97; }
       #startup-retry:focus { outline: 2px solid var(--text-primary); outline-offset: 3px; }
       @media (hover: hover) and (pointer: fine) {
         #startup-retry:hover { border-color: var(--accent-primary-hover); background: var(--accent-primary-hover); }
-        #startup-status[data-state="loading"] #startup-retry:hover {
-          border-color: var(--text-primary);
-          background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-primary));
-        }
       }
       @media (prefers-reduced-motion: reduce) {
         #startup-retry { transition: none; }
         #startup-retry:active { scale: none; }
       }
     </style>
-    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="loading">
+    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="pending">
       <svg class="startup-petri" viewBox="14 22 128 124" aria-hidden="true" focusable="false">
         <defs>
           <pattern id="startup-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="1.4" height="4" fill="currentColor"/></pattern>
@@ -222,7 +224,10 @@
       <h1 id="startup-title">Loading PaperTok</h1>
       <p id="startup-message">Your page will appear here shortly.</p>
       <noscript>
-        <style>#startup-title, #startup-message { display: none; }</style>
+        <style>
+          #startup-title, #startup-message { display: none; }
+          #startup-status[data-state="pending"] > * { visibility: visible; animation: none; }
+        </style>
         <h1>JavaScript is turned off</h1>
         <p>Enable JavaScript in your browser, then reload this page.</p>
       </noscript>
