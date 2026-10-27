@@ -1501,6 +1501,22 @@ test("an arXiv category's notable lane also lists ADS's most-cited papers of eac
   assert.equal(items[0].paper.openAccess, true, 'a paper with an arXiv version is open');
 });
 
+test('the notable lane of a leaf its ADS sample admitted lists only the papers arXiv files under the leaf first', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-26T03:00:00Z') });
+  const ranked = [
+    adsDoc(2018, 1, { arxiv_class: ['astro-ph.HE', 'nucl-th'] }),
+    adsDoc(2018, 2, { arxiv_class: ['nucl-th', 'nucl-ex'] }),
+    adsDoc(2018, 3, { arxiv_class: ['hep-ph', 'nucl-th'] }),
+    adsDoc(2018, 4, { arxiv_class: ['nucl-th'] }),
+  ];
+  const { urls, env } = relay(t, url => (url.searchParams.get('fl') === 'bibcode,arxiv_class'
+    ? { response: { docs: adsYear(url) === 2018 ? ranked.map(({ bibcode, arxiv_class }) => ({ bibcode, arxiv_class })) : [] } }
+    : { response: { docs: ranked.filter(doc => url.searchParams.get('q')!.includes(`"${doc.bibcode}"`)) } }));
+  const { items } = await SOURCES['ads-notable'].fetchPage(adsEnv(env), { lane: 'notable:nucl-th', page: 3, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(item => [item.paper.arxivId, item.lanes]), [['1803.10002', ['notable:nucl-th']], ['1803.10004', ['notable:nucl-th']]]);
+  assert.equal(urls.length, 2, 'the classes of the year, then the records of its own papers');
+});
+
 test('every arXiv category, and no other leaf, has an ADS notable job on its first night', async () => {
   const { binding } = testD1();
   const jobs = await notableLaneJobs(binding, Date.parse('2026-10-30T02:40:00Z'));

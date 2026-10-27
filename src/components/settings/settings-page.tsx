@@ -26,7 +26,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
 import { emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';

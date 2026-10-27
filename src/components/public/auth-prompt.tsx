@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/auth-context.tsx';
 import { authPromptCopy, authPromptViewParams } from './auth-prompt-copy.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import SignInMethods from './sign-in-methods.tsx';
 import { Button } from '../ui/button.tsx';
 import Petri from '../onboarding/petri.tsx';

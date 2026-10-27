@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/auth-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
 import { SIGN_IN_PROVIDERS, signInEvents, signInFailure } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';

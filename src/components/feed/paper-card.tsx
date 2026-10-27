@@ -167,7 +167,7 @@ import {
 } from '../../utils/external-url.ts';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';

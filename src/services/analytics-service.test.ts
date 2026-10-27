@@ -22,6 +22,7 @@ import {
   startAnalyticsClient,
   trackAcquisition,
   trackDay7Return,
+  trackProductEvent,
 } from './analytics-service.ts';
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -845,6 +846,19 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   await pending;
   await identifyAnalyticsUser({ uid: 'also-discarded' });
   assert.deepEqual(changes, []);
+
+  const capturedAccounts: Array<string | null> = [];
+  t.mock.method(posthog, 'capture', () => { capturedAccounts.push(identifiedAs); return undefined; });
+  storage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
+  await Promise.all([
+    identifyAnalyticsUser({ uid: 'next-account' }),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  await Promise.all([
+    identifyAnalyticsUser(null),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

@@ -26,7 +26,7 @@ import {
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { saveModalCloseRequest } from './save-modal-close-request.ts';

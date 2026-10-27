@@ -125,7 +125,7 @@ import { getLocalizedInstitutionName } from '../../utils/institution-localizatio
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeExternalUrl } from '../../utils/external-url.ts';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { DEFAULT_SHARE_IMAGE, getPublicEntityPath, getPublicEntityUrl, getShareImage } from '../../utils/public-navigation.ts';
 import { nameInitials } from '../../utils/name-initials.ts';
 import 'katex/dist/katex.min.css';

@@ -53,7 +53,7 @@ import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayou
 import { FeedContext } from './contexts.ts';
 import { db } from '../services/firebase.ts';
 import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
-import { useAnalyticsConsent } from './analytics-context.tsx';
+import { useAnalyticsConsent } from './privacy-context.tsx';
 import { useAuth } from './auth-context.tsx';
 import { auth } from '../services/firebase.ts';
 import { useFollowing } from './following-context.tsx';

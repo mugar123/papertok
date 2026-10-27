@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight, ShieldCheck } from '@phosphor-icons/react';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { cn } from '../../lib/utils.ts';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
 import { buttonVariants } from '../ui/button-variants.ts';
@@ -35,7 +35,7 @@ const ICON_BUTTON = buttonVariants({ variant: 'ghost', size: 'icon-sm' });
  * from the first screen of the welcome on and at the top of every page a
  * shared link opens. The host passes its own chrome class, as it does for
  * ThemeToggle. The choice belongs to analyticsService and goes through the
- * analytics context, exactly like the Settings switch, so the two cannot
+ * privacy context, exactly like the Settings switch, so the two cannot
  * disagree.
  */
 export default function PrivacyPopover({ className = ICON_BUTTON }) {

@@ -1,0 +1,257 @@
+[
+  {
+    "leaf": "cs.AI",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 148010
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 148010
+    }
+  },
+  {
+    "leaf": "cs.GT",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "numFound": 10693
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "numFound": 10693
+    }
+  },
+  {
+    "leaf": "cs.MM",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 7943
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 7943
+    }
+  },
+  {
+    "leaf": "math.AG",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5,
+      "precision": 0.3333333333333333,
+      "numFound": 30085
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 30085
+    }
+  },
+  {
+    "leaf": "math.CA",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "numFound": 14012
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12,
+      "precision": 0.8,
+      "numFound": 14012
+    }
+  },
+  {
+    "leaf": "math.GR",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 6,
+      "precision": 0.4,
+      "numFound": 14233
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "numFound": 14233
+    }
+  },
+  {
+    "leaf": "math.GT",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "numFound": 12946
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "numFound": 12946
+    }
+  },
+  {
+    "leaf": "nucl-ex",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 6,
+      "precision": 0.4,
+      "numFound": 13280
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 13280
+    }
+  },
+  {
+    "leaf": "nucl-th",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 6,
+      "precision": 0.4,
+      "numFound": 24641
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "numFound": 24641
+    }
+  },
+  {
+    "leaf": "q-fin.CP",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "numFound": 2229
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "numFound": 2229
+    }
+  },
+  {
+    "leaf": "q-fin.PM",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "numFound": 1541
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "numFound": 1541
+    }
+  },
+  {
+    "leaf": "q-fin.PR",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12,
+      "precision": 0.8,
+      "numFound": 1042
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "numFound": 1042
+    }
+  },
+  {
+    "leaf": "q-fin.RM",
+    "listed": {
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8,
+      "precision": 0.5333333333333333,
+      "numFound": 1905
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "numFound": 1905
+    }
+  },
+  {
+    "leaf": "q-fin.ST",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "numFound": 2398
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12,
+      "precision": 0.8,
+      "numFound": 2398
+    }
+  },
+  {
+    "leaf": "q-fin.TR",
+    "listed": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "numFound": 1421
+    },
+    "ownClass": {
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "numFound": 1421
+    }
+  }
+]

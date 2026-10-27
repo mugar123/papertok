@@ -31,6 +31,7 @@ import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handl
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
+import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -631,10 +632,12 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // The arXiv side of an arXiv category's notable lane: ADS's 100 most-cited
   // papers of the class in each of the ten completed years, preprints and
   // published versions alike, filed under the same lane and kept as
-  // OpenAlex's are. Its listing does not renew the enrichment
-  // (`renewsEnrichment`), so the 14-day refresh asks OpenAlex for a paper only
-  // ADS lists; a paper both list shows the higher count, as for any two
-  // sources (`PaperBuilder.merge`).
+  // OpenAlex's are. For a leaf of `ADS_NOTABLE_OWN_CLASS_LEAVES`, only papers
+  // arXiv files under the class first: most of those leaves' most-cited
+  // papers were cross-listed from a neighbouring class. Its listing does not
+  // renew the enrichment (`renewsEnrichment`), so the 14-day refresh asks
+  // OpenAlex for a paper only ADS lists; a paper both list shows the higher
+  // count, as for any two sources (`PaperBuilder.merge`).
   'ads-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {
@@ -643,7 +646,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
       let docs: unknown[];
       try {
-        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR));
+        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR, ADS_NOTABLE_OWN_CLASS_LEAVES.includes(leaf)));
       } catch (error) {
         // ADS answers a spent day with 429; the lane waits for the next night.
         // Any other failure, a rejected token among them, stays an error.

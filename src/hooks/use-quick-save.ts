@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { setDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { useAuth } from '../context/auth-context.tsx';
-import { useAnalyticsConsent } from '../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../context/privacy-context.tsx';
 import { useFeed } from '../context/feed-context.tsx';
 import { useLanguage } from '../context/language-context.tsx';
 import { readListsHoldingPaper, writeListMembership } from '../services/paper-list-membership.ts';

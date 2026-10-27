@@ -2,7 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { Paper } from '../models/paper.ts';
 import { EMPTY_SEARCH, SEARCH_SECTIONS, searchEntities } from '../services/entity-search-service.ts';
 import type { EntitySearch, SearchScope, SearchSnapshot } from '../services/entity-search-service.ts';
-import { useAnalyticsConsent } from '../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../context/privacy-context.tsx';
 
 const SEARCH_DEBOUNCE_MS = 320;
 type SearchAnswer = { term: string; signal: AbortSignal; snapshot: SearchSnapshot };

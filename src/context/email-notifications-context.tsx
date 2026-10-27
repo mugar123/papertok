@@ -16,7 +16,7 @@ import { useAuth } from './auth-context.tsx';
 import { useFollowing } from './following-context.tsx';
 import { useFollowingUpdates } from './following-updates-context.tsx';
 import { useLanguage } from './language-context.tsx';
-import { useAnalyticsConsent } from './analytics-context.tsx';
+import { useAnalyticsConsent } from './privacy-context.tsx';
 import {
   EmailNotificationServiceError,
   getEmailNotificationPreferences,
