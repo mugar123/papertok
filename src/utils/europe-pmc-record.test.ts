@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mapEuropePmcRecord } from './europe-pmc-record.ts';
 import { mapEuropePmcResult } from '../services/europe-pmc-records.ts';
 import { mapEuropePmcSearchResult } from '../services/domain-source-records.ts';
+import { isFeedPublication } from '../services/feed-publication-rules.ts';
 
 // The four places where the two copies of this reader had drifted apart. Each
 // assertion here was true on exactly one side before they were merged.
@@ -137,6 +138,34 @@ test('gives the enrichment patch and the feed paper the same verdict', () => {
   assert.equal(patch!.citationCount, paper!.citationCount);
   assert.deepEqual(patch!.biomedicalTerms, paper!.biomedicalTerms);
   assert.deepEqual(patch!.biomedicalTerms, ['Cardiology']);
+});
+
+// Europe PMC's core record lists MEDLINE's publication types by NLM's names
+// ("Randomized Controlled Trial", "Journal Article" for PMID 42159524,
+// captured 2026-10-26). Synthetic in that shape, with the types PubMed gives
+// Wakefield et al., Lancet 1998 (PMID 9500320): Europe PMC answered 503 when
+// asked for that record on 2026-10-27.
+test('a record typed `Retracted Publication` is retracted in the enrichment patch and the feed paper alike', () => {
+  const raw = {
+    id: '9500320',
+    source: 'MED',
+    pmid: '9500320',
+    title: 'Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.',
+    firstPublicationDate: '1998-02-28',
+    pubTypeList: { pubType: ["Research Support, Non-U.S. Gov't", 'Retracted Publication', 'Journal Article'] },
+  };
+  const paper = mapEuropePmcSearchResult(raw, ['med.peds'])!;
+  assert.equal(mapEuropePmcResult(raw)!.publicationStatus, 'retracted');
+  assert.deepEqual([paper.publicationType, paper.publicationStatus], ['article', 'retracted']);
+  assert.equal(isFeedPublication(paper), false);
+
+  // A retraction notice is another type, and a record without the type
+  // says nothing of a retraction.
+  for (const pubType of [['Retraction of Publication'], ['Journal Article'], []]) {
+    const unmarked = { ...raw, pubTypeList: { pubType } };
+    assert.equal(mapEuropePmcResult(unmarked)!.publicationStatus, undefined, pubType.join(', '));
+    assert.equal(mapEuropePmcSearchResult(unmarked, ['med.peds'])!.publicationStatus, 'published', pubType.join(', '));
+  }
 });
 
 test('the record keeps each author\'s ORCID and first affiliation', () => {

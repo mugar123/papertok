@@ -8,8 +8,9 @@ import { enrichPending } from './paper-enrichment.ts';
 import { embedWorks, evictExpired, ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapPubmedSummary, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
 import { mapAdsPaper } from '../src/services/domain-source-records.ts';
+import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -390,12 +391,14 @@ const RETRACTED_WORK = {
 };
 
 // OpenAlex answering every works list with these works, as it answers: only
-// the fields the request selects. Every other provider answers empty.
-function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record<string, unknown>>) {
+// the fields the request selects. Europe PMC answers every search with the
+// records `europePmc` gives at the time; every other provider answers empty.
+function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record<string, unknown>>, europePmc: () => Array<Record<string, unknown>> = () => []) {
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname === 'www.ebi.ac.uk') return Response.json({ resultList: { result: europePmc() } });
     if (url.hostname !== 'api.openalex.org') return Response.json({});
     const selected = url.searchParams.get('select')?.split(',') ?? [];
     return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
@@ -514,4 +517,107 @@ test("OpenAlex's own record of a retracted paper is stored under no lane: a file
   await ingestPapers({ PAPER_STORE: liked.binding }, [{ paper: record, lanes: [] }], { now: NOW, keepUntil: new Date(NOW + 30 * DAY_MS).toISOString() });
   assert.deepEqual(Object.values(stored(liked.db)).map(work => [work.paper.id, work.paper.publicationStatus]), [['openalex:W2766253867', 'retracted']]);
   assert.deepEqual(laneRows(liked.db), []);
+});
+
+// Captured on 2026-10-27 (esummary, keyless) and 2026-10-26 (efetch) and
+// trimmed: Wakefield et al., Lancet 1998 (PMID 9500320), which PubMed types
+// `Retracted Publication`, and a journal article of September 2026 (PMID
+// 42934083) with no other type.
+const WAKEFIELD_SUMMARY = {
+  uid: '9500320',
+  pubdate: '1998 Feb 28',
+  epubdate: '',
+  source: 'Lancet',
+  authors: [{ name: 'Wakefield AJ' }, { name: 'Murch SH' }],
+  title: 'Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.',
+  issn: '0140-6736',
+  pubtype: ['Journal Article', "Research Support, Non-U.S. Gov't", 'Retracted Publication'],
+  articleids: [{ idtype: 'pubmed', value: '9500320' }, { idtype: 'doi', value: '10.1016/s0140-6736(97)11096-0' }],
+};
+const PEDIATRIC_SUMMARY = {
+  uid: '42934083',
+  pubdate: '2026 Sep 30',
+  epubdate: '2026 Sep 30',
+  source: 'J Pediatr Urol',
+  authors: [{ name: 'Manivasagam SS' }, { name: 'Kane JA' }, { name: 'Decter RM' }],
+  title: 'Current trends in opioid prescription at discharge after pediatric urologic procedures: Analysis of ACS NSQIP pediatrics 2023 database.',
+  issn: '1477-5131',
+  pubtype: ['Journal Article'],
+  articleids: [{ idtype: 'pubmed', value: '42934083' }, { idtype: 'doi', value: '10.1016/j.jpurol.2026.106308' }],
+};
+const PUBMED_EFETCH = '<PubmedArticleSet>'
+  + '<PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM"><PMID Version="1">9500320</PMID><Article PubModel="Print">'
+  + '<ArticleTitle>Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.</ArticleTitle>'
+  + '<Abstract><AbstractText Label="BACKGROUND">We investigated a consecutive series of children with chronic enterocolitis and regressive developmental disorder.</AbstractText>'
+  + '<AbstractText Label="METHODS">12 children (mean age 6 years [range 3-10], 11 boys) were referred to a paediatric gastroenterology unit with a history of normal development followed by loss of acquired skills, including language, together with diarrhoea and abdominal pain.</AbstractText></Abstract>'
+  + '<AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Wakefield</LastName><ForeName>A J</ForeName><Initials>AJ</Initials></Author><Author ValidYN="Y"><LastName>Murch</LastName><ForeName>S H</ForeName><Initials>SH</Initials></Author></AuthorList>'
+  + '<PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D013485">Research Support, Non-U.S. Gov\'t</PublicationType><PublicationType UI="D016441">Retracted Publication</PublicationType></PublicationTypeList>'
+  + '</Article></MedlineCitation></PubmedArticle>'
+  + '<PubmedArticle><MedlineCitation Status="Publisher" Owner="NLM"><PMID Version="1">42934083</PMID><Article PubModel="Print-Electronic">'
+  + '<ArticleTitle>Current trends in opioid prescription at discharge after pediatric urologic procedures: Analysis of ACS NSQIP pediatrics 2023 database.</ArticleTitle>'
+  + '<Abstract><AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Opioid prescribing at discharge after pediatric surgery contributes to unnecessary opioid exposure, chronic opioid use, and increased community circulation of opioids.</AbstractText></Abstract>'
+  + '<AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Manivasagam</LastName><ForeName>Sri Saran</ForeName><Initials>SS</Initials></Author><Author ValidYN="Y"><LastName>Kane</LastName><ForeName>Jennifer A</ForeName><Initials>JA</Initials></Author><Author ValidYN="Y"><LastName>Decter</LastName><ForeName>Ross M</ForeName><Initials>RM</Initials></Author></AuthorList>'
+  + '<PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>'
+  + '</Article></MedlineCitation></PubmedArticle>'
+  + '</PubmedArticleSet>';
+// Captured from OpenAlex on 2026-10-26 (W2117847125) and trimmed, with
+// `is_retracted` cleared: OpenAlex's answer before its data had the
+// retraction, which reads published.
+const WAKEFIELD_WORK_UNFLAGGED = {
+  id: 'https://openalex.org/W2117847125',
+  doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0',
+  ids: { openalex: 'https://openalex.org/W2117847125', doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0', pmid: 'https://pubmed.ncbi.nlm.nih.gov/9500320' },
+  type: 'article',
+  is_retracted: false,
+  publication_year: 1998,
+};
+// Europe PMC's core record lists MEDLINE's types by NLM's names, as captured
+// for PMID 42159524 on 2026-10-26. Synthetic in that shape: Europe PMC
+// answered 503 when asked for Wakefield's record on 2026-10-27.
+const wakefieldInEuropePmc = (pubType: string[]) => ({ id: '9500320', source: 'MED', pmid: '9500320', title: WAKEFIELD_SUMMARY.title, pubTypeList: { pubType } });
+const LISTED = Date.parse('2026-10-27T03:00:00Z');
+
+// A page of the medicine lane for pediatrics, as the harvest reads it
+// (worker/paper-sources.ts): esummary's records with efetch's abstracts.
+const pediatricsPage = (...summaries: Array<typeof PEDIATRIC_SUMMARY>) => readPubmedPayload({
+  esearchresult: { idlist: summaries.map(summary => summary.uid) },
+  result: Object.fromEntries(summaries.map(summary => [summary.uid, summary])),
+  efetch: PUBMED_EFETCH,
+}, { internalCategories: ['med.peds'], parseXml: parseXmlDocument }).map(paper => ({ paper, lanes: ['med.peds'] }));
+const statusAndLanes = (db: ReturnType<typeof testD1>['db']) => Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>)
+  .map(row => [JSON.parse(row.paper).id, [
+    JSON.parse(row.paper).publicationStatus,
+    db.prepare('SELECT lane FROM work_lanes WHERE work_id = ? ORDER BY lane').all(row.id).map(lane => (lane as { lane: string }).lane),
+  ]]));
+
+// Kept whatever its age (`keepUntil`), as a notable listing or a reader's like
+// keeps a paper: PubMed's lanes list the last 90 days, and the paper PubMed
+// types retracted in these captures is from 1998.
+test('a paper PubMed types retracted is stored under no lane from its listing on, and an enrichment that reads it published does not file it', async t => {
+  openAlexAnswers(t, [WAKEFIELD_WORK_UNFLAGGED]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, pediatricsPage(WAKEFIELD_SUMMARY, PEDIATRIC_SUMMARY), { now: LISTED, keepUntil: keptFrom(LISTED) });
+  const expected = { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] };
+  assert.deepEqual(statusAndLanes(db), expected);
+
+  await enrichPending(env, 50, LISTED);
+  assert.ok(stored(db)['pmid:9500320'].paper.sources.enrichedBy.includes('openalex'));
+  assert.deepEqual(statusAndLanes(db), expected);
+});
+
+test('a retraction PubMed records after the paper was stored reaches it from Europe PMC at the refresh, and the paper leaves its lane', async t => {
+  let wakefieldTypes = ['Journal Article', "Research Support, Non-U.S. Gov't"];
+  openAlexAnswers(t, [WAKEFIELD_WORK_UNFLAGGED], () => [wakefieldInEuropePmc(wakefieldTypes)]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  // PubMed's record before NLM added the type.
+  const listedBefore = { ...WAKEFIELD_SUMMARY, pubtype: wakefieldTypes };
+  await ingestPapers(env, pediatricsPage(listedBefore, PEDIATRIC_SUMMARY), { now: LISTED, keepUntil: keptFrom(LISTED) });
+  await enrichPending(env, 50, LISTED);
+  assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['published', ['med.peds']], 'pmid:42934083': ['published', ['med.peds']] });
+
+  wakefieldTypes = [...wakefieldTypes, 'Retracted Publication'];
+  await enrichPending(env, 50, LISTED + 15 * DAY_MS);
+  assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] });
 });

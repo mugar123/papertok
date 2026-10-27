@@ -8,7 +8,6 @@ interface BioRxivRecord { doi?: string; title?: string; version?: string | numbe
 interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
 interface EuropePmcSearchRecord extends EuropePmcRecord {
   title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
-  pubTypeList?: { pubType?: string[] };
   source?: string; authorString?: string;
   journalInfo?: { journal?: { title?: string; issn?: string; essn?: string; nlmid?: string }; yearOfPublication?: number | string };
 }
@@ -259,7 +258,7 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
     publicationType: chapter ? 'book-chapter' : preprint ? 'preprint' : 'article',
     sourceType: chapter ? 'book-series' : undefined,
-    publicationStatus: preprint ? 'preprint' : 'published',
+    publicationStatus: record.retracted ? 'retracted' : preprint ? 'preprint' : 'published',
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
       || `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`,
