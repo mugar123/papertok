@@ -344,6 +344,9 @@ export const WORKING_PAPER_SERIES_IDS = [
 // sensor materials, biomass conversion and tissue scaffolds among them.
 const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
 
+// ChemRxiv, the chemistry preprint server (`openalex-chemrxiv`).
+const CHEMRXIV_SOURCE_ID = 'S4393918830';
+
 /**
  * The works filter of a leaf's venue lane (PAP-104): the OpenAlex sources its
  * labelled sample found on target, sorted, and the types and topic or author
@@ -371,7 +374,7 @@ export function openAlexNotableListingFilter(leaf: string, year: number) {
 }
 
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-series'
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-chemrxiv' | 'openalex-series'
   | 'openalex-follows' | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface'
   | 'ads-notable' | 'europepmc-notable';
 
@@ -703,6 +706,27 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       OPENALEX_NOT_LISTED_SERIES_FILTER,
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
+  // ChemRxiv's newest preprints, filed under the chemistry area beside its
+  // journal articles: no arXiv category stands for a chemistry leaf, so
+  // without them the area had no preprints. Only those OpenAlex labels
+  // Chemistry, as the area lane asks: 791 in the 90 days to 2026-10-27, about
+  // 9 a day, 788 with an abstract. Its other preprints, labelled Materials
+  // Science, Engineering or Biochemistry among others, would reach Chemistry's
+  // readers under another area's label. The source is named, as a venue lane
+  // names its journals, so `is_core` does not apply. One page of 200, about
+  // three weeks of preprints, also on the lane's first run: a reader's page
+  // reads at most the newest 800 rows of an area lane (paper-store.ts
+  // `readCandidates`), a few days of chemistry's.
+  'openalex-chemrxiv': {
+    firstPages: 1, dailyPages: 1, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      `primary_location.source.id:${CHEMRXIV_SOURCE_ID}`,
+      openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      windowFilter(),
+      'type:preprint',
+      'is_retracted:false',
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
+  },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -769,6 +793,9 @@ export function categoryLaneJobs(): LaneJob[] {
       if (request.source !== 'biorxiv') jobs.push({ source: request.source, lane: leaf.id });
     }
   }
+  // Last: the harvest names a lane's steps by its place here (paper-harvest.ts
+  // `runLaneJobs`), so the lanes before it keep theirs.
+  jobs.push({ source: 'openalex-chemrxiv', lane: areaLane('chem') });
   return jobs;
 }
 

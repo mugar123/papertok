@@ -101,8 +101,9 @@ the 80 lanes ask about 133 list calls a night, 240 at most, and 152 on their
 first night. cs.SY and eess.SY send the same request, which the relay answers
 from its store the second time. The lanes spend from the 3,000 of the
 harvest's 4,000 units a day that the category lanes share with the notable
-lanes: with the topic lanes (195 at most), the area lanes (9) and the
-working-paper series (4), a night's category calls are at most 448, and the
+lanes: with the topic lanes (195 at most), the area lanes (11), ChemRxiv's
+lane (1) and the working-paper series (4), a night's category calls are at most
+451, and the
 notable lanes add ten for each new lane on its first night (440 for the 44
 journal lanes of 2026-10-26) and at most 190 a night for re-listings (19 of
 129 lanes; a new lane whose first listing failed is listed again beside
