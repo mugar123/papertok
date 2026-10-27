@@ -19,7 +19,7 @@ const COPY = {
  * The privacy policy change, told in a modal dialog over the feed
  * (NudgeHost decides when). Got it is remembered for the account; Hide for now,
  * Escape, the close button and a press outside put it away for this visit only
- * (`onHide`).
+ * (`onHide`), and so does Back, which NudgeHost routes to the same `onHide`.
  *
  * Focus starts on the title, not on the first control (the link under the
  * summary), so a screen reader starts reading at the title, and a dialog that

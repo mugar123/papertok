@@ -4,6 +4,7 @@ import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
+import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
@@ -136,6 +137,9 @@ export default function NudgeHost() {
   // Hide for now puts it away for this visit and does not count as reading it,
   // so it returns next time.
   const hidePrivacy = useCallback(() => setPicked(null), []);
+  // Back does the same instead of leaving the feed (use-overlay-history.ts):
+  // the dialog opens unasked, and on a phone Back is how a reader dismisses it.
+  useOverlayHistory(dialogOpen, hidePrivacy, 'privacy');
 
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
