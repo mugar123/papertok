@@ -1814,11 +1814,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               must look under the same key (R8: ids differ by
                               entry route). */}
                           {isPhone ? (
+                            // Dimmed and renamed like the desktop Trash button
+                            // while the removal is pending: the sheet has
+                            // closed, so this button is the row's only cue.
+                            // It still opens the sheet, whose Edit works.
                             <Button
                               variant="ghost"
                               size="icon-sm"
+                              className={removalPending ? 'opacity-50' : undefined}
                               aria-haspopup="dialog"
-                              aria-label={`Actions for ${paper.title}`}
+                              aria-label={removalPending ? `Actions for ${paper.title}, removing from list...` : `Actions for ${paper.title}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setRowSheet({ listId: list.id, listName: list.name, paperId, paper });
