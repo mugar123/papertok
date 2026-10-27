@@ -9,21 +9,14 @@
   bottom: calc(20px + var(--inset-bottom));
   display: grid;
   width: min(520px, calc(100vw - 40px));
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
   gap: 12px;
-  padding: var(--nudge-pad);
+  padding: 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
   align-items: center;
-  /* Long copy at a large text size or a short viewport scrolls inside the
-     panel (on narrow or short screens, only the copy does, below);
-     a fixed panel cannot be scrolled to (WCAG 1.4.4, 1.4.10). */
-  max-height: calc(100vh - 24px - var(--inset-bottom));
-  max-height: calc(100dvh - 24px - var(--inset-bottom));
-  overflow-y: auto;
-  --nudge-pad: 16px;
 }
 
 .nudge-icon {
@@ -49,18 +42,11 @@
   line-height: 1.5;
 }
 
-/* The link is told from the text around it by more than its colour. */
-.nudge-copy a {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* Got it and the close button share one container, in the order they are read
-   and tabbed, so the layout can move them together. */
+/* Two answers take a row of their own under the copy: beside it, the copy
+   would be squeezed to a column of single words. */
 .nudge-actions {
   display: flex;
   gap: 8px;
-  align-items: center;
 }
 
 .nudge-dismiss {
@@ -83,85 +69,17 @@
 
 }
 
-/* Narrow or short screens, and large text on them: the copy takes the width and
-   the action gets a row of its own under it. Beside the copy it would squeeze
-   it to a column of single words. Only the copy scrolls; the row stays below
-   the scroll area instead of pinned over it, so it cannot cover a link that
-   has just been focused (WCAG 2.4.11) and the way out is in view whatever the
-   text size. */
-@media (max-width: 560px), (max-height: 480px) {
-  .nudge {
-    grid-template-columns: 40px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    align-items: start;
-    /* At most 60% of the screen, so the feed stays in view behind it. */
-    max-height: 60vh;
-    max-height: 60dvh;
-  }
-
-  .nudge-icon {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .nudge-copy {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: stretch;
-    min-height: 0;
-    overflow-y: auto;
-    /* A scroll area clips at its edge, and the focus ring of the link sits 4px
-       outside the link (2px outline, 2px offset): the padding keeps it whole,
-       the negative margin keeps the text where it was. */
-    margin: -4px;
-    padding: 4px;
-  }
-
-  .nudge-actions {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: stretch;
-    justify-content: flex-end;
-  }
-}
-
 @media (max-width: 560px) {
   .nudge {
-    --nudge-pad: 14px;
     right: 12px;
     bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
-    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .nudge-icon {
     display: none;
-  }
-
-  .nudge-copy {
-    grid-column: 1;
-  }
-}
-
-/* Moved up under the navbar when a focused control sits beneath it at the
-   bottom (NudgeHost measures both edges); the higher specificity beats the
-   narrow-screen `bottom` above. A band of the screen stays covered at both edges
-   (on a narrow or short screen, with the cap below, about the middle fifth to
-   half of it): a control that fits wholly inside that band hides the notice for
-   the visit, and one covered in part leaves it where it is. The height stops
-   short of the viewport's bottom, so text enlarged on a wide screen cannot push
-   the action row out of view from here either. */
-.nudge[data-edge='top'] {
-  top: calc(var(--nav-total) + 8px);
-  bottom: auto;
-  max-height: calc(100vh - var(--nav-total) - 20px - var(--inset-bottom));
-  max-height: calc(100dvh - var(--nav-total) - 20px - var(--inset-bottom));
-}
-
-@media (max-width: 560px), (max-height: 480px) {
-  .nudge[data-edge='top'] {
-    max-height: min(60vh, calc(100vh - var(--nav-total) - 20px - var(--inset-bottom)));
-    max-height: min(60dvh, calc(100dvh - var(--nav-total) - 20px - var(--inset-bottom)));
   }
 }
 

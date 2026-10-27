@@ -1,0 +1,72 @@
+/* A row of the feed page between the navbar and the cards, on the page's paper
+   with a hairline under it: nothing floats (design.md). Above the refresh pill
+   (z-index 5), which tucks away under this row as it does under the navbar. */
+.privacy-notice {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-card);
+}
+
+.privacy-notice-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.privacy-notice-copy {
+  max-width: 48rem;
+}
+
+.privacy-notice-copy h2 {
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+}
+
+.privacy-notice-copy p {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: var(--lh-normal);
+}
+
+/* Told from the text around it by more than its colour. */
+.privacy-notice-copy a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Wraps rather than clips at a large text size (design.md, Rule 6). */
+.privacy-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* Narrow screens: the copy takes the width and the actions a row under it.
+   Beside the copy they would squeeze it to a column of single words. */
+@media (max-width: 640px) {
+  .privacy-notice {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-3);
+  }
+
+  .privacy-notice-icon {
+    display: none;
+  }
+
+  .privacy-notice-actions {
+    justify-content: flex-start;
+  }
+}

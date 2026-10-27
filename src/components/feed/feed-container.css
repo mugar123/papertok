@@ -24,6 +24,36 @@
   --pull-y: 0px;
 }
 
+/* A notice above the cards (FeedContainer's `notice`) takes the first row, in
+   the page's flow, and the cards the rest: it covers nothing. The scroller, the
+   pill and the loading veil share the second row, whose area is the containing
+   block of the two absolute ones, so `top: 12px` and `inset: 0` measure from
+   the top of the cards. The cards keep at least half the height; at a text size
+   where the notice needs more, the wrapper scrolls to show all of it instead of
+   squeezing the cards away (WCAG 1.4.4, 1.4.10). */
+.feed-wrapper[data-notice] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(50%, 1fr);
+  overflow-y: auto;
+}
+
+.feed-wrapper[data-notice] > .feed-notice-slot {
+  grid-area: 1 / 1;
+}
+
+.feed-wrapper[data-notice] > :is(.feed-container, .feed-refresh, .feed-empty--veil) {
+  grid-area: 2 / 1;
+}
+
+/* The empty and error screens are a centred column that grows with its
+   content; the notice heads it at the column's width. */
+.feed-empty > .feed-notice-slot {
+  align-self: stretch;
+  margin-bottom: var(--space-6);
+  text-align: start;
+}
+
 .feed-container {
   height: 100%;
   overflow-y: scroll;

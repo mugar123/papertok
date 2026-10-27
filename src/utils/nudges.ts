@@ -187,8 +187,9 @@ export function statusIsSet({ shown, modalOpen, announced }: { shown: boolean; m
 
 /**
  * The picked notice, while it may be on screen: for a signed-in reader, on the
- * feed. Elsewhere the panel would sit over a modal paper, which traps focus and
- * takes the Escape meant for the notice. It comes back when the reader returns.
+ * feed. The privacy notice is part of the feed page; the email nudge's panel
+ * would sit over a modal paper elsewhere. Either comes back when the reader
+ * returns to the feed.
  */
 export function noticeOnScreen({ picked, signedIn, pathname }: { picked: string | null; signedIn: boolean; pathname: string }) {
   return signedIn && isNudgePath(pathname) ? picked : null;
@@ -212,24 +213,18 @@ export function pickVisitNotice({ privacyOwed, eligible = [], dismissed = [], ra
   return privacyOwed ? PRIVACY_NOTICE_ID : pickNudge({ eligible, dismissed, random });
 }
 
-// `data-popup-open` is what Base UI puts on the trigger of an open tooltip,
-// popover or menu, which Escape closes while focus is still on the trigger.
-const OTHER_ESCAPE_OWNERS = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[aria-modal="true"],[data-popup-open]';
-
 /**
- * Whether an Escape pressed on `target` belongs to something else: another
- * dialog, menu, list or tooltip closing itself, or a text field being cleared. Only an
- * Escape on the page underneath puts the privacy notice away.
+ * Whether the visit's notice is chosen now, on the feed. A privacy change owed
+ * to the reader is chosen at once: it takes a row above the cards, and arriving
+ * a minute into reading it would move the card being read. A nudge waits for
+ * the minute of reading.
  */
-export function escapeBelongsToOther(target: unknown) {
-  const element = target as { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown } | null;
-  if (!element || typeof element !== 'object') return false;
-  if (element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName ?? '')) return true;
-  return typeof element.closest === 'function' && Boolean(element.closest(OTHER_ESCAPE_OWNERS));
+export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolean; dwellDone: boolean }) {
+  return privacyOwed || dwellDone;
 }
 
-/** The panel's own element: focus inside it is not a place to hand focus back to. */
-export const NUDGE_PANEL_SELECTOR = '.nudge';
+/** The privacy notice's own element: focus inside it is not a place to hand focus back to. */
+export const PRIVACY_NOTICE_SELECTOR = '.privacy-notice';
 
 interface FocusSource {
   activeElement: unknown;
@@ -238,20 +233,20 @@ interface FocusSource {
 }
 
 // An element on the page, not the body that holds focus when nothing does and
-// not anything inside the panel.
+// not anything inside the notice.
 function isFocusToRestore(candidate: unknown): candidate is HTMLElement {
   const element = candidate as { tagName?: string; focus?: unknown; closest?: (selector: string) => unknown } | null;
   if (!element || typeof element !== 'object' || typeof element.focus !== 'function') return false;
   if (element.tagName === 'BODY' || element.tagName === 'HTML') return false;
-  return !(typeof element.closest === 'function' && element.closest(NUDGE_PANEL_SELECTOR));
+  return !(typeof element.closest === 'function' && element.closest(PRIVACY_NOTICE_SELECTOR));
 }
 
 /**
- * Remembers where focus is on the page outside the panel, from the moment the
- * panel appears: the element that already holds focus then, and every one that
- * receives it after. Without the first, a reader whose next Tab goes straight
- * into the panel would have no place to come back to, because the focus event
- * that put them there is inside the panel. `target` is that element while it is
+ * Remembers where focus is on the page outside the privacy notice, from the
+ * moment the notice appears: the element that already holds focus then, and
+ * every one that receives it after. Without the first, a reader whose next Tab
+ * goes straight into the notice would have no place to come back to, because the
+ * focus event that put them there is inside the notice. `target` is that element while it is
  * still on the page; a feed that unmounted it leaves nothing to return to.
  */
 export function trackFocusOutsideNotice(source: FocusSource) {
@@ -268,41 +263,15 @@ export function trackFocusOutsideNotice(source: FocusSource) {
   };
 }
 
-export interface Box { top: number; bottom: number; left: number; right: number }
-
 /**
- * The first of `candidates`, in the order given, whose panel box does not cover
- * `target`, or null when each one does. The panel is fixed over the page, so a
- * control focused underneath it would have its focus ring hidden (WCAG 2.4.11);
- * the host measures the panel at each edge it may sit on and moves it to one that
- * leaves the control in view. A box that only touches the target covers nothing.
+ * What to do with focus when the privacy notice is put away: nothing when it was
+ * not in the notice; give it up when it got there by a click or tap (a button the
+ * pointer pressed takes focus in Chrome and on Android, and handing it to a control
+ * the reader has since scrolled far from leaves it invisible and pulls the feed
+ * back on the next Tab); otherwise return it to the control that held it, or to
+ * the page when that one is off screen or gone.
  */
-export function firstEdgeClearOf<T>(target: Box, candidates: Array<{ edge: T; box: Box }>) {
-  const covers = (box: Box) => box.left < target.right && box.right > target.left && box.top < target.bottom && box.bottom > target.top;
-  return candidates.find(candidate => !covers(candidate.box))?.edge ?? null;
-}
-
-/**
- * Whether the panel at every one of `candidates` hides `target` entirely. WCAG
- * 2.4.11 fails only when the focused component is wholly hidden, so a control the
- * panel covers in part, and a container such as #main-content that the panel
- * cannot cover, leave the panel where it is; only a control that fits inside the
- * panel at both edges has no place left and is a reason to put the notice away.
- */
-export function coveredAtEveryEdge(target: Box, candidates: Array<{ box: Box }>) {
-  const hides = (box: Box) => box.left <= target.left && box.right >= target.right && box.top <= target.top && box.bottom >= target.bottom;
-  return candidates.length > 0 && candidates.every(candidate => hides(candidate.box));
-}
-
-/**
- * What to do with focus when the panel is put away: nothing when it was not in
- * the panel; give it up when it got there by a click or tap (a button the pointer
- * pressed takes focus in Chrome and on Android, and handing it to a control the
- * reader has since scrolled far from leaves it invisible and pulls the feed back
- * on the next Tab); otherwise return it to the control that held it, or to the
- * page when that one is off screen or gone.
- */
-export function focusAfterPanel({ focusWasInside, viaKeyboard, rememberedOnScreen }: { focusWasInside: boolean; viaKeyboard: boolean; rememberedOnScreen: boolean }) {
+export function focusAfterNotice({ focusWasInside, viaKeyboard, rememberedOnScreen }: { focusWasInside: boolean; viaKeyboard: boolean; rememberedOnScreen: boolean }) {
   if (!focusWasInside) return 'keep';
   if (!viaKeyboard) return 'blur';
   return rememberedOnScreen ? 'remembered' : 'page';
@@ -319,7 +288,7 @@ export function focusAfterPanel({ focusWasInside, viaKeyboard, rememberedOnScree
  * reports. A check the Worker did not run leaves the status unknown
  * (`emailServiceState`), which is not a fault either.
  */
-export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}) {
+export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}): 'not-configured' | 'unavailable' | null {
   if (loading || !health?.code || emailServiceState(health) !== 'down') return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }

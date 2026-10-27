@@ -4,13 +4,10 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
-  NUDGE_PANEL_SELECTOR,
   PRIVACY_NOTICE_ID,
+  PRIVACY_NOTICE_SELECTOR,
   emailNudgeProblem,
-  escapeBelongsToOther,
-  coveredAtEveryEdge,
-  firstEdgeClearOf,
-  focusAfterPanel,
+  focusAfterNotice,
   forgetPrivacyNotice,
   statusIsSet,
   noticeOnScreen,
@@ -23,6 +20,7 @@ import {
   rememberNudgeDismissal,
   rememberPrivacyNotice,
   trackFocusOutsideNotice,
+  visitChoiceDue,
 } from './nudges.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
 
@@ -247,26 +245,12 @@ test('a privacy change owed to the reader takes the visit before any nudge', () 
   assert.equal(pickVisitNotice({ privacyOwed: false }), null);
 });
 
-test('an Escape that belongs to another dialog, menu or text field does not put the notice away', () => {
-  const inside = (selectors: string) => ({ tagName: 'DIV', closest: (selector: string) => (selector.includes(selectors) ? {} : null) });
-  assert.equal(escapeBelongsToOther(inside('role="dialog"')), true, 'a dialog');
-  assert.equal(escapeBelongsToOther(inside('role="alertdialog"')), true, 'an alert dialog');
-  assert.equal(escapeBelongsToOther(inside('role="menu"')), true, 'a menu');
-  assert.equal(escapeBelongsToOther(inside('role="listbox"')), true, 'a list of options');
-  assert.equal(escapeBelongsToOther(inside('aria-modal="true"')), true, 'a modal');
-  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) {
-    assert.equal(escapeBelongsToOther({ tagName, closest: () => null }), true, tagName);
-  }
-  assert.equal(escapeBelongsToOther({ tagName: 'DIV', isContentEditable: true, closest: () => null }), true, 'a note editor');
-  assert.equal(escapeBelongsToOther({ tagName: 'BODY', closest: () => null }), false, 'the page underneath');
-  assert.equal(escapeBelongsToOther(null), false);
-  assert.equal(escapeBelongsToOther({}), false, 'the document itself has no closest');
-});
-
-test('an Escape that closes a tooltip or popover from its trigger does not put the notice away', () => {
-  const inside = (selectors: string) => ({ tagName: 'BUTTON', closest: (selector: string) => (selector.includes(selectors) ? {} : null) });
-  assert.equal(escapeBelongsToOther(inside('data-popup-open')), true, 'a trigger whose tooltip is open');
-  assert.equal(escapeBelongsToOther({ tagName: 'BUTTON', closest: () => null }), false, 'a trigger with nothing open');
+test('a privacy change owed to the reader is chosen on arrival, a nudge only after the minute of reading', () => {
+  // The privacy notice takes a row above the cards: arriving later would move the card being read.
+  assert.equal(visitChoiceDue({ privacyOwed: true, dwellDone: false }), true);
+  assert.equal(visitChoiceDue({ privacyOwed: true, dwellDone: true }), true);
+  assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: false }), false, 'the email nudge waits');
+  assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: true }), true);
 });
 
 test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
@@ -325,13 +309,13 @@ test('the status message is set once, held back while a modal is open, and not s
 });
 
 // What the focus tracker reads of the page: an element on it, the body that holds
-// focus when nothing does, an element inside the panel; and a document whose
+// focus when nothing does, an element inside the notice; and a document whose
 // focusin listeners the test can fire.
 const pageElement = (tagName = 'BUTTON', { connected = true, inPanel = false } = {}) => ({
   tagName,
   isConnected: connected,
   focus: () => undefined,
-  closest: (selector: string) => (inPanel && selector === NUDGE_PANEL_SELECTOR ? {} : null),
+  closest: (selector: string) => (inPanel && selector === PRIVACY_NOTICE_SELECTOR ? {} : null),
 });
 
 type FocusInListener = (event: { target: unknown }) => void;
@@ -388,53 +372,12 @@ test('a remembered control the feed has unmounted is not returned to, and a stop
   assert.equal(tracker.target(), first, 'a focus event after the notice went away');
 });
 
-// A 320x568 screen with the panel at 60% of it: the bottom edge covers 227-548 and
-// the top edge 56-397, so only the strip between them is covered both ways.
-const box = (top: number, bottom: number, left = 12, right = 308) => ({ top, bottom, left, right });
-const edges = [
-  { edge: 'bottom', box: box(227, 548) },
-  { edge: 'top', box: box(56, 397) },
-];
-
-test('the panel stays at the bottom while no focused control is under it', () => {
-  assert.equal(firstEdgeClearOf(box(100, 140), edges), 'bottom');
-  assert.equal(firstEdgeClearOf(box(500, 540, 400, 440), edges), 'bottom', 'beside it, on a wide screen');
-  assert.equal(firstEdgeClearOf(box(548, 580), edges), 'bottom', 'touching its edge covers nothing');
-});
-
-test('a control under the bottom edge moves the panel to the top, and back when focus leaves', () => {
-  assert.equal(firstEdgeClearOf(box(450, 490), edges), 'top');
-  assert.equal(firstEdgeClearOf(box(450, 490), [...edges].reverse()), 'top');
-  assert.equal(firstEdgeClearOf(box(100, 140), edges), 'bottom', 'the next control is clear of the bottom again');
-});
-
-test('a control that both edges cover leaves no place', () => {
-  assert.equal(firstEdgeClearOf(box(300, 340), edges), null);
-  assert.equal(firstEdgeClearOf(box(300, 340), []), null);
-});
-
-test('the notice is put away only for a control the panel hides entirely at both edges', () => {
-  assert.equal(coveredAtEveryEdge(box(300, 340), edges), true);
-  assert.equal(coveredAtEveryEdge(box(300, 340), []), false);
-});
-
-test('a container the panel cannot cover, or a control it covers in part, keeps the notice', () => {
-  // #main-content spans the viewport: it is what focus rests on after a route
-  // change, the skip link and a click on card text.
-  assert.equal(firstEdgeClearOf(box(0, 568, 0, 320), edges), null);
-  assert.equal(coveredAtEveryEdge(box(0, 568, 0, 320), edges), false);
-  // Partly under the bottom panel and partly under the top one: 2.4.11 is not failed.
-  assert.equal(coveredAtEveryEdge(box(380, 420), edges), false, 'hidden at the bottom, partly at the top');
-  assert.equal(coveredAtEveryEdge(box(210, 250), edges), false, 'hidden at the top, partly at the bottom');
-  assert.equal(coveredAtEveryEdge(box(300, 340, 0, 320), edges), false, 'wider than the panel');
-});
-
-test('focus is given up, not handed to a far-off control, when the panel was reached by a click', () => {
+test('focus is given up, not handed to a far-off control, when the notice was reached by a click', () => {
   const was = { focusWasInside: true, rememberedOnScreen: true };
-  assert.equal(focusAfterPanel({ ...was, viaKeyboard: true }), 'remembered');
-  assert.equal(focusAfterPanel({ ...was, viaKeyboard: false }), 'blur', 'a click or tap on Got it');
-  assert.equal(focusAfterPanel({ ...was, viaKeyboard: true, rememberedOnScreen: false }), 'page', 'the remembered control was scrolled away');
-  assert.equal(focusAfterPanel({ focusWasInside: false, viaKeyboard: false, rememberedOnScreen: false }), 'keep', 'focus was never in the panel');
+  assert.equal(focusAfterNotice({ ...was, viaKeyboard: true }), 'remembered');
+  assert.equal(focusAfterNotice({ ...was, viaKeyboard: false }), 'blur', 'a click or tap on Got it');
+  assert.equal(focusAfterNotice({ ...was, viaKeyboard: true, rememberedOnScreen: false }), 'page', 'the remembered control was scrolled away');
+  assert.equal(focusAfterNotice({ focusWasInside: false, viaKeyboard: false, rememberedOnScreen: false }), 'keep', 'focus was never in the notice');
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {

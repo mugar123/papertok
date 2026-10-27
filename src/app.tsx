@@ -32,6 +32,8 @@ import ProtectedRoute from './components/auth/protected-route.tsx'
 import FeedContainer from './components/feed/feed-container.tsx'
 import Navbar from './components/layout/navbar.tsx'
 import NudgeHost from './components/nudges/nudge-host.tsx'
+import PrivacyNotice from './components/nudges/privacy-notice.tsx'
+import { useVisitNotice } from './components/nudges/use-visit-notice.ts'
 import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
@@ -142,6 +144,9 @@ function AppContent() {
     setSearchOpen(true)
   }, [])
   const location = useLocation()
+  // What this visit tells or asks the reader: the privacy notice above the
+  // feed's cards, or the email nudge in NudgeHost's corner panel.
+  const visitNotice = useVisitNotice()
   // A deploy this tab is behind on is applied when the reader changes page,
   // once Firestore has acknowledged every write issued by then, the
   // interaction aggregate flushed here included (utils/service-worker-updates.ts).
@@ -328,11 +333,6 @@ function AppContent() {
         {'Skip to content'}
       </a>
       <RouteAnnouncer />
-      {/* Before the page, not after it: the panel is fixed, so its place in the
-          source is only its place in the Tab order, and after the feed it would
-          sit behind every card the feed has loaded and keeps loading. Here it is
-          the first stop after the skip link. */}
-      <NudgeHost />
       {/* The one place toasts render; anything calls `toast()` from 'sonner'. */}
       <Toaster />
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} />}
@@ -389,6 +389,9 @@ function AppContent() {
                     }}
                     onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
+                    notice={visitNotice.privacyShown && (
+                      <PrivacyNotice onAcknowledge={visitNotice.acknowledgePrivacy} onHide={visitNotice.hidePrivacy} />
+                    )}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -568,6 +571,8 @@ function AppContent() {
           <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} finalFocus={searchOpenerRef} />
         </Suspense>
       )}
+
+      <NudgeHost visit={visitNotice} />
 
       <AnimatePresence>
         {authPromptOpen && (

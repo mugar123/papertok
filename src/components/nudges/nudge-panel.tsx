@@ -4,8 +4,6 @@ interface NudgePanelProps {
   icon: ReactNode; title: string; body: ReactNode;
   action: { label: string; onClick: () => void };
   dismissLabel?: string; onDismiss?: () => void;
-  // Which edge of the screen it sits on; the host moves it off a focused control.
-  edge?: 'bottom' | 'top';
 }
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
@@ -13,11 +11,9 @@ import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 import './nudge-panel.css';
 
-// An aside, not a dialog: it takes no focus and traps nothing, so someone
-// reading a paper can ignore it to the end of the page. On a small screen it
-// can cover the bottom of the card, which is why it carries an X; the host
-// decides what the X remembers (the privacy notice hides for the visit and
-// also answers Escape, the email nudge is dismissed for good).
+// An aside, not a dialog: it takes no focus, traps nothing, and covers no
+// control. Someone reading a paper can ignore it to the end of the page, and
+// the X is the only thing it asks for.
 //
 // The motion, measured on its twin (2026-09-12): opacity runs straight and
 // lands first, movement keeps easing underneath it. One curve for all three
@@ -46,14 +42,12 @@ export default function NudgePanel({
   action,
   dismissLabel,
   onDismiss,
-  edge = 'bottom',
 }: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
     <motion.aside
       className="nudge"
-      data-edge={edge}
       aria-labelledby="nudge-title"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -67,18 +61,18 @@ export default function NudgePanel({
       </div>
       <div className="nudge-actions">
         <Button size="sm" onClick={action.onClick}>{action.label}</Button>
-        {onDismiss && (
-          <button
-            type="button"
-            className="nudge-dismiss"
-            onClick={onDismiss}
-            aria-label={dismissLabel}
-            title={dismissLabel}
-          >
-            <X size={14} aria-hidden="true" />
-          </button>
-        )}
       </div>
+      {onDismiss && (
+        <button
+          type="button"
+          className="nudge-dismiss"
+          onClick={onDismiss}
+          aria-label={dismissLabel}
+          title={dismissLabel}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
     </motion.aside>
   );
 }

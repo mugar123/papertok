@@ -1,61 +1,17 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { EnvelopeSimple, ShieldCheck } from '@phosphor-icons/react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/auth-context.tsx';
-import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
-import {
-  NUDGE_DWELL_MS,
-  NUDGE_PANEL_SELECTOR,
-  isNudgePath,
-  modalIsOpen,
-  PRIVACY_NOTICE_ID,
-  emailNudgeProblem,
-  escapeBelongsToOther,
-  coveredAtEveryEdge,
-  firstEdgeClearOf,
-  focusAfterPanel,
-  noticeOnScreen,
-  pickVisitNotice,
-  privacyOwedFor,
-  readDismissedNudges,
-  rememberNudgeDismissal,
-  rememberPrivacyNotice,
-  statusIsSet,
-  trackFocusOutsideNotice,
-} from '../../utils/nudges.ts';
+import { EnvelopeSimple } from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
 import NudgePanel from './nudge-panel.tsx';
+import { PRIVACY_NOTICE_COPY, type VisitNotice } from './use-visit-notice.ts';
 
-// The one place that decides whether anybody is asked anything, and when.
-//
-// The rules it keeps, in order of how badly each one hurts when broken:
-//   · Once per device, forever. A nudge that comes back is not a nudge.
-//   · One per visit, and never two. The corner belongs to the reader.
-//   · Not until a minute in, and only on the feed — asking somebody something
-//     before they have read a line is asking a stranger for a favour.
-//
-//   · Guests are out entirely: they already have one thing being asked of them.
-//
-// A privacy policy change takes the visit's turn before any nudge. Only
-// signed-in accounts are told, and it returns on later visits until it is
-// dismissed; utils/nudges.ts decides who is owed it. Whatever was picked, the
-// email nudge too, is shown on the feed only and comes back when the reader
-// returns to it: on a route with a modal paper it would cover the card and
-// take the Escape meant for the notice. A change of account remounts this
-// component, which clears what was picked for the previous reader.
+// Renders what useVisitNotice chose: the email nudge in its corner panel, and
+// the status message for the privacy notice, which the feed renders above its
+// cards.
 
 const COPY = {
   en: {
     dismiss: 'Dismiss and do not show again',
-    privacy: {
-      title: 'Privacy policy updated',
-      announced: 'The notice is a landmark with the same name, right after the skip link.',
-      policy: 'Read the policy',
-      newTab: ' (opens in a new tab)',
-      done: 'Got it',
-      hide: 'Hide for now (shows again next visit)',
-    },
     'email-down': {
       'not-configured': {
         title: 'Email updates are paused',
@@ -70,210 +26,28 @@ const COPY = {
   },
 };
 
-function subscribeToModals(onChange: () => void) {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-modal'] });
-  return () => observer.disconnect();
-}
-
-export default function NudgeHost() {
-  const { user, loading: authLoading, onboardingComplete } = useAuth();
-  const { health, loading: emailLoading } = useEmailNotifications();
-  const location = useLocation();
+export default function NudgeHost({ visit }: { visit: VisitNotice }) {
   const navigate = useNavigate();
-
-  const [dismissed, setDismissed] = useState(() => readDismissedNudges());
-  const [dwellDone, setDwellDone] = useState(false);
-  // `null` until one is picked.
-  const [picked, setPicked] = useState<string | null>(null);
-  // One per visit: flipped the moment the choice is made, so a re-render, a
-  // navigation or the health request landing cannot start a second one. State
-  // and not a ref, because this is read during render — the same shape (and
-  // the same reason) as the guest interests sheet.
-  const [choiceMade, setChoiceMade] = useState(false);
-
-  const signedIn = Boolean(user) && !authLoading && onboardingComplete;
-  const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
-
-  useEffect(() => {
-    if (!signedIn || dwellDone) return undefined;
-    const timer = window.setTimeout(() => setDwellDone(true), NUDGE_DWELL_MS);
-    return () => window.clearTimeout(timer);
-  }, [signedIn, dwellDone]);
-
-  const openable = dwellDone
-    && signedIn
-    && isNudgePath(location.pathname);
-
-  // Picked during render rather than in an effect: this derives state from
-  // state, which an effect would turn into a second render pass — and the
-  // linter says so, twice. Same shape the guest interests sheet uses.
-  if (openable && user && !choiceMade) {
-    setChoiceMade(true);
-    const id = pickVisitNotice({
-      privacyOwed: privacyOwedFor({
-        user,
-        signedIn,
-        version: PRIVACY_POLICY_VERSION,
-        effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-      }),
-      eligible: emailProblem ? ['email-down'] : [],
-      dismissed,
-    });
-    if (id) setPicked(id);
-  }
-
-  const close = useCallback((id: string) => {
-    setDismissed(rememberNudgeDismissal(id));
-    setPicked(null);
-  }, []);
-
-  const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname });
-  const privacyShown = onScreen === PRIVACY_NOTICE_ID;
-
-  // Escape puts it away for this visit and does not count as reading it, so it
-  // returns next time. On a phone the panel covers the bottom of the card, and
-  // this is how a control focused underneath is seen again (WCAG 2.4.11).
-  // The close button does the same for a touch reader, who has no Escape.
-  // Focus moves only when it was inside the panel: Safari does not focus a
-  // button on click, and a reader whose focus sits on a feed control keeps it.
-  // Where focus was on the page before it went into the panel: Got it and the
-  // close button hand it back there, so the next Tab continues from the card the
-  // reader was on and not from the top of the page.
-  const focusTracker = useRef<ReturnType<typeof trackFocusOutsideNotice> | null>(null);
-  useEffect(() => {
-    if (!privacyShown) return undefined;
-    const tracker = trackFocusOutsideNotice(document);
-    focusTracker.current = tracker;
-    return () => {
-      tracker.stop();
-      focusTracker.current = null;
-    };
-  }, [privacyShown]);
-
-  const hidePrivacyForVisit = useCallback(() => {
-    const active = document.activeElement;
-    const focusWasInside = Boolean(active && document.querySelector(NUDGE_PANEL_SELECTOR)?.contains(active));
-    const before = focusTracker.current?.target();
-    const rect = before?.getBoundingClientRect();
-    const rememberedOnScreen = Boolean(rect && rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth);
-    setPicked(null);
-    const next = focusAfterPanel({ focusWasInside, viaKeyboard: Boolean(active?.matches(':focus-visible')), rememberedOnScreen });
-    if (next === 'blur') (active as HTMLElement).blur();
-    else if (next === 'remembered') before?.focus({ preventScroll: true });
-    else if (next === 'page') document.getElementById('main-content')?.focus({ preventScroll: true });
-  }, []);
-
-  // The panel is fixed over the feed, so a control focused beneath it would have
-  // its focus ring hidden (WCAG 2.4.11). On each focus change, and again once the
-  // scroll that brought the control into view has settled, the panel moves to the
-  // other edge when that leaves the control uncovered; a control that fits wholly
-  // under the panel at both edges hides it for this visit, as Escape does. A control
-  // covered only in part, or a container, leaves it where it is. Measured at each edge in turn, with no
-  // paint in between, so nothing flickers.
-  const [edge, setEdge] = useState<'bottom' | 'top'>('bottom');
-  useEffect(() => {
-    if (!privacyShown) return undefined;
-    let settle = 0;
-    const keepClear = () => {
-      const panel = document.querySelector<HTMLElement>(NUDGE_PANEL_SELECTOR);
-      const active = document.activeElement;
-      if (!panel || !active || active === document.body || panel.contains(active)) return;
-      // A modal sits above the panel (the reader, a sheet), so what it focuses is
-      // not covered; and 2.4.11 concerns the focus ring a keyboard reader sees, not
-      // the container a click or a route change focuses.
-      if (modalIsOpen(document) || !active.matches(':focus-visible')) return;
-      const target = active.getBoundingClientRect();
-      const current = panel.dataset.edge;
-      const candidates = (['bottom', 'top'] as const).map(candidate => {
-        panel.dataset.edge = candidate;
-        return { edge: candidate, box: panel.getBoundingClientRect() };
-      });
-      panel.dataset.edge = current;
-      const clear = firstEdgeClearOf(target, candidates);
-      if (clear) setEdge(clear);
-      else if (coveredAtEveryEdge(target, candidates)) hidePrivacyForVisit();
-    };
-    const onFocusIn = () => {
-      keepClear();
-      window.clearTimeout(settle);
-      settle = window.setTimeout(keepClear, 400);
-    };
-    document.addEventListener('focusin', onFocusIn);
-    document.addEventListener('scrollend', keepClear, true);
-    return () => {
-      window.clearTimeout(settle);
-      document.removeEventListener('focusin', onFocusIn);
-      document.removeEventListener('scrollend', keepClear, true);
-      setEdge('bottom');
-    };
-  }, [privacyShown, hidePrivacyForVisit]);
-
-  const uid = user?.uid;
-  const acknowledgePrivacy = useCallback(() => {
-    if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
-    hidePrivacyForVisit();
-  }, [uid, hidePrivacyForVisit]);
-
-  useEffect(() => {
-    if (!privacyShown) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || escapeBelongsToOther(event.target)) return;
-      hidePrivacyForVisit();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [privacyShown, hidePrivacyForVisit]);
-
-  // A status set while a modal is open is never spoken (everything outside it is
-  // hidden from assistive technology), and closing the modal would not change the
-  // text again. So the message waits for the modal to close, and once set it stays
-  // set: clearing it for each later modal would have it read after every one.
-  // Modals are watched only while the notice is shown.
-  const subscribe = useCallback((onChange: () => void) => (privacyShown ? subscribeToModals(onChange) : () => undefined), [privacyShown]);
-  const modalOpen = useSyncExternalStore(subscribe, () => privacyShown && modalIsOpen(document), () => false);
-  const [announced, setAnnounced] = useState(false);
-  const statusSet = statusIsSet({ shown: privacyShown, modalOpen, announced });
-  if (statusSet !== announced) setAnnounced(statusSet);
+  const { onScreen, statusSet, emailProblem, closeNudge } = visit;
 
   const handleSettings = useCallback(() => {
-    close('email-down');
+    closeNudge('email-down');
     void navigate('/settings/notifications');
-  }, [close, navigate]);
+  }, [closeNudge, navigate]);
 
   const copy = COPY.en;
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
 
   return (
     <>
-    {/* Always mounted, outside the panel: a live region speaks when its text
-        changes, and one that arrives already holding text is often not read.
-        It says only that the notice is there; the summary is read once, in the
-        panel, instead of a second time from here. */}
+    {/* Always mounted: a live region speaks when its text changes, and one that
+        arrives already holding text is often not read. It says only that the
+        notice is there; the summary is read once, in the notice. */}
     <p className="visually-hidden" role="status">
-      {statusSet ? `${copy.privacy.title}. ${copy.privacy.announced}` : ''}
+      {statusSet ? `${PRIVACY_NOTICE_COPY.title}. ${PRIVACY_NOTICE_COPY.announced}` : ''}
     </p>
     <AnimatePresence>
-      {privacyShown ? (
-        <NudgePanel
-          key="privacy-change"
-          edge={edge}
-          icon={<ShieldCheck size={19} />}
-          title={copy.privacy.title}
-          body={(
-            <>
-              {PRIVACY_POLICY_CHANGE}{' '}
-              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">
-                {copy.privacy.policy}
-                <span className="visually-hidden">{copy.privacy.newTab}</span>
-              </a>
-            </>
-          )}
-          action={{ label: copy.privacy.done, onClick: acknowledgePrivacy }}
-          dismissLabel={copy.privacy.hide}
-          onDismiss={hidePrivacyForVisit}
-        />
-      ) : onScreen === 'email-down' && emailCopy && (
+      {onScreen === 'email-down' && emailCopy && (
         <NudgePanel
           key="nudge-email-down"
           icon={<EnvelopeSimple size={19} />}
@@ -281,7 +55,7 @@ export default function NudgeHost() {
           body={emailCopy.body}
           action={{ label: copy['email-down'].cta, onClick: handleSettings }}
           dismissLabel={copy.dismiss}
-          onDismiss={() => close('email-down')}
+          onDismiss={() => closeNudge('email-down')}
         />
       )}
     </AnimatePresence>
