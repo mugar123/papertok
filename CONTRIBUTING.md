@@ -129,9 +129,10 @@ a session can finish, lints the files changed on the branch and in the working t
   too, an earlier one skips accounts that read the old page) and the summary (one or two short
   sentences with the main changes; the page keeps the full list) in
   `src/legal/privacyPolicy.ts`. The
-  app shows that summary to each signed-in account above the cards on /feed, after onboarding,
-  until the account chooses Got it; Hide for now only hides it for that visit. Guests and
-  accounts created at or after that time do not see it.
+  app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
+  on each visit until the account chooses Got it; Hide for now, or closing the dialog any other
+  way, only hides it for that visit. Guests and accounts created at or after that time do not
+  see it.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.

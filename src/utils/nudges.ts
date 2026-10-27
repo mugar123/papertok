@@ -147,7 +147,7 @@ export function visitReaderReady({ user, loading, onboardingComplete, profileLoa
 }
 
 /**
- * What useVisitNotice asks of the policy: the signed-in account, when it was
+ * What NudgeHost asks of the policy: the signed-in account, when it was
  * created and what this browser has stored for its uid. Kept here so the
  * arguments that decide who is told are tested, not only the rule itself.
  */
@@ -174,32 +174,30 @@ export function isNudgePath(pathname: string) {
 }
 
 /**
- * Whether a modal (the reader, the PDF viewer, the Similar layer) is open in
- * `root`. Base UI makes everything outside a modal inert and hidden from
- * assistive technology, the status region included, so a message set meanwhile
- * is never spoken.
+ * Whether a modal (the reader, the PDF viewer, the Similar layer, a list
+ * dialog, the search palette) is open in `root`: every one in this app writes
+ * `aria-modal="true"`.
  */
 export function modalIsOpen(root: { querySelector(selector: string): unknown }) {
   return root.querySelector('[aria-modal="true"]') !== null;
 }
 
 /**
- * Whether the status message is in the live region. It is set once, when the
- * notice is on screen and no modal is open, and then left alone: a polite region
- * speaks on every change of text, so clearing it for each modal that opens would
- * read the whole message again after each one closes. `announced` is the value
- * this returned on the previous render; leaving the feed (`shown` false) resets
- * it, so the message is spoken again on coming back.
+ * Whether the privacy dialog is open. It opens when the notice is on screen
+ * (`shown`) and no other modal is open, so it never lands over a paper or
+ * another dialog: it waits for that one to close. Once open it stays open, under
+ * any modal opened over it, until the reader puts it away or leaves the feed.
+ * `wasOpen` is the value this returned on the previous render, and `modalOpen`
+ * only matters while the dialog is closed (open, it is a modal itself).
  */
-export function statusIsSet({ shown, modalOpen, announced }: { shown: boolean; modalOpen: boolean; announced: boolean }) {
-  return shown && (announced || !modalOpen);
+export function privacyDialogOpen({ shown, modalOpen, wasOpen }: { shown: boolean; modalOpen: boolean; wasOpen: boolean }) {
+  return shown && (wasOpen || !modalOpen);
 }
 
 /**
  * The picked notice, while it may be on screen: for a signed-in reader, on the
- * feed. The privacy notice is part of the feed page; the email nudge's panel
- * would sit over a modal paper elsewhere. Either comes back when the reader
- * returns to the feed.
+ * feed. Elsewhere a paper may be open as a modal, which the email nudge's panel
+ * would sit over. Either comes back when the reader returns to the feed.
  */
 export function noticeOnScreen({ picked, signedIn, pathname }: { picked: string | null; signedIn: boolean; pathname: string }) {
   return signedIn && isNudgePath(pathname) ? picked : null;
@@ -225,66 +223,12 @@ export function pickVisitNotice({ privacyOwed, eligible = [], dismissed = [], ra
 
 /**
  * Whether the visit's notice is chosen now, on the feed. A privacy change owed
- * to the reader is chosen at once: it takes a row above the cards, and arriving
- * a minute into reading it would move the card being read. A nudge waits for
- * the minute of reading.
+ * to the reader is chosen at once, so its dialog opens as the reader arrives:
+ * a minute into reading it would interrupt the card being read. A nudge waits
+ * for the minute of reading.
  */
 export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolean; dwellDone: boolean }) {
   return privacyOwed || dwellDone;
-}
-
-/** The privacy notice's own element: focus inside it is not a place to hand focus back to. */
-export const PRIVACY_NOTICE_SELECTOR = '.privacy-notice';
-
-interface FocusSource {
-  activeElement: unknown;
-  addEventListener(type: 'focusin', listener: (event: { target: unknown }) => void): void;
-  removeEventListener(type: 'focusin', listener: (event: { target: unknown }) => void): void;
-}
-
-// An element on the page, not the body that holds focus when nothing does and
-// not anything inside the notice.
-function isFocusToRestore(candidate: unknown): candidate is HTMLElement {
-  const element = candidate as { tagName?: string; focus?: unknown; closest?: (selector: string) => unknown } | null;
-  if (!element || typeof element !== 'object' || typeof element.focus !== 'function') return false;
-  if (element.tagName === 'BODY' || element.tagName === 'HTML') return false;
-  return !(typeof element.closest === 'function' && element.closest(PRIVACY_NOTICE_SELECTOR));
-}
-
-/**
- * Remembers where focus is on the page outside the privacy notice, from the
- * moment the notice appears: the element that already holds focus then, and
- * every one that receives it after. Without the first, a reader whose next Tab
- * goes straight into the notice would have no place to come back to, because the
- * focus event that put them there is inside the notice. `target` is that element while it is
- * still on the page; a feed that unmounted it leaves nothing to return to.
- */
-export function trackFocusOutsideNotice(source: FocusSource) {
-  let remembered: HTMLElement | null = null;
-  const remember = (candidate: unknown) => {
-    if (isFocusToRestore(candidate)) remembered = candidate;
-  };
-  const onFocusIn = (event: { target: unknown }) => remember(event.target);
-  remember(source.activeElement);
-  source.addEventListener('focusin', onFocusIn);
-  return {
-    target: () => (remembered?.isConnected ? remembered : null),
-    stop: () => source.removeEventListener('focusin', onFocusIn),
-  };
-}
-
-/**
- * What to do with focus when the privacy notice is put away: nothing when it was
- * not in the notice; give it up when it got there by a click or tap (a button the
- * pointer pressed takes focus in Chrome and on Android, and handing it to a control
- * the reader has since scrolled far from leaves it invisible and pulls the feed
- * back on the next Tab); otherwise return it to the control that held it, or to
- * the page when that one is off screen or gone.
- */
-export function focusAfterNotice({ focusWasInside, viaKeyboard, rememberedOnScreen }: { focusWasInside: boolean; viaKeyboard: boolean; rememberedOnScreen: boolean }) {
-  if (!focusWasInside) return 'keep';
-  if (!viaKeyboard) return 'blur';
-  return rememberedOnScreen ? 'remembered' : 'page';
 }
 
 /**

@@ -23,8 +23,6 @@ interface FeedContainerProps {
   source?: FeedSource | null;
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
-  // A notice told above the cards, in the page's flow (the privacy change on /feed).
-  notice?: ReactNode;
 }
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -219,27 +217,20 @@ const ATOM_VEIL_REDUCED_VARIANTS = {
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-//
-// `notice` goes first, before the cards in reading and Tab order, in a row of
-// its own (feed-container.css). Its slot sits before `children` in every
-// branch, so it coming or going never remounts the scroller under the reader.
-function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, notice, children }: PropsWithChildren<{
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, children }: PropsWithChildren<{
   landmark: FeedContainerProps['landmark'];
   className?: string;
   nodeRef?: (node: HTMLElement | null) => void;
   status?: string;
-  notice?: ReactNode;
 }>) {
   const statusRegion = <span className="visually-hidden" role="status">{status}</span>;
-  const noticeSlot = notice ? <div className="feed-notice-slot">{notice}</div> : null;
   if (!landmark) {
-    return <div ref={nodeRef} className={className} data-notice={notice ? '' : undefined}>{statusRegion}{noticeSlot}{children}</div>;
+    return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
   }
   return (
-    <main ref={nodeRef} className={className} aria-label={landmark.label} data-notice={notice ? '' : undefined}>
+    <main ref={nodeRef} className={className} aria-label={landmark.label}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {statusRegion}
-      {noticeSlot}
       {children}
     </main>
   );
@@ -254,7 +245,7 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, n
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null, notice = null }: FeedContainerProps) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null }: FeedContainerProps) {
   const feed = useFeed();
   const { user } = useAuth();
   // For You's place is the account's (forYouScrollKey).
@@ -757,9 +748,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         const activeTarget = e.target instanceof Element ? e.target : null;
         // `[role="dialog"]` covers a non-modal popup over the feed, such as a
         // visitor's Privacy panel: its keys are its own, and with large text it
-        // scrolls with them. So does the notice above the cards (`notice`).
+        // scrolls with them.
         const exempt = activeTarget?.closest(
-          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"], .feed-notice-slot',
+          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"]',
         );
         // The Similar layer is a modal dialog this feed lives IN: its arrows
         // are this feed's, and the feed under it is the one that keeps still.
@@ -857,14 +848,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // is the same. The first mousemove would flash the pill. Stay hidden until
   // the pointer leaves the band once; after that, hover works as before.
   // A pointerdown outside the wrapper (sheet, modal, navbar) re-locks.
-  //
-  // The band is measured from the scroller's top, not the wrapper's: a notice
-  // above the cards (`notice`) takes the wrapper's first row, and the pill
-  // shows beneath it, at the top of the cards.
-  const handleMouseMove = useCallback((e: MouseEvent, scroller: HTMLElement) => {
+  const handleMouseMove = useCallback((e: MouseEvent, wrapper: HTMLElement) => {
     if (!window.matchMedia('(pointer: fine)').matches) return;
-    const depth = e.clientY - scroller.getBoundingClientRect().top;
-    const inBand = depth >= 0 && depth < REFRESH_HOVER_BAND_PX;
+    const inBand = e.clientY - wrapper.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
     if (refreshHoverLockedRef.current) {
       if (inBand) {
         setRefreshPillHover((prev) => (prev ? false : prev));
@@ -885,8 +871,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // envoltorio y CDP no le veía un solo oyente.
   useEffect(() => {
     const wrapper = feedNode?.parentElement;
-    if (!feedNode || !wrapper) return undefined;
-    const onMove = (e: MouseEvent) => handleMouseMove(e, feedNode);
+    if (!wrapper) return undefined;
+    const onMove = (e: MouseEvent) => handleMouseMove(e, wrapper);
     const onLeave = () => {
       refreshHoverLockedRef.current = true;
       setRefreshPillHover(false);
@@ -1198,7 +1184,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // la rama con papers. Un estado de la página sigue siendo la página.
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <EmptyState
           role="alert"
           art={<Petri pose="upset" className="feed-error-petri" />}
@@ -1218,7 +1204,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice}>
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
         <div className="feed-container">
           <div className="feed-snap-item"><SkeletonCard /></div>
         </div>
@@ -1229,12 +1215,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <EmptyState
           role="status"
           art={<Petri pose="flask" className="feed-error-petri" />}
@@ -1257,7 +1243,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <div className="atom-loader">
           <Petri pose="flask" className="petri-loader" />
         </div>
@@ -1278,7 +1264,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} notice={notice}>
+    <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"

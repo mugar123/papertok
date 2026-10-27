@@ -2,14 +2,14 @@
  * The privacy policy version the app announces. privacy.html promises that a
  * meaningful change updates its "Last updated" date and is announced in the
  * app to signed-in accounts created before the change took effect; the feed
- * shows PRIVACY_POLICY_CHANGE above its cards (components/nudges/privacy-notice.tsx)
+ * shows PRIVACY_POLICY_CHANGE in a dialog (components/nudges/privacy-notice.tsx)
  * to each of them until they choose Got it for this PRIVACY_POLICY_VERSION.
  *
  * Whoever makes such a change to privacy.html sets the version to its new date
  * and rewrites the change to say the main changes since the previous version, in
  * one or two short sentences that lead with the change a reader would most want to
- * know. The notice pushes the cards down while it is shown, so the full list stays
- * on the page.
+ * know. The dialog has to hold it on a phone's screen, so the full list stays on
+ * the page.
  * Raising the date means re-reading `git diff <previous version>..HEAD --
  * privacy.html`, not only the commits you made: a merge brings in others'
  * edits to the page. privacy.test.ts fails while the version and the page's date

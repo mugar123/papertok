@@ -5,21 +5,18 @@ import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
-  PRIVACY_NOTICE_SELECTOR,
   emailNudgeProblem,
-  focusAfterNotice,
   forgetPrivacyNotice,
-  statusIsSet,
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
+  privacyDialogOpen,
   privacyNoticeOwed,
   privacyOwedFor,
   readDismissedNudges,
   readPrivacyNoticeAck,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
-  trackFocusOutsideNotice,
   visitChoiceDue,
   visitReaderReady,
 } from './nudges.ts';
@@ -247,7 +244,7 @@ test('a privacy change owed to the reader takes the visit before any nudge', () 
 });
 
 test('a privacy change owed to the reader is chosen on arrival, a nudge only after the minute of reading', () => {
-  // The privacy notice takes a row above the cards: arriving later would move the card being read.
+  // A dialog a minute in would interrupt the card being read.
   assert.equal(visitChoiceDue({ privacyOwed: true, dwellDone: false }), true);
   assert.equal(visitChoiceDue({ privacyOwed: true, dwellDone: true }), true);
   assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: false }), false, 'the email nudge waits');
@@ -270,7 +267,7 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
 });
 
-test('nothing is picked or announced while the profile could not be loaded, and it is once a retry loads it', () => {
+test('nothing is picked or opened while the profile could not be loaded, and it is once a retry loads it', () => {
   const user = { uid: 'u1' };
   const ready = (over: Partial<Parameters<typeof visitReaderReady>[0]> = {}) => visitReaderReady({ user, loading: false, onboardingComplete: true, profileLoadError: null, ...over });
   assert.equal(ready(), true);
@@ -281,121 +278,82 @@ test('nothing is picked or announced while the profile could not be loaded, and 
   assert.equal(ready({ user: null }), false, 'signed out');
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null);
   assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null, 'the email nudge too');
-  // Off screen, the status is cleared, so the notice is announced when Try again brings the feed back.
-  assert.equal(statusIsSet({ shown: false, modalOpen: false, announced: true }), false);
+  // Off screen the dialog closes, and it opens again when Try again brings the feed back.
+  assert.equal(privacyDialogOpen({ shown: false, modalOpen: false, wasOpen: true }), false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed' }), PRIVACY_NOTICE_ID);
-  assert.equal(statusIsSet({ shown: true, modalOpen: false, announced: false }), true);
+  assert.equal(privacyDialogOpen({ shown: true, modalOpen: false, wasOpen: false }), true);
 });
 
-test('the status message is set once, held back while a modal is open, and not set again after one closes', () => {
-  // The text the live region holds after each step; it speaks when the text changes.
-  const steps = (events: Array<{ shown: boolean; modalOpen: boolean }>) => {
-    let announced = false;
-    return events.map(event => (announced = statusIsSet({ ...event, announced })));
-  };
+// Whether the privacy dialog is open after each render, as NudgeHost feeds it:
+// `modalOpen` is whether a modal is on the page while the dialog is closed.
+const dialogSteps = (events: Array<{ shown: boolean; modalOpen: boolean }>) => {
+  let wasOpen = false;
+  return events.map(event => (wasOpen = privacyDialogOpen({ ...event, wasOpen })));
+};
+
+test('the privacy dialog never opens over another dialog: it waits for that one to close', () => {
   assert.deepEqual(
-    steps([
-      { shown: true, modalOpen: false },
+    dialogSteps([
       { shown: true, modalOpen: true },
+      { shown: true, modalOpen: true },
+      { shown: true, modalOpen: false },
+    ]),
+    [false, false, true],
+    'another modal still open, or closing, as the reader reaches the feed',
+  );
+  assert.deepEqual(dialogSteps([{ shown: true, modalOpen: false }]), [true], 'nothing else open: it opens on arrival');
+});
+
+test('once open, the privacy dialog stays open until it is put away or the reader leaves the feed, and opens again on return', () => {
+  assert.deepEqual(
+    dialogSteps([
       { shown: true, modalOpen: false },
       { shown: true, modalOpen: true },
       { shown: true, modalOpen: false },
     ]),
-    [true, true, true, true, true],
-    'a paper, the authors sheet or a list dialog opening and closing never changes the text',
+    [true, true, true],
+    'a modal opened over it does not close it',
   );
   assert.deepEqual(
-    steps([
-      { shown: true, modalOpen: true },
-      { shown: true, modalOpen: true },
+    dialogSteps([
       { shown: true, modalOpen: false },
-      { shown: true, modalOpen: true },
+      { shown: false, modalOpen: false },
     ]),
-    [false, false, true, true],
-    'arriving while a modal is open waits for it to close',
+    [true, false],
+    'Got it, Hide for now, Escape, the close button or leaving the feed',
   );
   assert.deepEqual(
-    steps([
+    dialogSteps([
       { shown: true, modalOpen: false },
       { shown: false, modalOpen: false },
       { shown: true, modalOpen: true },
       { shown: true, modalOpen: false },
     ]),
     [true, false, false, true],
-    'leaving the feed and coming back announces it again',
+    'back on the feed, unanswered, it again waits for any other dialog',
   );
 });
 
-// What the focus tracker reads of the page: an element on it, the body that holds
-// focus when nothing does, an element inside the notice; and a document whose
-// focusin listeners the test can fire.
-const pageElement = (tagName = 'BUTTON', { connected = true, inNotice = false } = {}) => ({
-  tagName,
-  isConnected: connected,
-  focus: () => undefined,
-  closest: (selector: string) => (inNotice && selector === PRIVACY_NOTICE_SELECTOR ? {} : null),
-});
-
-type FocusInListener = (event: { target: unknown }) => void;
-const focusSource = (activeElement: unknown) => {
-  const listeners = new Set<FocusInListener>();
-  return {
-    activeElement,
-    addEventListener: (type: 'focusin', listener: FocusInListener) => { listeners.add(listener); },
-    removeEventListener: (type: 'focusin', listener: FocusInListener) => { listeners.delete(listener); },
-    focusIn: (target: unknown) => { for (const listener of listeners) listener({ target }); },
+test('the privacy dialog opens once per policy version, for signed-in accounts created before the change', () => {
+  const HOUR = 3_600_000;
+  const createdAt = (uid: string, offsetMs: number) => ({ uid, metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) + offsetMs).toUTCString() } });
+  // A visit's arrival on /feed with no other dialog open, from the parts NudgeHost calls in this order.
+  const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
+    const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
+    const picked = visitChoiceDue({ privacyOwed, dwellDone: false }) ? pickVisitNotice({ privacyOwed, eligible: ['email-down'] }) : null;
+    const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed' }) === PRIVACY_NOTICE_ID;
+    return privacyDialogOpen({ shown, modalOpen: false, wasOpen: false });
   };
-};
-
-test('a control that already holds focus when the notice appears is where Got it returns focus to', () => {
-  const control = pageElement();
-  const source = focusSource(control);
-  const tracker = trackFocusOutsideNotice(source);
-  // The reader's next Tab lands in the notice. That focus event is inside it, so
-  // the control focused before is the only thing the tracker has to go on.
-  source.focusIn(pageElement('A', { inNotice: true }));
-  assert.equal(tracker.target(), control);
-});
-
-test('the last control on the page that took focus is remembered, and nothing inside the notice replaces it', () => {
-  const source = focusSource(pageElement());
-  const tracker = trackFocusOutsideNotice(source);
-  const later = pageElement('A');
-  source.focusIn(later);
-  assert.equal(tracker.target(), later, 'focus moved to another control after the notice appeared');
-  source.focusIn(pageElement('BUTTON', { inNotice: true }));
-  source.focusIn(pageElement('BODY'));
-  source.focusIn({ tagName: 'DIV' });
-  source.focusIn({});
-  source.focusIn(null);
-  assert.equal(tracker.target(), later, 'the notice, the body, something that cannot take focus and a non-element are not places to return to');
-});
-
-test('with no control focused outside the notice there is nothing to return to', () => {
-  const source = focusSource(pageElement('BODY'));
-  const tracker = trackFocusOutsideNotice(source);
-  source.focusIn(pageElement('BUTTON', { inNotice: true }));
-  assert.equal(tracker.target(), null, 'nothing was focused: the page is the active element');
-  assert.equal(trackFocusOutsideNotice(focusSource(null)).target(), null, 'no active element at all');
-  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { inNotice: true }))).target(), null, 'focus already in the notice');
-});
-
-test('a remembered control the feed has unmounted is not returned to, and a stopped tracker remembers nothing more', () => {
-  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { connected: false }))).target(), null);
-  const first = pageElement();
-  const source = focusSource(first);
-  const tracker = trackFocusOutsideNotice(source);
-  tracker.stop();
-  source.focusIn(pageElement('A'));
-  assert.equal(tracker.target(), first, 'a focus event after the notice went away');
-});
-
-test('focus is given up, not handed to a far-off control, when the notice was reached by a click', () => {
-  const was = { focusWasInside: true, rememberedOnScreen: true };
-  assert.equal(focusAfterNotice({ ...was, viaKeyboard: true }), 'remembered');
-  assert.equal(focusAfterNotice({ ...was, viaKeyboard: false }), 'blur', 'a click or tap on Got it');
-  assert.equal(focusAfterNotice({ ...was, viaKeyboard: true, rememberedOnScreen: false }), 'page', 'the remembered control was scrolled away');
-  assert.equal(focusAfterNotice({ focusWasInside: false, viaKeyboard: false, rememberedOnScreen: false }), 'keep', 'focus was never in the notice');
+  const storage = fakeStorage();
+  const before = createdAt('reader-a', -24 * HOUR);
+  assert.equal(opensOnArrival(before, storage), true, 'an account from before the change');
+  assert.equal(opensOnArrival(before, storage), true, 'until Got it, every visit opens it again');
+  rememberPrivacyNotice(before.uid, PRIVACY_POLICY_VERSION, storage);
+  assert.equal(opensOnArrival(before, storage), false, 'Got it settles this version for this account');
+  assert.equal(opensOnArrival(createdAt('reader-b', -24 * HOUR), storage), true, 'another account on the same browser is still told');
+  assert.equal(opensOnArrival(createdAt('reader-c', 0), fakeStorage()), false, 'an account created at the instant of the change');
+  assert.equal(opensOnArrival(createdAt('reader-c', 10 * HOUR), fakeStorage()), false, 'a new account');
+  assert.equal(opensOnArrival(null, fakeStorage(), false), false, 'a guest');
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {

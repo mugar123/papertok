@@ -1,119 +1,56 @@
-/* A row of the feed page between the navbar and the cards, on the page's paper
-   with a hairline under it: nothing floats (design.md). Above the refresh pill
-   (z-index 5), which tucks away under this row as it does under the navbar. */
+/* The Dialog's sheet (ui/dialog.tsx) with the app's inner spacing, like the
+   Your university window (institution.css). On a short screen or at a large
+   text size the whole sheet scrolls, so the summary is never cut and Got it is
+   reached by scrolling past it; the close button scrolls with it. */
 .privacy-notice {
-  position: relative;
-  z-index: 6;
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  /* The row may be shorter than the copy: the feed caps the notice's height
-     (feed-container.css). Then only the copy scrolls, and Got it and Hide for
-     now stay in view beside or under it. The copy keeps at least the title's
-     line; only where even that and the actions do not fit (200% text on a
-     small phone) does the whole notice scroll. */
-  grid-template-rows: minmax(1.5rem, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
+  width: min(460px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-6);
+}
+
+/* Clear of the close button in the corner. */
+.privacy-notice-title {
+  display: flex;
   align-items: center;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-card);
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
+  gap: var(--space-2);
+  padding-right: var(--space-8);
 }
 
-.privacy-notice-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+.privacy-notice-title > svg {
+  flex: none;
   color: var(--text-secondary);
-  background: var(--bg-secondary);
 }
 
-/* Takes focus while it scrolls, so the keyboard can scroll it
-   (privacy-notice.tsx). Positioned, so the link's visually hidden words are
-   clipped by this scroller and do not make the whole notice scroll. */
-.privacy-notice-copy {
-  position: relative;
-  align-self: stretch;
-  align-content: center;
-  max-width: 48rem;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-}
-
-.privacy-notice-copy h2 {
+/* The change itself is the message, so it reads in the body colour and size,
+   not as a muted lede. */
+.privacy-notice-summary {
+  margin: 0;
+  color: var(--text-primary);
   font-size: var(--fs-sm);
-  letter-spacing: 0;
-}
-
-.privacy-notice-copy p {
-  margin-top: var(--space-1);
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
   line-height: var(--lh-normal);
 }
 
+.privacy-notice-policy {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
 /* Told from the text around it by more than its colour. */
-.privacy-notice-copy a {
+.privacy-notice-policy a {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-/* Wraps rather than clips at a large text size (design.md, Rule 6). */
+/* Primary first, on the left, and wrapping rather than clipping at a large
+   text size (design.md, Rule 6). */
 .privacy-notice-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  justify-content: flex-end;
-}
-
-/* Narrow screens: the copy takes the width and the actions a row under it.
-   Beside the copy they would squeeze it to a column of single words. */
-@media (max-width: 640px) {
-  .privacy-notice {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(1.5rem, 1fr) auto;
-    padding: var(--space-3);
-  }
-
-  .privacy-notice-icon {
-    display: none;
-  }
-
-  .privacy-notice-actions {
-    justify-content: flex-start;
-  }
-}
-
-/* Short screens (a phone on its side): one line of title, link and actions.
-   The summary is left to the policy behind the link; in 40% of a landscape
-   phone's feed it showed two lines, and the cards below lost the ends of their
-   side rail. The breakpoint is the cards' own (paper-card.css). */
-@media (max-height: 500px) {
-  .privacy-notice {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: minmax(0, 1fr);
-    padding-block: var(--space-2);
-  }
-
-  .privacy-notice-icon,
-  .privacy-notice-summary {
-    display: none;
-  }
-
-  .privacy-notice-copy {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: var(--space-3);
-  }
-
-  .privacy-notice-copy p {
-    margin-top: 0;
-  }
+  margin-top: var(--space-1);
 }
