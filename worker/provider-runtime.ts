@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
-import type { QuotaRequest } from './request-quota-ledger.ts';
+import type { QuotaPart, QuotaReading, QuotaRequest } from './request-quota-ledger.ts';
 
 export interface UpstreamError extends Error {
   status?: number;
@@ -15,19 +15,56 @@ export interface MinuteCeiling {
   paced?: boolean;
 }
 
+// What one OpenAlex miss may spend, and for what. `tier` decides how much of
+// the day's ceiling it may reach (`OPENALEX_TIER_PERCENT`); `kind` only names
+// the spend in the day's tally, which `/health/openalex/budget` reports. Only
+// the paper harvest spends `feed`, within its own share of the day
+// (`OPENALEX_HARVEST_DAILY_UNITS`).
+export type OpenAlexTier = 'essential' | 'feed' | 'enrichment' | 'exploration';
+export type OpenAlexKind = 'entity' | 'search' | 'list' | 'graph' | 'share';
+export interface OpenAlexBudget {
+  units: number;
+  tier: OpenAlexTier;
+  kind: OpenAlexKind;
+  // A second subject this miss spends: for `feed`, the part of the nightly
+  // run's share, such as the followed lanes' (paper-sources.ts); for a reader,
+  // the caller's allowance for the minute (openalex-api.ts).
+  part?: QuotaPart;
+  // `feed` only: a miss of a run a new follow started, which spends the new
+  // follows' share (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) rather than the nightly run's.
+  newFollow?: boolean;
+}
+
+// A per-account and app-wide allowance per UTC minute, spent by a signed-in
+// reader's cache misses. `namespace` names the ledger object and the subject,
+// so routes with their own allowance do not spend each other's.
+export interface IdentityMinuteQuota {
+  namespace: string;
+  userVariable: keyof WorkerEnv;
+  userFallback: number;
+  globalVariable: keyof WorkerEnv;
+  globalFallback: number;
+}
+
 interface CacheOptions {
   identity?: Pick<VerifiedIdentity, 'uid'> | null;
+  // The allowance `identity` is charged to; absent is the provider routes' own.
+  identityQuota?: IdentityMinuteQuota;
   canonicalParams?: Record<string, unknown>;
-  openAlexCalls?: number;
+  openAlexBudget?: OpenAlexBudget;
   // The answer belongs to one reader: its key must name them, and the browser
   // is told not to store or share it.
   personal?: boolean;
+  // A public route's allowance per caller address and UTC minute, for a route
+  // with no shared reservation to carry the caller.
+  callerMinute?: { namespace: string; limit: number };
 }
 
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
 
+import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
+import { observeRequestQuota, peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 
 // The default upstream deadlines for the provider modules; some modules set their
@@ -50,6 +87,9 @@ const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 3_000;
 // digest cron -- which spends outside this ledger -- and the health probe. Both
 // ceilings count list calls, $0.0001 each; a search is reserved as ten of them,
 // so the minute's 3000 is the 300 searches it allowed when every call was one.
+// The daily one is a cap and a fallback: OpenAlex's own reading of the key
+// lowers the day's ceiling below it (`observeOpenAlexBudget`), and without a
+// reading for the day it is the ceiling.
 const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
 // before the work starts: a route that spends seven calls and reserves one is a
@@ -62,15 +102,75 @@ export const OPENALEX_CALLS = Object.freeze({
   // $0.001, a list $0.0001, a single work nothing. Counted as one, the feed's
   // searches could spend eight dollars under an eight-thousand-call ceiling.
   search: 10,
-  // One `works/doi:` lookup, then batches of twenty for references and the same
-  // for citations. Each relation's two filters share its 40 candidates, so they
-  // need at most three batches between them (21 + 19 is two plus one).
-  citationGraph: 7,
+  // One entity by id or DOI is "Free" on OpenAlex's price list
+  // (help.openalex.org/access/example-costs/, read 2026-10-21), which is what
+  // the measurement above saw. Reserved as one, every card opened and every
+  // author clicked took a unit of the day's ceiling (PAP-86). The autocomplete
+  // endpoint is not on that list, so it stays a list.
+  entity: 0,
+  // One `works/doi:` lookup, free as above, then batches of twenty for
+  // references and the same for citations. Each relation's two filters share
+  // its 40 candidates, so they need at most three batches between them
+  // (21 + 19 is two plus one): six billed calls.
+  citationGraph: 6,
 });
+// How much of the day's ceiling each tier may reach, in percent. On launch day
+// the whole budget ran out at once, and a paper a reader had just opened
+// stopped with the searches (PAP-86). Exploration (searches, profile pages,
+// graph expansions, the citation graph) stops first, the enrichment of cards
+// already shown next, the paper harvest that fills the feed after that, and
+// one paper being opened only at the ceiling. The whole day's usage counts
+// against each share, so a tier is closed for everyone once the day passes it.
+// Readers' searches and card batches therefore cannot close the harvest, and
+// the harvest leaves the last 5 % to papers being opened. Entity lookups cost
+// nothing and are never refused. Code rather than variables, because changing
+// a variable needs a Worker deploy all the same; retune from the day's tally on
+// `/health/openalex/budget`.
+export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Object.freeze({
+  essential: 100,
+  feed: 95,
+  enrichment: 80,
+  exploration: 60,
+});
+// The most the paper harvest (`feed`) may spend in a UTC day, in units (a
+// search is ten), its enrichment and the runs started by new follows included.
+// It is the ledger subject of the harvest's reservations, in the day's object
+// where readers' misses count the minute: the share and the day's ceiling are
+// checked in one transaction, and a page the harvest finds stored spends none
+// of it. With this bound of its own, the harvest does not count against the
+// minute's ceiling, which guards the day against readers' bursts. The runs new
+// follows start have OPENALEX_NEW_FOLLOWS_DAILY_UNITS of it, a subject of
+// their own, and the nightly run the rest, so neither spends the other's: a
+// follow added after the run's enrichment is still harvested at once. The
+// nightly run's lanes spend named parts of its share, checked in the same
+// transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
+export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
+export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
+// Names the tier on every refusal of the OpenAlex budget, so the client can
+// tell the Worker's own refusal of one request from OpenAlex refusing the key:
+// only the second closes OpenAlex for the whole tab. `open-alex-client.ts` reads
+// the same name.
+const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
+// One list call, the unit every OpenAlex ceiling here counts in.
+export const OPENALEX_UNIT_USD = 0.0001;
+// Units kept back from what OpenAlex reports is left. A reading is a little
+// stale by the time it is stored: misses already reserved but not yet billed
+// when OpenAlex wrote the header, and reservations made before the reading is
+// written, are still to be billed. Two hundred units is about twenty searches
+// in flight. It is an estimate, not a measurement. It also keeps the Worker
+// from driving the key to $0, where whether OpenAlex still serves free lookups
+// is unverified.
+export const OPENALEX_OBSERVATION_MARGIN = 200;
+// How far the end of a reading's day may be from the end of the UTC day it is
+// filed under, so that a reading from yesterday's counter arriving just after
+// midnight does not close the new day. Measured 2026-10-21: the counter resets
+// at 00:00 UTC (`x-ratelimit-reset` 1020 at 23:43:00Z).
+const OPENALEX_RESET_TOLERANCE_MS = 120_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
-  // Ten minutes is what the browser cache in `src/utils/sourceCache.ts` already
+  // Ten minutes is what the browser cache in `src/utils/source-cache.ts` already
   // considered invisible staleness for a paper feed, and it is short enough that
   // a batch whose efetch half failed heals on its own rather than sitting behind
   // a six-hour TTL.
@@ -86,8 +186,13 @@ export const SOURCE_CACHE_SECONDS = {
   icite: 24 * 60 * 60,
   huggingFaceResources: 7 * 24 * 60 * 60,
 };
-const DEFAULT_PROVIDER_USER_MINUTE_LIMIT = 60;
-const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
+const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
+  namespace: 'provider',
+  userVariable: 'PROVIDER_USER_MINUTE_LIMIT',
+  userFallback: 60,
+  globalVariable: 'PROVIDER_GLOBAL_MINUTE_LIMIT',
+  globalFallback: 2_000,
+});
 
 // Ceilings for routes whose upstream limit is per provider rather than per user,
 // and which the guest feed reads, so they cannot be gated behind an identity the
@@ -95,10 +200,12 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // makes: origin gate plus edge cache plus a global per-minute ceiling reserved
 // only after a cache miss.
 //
-// `/related` and `/recommendations` share the `s2` namespace with `/sources/s2`
-// on purpose. All three spend the same Semantic Scholar allowance, and a
-// ceiling that only covered one of them would leave alive exactly the failure
-// this replaces -- a limiter that counts per caller instead of per provider.
+// `/related` shares the `s2` namespace with `/sources/s2` on purpose, and so
+// does `/enrich/s2`, the batch the corpus enrichment sends for itself
+// (`reserveInternalCall`). All three spend the same Semantic Scholar
+// allowance, and a ceiling that only covered one of them would leave alive
+// exactly the failure this replaces -- a limiter that counts per caller instead
+// of per provider.
 //
 // `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
 // minute ceiling. Semantic Scholar is the provider that needs it: it admits one
@@ -107,6 +214,7 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
+const DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> = Object.freeze({
   // Each miss spends three E-utilities calls, six if every one is refused once
   // and retried -- what NCBI actually refuses is per-second bursts, which no
@@ -118,7 +226,14 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
-  '/recommendations': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/enrich/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  // Each figures miss fetches arxiv.org/html and ar5iv at once, and anyone can
+  // ask without an Origin. Nothing is billed; the ceiling keeps one script from
+  // sending arXiv unbounded traffic under PaperTok's user agent, which the
+  // harvest also uses. Its own namespace, so card backdrops cannot starve
+  // another route. Missing figures are cosmetic, so a spent minute (or a
+  // missing ledger) leaves cards without them.
+  '/resources/figures': { namespace: 'figures', variable: 'FIGURES_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT },
 });
 
 // The key is built from the values the handler is about to send upstream, never
@@ -174,22 +289,14 @@ function boundedLimit(value: unknown, fallback: number, maximum: number) {
 // Returns the ledger request it reserved with, not just a verdict: a later gate
 // may refuse this caller after this unit is spent, and the refund has to name
 // this unit -- this minute, this user -- rather than one recomputed later.
-async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], quota: IdentityMinuteQuota, env: WorkerEnv, origin: string): Promise<QuotaGate> {
   if (!identity) return {};
   const minute = new Date().toISOString().slice(0, 16);
   const ledgerRequest = {
-    periodKey: `provider:${minute}`,
-    subject: `provider:${identity.uid}`,
-    subjectLimit: boundedLimit(
-      env.PROVIDER_USER_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_USER_MINUTE_LIMIT,
-      500,
-    ),
-    globalLimit: boundedLimit(
-      env.PROVIDER_GLOBAL_MINUTE_LIMIT,
-      DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT,
-      100_000,
-    ),
+    periodKey: `${quota.namespace}:${minute}`,
+    subject: `${quota.namespace}:${identity.uid}`,
+    subjectLimit: boundedLimit(env[quota.userVariable], quota.userFallback, 500),
+    globalLimit: boundedLimit(env[quota.globalVariable], quota.globalFallback, 100_000),
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
@@ -251,6 +358,26 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
   return { reservation: ledgerRequest };
 }
 
+// The caller's allowance, first of the reserving gates: a caller past it takes
+// nothing from the shared gates after it. A missing identity fails closed like
+// a missing ledger.
+async function reserveCallerGate(request: Request, quota: CacheOptions['callerMinute'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
+  if (!quota) return {};
+  const caller = await reserveCallerMinute(request, env, quota.namespace, quota.limit);
+  if (caller.reading.accepted) return { reservation: caller.reservation };
+  if (caller.reading.code) {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    }) };
+  }
+  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': caller.retryAfter,
+  }) };
+}
+
 // The beat under the ceiling, for the providers that count per second. It runs
 // last of the reserving gates because it is the only one that costs wall-clock:
 // a caller the minute ceiling or the identity quota is about to turn away must
@@ -266,9 +393,9 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
 // it is wall-clock time already slept into, and `awaitUpstreamSlot` only ever
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
-// accepted beat today -- the paced routes, `/sources/s2`, `/related` and
-// `/recommendations`, never pass `openAlexCalls` -- but a route that combined both would leak
-// this seat, with nothing left downstream to catch it.
+// accepted beat today -- the paced routes `/sources/s2`, `/related` and
+// `/enrich/s2` never pass `openAlexBudget` -- but a route that combined both
+// would leak this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
@@ -313,18 +440,21 @@ export async function releaseHeld(env: WorkerEnv, held: QuotaRequest[]) {
 // earlier ones already spent. The fetcher is deliberately not inside this: a
 // fetch that fails may still have reached the provider, and the ledger counts
 // provider calls, not answers.
-async function reserveGates(origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
+async function reserveGates(request: Request, origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
   try {
+    const caller = await reserveCallerGate(request, options.callerMinute, env, origin);
+    if (caller.error) return caller.error;
+    if (caller.reservation) held.push(caller.reservation);
     const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
     if (minute.error) return minute.error;
     if (minute.reservation) held.push(minute.reservation);
-    const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+    const identity = await reserveProtectedProviderQuota(options.identity || null, options.identityQuota || PROVIDER_IDENTITY_QUOTA, env, origin);
     if (identity.error) return identity.error;
     if (identity.reservation) held.push(identity.reservation);
     const paceError = await awaitSharedPace(ceiling, env, origin);
     if (paceError) return paceError;
-    if (options.openAlexCalls) {
-      const budget = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+    if (options.openAlexBudget) {
+      const budget = await reserveOpenAlexBudget(env, origin, options.openAlexBudget);
       if (budget.error) return budget.error;
       held.push(...budget.reservations);
     }
@@ -333,6 +463,21 @@ async function reserveGates(origin: string, env: WorkerEnv, options: CacheOption
     await releaseHeld(env, held);
     throw error;
   }
+}
+
+// The gates of `path`'s shared ceiling for a call the Worker sends for itself,
+// with no reader to charge and nothing to cache: the minute ceiling and, for a
+// paced provider, the beat. True when the call may go. False on a refusal,
+// and also when the ledger answers that it is not configured: either way
+// nothing is sent and every unit taken goes back. A ledger that cannot be
+// reached throws.
+export async function reserveInternalCall(path: string, env: WorkerEnv) {
+  const ceiling = SHARED_MINUTE_CEILINGS[path];
+  if (!ceiling) throw new Error(`No shared ceiling for ${path}`);
+  const held: QuotaRequest[] = [];
+  const refusal = await reserveGates(new Request(`https://papertok.internal${path}`), '', env, {}, ceiling, held);
+  if (refusal) await releaseHeld(env, held);
+  return !refusal;
 }
 
 // `ttl` may be a function of the payload, because whether an answer deserves its
@@ -349,7 +494,7 @@ export async function cacheResponse<T>(request: Request, origin: string, env: Wo
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
   const held: QuotaRequest[] = [];
-  const refusal = await reserveGates(origin, env, options, ceiling, held);
+  const refusal = await reserveGates(request, origin, env, options, ceiling, held);
   if (refusal) {
     await releaseHeld(env, held);
     return refusal;
@@ -429,6 +574,9 @@ export function safeSourceQuery(value: unknown) {
 // agree with the other nine. PubMed and Semantic Scholar were read straight from
 // the browser in batches of 25, and capping them at the 10 the domain sources use
 // would quietly shrink every result set that migrates here.
+// The last page a source route serves; a later one is answered as this one.
+export const SOURCE_MAX_PAGE = 100;
+
 export function sourceRequestContext(request: Request, env: WorkerEnv, { limitFallback = 8, limitMax = 10 } = {}) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -438,7 +586,7 @@ export function sourceRequestContext(request: Request, env: WorkerEnv, { limitFa
   return {
     requestUrl,
     origin,
-    page: getSafeLimit(requestUrl.searchParams.get('page'), 1, 100),
+    page: getSafeLimit(requestUrl.searchParams.get('page'), 1, SOURCE_MAX_PAGE),
     limit: getSafeLimit(requestUrl.searchParams.get('limit'), limitFallback, limitMax),
     sort: requestUrl.searchParams.get('sort') === 'recent' ? 'recent' : 'relevance',
   };
@@ -497,15 +645,44 @@ export function boundedText(value: unknown, maxLength: number) {
 // transaction: one Durable Object request per miss instead of two, and no object
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
-// owns the refund can name it.
-export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amount: number) {
-  const now = new Date().toISOString();
-  const ledgerRequest = {
+// owns the refund can name it. A reader's miss names its address's minute
+// allowance as the part, so one caller cannot spend the minute for everyone
+// (openalex-api.ts). The harvest's reservations (`feed`) check its
+// day's share as the subject instead of the minute: the new follows' share for
+// a run a new follow started, otherwise the nightly run's, with the part of it
+// a lane spends when it names one.
+function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAlexBudget, 'tier' | 'part' | 'newFollow'>): QuotaRequest {
+  const day = {
     periodKey: `openalex:day:${now.slice(0, 10)}`,
-    subject: `openalex:minute:${now.slice(0, 16)}`,
-    subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
     globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
-    amount,
+  };
+  if (budget?.tier !== 'feed') {
+    return {
+      ...day,
+      subject: `openalex:minute:${now.slice(0, 16)}`,
+      subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+      ...(budget?.part ? { part: budget.part } : {}),
+    };
+  }
+  return budget.newFollow
+    ? { ...day, subject: 'openalex:harvest:new-follows', subjectLimit: OPENALEX_NEW_FOLLOWS_DAILY_UNITS }
+    : {
+      ...day,
+      subject: 'openalex:harvest',
+      subjectLimit: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS,
+      ...(budget.part ? { part: budget.part } : {}),
+    };
+}
+
+// The tier's share of the ceiling travels with the reservation, so the share is
+// checked in the same transaction as the day and the subject. `now` names the
+// day's object; the relay passes the instant its reading will name too.
+export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget, now = new Date().toISOString()) {
+  const ledgerRequest = {
+    ...openAlexLedgerRequest(env, now, budget),
+    amount: budget.units,
+    percent: OPENALEX_TIER_PERCENT[budget.tier],
+    tally: `${budget.tier}.${budget.kind}`,
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (reservation.accepted) return { reservations: [ledgerRequest] };
@@ -517,11 +694,132 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amou
   }
   return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
+    // On every refusal, the minute's and the full ceiling's too: a refusal
+    // without it is OpenAlex's own, and the client closes OpenAlex for the tab.
+    // The relay reserves with no origin and puts the asker's on afterwards,
+    // keeping the names exposed here.
+    'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
+    [OPENALEX_BUDGET_TIER_HEADER]: budget.tier,
     'cache-control': 'no-store',
-    // The day's refusal is not the true seconds until UTC midnight: a
-    // `retry-after` of several hours is a client that stops asking until someone
-    // reloads the tab, and the daily ceiling is an emergency brake, not a normal
-    // state.
-    'retry-after': reservation.scope === 'global' ? '300' : '60',
+    // The day's refusal is not the true seconds until UTC midnight: a tier
+    // closes every day and can reopen at the next budget reading, and a
+    // `retry-after` of several hours is a client that stops asking until
+    // someone reloads the tab. It bounds how soon a client may ask again, not
+    // when the tier reopens, so the browser shows no countdown for a refusal
+    // naming its tier (`isOpenAlexBudgetRefusal` in open-alex-client.ts). The
+    // harvest's subject is its day's share, so its every refusal is a day's.
+    'retry-after': reservation.scope === 'global' || budget.tier === 'feed' ? '300' : '60',
   }) };
+}
+
+// The most the ledger accepts as `remaining`.
+const MAX_OBSERVED_UNITS = 1_000_000;
+// How long an answer waits for its reading to be filed. A work opened by id
+// reaches the ledger only for its reading, and a slow or stuck ledger must not
+// hold that reader, or everyone waiting on the same miss. A reading dropped
+// here is followed by the next answer's, and the margin covers the gap.
+const OPENALEX_OBSERVATION_WAIT_MS = 250;
+
+/**
+ * Files what OpenAlex reports is left of the key's day
+ * (`x-ratelimit-remaining-usd`, less `OPENALEX_OBSERVATION_MARGIN`) as the
+ * ceiling of the day `now` names. Spend the ledger never sees (the digest, the
+ * health probe) and units reserved but never billed stop distorting the
+ * ceiling at the next reading, and credit added mid-day reopens it without a
+ * deploy. No reading is filed when either header is missing or unusable, or
+ * when `x-ratelimit-reset` does not end that UTC day: the cap then stands, and
+ * an unknown budget stays unknown. A reading that cannot be filed, or that the
+ * ledger has not taken within `OPENALEX_OBSERVATION_WAIT_MS`, is dropped; the
+ * answer it came with is still served.
+ */
+export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers: Pick<Headers, 'get'>) {
+  const remainingUsd = numberOrNull(headers.get('x-ratelimit-remaining-usd'));
+  const resetSeconds = numberOrNull(headers.get('x-ratelimit-reset'));
+  if (remainingUsd === null || remainingUsd < 0 || resetSeconds === null) return;
+  const dayEnds = Date.parse(`${now.slice(0, 10)}T00:00:00.000Z`) + DAY_MS;
+  if (Math.abs(Date.now() + resetSeconds * 1000 - dayEnds) > OPENALEX_RESET_TOLERANCE_MS) return;
+  // In millionths of a dollar first, so 0.0246 is 246 units and not 245.99….
+  const units = Math.floor(Math.round(remainingUsd * 1e6) / Math.round(OPENALEX_UNIT_USD * 1e6));
+  const filed = observeRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    ...openAlexLedgerRequest(env, now),
+    remaining: Math.min(MAX_OBSERVED_UNITS, Math.max(0, units - OPENALEX_OBSERVATION_MARGIN)),
+  }).catch(() => {
+    // The previous reading, or the cap, stands.
+  });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([filed, new Promise(resolve => { timer = setTimeout(resolve, OPENALEX_OBSERVATION_WAIT_MS); })]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
+const OPENALEX_REPORTED_KINDS = ['search', 'list', 'graph', 'share'] as const;
+
+// Adds the units of the `tier.kind` names that `matches` accepts.
+function sumTally(counts: Record<string, number> | undefined, matches: (tier: string, kind: string) => boolean) {
+  return Object.entries(counts || {}).reduce((total, [name, units]) => {
+    const [tier, kind] = name.split('.');
+    return matches(tier, kind) ? total + (Number(units) || 0) : total;
+  }, 0);
+}
+
+/**
+ * Today's OpenAlex budget as the ledger holds it, for `/health/openalex/budget`:
+ * units, not calls, and only aggregates. Entity lookups cost nothing and never
+ * appear; spend outside the ledger shows only through `observedCeiling`. Reads
+ * without spending, through the ledger's `peek`, which names the nightly run's
+ * share: the one a harvest miss naming no part, such as enrichment's, spends.
+ */
+export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOString()) {
+  const request = openAlexLedgerRequest(env, now, { tier: 'feed' });
+  let reading: QuotaReading;
+  try {
+    reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, request);
+  } catch {
+    return { code: 'QUOTA_LEDGER_UNAVAILABLE' };
+  }
+  if (!reading.accepted) {
+    return { code: reading.code === 'QUOTA_LEDGER_NOT_CONFIGURED' ? 'PROVIDER_QUOTA_NOT_CONFIGURED' : 'QUOTA_LEDGER_UNAVAILABLE' };
+  }
+  const day = now.slice(0, 10);
+  const cap = request.globalLimit;
+  const observedCeiling = reading.observed?.ceiling ?? null;
+  const ceiling = observedCeiling === null ? cap : Math.min(cap, observedCeiling);
+  const used = reading.globalUsage ?? 0;
+  const tiers = Object.fromEntries(Object.entries(OPENALEX_TIER_PERCENT).map(([tier, percent]) => {
+    const limit = Math.floor(ceiling * percent / 100);
+    // The nightly run's share of the harvest's day closes `feed` too. `used`
+    // counts the runs new follows start as well, which spend a share of their own.
+    const harvest = tier === 'feed';
+    return [tier, {
+      percent,
+      limit,
+      ...(harvest ? { share: request.subjectLimit } : {}),
+      used: sumTally(reading.tally?.used, spentBy => spentBy === tier),
+      refused: sumTally(reading.tally?.refused, spentBy => spentBy === tier),
+      // Whether a one-unit miss of this tier would be accepted now.
+      open: used + 1 <= limit && (!harvest || (reading.subjectUsage ?? 0) + 1 <= request.subjectLimit),
+    }];
+  }));
+  const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {
+    used: sumTally(reading.tally?.used, (_, spentOn) => spentOn === kind),
+    refused: sumTally(reading.tally?.refused, (_, spentOn) => spentOn === kind),
+  }]));
+  return {
+    report: {
+      provider: 'openalex',
+      day,
+      resetsAt: new Date(Date.parse(`${day}T00:00:00.000Z`) + DAY_MS).toISOString(),
+      unitUsd: OPENALEX_UNIT_USD,
+      cap,
+      observedCeiling,
+      observedAt: reading.observed ? new Date(reading.observed.at).toISOString() : null,
+      ceiling,
+      used,
+      remaining: Math.max(0, ceiling - used),
+      tiers,
+      kinds,
+    },
+  };
 }

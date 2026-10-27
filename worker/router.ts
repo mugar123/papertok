@@ -31,12 +31,14 @@ import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
+import { PaperStoreError } from './paper-store.ts';
+import { handleCorpusFeed } from './paper-feed.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
-import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
+import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
-import { handleAIHealth, handleEmailHealth, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
+import { handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
 import {
   handleBioRxiv,
   handleCore,
@@ -68,7 +70,6 @@ const PROTECTED_PROVIDER_PATHS = new Set([
 const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze<Record<string, string>>({
   '/sources/s2': '2',
   '/related': '2',
-  '/recommendations': '2',
 });
 const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
 
@@ -128,6 +129,9 @@ async function authenticateProtectedProviderRequest(request: Request, env: Worke
 // segment that is not a lowercase route word ends the route, so a DOI, a
 // token or an address never reaches Workers Logs.
 export function routeForLog(pathname: string) {
+  // The one fixed route three segments deep. Cut to two, its failures would
+  // read as those of `/health/openalex`, the probe that costs an OpenAlex call.
+  if (pathname === '/health/openalex/budget') return pathname;
   const segments = pathname.split('/').slice(1, 3);
   if (segments[0] === 'share') return '/share';
   const fixed: string[] = [];
@@ -155,7 +159,7 @@ const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/resources/figures': handlePaperFigures,
 };
 
-export async function handleRequest(request: Request, env: WorkerEnv): Promise<Response> {
+export async function handleRequest(request: Request, env: WorkerEnv, context?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (request.method === 'OPTIONS') {
@@ -176,14 +180,14 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
   // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
   // contesta antes que nada porque un rastreador no manda `origin`.
   //
-  // Medido el 2026-09-01: en `api.papertok.app` Cloudflare intercepta
-  // /robots.txt ANTES que el Worker, asi que esta ruta solo se ve hoy en
-  // `papertok-report-api.*.workers.dev`. No esta rota: entra en vigor en el
-  // dominio propio en cuanto se apague el robots.txt gestionado de la zona
-  // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
-  // de los dos esta contestando.
+  // Cloudflare's managed robots.txt may answer before this handler on the
+  // custom domain. Check AI Crawl Control before changing this response.
+  //
+  // Share cards are the exception: a preview bot that honours robots.txt,
+  // Twitterbot among them, fetches a card from here and draws no picture if
+  // it is disallowed. A card costs a lookup only as its page does.
   if (url.pathname === '/robots.txt') {
-    return new Response('User-agent: *\nDisallow: /\n', {
+    return new Response('User-agent: *\nAllow: /share/image/\nDisallow: /\n', {
       status: 200,
       headers: {
         'content-type': 'text/plain; charset=utf-8',
@@ -266,9 +270,10 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
       // Before the cache: the answer is the institution's and shared, but
-      // only a signed-in reader may draw on the resolvers behind it.
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionAccess(request, env);
+      // only a signed-in reader may draw on the resolvers behind it, and a
+      // miss is charged to that reader.
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionAccess(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
@@ -283,8 +288,8 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
     if (request.method !== 'GET') return json({ code: 'METHOD_NOT_ALLOWED' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionServices(request, env);
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionServices(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
@@ -364,10 +369,10 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       );
     }
   }
-  // The one provider route asked with a body, so it is routed ahead of the
-  // GET-only gate below. Like the protected routes after that gate, it checks
-  // the reader's identity before anything else.
-  if (url.pathname === '/recommendations') {
+  // The personal corpus feed checks identity and is never cached.
+  if (url.pathname === '/store/papers') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     let identity: VerifiedIdentity;
     try {
       identity = await verifyFirebaseIdentity(request, env);
@@ -375,12 +380,17 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       captureWorkerException(error);
       return providerAuthFailure(error, origin, env);
     }
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
     try {
-      return await handlePersonalRecommendations(request, env, identity);
+      const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined);
+      return json(answer, 200, headers);
     } catch (error) {
+      if (error instanceof PaperStoreError) {
+        return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+      }
       captureWorkerException(error);
-      console.error('Personal recommendations failed', error);
-      return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
+      console.error('Paper store failed', error);
+      return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
@@ -402,7 +412,7 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
       emailConfigured: Boolean(
         env.NOTIFICATION_STORE
-        && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
+        && env.RESEND_API_KEY && env.RESEND_FROM_EMAIL,
       ),
       publishingConfigured: isServiceAccountConfigured(env),
       // The `[version_metadata]` binding: which deploy is answering. `tag` is
@@ -444,6 +454,10 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
   if (url.pathname === '/health/openalex') {
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     return handleOpenAlexHealth(request, env);
+  }
+  if (url.pathname === '/health/openalex/budget') {
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    return handleOpenAlexBudget(request, env);
   }
   if (url.pathname === '/health/scopus') {
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

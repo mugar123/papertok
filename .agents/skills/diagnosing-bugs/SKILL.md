@@ -46,7 +46,7 @@ Show that the original symptom changed as expected. For behavioral regression
 tests, confirm the assertion can detect the old failure, then verify the fix.
 Preserve trust-boundary validation and valid degraded-provider behavior.
 Use [Repo QA](../repo-qa/SKILL.md) for remaining checks and
-[Ponytail Review](../ponytail-review/SKILL.md) for the final diff.
+[Review](../review/SKILL.md) for the final diff.
 
 If evidence requires unavailable access or a user decision, explain the exact
 missing fact and continue independent work. Do not weaken checks or claim a

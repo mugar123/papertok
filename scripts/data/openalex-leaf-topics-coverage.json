@@ -1,0 +1,2903 @@
+[
+  {
+    "leaf": "quant-ph",
+    "label": "Quantum Physics",
+    "topicIds": [
+      "T10022",
+      "T10224",
+      "T10382",
+      "T10622",
+      "T11177",
+      "T11261",
+      "T11262",
+      "T11414",
+      "T11415",
+      "T11683"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T10022": "0/0",
+      "T10224": "0/1",
+      "T10382": "1/2",
+      "T10622": "1/1",
+      "T11177": "0/5",
+      "T11261": "0/0",
+      "T11262": "1/2",
+      "T11414": "2/2",
+      "T11415": "0/0",
+      "T11683": "0/2"
+    }
+  },
+  {
+    "leaf": "cond-mat.supr-con",
+    "label": "Superconductivity",
+    "topicIds": [
+      "T10037",
+      "T10681",
+      "T11682",
+      "T12491",
+      "T13531"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10037": "4/6",
+      "T10681": "0/0",
+      "T11682": "0/8",
+      "T12491": "0/0",
+      "T13531": "0/1"
+    }
+  },
+  {
+    "leaf": "cond-mat.str-el",
+    "label": "Strongly Correlated Electrons",
+    "topicIds": [
+      "T11603"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11603": "0/15"
+    }
+  },
+  {
+    "leaf": "cond-mat.mtrl-sci",
+    "label": "Materials Science",
+    "topicIds": [
+      "T10049",
+      "T10099",
+      "T10657",
+      "T10666",
+      "T11853",
+      "T11949",
+      "T14363"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10049": "2/9",
+      "T10099": "0/1",
+      "T10657": "1/4",
+      "T10666": "0/0",
+      "T11853": "1/1",
+      "T11949": "0/0",
+      "T14363": "0/0"
+    }
+  },
+  {
+    "leaf": "cond-mat.mes-hall",
+    "label": "Mesoscale and Nanoscale Physics",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "cond-mat.stat-mech",
+    "label": "Statistical Mechanics",
+    "topicIds": [
+      "T11520",
+      "T12261",
+      "T13769"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T11520": "13/13",
+      "T12261": "0/2",
+      "T13769": "0/0"
+    }
+  },
+  {
+    "leaf": "cond-mat.soft",
+    "label": "Soft Condensed Matter",
+    "topicIds": [
+      "T11682"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11682": "0/15"
+    }
+  },
+  {
+    "leaf": "cond-mat.quant-gas",
+    "label": "Quantum Gases",
+    "topicIds": [
+      "T10425",
+      "T11993"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10425": "8/11",
+      "T11993": "0/4"
+    }
+  },
+  {
+    "leaf": "hep-th",
+    "label": "High Energy Physics - Theory",
+    "topicIds": [
+      "T10048",
+      "T10384",
+      "T10527",
+      "T10818",
+      "T12516"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10048": "1/2",
+      "T10384": "0/3",
+      "T10527": "2/5",
+      "T10818": "0/5",
+      "T12516": "0/0"
+    }
+  },
+  {
+    "leaf": "hep-ph",
+    "label": "High Energy Physics - Phenomenology",
+    "topicIds": [
+      "T10048",
+      "T10384",
+      "T10527",
+      "T10818",
+      "T12516"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10048": "2/2",
+      "T10384": "0/3",
+      "T10527": "5/5",
+      "T10818": "0/5",
+      "T12516": "0/0"
+    }
+  },
+  {
+    "leaf": "hep-ex",
+    "label": "High Energy Physics - Experiment",
+    "topicIds": [
+      "T10048",
+      "T10384",
+      "T10527",
+      "T10818",
+      "T12250",
+      "T12516"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10048": "0/2",
+      "T10384": "0/3",
+      "T10527": "0/5",
+      "T10818": "0/5",
+      "T12250": "0/0",
+      "T12516": "0/0"
+    }
+  },
+  {
+    "leaf": "astro-ph.CO",
+    "label": "Cosmology",
+    "topicIds": [
+      "T10026",
+      "T10095",
+      "T11090",
+      "T11415",
+      "T13080"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10026": "2/9",
+      "T10095": "2/2",
+      "T11090": "3/3",
+      "T11415": "0/0",
+      "T13080": "0/1"
+    }
+  },
+  {
+    "leaf": "astro-ph.GA",
+    "label": "Astrophysics of Galaxies",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "astro-ph.SR",
+    "label": "Solar and Stellar Astrophysics",
+    "topicIds": [
+      "T10039",
+      "T10477",
+      "T13126"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10039": "8/12",
+      "T10477": "0/3",
+      "T13126": "0/0"
+    }
+  },
+  {
+    "leaf": "astro-ph.HE",
+    "label": "High Energy Astrophysical Phenomena",
+    "topicIds": [
+      "T10818"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "byTopic": {
+      "T10818": "11/15"
+    }
+  },
+  {
+    "leaf": "astro-ph.EP",
+    "label": "Earth and Planetary Astrophysics",
+    "topicIds": [
+      "T10039"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T10039": "5/15"
+    }
+  },
+  {
+    "leaf": "gr-qc",
+    "label": "General Relativity and Quantum Cosmology",
+    "topicIds": [
+      "T10095",
+      "T11415",
+      "T11960",
+      "T13080"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10095": "4/9",
+      "T11415": "1/1",
+      "T11960": "3/3",
+      "T13080": "0/2"
+    }
+  },
+  {
+    "leaf": "math-ph",
+    "label": "Mathematical Physics",
+    "topicIds": [
+      "T12516"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T12516": "0/15"
+    }
+  },
+  {
+    "leaf": "nucl-th",
+    "label": "Nuclear Theory",
+    "topicIds": [
+      "T10093",
+      "T10382",
+      "T10463",
+      "T11175",
+      "T11603",
+      "T11949",
+      "T11965",
+      "T12603",
+      "T12762",
+      "T13458"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T10093": "2/2",
+      "T10382": "0/2",
+      "T10463": "0/6",
+      "T11175": "0/1",
+      "T11603": "0/3",
+      "T11949": "0/0",
+      "T11965": "0/1",
+      "T12603": "0/0",
+      "T12762": "0/0",
+      "T13458": "0/0"
+    }
+  },
+  {
+    "leaf": "nucl-ex",
+    "label": "Nuclear Experiment",
+    "topicIds": [
+      "T11603"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11603": "0/15"
+    }
+  },
+  {
+    "leaf": "physics.optics",
+    "label": "Optics",
+    "topicIds": [
+      "T10490",
+      "T10566",
+      "T10988",
+      "T11050",
+      "T11414",
+      "T11484",
+      "T12917",
+      "T13126",
+      "T13493"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T10490": "3/4",
+      "T10566": "1/2",
+      "T10988": "2/2",
+      "T11050": "1/1",
+      "T11414": "0/3",
+      "T11484": "2/2",
+      "T12917": "0/1",
+      "T13126": "0/0",
+      "T13493": "0/0"
+    }
+  },
+  {
+    "leaf": "physics.atom-ph",
+    "label": "Atomic Physics",
+    "topicIds": [
+      "T10523",
+      "T10923",
+      "T11414",
+      "T11993",
+      "T12004",
+      "T12762",
+      "T13458",
+      "T13531"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T10523": "1/1",
+      "T10923": "0/4",
+      "T11414": "2/4",
+      "T11993": "2/2",
+      "T12004": "1/2",
+      "T12762": "0/0",
+      "T13458": "0/0",
+      "T13531": "0/2"
+    }
+  },
+  {
+    "leaf": "physics.flu-dyn",
+    "label": "Fluid Dynamics",
+    "topicIds": [
+      "T10527",
+      "T11206",
+      "T11486"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10527": "0/3",
+      "T11206": "2/7",
+      "T11486": "2/5"
+    }
+  },
+  {
+    "leaf": "physics.plasm-ph",
+    "label": "Plasma Physics",
+    "topicIds": [
+      "T10159",
+      "T10251",
+      "T10384",
+      "T10527",
+      "T11175",
+      "T11603",
+      "T12077",
+      "T13769"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10159": "1/1",
+      "T10251": "5/11",
+      "T10384": "0/0",
+      "T10527": "0/1",
+      "T11175": "0/1",
+      "T11603": "1/1",
+      "T12077": "0/0",
+      "T13769": "0/0"
+    }
+  },
+  {
+    "leaf": "physics.bio-ph",
+    "label": "Biological Physics",
+    "topicIds": [
+      "T10923",
+      "T11513",
+      "T13769"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T10923": "5/12",
+      "T11513": "0/3",
+      "T13769": "0/0"
+    }
+  },
+  {
+    "leaf": "physics.comp-ph",
+    "label": "Computational Physics",
+    "topicIds": [
+      "T10591"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10591": "3/15"
+    }
+  },
+  {
+    "leaf": "cs.RO",
+    "label": "Robotics",
+    "topicIds": [
+      "T10249",
+      "T10462",
+      "T10533",
+      "T10586",
+      "T13904",
+      "T13964",
+      "T14335",
+      "T14381"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10249": "0/1",
+      "T10462": "4/4",
+      "T10533": "0/4",
+      "T10586": "3/3",
+      "T13904": "0/3",
+      "T13964": "0/0",
+      "T14335": "0/0",
+      "T14381": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.CR",
+    "label": "Cryptography and Security",
+    "topicIds": [
+      "T10020",
+      "T10237",
+      "T11498",
+      "T13674"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T10020": "1/10",
+      "T10237": "3/3",
+      "T11498": "2/2",
+      "T13674": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.SE",
+    "label": "Software Engineering",
+    "topicIds": [
+      "T10260",
+      "T10430",
+      "T10456",
+      "T10639",
+      "T10714",
+      "T10743",
+      "T11450",
+      "T11675",
+      "T12127",
+      "T12423"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T10260": "6/6",
+      "T10430": "6/6",
+      "T10456": "0/1",
+      "T10639": "0/0",
+      "T10714": "0/0",
+      "T10743": "2/2",
+      "T11450": "0/0",
+      "T11675": "0/0",
+      "T12127": "0/0",
+      "T12423": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.DS",
+    "label": "Data Structures and Algorithms",
+    "topicIds": [
+      "T10080",
+      "T10538",
+      "T10637",
+      "T11106",
+      "T11269",
+      "T11303",
+      "T12761",
+      "T13373",
+      "T14025",
+      "T14175"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10080": "0/4",
+      "T10538": "0/1",
+      "T10637": "0/5",
+      "T11106": "0/0",
+      "T11269": "0/2",
+      "T11303": "0/0",
+      "T12761": "0/0",
+      "T13373": "0/2",
+      "T14025": "0/1",
+      "T14175": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.DB",
+    "label": "Databases",
+    "topicIds": [
+      "T10181",
+      "T10317",
+      "T11106",
+      "T12292",
+      "T13681"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10181": "0/4",
+      "T10317": "7/7",
+      "T11106": "0/1",
+      "T12292": "1/2",
+      "T13681": "0/1"
+    }
+  },
+  {
+    "leaf": "cs.DC",
+    "label": "Distributed Computing",
+    "topicIds": [
+      "T10101",
+      "T10715",
+      "T11181",
+      "T12203",
+      "T12292"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10101": "6/8",
+      "T10715": "0/0",
+      "T11181": "1/4",
+      "T12203": "0/0",
+      "T12292": "1/3"
+    }
+  },
+  {
+    "leaf": "cs.IR",
+    "label": "Information Retrieval",
+    "topicIds": [
+      "T10028",
+      "T10286",
+      "T11309",
+      "T11550",
+      "T12016",
+      "T13523",
+      "T13976",
+      "T14435"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10028": "2/9",
+      "T10286": "4/4",
+      "T11309": "1/2",
+      "T11550": "0/0",
+      "T12016": "0/0",
+      "T13523": "0/0",
+      "T13976": "0/0",
+      "T14435": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.HC",
+    "label": "Human-Computer Interaction",
+    "topicIds": [
+      "T10470",
+      "T10803",
+      "T11349",
+      "T11398",
+      "T11707",
+      "T12128",
+      "T13155",
+      "T14254"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T10470": "0/0",
+      "T10803": "2/2",
+      "T11349": "1/2",
+      "T11398": "0/0",
+      "T11707": "0/1",
+      "T12128": "2/9",
+      "T13155": "0/1",
+      "T14254": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.PL",
+    "label": "Programming Languages",
+    "topicIds": [
+      "T10126",
+      "T10904"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T10126": "4/8",
+      "T10904": "1/7"
+    }
+  },
+  {
+    "leaf": "cs.GT",
+    "label": "Computer Science and Game Theory",
+    "topicIds": [
+      "T11574"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T11574": "2/15"
+    }
+  },
+  {
+    "leaf": "cs.SI",
+    "label": "Social and Information Networks",
+    "topicIds": [
+      "T10028",
+      "T11309",
+      "T11896",
+      "T13514",
+      "T13553",
+      "T13924",
+      "T13976",
+      "T13983",
+      "T14100",
+      "T14435"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10028": "0/11",
+      "T11309": "0/4",
+      "T11896": "0/0",
+      "T13514": "0/0",
+      "T13553": "0/0",
+      "T13924": "0/0",
+      "T13976": "0/0",
+      "T13983": "0/0",
+      "T14100": "0/0",
+      "T14435": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.NI",
+    "label": "Networking and Internet Architecture",
+    "topicIds": [
+      "T11478",
+      "T14455"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T11478": "14/15",
+      "T14455": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.GR",
+    "label": "Graphics",
+    "topicIds": [
+      "T10481",
+      "T14254"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T10481": "6/6",
+      "T14254": "0/9"
+    }
+  },
+  {
+    "leaf": "cs.SD",
+    "label": "Sound",
+    "topicIds": [
+      "T11309",
+      "T11349"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "byTopic": {
+      "T11309": "8/8",
+      "T11349": "4/7"
+    }
+  },
+  {
+    "leaf": "cs.MM",
+    "label": "Multimedia",
+    "topicIds": [
+      "T12260",
+      "T13541",
+      "T13567",
+      "T13873",
+      "T14067",
+      "T14216",
+      "T14254",
+      "T14496",
+      "T14516"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T12260": "0/5",
+      "T13541": "0/0",
+      "T13567": "0/0",
+      "T13873": "0/0",
+      "T14067": "0/0",
+      "T14216": "0/0",
+      "T14254": "0/4",
+      "T14496": "0/0",
+      "T14516": "0/6"
+    }
+  },
+  {
+    "leaf": "cs.SY",
+    "label": "Systems and Control",
+    "topicIds": [
+      "T10142",
+      "T10249",
+      "T10772",
+      "T10820",
+      "T10933",
+      "T11125",
+      "T12794",
+      "T13541",
+      "T13615",
+      "T13935"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T10142": "0/1",
+      "T10249": "4/4",
+      "T10772": "0/0",
+      "T10820": "3/5",
+      "T10933": "0/2",
+      "T11125": "0/0",
+      "T12794": "2/3",
+      "T13541": "0/0",
+      "T13615": "0/0",
+      "T13935": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.AI",
+    "label": "Artificial Intelligence",
+    "topicIds": [
+      "T10456",
+      "T11349",
+      "T11574",
+      "T12026",
+      "T12128",
+      "T12260",
+      "T12797",
+      "T13904",
+      "T14174",
+      "T14414"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10456": "0/0",
+      "T11349": "0/0",
+      "T11574": "0/0",
+      "T12026": "0/3",
+      "T12128": "0/1",
+      "T12260": "0/0",
+      "T12797": "0/0",
+      "T13904": "0/3",
+      "T14174": "0/0",
+      "T14414": "0/8"
+    }
+  },
+  {
+    "leaf": "cs.LG",
+    "label": "Machine Learning",
+    "topicIds": [
+      "T10028",
+      "T11122",
+      "T11689",
+      "T11714",
+      "T12072",
+      "T12535",
+      "T12676",
+      "T13373",
+      "T13693",
+      "T13702"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10028": "1/6",
+      "T11122": "0/2",
+      "T11689": "1/4",
+      "T11714": "0/0",
+      "T12072": "0/0",
+      "T12535": "1/1",
+      "T12676": "0/0",
+      "T13373": "0/0",
+      "T13693": "0/0",
+      "T13702": "0/2"
+    }
+  },
+  {
+    "leaf": "cs.CV",
+    "label": "Computer Vision",
+    "topicIds": [
+      "T10036",
+      "T12549",
+      "T13674"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "byTopic": {
+      "T10036": "15/15",
+      "T12549": "0/0",
+      "T13674": "0/0"
+    }
+  },
+  {
+    "leaf": "cs.CL",
+    "label": "Computation and Language",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "cs.NE",
+    "label": "Neural and Evolutionary Computing",
+    "topicIds": [
+      "T12611",
+      "T13062",
+      "T13935"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T12611": "6/15",
+      "T13062": "0/0",
+      "T13935": "0/0"
+    }
+  },
+  {
+    "leaf": "math.AG",
+    "label": "Algebraic Geometry",
+    "topicIds": [
+      "T10061",
+      "T10304",
+      "T10896",
+      "T11680",
+      "T12504"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T10061": "4/5",
+      "T10304": "0/5",
+      "T10896": "0/2",
+      "T11680": "2/3",
+      "T12504": "0/0"
+    }
+  },
+  {
+    "leaf": "math.AP",
+    "label": "Analysis of PDEs",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "math.CO",
+    "label": "Combinatorics",
+    "topicIds": [
+      "T10948"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "byTopic": {
+      "T10948": "10/15"
+    }
+  },
+  {
+    "leaf": "math.NT",
+    "label": "Number Theory",
+    "topicIds": [
+      "T10061",
+      "T10948",
+      "T11166",
+      "T11329",
+      "T11345",
+      "T11428",
+      "T12037",
+      "T12069",
+      "T13400",
+      "T14500"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10061": "0/2",
+      "T10948": "0/5",
+      "T11166": "3/3",
+      "T11329": "0/1",
+      "T11345": "0/2",
+      "T11428": "0/0",
+      "T12037": "0/1",
+      "T12069": "0/1",
+      "T13400": "0/0",
+      "T14500": "0/0"
+    }
+  },
+  {
+    "leaf": "math.PR",
+    "label": "Probability",
+    "topicIds": [
+      "T11875",
+      "T13500",
+      "T13546",
+      "T13680",
+      "T13797"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T11875": "0/4",
+      "T13500": "6/10",
+      "T13546": "0/1",
+      "T13680": "0/0",
+      "T13797": "0/0"
+    }
+  },
+  {
+    "leaf": "math.ST",
+    "label": "Statistics Theory",
+    "topicIds": [
+      "T11716",
+      "T11871",
+      "T11875",
+      "T13500",
+      "T13797"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T11716": "0/3",
+      "T11871": "3/4",
+      "T11875": "0/1",
+      "T13500": "6/7",
+      "T13797": "0/0"
+    }
+  },
+  {
+    "leaf": "math.DG",
+    "label": "Differential Geometry",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "math.DS",
+    "label": "Dynamical Systems",
+    "topicIds": [
+      "T10588",
+      "T12396"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10588": "8/10",
+      "T12396": "5/5"
+    }
+  },
+  {
+    "leaf": "math.FA",
+    "label": "Functional Analysis",
+    "topicIds": [
+      "T10541",
+      "T11545",
+      "T11871",
+      "T12037",
+      "T12062",
+      "T13797"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10541": "0/1",
+      "T11545": "4/4",
+      "T11871": "0/7",
+      "T12037": "0/3",
+      "T12062": "0/0",
+      "T13797": "0/0"
+    }
+  },
+  {
+    "leaf": "math.NA",
+    "label": "Numerical Analysis",
+    "topicIds": [
+      "T12135",
+      "T12727",
+      "T13400",
+      "T13487",
+      "T13806"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T12135": "0/5",
+      "T12727": "2/5",
+      "T13400": "0/2",
+      "T13487": "0/1",
+      "T13806": "0/2"
+    }
+  },
+  {
+    "leaf": "math.OC",
+    "label": "Optimization and Control",
+    "topicIds": [
+      "T14082"
+    ],
+    "status": "insufficient-sample",
+    "sampleSize": 0,
+    "onTarget": 0,
+    "precision": null,
+    "byTopic": {
+      "T14082": "0/0"
+    }
+  },
+  {
+    "leaf": "math.LO",
+    "label": "Logic",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "math.GR",
+    "label": "Group Theory",
+    "topicIds": [
+      "T10287",
+      "T10304",
+      "T10849",
+      "T10899",
+      "T11151",
+      "T11680"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T10287": "0/2",
+      "T10304": "0/4",
+      "T10849": "2/3",
+      "T10899": "0/1",
+      "T11151": "0/4",
+      "T11680": "0/1"
+    }
+  },
+  {
+    "leaf": "math.GT",
+    "label": "Geometric Topology",
+    "topicIds": [
+      "T10304"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10304": "8/15"
+    }
+  },
+  {
+    "leaf": "math.RA",
+    "label": "Rings and Algebras",
+    "topicIds": [
+      "T11703"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T11703": "14/15"
+    }
+  },
+  {
+    "leaf": "math.CA",
+    "label": "Classical Analysis and ODEs",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "math.MP",
+    "label": "Mathematical Physics",
+    "topicIds": [
+      "T10588",
+      "T11022",
+      "T11191",
+      "T11210",
+      "T11345",
+      "T11428",
+      "T11564",
+      "T11654",
+      "T11829",
+      "T12404"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10588": "0/2",
+      "T11022": "3/3",
+      "T11191": "0/1",
+      "T11210": "0/0",
+      "T11345": "0/2",
+      "T11428": "0/0",
+      "T11564": "0/2",
+      "T11654": "0/0",
+      "T11829": "0/3",
+      "T12404": "0/2"
+    }
+  },
+  {
+    "leaf": "stat.ML",
+    "label": "Machine Learning",
+    "topicIds": [
+      "T11326",
+      "T11918",
+      "T13612",
+      "T14222",
+      "T14260",
+      "T14280",
+      "T14465"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11326": "0/6",
+      "T11918": "0/5",
+      "T13612": "0/0",
+      "T14222": "0/0",
+      "T14260": "0/4",
+      "T14280": "0/0",
+      "T14465": "0/0"
+    }
+  },
+  {
+    "leaf": "stat.ME",
+    "label": "Methodology",
+    "topicIds": [
+      "T10206",
+      "T10467",
+      "T11798",
+      "T11810",
+      "T13587",
+      "T14369"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10206": "0/5",
+      "T10467": "3/8",
+      "T11798": "1/1",
+      "T11810": "0/0",
+      "T13587": "0/1",
+      "T14369": "0/0"
+    }
+  },
+  {
+    "leaf": "stat.AP",
+    "label": "Applications",
+    "topicIds": [
+      "T11890",
+      "T13309",
+      "T13609",
+      "T14406"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T11890": "2/7",
+      "T13309": "3/7",
+      "T13609": "0/0",
+      "T14406": "1/1"
+    }
+  },
+  {
+    "leaf": "stat.CO",
+    "label": "Computation",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "stat.TH",
+    "label": "Theory",
+    "topicIds": [
+      "T11890",
+      "T13309",
+      "T13609",
+      "T14406"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11890": "0/7",
+      "T13309": "0/7",
+      "T13609": "0/0",
+      "T14406": "0/1"
+    }
+  },
+  {
+    "leaf": "econ.EM",
+    "label": "Econometrics",
+    "topicIds": [
+      "T11911",
+      "T12446",
+      "T12722",
+      "T14051"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T11911": "0/6",
+      "T12446": "0/0",
+      "T12722": "0/5",
+      "T14051": "0/4"
+    }
+  },
+  {
+    "leaf": "econ.GN",
+    "label": "General Economics",
+    "topicIds": [
+      "T10007",
+      "T10128",
+      "T10393",
+      "T10438",
+      "T10471",
+      "T10605",
+      "T10632",
+      "T10785",
+      "T10804",
+      "T10841"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T10007": "0/0",
+      "T10128": "0/0",
+      "T10393": "0/0",
+      "T10438": "6/7",
+      "T10471": "2/3",
+      "T10605": "0/0",
+      "T10632": "1/2",
+      "T10785": "0/0",
+      "T10804": "0/3",
+      "T10841": "0/0"
+    }
+  },
+  {
+    "leaf": "econ.TH",
+    "label": "Theoretical Economics",
+    "topicIds": [
+      "T10007",
+      "T10128",
+      "T10393",
+      "T10438",
+      "T10471",
+      "T10605",
+      "T10632",
+      "T10785",
+      "T10804",
+      "T10841"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10007": "0/0",
+      "T10128": "0/0",
+      "T10393": "0/0",
+      "T10438": "0/7",
+      "T10471": "0/3",
+      "T10605": "0/0",
+      "T10632": "0/2",
+      "T10785": "0/0",
+      "T10804": "0/3",
+      "T10841": "0/0"
+    }
+  },
+  {
+    "leaf": "q-fin.ST",
+    "label": "Statistical Finance",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "q-fin.CP",
+    "label": "Computational Finance",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "q-fin.PM",
+    "label": "Portfolio Management",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "q-fin.RM",
+    "label": "Risk Management",
+    "topicIds": [
+      "T10282",
+      "T11976",
+      "T14154",
+      "T14317"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10282": "4/12",
+      "T11976": "0/3",
+      "T14154": "0/0",
+      "T14317": "0/0"
+    }
+  },
+  {
+    "leaf": "q-fin.MF",
+    "label": "Mathematical Finance",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "q-fin.PR",
+    "label": "Pricing of Securities",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "q-fin.TR",
+    "label": "Trading and Market Microstructure",
+    "topicIds": [
+      "T10047",
+      "T10067"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2,
+    "byTopic": {
+      "T10047": "3/11",
+      "T10067": "0/4"
+    }
+  },
+  {
+    "leaf": "q-fin.GN",
+    "label": "General Finance",
+    "topicIds": [
+      "T10047",
+      "T10127",
+      "T11817",
+      "T13146",
+      "T14154",
+      "T14317",
+      "T14464"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "byTopic": {
+      "T10047": "7/7",
+      "T10127": "3/3",
+      "T11817": "0/0",
+      "T13146": "0/5",
+      "T14154": "0/0",
+      "T14317": "0/0",
+      "T14464": "0/0"
+    }
+  },
+  {
+    "leaf": "eess.SP",
+    "label": "Signal Processing",
+    "topicIds": [
+      "T10232",
+      "T10500",
+      "T10767",
+      "T10891",
+      "T11038",
+      "T11233",
+      "T12300",
+      "T12537",
+      "T13816",
+      "T14420"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10232": "0/0",
+      "T10500": "0/0",
+      "T10767": "0/3",
+      "T10891": "5/5",
+      "T11038": "2/4",
+      "T11233": "0/0",
+      "T12300": "1/1",
+      "T12537": "0/2",
+      "T13816": "0/0",
+      "T14420": "0/0"
+    }
+  },
+  {
+    "leaf": "eess.IV",
+    "label": "Image and Video Processing",
+    "topicIds": [
+      "T11606",
+      "T12597",
+      "T12983",
+      "T13049",
+      "T13114",
+      "T13292",
+      "T14257"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T11606": "7/12",
+      "T12597": "0/1",
+      "T12983": "2/2",
+      "T13049": "0/0",
+      "T13114": "0/0",
+      "T13292": "0/0",
+      "T14257": "0/0"
+    }
+  },
+  {
+    "leaf": "eess.SY",
+    "label": "Systems and Control",
+    "topicIds": [
+      "T10040",
+      "T10046",
+      "T10740",
+      "T10791",
+      "T10805",
+      "T10876",
+      "T11081",
+      "T11236",
+      "T11394",
+      "T11701"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10040": "5/5",
+      "T10046": "0/0",
+      "T10740": "2/4",
+      "T10791": "0/0",
+      "T10805": "0/0",
+      "T10876": "0/4",
+      "T11081": "0/0",
+      "T11236": "1/1",
+      "T11394": "0/0",
+      "T11701": "0/1"
+    }
+  },
+  {
+    "leaf": "eess.telecom",
+    "label": "Telecommunications",
+    "topicIds": [
+      "T11499",
+      "T13816",
+      "T13905"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T11499": "0/12",
+      "T13816": "1/2",
+      "T13905": "1/1"
+    }
+  },
+  {
+    "leaf": "eess.electro",
+    "label": "Electronics & Microelectronics",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "eess.power",
+    "label": "Power Systems",
+    "topicIds": [
+      "T10305",
+      "T10424",
+      "T10568",
+      "T10972",
+      "T11249",
+      "T11941",
+      "T12277",
+      "T12451",
+      "T13093",
+      "T13183"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "byTopic": {
+      "T10305": "2/2",
+      "T10424": "2/2",
+      "T10568": "0/3",
+      "T10972": "2/2",
+      "T11249": "0/1",
+      "T11941": "0/0",
+      "T12277": "3/3",
+      "T12451": "1/2",
+      "T13093": "0/0",
+      "T13183": "0/0"
+    }
+  },
+  {
+    "leaf": "eess.optics",
+    "label": "Applied Optics & Photonics",
+    "topicIds": [
+      "T10205",
+      "T10846",
+      "T12510"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "byTopic": {
+      "T10205": "13/13",
+      "T10846": "2/2",
+      "T12510": "0/0"
+    }
+  },
+  {
+    "leaf": "mech.dyn",
+    "label": "Dynamics & Robotics",
+    "topicIds": [
+      "T11170"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T11170": "4/15"
+    }
+  },
+  {
+    "leaf": "mech.fluid",
+    "label": "Fluid Mechanics",
+    "topicIds": [
+      "T10360",
+      "T13116",
+      "T13951"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10360": "10/10",
+      "T13116": "1/3",
+      "T13951": "2/2"
+    }
+  },
+  {
+    "leaf": "mech.thermo",
+    "label": "Thermodynamics",
+    "topicIds": [
+      "T10568",
+      "T11126",
+      "T11529",
+      "T12139",
+      "T13200",
+      "T13645",
+      "T13685"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4,
+    "byTopic": {
+      "T10568": "3/3",
+      "T11126": "0/8",
+      "T11529": "3/3",
+      "T12139": "0/0",
+      "T13200": "0/0",
+      "T13645": "0/1",
+      "T13685": "0/0"
+    }
+  },
+  {
+    "leaf": "mech.solid",
+    "label": "Solid Mechanics",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "mech.aero",
+    "label": "Aerospace Engineering",
+    "topicIds": [
+      "T10173",
+      "T10944",
+      "T11489",
+      "T11082",
+      "T12125",
+      "T11619",
+      "T11170",
+      "T11096",
+      "T12696",
+      "T11701",
+      "T12513",
+      "T11008",
+      "T12449",
+      "T12158",
+      "T12007",
+      "T12081"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "mech.mfg",
+    "label": "Manufacturing",
+    "topicIds": [
+      "T10615",
+      "T10705",
+      "T10707",
+      "T10783",
+      "T12959",
+      "T13451",
+      "T14262"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "byTopic": {
+      "T10615": "0/1",
+      "T10705": "4/4",
+      "T10707": "1/5",
+      "T10783": "5/5",
+      "T12959": "0/0",
+      "T13451": "0/0",
+      "T14262": "0/0"
+    }
+  },
+  {
+    "leaf": "mech.cad",
+    "label": "CAD & Simulation",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "mech.auto",
+    "label": "Automotive Engineering",
+    "topicIds": [
+      "T10670",
+      "T10891",
+      "T11138",
+      "T12197",
+      "T12759",
+      "T12959",
+      "T13990"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10670": "0/3",
+      "T10891": "0/5",
+      "T11138": "2/5",
+      "T12197": "1/1",
+      "T12759": "0/0",
+      "T12959": "0/0",
+      "T13990": "1/1"
+    }
+  },
+  {
+    "leaf": "mech.acoustics",
+    "label": "Acoustics & Vibrations",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "civil.struct",
+    "label": "Structural Engineering",
+    "topicIds": [
+      "T10160",
+      "T10713",
+      "T10479",
+      "T11606",
+      "T10534",
+      "T10690",
+      "T12940",
+      "T11352",
+      "T11807",
+      "T13031",
+      "T11874",
+      "T13852",
+      "T11870",
+      "T10687",
+      "T12487"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "civil.geo",
+    "label": "Geotechnical Engineering",
+    "topicIds": [
+      "T10233",
+      "T11375",
+      "T12233",
+      "T12940",
+      "T13031",
+      "T13236",
+      "T13941"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10233": "5/5",
+      "T11375": "7/7",
+      "T12233": "1/2",
+      "T12940": "0/0",
+      "T13031": "0/1",
+      "T13236": "0/0",
+      "T13941": "0/0"
+    }
+  },
+  {
+    "leaf": "civil.hydro",
+    "label": "Hydraulic Engineering",
+    "topicIds": [
+      "T10930",
+      "T10330",
+      "T11186",
+      "T11119",
+      "T11490",
+      "T10577",
+      "T14232",
+      "T10894",
+      "T12543",
+      "T11312",
+      "T12022",
+      "T12293",
+      "T11220",
+      "T11634",
+      "T10969"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "civil.trans",
+    "label": "Transportation",
+    "topicIds": [
+      "T11344",
+      "T11622",
+      "T11807",
+      "T12306",
+      "T13190",
+      "T13527",
+      "T13601",
+      "T14445"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T11344": "4/4",
+      "T11622": "1/8",
+      "T11807": "2/3",
+      "T12306": "0/0",
+      "T13190": "0/0",
+      "T13527": "0/0",
+      "T13601": "0/0",
+      "T14445": "0/0"
+    }
+  },
+  {
+    "leaf": "civil.quake",
+    "label": "Earthquake Engineering",
+    "topicIds": [
+      "T10160",
+      "T12233",
+      "T14146"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10160": "11/12",
+      "T12233": "1/2",
+      "T14146": "1/1"
+    }
+  },
+  {
+    "leaf": "civil.env",
+    "label": "Environmental Engineering",
+    "topicIds": [
+      "T10753",
+      "T10016",
+      "T10210",
+      "T10139",
+      "T10197",
+      "T10419",
+      "T10324",
+      "T11781",
+      "T10564",
+      "T11231",
+      "T11188",
+      "T12120",
+      "T11624",
+      "T11108",
+      "T10284",
+      "T11952"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "civil.mat",
+    "label": "Construction Materials",
+    "topicIds": [
+      "T12105",
+      "T12190",
+      "T12940",
+      "T13031",
+      "T13236"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T12105": "3/3",
+      "T12190": "4/7",
+      "T12940": "0/3",
+      "T13031": "0/1",
+      "T13236": "0/1"
+    }
+  },
+  {
+    "leaf": "civil.urban",
+    "label": "Urban Planning",
+    "topicIds": [
+      "T13601",
+      "T13689",
+      "T14456"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667,
+    "byTopic": {
+      "T13601": "0/0",
+      "T13689": "1/3",
+      "T14456": "0/12"
+    }
+  },
+  {
+    "leaf": "chemeng.process",
+    "label": "Chemical Processes & Catalysis",
+    "topicIds": [
+      "T10192",
+      "T11593",
+      "T12038",
+      "T13104"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "byTopic": {
+      "T10192": "7/7",
+      "T11593": "0/0",
+      "T12038": "3/8",
+      "T13104": "0/0"
+    }
+  },
+  {
+    "leaf": "chemeng.poly",
+    "label": "Polymer Engineering",
+    "topicIds": [
+      "T10389",
+      "T10501",
+      "T10660",
+      "T10661",
+      "T10810",
+      "T10859",
+      "T11686",
+      "T12084",
+      "T12416",
+      "T12628"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "byTopic": {
+      "T10389": "2/2",
+      "T10501": "0/0",
+      "T10660": "1/1",
+      "T10661": "3/3",
+      "T10810": "7/7",
+      "T10859": "1/1",
+      "T11686": "0/0",
+      "T12084": "1/1",
+      "T12416": "0/0",
+      "T12628": "0/0"
+    }
+  },
+  {
+    "leaf": "chemeng.nano",
+    "label": "Nanotechnology",
+    "topicIds": [
+      "T10610",
+      "T11471"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333,
+    "byTopic": {
+      "T10610": "2/11",
+      "T11471": "0/4"
+    }
+  },
+  {
+    "leaf": "chemeng.energy",
+    "label": "Energy & Batteries",
+    "topicIds": [
+      "T11947",
+      "T12046"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T11947": "0/0",
+      "T12046": "7/15"
+    }
+  },
+  {
+    "leaf": "chemeng.bio",
+    "label": "Bioengineering",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "chemeng.metal",
+    "label": "Metallurgy",
+    "topicIds": [
+      "T14184"
+    ],
+    "status": "insufficient-sample",
+    "sampleSize": 13,
+    "onTarget": 13,
+    "precision": 1,
+    "byTopic": {
+      "T14184": "13/13"
+    }
+  },
+  {
+    "leaf": "chemeng.ceramics",
+    "label": "Ceramics & Composites",
+    "topicIds": [
+      "T10132"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "byTopic": {
+      "T10132": "15/15"
+    }
+  },
+  {
+    "leaf": "chemeng.sep",
+    "label": "Separation Technologies",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "med.gen",
+    "label": "General Medicine",
+    "topicIds": [
+      "T10902",
+      "T11051",
+      "T11566",
+      "T11709",
+      "T11861",
+      "T12264",
+      "T12647",
+      "T12994",
+      "T13099",
+      "T13483"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0,
+    "byTopic": {
+      "T10902": "0/0",
+      "T11051": "0/1",
+      "T11566": "0/2",
+      "T11709": "0/3",
+      "T11861": "0/0",
+      "T12264": "0/6",
+      "T12647": "0/2",
+      "T12994": "0/0",
+      "T13099": "0/1",
+      "T13483": "0/0"
+    }
+  },
+  {
+    "leaf": "med.onco",
+    "label": "Oncology",
+    "topicIds": [
+      "T10129",
+      "T10231",
+      "T10950",
+      "T11141",
+      "T11149",
+      "T11296",
+      "T11328",
+      "T11669",
+      "T12695",
+      "T13123"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T10129": "5/5",
+      "T10231": "4/4",
+      "T10950": "3/3",
+      "T11141": "1/1",
+      "T11149": "0/1",
+      "T11296": "0/0",
+      "T11328": "0/0",
+      "T11669": "1/1",
+      "T12695": "0/0",
+      "T13123": "0/0"
+    }
+  },
+  {
+    "leaf": "med.cardio",
+    "label": "Cardiology",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "med.neuro",
+    "label": "Clinical Neurology",
+    "topicIds": [
+      "T10009",
+      "T10094",
+      "T10086",
+      "T10085",
+      "T10498",
+      "T11266",
+      "T10706",
+      "T10855",
+      "T11763",
+      "T10227",
+      "T10919",
+      "T11735"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "med.psych",
+    "label": "Psychiatry & Mental Health",
+    "topicIds": [
+      "T10106",
+      "T10376",
+      "T10263",
+      "T10023",
+      "T10242",
+      "T10537",
+      "T10854",
+      "T13944",
+      "T11123",
+      "T12553",
+      "T11093",
+      "T10168"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "med.pubh",
+    "label": "Public Health & Epidemiology",
+    "topicIds": [
+      "T10312",
+      "T11555",
+      "T12041",
+      "T12413",
+      "T12492",
+      "T12935",
+      "T13112",
+      "T13522",
+      "T14093",
+      "T14495"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T10312": "0/0",
+      "T11555": "0/0",
+      "T12041": "7/7",
+      "T12413": "0/0",
+      "T12492": "1/1",
+      "T12935": "0/0",
+      "T13112": "1/1",
+      "T13522": "5/5",
+      "T14093": "0/0",
+      "T14495": "0/1"
+    }
+  },
+  {
+    "leaf": "med.pharma",
+    "label": "Pharmacology",
+    "topicIds": [
+      "T10800",
+      "T11635",
+      "T11752",
+      "T12023",
+      "T12356",
+      "T12539",
+      "T12649",
+      "T12817",
+      "T13037",
+      "T13202"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10800": "1/4",
+      "T11635": "2/3",
+      "T11752": "0/0",
+      "T12023": "0/0",
+      "T12356": "0/0",
+      "T12539": "3/5",
+      "T12649": "1/2",
+      "T12817": "0/1",
+      "T13037": "0/0",
+      "T13202": "0/0"
+    }
+  },
+  {
+    "leaf": "med.tox",
+    "label": "Toxicology",
+    "topicIds": [
+      "T10800",
+      "T11274",
+      "T12023",
+      "T12356",
+      "T12649",
+      "T13533",
+      "T14072",
+      "T14199"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10800": "6/9",
+      "T11274": "0/1",
+      "T12023": "0/1",
+      "T12356": "0/0",
+      "T12649": "1/2",
+      "T13533": "0/1",
+      "T14072": "0/0",
+      "T14199": "0/1"
+    }
+  },
+  {
+    "leaf": "med.peds",
+    "label": "Pediatrics",
+    "topicIds": [
+      "T10234",
+      "T10436",
+      "T10560",
+      "T11174",
+      "T11292",
+      "T12460",
+      "T12552",
+      "T12823",
+      "T13770",
+      "T14437"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10234": "0/2",
+      "T10436": "1/4",
+      "T10560": "0/1",
+      "T11174": "0/0",
+      "T11292": "1/1",
+      "T12460": "0/0",
+      "T12552": "1/2",
+      "T12823": "4/4",
+      "T13770": "0/0",
+      "T14437": "1/1"
+    }
+  },
+  {
+    "leaf": "med.surg",
+    "label": "Surgery",
+    "topicIds": [
+      "T10455",
+      "T10563",
+      "T10569",
+      "T10599",
+      "T10630",
+      "T10861",
+      "T11055",
+      "T11291",
+      "T11322",
+      "T11377"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333,
+    "byTopic": {
+      "T10455": "1/4",
+      "T10563": "1/1",
+      "T10569": "1/3",
+      "T10599": "0/0",
+      "T10630": "1/1",
+      "T10861": "0/1",
+      "T11055": "3/3",
+      "T11291": "1/1",
+      "T11322": "0/1",
+      "T11377": "0/0"
+    }
+  },
+  {
+    "leaf": "med.immuno",
+    "label": "Clinical Immunology",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "med.endo",
+    "label": "Endocrinology",
+    "topicIds": [
+      "T13533"
+    ],
+    "status": "insufficient-sample",
+    "sampleSize": 12,
+    "onTarget": 1,
+    "precision": 0.08333333333333333,
+    "byTopic": {
+      "T13533": "1/12"
+    }
+  },
+  {
+    "leaf": "med.path",
+    "label": "Pathology",
+    "topicIds": [
+      "T10238",
+      "T10760",
+      "T10966",
+      "T11184",
+      "T11452",
+      "T11658",
+      "T11787",
+      "T12067",
+      "T13543",
+      "T13759"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667,
+    "byTopic": {
+      "T10238": "1/4",
+      "T10760": "0/4",
+      "T10966": "0/4",
+      "T11184": "0/3",
+      "T11452": "0/0",
+      "T11658": "0/0",
+      "T11787": "0/0",
+      "T12067": "0/0",
+      "T13543": "0/0",
+      "T13759": "0/0"
+    }
+  },
+  {
+    "leaf": "med.radio",
+    "label": "Radiology & Imaging",
+    "topicIds": [
+      "T11363",
+      "T11636"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333,
+    "byTopic": {
+      "T11363": "2/2",
+      "T11636": "3/13"
+    }
+  },
+  {
+    "leaf": "med.infect",
+    "label": "Infectious Diseases",
+    "topicIds": [
+      "T10296",
+      "T10482",
+      "T10897",
+      "T11381",
+      "T11430",
+      "T11819",
+      "T12297",
+      "T12402",
+      "T12492",
+      "T12914"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "byTopic": {
+      "T10296": "1/1",
+      "T10482": "2/6",
+      "T10897": "3/4",
+      "T11381": "1/1",
+      "T11430": "0/2",
+      "T11819": "0/0",
+      "T12297": "0/1",
+      "T12402": "0/0",
+      "T12492": "0/0",
+      "T12914": "0/0"
+    }
+  },
+  {
+    "leaf": "med.derma",
+    "label": "Dermatology",
+    "topicIds": [
+      "T10837",
+      "T13597",
+      "T13953"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10837": "13/15",
+      "T13597": "0/0",
+      "T13953": "0/0"
+    }
+  },
+  {
+    "leaf": "bio.gen",
+    "label": "Genetics",
+    "topicIds": [
+      "T10015",
+      "T10261",
+      "T10012",
+      "T10120",
+      "T10269",
+      "T11642",
+      "T10222",
+      "T11468",
+      "T10676",
+      "T11764"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.mol",
+    "label": "Molecular Biology",
+    "topicIds": [
+      "T10878",
+      "T10521",
+      "T10604",
+      "T11482",
+      "T10123",
+      "T12534",
+      "T10268",
+      "T11041",
+      "T11765",
+      "T11237"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.cell",
+    "label": "Cell Biology",
+    "topicIds": [
+      "T10773",
+      "T10301",
+      "T10379",
+      "T10505",
+      "T10294",
+      "T10492",
+      "T10617",
+      "T11150",
+      "T11841",
+      "T10407"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.neuro",
+    "label": "Neuroscience",
+    "topicIds": [
+      "T10429",
+      "T10241",
+      "T10342",
+      "T10427",
+      "T10581",
+      "T10077",
+      "T10448",
+      "T10608",
+      "T10056",
+      "T10465",
+      "T10985",
+      "T10614"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.eco",
+    "label": "Ecology",
+    "topicIds": [
+      "T10089",
+      "T10199",
+      "T10005",
+      "T10319",
+      "T10555",
+      "T10895",
+      "T10332",
+      "T10302",
+      "T11791",
+      "T10779",
+      "T11880",
+      "T10341",
+      "T10669",
+      "T12640",
+      "T12091",
+      "T11913"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.evo",
+    "label": "Evolution & Population Dynamics",
+    "topicIds": [
+      "T10012",
+      "T10174",
+      "T10751",
+      "T11764",
+      "T12043",
+      "T12968",
+      "T13102",
+      "T14310",
+      "T14378"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "byTopic": {
+      "T10012": "2/3",
+      "T10174": "7/7",
+      "T10751": "0/0",
+      "T11764": "4/4",
+      "T12043": "0/0",
+      "T12968": "0/0",
+      "T13102": "0/1",
+      "T14310": "0/0",
+      "T14378": "0/0"
+    }
+  },
+  {
+    "leaf": "bio.zoo",
+    "label": "Zoology",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "bio.bot",
+    "label": "Botany",
+    "topicIds": [
+      "T12618",
+      "T12630",
+      "T13015",
+      "T14310"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "byTopic": {
+      "T12618": "11/12",
+      "T12630": "2/2",
+      "T13015": "1/1",
+      "T14310": "0/0"
+    }
+  },
+  {
+    "leaf": "bio.micro",
+    "label": "Microbiology",
+    "topicIds": [
+      "T12167",
+      "T12181",
+      "T12349"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T12167": "8/8",
+      "T12181": "0/4",
+      "T12349": "1/3"
+    }
+  },
+  {
+    "leaf": "bio.immuno",
+    "label": "Biological Immunology",
+    "topicIds": [
+      "T10134"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "byTopic": {
+      "T10134": "4/15"
+    }
+  },
+  {
+    "leaf": "bio.comp",
+    "label": "Bioinformatics",
+    "topicIds": [
+      "T11289",
+      "T10887",
+      "T10621",
+      "T12254",
+      "T10885",
+      "T10519",
+      "T12576"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.physio",
+    "label": "Physiology",
+    "topicIds": [
+      "T11109",
+      "T12005",
+      "T11456",
+      "T10814",
+      "T10155",
+      "T11204",
+      "T11193",
+      "T11968",
+      "T11399",
+      "T10441",
+      "T10745",
+      "T11209"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.biochem",
+    "label": "Biochemistry",
+    "topicIds": [
+      "T10044",
+      "T10602",
+      "T10836",
+      "T10432",
+      "T10934",
+      "T11124",
+      "T11844",
+      "T12688",
+      "T10303",
+      "T11884"
+    ],
+    "status": "inherited"
+  },
+  {
+    "leaf": "bio.marine",
+    "label": "Marine Biology",
+    "topicIds": [
+      "T12596"
+    ],
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "byTopic": {
+      "T12596": "11/15"
+    }
+  },
+  {
+    "leaf": "bio.biotech",
+    "label": "Biotechnology",
+    "topicIds": [
+      "T10120",
+      "T10240",
+      "T11426",
+      "T12181",
+      "T12929",
+      "T14018"
+    ],
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "byTopic": {
+      "T10120": "0/4",
+      "T10240": "7/7",
+      "T11426": "1/2",
+      "T12181": "0/1",
+      "T12929": "1/1",
+      "T14018": "0/0"
+    }
+  },
+  {
+    "leaf": "chem.anal",
+    "label": "Analytical Chemistry",
+    "topicIds": [
+      "T10180",
+      "T10908",
+      "T11460"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.electro",
+    "label": "Electrochemistry",
+    "topicIds": [],
+    "status": "no-candidates"
+  },
+  {
+    "leaf": "chem.inorg",
+    "label": "Inorganic Chemistry",
+    "topicIds": [
+      "T11746",
+      "T11790",
+      "T12557",
+      "T10807",
+      "T12646"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.org",
+    "label": "Organic Chemistry",
+    "topicIds": [
+      "T11549",
+      "T11790",
+      "T11989",
+      "T12893",
+      "T13649",
+      "T13859",
+      "T10578",
+      "T11746",
+      "T12527",
+      "T12653"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.phys",
+    "label": "Physical & Theoretical Chemistry",
+    "topicIds": [
+      "T12044"
+    ],
+    "status": "not-reviewed"
+  },
+  {
+    "leaf": "chem.spectro",
+    "label": "Spectroscopy",
+    "topicIds": [
+      "T10640",
+      "T11111",
+      "T12748",
+      "T12967",
+      "T11746",
+      "T11809",
+      "T12646",
+      "T13675"
+    ],
+    "status": "not-reviewed"
+  }
+]

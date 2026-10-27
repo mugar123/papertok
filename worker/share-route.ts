@@ -1,14 +1,17 @@
 import type { OpenAlexWork } from './openalex-api.ts';
-import type { ShareProviders, OpenAireProjects } from './share-pages.ts';
+import type { ShareProviders } from './share-pages.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { createFirestoreRest } from '../src/utils/firestoreRest.ts';
+import { createFirestoreRest } from '../src/utils/firestore-rest.ts';
+import { OPENAIRE_GRAPH_URL } from '../src/services/open-aire-records.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
-import { addOpenAlexCredentials } from './openalex-api.ts';
-import { fetchWithDeadline, OPENALEX_CALLS, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
+import { callerSubject } from './caller-quota.ts';
+import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
+import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.ts';
+import { createPhotoLoader, handleShareImage } from './share-image.ts';
 import { awaitUpstreamSlot } from './upstream-pace.ts';
 
 // The share pages (worker/share-pages.ts) are public and carry no Origin, so a
@@ -21,8 +24,12 @@ import { awaitUpstreamSlot } from './upstream-pace.ts';
 // misses once per data centre, since the edge cache is per data centre, so it
 // leaves room for several at once (review of 2026-09-25). arXiv gets its own
 // ceiling, a tenth of the app's one call every three seconds, and a share page
-// asks it only for a preprint OpenAlex has not indexed yet.
+// asks it only for a preprint OpenAlex has not indexed yet. One address may
+// spend a third of the minute: legitimate previews arrive through Vercel's
+// rewrite, so the address is Vercel's, shared by every bot it relays, while a
+// script calling this Worker directly is held to its own.
 const SHARE_LOOKUP_MINUTE_LIMIT = 60;
+const SHARE_CALLER_MINUTE_LIMIT = 20;
 const SHARE_LOOKUP_DAILY_LIMIT = 1_000;
 const SHARE_ARXIV_HOURLY_LIMIT = 120;
 const SHARE_UPSTREAM_TIMEOUT_MS = 6_000;
@@ -35,15 +42,19 @@ async function reserveShareCeiling(env: WorkerEnv, periodKey: string, limit: num
   return reservation.accepted ? [ledgerRequest] : null;
 }
 
-// The minute is the subject inside the day's object, so one ledger call checks
-// both ceilings in one transaction, like `reserveOpenAlexBudget`.
-async function admitShareLookup(env: WorkerEnv) {
+// The minute is the subject inside the day's object and the caller's minute
+// its part, so one ledger call checks all three in one transaction, like
+// `reserveOpenAlexBudget`. No caller identity, no lookup.
+async function admitShareLookup(request: Request, env: WorkerEnv) {
   const now = new Date().toISOString();
+  const caller = await callerSubject(request, env, `share:${now.slice(0, 16)}`);
+  if (!caller) return false;
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
     periodKey: `share:day:${now.slice(0, 10)}`,
     subject: `share:minute:${now.slice(0, 16)}`,
     subjectLimit: SHARE_LOOKUP_MINUTE_LIMIT,
     globalLimit: SHARE_LOOKUP_DAILY_LIMIT,
+    part: { subject: caller, limit: SHARE_CALLER_MINUTE_LIMIT },
   });
   return Boolean(reservation.accepted);
 }
@@ -60,8 +71,15 @@ function shareProviders(env: WorkerEnv): ShareProviders {
     async openAlex(path, params = {}) {
       const url = addOpenAlexCredentials(new URL(`https://api.openalex.org/${path}`), env);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-      const budget = await reserveOpenAlexBudget(env, '', OPENALEX_CALLS.relay);
-      if (budget.error) throw new Error('The OpenAlex budget refused a share page');
+      // Billed as the relay bills the same URL: a DOI, work, PMID or entity
+      // lookup is free and reserves nothing, so the tiers cannot refuse it.
+      // What is billed (the arXiv landing-page lookup) is enrichment: a
+      // crawler's preview, not a reader waiting on the page.
+      const { units } = openAlexCostFor(url);
+      if (units > 0) {
+        const budget = await reserveOpenAlexBudget(env, '', { units, tier: 'enrichment', kind: 'share' });
+        if (budget.error) throw new Error('The OpenAlex budget refused a share page');
+      }
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (response.status === 404) return null;
       if (!response.ok) throw shareUpstreamError('OpenAlex', response);
@@ -96,13 +114,12 @@ function shareProviders(env: WorkerEnv): ShareProviders {
       return response.text();
     },
     async openAire(params) {
-      const url = new URL('https://api.openaire.eu/search/projects');
-      url.searchParams.set('format', 'json');
-      url.searchParams.set('size', '1');
+      const url = new URL(`${OPENAIRE_GRAPH_URL}/projects`);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+      url.searchParams.set('pageSize', '1');
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (!response.ok) throw shareUpstreamError('OpenAIRE', response);
-      return response.json<OpenAireProjects>();
+      return response.json();
     },
     // Anonymous, on purpose: with no credential the rules decide exactly as
     // they do for a visitor.
@@ -120,12 +137,22 @@ function shareProviders(env: WorkerEnv): ShareProviders {
 
 export async function handleShareRoute(request: Request, env: WorkerEnv) {
   try {
+    if (new URL(request.url).pathname.startsWith('/share/image/')) {
+      return await handleShareImage(request, {
+        loadRecord: createShareLoader(shareProviders(env)),
+        admit: () => admitShareLookup(request, env),
+        loadPhoto: createPhotoLoader(),
+        // Evaluated on the first card, so no other route starts the renderer,
+        // and a Node test, which cannot load its WebAssembly, never does.
+        renderCard: async (card, photo) => (await import('./share-card-render.ts')).renderShareCard(card, photo),
+      });
+    }
     return await handleSharePage(request, {
       loadShell: createShellLoader({
         fetchShell: shellUrl => fetchWithDeadline(shellUrl, { headers: { accept: 'text/html' } }, SHARE_UPSTREAM_TIMEOUT_MS),
       }),
       loadRecord: createShareLoader(shareProviders(env)),
-      admit: () => admitShareLookup(env),
+      admit: () => admitShareLookup(request, env),
     });
   } catch (error) {
     console.error('Share page failed', error);

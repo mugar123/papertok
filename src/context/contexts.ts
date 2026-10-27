@@ -1,12 +1,12 @@
-import type { FeedContextValue } from './FeedContext.tsx';
-import type { EmailNotificationsContextValue } from './EmailNotificationsContext.tsx';
-import type { FollowingUpdatesContextValue } from './FollowingUpdatesContext.tsx';
-import type { FollowingContextValue } from './FollowingContext.tsx';
-import type { LanguageContextValue } from './LanguageContext.tsx';
-import type { ThemeContextValue } from './ThemeContext.tsx';
-import type { AnalyticsContextValue } from './AnalyticsContext.tsx';
-import type { AuthContextValue } from './AuthContext.tsx';
-import type { SimilarFeedContextValue } from './SimilarFeedContext.tsx';
+import type { FeedContextValue } from './feed-context.tsx';
+import type { EmailNotificationsContextValue } from './email-notifications-context.tsx';
+import type { FollowingUpdatesContextValue } from './following-updates-context.tsx';
+import type { FollowingContextValue } from './following-context.tsx';
+import type { LanguageContextValue } from './language-context.tsx';
+import type { ThemeContextValue } from './theme-context.tsx';
+import type { AnalyticsContextValue } from './privacy-context.tsx';
+import type { AuthContextValue } from './auth-context.tsx';
+import type { SimilarFeedContextValue } from './similar-feed-context.tsx';
 
 import { createContext } from 'react';
 

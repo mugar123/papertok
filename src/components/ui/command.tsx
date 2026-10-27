@@ -32,7 +32,7 @@ function Command({ className, ...props }: StyledProps<typeof CommandPrimitive>) 
  * `position: fixed` sheet, so its offset should track the visible viewport as
  * the URL bar hides and reveals, the same as every other fixed sheet in this
  * repo. Unlike a `.css` file, a Tailwind arbitrary value cannot carry a
- * large-viewport fallback the way `FeedContainer.css:15-16` does —
+ * large-viewport fallback the way `feed-container.css:15-16` does —
  * `tailwind-merge` (via `cn`) drops conflicting utilities for the same
  * property down to the last one, so a second bracket value in the old unit
  * here would just be dead code, not a fallback. `dvh` already ships bare
@@ -77,7 +77,7 @@ function CommandDialog({ children, className, overlayClassName, finalFocus, comm
  *
  * Overriding it needs no `!important`: `global.css` declares
  * `@layer theme, base, components, utilities`, so any utility beats the base
- * reset whatever its specificity. `SearchPage.css` predates that and still
+ * reset whatever its specificity. `search-page.css` predates that and still
  * fights the same rule with `!important`.
  *
  * `py-2` on the row is the air around the field. It was `pt-2`, which pushed
@@ -122,7 +122,7 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...
 /**
  * `svh`, not `dvh`: this is the scrolled results list itself
  * (`overflow-y-auto`), and nothing here transitions its `max-height` the way
- * `.related-sheet` in `PaperCard.css` transitions its `height` — so a bar
+ * `.related-sheet` in `paper-card.css` transitions its `height` — so a bar
  * animation that changed a `dvh` bound mid-scroll would snap the clamp
  * instead of easing it, and could yank the scroll position with it. `svh`
  * pins the bound to the viewport's smallest state so it never moves under an
@@ -177,7 +177,7 @@ function CommandGroup({ className, ...props }: StyledProps<typeof CommandPrimiti
  * the title followed and went too (2026-10-17). What marks the row is its own
  * icon, heavier and in `var(--focus-ring)`, the token whose job is "you are
  * here" and whose value stays above 3:1 on every surface in both themes; the
- * palette draws it (Search/SearchCommand.css), because the icon is its own
+ * palette draws it (search/search-command.css), because the icon is its own
  * `.sc-icon`. A stronger tint makes the row read
  * as one object; it is not the indicator.
  * Rows are square: nothing on them is rounded any more. cmdk keeps DOM focus

@@ -1,6 +1,6 @@
 ---
 name: PaperTok
-description: Today's science in one feed, printed like an index over editorial content.
+description: Scientific papers in one feed, printed like an index over editorial content.
 colors:
   navy-ink: "#1d2b53"
   ink-hover: "#3e4a6b"
@@ -24,6 +24,7 @@ colors:
   accent-success: "#067647"
   field-physics: "#4f46e5"
   field-cs: "#c2410c"
+  field-ai: "#a21caf"
   field-math: "#7e22ce"
   field-stat: "#1d4ed8"
   field-econ: "#0f766e"
@@ -34,6 +35,7 @@ colors:
   field-chemeng: "#4d7c0f"
   field-med: "#be123c"
   field-bio: "#15803d"
+  field-chem: "#a13170"
   night-paper: "#14161d"
   night-card: "#1b1c23"
   night-ink: "#f4ecd8"
@@ -147,13 +149,13 @@ reference files — look at them when a rule is unclear:
 
 | File | What it shows |
 | --- | --- |
-| `src/components/Feed/PaperCard.css` | the card, the field colour, the voices |
-| `src/components/Reader/PaperReader.css` | long-form reading, floating controls |
-| `src/components/Layout/Navbar.css` | flat chrome, the brand thread |
-| `src/components/Search/SearchCommand.css` | overlay surfaces |
+| `src/components/feed/paper-card.css` | the card, the field colour, the voices |
+| `src/components/reader/paper-reader.css` | long-form reading, floating controls |
+| `src/components/layout/navbar.css` | flat chrome, the brand thread |
+| `src/components/search/search-command.css` | overlay surfaces |
 
-The Explorer (`src/components/Explorer/EntityExplorer.*`) and the sign-in modal
-(`src/components/Public/AuthPrompt.*`) are worked examples of the whole system.
+The Explorer (`src/components/explorer/entity-explorer.*`) and the sign-in modal
+(`src/components/public/auth-prompt.*`) are worked examples of the whole system.
 
 The seven numbered rules below are cited from code comments as
 "design.md, rule N"; they keep their numbers wherever they sit.
@@ -166,7 +168,8 @@ A document-first product printed like a single-ink page — one navy ink on warm
 a spot yellow and, on the welcome page, a faint paper grain — that reads like a machine-generated
 index over editorial content. The tone is sober, editorial and curious: serious
 with the science, with a spark of play (Petri the mascot, the engravings, the
-twinkling stars) kept for first-run moments only.
+twinkling stars) kept for first-run moments. Petri also marks empty, error and
+startup states.
 
 Structure comes from **hairline rules**, not shadows; metadata is set in
 **mono**; anything you read as prose is set in a **serif**; and every splash of
@@ -181,7 +184,7 @@ yellow does not flip — a mark that changes value stops being a mark.
 **Key Characteristics:**
 - One ink (Navy) on Warm Proof Paper; the welcome page adds a paper grain.
 - Three voices: serif prose, mono machine data, Inter controls.
-- Colour only from the data (the twelve field inks) or from an action's meaning.
+- Colour only from the data (the fourteen field inks) or from an action's meaning.
 - Spot Yellow as a thread, never a highlight reel.
 - Near-square corners, visible hairlines, no shadows anywhere.
 - Patterned buttons (engraved, halftone) only on the landing and onboarding.
@@ -210,7 +213,7 @@ that only the data is allowed to pick.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
-- **The twelve field inks** (`field-physics` … `field-bio`, the
+- **The fourteen field inks** (`field-physics` … `field-chem`, the
   `--gradient-*` variables): flat print inks, one per research field, each
   legible as text on paper. A paper or entity carries its field as
   `--area-accent`. `--gradient-brand` is ink, the fallback when no field
@@ -241,7 +244,7 @@ its rule, its category name and its tinted chips, and derive tints instead of
 hardcoding a second value —
 `background: color-mix(in srgb, var(--area-accent) 8%, var(--bg-card));`.
 Set `--area-accent` from the field with the `getAreaGradient()` helper pattern
-(see `EntityExplorer.jsx`).
+(see `entity-explorer.tsx`).
 
 **Rule 3 — The Yellow Thread Rule.** `--brand-yellow` marks only: the
 **engraved button's plate** (landing and onboarding only), the **active nav or
@@ -324,14 +327,13 @@ units, never a fixed `em`, or content gets cut while the screen sits empty
 **The One Scrolling Line Rule.** A strip of chips whose length comes from the
 data gets one fixed row rather than a wrap: `overflow-x: auto`, no scrollbar,
 `overscroll-behavior-inline: contain`, and a `mask-image` fading the right edge.
-Nothing leaves the DOM; keyboard focus scrolls a chip into view (`.pc-topics`,
-`.pc-linked-resources-list`).
+Nothing leaves the DOM; keyboard focus scrolls a chip into view (`.pc-topics`).
 
 ## Elevation & Depth
 
 Nothing floats. The system is flat: every elevation `--shadow-*` token
-(`sm` to `xl`) resolves to `none`; the two `--shadow-glow-*` tokens are the
-3px focus ring on fields, not elevation, and stay. Depth is conveyed by
+(`sm` to `xl`) resolves to `none`; `--shadow-glow-primary` is the
+3px focus ring on fields, not elevation. Depth is conveyed by
 hairline rules and by the step between paper and Ink Wash. The welcome page alone
 prints a faint paper grain (`--grain`, two offset blue-noise tiles in the ink,
 0.22 light / 0.18 dark); the app's pages are plain paper. An overlay is set
@@ -384,7 +386,7 @@ handler or a hand-rolled overlay.
   reduced motion keeps the colour change and drops the squeeze.
 
 **Rule 5 — The Rationed Pattern Rule.** Buttons come from the component
-(`import { Button } from '../ui/button.jsx'`), not from CSS; delete any bespoke
+(`import { Button } from '../ui/button.tsx'`), not from CSS; delete any bespoke
 `.foo-btn` you replace. The patterned pair is rationed: `engraved` (a hatched
 ink frame around a yellow plate) and `halftone` (a paper plate over a 1-bit
 checker shadow) draw the eye, and a pattern on every screen stops being one.
@@ -392,7 +394,7 @@ checker shadow) draw the eye, and a pattern on every screen stops being one.
 welcome/onboarding foot; `halftone` is the landing's account button, its
 theme switch and the Privacy button beside it. Never more than one engraved
 button on a screen, never on icon buttons inside the app, never in dense
-screens (feed, reader, explorer, settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
+screens (feed, reader, explorer, settings, dialogs). The `papertok/patterned-buttons` lint rule holds the list; a new place is a
 design decision, made here and there together. The label always sits on a
 solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 `src/components/ui/button.css`).
@@ -400,7 +402,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the
   field (`color-mix` of `--area-accent`) or from a status tint.
-- **State:** toggles are `aria-pressed` chips (`toggle.jsx`); a toggle group's
+- **State:** toggles are `aria-pressed` chips (`toggle.tsx`); a toggle group's
   `value` is always an array.
 
 ### Cards / Containers
@@ -423,25 +425,30 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Navigation
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
-  active one marked by a sliding yellow rule (the brand thread). The search bar
+  active one marked by a sliding yellow rule (the brand thread). Pressing the
+  active feed tab reloads that feed, and on a touch screen a sideways swipe on
+  the feed moves between For you and Following. The search bar
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
-  command palette, which grows from its own centre.
+  command palette, which grows from its own centre. On `/search` the bar holds
+  the search page's own field and scope instead, and the shortcut focuses it;
+  below 768px that field takes the tabs' place, and the tabs move into a
+  "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 
 ### Overlays
-- **`dialog.jsx`:** the centred modal over the flat scrim; Base UI owns focus,
-  Escape, outside press and restore. `alert-dialog.jsx` for confirmations.
-- **`dropdown-menu.jsx` / Base UI Menu:** a `role="menu"` of commands, opening
+- **`dialog.tsx`:** the centred modal over the flat scrim; Base UI owns focus,
+  Escape, outside press and restore. `alert-dialog.tsx` for confirmations.
+- **`dropdown-menu.tsx` / Base UI Menu:** a `role="menu"` of commands, opening
   from its trigger. The share menu is the model: the link first, then each
   destination by name.
-- **`drawer.jsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
+- **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
-- **`popover.jsx`**, **`sheet.jsx`**, **`tooltip.jsx`**, **`tabs.jsx`**
+- **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
   `textarea`).
-- **Toasts:** Sonner (`ui/sonner.jsx`) on paper with a hairline; a success
+- **Toasts:** Sonner (`ui/sonner.tsx`) on paper with a hairline; a success
   carries the check icon. On a phone, a toast confirming a sheet's action comes
   in at the top, clear of the thumb.
 
@@ -455,12 +462,13 @@ reduced motion. No counts until per-paper totals exist; the names stay in the
 DOM for assistive tech and in a native `title`. Save puts the paper in Read
 later at once, with an "Add to list" toast; a second press takes it out of
 Read later and every list, with Undo. On a touch screen, holding Save for half
-a second opens the list picker instead, saved or not. Connections is a toggle:
+a second opens the list picker instead, saved or not. Saving from the picker
+confirms with a toast that offers Undo. Connections is a toggle:
 wider than a phone it swaps the abstract for the citation map until it is pressed again; on
 a phone it opens the map as a sheet. Similar papers opens a feed of
 recommended papers in a full-screen layer that grows out of the button and
-folds back into it (`Feed/SimilarFeedLayer.tsx`). More opens the paper's options
-(`Feed/PaperMenu.tsx`), a dialog on desktop and a drawer on a phone: the
+folds back into it (`feed/similar-feed-layer.tsx`). More opens the paper's options
+(`feed/paper-menu.tsx`), a dialog on desktop and a drawer on a phone: the
 actions with a one-line hint each and their glyph on a tint of the action's own
 accent (About this paper, Mark as read, Not
 interested, the BibTeX/RIS exports), then the share destinations. About this
@@ -471,11 +479,26 @@ in a lighter one. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
 
+Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
+institution, project or topic can be followed: the Explorer header, beside a
+Share glyph drawn the same way in the neutral rail, and search results. It is
+an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
+40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
+like Like and Save; "Follow" is its name and its `title` says Following once on.
+
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
 (`--tint-red-*` when a request failed, `--tint-neutral-*` when nothing did), a
 serif heading, one sentence saying what to do, and the way out as labelled
 `Button`s. Never an emoji, never a bare icon button as the only exit.
+
+The startup recovery screen in `index.html` is the one status screen drawn before
+the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the
+one documented exception to the No New Hex Rule. It copies the token values it
+uses into local custom properties with the tokens' own names, sets type in system
+fonts and draws Petri inline: thinking while PaperTok loads or is slow, upset
+when it fails. A change to those tokens or to `petri-frame.tsx`,
+`petri-thinking.tsx` or `petri-upset.tsx` needs the same change there.
 
 ## Do's and Don'ts
 
@@ -507,14 +530,14 @@ serif heading, one sentence saying what to do, and the way out as labelled
 
 ## Shared components — wiring notes
 
-- **`button.jsx`** (+ `button-variants.js`) — the only button. Compose with a
+- **`button.tsx`** (+ `button-variants.ts`) — the only button. Compose with a
   non-button through `render={<a href … />}` (Base UI's render prop; there is
   no `asChild`).
-- **`command.jsx`** — cmdk command palette on the Dialog (see `SearchCommand`).
-- **`../../lib/utils.js`** — `cn()` merges class names (clsx + tailwind-merge),
+- **`command.tsx`** — cmdk command palette on the Dialog (see `SearchCommand`).
+- **`../../lib/utils.ts`** — `cn()` merges class names (clsx + tailwind-merge),
   letting a caller's utility win over a component default.
-- Add a new primitive with `npx shadcn add <name>` (`components.json` style
-  `base-nova`), then redraw it in this vocabulary before it ships.
+- Build new primitives with the installed Base UI package and the existing
+  `src/components/ui` patterns, then apply the tokens in this document.
 
 Base UI's docs travel with the package:
 `node_modules/@base-ui/react/docs/react/components/<name>.md`. Its state
@@ -530,38 +553,20 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 
 ---
 
-## Auth pattern — two doors, and they are not interchangeable
+## Auth pattern
 
-Sign-in has two entry points. Which one you reach for is decided by a single
-question: **did the user already get taken somewhere else?**
+`src/components/public/auth-prompt.tsx` owns Google and GitHub sign-in.
+An in-context action calls `requestAuthentication` (passed to screens as
+`onAuthRequired`) and opens the dialog over the current page.
 
-**The modal — `src/components/Public/AuthPrompt.tsx`.** The in-context door,
-opened by calling `requestAuthentication` (passed to screens as
-`onAuthRequired`). It does Google + GitHub sign-in on the spot and closes itself
-once a session exists, leaving the user exactly where they were. That is the
-whole point: someone who tapped "save" on a paper should still be looking at
-that paper afterwards. It deliberately offers **no** way out to `/login` — there
-is nothing to return to.
+A guest who opens a protected route reaches onboarding with `authRequired`
+and `returnTo` in location state. `app.tsx` opens the same dialog there and
+`src/utils/auth-return.ts` keeps the validated destination across the session
+remount. After sign-in, the app completes onboarding when needed and returns
+the reader to that destination. Legacy `/login` links use this same flow.
 
-**The page — `/login`, `src/components/Auth/LoginPage.jsx`.** The destination for
-the trips that already moved the user: a direct link, a shared URL, or
-`ProtectedRoute` intercepting a gated route. Those are the only journeys that
-have somewhere to go back to, so they are the only ones that carry a `returnTo`.
-`ProtectedRoute` redirects with `state={{ returnTo: pathname + search }}`; the
-page reads it back from `location.state` (or a `?returnTo=` query, for links
-built outside the app), validates it, and lands the user there once the session
-exists — or passes it through `/onboarding` first, so it survives that too. The
-route is `lazy`, because a session that already exists never renders it.
-
-**Adding an auth entry point:** wire `onAuthRequired` and use the modal. Reach
-for `/login` only when the user has already been navigated away from what they
-wanted, and then always carry the `returnTo` — a redirect that drops it is the
-bug this pattern exists to prevent.
-
-> Earlier drafts of this file said "never reintroduce a `/login` page". That rule
-> was reversed on 2026-08-24: it optimised for the in-context case and silently
-> broke the other one, leaving a guest who opened a shared link to a gated route
-> stranded on the feed with no memory of where they were going.
+New entry points should use `onAuthRequired`; a navigation to a protected
+route must preserve its return destination.
 
 ---
 
@@ -604,8 +609,8 @@ bug this pattern exists to prevent.
 - **`createContext` must not share a module with a component.** A module that
   defines a component is a Fast Refresh boundary; re-evaluating it mints a new
   context that mounted consumers aren't holding. Put `createContext` in its own
-  component-free module (see `toggle-group-context.js`,
-  `button-variants.js`). Enforced by `src/context/contextIdentity.test.js`.
+  component-free module (see `toggle-group-context.ts`,
+  `button-variants.ts`). The lint rejects `createContext` in a `.tsx` file.
 
 ---
 

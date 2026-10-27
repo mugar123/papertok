@@ -26,30 +26,77 @@ function adsQueryFromTerms(query: string) {
 }
 
 async function fetchAdsLiterature(context: SourceContext, query: string, env: WorkerEnv) {
+  return adsSearch(env, {
+    q: adsQueryFromTerms(query),
+    sort: context.sort === 'recent' ? 'date desc' : 'score desc',
+    rows: context.limit,
+    start: (context.page - 1) * context.limit,
+  });
+}
+
+// ADS's largest page.
+const ADS_MAX_ROWS = 2000;
+// On 2026-10-26 ADS took up to about 6 s to answer with the classes of a
+// year's 2,000 most-cited papers of a class; a nightly listing can wait as
+// long as the enrichment's calls do.
+const ADS_RANKING_TIMEOUT_MS = 15_000;
+
+/**
+ * The year's most-cited papers of one arXiv category, for a notable lane
+ * (worker/paper-sources.ts `ads-notable`): ADS files a published paper under
+ * the classes of its arXiv version, chosen by its authors. `arxiv_class` names
+ * every class a paper is listed in, arXiv's primary class first, and a query
+ * cannot ask for the first alone. With `ownClassOnly` the listing keeps the
+ * papers arXiv files under the category first: it reads the classes of the
+ * year's 2,000 most-cited papers of the category, then the records of the
+ * first `rows` of them filed under it first. A cross-listed paper is left to
+ * the lane of its own class.
+ */
+export async function fetchAdsNotable(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, arxivClass: string, year: number, rows: number, ownClassOnly = false) {
+  const query = { q: `arxiv_class:"${arxivClass}" year:${year}`, sort: 'citation_count desc', start: 0 };
+  if (!ownClassOnly) return { docs: (await adsSearch(env, { ...query, rows })).response.docs };
+  const ranked = await adsSearch(env, { ...query, rows: ADS_MAX_ROWS, fields: ['bibcode', 'arxiv_class'], timeoutMs: ADS_RANKING_TIMEOUT_MS });
+  const bibcodes = ranked.response.docs
+    .filter(doc => Array.isArray(doc.arxiv_class) && doc.arxiv_class[0] === arxivClass)
+    .slice(0, rows)
+    .map(doc => `"${String(doc.bibcode)}"`);
+  if (bibcodes.length === 0) return { docs: [] };
+  const data = await adsSearch(env, { ...query, q: `bibcode:(${bibcodes.join(' OR ')})`, rows: bibcodes.length });
+  return { docs: data.response.docs };
+}
+
+const ADS_FIELDS = [
+  'bibcode',
+  'title',
+  'author',
+  'abstract',
+  'year',
+  'pubdate',
+  'doi',
+  'identifier',
+  'arxiv_class',
+  'keyword',
+  'citation_count',
+  'reference',
+  'property',
+  'data',
+  'esources',
+  'pub',
+  'doctype',
+];
+
+async function adsSearch(env: Pick<WorkerEnv, 'NASA_ADS_API_TOKEN'>, { q, sort, rows, start, fields = ADS_FIELDS, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS }: {
+  q: string; sort: string; rows: number; start: number; fields?: string[]; timeoutMs?: number;
+}) {
   const url = new URL('https://api.adsabs.harvard.edu/v1/search/query');
-  url.searchParams.set('q', adsQueryFromTerms(query));
-  url.searchParams.set('rows', String(context.limit));
-  url.searchParams.set('start', String((context.page - 1) * context.limit));
-  url.searchParams.set('sort', context.sort === 'recent' ? 'date desc' : 'score desc');
-  url.searchParams.set('fl', [
-    'bibcode',
-    'title',
-    'author',
-    'abstract',
-    'year',
-    'pubdate',
-    'doi',
-    'identifier',
-    'arxiv_class',
-    'keyword',
-    'citation_count',
-    'reference',
-    'property',
-    'data',
-    'esources',
-    'pub',
-    'doctype',
-  ].join(','));
+  // Journal articles, arXiv's records and conference papers: not ADS's meeting
+  // abstracts, circulars, catalogues, proposals, software or theses. Both
+  // queries are clauses joined by AND, so the type is one more.
+  url.searchParams.set('q', `${q} doctype:(article OR eprint OR inproceedings)`);
+  url.searchParams.set('rows', String(rows));
+  url.searchParams.set('start', String(start));
+  url.searchParams.set('sort', sort);
+  url.searchParams.set('fl', fields.join(','));
 
   const response = await fetchWithDeadline(url, {
     headers: {
@@ -57,7 +104,7 @@ async function fetchAdsLiterature(context: SourceContext, query: string, env: Wo
       authorization: `Bearer ${env.NASA_ADS_API_TOKEN}`,
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
     },
-  }, SOURCE_UPSTREAM_TIMEOUT_MS);
+  }, timeoutMs);
   if (!response.ok) {
     const error: UpstreamError = new Error(`NASA ADS error: ${response.status}`);
     error.status = response.status;

@@ -31,6 +31,16 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: List maintained Markdown files
+        run: git ls-files --cached --others --exclude-standard '*.md' ':!:.agents/skills/impeccable/**' > "$RUNNER_TEMP/documentation-files.txt"
+
+      - name: Check local links and heading fragments
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
+        with:
+          lycheeVersion: v0.24.2
+          args: --config .lychee.toml --files-from ${{ runner.temp }}/documentation-files.txt
+          output: ${{ runner.temp }}/documentation-links.md
+
       - name: Install dependencies
         run: npm ci
 

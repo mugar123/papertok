@@ -1,0 +1,204 @@
+.public-paper-page {
+  /* The bar fixed over the top of this page. Signed out it is the page's own
+     .public-paper-nav below, which keeps --nav-height at every width; signed
+     in it is the shared app navbar, so the --app modifier retargets this to
+     --nav-total (which shrinks under 768px, as that bar does). */
+  --public-paper-bar: calc(var(--nav-height) + var(--inset-top));
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100svh;
+  /* The frame the card is set in begins where the bar ends — the same offset
+     .feed-wrapper takes from --nav-total. The page used to be laid out from
+     viewport 0 with the bar painted over it, and nothing subtracted the bar:
+     the sheet is anchored to the bottom of its frame, so a short abstract left
+     the gap at the top and hid it, and a long one filled the sheet upwards
+     until the accent rule, the kicker and the chips sat under the bar.
+     Measured at 1440×800: sheet from 24 with the bar ending at 56; from 80
+     with the bar padded off, the frame the feed gives the same card. */
+  padding-top: var(--public-paper-bar);
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.public-paper-page--app {
+  --public-paper-bar: var(--nav-total);
+}
+
+.public-paper-card {
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+}
+
+/* The way back, signed in.
+   The app navbar owns the top of the screen on this route, so this is a
+   floating control over the page rather than a bar of its own — and it is the
+   shared icon button, the same one the Explorer's back arrow is, so it reads
+   as the same affordance rather than as a second idea of "back". It had no
+   rules at all before: a bare 20px chevron at (0, 0), `position: static`, over
+   the top-left corner of a card that starts with a watermark there. In
+   practice, no back arrow. */
+.public-paper-back-floating {
+  position: absolute;
+  z-index: 6;
+  /* Below the navbar, not behind it. The page is positioned from viewport 0
+     and the navbar is fixed over the top of it, so an inset measured from the
+     page's own edge puts the button underneath the bar. This element only
+     renders when public-paper-page.tsx is in its signed-in branch, where
+     --public-paper-bar is --nav-total, the shared app navbar's own height
+     token (it shrinks to --nav-height-mobile under 768px, unlike the
+     signed-out .public-paper-nav below). */
+  top: calc(var(--public-paper-bar) + var(--space-3));
+  left: var(--space-5);
+}
+
+@media (max-width: 900px) {
+  .public-paper-back-floating {
+    left: calc(var(--space-5) - 10px);
+  }
+
+  .public-paper-page--app :is(.public-paper-card, .public-paper-skeleton) .pc-sheet {
+    padding-top: calc(var(--space-3) * 2 + 40px);
+  }
+}
+
+@media (max-width: 420px) {
+  .public-paper-back-floating {
+    left: calc(var(--space-4) - 10px);
+  }
+}
+
+/* The cover, which has to actually cover.
+   This class had no rules either, so the skeleton painted as a plain block in
+   normal flow: 294px of placeholder stacked *above* the paper, pushing the card
+   that far down the page instead of standing in front of it while it arrived.
+   Absolute and opaque is the whole of what it was always described as doing —
+   "it sits on top and lifts only once the card has animated in". */
+.public-paper-skeleton {
+  position: absolute;
+  /* From the bar down, not `inset: 0`: absolute offsets are measured from the
+     padding box, so a skeleton stretched over the whole page would centre
+     itself half a bar higher than the card it stands in for. */
+  top: var(--public-paper-bar);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: grid;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* The same bar the guest feed puts over its own cards, not a floating capsule.
+   A shared link is most people's first sight of PaperTok, so it should look
+   like PaperTok: a flat ground with one hairline under it, the way every other
+   header in the app sits. The glass pill it replaced belonged to a different
+   design — rounded, blurred, shadowed, and centred over the page like a widget
+   dropped on top of it. Mirrors `.guest-feed-header`, deliberately: two headers
+   doing the same job should not be two designs. */
+.public-paper-nav {
+  position: fixed;
+  z-index: 900;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* --nav-total is not used here: this bar has no 768px breakpoint of its
+     own (unlike the signed-in navbar and the guest header, it stays
+     --nav-height at every width), so the token that switches to
+     --nav-height-mobile there would shrink it on phones for no reason. The
+     inset is added directly instead — --inset-top is still the one shared
+     source for the raw value. */
+  height: calc(var(--nav-height) + var(--inset-top));
+  padding-top: var(--inset-top);
+  display: grid;
+  /* One control on the left, two on the right, and the wordmark still
+     centred: the sides share what it leaves. Its column can shrink to
+     nothing, so at large text on a narrow screen the wordmark ellipsizes
+     before the bar overflows. */
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-primary);
+}
+
+.public-paper-nav-actions {
+  display: flex;
+  justify-self: end;
+  gap: var(--space-2);
+}
+
+/* Large text scales these rem gaps and not the 32px buttons, so on a phone
+   they are what leaves the wordmark too little. Tightened here; and at the
+   narrowest widths the left track stops matching the right one, which gives
+   the wordmark the room of the one-button side at the cost of sitting a
+   little off the centre. */
+@media (max-width: 480px) {
+  .public-paper-nav {
+    gap: var(--space-1);
+    padding-inline: var(--space-3);
+  }
+
+  .public-paper-nav-actions {
+    gap: var(--space-1);
+  }
+}
+
+@media (max-width: 340px) {
+  .public-paper-nav {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
+.public-paper-nav-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .public-paper-nav-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
+}
+
+.public-paper-wordmark {
+  overflow: hidden;
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The highlighter under "Tok", as everywhere else. It was a violet letter here
+   and nowhere else in the app. */
+.public-paper-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+.public-paper-state {
+  width: min(520px, calc(100% - 40px));
+  height: 100%;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .public-paper-nav-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-glass-hover);
+  }
+}

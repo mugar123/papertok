@@ -1,8 +1,10 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
+import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { canonicalCacheKey, fetchWithDeadline, serveCached } from './provider-runtime.ts';
+import { releaseRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, paceRetryAfterSeconds } from './upstream-pace.ts';
 
 export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
@@ -16,11 +18,28 @@ export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 // seat somebody else could have used.
 export const ARXIV_PACE_PERIOD_MS = 3_000;
 export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
+// A request from outside the Worker (`handleArxiv`: a reader, a guest or a
+// script) may take only every other seat, 10 misses a minute app-wide, so
+// cache-busting queries cannot hold every seat however many addresses send
+// them; the caller allowance below counts one address, and one IPv6 host can
+// send from a whole /64. The Worker's own callers take any seat: the
+// harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
+// and share pages. A signed-in reader chooses the ids those lookups ask for
+// through POST /store/papers, so one account, within its per-minute feed
+// allowance, can still hold every seat. Spacing towards arXiv is unchanged:
+// still one call every three seconds.
+const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
 // for the whole app, every call the cache saves is a seat somebody else gets.
 const ARXIV_CACHE_SECONDS = 60 * 60;
+// The misses one address may send in a UTC minute: 5, half of the 10 seats
+// PUBLIC_SEAT leaves a request from outside the Worker. One address, such as a
+// script or a university behind one NAT, cannot take every public seat; two
+// can, and everyone behind one NAT shares these 5. The paper harvest asks
+// in-process (`handleHarvestArxiv`) and spends no caller's allowance.
+const ARXIV_CALLER_MINUTE_LIMIT = 5;
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function safeArxivParam(name: string, rawValue: unknown) {
@@ -40,7 +59,18 @@ function safeArxivParam(name: string, rawValue: unknown) {
   return value;
 }
 
-export async function handleArxiv(request: Request, env: WorkerEnv) {
+export function handleArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, true);
+}
+
+// The route as the paper harvest asks it in-process: no caller to count.
+export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, false);
+}
+
+// `perCaller` is true for a request from outside the Worker: it spends its
+// address's allowance and takes only public seats.
+async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -64,12 +94,35 @@ export async function handleArxiv(request: Request, env: WorkerEnv) {
   // beat: the seat is courtesy towards arXiv, not the protection of a key,
   // and a ledger that is down must not take the source down with it.
   if (env.REQUEST_QUOTA_LEDGER) {
+    // The caller's allowance comes before the beat, so a caller past it takes
+    // no seat. A missing identity fails closed; a ledger that cannot answer is
+    // treated as it is for the beat.
+    const caller = perCaller ? await reserveCallerMinute(request, env, 'arxiv', ARXIV_CALLER_MINUTE_LIMIT) : null;
+    if (caller?.reading.code === 'CALLER_IDENTITY_NOT_CONFIGURED') {
+      return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+      });
+    }
+    if (caller && !caller.reading.accepted && !caller.reading.code) {
+      return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        'retry-after': caller.retryAfter,
+      });
+    }
+    if (caller?.reading.code) console.warn(`arXiv caller allowance unavailable (${caller.reading.code}); not counted`);
     const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+      accepts: perCaller ? PUBLIC_SEAT : undefined,
     });
     if (!seat.accepted && !seat.code) {
+      // No seat, no call: the caller's unit goes back.
+      if (caller?.reading.accepted && caller.reservation) {
+        await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
+      }
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',

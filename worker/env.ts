@@ -1,14 +1,12 @@
 import type { TextExtractionEnv } from './paper-text.ts';
+import type { EmbeddingEnv } from './paper-store.ts';
 // Bindings come from Wrangler. Configuration may be absent in local requests;
 // optional secrets are provisioned separately from wrangler.toml.
 export type WorkerEnv = {
-  [Key in keyof Env]?: Key extends 'AI' ? TextExtractionEnv['AI'] : Env[Key] extends string ? string : Env[Key];
+  [Key in keyof Env]?: Key extends 'AI' ? TextExtractionEnv['AI'] & EmbeddingEnv['AI'] : Env[Key] extends string ? string : Env[Key];
 } & Partial<Record<
   | 'AI_ANNOTATION_MODEL'
   | 'AI_UNLIMITED_EMAILS'
-  | 'BREVO_API_KEY'
-  | 'BREVO_FROM_EMAIL'
-  | 'BREVO_FROM_NAME'
   | 'CORE_API_KEY'
   | 'EMAIL_DELIVERY_LEDGER_FALLBACK'
   | 'FIREBASE_SERVICE_ACCOUNT_EMAIL'
@@ -22,14 +20,12 @@ export type WorkerEnv = {
   | 'OPENCITATIONS_ACCESS_TOKEN'
   | 'OPENALEX_API_KEY'
   | 'PDF_GLOBAL_MINUTE_LIMIT'
+  | 'PDF_RATE_LIMIT_SECRET'
+  | 'POSTHOG_PROJECT_TOKEN'
   | 'RESEND_API_KEY'
-  | 'RESEND_FROM_EMAIL'
   | 'SCOPUS_PROXY_URL'
   | 'SCOPUS_PROXY_SECRET'
   | 'SCOPUS_VIEW'
-  | 'SENTRY_DSN'
-  | 'SENTRY_ENVIRONMENT'
-  | 'SENTRY_RELEASE'
   | 'SEMANTIC_SCHOLAR_API_KEY'
   | 'UNPAYWALL_EMAIL',
   string

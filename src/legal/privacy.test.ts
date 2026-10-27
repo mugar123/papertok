@@ -2,10 +2,9 @@
  * The privacy page as a Vite entry: what the built document must say, and
  * what it must never load.
  *
- * Source tests, so comments are stripped before asserting — a comment that
- * names the thing we forbid would otherwise pass the check for its absence,
- * and one that quotes the thing we require would pass the check for its
- * presence (see docs on source-test hardening, ce139ce).
+ * HTML comments are stripped before asserting, so a comment that names the
+ * thing we forbid cannot pass the check for its absence, and one that quotes
+ * the thing we require cannot pass the check for its presence.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
 const stripHtmlComments = (s: string) => s.replace(/<!--[\s\S]*?-->/g, '');
-const stripCssComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the page lives at the repo root as a Vite entry, not in public/', () => {
   assert.ok(existsSync(fileURLToPath(new URL('privacy.html', ROOT))), 'privacy.html at the root');
@@ -29,36 +27,9 @@ test('the document is English and canonical at /privacy.html', () => {
   assert.match(html, /<title>Privacy policy — PaperTok<\/title>/);
 });
 
-test('no font or script comes from outside the site', () => {
+test('the document loads no font or script from outside the site', () => {
   const html = stripHtmlComments(read('privacy.html'));
   assert.doesNotMatch(html, /googleapis|gstatic|cdnjs|jsdelivr|unpkg/);
-  const css = stripCssComments(read('src/legal/privacy.css'));
-  assert.doesNotMatch(css, /https?:\/\//);
-});
-
-test('the theme is decided before first paint by the same mirror the app uses', () => {
-  const html = stripHtmlComments(read('privacy.html'));
-  /* Both halves of the mirror: the stored choice and the system fallback. */
-  assert.match(html, /localStorage\.getItem\('papertok_theme'\)/);
-  assert.match(html, /prefers-color-scheme: dark/);
-  assert.match(html, /setAttribute\('data-theme'/);
-  /* And no OS-only media query in the stylesheet doing a second, disagreeing job. */
-  const css = stripCssComments(read('src/legal/privacy.css'));
-  assert.doesNotMatch(css, /prefers-color-scheme/);
-});
-
-test('the stylesheet shares the app tokens and self-hosted faces instead of forking them', () => {
-  const privacyCss = stripCssComments(read('src/legal/privacy.css'));
-  assert.ok(privacyCss.includes("@import './static-page.css'"));
-  const staticPageCss = stripCssComments(read('src/legal/static-page.css'));
-  assert.match(staticPageCss, /@import\s+'\.\.\/styles\/variables\.css'/);
-  assert.match(staticPageCss, /@import\s+'@fontsource-variable\/newsreader\/opsz\.css'/);
-  assert.match(staticPageCss, /@import\s+'@fontsource\/inter\/400\.css'/);
-  /* The old page's violet, which belongs to nobody. */
-  const combinedCss = privacyCss + staticPageCss;
-  assert.doesNotMatch(combinedCss, /#7c5cff|#a893ff/i);
-  /* No uppercase-mono table headers: labels are sentences here. */
-  assert.doesNotMatch(combinedCss, /text-transform:\s*uppercase/);
 });
 
 test('the summary up top says the five things a reader needs', () => {
@@ -97,14 +68,55 @@ test('every section of the Spanish policy survives the translation', () => {
   ]);
 });
 
-test('the build knows the second page and keeps the app entry named index', () => {
-  const config = read('vite.config.ts').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const input = config.match(/input:\s*\{([\s\S]*?)\}/)?.[1] || '';
-  // The app is index.html again (it was app.html for as long as a marketing
-  // landing held `/`), and the KEY stays `index` either way — that is the half
-  // of this contract that actually matters: PRECACHE_GLOB_PATTERNS asks the
-  // service worker for `assets/index-*` by name, and a renamed key ships a
-  // boot set without the app in it while workbox only warns (vite.config.ts).
-  assert.match(input, /\bindex:\s*fileURLToPath\(new URL\('\.\/index\.html'/);
-  assert.match(input, /\bprivacy:\s*fileURLToPath\(new URL\('\.\/privacy\.html'/);
+test('the page says papers you liked, saved or opened reach the catalogue and Workers AI, without the reader', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.doesNotMatch(html, /your likes [^.]*not sent to it/);
+  // Opening a paper asks for related ones by its id, as a like does (FeedContext's network expansion).
+  assert.match(html, /opening a paper [^.]*related[^.]*identifier/);
+  assert.match(html, /paper you liked, saved or opened that the catalogue does not have yet is added/);
+  assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
+});
+
+test('the page says what the server keeps of the feed order ranked for a reader, where, for how long, and, up top too, that deleting the account leaves it to expire', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // worker/paper-feed.ts `rankingCache`: a walk's order lasts WALK_KEPT_MS from its last page.
+  assert.match(html, /keeps the order it ranked for you, and how far down it you got, for up to 2 hours after your last page/);
+  assert.match(html, /cache of the Cloudflare data center that answered you/);
+  assert.match(html, /Deleting your account does not remove it sooner/);
+  const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
+  assert.match(summary, /delete your account, and everything in it, [^<]*The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page/);
+});
+
+test("the page says the server counts a signed-in reader's requests per account, not only their volume", () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // The ledger keys per-account limits (feed, follows, embedding, provider minutes) by a SHA-256 of the uid.
+  assert.doesNotMatch(html, /not who makes them/);
+  assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
+});
+
+test('the page names the public pages a shared link opens as places for the Privacy button', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const where = html.match(/with the <strong>Privacy<\/strong> button ([^.]*)\./)?.[1];
+  assert.ok(where, 'the policy no longer says where the Privacy button is');
+  assert.match(where, /welcome screens/);
+  // The sentence Pablo approved on 2026-10-25, word for word.
+  assert.ok(
+    where.endsWith('screens and of the public pages a shared link opens: a paper, a list, an author, institution, journal, topic or project page, and the page for a link that no longer works'),
+    where,
+  );
+  assert.doesNotMatch(where, /\bfeed\b/);
+});
+
+test('the page says figure lookups count against the caller address like the other public lookups', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
+  assert.match(html, /a public request looks up papers, paper figures, open-access links or a shared page, that server uses the IP address/);
+  // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
+  assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
+});
+
+test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
+  assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });

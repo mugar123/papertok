@@ -1,0 +1,95 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { authorExplorerPath, openAlexAuthorId, projectExplorerPath } from './explorer-paths.ts';
+
+test('an author with an OpenAlex id opens by id, name riding along for the masthead', () => {
+  assert.equal(
+    authorExplorerPath({ name: 'Ada Lovelace', id: 'https://openalex.org/A5023888391' }, 'openalex:W1'),
+    '/explorer/author/A5023888391?name=Ada%20Lovelace',
+  );
+  assert.equal(authorExplorerPath({ name: 'Ada', id: 'a5023888391' }, 'x'), '/explorer/author/A5023888391?name=Ada', 'a bare id, any case');
+  assert.equal(openAlexAuthorId({ id: 'https://openalex.org/I123' }), '', 'an institution id is not an author');
+});
+
+test('an author without an id keeps the name door, with the arXiv id the explorer matches on', () => {
+  assert.equal(authorExplorerPath({ name: 'Grace Hopper' }, 'arxiv:2401.12345'), '/explorer/author/Grace%20Hopper?arxivId=2401.12345');
+  assert.equal(authorExplorerPath('Grace Hopper', '2401.12345'), '/explorer/author/Grace%20Hopper?arxivId=2401.12345', 'a plain string author');
+  assert.equal(authorExplorerPath({ name: '' }, 'x'), '', 'nothing to open');
+});
+
+test('signed out, the public entity page gets the id when there is one, and the name beside it', () => {
+  assert.equal(
+    authorExplorerPath({ name: 'Ada Lovelace', id: 'https://openalex.org/A1' }, 'x', { publicMode: true }),
+    '/public/entity/author/A1?name=Ada%20Lovelace',
+  );
+  assert.equal(authorExplorerPath({ name: 'Ada Lovelace' }, 'x', { publicMode: true }), '/public/entity/author/Ada%20Lovelace');
+});
+
+// PubMed and Europe PMC authors arrive without an OpenAlex id, and the card
+// used to hand the paper's `pmid:…` id over as an "arXiv id" the explorer
+// turned into an impossible `10.48550/arxiv.pmid:…` DOI; the name search it
+// fell back to picked "Po-Wn Li" for "Li WN" (audit 2026-09-23, issue 4).
+// An ORCID is a person OpenAlex may not have linked to any author entity yet,
+// so the paper travels with it: without it, an unlinked ORCID fell back to an
+// arXiv search by the ORCID's name and showed homonyms' papers as the
+// person's (review of 2026-09-25).
+test('an author with an ORCID and no OpenAlex id opens by ORCID, with the paper beside it', () => {
+  assert.equal(
+    authorExplorerPath({ name: 'Li WN', orcid: 'https://orcid.org/0000-0002-1825-0097' }, { id: 'pmid:42774036', pmid: '42774036' }),
+    '/explorer/author/0000-0002-1825-0097?name=Li%20WN&paper=pmid%3A42774036',
+  );
+  assert.equal(
+    authorExplorerPath({ name: 'Li WN', orcid: '0000-0002-1825-009X' }, {}, { publicMode: true }),
+    '/public/entity/author/0000-0002-1825-009X?name=Li%20WN',
+  );
+});
+
+test('a name-only author carries the paper it was clicked from, by its most reliable id', () => {
+  const editorial = { id: 'pmid:42774036', pmid: '42774036', doi: '10.3389/fendo.2026.1980821' };
+  assert.equal(
+    authorExplorerPath({ name: 'Li WN' }, editorial),
+    '/explorer/author/Li%20WN?paper=doi%3A10.3389%2Ffendo.2026.1980821',
+  );
+  assert.equal(
+    authorExplorerPath({ name: 'Li WN' }, { id: 'pmid:42774036', pmid: '42774036' }),
+    '/explorer/author/Li%20WN?paper=pmid%3A42774036',
+  );
+  assert.equal(
+    authorExplorerPath({ name: 'Grace Hopper' }, { id: '2401.12345', arxivId: '2401.12345' }),
+    '/explorer/author/Grace%20Hopper?arxivId=2401.12345',
+  );
+  assert.equal(authorExplorerPath({ name: 'Li WN' }, 'pmid:42774036'), '/explorer/author/Li%20WN?paper=pmid%3A42774036');
+  assert.equal(authorExplorerPath({ name: 'Nobody' }, { id: 'europepmc:PPR:1' }), '/explorer/author/Nobody');
+});
+
+test('signed out, the name-only door keeps the paper too', () => {
+  assert.equal(
+    authorExplorerPath({ name: 'Li WN' }, { id: 'pmid:42774036', pmid: '42774036' }, { publicMode: true }),
+    '/public/entity/author/Li%20WN?paper=pmid%3A42774036',
+  );
+});
+
+// Unencoded, `&` in a paper id would end the value and add a query key, `#`
+// would start a fragment and `+` would read back as a space.
+test('the project link carries any paper id whole, whatever characters it holds', () => {
+  const project = { id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' };
+  const open = (paperId: string) => new URL(projectExplorerPath(project, paperId), 'https://papertok.app');
+
+  for (const paperId of ['2401.12345', 'hep-th/9901001', 'openalex:W123', 'ads:2019A&A...623A..72B', '10.1000/a&b=c', '10.5555/a+b', '10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-#', 'doi:10.1000/a%2Fb', '10.1/a?b=c#d', 'x y']) {
+    const url = open(paperId);
+    assert.equal(url.searchParams.get('arxivId'), paperId, paperId);
+    assert.deepEqual([...url.searchParams.keys()], ['name', 'funder', 'arxivId'], `${paperId} adds no query key`);
+    assert.equal(url.hash, '', `${paperId} starts no fragment`);
+    assert.equal(url.searchParams.get('name'), 'ERC Starting');
+    assert.equal(url.searchParams.get('funder'), 'EC');
+  }
+});
+
+// An old-style id such as `hep-th/9901001` now carries `%2F`; the loop above
+// checks that it reads back whole.
+test('the project link for a new-style arXiv id is the one earlier versions produced', () => {
+  assert.equal(
+    projectExplorerPath({ id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' }, '2401.12345'),
+    '/explorer/project/corda__h2020%3A%3A1234abcd?name=ERC%20Starting&funder=EC&arxivId=2401.12345',
+  );
+});

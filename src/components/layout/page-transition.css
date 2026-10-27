@@ -1,0 +1,241 @@
+/* Route handover: the detail arrives from the right, and the back arrow
+   uncovers the feed by sending that detail back to the right. The page below
+   moves a shorter distance along the same axis, without scaling its text.
+   CSS owns transform and opacity; PageTransition owns presence and scroll.
+   A short linear fade covers overlapping text before the travel settles. */
+
+.page-transition {
+  /* The only place a duration is written. A held page has no clock of its
+     own: it rides the one of the entrance above it (`hold` the enter clock,
+     `hold-lateral` the lateral one), because it has to end in the very
+     frame that page settles — earlier, and the arriving page is translucent
+     over nothing; later, and it paints OVER a page that has already dropped
+     its stacking (below). One hold timed for the longest entrance was
+     measured doing that under every tab switch: eight frames of the For you
+     card at 60% over a Research page already at rest. */
+  --page-enter-ms: 280ms;
+  --page-leave-ms: 240ms;
+  --page-lateral-ms: 120ms;
+  --page-fade-ms: 150ms;
+  --page-reveal-ms: 240ms;
+  --page-reduced-ms: 120ms;
+  /* The box the motion.div used to set inline: without an explicit width a
+     flex-column route root measures against its content and jumps on load. */
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* Its own ground. Two pages share the screen during a navigation, and a page
+     with no background is a sheet you can see through: with Research already at
+     rest and opaque down its own column, the feed held underneath was still
+     showing in the margins either side of it, and then vanished in one frame
+     when AnimatePresence dropped it. Opaque, the page arriving covers what it
+     replaces as it fades in, which is what "arriving" means. Same token `body`
+     paints, so a page at rest looks exactly as it did. */
+  background: var(--bg-primary);
+}
+
+/* ─── The page on its way out ───
+   Out of flow the same frame it stops being present (the attribute is set
+   from the render), so the page arriving takes its place in the document
+   at once. `top` is set inline by the component: minus the window scroll
+   the page had, so what was on screen stays on screen while it goes.
+   `height: auto`: fixed, the root's 100% would be the viewport, and a flex
+   column that tall would try to squeeze a long page into it. Taps go
+   through to the page underneath or the one on top. */
+.page-transition[data-page-motion="hold"],
+.page-transition[data-page-motion="hold-lateral"],
+.page-transition[data-page-motion="leave"],
+.page-transition[data-page-motion="fade"] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: auto;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ─── The page arriving on top ───
+   Above the held page only while it animates: once the animation ends the
+   component drops the attribute, and with it this stacking context, so a
+   fixed element inside the page (the paper reader) is not trapped under
+   the bar afterwards. Both indices stay under --z-nav. A page REVEALED on
+   the way back is not here: it must stay under the page leaving. */
+.page-transition[data-page-motion="enter"],
+.page-transition[data-page-motion="enter-lateral"] {
+  position: relative;
+  z-index: 2;
+}
+
+/* The detail covers early, then finishes its travel at full opacity. */
+.page-transition[data-page-motion="enter"] {
+  animation:
+    pageEnterTravel var(--page-enter-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-enter-ms) * 0.36) linear both;
+}
+
+/* Navbar tabs retain their own directional pass and shorter overlap. */
+.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
+  animation:
+    pageEnterFromRight var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-lateral-ms) * 0.3) linear both;
+}
+
+.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
+  animation:
+    pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-lateral-ms) * 0.3) linear both;
+}
+
+/* The feed yields on the detail's clock, so both finish together. */
+.page-transition[data-page-motion="hold"] {
+  animation:
+    pageHold var(--page-enter-ms) var(--ease-out-cubic) both,
+    pageDim var(--page-enter-ms) linear both;
+}
+
+/* The fallback, for a lateral hold that somehow has no direction. */
+.page-transition[data-page-motion="hold-lateral"] {
+  animation:
+    pageHold var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageDim var(--page-lateral-ms) linear both;
+}
+
+/* A tab change is a pass, not a dissolve: the page arriving travels and the one
+   it replaces cedes THE OTHER WAY, on the same clock. Which way it cedes is
+   `data-leave-direction` — the navigation ejecting it — because
+   `data-nav-direction` keeps the direction this page arrived with. */
+.page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"] {
+  animation:
+    pageHoldToLeft var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageYield var(--page-lateral-ms) linear both;
+}
+
+.page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
+  animation:
+    pageHoldToRight var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageYield var(--page-lateral-ms) linear both;
+}
+
+/* Back restores the feed from the exact offset and brightness it ceded.
+   Translation avoids zooming every letter and figure as the feed remounts. */
+.page-transition[data-page-motion="reveal"] {
+  animation:
+    pageRevealTravel var(--page-reveal-ms) var(--ease-out-cubic) both,
+    pageUncover calc(var(--page-reveal-ms) * 0.45) linear both;
+}
+
+/* The detail retraces its entrance; its fade ends while it is still moving. */
+.page-transition[data-page-motion="leave"] {
+  animation:
+    pageLeaveTravel var(--page-leave-ms) var(--ease-out-cubic) both,
+    pageFadeOut calc(var(--page-leave-ms) * 0.45) linear both;
+}
+
+/* A replace, or a redirect: no step to animate, the old page dissolves. */
+.page-transition[data-page-motion="fade"] {
+  animation: pageFadeOut var(--page-fade-ms) linear both;
+}
+
+/* ─── The travels: one curve each, no opacity ─── */
+
+@keyframes pageEnterTravel {
+  from { transform: translateX(56px); }
+  to { transform: none; }
+}
+
+@keyframes pageEnterFromRight {
+  from { transform: translateX(36px); }
+  to { transform: none; }
+}
+
+@keyframes pageEnterFromLeft {
+  from { transform: translateX(-36px); }
+  to { transform: none; }
+}
+
+/* Tabs yield in the opposite direction to the arriving sibling. */
+@keyframes pageHoldToLeft {
+  from { transform: none; }
+  to { transform: translateX(-16px); }
+}
+
+@keyframes pageHoldToRight {
+  from { transform: none; }
+  to { transform: translateX(16px); }
+}
+
+@keyframes pageLeaveTravel {
+  from { transform: none; }
+  to { transform: translateX(56px); }
+}
+
+@keyframes pageHold {
+  from { transform: none; }
+  to { transform: translateX(-18px); }
+}
+
+@keyframes pageRevealTravel {
+  from { transform: translateX(-18px); }
+  to { transform: none; }
+}
+
+/* ─── The fades: a straight line, and never all the way to nothing ───
+   Four of them, shared by every rule above and by the reduced-motion block
+   below — the same fades, without the travel. */
+
+@keyframes pageCover {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pageFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes pageDim {
+  from { opacity: 1; }
+  to { opacity: 0.72; }
+}
+
+@keyframes pageUncover {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
+@keyframes pageYield {
+  from { opacity: 1; }
+  to { opacity: 0.6; }
+}
+
+/* Fewer and gentler, not none: the fades stay — literally the same four, which
+   are what keeps two pages from teleporting — the movement goes, and everything
+   is shorter. The lateral selectors repeat both attributes to match the
+   specificity of the rules they override. */
+@media (prefers-reduced-motion: reduce) {
+  .page-transition[data-page-motion="enter"],
+  .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"],
+  .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
+    animation: pageCover var(--page-reduced-ms) linear both;
+  }
+
+  .page-transition[data-page-motion="leave"],
+  .page-transition[data-page-motion="fade"] {
+    animation: pageFadeOut var(--page-reduced-ms) linear both;
+  }
+
+  .page-transition[data-page-motion="hold"],
+  .page-transition[data-page-motion="hold-lateral"] {
+    animation: pageDim var(--page-reduced-ms) linear both;
+  }
+
+  .page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"],
+  .page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
+    animation: pageYield var(--page-reduced-ms) linear both;
+  }
+
+  .page-transition[data-page-motion="reveal"] {
+    animation: pageUncover var(--page-reduced-ms) linear both;
+  }
+}

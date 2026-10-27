@@ -15,6 +15,11 @@
       "has": [{ "type": "host", "value": "papertok-ten.vercel.app" }],
       "destination": "https://papertok.app/:path*",
       "permanent": true
+    },
+    {
+      "source": "/public/paper/:key",
+      "destination": "/paper/:key",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -35,7 +40,18 @@
       "destination": "https://eu.i.posthog.com/:path"
     },
     {
-      "source": "/public/:kind(paper|list|user|entity)/:rest*",
+      "source": "/paper/:rest*",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(?:Googlebot|Google-InspectionTool|GoogleOther|Storebot-Google|AdsBot-Google|bingbot|BingPreview|DuckDuckBot|YandexBot|Baiduspider|Applebot|Qwantbot|SeznamBot|facebookexternalhit|Facebot|meta-externalagent|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|redditbot|Pinterestbot|Embedly|Iframely|Mastodon|Bluesky|vkShare).*"
+        }
+      ],
+      "destination": "https://api.papertok.app/share/paper/:rest*"
+    },
+    {
+      "source": "/public/:kind(list|entity)/:rest*",
       "has": [
         {
           "type": "header",
@@ -46,7 +62,7 @@
       "destination": "https://api.papertok.app/share/:kind/:rest*"
     },
     {
-      "source": "/:path((?:institution|login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public)(?:/.*)?)",
+      "source": "/:path((?:institution|login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public|paper)(?:/.*)?)",
       "destination": "/index.html"
     }
   ],

@@ -481,7 +481,8 @@ test('reassembles a section split across provider chunks', async () => {
   }
   assert.equal(sections.length, 1);
   assert.equal(sections[0].paragraphs[0], 'Split across two frames.');
-  assert.equal(end!.rawText, line);
+  assert.ok(end);
+  assert.equal(end.rawText, line);
 });
 
 test('reports the finish reason and raw text when nothing parses', async () => {
@@ -675,37 +676,44 @@ async function runRewrite(harnessOptions: HarnessOptions, env: WorkerEnv, reques
  * not simulated with a timer here on purpose: a wall-clock threshold would make
  * these tests flaky on a loaded machine, and what is being asserted is an
  * ordering — the reader hears from us *before* the slow stage finishes — not a
- * duration.
+ * duration. `reached` resolves when the rewrite arrives at the stage.
  */
 function heldOpen() {
   let release!: (value?: unknown) => void;
+  let arrive!: () => void;
   const gate = new Promise(resolve => { release = resolve; });
-  return { gate, release };
+  const reached = new Promise<void>(resolve => { arrive = resolve; });
+  return { reached, release, hold: () => { arrive(); return gate; } };
 }
 
 const SILENCE = Symbol('nothing reached the reader');
 
 /**
- * The first NDJSON event, or `SILENCE` if none arrived in time.
+ * The first NDJSON event, or `SILENCE` if the rewrite reached `stage` first.
  *
  * The browser arms its stall timer before the POST and resets it only when bytes
  * arrive, so a rewrite fails at 45s not because the model is slow but because
  * nothing at all came back while it worked. That is what this measures.
+ *
+ * Silence is decided by order, not by a stopwatch: the stage has been reached,
+ * the callbacks already queued have run (`setImmediate`), and the reader still
+ * holds nothing. A fixed allowance would measure the machine: under load a
+ * correct rewrite's first event sometimes missed 200 ms.
+ *
+ * This leans on an ordering: the pump's meta write cannot finish until the reader
+ * pulls, so a correct rewrite has its first event queued before the stage is
+ * reached. A macrotask hop added between that write and the stage would need a
+ * longer wait here.
  */
-async function firstEventWithin(pending: Promise<Response>, ms: number) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const silence = new Promise(resolve => { timer = setTimeout(() => resolve(SILENCE), ms); });
-  const firstEvent = pending.then(async (response: Response) => {
-    const reader = response.body!.getReader();
-    const { value } = await reader.read();
-    reader.releaseLock();
+async function firstEventBefore(reader: Promise<ReadableStreamDefaultReader>, stage: { reached: Promise<void> }) {
+  const firstEvent = reader.then(async (open) => {
+    const { value } = await open.read();
     return JSON.parse(new TextDecoder().decode(value).trim().split('\n')[0]);
   });
-  try {
-    return await Promise.race([firstEvent, silence]);
-  } finally {
-    clearTimeout(timer);
-  }
+  const silence = stage.reached
+    .then(() => new Promise((resolve) => { setImmediate(resolve); }))
+    .then(() => SILENCE);
+  return Promise.race([firstEvent, silence]);
 }
 
 test('the reader hears from the worker while the model is still thinking', async () => {
@@ -714,7 +722,7 @@ test('the reader hears from the worker while the model is still thinking', async
 
   await withRewriteHarness({
     provider: async () => {
-      await model.gate;
+      await model.hold();
       return sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]);
     },
   }, async () => {
@@ -722,8 +730,9 @@ test('the reader hears from the worker while the model is still thinking', async
       ...REWRITE_ENV,
       REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
     });
+    const reader = pending.then(response => response.body!.getReader());
     try {
-      const first = await firstEventWithin(pending, 200);
+      const first = await firstEventBefore(reader, model);
       assert.notEqual(
         first,
         SILENCE,
@@ -737,9 +746,11 @@ test('the reader hears from the worker while the model is still thinking', async
     } finally {
       model.release();
       // Draining matters: a transform nobody reads blocks its writer on the
-      // second line, and the pump then never reaches the `close` that lets the
-      // test runner exit.
-      await pending.then(response => response.body!.cancel()).catch(() => {});
+      // second line, and the pump then never reaches the `close` that stops its
+      // heartbeat interval and lets the test runner exit. Cancel through the
+      // reader: `response.body.cancel()` is refused while the reader holds the
+      // lock, which it does whenever the first event never came.
+      await reader.then(open => open.cancel()).catch(() => {});
     }
   });
 });
@@ -750,7 +761,7 @@ test('the reader hears from the worker while the PDF is still downloading', asyn
 
   await withRewriteHarness({
     pdf: async () => {
-      await download.gate;
+      await download.hold();
       return readablePdf();
     },
     provider: async () => sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]),
@@ -759,13 +770,14 @@ test('the reader hears from the worker while the PDF is still downloading', asyn
       ...REWRITE_ENV,
       REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
     });
+    const reader = pending.then(response => response.body!.getReader());
     try {
-      const first = await firstEventWithin(pending, 200);
+      const first = await firstEventBefore(reader, download);
       assert.notEqual(first, SILENCE, 'the PDF download gets up to twelve seconds of it, in total silence');
       assert.equal(first.type, 'meta');
     } finally {
       download.release();
-      await pending.then(response => response.body!.cancel()).catch(() => {});
+      await reader.then(open => open.cancel()).catch(() => {});
     }
   });
 });
@@ -1075,6 +1087,90 @@ test('a failed explicit retry preserves the old partial result for a normal reop
   assert.equal(state.reserve, 2);
 });
 
+test('regenerate writes a complete cached rewrite again and replaces it for later opens', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'First version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Second version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env, { regenerate: true });
+  assert.equal(events[0].cached, false);
+  assert.equal(events.find(event => event.type === 'section')!.paragraphs![0], 'Second version.');
+  assert.equal(state.reserve, 2);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[1].paragraphs![0], 'Second version.');
+  assert.equal(state.reserve, 2);
+});
+
+test('a regenerate cut short leaves the complete cached rewrite for later opens', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Whole introduction.')),
+      sseFrame(sectionLine('conclusion', 'Whole conclusion.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Cut-short introduction.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, env, { regenerate: true });
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(state.reserve, 2);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.deepEqual(replay.filter(event => event.type === 'section').map(event => event.paragraphs), [
+    ['Whole introduction.'], ['Whole conclusion.'],
+  ]);
+  assert.equal(replay.at(-1)!.truncated, undefined);
+  assert.equal(state.reserve, 2);
+});
+
+test('only a boolean true regenerate bypasses a complete cached rewrite', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Kept.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+  for (const regenerate of [undefined, false, 'true', 1]) {
+    const { events: replay } = await runRewrite({
+      pdf: async () => { throw new Error('Only boolean true requests regeneration'); },
+    }, env, { regenerate });
+    assert.equal(replay[0].cached, true);
+    assert.equal(replay[1].paragraphs![0], 'Kept.');
+  }
+  assert.equal(state.reserve, 1);
+});
+
 test('a rewrite that finished is not replayed as truncated', async () => {
   const store = fakeRewriteStore();
   const env = {
@@ -1182,6 +1278,70 @@ test('a 503 from flash before any token is retried once on the fallback model', 
   assert.equal(events.some((event) => event.type === 'ping' && event.model === 'gemini-3.5-flash-lite'), true);
   // The rewrite arrived: there is nothing to give back.
   assert.equal(state.release, 0);
+});
+
+test('a rewrite the fallback wrote is stored briefly, under the name of the model that wrote it', async () => {
+  const store = fakeRewriteStore();
+  const models: string[] = [];
+  const env = {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+
+  await runRewrite({ provider: failingPrimary(models) }, env);
+
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(store.entries.size, 1);
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'gemini-3.5-flash-lite');
+  // Minutes, not the thirty days a primary rewrite is kept for, and no less than
+  // the sixty seconds KV accepts.
+  const ttl = entry.ttl ?? 0;
+  assert.ok(ttl >= 60 && ttl <= 120, `ttl ${entry.ttl}`);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[0].model, 'gemini-3.5-flash-lite');
+});
+
+test('a regenerate the fallback answered leaves the complete primary rewrite for later opens', async () => {
+  const store = fakeRewriteStore();
+  const models: string[] = [];
+  const env = {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Primary version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+  const stored = [...store.entries];
+  assert.equal(stored.length, 1);
+
+  const { events } = await runRewrite({ provider: failingPrimary(models) }, env, { regenerate: true });
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.model, 'gemini-3.5-flash-lite');
+  // The reader got the lighter model's text, but a thirty-day entry is not
+  // given up for two minutes of it.
+  assert.deepEqual([...store.entries], stored);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[0].model, 'gemini-3.5-flash');
+  assert.equal(replay[1].paragraphs![0], 'Primary version.');
 });
 
 test('the provider own daily wall on flash is worth trying on flash-lite', async () => {

@@ -216,7 +216,7 @@
   }
 
   /* No `backdrop-filter` in this base rule. Both `<dialog>`s in the app
-     (CreateListDialog.css, SaveToListModal.css) override `::backdrop`
+     (create-list-dialog.css, save-to-list-modal.css) override `::backdrop`
      entirely — background, animation, everything — so this rule is what a
      future dialog would actually render with, and every dialog that exists
      today animates its backdrop's opacity in with `fadeIn`. A blur left
@@ -234,15 +234,14 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@media (prefers-reduced-motion: reduce) {
+  .spinning { animation-duration: 2.4s; }
 }
 
 /* ============================================
    Maths
 
-   KaTeX's stylesheet is imported at runtime (`utils/katexLoader.js`), so it
+   KaTeX's stylesheet is imported at runtime (`utils/katex-loader.ts`), so it
    lands in the document after this file and wins any tie. Every rule here is
    written with a doubled class to take the specificity instead of relying on
    an order we do not control.
@@ -281,11 +280,11 @@
    Theme switch — a crossfade
 
    Pressing the toggle fades the incoming page in over the outgoing one:
-   `utils/themeTransition.js` puts `theme-switch-plain` on `<html>` for the
+   `utils/theme-transition.ts` puts `theme-switch-plain` on `<html>` for the
    length of the View Transition, and the two rules below are the whole
    animation — opacity only, which composites on any GPU. The circular ink
    sweep that used to live here ran just as smoothly but its hard edge read
-   as a cut (measured 2026-09-11, see themeTransition.js).
+   as a cut (measured 2026-09-11, see theme-transition.ts).
 
    These rules sit outside `@layer base` deliberately: they are not element
    resets, and the pseudo-elements they target have to beat the UA's own
@@ -310,12 +309,7 @@
 
 :root.theme-switch-plain::view-transition-new(root) {
   z-index: 1;
-  animation: themePlainFade 220ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-@keyframes themePlainFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  animation: fadeIn 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* A full-page fade is precisely the movement this preference exists to
@@ -362,19 +356,22 @@ textarea:focus-visible,
 }
 
 /* Visible only while focused: the first Tab of every page lands here.
-   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
-   400, but the page chrome this link has to sit in front of ignores that scale
-   — the guest header and the public paper header are at 900 and the search
+   The z-index is a literal because fixed headers sit above the token scale:
+   the guest header and the public paper header are at 900 and the search
    header at 1000. At 401 the link was focused and completely painted over by
    the guest header (verified in the browser: `elementFromPoint` on the focused
    link returned `.guest-wordmark`), which is exactly the "focus is hidden by
    author content" failure of WCAG 2.4.11, and it made 2.4.1 useless to anyone
    who needs to see where the focus went. 1100 clears every fixed header while
    staying under the dialog layers (AuthPrompt 1800, overlays 9999+), which no
-   focused skip link ever has to cross. */
+   focused skip link ever has to cross.
+
+   It hides by its own height, not by a fixed offset: at 320px wide with 200%
+   text the label wraps to about 128px, so a `top: -100px` would leave its
+   bottom 28px over the page and the controls under it (WCAG 1.4.10). */
 .skip-link {
   position: fixed;
-  top: -100px;
+  top: var(--space-2);
   left: var(--space-4);
   z-index: 1100;
   background: var(--accent-primary);
@@ -383,15 +380,28 @@ textarea:focus-visible,
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   text-decoration: none;
-  transition: top var(--transition-fast);
+  transform: translateY(calc(-100% - var(--space-2)));
+  transition: transform var(--transition-fast);
 }
 .skip-link:focus-visible {
-  top: var(--space-2);
+  transform: none;
+}
+/* After the base rule: both are unlayered with the same specificity, so a
+   reduced-motion override placed earlier in the file loses to the transition. */
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
 }
 
 /* Programmatic focus target; the ring belongs on real controls. */
 #main-content:focus {
   outline: none;
+}
+
+/* A page sliding in from the side must not widen the phone's layout viewport,
+   which the fixed navbar sizes to. `clip`, not `hidden`, so this is no scroll
+   container and the window keeps scrolling. */
+#main-content {
+  overflow-x: clip;
 }
 
 /* `html { scroll-behavior: smooth }` above is its own movement — every

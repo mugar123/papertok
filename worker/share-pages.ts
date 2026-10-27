@@ -1,6 +1,9 @@
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
+import type { EntityMetrics } from '../src/services/adapters/open-alex-types.ts';
+import type { ShareCardEntity } from './share-card.ts';
 import type { WorkerGlobals } from './env.ts';
+import type { ShareImage } from '../src/utils/public-navigation.ts';
 
 type EntityType = keyof typeof SCHEMA_TYPES;
 type EntityLookup = { provider: 'openalex'; path: string; params?: never }
@@ -14,7 +17,14 @@ export type ShareRoute = RouteBase & (
 );
 type InvalidRoute = { kind: string; invalid: true };
 interface ShareList { title: string; description?: string; language?: string; papers?: Array<{ title: string; key?: string }> }
-interface ShareEntity { name: string; nameOnly?: boolean }
+interface ShareEntity extends ShareCardEntity { nameOnly?: boolean }
+// The fields of an OpenAlex entity a share card prints (ENTITY_SELECT).
+interface OpenAlexEntityRecord extends EntityMetrics {
+  geo?: { city?: string; country?: string } | null;
+  host_organization_name?: string | null;
+  subfield?: { display_name?: string } | null;
+  image_thumbnail_url?: string | null;
+}
 interface ShareRecord { paper?: Partial<Paper> & { authors?: string[] }; list?: ShareList; entity?: ShareEntity }
 export interface ShareOutcome { found?: boolean; unknown?: boolean; failed?: boolean; record?: ShareRecord }
 type ShareCache = Pick<Cache, 'match' | 'put'>;
@@ -24,21 +34,22 @@ export interface ShareDependencies {
   admit?: (route: ShareRoute) => Promise<boolean>;
   cache?: ShareCache | null;
 }
-interface ProjectMetadata { acronym?: { $?: unknown }; title?: { $?: unknown } }
-export interface OpenAireProjects { response?: { results?: { result?: { metadata?: { 'oaf:entity'?: { 'oaf:project'?: ProjectMetadata } } }[] } } }
+interface ProjectName { acronym?: unknown; title?: unknown }
 export interface ShareProviders {
-  openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & { results?: OpenAlexWork[] }) | null>;
+  openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & OpenAlexEntityRecord & { results?: OpenAlexWork[] }) | null>;
   arxiv?: (id: string) => Promise<string>;
-  openAire?: (params: Record<string, string>) => Promise<OpenAireProjects | null>;
+  openAire?: (params: Record<string, string>) => Promise<unknown>;
   firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } | null } | null> };
 }
 interface SharePage {
-  status: number; language: string; title: string; description: string; imageAlt: string;
+  status: number; language: string; title: string; description: string; image: PreviewImage;
   ogType: string; canonicalUrl: string | null; pageUrl: string; noIndex: boolean;
   jsonLd: Record<string, unknown> | null; fallbackHtml: string;
   seed: { key: string; paper: Partial<Paper> } | null;
   maxAge: number;
 }
+// The image a page previews with, as its head names it.
+interface PreviewImage { url: string; alt: string; width: number; height: number }
 type XmlText = string | { '#text'?: string };
 interface ArxivEntry {
   id?: XmlText; title?: XmlText; summary?: XmlText; published?: XmlText; doi?: XmlText; journal_ref?: XmlText;
@@ -46,18 +57,21 @@ interface ArxivEntry {
 }
 
 import { XMLParser } from 'fast-xml-parser';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { plainScientificText } from '../src/utils/plainScientificText.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { plainScientificText } from '../src/utils/plain-scientific-text.ts';
+import { openAireProjectParams, readOpenAirePage } from '../src/services/open-aire-records.ts';
+import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH, shareCardFor } from './share-card.ts';
 import {
   DEFAULT_PUBLIC_ORIGIN,
-  DEFAULT_SHARE_IMAGE_PATH,
+  DEFAULT_SHARE_IMAGE,
   PUBLIC_ENTITY_TYPES,
   encodePaperKey,
+  getShareImage,
   getPublicEntityPath,
   getPublicListPath,
   getPublicPaperPath,
   parsePaperKey,
-} from '../src/utils/publicNavigation.ts';
+} from '../src/utils/public-navigation.ts';
 
 /**
  * The HTML a crawler gets for a public page (audit 2026-09-23, issue 5).
@@ -66,12 +80,12 @@ import {
  * JavaScript: WhatsApp, Twitterbot, facebookexternalhit and Googlebot all
  * received the same 8963 bytes, titled «PaperTok», with og:url and canonical
  * at /feed and an empty #root. Vercel sends those bots here instead
- * (vercel.json), from /public/{paper,list,user,entity}/… to /share/…, and
+ * (vercel.json), from /paper/… and /public/{list,entity}/… to /share/…, and
  * this module answers the same shell with the page's own head (profiles are
  * gone, so a /share/user/… path gets the not-found page): title,
  * description, canonical, og:* and twitter:*, JSON-LD, a static copy of the
  * page inside #root, and for a paper the paper itself as a seed the app
- * paints from (`src/utils/shareSeed.ts`).
+ * paints from (`src/utils/share-seed.ts`).
  *
  * Two caches, deliberately apart. The shell is kept five minutes, because it
  * names the hashed assets of the current deployment and a stale one points at
@@ -82,10 +96,17 @@ import {
  */
 
 export const SHELL_URL = `${DEFAULT_PUBLIC_ORIGIN}/index.html`;
-const SHARE_IMAGE_URL = `${DEFAULT_PUBLIC_ORIGIN}${DEFAULT_SHARE_IMAGE_PATH}`;
+// Where this Worker answers in production, and so where a card is drawn when
+// a page is composed without the address it was asked at.
+const WORKER_ORIGIN = 'https://api.papertok.app';
 const CACHE_ROOT = 'https://papertok.internal/cache/share';
 const ROOT_ELEMENT = '<div id="root"></div>';
 const NO_INDEX = 'noindex, nofollow';
+
+// Bumped for a kind when its record gains or loses a field, so a record of
+// the old shape is looked up again rather than served for a day. Entities
+// gained the share card's fields on 2026-10-25.
+const RECORD_VERSIONS: Partial<Record<string, string>> = Object.freeze({ entity: 'v2/' });
 
 const SHELL_CACHE_SECONDS = 5 * 60;
 const FOUND_CACHE_SECONDS = 24 * 60 * 60;
@@ -147,7 +168,15 @@ const WORK_SELECT = [
   'best_oa_location',
   'open_access',
 ].join(',');
-const ENTITY_SELECT = 'id,display_name';
+// An entity's name, and what its share card prints beside it
+// (worker/share-card.ts). OpenAlex refuses a field the type does not have.
+const ENTITY_SELECT: Record<string, string> = Object.freeze({
+  author: 'id,display_name,works_count,cited_by_count',
+  institution: 'id,display_name,works_count,cited_by_count,geo,image_thumbnail_url',
+  source: 'id,display_name,works_count,cited_by_count,host_organization_name',
+  topic: 'id,display_name,works_count,cited_by_count,subfield',
+  concept: 'id,display_name,works_count,cited_by_count',
+});
 
 const OPENALEX_ENTITIES = Object.freeze({
   author: { path: 'authors', prefix: 'A' },
@@ -171,10 +200,6 @@ const SCHEMA_TYPES = Object.freeze({
 const COPY = Object.freeze({
   siteTitle: 'PaperTok — Discover scientific research',
   siteDescription: 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.',
-  imageAlt: {
-    paper: 'A scientific paper view in PaperTok',
-    list: 'A public scientific reading list on PaperTok',
-  },
   notFound: {
     paper: 'We could not find this paper',
     list: 'We could not find this list',
@@ -313,9 +338,8 @@ function cleanRouteId(value: unknown) {
  */
 function entityLookup(type: EntityType, id: string, params: { funder?: string }): EntityLookup | null {
   if (type === 'project') {
-    if (id.includes('::')) return { provider: 'openaire', params: { openaireProjectID: id } };
-    if (!/^[\w.\-/]{1,80}$/.test(id)) return null;
-    return { provider: 'openaire', params: { grantID: id, ...(params.funder ? { funder: params.funder } : {}) } };
+    if (!id.includes('::') && !/^[\w.\-/]{1,80}$/.test(id)) return null;
+    return { provider: 'openaire', params: openAireProjectParams(id, params.funder) };
   }
   const entity = OPENALEX_ENTITIES[type];
   const bare = id.replace(/^https?:\/\/(?:api\.)?openalex\.org\/(?:[a-z]+\/)?/i, '');
@@ -355,6 +379,10 @@ export function matchShareRoute(url: URL): ShareRoute | InvalidRoute | null {
   if (kind === 'paper' && rest.length === 1) {
     const identity = parsePaperKey(rest[0]);
     if (!identity) return invalid;
+    // The DOI goes into the OpenAlex path with its slashes, and the URL parser
+    // resolves a whole `.` or `..` segment into another record's path. No real
+    // DOI has one; a dot inside a segment (`10.1234/a..b`) is part of the DOI.
+    if (identity.type === 'doi' && identity.value.split('/').some(segment => segment === '.' || segment === '..')) return invalid;
     const canonicalPath = getPublicPaperPath(identity.type, identity.value)!;
     return {
       kind,
@@ -376,7 +404,7 @@ export function matchShareRoute(url: URL): ShareRoute | InvalidRoute | null {
       funder: cleanText(url.searchParams.get('funder'), 80),
     };
     const lookup = entityLookup(type, id, params);
-    const funderKey = lookup?.params?.funder ? `?funder=${encodeURIComponent(lookup.params.funder)}` : '';
+    const funderKey = lookup?.params?.fundingShortName ? `?funder=${encodeURIComponent(lookup.params.fundingShortName)}` : '';
     return {
       kind,
       type,
@@ -513,10 +541,28 @@ async function loadList(route: Extract<ShareRoute, { kind: 'list' }>, { firestor
   });
 }
 
-function projectName(project: ProjectMetadata | undefined) {
-  const acronym = cleanText(project?.acronym?.$, 120);
-  const title = cleanText(project?.title?.$, 400);
+function projectName(project: ProjectName | undefined) {
+  const acronym = cleanText(project?.acronym, 120);
+  const title = cleanText(project?.title, 400);
   return acronym && title ? `${acronym}: ${title}` : acronym || title;
+}
+
+// What an entity's card says under its name: where an institution is, a
+// journal's publisher, a topic's subfield. Not where an author works: OpenAlex
+// infers its last known institution from the latest paper, and a card would
+// print that guess as a fact.
+function entityCardFields(type: EntityType, data: OpenAlexEntityRecord): Omit<ShareCardEntity, 'name'> {
+  const subtitle = {
+    institution: () => [data.geo?.city, data.geo?.country].map(part => cleanText(part, 80)).filter(Boolean).join(', '),
+    source: () => data.host_organization_name,
+    topic: () => data.subfield?.display_name,
+  }[type as 'institution' | 'source' | 'topic']?.();
+  return {
+    worksCount: typeof data.works_count === 'number' ? data.works_count : null,
+    citedByCount: typeof data.cited_by_count === 'number' ? data.cited_by_count : null,
+    subtitle: cleanText(subtitle, 120),
+    imageUrl: cleanText(data.image_thumbnail_url, 500),
+  };
 }
 
 async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { openAlex, openAire }: ShareProviders) {
@@ -524,14 +570,14 @@ async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { open
     return found({ entity: { name: route.params.name || cleanText(route.id, 200), nameOnly: true } });
   }
   if (route.lookup.provider === 'openaire') {
-    const data = await openAire!(route.lookup.params);
-    const result = asArray(data?.response?.results?.result)[0];
-    const name = projectName(result?.metadata?.['oaf:entity']?.['oaf:project']);
+    const [project] = readOpenAirePage<ProjectName>(await openAire!(route.lookup.params)).results;
+    const name = projectName(project);
     return name ? found({ entity: { name } }) : notFound();
   }
-  const data = await openAlex!(route.lookup.path, { select: ENTITY_SELECT });
+  const data = await openAlex!(route.lookup.path, { select: ENTITY_SELECT[route.type] });
   const name = cleanText(data?.display_name, 300);
-  return data?.id && name ? found({ entity: { name } }) : notFound();
+  if (!data?.id || !name) return notFound();
+  return found({ entity: { name, ...entityCardFields(route.type, data) } });
 }
 
 /**
@@ -542,7 +588,7 @@ async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { open
  * `providers`, all injected so the Worker owns the budgets:
  * - `openAlex(path, params)` → the JSON, or null for a 404;
  * - `arxiv(id)` → the Atom feed `id_list=id` answers;
- * - `openAire(params)` → the JSON of `search/projects`;
+ * - `openAire(params)` → the JSON of Graph's `projects`, asked with `params`;
  * - `firestore.getDocument(path)` → `{ exists, id, data }`, read anonymously
  *   so the rules decide exactly as they do for a visitor.
  */
@@ -561,13 +607,18 @@ export function createShareLoader(providers: ShareProviders = {}) {
 // Every share page is English: PaperTok is English-only.
 const PAGE_LANGUAGE = 'en';
 
+// The static previews in public/og/ are drawn at 2400x1260.
+function staticImage({ path, alt }: ShareImage): PreviewImage {
+  return { url: absoluteUrl(path), alt, width: 2400, height: 1260 };
+}
+
 function basePage(overrides: Partial<SharePage> = {}): SharePage {
   return {
     status: 200,
     language: PAGE_LANGUAGE,
     title: COPY.siteTitle,
     description: COPY.siteDescription,
-    imageAlt: COPY.imageAlt.paper,
+    image: staticImage(DEFAULT_SHARE_IMAGE),
     ogType: 'website',
     canonicalUrl: null,
     pageUrl: `${DEFAULT_PUBLIC_ORIGIN}/`,
@@ -580,14 +631,14 @@ function basePage(overrides: Partial<SharePage> = {}): SharePage {
   };
 }
 
-function webPage({ name, description, url, extra = {} }: { name: string; description: string; url: string; extra?: Record<string, unknown> }) {
+function webPage({ name, description, url, image = staticImage(DEFAULT_SHARE_IMAGE), extra = {} }: { name: string; description: string; url: string; image?: PreviewImage; extra?: Record<string, unknown> }) {
   return compact({
     '@context': 'https://schema.org',
     '@type': 'WebPage',
     name,
     description,
     url,
-    image: SHARE_IMAGE_URL,
+    image: image.url,
     inLanguage: 'en-US',
     isPartOf: { '@type': 'WebSite', name: 'PaperTok', url: `${DEFAULT_PUBLIC_ORIGIN}/` },
     ...extra,
@@ -645,7 +696,7 @@ function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNull
     name: title,
     description,
     url: pageUrl,
-    image: SHARE_IMAGE_URL,
+    image: absoluteUrl(DEFAULT_SHARE_IMAGE.path),
     datePublished: paper.published || (paper.year ? String(paper.year) : ''),
     author: authors.slice(0, 20).map(name => ({ '@type': 'Person', name })),
     isPartOf: paper.journal ? { '@type': 'Periodical', name: paper.journal } : null,
@@ -698,18 +749,22 @@ function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNull
 function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const description = list.description || COPY.listFallback;
-  const papers = asArray(list.papers).map(paper => ({ ...paper, title: plainScientificText(paper.title) }));
-  const items = papers.map(paper => (paper.key
-    ? `<li><a href="/public/paper/${paper.key}">${escapeHtml(paper.title)}</a></li>`
+  const papers = asArray(list.papers).map(paper => ({
+    title: plainScientificText(paper.title),
+    path: paper.key ? getPublicPaperPath(paper.key) : null,
+  }));
+  const items = papers.map(paper => (paper.path
+    ? `<li><a href="${paper.path}">${escapeHtml(paper.title)}</a></li>`
     : `<li>${escapeHtml(paper.title)}</li>`)).join('');
   // The list's own content language (its owner's title and description) is data:
   // a list recorded as written in Spanish is marked `lang="es"` inside the English page.
   const contentLanguage = list.language && list.language !== PAGE_LANGUAGE ? ` lang="${list.language}"` : '';
 
+  const image = staticImage(getShareImage('list'));
   return basePage({
     title: `${list.title} | ${COPY.listSuffix}`,
     description,
-    imageAlt: COPY.imageAlt.list,
+    image,
     maxAge: OWNED_MAX_AGE_SECONDS,
     canonicalUrl: pageUrl,
     pageUrl,
@@ -717,6 +772,7 @@ function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList)
       name: list.title,
       description,
       url: pageUrl,
+      image,
       extra: {
         '@type': 'CollectionPage',
         mainEntity: {
@@ -726,7 +782,7 @@ function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList)
             '@type': 'ListItem',
             position: index + 1,
             name: paper.title,
-            url: paper.key ? absoluteUrl(`/public/paper/${paper.key}`) : '',
+            url: paper.path ? absoluteUrl(paper.path) : '',
           })),
         },
       },
@@ -738,7 +794,31 @@ function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList)
   });
 }
 
-function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: ShareEntity) {
+/**
+ * The entity's own card (`/share/image/…`, worker/share-image.ts) when it can
+ * be drawn, or its type's static preview. `cardOrigin` is the Worker's own.
+ */
+function entityImage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: ShareEntity, cardOrigin: string): PreviewImage {
+  const card = entityShareCard(route, entity);
+  if (!card) return staticImage(getShareImage(route.type));
+  return { url: `${cardOrigin}${shareCardPath(route)}`, alt: card.alt, width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT };
+}
+
+/**
+ * What an entity's card says, or null when it has none: a page found by a name
+ * alone keeps PaperTok's own preview (see `entityPage`), and so does a name
+ * the card's fonts cannot draw.
+ */
+export function entityShareCard(route: Extract<ShareRoute, { kind: 'entity' }>, entity: ShareEntity) {
+  return entity.nameOnly ? null : shareCardFor(route.type, COPY.entityTypes[route.type], entity);
+}
+
+/** Where an entity's card is drawn: the page's own record, under /share/image/. */
+export function shareCardPath(route: Extract<ShareRoute, { kind: 'entity' }>) {
+  return `/share/image/${route.cacheId}`;
+}
+
+function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: ShareEntity, cardOrigin: string) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const typeLabel = COPY.entityTypes[route.type];
   if (entity.nameOnly) {
@@ -758,9 +838,11 @@ function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: Shar
     });
   }
   const description = entityDescription(entity.name);
+  const image = entityImage(route, entity, cardOrigin);
   return basePage({
     title: `${entity.name} - ${typeLabel} | PaperTok`,
     description,
+    image,
     ogType: 'profile',
     canonicalUrl: pageUrl,
     pageUrl,
@@ -768,6 +850,7 @@ function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: Shar
       name: `${entity.name} - ${typeLabel}`,
       description,
       url: pageUrl,
+      image,
       extra: { about: { '@type': SCHEMA_TYPES[route.type], name: entity.name } },
     }),
     fallbackHtml: `<main><h1>${escapeHtml(entity.name)}</h1><p>${escapeHtml(typeLabel)}</p>`
@@ -779,8 +862,8 @@ function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: Shar
  * The page for a route and what its lookup gave: `{ found, record }`,
  * `{ found: false }`, or `{ failed: true }`.
  */
-export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null, language?: string): SharePage;
-export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null) {
+export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null, language?: string, options?: { cardOrigin?: string }): SharePage;
+export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null, _language?: string, { cardOrigin = WORKER_ORIGIN }: { cardOrigin?: string } = {}) {
   const kind = KINDS.has(route?.kind as string) ? route!.kind : 'entity';
   if (!route || route.invalid || !outcome || (!outcome.found && !outcome.failed && !outcome.unknown)) {
     return notFoundPage(kind);
@@ -791,7 +874,7 @@ export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome:
   const record = outcome.record || {};
   if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper);
   if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list);
-  if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity);
+  if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity, cardOrigin);
   return unavailablePage(route);
 }
 
@@ -840,14 +923,16 @@ export function renderSharePage(shell: string, page: SharePage) {
   html = setMeta(html, 'property', 'og:locale', 'en_US');
   // A shell that still advertises an alternate locale loses it: there is none.
   html = setMeta(html, 'property', 'og:locale:alternate', null);
-  html = setMeta(html, 'property', 'og:image', SHARE_IMAGE_URL);
-  html = setMeta(html, 'property', 'og:image:alt', page.imageAlt);
+  html = setMeta(html, 'property', 'og:image', page.image.url);
+  html = setMeta(html, 'property', 'og:image:alt', page.image.alt);
+  html = setMeta(html, 'property', 'og:image:width', String(page.image.width));
+  html = setMeta(html, 'property', 'og:image:height', String(page.image.height));
   html = setMeta(html, 'name', 'twitter:card', 'summary_large_image');
   html = setMeta(html, 'name', 'twitter:title', page.title);
   html = setMeta(html, 'name', 'twitter:description', page.description);
   html = setMeta(html, 'name', 'twitter:url', page.pageUrl);
-  html = setMeta(html, 'name', 'twitter:image', SHARE_IMAGE_URL);
-  html = setMeta(html, 'name', 'twitter:image:alt', page.imageAlt);
+  html = setMeta(html, 'name', 'twitter:image', page.image.url);
+  html = setMeta(html, 'name', 'twitter:image:alt', page.image.alt);
   html = setElement(html, JSON_LD_TAG, page.jsonLd
     ? `<script id="papertok-jsonld" type="application/ld+json">${scriptJson(page.jsonLd)}</script>`
     : null);
@@ -909,10 +994,10 @@ export function createShellLoader({ fetchShell, cache = (globalThis as WorkerGlo
 // lookup each and run the ceilings dry (review of 2026-09-25).
 const lookupsInFlight = new Map<string, Promise<ShareOutcome>>();
 
-async function readRecord(route: ShareRoute, deps: ShareDependencies) {
+export async function readRecord(route: ShareRoute, deps: ShareDependencies) {
   // A page known only by its name costs nothing to answer, and asks nobody.
   if (route.kind === 'entity' && !route.lookup) return deps.loadRecord!(route);
-  const key = new Request(`${CACHE_ROOT}/record/${route.cacheId}`);
+  const key = new Request(`${CACHE_ROOT}/record/${RECORD_VERSIONS[route.kind] || ''}${route.cacheId}`);
   const cached = await cachedJson(deps.cache, key);
   if (cached) return cached;
 
@@ -962,6 +1047,13 @@ async function lookUpRecord(route: ShareRoute, key: Request, { loadRecord, admit
   return outcome;
 }
 
+// The entity's card is drawn by this Worker, at the host it was asked at.
+// Only a local Worker is plain http; anywhere else the card is https, the only
+// scheme a preview bot is sure to fetch.
+function cardOrigin(url: URL) {
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1' ? url.origin : `https://${url.host}`;
+}
+
 /**
  * GET or HEAD `/share/{paper,list,entity}/…`. Public, and without an
  * Origin: the caller is Vercel relaying a crawler (see vercel.json).
@@ -980,7 +1072,7 @@ export async function handleSharePage(request: Request, {
   const outcome = route && !route.invalid
     ? await readRecord(route, { loadRecord, admit, cache })
     : { found: false };
-  const page = sharePageModel(route, outcome);
+  const page = sharePageModel(route, outcome, undefined, { cardOrigin: cardOrigin(new URL(request.url)) });
 
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',

@@ -3,12 +3,46 @@ import type { WorkerEnv } from './env.ts';
 export interface VerifiedIdentity {
   uid: string;
   email: string;
+  displayName?: string;
+  /** Firebase's own flag, set only by sign-ins through a provider that verifies the address itself. */
   emailVerified: boolean;
+  /** `emailVerified`, or a Google or GitHub identity carrying the same address (`accountOwnsEmail`). */
+  ownsEmail: boolean;
   authTime: number | null;
 }
 
+interface LookupUser {
+  localId?: string;
+  email?: unknown;
+  displayName?: unknown;
+  emailVerified?: unknown;
+  providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
+}
+
 interface IdentityLookup {
-  users?: Array<{ localId?: string; email?: unknown; emailVerified?: unknown }>;
+  users?: LookupUser[];
+}
+
+const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
+
+/**
+ * Whether the account has proven the address it carries.
+ *
+ * FIREBASE_WEB_API_KEY is public, so the Worker cannot assume the console only
+ * offers Google and GitHub: any sign-up method that hands over an unverified
+ * address would otherwise pass for its owner. And Firebase sets `emailVerified`
+ * only when the provider verifies the address itself, which Google does and
+ * GitHub does not, so a GitHub sign-in arrives with the flag off and nothing in
+ * the app to turn it on (#267). An identity provider that vouched for the same
+ * address is the proof of possession in that case.
+ */
+export function accountOwnsEmail(account: Pick<LookupUser, 'email' | 'emailVerified' | 'providerUserInfo'> | null | undefined) {
+  if (account?.emailVerified === true) return true;
+  const email = String(account?.email || '').trim().toLowerCase();
+  return email !== '' && (account?.providerUserInfo || []).some(provider => (
+    TRUSTED_EMAIL_PROVIDERS.has(String(provider?.providerId || '').trim().toLowerCase())
+    && String(provider?.email || '').trim().toLowerCase() === email
+  ));
 }
 
 export class WorkerAuthError extends Error {
@@ -40,6 +74,9 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 4000;
 
 /** A token this close to expiry is still worth asking Google about. */
 const CLOCK_SKEW_SECONDS = 60;
+
+/** The width of a name in a subscription and in the delivery ledger's recipient. */
+const MAX_DISPLAY_NAME_LENGTH = 160;
 
 function decodeSegment(segment: string): { exp?: unknown; aud?: unknown; auth_time?: unknown } | null {
   const binary = atob(segment.replace(/-/g, '+').replace(/_/g, '/'));
@@ -152,16 +189,28 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   // The email travels with the identity so a caller can recognise a specific
   // account without a second lookup, and `emailVerified` travels with it because
   // an unverified address is a claim rather than an identity — anything that
-  // grants on the strength of an email has to see both.
+  // grants on the strength of an email has to see both. `ownsEmail` is for the
+  // routes that only need a proven owner, since the flag alone shuts out every
+  // GitHub account (`accountOwnsEmail`).
   //
   // `authTime` is when the user last signed in for this session, in seconds.
   // The claim can be trusted only because Identity Toolkit accepted the token
   // that carries it; a token it refuses never gets this far.
+  //
+  // `displayName` is here for the email routes, which store it with the
+  // subscription. Like the email, it sits in the 60 s cache entry below, so it
+  // is collapsed and capped here, where the provider's string enters, to the
+  // width the subscription keeps. Only the notification writes read it today,
+  // and they skip the cache.
   const identity = user?.localId
     ? {
       uid: user.localId,
       email: String(user.email || '').trim().toLowerCase(),
+      ...(typeof user.displayName === 'string'
+        ? { displayName: user.displayName.replace(/\s+/g, ' ').trim().slice(0, MAX_DISPLAY_NAME_LENGTH) }
+        : {}),
       emailVerified: user.emailVerified === true,
+      ownsEmail: accountOwnsEmail(user),
       authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
     }
     : null;

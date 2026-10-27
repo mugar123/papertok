@@ -387,6 +387,11 @@ export async function handleHuggingFaceResources(request: Request, env: WorkerEn
   }, { canonicalParams: { arxiv_id: arxivId } });
 }
 
+// The misses one address may send in a UTC minute: 20 of the route's 60
+// (`FIGURES_GLOBAL_MINUTE_LIMIT`), so one address cannot spend the whole minute
+// for every reader; three can, and everyone behind one NAT shares these 20.
+const FIGURES_CALLER_MINUTE = Object.freeze({ namespace: 'figures', limit: 20 });
+
 export async function handlePaperFigures(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -404,14 +409,14 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
     env,
     (payload) => (payload?.figures?.length ? FIGURE_CACHE_SECONDS : FIGURE_EMPTY_CACHE_SECONDS),
     () => fetchPaperFigures(arxivId),
-    { canonicalParams: { arxiv_id: arxivId } },
+    { canonicalParams: { arxiv_id: arxivId }, callerMinute: FIGURES_CALLER_MINUTE },
   );
 }
 
 // CORE's search took 7.4 s and 8.0 s to answer (measured 2026-10-20), past the
 // shared six seconds, so a successful search was cut before it could reach the
 // edge cache. The browser keeps the request open for 10 s (`REQUEST_TIMEOUT_MS`
-// in domainSourceService.ts) after the feed stops waiting for it; nine seconds
+// in domain-source-service.ts) after the feed stops waiting for it; nine seconds
 // lets the answer finish and be cached for the next reader, with room left for
 // the identity and quota checks that run first.
 const CORE_UPSTREAM_TIMEOUT_MS = 9_000;

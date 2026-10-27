@@ -1,0 +1,10 @@
+// The local D1 that measure-lane-reads.ts seeds and reads, in memory through
+// wrangler's getPlatformProxy. No remote database has this id, and the script
+// turns remote bindings off.
+{
+  "name": "papertok-measure-lane-reads",
+  "compatibility_date": "2026-07-16",
+  "d1_databases": [
+    { "binding": "PAPER_STORE", "database_name": "measure-lane-reads", "database_id": "measure-lane-reads" }
+  ]
+}

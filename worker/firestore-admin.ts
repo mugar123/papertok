@@ -1,8 +1,8 @@
 import { getAccessToken, readServiceAccount, invalidateAccessToken } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 
-import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
-export type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
+import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/firestore.ts';
+export type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/firestore.ts';
 
 interface FirestoreFailure { error?: { status?: string } }
 interface FirestoreDocument extends FirestoreFailure {
@@ -24,6 +24,8 @@ export interface QueryOptions {
   limit?: number;
   where?: { field: string; op?: string; value: unknown };
   allDescendants?: boolean;
+  /** Field paths to return; `['__name__']` returns the document names alone. */
+  select?: string[];
 }
 export interface FirestoreWrite {
   update?: { name: string; fields: Record<string, FirestoreValue> };
@@ -176,7 +178,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
       const url = `https://firestore.googleapis.com/v1/${documentName(projectId, segments)}`;
       const response = await authorizedFetch(url, { method: 'GET' });
       if (response.status === 404) return null;
-      const payload = await response.json<Partial<FirestoreDocument>>().catch(() => ({} as Partial<FirestoreDocument>));
+      const payload = await response.json<Partial<FirestoreDocument>>().catch((): Partial<FirestoreDocument> => ({}));
       if (!response.ok) {
         throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502, payload?.error?.status || '');
       }
@@ -234,6 +236,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
       limit: pageSize,
       where: whereFilter,
       allDescendants = false,
+      select,
     }: QueryOptions = {}) {
       if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
         throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
@@ -243,6 +246,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
         : documentRoot(projectId);
       const url = `https://firestore.googleapis.com/v1/${parent}:runQuery`;
       const structuredQuery = {
+        ...(select?.length ? { select: { fields: select.map(fieldPath => ({ fieldPath })) } } : {}),
         from: [{ collectionId, allDescendants: allDescendants === true }],
         ...(whereFilter?.field ? {
           where: {
@@ -343,7 +347,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ writes }),
       });
-      const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch(() => ({} as FirestoreFailure));
+      const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch((): FirestoreFailure & { commitTime?: string; writeResults?: unknown[] } => ({}));
       if (!response.ok) {
         const status = payload?.error?.status || '';
         // A failed precondition is the caller's problem (already published,

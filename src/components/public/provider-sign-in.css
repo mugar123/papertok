@@ -1,0 +1,36 @@
+.auth-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--text-primary);
+  border-radius: var(--radius-full);
+  animation: spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* "Preparing sign-in…" (PreparingNote), or the failure and its Try again.
+   The height holds its line once the text has gone. */
+.provider-preparing {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* Inline, so the note follows the surface's own text-align; Try again sits on
+   the text's line and wraps below it on a narrow screen. The word space
+   between them, widened here, separates them on one line and drops at a wrap,
+   where a margin would push the wrapped button off-centre. */
+.provider-preparing {
+  word-spacing: var(--space-1);
+}
+
+.provider-preparing > * {
+  word-spacing: normal;
+}

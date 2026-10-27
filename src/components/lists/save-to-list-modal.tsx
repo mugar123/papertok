@@ -1,0 +1,969 @@
+import type { ComponentProps, KeyboardEvent, MutableRefObject, ReactNode } from 'react';
+import type { Paper } from '../../models/paper.ts';
+import type { OwnList } from '../../utils/own-lists.ts';
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { auth, db } from '../../services/firebase.ts';
+import { savedPaperDocRef } from '../../services/saved-paper-store.ts';
+import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
+import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
+import {
+  OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists,
+} from '../../utils/own-lists.ts';
+import { writeListMembership } from '../../services/paper-list-membership.ts';
+import { publishPublicList } from '../../services/public-list-service.ts';
+import {
+  commitTagInput,
+  diffListSelection,
+  EMPTY_LIST_INTENT,
+  hasUnsavedChanges,
+  readLaterState,
+  removeTag,
+  resolveSelection,
+  toggleListIntent,
+} from '../../utils/save-organize-model.ts';
+import { useAuth } from '../../context/auth-context.tsx';
+import { useFeed } from '../../context/feed-context.tsx';
+import { useLanguage } from '../../context/language-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { getIcon } from '../../utils/icons.ts';
+import CreateListDialog from './create-list-dialog.tsx';
+import { saveModalCloseRequest } from './save-modal-close-request.ts';
+import { writeNewList } from './write-new-list.ts';
+import ScientificText from '../scientific-text.ts';
+import { ArrowLeft, BookOpen, Check, ListPlus, LockSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
+import { libraryTags, suggestTags } from '../../utils/tag-suggestions.ts';
+import { areaLabelForPaper } from '../../utils/area-accent.ts';
+import { Button } from '../ui/button.tsx';
+import { toast } from 'sonner';
+import { toastError } from '../ui/toast.ts';
+import { Checkbox } from '../ui/checkbox.tsx';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import useIsPhone from '../../hooks/use-is-phone.ts';
+import { Input } from '../ui/input.tsx';
+import { Label } from '../ui/label.tsx';
+import { Textarea } from '../ui/textarea.tsx';
+import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { pickerUndoToastId } from './picker-undo-toast.ts';
+import {
+  ownListsAreFresh,
+  ownListsCache,
+  rememberOwnLists,
+  reviseOwnLists,
+} from '../../utils/profile-session-caches.ts';
+import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
+import './save-to-list-modal.css';
+import { Toggle } from '../ui/toggle.tsx';
+import { viewMorph } from '../../utils/view-morph.ts';
+import { EASE_IN_OUT, animateSize } from '../../utils/motion-curves.ts';
+
+/**
+ * States where the lists are still on their way. 'slow' and 'offline' keep the
+ * skeleton and the read behind it: only 'unavailable' is the screen giving up.
+ */
+const LISTS_WAITING = ['loading', 'slow', 'offline'];
+
+/**
+ * States where the skeleton has given way to words. 'stalled' is still a wait
+ * — the retry loop runs behind it and `onLateResult` can still paint the
+ * lists — but a skeleton with no end and no explanation reads as a hung
+ * screen, so past the budget the modal says so and offers the button.
+ */
+const LISTS_STOPPED = ['stalled', 'unavailable'];
+
+/**
+ * Confirm-on-save. Everything in this modal — list membership, Read later,
+ * the note, the tags — is PENDING state until the one Save button commits it.
+ * The old version mixed two save models in one window (checkboxes wrote
+ * instantly, the note waited for its own button) and neither was the one a
+ * person expects.
+ *
+ * Because nothing saves on touch, closing with pending changes must warn:
+ * every close path (✕, backdrop, Escape) funnels through `requestClose`,
+ * which swaps the save bar for a discard confirmation while changes exist.
+ *
+ * Structural contract (no test holds it; see docs/agents/papercuts.md): the ONLY
+ * handlers that write are `handleCreateList` (its own explicit button; it
+ * creates an EMPTY list — the paper joins it on Save) and `handleSave`, and
+ * they are defined last, after every write-free handler.
+ */
+
+export default function SaveToListModal({
+  paper,
+  onClose,
+  embedded = false,
+  closeGuardRef,
+}: {
+  paper: Paper;
+  onClose: () => void;
+  embedded?: boolean;
+  closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
+}) {
+  const { user } = useAuth();
+  const { language } = useLanguage();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
+  const {
+    markSaved, unmarkSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater,
+    saveReadingMetadata, savedPaperIds, interactionIdFor,
+  } = useFeed();
+
+  // The note and tags for this paper live in the reading library, which is
+  // loaded on demand rather than with the feed.
+  useEffect(() => {
+    void ensurePersonalLibrary?.();
+  }, [ensurePersonalLibrary]);
+
+  // Saving fifty papers in a row used to re-read all sixty list documents
+  // fifty times, once per open, and that is what saturated: the reads pile up
+  // on a channel already busy with a write per save to the same document.
+  // The lists are the same lists every time, so the modal paints from the
+  // session cache the lists page also reads, and revalidates behind it. Membership is the one thing that is NOT cached — it is per paper, so
+  // it is derived here from the cached lists.
+  const seededLists = user?.uid
+    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
+    : null;
+  const seededMembership = useMemo(
+    () => listsHolding(seededLists, paper.id),
+    [seededLists, paper.id],
+  );
+
+  const [lists, setLists] = useState(() => seededLists ?? []);
+  // Four outcomes, four states. 'loading', 'slow'/'offline' and 'unavailable'
+  // are deliberately not the same thing as an empty 'ready': "we could not
+  // find out" must never render as "you have no lists", which is the lie this
+  // modal used to tell.
+  const [listsStatus, setListsStatus] = useState(seededLists ? 'ready' : 'loading');
+  const [listsAttempt, setListsAttempt] = useState(0);
+  // Whether THIS open started from the cache: a failed revalidation behind a
+  // painted view must stay quiet, because the cached lists are still usable.
+  const openedSeeded = useRef(Boolean(seededLists));
+
+  // Server truth, and — kept apart from it — what the user did to it. Save
+  // writes the diff between the two, both directions.
+  //
+  // These used to be two full sets, and the second one froze the moment the
+  // user touched any checkbox: a membership arriving after that first touch
+  // updated `initial` while `pending` stayed on the stale snapshot, so every
+  // list the fresh read knew about and the cache did not became a REMOVAL
+  // nobody asked for. `listIntent` holds only the rows the user disagreed
+  // with the account about; everything else follows the membership, however
+  // late it lands. See save-organize-model.ts.
+  const [initialListIds, setInitialListIds] = useState(() => new Set(seededMembership));
+  const [listIntent, setListIntent] = useState<ReturnType<typeof toggleListIntent>>(EMPTY_LIST_INTENT);
+
+  // Drafts are null until the user edits the field; while null, the field
+  // shows the library baseline. This is what lets a library record that lands
+  // AFTER the modal opens fill an untouched field — the old version seeded
+  // once at mount, showed empty, and saving would have replaced a real note
+  // with nothing.
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [tagsDraft, setTagsDraft] = useState<string[] | null>(null);
+  const [tagInput, setTagInput] = useState('');
+  const [readLaterDraft, setReadLaterDraft] = useState<boolean | null>(null);
+  // Lists created in this window, kept so a read issued before they existed —
+  // including a late answer from patientRead's healing loop — cannot take them
+  // back off the screen and out of the shared cache. See mergeCreatedLists.
+  const createdLists = useRef<OwnList[]>([]);
+
+  // The creation form stays folded behind its button until asked for.
+  const [creatingList, setCreatingList] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // A ref beside the state, the same reason CreateListDialog keeps one: two
+  // clicks can land before React re-renders and both would read a stale
+  // `saving: false`. The list writes are idempotent, but `toggleReadLater` is
+  // a toggle — running it twice puts Read later back where it started.
+  const savingRef = useRef(false);
+  const [saveError, setSaveError] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // app.tsx mounts this window and unmounts it on `onClose`, so the window
+  // owns its open state: it starts open, closing flips it, and the parent is
+  // only told once Base UI has finished playing the exit (see the Root's
+  // `onOpenChangeComplete` below). Telling it any earlier would unmount the
+  // window in the same frame and cut the exit short.
+  // Mounted open: the dialog plays its entrance on mount, and ui/drawer holds
+  // a drawer's first frame back itself so it arrives too.
+  const [open, setOpen] = useState(true);
+  const isPhone = useIsPhone();
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // What the library says today: the dirty check and the save diff compare
+  // against this, and untouched fields render it directly.
+  const baseline = useMemo(() => {
+    const record = personalLibrary[paper.id] || {};
+    return {
+      note: record.note || '',
+      tags: record.tags || [],
+      readLater: Boolean(record.readLater),
+    };
+  }, [personalLibrary, paper.id]);
+
+  const note = noteDraft ?? baseline.note;
+  const tags = tagsDraft ?? baseline.tags;
+  // A first save proposes Read later; an already saved paper keeps its own.
+  // `editedReadLater` is the same value with an untouched proposal counted as
+  // the stored one, which is all the close guard may see (save-organize-model.ts).
+  const alreadySaved = Boolean(savedPaperIds?.has(interactionIdFor?.(paper) ?? paper.id));
+  const { pending: pendingReadLater, edited: editedReadLater } = readLaterState({
+    stored: baseline.readLater, draft: readLaterDraft, alreadySaved,
+  });
+
+  // The ticks on screen: never stored, always derived. `known` bounds the
+  // user's own ticks to lists that still exist — a list deleted on another
+  // device must not be written to — and deliberately never bounds the
+  // membership, which is why it is only supplied once the rows are real.
+  const knownListIds = useMemo(
+    () => (listsStatus === 'ready' ? lists.map((list) => list.id) : null),
+    [listsStatus, lists],
+  );
+  const pendingListIds = useMemo(() => resolveSelection({
+    membership: initialListIds, ...listIntent, known: knownListIds,
+  }), [initialListIds, listIntent, knownListIds]);
+
+  /**
+   * The account's custom lists: a bounded page, `patientRead` for the stall,
+   * and an emptiness that is only believed when the server said it (see the
+   * history of this read in own-lists.ts).
+   */
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    // The retry loop outlives the promise; closing the modal must end it.
+    const controller = new AbortController();
+
+    const fromFirestore = async () => readOwnLists(
+      await getDocs(query(
+        collection(db, 'users', user.uid, 'lists'),
+        limit(OWN_LISTS_PAGE_SIZE),
+      )),
+      paper.id,
+    );
+
+    const apply = ({ lists: userLists, inLists, authoritative, cached = false }: { lists: OwnList[] | null; inLists: Set<string>; authoritative: boolean; cached?: boolean }) => {
+      if (!active) return;
+      if (!authoritative) {
+        setListsStatus('unavailable');
+        return;
+      }
+      // A read issued before a list was created cannot contain it, and a late
+      // answer can land minutes after the Create button was pressed. Merging
+      // is what stops the snapshot from taking that list back off the screen
+      // — and, worse, out of the shared cache stamped fresh on the next line.
+      const merged = mergeCreatedLists(userLists!, createdLists.current);
+      setLists(merged);
+      if (cached) reviseOwnLists(user?.uid, merged);
+      else {
+        rememberOwnLists(user?.uid, merged);
+        saveStoredLists(user?.uid, merged);
+      }
+      // Only the membership moves. The ticks are derived from it plus what the
+      // user did, so a late answer can no longer wipe a toggle, nor turn a
+      // list it reveals into a removal.
+      setInitialListIds(new Set(inLists));
+      setListsStatus('ready');
+    };
+
+    /**
+     * Inside the freshness window the cached lists ARE the answer, and this is
+     * what stops a burst of saves from re-reading sixty documents per paper.
+     *
+     * It goes through the same pipeline rather than short-circuiting it, and
+     * that is deliberate: membership is per paper, so opening the modal on a
+     * second paper without a fresh `apply` would leave the FIRST paper's
+     * checkboxes on screen. Feeding the cache in as an attempt keeps one path,
+     * one `apply`, and no state set synchronously inside the effect.
+     */
+    const fromFreshCache = () => {
+      const cached = ownListsCache.get(user.uid);
+      // `cached: true` is what stops `apply` from renewing the freshness
+      // window with data it did not fetch — otherwise the window would keep
+      // extending itself and the lists would never be re-read at all.
+      return {
+        lists: cached!, inLists: listsHolding(cached, paper.id),
+        authoritative: true, cached: true,
+      };
+    };
+    const readLists = (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
+
+    patientRead(readLists, {
+      attempts: 3,
+      label: 'lists',
+      signal: controller.signal,
+      // A mute connection is a wait, not a verdict: saying the lists could not
+      // be loaded, while the read behind it is still going, is the one thing
+      // this screen must never do to somebody's own data.
+      onSlow: (attemptNumber, info) => {
+        if (active && !openedSeeded.current) setListsStatus(info?.offline ? 'offline' : 'slow');
+      },
+      onLateResult: apply,
+    })
+      .then(apply)
+      .catch((err) => {
+        // A revalidation that failed behind a painted view keeps the view.
+        if (active && openedSeeded.current) {
+          console.warn('The lists could not be refreshed; the cached view stands', err);
+          return;
+        }
+        if (isReadTimeout(err)) {
+          // The budget is spent but the retry loop is not: say so, offer the
+          // button, and keep `onLateResult` armed. An unlabelled skeleton that
+          // never ends is indistinguishable from being hung, which is what
+          // this state exists to stop.
+          console.warn('The lists did not answer in time', err);
+          if (active) setListsStatus('stalled');
+          return;
+        }
+        console.error('Error loading lists:', err);
+        if (active) setListsStatus('unavailable');
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [user, paper.id, listsAttempt]);
+
+  /* --- Write-free pending-state handlers --------------------------------- */
+
+  // Editing anything is an implicit "keep editing": it dismisses the discard
+  // prompt and clears a stale save error.
+  const beginEdit = () => {
+    setConfirmingDiscard(false);
+    setSaveError(false);
+  };
+
+  const toggleListSelection = (listId: string) => {
+    beginEdit();
+    setListIntent((previous) => toggleListIntent(previous, listId, initialListIds));
+  };
+
+  const toggleReadLaterSelection = () => {
+    beginEdit();
+    setReadLaterDraft(!pendingReadLater);
+  };
+
+  const editNote = (value: string) => {
+    beginEdit();
+    setNoteDraft(value);
+  };
+
+  const commitPendingTag = () => {
+    if (!tagInput.trim()) return;
+    // `beginEdit` like every other editing handler: committing a chip with
+    // Enter while the discard prompt is up is the user saying "keep editing",
+    // and it must clear a stale save error too.
+    beginEdit();
+    setTagsDraft(commitTagInput(tags, tagInput));
+    setTagInput('');
+  };
+
+  const addSuggestedTag = (tag: string) => {
+    beginEdit();
+    setTagsDraft(commitTagInput(tags, tag));
+  };
+
+  const removePendingTag = (tag: string) => {
+    beginEdit();
+    setTagsDraft(removeTag(tags, tag));
+  };
+
+  const onTagInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      commitPendingTag();
+    } else if (event.key === 'Backspace' && tagInput === '' && tags.length > 0) {
+      removePendingTag(tags[tags.length - 1]);
+    }
+  };
+
+  // Tags to offer from the paper's own terms and the reader's other tags
+  // (utils/tag-suggestions.ts); one taken leaves the row.
+  const suggestedTags = useMemo(() => suggestTags(paper, {
+    current: tags,
+    userTags: libraryTags(personalLibrary),
+    area: areaLabelForPaper(paper),
+  }), [paper, tags, personalLibrary]);
+
+  // A tag typed but not yet committed with Enter still counts: it joins the
+  // save, and it counts as a change worth warning about.
+  const effectiveTags = useMemo(() => commitTagInput(tags, tagInput), [tags, tagInput]);
+
+  // Two questions, one comparison each. `hasWrites` is whether Save has
+  // anything to commit, the proposed Read later included. `dirty` is whether
+  // closing would lose something the user did, so an untouched proposal does
+  // not count: dismissing a fresh modal must not ask about unsaved changes.
+  const [hasWrites, dirty] = useMemo(() => {
+    const initial = {
+      listIds: [...initialListIds],
+      note: baseline.note,
+      tags: baseline.tags,
+      readLater: baseline.readLater,
+    };
+    const pending = { listIds: [...pendingListIds], note, tags: effectiveTags };
+    return [
+      hasUnsavedChanges({ initial, pending: { ...pending, readLater: pendingReadLater } }),
+      hasUnsavedChanges({ initial, pending: { ...pending, readLater: editedReadLater } }),
+    ];
+  }, [initialListIds, pendingListIds, baseline, note, effectiveTags, pendingReadLater, editedReadLater]);
+
+  /* --- Close paths, all through the guard -------------------------------- */
+
+  /**
+   * Every close path lands here once the discard guard has already decided
+   * the window can go. Flipping `open` is all it takes: Base UI marks the
+   * popup `data-closed`, waits for `dialogOut` to finish (or for nothing,
+   * under `prefers-reduced-motion`, where the stylesheet sets the animation
+   * to `none`), hands focus back to the button that opened the window, and
+   * only then reports `onOpenChangeComplete(false)` — the one place the
+   * parent is told.
+   */
+  const closeDialog = () => (embedded ? onClose() : setOpen(false));
+
+  // The guard itself (save-modal-close-request.ts): the X answers an open discard
+  // prompt, Escape and the scrim never do.
+  const requestClose = (reason: string) => {
+    const outcome = saveModalCloseRequest({ reason, saving, open, dirty, confirmingDiscard });
+    if (outcome === 'confirmDiscard') setConfirmingDiscard(true);
+    else if (outcome === 'close') closeDialog();
+  };
+
+  // Base UI's own dismissals — Escape, a press on the scrim, the X — arrive as
+  // a request to close, and the answer is never a direct close: the request
+  // is refused (`cancel()`) and routed through the unsaved-changes guard, the
+  // way the native dialog's `onCancel` was intercepted before.
+  const onCancel = (eventDetails: Parameters<NonNullable<ComponentProps<typeof Dialog>['onOpenChange']>>[1] | Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => {
+    eventDetails.cancel();
+    requestClose(eventDetails.reason);
+  };
+  useLayoutEffect(() => {
+    if (!closeGuardRef) return undefined;
+    closeGuardRef.current = onCancel;
+    return () => { closeGuardRef.current = null; };
+  });
+
+  // Once the exit has played. `onClose` unmounts this component (app.tsx), so
+  // this is the single point from which the parent hears of a close, whatever
+  // path asked for it.
+  const handleOpenChangeComplete = (nextOpen: boolean) => {
+    if (!nextOpen) onClose();
+  };
+
+  /* --- The two write sites, last by contract ------------------------------ */
+
+  // The write, and only the write: CreateListDialog owns the form, the busy
+  // state and the error. Letting this throw is what gives the owner a message —
+  // it used to end at console.error, leaving an unchanged screen behind.
+  const handleCreateList = async (name: string, icon: string, color: string, { isPublic = false } = {}) => {
+    const listId = `list_${Date.now()}`;
+    // Created EMPTY: creating the list is this button's explicit act; the
+    // paper joins it when Save commits the (auto-checked) selection.
+    const newList = {
+      id: listId, name, emoji: icon, color,
+      paperIds: [], createdAt: new Date().toISOString(),
+    };
+
+    const listRef = doc(db, 'users', user!.uid, 'lists', listId);
+    // Public from the start: published empty, the Worker writes the share id
+    // onto the list; Save's sync then fills it with this paper.
+    // A failed publish leaves the list private, and says so.
+    await writeNewList(newList, {
+      isPublic,
+      write: (list) => setDoc(listRef, list),
+      publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
+      onPublishFailed: (publishError) => {
+        console.error('The new list could not be published', publishError);
+        toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
+      },
+    });
+
+    createdLists.current = [...createdLists.current, newList];
+    setLists((previous) => mergeCreatedLists(previous, [newList]));
+    // A list created here has to reach the cache too, or the next open inside
+    // the freshness window would paint a list that no longer matches the
+    // account. But ONLY when what is on screen is the account: this button is
+    // live from the first frame, and writing `[...[], newList]` through while
+    // the read was still on its way — or after it had failed — replaced every
+    // screen's shared view of the collection with an array of one.
+    if (listsStatus === 'ready') {
+      reviseOwnLists(user?.uid, mergeCreatedLists(lists, [newList]));
+      saveStoredLists(user?.uid, ownListsCache.get(user?.uid as string));
+    }
+    setListIntent((previous) => toggleListIntent(previous, listId, initialListIds));
+  };
+
+  const handleSave = async () => {
+    if (savingRef.current || saving || !hasWrites) return;
+    savingRef.current = true;
+    toast.dismiss(pickerUndoToastId(paper.id));
+    const finalTags = effectiveTags;
+    const { toAdd, toRemove } = diffListSelection([...initialListIds], [...pendingListIds]);
+    const metadataChanged = note !== baseline.note
+      || JSON.stringify(finalTags) !== JSON.stringify(baseline.tags);
+    const readLaterChanged = pendingReadLater !== baseline.readLater;
+    // Read later is one of the destinations, so a paper sent there alone is a
+    // saved paper: the card's Save button has to light up for it the way it
+    // does for any list. Without this the paper sat in Read later with the
+    // button still off, and the next open proposed Read later all over again.
+    const savesPaper = toAdd.length > 0 || (readLaterChanged && pendingReadLater);
+    // And the way back: once this save takes the paper out of the last place
+    // holding it, it is no longer a saved paper and the button goes dark. Only
+    // on a membership the modal has actually read in full — a page of lists
+    // that is still loading, failed, or filled to its cap could be hiding a
+    // list that still holds the paper, and unsaving on that guess is the
+    // worse error.
+    const unsavesPaper = alreadySaved && !savesPaper
+      && (toRemove.length > 0 || readLaterChanged)
+      && !pendingReadLater && pendingListIds.size === 0
+      && listsStatus === 'ready' && lists.length < OWN_LISTS_PAGE_SIZE;
+
+    setSaving(true);
+    setSaveError(false);
+    try {
+      // A list created in this window while the read had not landed is
+      // folded into the cache first, or the membership written below would
+      // be recorded against a list the cache has never heard of.
+      const cached = ownListsCache.get(user!.uid);
+      if (cached) reviseOwnLists(user!.uid, mergeCreatedLists(cached, createdLists.current));
+      /**
+       * The paper's document FIRST, before any list is told about it.
+       *
+       * The order used to be the other way round, and that is how a list ends
+       * up holding an id with nothing behind it: the `arrayUnion` landed, the
+       * `setDoc` was refused, and the row rendered as a bare arXiv id for
+       * good — no later read can produce a document that was never written.
+       * Writing the paper first means a refusal costs the owner an error
+       * message and nothing else.
+       *
+       * Still sequential and still retry-safe: `setDoc` merges, `arrayUnion`
+       * of a present id and `arrayRemove` of an absent one are no-ops, so
+       * pressing Save again redoes only what is missing.
+       */
+      if (savesPaper) {
+        await setDoc(
+          savedPaperDocRef(user!.uid, paper.id),
+          buildSavedPaperPayload(paper, new Date().toISOString()),
+          { merge: true },
+        );
+        // The aggregate learns of the save only once the document exists.
+        // The other order left an orphan whenever this write was refused:
+        // "saved" everywhere, a paper in no list, and a Save that could
+        // never succeed again because markSaved saw it as already saved.
+        void markSaved(paper);
+      }
+
+      // `updatedAt` rides along on every list write. It is what tells a
+      // later visit that an edit happened here, so a sync lost to a closed
+      // tab or a dead connection can still be found and replayed (P25).
+      const listById = (listId: string) => lists.find(entry => entry.id === listId) ?? { id: listId };
+      await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
+      await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
+
+      if (readLaterChanged) await toggleReadLater(paper);
+      if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
+      if (unsavesPaper) await unmarkSaved(paper);
+
+      const paperDetail = { paper_id: paper.id, paper_title: paper.title };
+      toAdd.forEach(() => { void trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }); });
+      toRemove.forEach(() => { void trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }); });
+      if (savesPaper) void markActivation();
+
+      closeDialog();
+      const uid = user!.uid;
+      const undo = async () => {
+        if (auth.currentUser?.uid !== uid) return false;
+        await writeListMembership({ uid, paper, lists: toAdd.map(listById), added: false, language });
+        await writeListMembership({ uid, paper, lists: toRemove.map(listById), added: true, language });
+        if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
+        if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
+        if (savesPaper && !alreadySaved) await unmarkSaved(paper);
+        if (unsavesPaper) await markSaved(paper);
+        return true;
+      };
+      const destinations = [
+        ...(readLaterChanged && pendingReadLater ? ['Read later'] : []),
+        ...toAdd.map(listId => listById(listId).name || 'a list'),
+      ];
+      toast.success(
+        destinations.length === 0 ? 'Changes saved'
+          : destinations.length <= 2 ? `Saved to ${destinations.join(' and ')}`
+            : `Saved to ${destinations[0]} and ${destinations.length - 1} more`,
+        {
+          id: pickerUndoToastId(paper.id),
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              undo()
+                .then((undone) => { if (undone) toast.success('Save undone', { id: pickerUndoToastId(paper.id) }); })
+                .catch(() => toastError('Could not undo this change'));
+            },
+          },
+        },
+      );
+    } catch (err) {
+      console.error('Save and organize could not commit everything:', err);
+      setSaveError(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const copy = {
+    title: 'Save and organize',
+    close: 'Close',
+    saveTo: 'Save to',
+    readLaterOn: 'Read later',
+    readLaterOff: 'Read later',
+    loadingLists: 'Loading lists...',
+    listsSlow: 'This is taking longer than usual. Still trying.',
+    listsOffline: 'There seems to be no connection. Still trying.',
+    listsStalled: 'Your lists are taking unusually long. We are still trying — your papers are safe.',
+    listsUnavailable: 'Your lists could not be loaded. They are still there.',
+    retry: 'Try again',
+    noLists: 'No lists yet — create the first one right below.',
+    newListCta: 'Create a new list',
+    noteAndTags: 'Note and tags',
+    private: 'Private',
+    privateNote: 'Note',
+    notePlaceholder: 'Ideas, questions, or conclusions...',
+    tags: 'Tags',
+    tagPlaceholder: 'Type a tag and press Enter',
+    removeTagLabel: (tag: string) => `Remove ${tag}`,
+    back: 'Back',
+    newList: 'New list',
+    addTagLabel: (tag: string) => `Add tag ${tag}`,
+    suggestedTags: 'Suggested tags',
+    save: 'Save',
+    saving: 'Saving...',
+    saveFailed: 'Not everything could be saved. Save again to retry what is missing.',
+    discardTitle: 'You have unsaved changes.',
+    discard: 'Discard',
+    keepEditing: 'Keep editing',
+  };
+
+  const pendingCount = (list: OwnList, selected: boolean) => {
+    const ids = list.paperIds || [];
+    return ids.length - (ids.includes(paper.id) ? 1 : 0) + (selected ? 1 : 0);
+  };
+
+  // Read later is a destination like any other: the first row of the same
+  // ruled group as the lists, at the same size.
+  const readLaterRow = (
+    <Toggle
+      className={`save-modal-row${pendingReadLater ? ' is-selected' : ''}`}
+      pressed={pendingReadLater}
+      onPressedChange={toggleReadLaterSelection}
+    >
+      <span className="save-modal-tick" aria-hidden="true">
+        <Check size={13} weight="bold" />
+      </span>
+      <BookOpen className="save-modal-row-icon" size={18} aria-hidden="true" />
+      <span className="save-modal-row-text">
+        <span className="save-modal-row-name">
+          {pendingReadLater ? copy.readLaterOn : copy.readLaterOff}
+        </span>
+      </span>
+    </Toggle>
+  );
+
+  // On a phone the window is a bottom drawer. At every size, creating a list
+  // is a second view of the same window (with a way back), not a window over
+  // it.
+  const Root = isPhone ? Drawer : Dialog;
+  // Which way "forward" (into the new-list form) travels: from the right in
+  // the dialog, from above in the phone's sheet (see the morph below).
+  const viewForward = isPhone ? -1 : 1;
+  const Close = isPhone ? DrawerClose : DialogClose;
+  const Title = isPhone ? DrawerTitle : DialogTitle;
+
+  // The two views are not the same height, and the sheet used to jump to the
+  // new one in a frame while the views slid. FLIP on the sheet: its height is
+  // read just before the switch and animated to the one after, on the views'
+  // curve and 240ms, so the two move as one.
+  // `height` because a sheet resize has no transform equivalent.
+  // The arriving section's node. Only ever set, never cleared: the leaving
+  // section unmounts after the new one has mounted, and must not null it.
+  const viewRef = useRef<HTMLDivElement | null>(null);
+  const setViewRef = (node: HTMLDivElement | null) => { if (node) viewRef.current = node; };
+  const sheetFrom = useRef<number | null>(null);
+  const sheetOf = () => viewRef.current?.closest<HTMLElement>('[data-slot="drawer-content"], [data-slot="dialog-content"]');
+  const switchView = (toCreate: boolean) => {
+    sheetFrom.current = sheetOf()?.offsetHeight ?? null;
+    setCreatingList(toCreate);
+  };
+  const leaveCreateView = () => switchView(false);
+  useLayoutEffect(() => {
+    const from = sheetFrom.current;
+    sheetFrom.current = null;
+    const sheet = sheetOf();
+    if (from == null || !sheet || reduceMotion) return;
+    animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
+  }, [creatingList, reduceMotion]);
+  const frame = (children: ReactNode) => (isPhone ? (
+    <DrawerContent className="save-modal--sheet">
+      {children}
+    </DrawerContent>
+  ) : (
+    <DialogContent
+      className="save-modal"
+      overlayClassName="save-modal-scrim"
+      showClose={false}
+      closeLabel={copy.close}
+    >
+      {children}
+    </DialogContent>
+  ));
+
+  const body = (
+        <>
+          {isPhone && !embedded && <DrawerHandle />}
+          {/* No header: the X alone, in the corner. The title still names the
+              window for assistive tech. */}
+          <Title className="visually-hidden">{copy.title}</Title>
+          {/* The sections morph: the one leaving blurs out over the one
+              arriving (`popLayout` lifts it out of the flow, so the window's
+              height already reads the new one), in the direction of travel —
+              sideways in the dialog, up and down in a phone's bottom sheet —
+              on the height's curve and clock. */}
+          {/* On a phone the new-list form is shorter than the lists, so the
+              sheet's top edge drops as it arrives: the sections travel with
+              that edge, the form coming down from above and the lists rising
+              back from below. */}
+          <AnimatePresence initial={false} mode="popLayout" custom={creatingList ? viewForward : -viewForward}>
+          {creatingList ? (
+            <motion.div
+              key="create"
+              ref={setViewRef}
+              className="save-modal-view save-modal-view--forward"
+              custom={viewForward}
+              variants={viewMorph(reduceMotion, isPhone ? 'y' : 'x')}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
+              <div className="save-modal-view-head">
+                <Button variant="ghost" size="icon-sm" aria-label={copy.back} onClick={leaveCreateView}>
+                  <ArrowLeft size={16} aria-hidden="true" />
+                </Button>
+                <p className="save-modal-view-title">{copy.newList}</p>
+              </div>
+              <CreateListDialog
+                plain
+                open
+                onClose={leaveCreateView}
+                onCreate={handleCreateList}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="main"
+              ref={setViewRef}
+              className="save-modal-view"
+              custom={-viewForward}
+              variants={viewMorph(reduceMotion, isPhone ? 'y' : 'x')}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
+              <div className="save-modal-header">
+                <Close
+                  render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
+                >
+                  <X size={16} aria-hidden="true" />
+                </Close>
+              </div>
+
+          {/* The same KaTeX pass the feed uses: a title like "$p$-adic
+              $\text{GL}_n$" must not render as raw dollar signs here. */}
+          <p className="save-modal-paper-title"><span className="save-modal-paper-title-text"><ScientificText>{paper.title}</ScientificText></span></p>
+
+          <div className="save-modal-body">
+            <section className="save-modal-destinations" aria-label={copy.saveTo}>
+              <div className="save-modal-section-head">
+                <p className="save-modal-section-title">{copy.saveTo}</p>
+              </div>
+
+              {/* While the lists are not there yet, Read later still stands on its own. */}
+              {[...LISTS_WAITING, ...LISTS_STOPPED].includes(listsStatus) && (
+                <div className="save-modal-rows">{readLaterRow}</div>
+              )}
+              {LISTS_WAITING.includes(listsStatus) ? (
+                <div className="save-modal-rows" aria-busy="true" aria-label={copy.loadingLists}>
+                  <div className="save-modal-skeleton" />
+                  <div className="save-modal-skeleton" />
+                  {listsStatus !== 'loading' && (
+                    <p className="save-modal-notice" role="status">
+                      {listsStatus === 'offline' ? copy.listsOffline : copy.listsSlow}
+                    </p>
+                  )}
+                </div>
+              ) : LISTS_STOPPED.includes(listsStatus) ? (
+                // 'stalled' keeps `aria-busy`: the read behind it is still going
+                // and can still paint the lists without anybody pressing anything.
+                // 'unavailable' is the verdict, and there the button is the only
+                // way forward.
+                <div className="save-modal-notice" role="status" aria-busy={listsStatus === 'stalled'}>
+                  <span>{listsStatus === 'stalled' ? copy.listsStalled : copy.listsUnavailable}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
+                  >
+                    {copy.retry}
+                  </Button>
+                </div>
+              ) : (
+                <div className="save-modal-rows">
+                  {readLaterRow}
+                  {lists.map((list) => {
+                    const selected = pendingListIds.has(list.id);
+                    const Icon = getIcon(list.emoji!);
+                    return (
+                      <label key={list.id} className={`save-modal-row${selected ? ' is-selected' : ''}`}>
+                        {/* The row is the label of its checkbox: the whole row
+                            toggles it, its name is the list's name, and the
+                            focus ring is drawn on the row (see the stylesheet). */}
+                        <Checkbox
+                          className="save-modal-tick"
+                          checked={selected}
+                          onCheckedChange={() => toggleListSelection(list.id)}
+                        />
+                        <Icon className="save-modal-row-icon" size={18} aria-hidden="true" />
+                        <span className="save-modal-row-text">
+                          <span className="save-modal-row-name">{list.name}</span>
+                        </span>
+                        {/* What the list will hold once Save commits: ticking adds
+                            this paper, unticking takes it away. */}
+                        <span className="save-modal-count">{pendingCount(list, selected)}</span>
+                      </label>
+                    );
+                  })}
+                  {lists.length === 0 && (
+                    <p className="save-modal-empty">{copy.noLists}</p>
+                  )}
+                </div>
+              )}
+              {/* The door to the create view: a list row in a box of its own. */}
+              <div className="save-modal-rows">
+                <button type="button" className="save-modal-row save-modal-create-row" onClick={() => switchView(true)}>
+                  <ListPlus className="save-modal-row-icon" size={18} aria-hidden="true" />
+                  <span className="save-modal-row-text">
+                    <span className="save-modal-row-name">{copy.newListCta}</span>
+                  </span>
+                </button>
+              </div>
+
+            </section>
+
+            <section className="save-modal-personal" aria-label={copy.noteAndTags}>
+              <div className="save-modal-field">
+                {/* No section heading: the Note label leads, and the chip says
+                    the note and tags are the reader's own. */}
+                <div className="save-modal-field-head">
+                  <Label className="save-modal-field-label" htmlFor="save-modal-note">
+                    <Note size={14} aria-hidden="true" /> {copy.privateNote}
+                  </Label>
+                  <span className="save-modal-private">
+                    <LockSimple size={12} aria-hidden="true" /> {copy.private}
+                  </span>
+                </div>
+                <Textarea
+                  id="save-modal-note"
+                  value={note}
+                  onChange={(event) => editNote(event.target.value)}
+                  placeholder={copy.notePlaceholder}
+                  maxLength={3000}
+                />
+              </div>
+              <div className="save-modal-field">
+                <span id="save-modal-tags-label" className="save-modal-field-label">
+                  <Tag size={14} aria-hidden="true" /> {copy.tags}
+                </span>
+                <div className="save-modal-tag-editor">
+                  {tags.map((tag) => (
+                    // The whole chip removes the tag, not only its X.
+                    <button
+                      key={tag}
+                      type="button"
+                      className="save-modal-tag-chip"
+                      onClick={() => removePendingTag(tag)}
+                      aria-label={copy.removeTagLabel(tag)}
+                    >
+                      {tag}
+                      <span className="save-modal-tag-remove" aria-hidden="true">
+                        <X size={11} weight="bold" />
+                      </span>
+                    </button>
+                  ))}
+                  <Input
+                    className="save-modal-tag-input"
+                    aria-labelledby="save-modal-tags-label"
+                    value={tagInput}
+                    placeholder={tags.length === 0 ? copy.tagPlaceholder : ''}
+                    onChange={(event) => { beginEdit(); setTagInput(event.target.value); }}
+                    onKeyDown={onTagInputKeyDown}
+                    onBlur={commitPendingTag}
+                  />
+                </div>
+                {suggestedTags.length > 0 && (
+                  <div className="save-modal-tag-suggestions" role="group" aria-label={copy.suggestedTags}>
+                    {suggestedTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="save-modal-tag-suggestion"
+                        onClick={() => addSuggestedTag(tag)}
+                        aria-label={copy.addTagLabel(tag)}
+                      >
+                        <Plus size={11} weight="bold" aria-hidden="true" /> {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+          </div>
+
+          <div className="save-modal-savebar">
+            {saveError && <p className="save-modal-save-error" role="alert">{copy.saveFailed}</p>}
+            {confirmingDiscard && dirty ? (
+              <div className="save-modal-discard" role="alert">
+                <p>{copy.discardTitle}</p>
+                <div className="save-modal-discard-actions">
+                  <Button variant="outline" size="sm" onClick={closeDialog}>
+                    {copy.discard}
+                  </Button>
+                  <Button size="sm" onClick={() => setConfirmingDiscard(false)}>
+                    {copy.keepEditing}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                className="save-modal-save"
+                onClick={() => { void handleSave(); }}
+                disabled={!hasWrites || saving}
+              >
+                {saving ? copy.saving : copy.save}
+              </Button>
+            )}
+          </div>
+            </motion.div>
+          )}
+          </AnimatePresence>
+        </>
+  );
+
+  if (embedded) return body;
+  return (
+    <Root
+      open={open}
+      onOpenChange={(nextOpen, eventDetails) => { if (!nextOpen) onCancel(eventDetails); }}
+      onOpenChangeComplete={handleOpenChangeComplete}
+    >
+      {frame(body)}
+    </Root>
+  );
+}
