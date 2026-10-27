@@ -51,6 +51,23 @@ test('a refused write the caller asked about puts the mark and its time back, an
   assert.equal(restored, 1);
 });
 
+test('a refused unmark of an id the screen does not hold read adds no row to Reading history', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  // The overlay card's alias id: the paper is shown read under another id.
+  await silenced(() => assert.rejects(unmarkRead('alias-p2', {
+    setReadIds,
+    setLibrary,
+    write: () => Promise.reject(new Error('not-found')),
+    onUnmarked: () => {},
+    onRestored: () => {},
+    throwOnError: true,
+    stillSignedIn: () => true,
+    stillNewest: () => true,
+    stillRead: () => state.readIds.has('alias-p2'),
+  }), /not-found/));
+  assert.deepEqual([...state.readIds].sort(), ['p1', 'p2']);
+});
+
 test('the mark is gone while the write is in flight, and stays gone once it is accepted', async () => {
   const { state, setReadIds, setLibrary } = feedState();
   let accept!: () => void;

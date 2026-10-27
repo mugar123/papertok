@@ -27,12 +27,16 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
     stillRead: () => boolean;
   },
 ) {
-  // Set by the updater in `show`. React runs queued updaters in order, so the
-  // updater in `undo` always reads it after that one has run.
+  // Set by the updaters in `show`. React runs queued updaters in order, so the
+  // updaters in `undo` always read them after those have run. `wasRead` keeps
+  // the undo from adding an id the screen never held, such as an alias id that
+  // has no interaction document.
   let readAt: Entry['readAt'];
+  let wasRead = false;
   await writeMark({
     show: () => {
       setReadIds((ids) => {
+        wasRead = ids.has(paperId);
         const next = new Set(ids);
         next.delete(paperId);
         return next;
@@ -45,7 +49,7 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
       onUnmarked();
     },
     undo: throwOnError ? () => {
-      setReadIds((ids) => new Set(ids).add(paperId));
+      setReadIds((ids) => (wasRead ? new Set(ids).add(paperId) : ids));
       setLibrary((library) => (
         library[paperId] ? { ...library, [paperId]: { ...library[paperId], readAt } } : library
       ));
