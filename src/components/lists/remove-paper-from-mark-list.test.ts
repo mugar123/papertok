@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { MarkWriteOptions } from '../../context/write-mark.ts';
-import { writeMark } from '../../context/write-mark.ts';
+import { markStartsOn, writeMark } from '../../context/write-mark.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 
 type Paper = { id: string };
@@ -45,7 +45,7 @@ function markedLists() {
     marks: {
       unmarkAsRead: (id: string, options: MarkWriteOptions) => take('__read__', id, false, true, options),
       toggleLike: (paper: Paper, options: MarkWriteOptions) => {
-        const wasLiked = Boolean(options.afterWrite) || rows.__favorites__.has(paper.id);
+        const wasLiked = markStartsOn(options, rows.__favorites__.has(paper.id));
         return take('__favorites__', paper.id, !wasLiked, wasLiked, options);
       },
       toggleReadLater: (paper: Paper, value: boolean, options: MarkWriteOptions) => take('__read_later__', paper.id, value, !value, options),

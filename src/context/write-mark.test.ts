@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { markChanges, writeMark } from './write-mark.ts';
+import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
 
 const silenced = async (run: () => Promise<unknown>) => {
   const original = console.error;
@@ -61,7 +61,7 @@ function likedPaper() {
   const profile: string[] = [];
   const answers: Array<() => void> = [];
   const press = (options: { afterWrite?: boolean } = {}) => {
-    const wasLiked = Boolean(options.afterWrite) || screen.liked;
+    const wasLiked = markStartsOn(options, screen.liked);
     const showLiked = (liked: boolean) => {
       screen.liked = liked;
       profile.push(liked ? 'like' : 'unlike');

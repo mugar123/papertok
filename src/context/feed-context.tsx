@@ -87,7 +87,7 @@ import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { markChanges, writeMark } from './write-mark.ts';
+import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
 import { restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
@@ -1772,10 +1772,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const toggleLike = useCallback(async (paperInput: Paper, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
-    // A removal from Favorites (`afterWrite`) only ever takes the like off, so
-    // it starts from a liked paper whatever the screen shows by now: if the
-    // like has already gone, writeMark sends nothing rather than liking it.
-    const isCurrentlyLiked = Boolean(options?.afterWrite) || likedPaperIds.has(paper.id);
+    const isCurrentlyLiked = markStartsOn(options, likedPaperIds.has(paper.id));
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {

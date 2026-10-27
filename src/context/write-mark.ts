@@ -7,6 +7,16 @@
 export interface MarkWriteOptions { throwOnError: boolean; afterWrite?: boolean }
 
 /**
+ * Whether a change starts from the mark on. A removal from a saved list
+ * (`afterWrite`) only ever takes the mark off, so it starts from on whatever
+ * the screen shows by now: when the mark has already gone, writeMark writes
+ * nothing rather than turning it back on.
+ */
+export function markStartsOn(options: Pick<MarkWriteOptions, 'afterWrite'> | undefined, isOn: boolean) {
+  return Boolean(options?.afterWrite) || isOn;
+}
+
+/**
  * Numbers the changes started on each mark, so a write answered late can tell
  * whether a newer change to the same mark has started since. A key names one
  * mark of one paper (`like:<id>`), not the paper: marking a paper read must
