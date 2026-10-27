@@ -44,8 +44,12 @@ flowchart TD
 ```
 
 - [index.html](index.html) contains a startup recovery screen with inline styles.
-  Its initial markup shows loading before any script runs; only a detected
-  startup failure changes it to an error.
+  Its initial markup keeps recovery content hidden over the page background.
+  The guard reveals loading feedback after 500 ms if React has not mounted;
+  errors appear immediately, and retry is offered on failure or a long wait.
+  If the inline guard itself cannot run, CSS reveals the native fallback after
+  one second so the page does not remain blank.
+  With JavaScript disabled, the document shows instructions and a native reload link.
   Vite embeds [startup-guard.ts](src/startup-guard.ts) as an independent inline
   script before the generated stylesheet links, so a stalled stylesheet cannot
   delay the watchdog. Only resources marked as part of the initial app graph

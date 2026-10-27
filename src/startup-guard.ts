@@ -31,13 +31,19 @@ export function installStartupGuard() {
 
   let finished = false;
   let failed = false;
-  panel.setAttribute('data-state', 'loading');
+  panel.setAttribute('data-state', 'pending');
   title.textContent = 'Loading PaperTok';
   message.textContent = 'Your page will appear here shortly.';
+
+  // Fast mounts should not flash a recovery screen before the app's own loader.
+  const loadingTimer = window.setTimeout(() => {
+    if (!finished && !failed) panel.setAttribute('data-state', 'loading');
+  }, 500);
 
   const showFailure = () => {
     if (finished) return;
     failed = true;
+    window.clearTimeout(loadingTimer);
     panel.setAttribute('data-state', 'failed');
     title.textContent = 'PaperTok could not start';
     message.textContent = 'Reload the page to try again. If it still does not load, try another connection.';
@@ -67,6 +73,7 @@ export function installStartupGuard() {
   const observer = new MutationObserver(function () {
     if (!root.hasChildNodes()) return;
     finished = true;
+    window.clearTimeout(loadingTimer);
     window.clearTimeout(timer);
     window.removeEventListener('error', onError, true);
     window.removeEventListener('unhandledrejection', showFailure);
