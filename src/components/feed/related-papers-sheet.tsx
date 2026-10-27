@@ -175,7 +175,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
 
   const closingRef = useRef(false);
   const mountedRef = useRef(false);
-  const pendingSelectionRef = useRef<{ paper: Paper; key: string } | null>(null);
+  const pendingSelectionRef = useRef<{ paper: Paper; key: string; view: string } | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const viewToggleRef = useRef<HTMLButtonElement | null>(null);
   const walkTimersRef = useRef<number[]>([]);
@@ -239,8 +239,11 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     if (!pendingSelection) return;
     pendingSelectionRef.current = null;
     closingRef.current = false;
+    // Counted at the hand-over, not the press: a sheet removed during its
+    // exit opens nothing, and its press must not count as an open.
+    track('open_paper', pendingSelection.view);
     onSelectPaperRef.current(pendingSelection.paper);
-  }, []);
+  }, [track]);
 
   const requestClose = useCallback(() => {
     if (closingRef.current) return;
@@ -252,16 +255,15 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
 
   const requestPaper = useCallback((relatedPaper: Partial<Paper>, paperKey: string) => {
     if (closingRef.current) return;
-    track('open_paper');
     onPreparePaperRef.current?.(relatedPaper as Paper);
-    pendingSelectionRef.current = { paper: relatedPaper as Paper, key: paperKey };
+    pendingSelectionRef.current = { paper: relatedPaper as Paper, key: paperKey, view };
     closingRef.current = true;
     setSelectedPaperKey(paperKey);
     setIsSelectionReady(true);
     setOpen(false);
     // Inline there is no exit to wait for.
     if (inline) finishSelection();
-  }, [setOpen, inline, finishSelection, track]);
+  }, [setOpen, inline, finishSelection, view]);
 
   // The primitive has finished the exit — the parent hears of it here and
   // nowhere else. A paper chosen from the sheet is handed over; anything
