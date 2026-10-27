@@ -252,7 +252,7 @@ test('a privacy change owed to the reader is chosen on arrival, a nudge only aft
 });
 
 test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
-  const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname });
+  const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname, privacyOwed: true });
   assert.equal(on(PRIVACY_NOTICE_ID, true, '/feed'), PRIVACY_NOTICE_ID);
   assert.equal(on('email-down', true, '/feed'), 'email-down');
   for (const pathname of ['/feed/', '/feed//', '/Feed', '/FEED', '/Feed/']) {
@@ -276,11 +276,11 @@ test('nothing is picked or opened while the profile could not be loaded, and it 
   assert.equal(ready({ loading: true }), false, 'still loading');
   assert.equal(ready({ onboardingComplete: false }), false, 'not onboarded');
   assert.equal(ready({ user: null }), false, 'signed out');
-  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null);
-  assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null, 'the email nudge too');
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
+  assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: false }), null, 'the email nudge too');
   // Off screen the dialog closes, and it opens again when Try again brings the feed back.
   assert.equal(privacyDialogOpen({ shown: false, modalOpen: false, wasOpen: true }), false);
-  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed' }), PRIVACY_NOTICE_ID);
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed', privacyOwed: true }), PRIVACY_NOTICE_ID);
   assert.equal(privacyDialogOpen({ shown: true, modalOpen: false, wasOpen: false }), true);
 });
 
@@ -341,7 +341,7 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
     const picked = visitChoiceDue({ privacyOwed, dwellDone: false }) ? pickVisitNotice({ privacyOwed, eligible: ['email-down'] }) : null;
-    const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed' }) === PRIVACY_NOTICE_ID;
+    const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
     return privacyDialogOpen({ shown, modalOpen: false, wasOpen: false });
   };
   const storage = fakeStorage();
@@ -354,6 +354,36 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   assert.equal(opensOnArrival(createdAt('reader-c', 0), fakeStorage()), false, 'an account created at the instant of the change');
   assert.equal(opensOnArrival(createdAt('reader-c', 10 * HOUR), fakeStorage()), false, 'a new account');
   assert.equal(opensOnArrival(null, fakeStorage(), false), false, 'a guest');
+});
+
+test('Got it chosen in another tab puts away the notice this tab picked, open or waiting off the feed', () => {
+  const reader = { uid: 'reader-a', metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) - 3_600_000).toUTCString() } };
+  const shownIn = (storage: ReturnType<typeof fakeStorage>, pathname: string) => {
+    const privacyOwed = privacyOwedFor({ user: reader, signedIn: true, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
+    return noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: true, pathname, privacyOwed }) === PRIVACY_NOTICE_ID;
+  };
+
+  const storage = fakeStorage();
+  assert.equal(shownIn(storage, '/feed'), true, 'picked in this tab');
+  assert.equal(shownIn(storage, '/settings'), false, 'the reader left the feed with it unanswered');
+  rememberPrivacyNotice(reader.uid, PRIVACY_POLICY_VERSION, storage);
+  assert.equal(shownIn(storage, '/feed'), false, 'back on the feed after Got it in the other tab');
+
+  const open = fakeStorage();
+  const steps = [{ shown: shownIn(open, '/feed'), modalOpen: false }];
+  rememberPrivacyNotice(reader.uid, PRIVACY_POLICY_VERSION, open);
+  steps.push({ shown: shownIn(open, '/feed'), modalOpen: false });
+  assert.deepEqual(dialogSteps(steps), [true, false], 'a dialog open here closes');
+
+  const newer = fakeStorage();
+  rememberPrivacyNotice(reader.uid, `${PRIVACY_POLICY_VERSION}.2`, newer);
+  assert.equal(shownIn(newer, '/feed'), false, 'a tab on a newer bundle settled a later version');
+
+  assert.equal(
+    noticeOnScreen({ picked: 'email-down', signedIn: true, pathname: '/feed', privacyOwed: false }),
+    'email-down',
+    'the email nudge does not depend on the policy',
+  );
 });
 
 test('who is told is decided from the account, its creation time and what this browser stored for its uid', () => {

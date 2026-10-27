@@ -194,13 +194,18 @@ export function privacyDialogOpen({ shown, modalOpen, wasOpen }: { shown: boolea
   return shown && (wasOpen || !modalOpen);
 }
 
+export const PRIVACY_NOTICE_ID = 'privacy-change';
+
 /**
  * The picked notice, while it may be on screen: for a signed-in reader, on the
  * feed. Elsewhere a paper may be open as a modal, which the email nudge's panel
- * would sit over. Either comes back when the reader returns to the feed.
+ * would sit over. Either comes back when the reader returns to the feed. The
+ * privacy notice also goes once it is no longer owed (`privacyOwed`, read from
+ * storage on every render): Got it chosen in another tab settles it here too.
  */
-export function noticeOnScreen({ picked, signedIn, pathname }: { picked: string | null; signedIn: boolean; pathname: string }) {
-  return signedIn && isNudgePath(pathname) ? picked : null;
+export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean }) {
+  if (!signedIn || !isNudgePath(pathname)) return null;
+  return picked === PRIVACY_NOTICE_ID && !privacyOwed ? null : picked;
 }
 
 /** One of the pending ones, at random, or nothing at all. */
@@ -210,8 +215,6 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
   const index = Math.min(pending.length - 1, Math.floor(random() * pending.length));
   return pending[index];
 }
-
-export const PRIVACY_NOTICE_ID = 'privacy-change';
 
 /**
  * What the visit shows: the privacy change when it is owed, which takes the

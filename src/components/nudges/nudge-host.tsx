@@ -63,6 +63,12 @@ function subscribeToModals(onChange: () => void) {
   return () => observer.disconnect();
 }
 
+// Another tab's writes; this tab's own are read on its next render.
+function subscribeToOtherTabs(onChange: () => void) {
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
+
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
@@ -88,25 +94,25 @@ export default function NudgeHost() {
     return () => window.clearTimeout(timer);
   }, [signedIn, dwellDone]);
 
+  // Read again on every render and whenever another tab writes storage, so Got
+  // it chosen in another tab puts the notice away here as well.
+  const privacyOwed = useSyncExternalStore(
+    subscribeToOtherTabs,
+    () => privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT }),
+    () => false,
+  );
+
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
   // linter says so, twice. Same shape the guest interests sheet uses.
-  if (signedIn && user && !choiceMade && isNudgePath(location.pathname)) {
-    const privacyOwed = privacyOwedFor({
-      user,
-      signedIn,
-      version: PRIVACY_POLICY_VERSION,
-      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+  if (signedIn && !choiceMade && isNudgePath(location.pathname) && visitChoiceDue({ privacyOwed, dwellDone })) {
+    setChoiceMade(true);
+    const id = pickVisitNotice({
+      privacyOwed,
+      eligible: emailProblem ? ['email-down'] : [],
+      dismissed,
     });
-    if (visitChoiceDue({ privacyOwed, dwellDone })) {
-      setChoiceMade(true);
-      const id = pickVisitNotice({
-        privacyOwed,
-        eligible: emailProblem ? ['email-down'] : [],
-        dismissed,
-      });
-      if (id) setPicked(id);
-    }
+    if (id) setPicked(id);
   }
 
   const close = useCallback((id: string) => {
@@ -114,7 +120,7 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
-  const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname });
+  const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname, privacyOwed });
   const privacyShown = onScreen === PRIVACY_NOTICE_ID;
 
   // The dialog never opens over another modal: one still open, or still playing
