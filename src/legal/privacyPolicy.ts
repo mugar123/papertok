@@ -30,7 +30,7 @@ export const PRIVACY_POLICY_VERSION = '2026-10-26';
  * the deploy of this notice. When the text ships in the same PR, that moment is
  * not known yet: set a time after the merge, raise it before merging if the
  * merge slips, and lower it to the deployment's success time once it is live.
- * Whenever the page's text changes again, bump the page's date,
+ * Whenever a change to the page needs announcing, bump the page's date,
  * PRIVACY_POLICY_VERSION and this instant together.
  *
  * 2026-10-26T05:00Z is an exception to that rule, kept on purpose. The summary
