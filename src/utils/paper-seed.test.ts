@@ -95,6 +95,10 @@ test('the abstract the page keeps brings the source credited for it', () => {
   const long = { ...credited, abstract: 'S'.repeat(STORED_SUMMARY_CAP) };
   const hydrated = hydrateSeededPaper(long, provider)!;
   assert.deepEqual([hydrated.abstract, hydrated.abstractSource], [provider.abstract, undefined]);
+  // A copy without the field keeps the provider's credit for the same text.
+  const recovered = { ...provider, abstract: seed.abstract, abstractSource: 'crossref' as const };
+  assert.equal(hydrateSeededPaper(seed, recovered)!.abstractSource, 'crossref');
+  assert.equal(hydrateSeededPaper(seed, { ...recovered, abstract: `${seed.abstract} More.` })!.abstractSource, undefined, "the copy's own text is not the provider's");
 });
 
 test('a whole stored abstract stays; one cut at the cap gives way to the provider\'s', () => {
