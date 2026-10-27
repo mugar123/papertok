@@ -11,9 +11,10 @@ const NOTABLE_SPARE = 2;
 /**
  * How a page joins the list: a refresh replaces it, keeping the cards through
  * the visible one when asked. `notableAfter` is the card just before a notable
- * card the reader met and dismissed (notablePlaceAfterDismissal).
+ * card the reader met and dismissed (notablePlaceAfterDismissal). `every` is
+ * the page's one notable place in so many cards (sampleNotableEvery).
  */
-type PageJoin = { reset: boolean; keepThroughVisible: boolean; visiblePaperId: string | null; notableAfter?: string | null };
+type PageJoin = { reset: boolean; keepThroughVisible: boolean; visiblePaperId: string | null; notableAfter?: string | null; every?: number };
 
 /**
  * The cards a page follows: the whole list on a later page, the cards through
@@ -34,10 +35,12 @@ const reachedCards = (cards: Paper[], visiblePaperId: string | null) => (
 /**
  * How many unseen notable papers a page asks the corpus for: one for each
  * place of the largest page the load can show (`largestPage` other cards)
- * after `cardsBefore`, and NOTABLE_SPARE more.
+ * after `cardsBefore`, one in `every` cards, and NOTABLE_SPARE more. The
+ * corpus sends five at most (FEED_MAX_NOTABLE in worker/paper-store.ts); a
+ * place it leaves without one takes the next other card.
  */
-export function notableRequest(cardsBefore: Paper[], largestPage: number, visiblePaperId: string | null, notableAfter: string | null = null) {
-  return notablePlaces(cardsBefore, largestPage, reachedCards(cardsBefore, visiblePaperId), notableAfter) + NOTABLE_SPARE;
+export function notableRequest(cardsBefore: Paper[], largestPage: number, visiblePaperId: string | null, notableAfter: string | null = null, every?: number) {
+  return notablePlaces(cardsBefore, largestPage, reachedCards(cardsBefore, visiblePaperId), notableAfter, every) + NOTABLE_SPARE;
 }
 
 /**
@@ -99,7 +102,7 @@ export function joinFeedPage(shown: Paper[], others: Paper[], notable: Paper[], 
   const kept = cardsBeforePage(shown, join);
   const keptIds = new Set(kept.map(paper => paper.id));
   const isNew = (paper: Paper) => !keptIds.has(paper.id);
-  return joinNotablePage(kept, others.filter(isNew), notable.filter(isNew), reachedCards(kept, join.visiblePaperId), join.notableAfter ?? null);
+  return joinNotablePage(kept, others.filter(isNew), notable.filter(isNew), reachedCards(kept, join.visiblePaperId), join.notableAfter ?? null, join.every);
 }
 
 /**

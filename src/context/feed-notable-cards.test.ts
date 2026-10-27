@@ -48,6 +48,18 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
   assert.deepEqual(notableAt(next), [[14, 'notable-0']]);
 });
 
+// ENG-166: each page samples its own share, one notable place in `every` cards.
+test('a page sampled at one in five asks for and places a notable card every fifth card, and the next page counts on from the last one', () => {
+  // Twenty-one cards hold five places at one in five, and two spares.
+  assert.equal(notableRequest([], FIRST_SCREEN, null, null, 5), 7);
+  const offered = ['notable-0', 'notable-1', 'notable-2', 'notable-3'].map(notable);
+  const shown = joinFeedPage([], records('corpus'), offered, { ...firstScreen, every: 5 });
+  assert.deepEqual(notableAt(shown), [[4, 'notable-0'], [9, 'notable-1'], [14, 'notable-2']]);
+  // A next page sampled at today's one in fifteen: fifteen cards after the last notable one.
+  const next = joinFeedPage(shown, records('page'), [notable('page-notable-0')], { ...later, every: 15 });
+  assert.deepEqual(notableAt(next).slice(3), [[29, 'page-notable-0']]);
+});
+
 // A follow change refreshes the ranking but the reader keeps their place.
 test('a refresh that keeps the reader\'s place keeps the cards through the visible one, and counts the next notable card from theirs', () => {
   const onScreen = records('shown', 20).map((paper, index) => ({ ...paper, _notable: index === 14 }));

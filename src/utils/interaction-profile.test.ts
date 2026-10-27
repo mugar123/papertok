@@ -142,6 +142,7 @@ test('a new profile is empty and at the current schema version', () => {
     interactionCount: 0,
     dwellMedianSeconds: 6,
     positiveExamples: [],
+    temporal: { notable: 0, recent: 0, lean: 0 },
   });
   assert.equal(curatedIds(profile, 'liked').length, 0);
   assert.equal(isPaperKnown(profile, 'arxiv:2401.00001'), false);

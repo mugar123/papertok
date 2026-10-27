@@ -5,6 +5,13 @@ export interface DecayedAffinity { value: number; at: number; }
 export interface CategoryExposure { shown: number; engaged: number; }
 export interface PositiveExample { id: string; category: string; }
 export interface WeightedConcept { id: string; score?: number; }
+/**
+ * The likes, saves and opened PDFs of notable and of other For You cards, and
+ * the lean, from -1 (classic) to +1 (recent), that likes, saves and long reads
+ * move. The feed samples each page's share of notable places from the counts
+ * (sampleNotableEvery).
+ */
+export interface TemporalSignal { notable: number; recent: number; lean: number; }
 export interface InteractionProfile {
   version: number; updatedAt: string | null;
   categories: Map<string, { cohorts: Map<number, { weighted: number; raw: number }>; aged: number }>;
@@ -23,6 +30,9 @@ export interface InteractionProfile {
   // The interaction documents do not say which views those were, so a
   // rebuild starts it empty.
   viewedNotable: string[];
+  // The interaction documents do not say which cards were notable either, so
+  // a rebuild starts this empty too.
+  temporal: TemporalSignal;
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
   sourceDocCount: number; truncated: boolean;
@@ -30,8 +40,12 @@ export interface InteractionProfile {
 export interface InteractionEvent {
   paperId: string; kind: string; category?: string; timestamp?: number | string; viewTime?: number; value?: boolean;
   concepts?: WeightedConcept[]; authorIds?: string[];
-  // A view or a skip of a notable card.
+  // Whether the card was notable: on a view or a skip, and on a like, a save or
+  // an opened PDF of a For You card. Left out for a paper off that feed.
   notable?: boolean;
+  // The paper's publication date, which a like, a save or a long read moves
+  // the lean by.
+  published?: string | null;
   // The card's area (areaKeyForPaper), for a card whose category is no leaf.
   area?: string | null;
 }
@@ -46,6 +60,7 @@ export interface ProfileSignals {
   // The likes, saves and long reads the reader keeps, newest first, up to
   // MAX_POSITIVE_EXAMPLES_PER_AREA for each area.
   positiveExamples: PositiveExample[];
+  temporal: TemporalSignal;
 }
 export interface StoredInteractionProfile {
   schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
@@ -224,6 +239,7 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     curated: new Map(CURATED_SETS.map(name => [name, { order: [], members: new Set() }])),
     viewed: [],
     viewedNotable: [],
+    temporal: { notable: 0, recent: 0, lean: 0 },
     seenFilter: null,
     counters: { interactions: 0, evicted: 0 },
     // Papers already counted towards sourceDocCount in this session. In memory
@@ -421,6 +437,33 @@ function removeUnkeptPositive(profile: InteractionProfile, paperId: string) {
   removePositive(profile, paperId);
 }
 
+// How far a like, a save and a read of LEAN_READ_SECONDS or more move the lean.
+const LEAN_STEP = { like: 0.1, save: 0.15, read: 0.05 };
+const LEAN_READ_SECONDS = 10;
+
+/**
+ * Moves the lean by `step`: toward recent for a paper a week old or less,
+ * toward classic for one a year old or more. A notable card leaves it as it
+ * is: the feed chose that card for its citations, and it is years old by that
+ * choice. A paper without a date says nothing about age.
+ */
+function moveLean(profile: InteractionProfile, event: InteractionEvent, step: number, now: number) {
+  const published = toTimestampMs(event.published);
+  if (event.notable === true || published === null) return;
+  const daysOld = (now - published) / DAY_MS;
+  const { temporal } = profile;
+  if (daysOld <= 7) temporal.lean = Math.min(1, temporal.lean + step);
+  else if (daysOld >= 365) temporal.lean = Math.max(-1, temporal.lean - step);
+}
+
+// A like, a save or an opened PDF of a For You card counts toward its kind.
+// A skip or a dismissal counts toward neither.
+function countFeedEngagement(profile: InteractionProfile, event: InteractionEvent) {
+  if (typeof event.notable !== 'boolean') return;
+  if (event.notable) profile.temporal.notable += 1;
+  else profile.temporal.recent += 1;
+}
+
 function recordSessionImpact(
   profile: InteractionProfile,
   category: string,
@@ -455,6 +498,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     interactionCount: 0,
     dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
     positiveExamples: [],
+    temporal: { notable: 0, recent: 0, lean: 0 },
   };
   if (!profile) return signals;
 
@@ -481,6 +525,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
   signals.positiveExamples = profile.positives.map(example => ({ ...example }));
+  signals.temporal = { ...profile.temporal };
   return signals;
 }
 
@@ -644,6 +689,8 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'like':
       addCurated(profile, 'liked', event.paperId);
       addPositive(profile, event.paperId, learned);
+      countFeedEngagement(profile, event);
+      moveLean(profile, event, LEAN_STEP.like, now);
       impact = IMPACT_LIKED;
       break;
     case 'unlike':
@@ -654,6 +701,8 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'save':
       addCurated(profile, 'saved', event.paperId);
       addPositive(profile, event.paperId, learned);
+      countFeedEngagement(profile, event);
+      moveLean(profile, event, LEAN_STEP.save, now);
       impact = IMPACT_SAVED;
       break;
     case 'unsave':
@@ -689,6 +738,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
       break;
     case 'openedPdf':
+      countFeedEngagement(profile, event);
       impact = IMPACT_OPENED_PDF;
       break;
     case 'pdfBounce':
@@ -711,6 +761,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
         addPositive(profile, event.paperId, learned);
       }
       observeDwell(profile.dwell, seconds);
+      if (seconds >= LEAN_READ_SECONDS) moveLean(profile, event, LEAN_STEP.read, now);
       break;
     }
     case 'metadata':
@@ -887,6 +938,7 @@ function serializeAffinities(profile: InteractionProfile) {
     exposure,
     dwell: Number(profile.dwell.median.toPrecision(6)),
     positives: profile.positives.map(example => [example.id, example.category]),
+    temporal: [profile.temporal.notable, profile.temporal.recent, Number(profile.temporal.lean.toPrecision(6))],
   };
   let serialized = JSON.stringify(payload);
   // Concepts and authors are the part that can grow with use; the weakest go
@@ -989,7 +1041,19 @@ function deserializeDecayed(serialized: unknown, map: Map<string, DecayedAffinit
 interface SerializedAffinities {
   categories?: Record<string, { c?: Record<string, unknown>; a?: number }>;
   concepts?: unknown; authors?: unknown; exposure?: Record<string, unknown>;
-  dwell?: unknown; positives?: unknown;
+  dwell?: unknown; positives?: unknown; temporal?: unknown;
+}
+
+// The stored counts and lean, or none for an aggregate written before them or
+// a value out of range.
+function storedTemporal(stored: unknown): TemporalSignal {
+  const temporal = { notable: 0, recent: 0, lean: 0 };
+  if (!Array.isArray(stored)) return temporal;
+  const [notable, recent, lean] = stored.map(Number);
+  if (Number.isSafeInteger(notable) && notable >= 0) temporal.notable = notable;
+  if (Number.isSafeInteger(recent) && recent >= 0) temporal.recent = recent;
+  if (Number.isFinite(lean)) temporal.lean = clamp(lean, -1, 1);
+  return temporal;
 }
 
 /**
@@ -1023,6 +1087,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
     if (affinities.dwell !== undefined && Number.isFinite(median)) {
       profile.dwell.median = clamp(median, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
     }
+    profile.temporal = storedTemporal(affinities.temporal);
 
     const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed' | 'viewedNotable', unknown[]>>;
     CURATED_SETS.forEach((name) => {

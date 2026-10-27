@@ -740,7 +740,7 @@ function sampleGamma(shape: number, random: () => number) {
   return d;
 }
 
-function sampleBeta(alpha: number, beta: number, random: () => number) {
+export function sampleBeta(alpha: number, beta: number, random: () => number) {
   const x = sampleGamma(alpha, random);
   return x / (x + sampleGamma(beta, random));
 }
