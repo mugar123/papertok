@@ -15,8 +15,10 @@
  *   2026-09-16: one cold feed load put five arXiv requests in this lane in
  *   2.5 s, and the last ones were for followed topics whose 3.5 s budget was
  *   long gone by the time they went out.
- * - A 429 -- the Worker's beat refusing, or arXiv itself -- puts the lane on
- *   a cooldown for the `retry-after` it carried (`DEFAULT_COOLDOWN_MS` when it
+ * - A 429 -- the Worker's beat refusing (`retry-after: 4`), the address's
+ *   allowance of 5 misses a minute refusing (`retry-after` up to the end of
+ *   the UTC minute, at most 60 s), or arXiv itself -- puts the lane on a
+ *   cooldown for the `retry-after` it carried (`DEFAULT_COOLDOWN_MS` when it
  *   carried none), during which every request is refused at once. Asking
  *   again inside that window costs a round trip and answers the same thing.
  *

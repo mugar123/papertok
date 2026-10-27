@@ -8,6 +8,7 @@ interface BioRxivRecord { doi?: string; title?: string; version?: string | numbe
 interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
 interface EuropePmcSearchRecord extends EuropePmcRecord {
   title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
+  pubTypeList?: { pubType?: string[] };
   source?: string; authorString?: string;
   journalInfo?: { journal?: { title?: string; issn?: string; essn?: string; nlmid?: string }; yearOfPublication?: number | string };
 }
@@ -238,6 +239,9 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
   const published = scheduled ? '' : date;
   const journal = raw.journalInfo?.journal;
   const chapter = isProtocolBookSeries({ issn: journal?.issn, essn: journal?.essn, nlmId: journal?.nlmid });
+  // PPR is Europe PMC's preprint source; PubMed also indexes NIH-funded
+  // preprints, typed Preprint.
+  const preprint = raw.source === 'PPR' || (raw.pubTypeList?.pubType || []).some(type => /^preprint$/i.test(type));
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
@@ -253,9 +257,9 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     year: scheduled ? undefined : safeYear(published || (raw.journalInfo?.yearOfPublication ? `${raw.journalInfo.yearOfPublication}-01-01` : undefined)),
     published,
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
-    publicationType: chapter ? 'book-chapter' : 'article',
+    publicationType: chapter ? 'book-chapter' : preprint ? 'preprint' : 'article',
     sourceType: chapter ? 'book-series' : undefined,
-    publicationStatus: 'published',
+    publicationStatus: preprint ? 'preprint' : 'published',
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
       || `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`,
@@ -416,7 +420,9 @@ export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []):
     || properties.some(value => value.includes('OPENACCESS'))
     || (raw.esources || []).some(value => /eprint_pdf|openaccess/i.test(value));
   const citationCount = Number(raw.citation_count);
-  const published = normalizeText(raw.pubdate) || (Number(raw.year) ? `${Number(raw.year)}-01-01` : '');
+  // ADS writes an unknown day or month as 00 (2018-03-00), which no date
+  // parser reads; the month or year it names stays, read as its first day.
+  const published = normalizeText(raw.pubdate).replace(/(?:-00)+$/, '') || (Number(raw.year) ? `${Number(raw.year)}-01-01` : '');
   const paper = PaperBuilder.create({
     id: `ads:${bibcode}`,
     doi: doi || undefined,
@@ -539,8 +545,13 @@ export function sourceQuery(categories: readonly string[]) {
  */
 export function europePmcQuery(categories: readonly string[]) {
   const today = new Date().toISOString().slice(0, 10);
+  return `${europePmcLabelQuery(categories)} AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+}
+
+/** The categories' labels where a paper states its subject: title, abstract and keywords. */
+export function europePmcLabelQuery(categories: readonly string[]) {
   const labels = categories.map(categoryLabel).map(label => `TITLE_ABS:"${label}" OR KW:"${label}"`);
-  return `(${labels.join(' OR ')}) AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+  return `(${labels.join(' OR ')})`;
 }
 
 export function getDomainSourcePlan(categories: readonly string[] = []) {

@@ -4,7 +4,8 @@ import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { noteDeployActivated, watchServiceWorkerUpdates, watchWorkerActivations } from './utils/service-worker-updates.ts'
-import { applyReloadPolicy, markAppForcedReload, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from './utils/app-reload.ts'
+import { applyReloadPolicy } from './utils/app-reload.ts'
+import { recoverModuleLoad } from './utils/module-load-recovery.ts'
 import { applyLegacyHashRoute } from './utils/legacy-hash-route.ts'
 import { clearStaleOverlayMarker } from './hooks/use-overlay-history.ts'
 import App from './app.tsx'
@@ -94,23 +95,7 @@ import './styles/global.css'
 // and Vite reports the failure here. One reload fetches the new graph. The
 // timestamp is what keeps a deploy that is genuinely broken from reloading
 // forever: a second failure inside a minute surfaces as the error it is.
-window.addEventListener('vite:preloadError', (event) => {
-  const now = Date.now()
-  let last
-  try {
-    last = Number(sessionStorage.getItem(PRELOAD_RELOAD_KEY)) || 0
-    if (now - last < PRELOAD_RELOAD_WINDOW_MS) return
-    sessionStorage.setItem(PRELOAD_RELOAD_KEY, String(now))
-  } catch {
-    // No session storage means no way to stop a loop: let the error surface.
-    return
-  }
-  event.preventDefault()
-  // Marked as ours, so the feed knows this reload was not asked for and keeps
-  // the reader's place (utils/app-reload.ts).
-  markAppForcedReload()
-  window.location.reload()
-})
+window.addEventListener('vite:preloadError', recoverModuleLoad)
 
 // First of the pre-React gestures, because it settles the URL that every one
 // of them — and then the router — reads. The app was a HashRouter until this

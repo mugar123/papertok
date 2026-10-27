@@ -85,7 +85,9 @@ import CareerTimeline from './career-timeline.tsx';
 import OrcidLinks from './orcid-links.tsx';
 import { foldMotion } from './explorer-fold.ts';
 import { careerStops } from './career-stops.ts';
+import ExplorerHeroTop from './explorer-hero-top.tsx';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.tsx';
@@ -107,6 +109,7 @@ import { ListRowAuthors, PaperListRow } from '../lists/list-row.tsx';
 import SharePanel from '../feed/share-panel.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
+import PrivacyPopover from '../public/privacy-popover.tsx';
 import { ExplorerEmptyState } from './explorer-empty-state.tsx';
 import ExplorerGuestGate from './explorer-guest-gate.tsx';
 import { pickEmptyVariant } from './explorer-empty-variant.ts';
@@ -122,7 +125,7 @@ import { getLocalizedInstitutionName } from '../../utils/institution-localizatio
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeExternalUrl } from '../../utils/external-url.ts';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { DEFAULT_SHARE_IMAGE, getPublicEntityPath, getPublicEntityUrl, getShareImage } from '../../utils/public-navigation.ts';
 import { nameInitials } from '../../utils/name-initials.ts';
 import 'katex/dist/katex.min.css';
@@ -132,6 +135,9 @@ import { formatProjectAmount } from '../../utils/format-project-amount.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
+
+// The Privacy trigger at Share's 40px (`.ehc-share`), so the bar's icon buttons match.
+const EXPLORER_PRIVACY_BUTTON = `${buttonVariants({ variant: 'ghost', size: 'icon-sm' })} ehc-share`;
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -342,6 +348,7 @@ export default function EntityExplorer({
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
+  const [heroOpening] = useState(() => (bornResolved ? ' is-born-resolved' : ''));
   // True from the start, and re-armed by every entity load: the live page's
   // first frame comes before the effect that requests the papers, and with
   // this false that frame showed the empty-state copy — "no results matched"
@@ -430,6 +437,12 @@ export default function EntityExplorer({
   }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
+  const [rowsResolving, setRowsResolving] = useState(false);
+  const [rowsSeen, setRowsSeen] = useState({ loading: isLoadingPapers, tab: activeTab });
+  if (rowsSeen.loading !== isLoadingPapers || rowsSeen.tab !== activeTab) {
+    setRowsSeen({ loading: isLoadingPapers, tab: activeTab });
+    setRowsResolving(rowsSeen.tab === activeTab && rowsSeen.loading && !isLoadingPapers);
+  }
   // Whether the Authors tab has been opened on this entity. The list is
   // requested then and kept from then on; `activeTab` no longer drives the
   // fetch, so leaving the tab does not cancel it and coming back does not
@@ -630,7 +643,7 @@ export default function EntityExplorer({
     // same displacement, on a different clock. Measured stepping back from an
     // author to its institution: four settles in 76ms, each restarting a full
     // 360ms, and the tab strip dipping 16px instead of being where it was left.
-    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', duration: 280 },
   );
 
   // What the next mount of this entity resumes with (`visitMemory`).
@@ -1547,6 +1560,11 @@ export default function EntityExplorer({
     </div>
   );
 
+  // A visitor's analytics switch sits last in the bar, the far side from
+  // Back, where the paper page and the list keep it too (`explorerPrivacy`).
+  // Only without a session: an account has Settings for it.
+  const explorerPrivacy = publicMode && <PrivacyPopover className={EXPLORER_PRIVACY_BUTTON} />;
+
   const retryPapers = () => {
     setPapersError(null);
     setPage(1);
@@ -1641,14 +1659,11 @@ export default function EntityExplorer({
             Tab (axe's `aria-hidden-focus`). Each decorative placeholder is
             hidden on its own instead, so the Back button is the one thing in
             here a screen reader still announces. */}
+        {/* `.explorer-hero` stays this root's first child, and the bar its
+            first child: that position is what keeps an open Privacy popover
+            mounted when the hero or the error page replaces the skeleton. */}
         <div className="explorer-hero">
-          <div className="explorer-hero-top">
-            <div className="eht-left">
-              <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
-                <ArrowLeft size={20} />
-              </Button>
-            </div>
-          </div>
+          <ExplorerHeroTop onBack={handleBack} privacy={explorerPrivacy} />
 
           {/* The live hero's own nesting, copied rather than approximated:
               header wraps main and aside, and the stats sit inside the aside.
@@ -1753,6 +1768,11 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className={`explorer-error${appChromeClass}`}>
+        {/* A dead or failing shared link is a visitor's first page too. The
+            bar is the skeleton's `.explorer-hero > ExplorerHeroTop` path, so
+            Privacy opened while the entity was coming stays open when it
+            fails, and on Try again. No Back here: the page has its own. */}
+        {publicMode && <div className="explorer-error-bar"><ExplorerHeroTop privacy={explorerPrivacy} /></div>}
         <div className="empty-state-art" aria-hidden="true">
           <Petri pose={entityError ? 'upset' : 'lost'} />
         </div>
@@ -2172,20 +2192,15 @@ export default function EntityExplorer({
   );
 
   return (
-    <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
-      {/* Immersive Hero */}
+    <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}${heroOpening || (seedName ? ' has-seed-name' : '')}`} style={{ '--area-accent': entityAccent }}>
+      {/* Immersive Hero. First child, with the bar its first child: the
+          skeleton's position, which keeps an open Privacy popover mounted
+          across the swap. */}
       <div className="explorer-hero">
         
-        <div className="explorer-hero-top">
-          <div className="eht-left">
-            <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
-              <ArrowLeft size={20} />
-            </Button>
-          </div>
-          {/* Every page keeps its actions in the bar, across from the way
-              back, and leaves the header below to the entity itself. */}
-          {heroActions}
-        </div>
+        {/* Every page keeps its actions in the bar, across from the way
+            back, and leaves the header below to the entity itself. */}
+        <ExplorerHeroTop onBack={handleBack} actions={heroActions} privacy={explorerPrivacy} />
         
         <div className="explorer-hero-content" ref={heroBodyRef}>
           <div className={`ehc-layout${usesSheet ? ' ehc-layout--sheet' : ''}`}>
@@ -2478,7 +2493,7 @@ export default function EntityExplorer({
           <>
 
             
-            <div className="explorer-grid">
+            <div className={`explorer-grid${rowsResolving ? ' explorer-grid--resolving' : ''}`}>
               {(!isLoadingPapers || isFetchingMore) && visiblePapers.map((paper, idx) => (
                 <PaperListRow
                   key={`${paper.id}-${idx}`}

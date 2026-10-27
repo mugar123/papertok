@@ -113,12 +113,44 @@
   height: calc(var(--nav-height) + var(--inset-top));
   padding-top: var(--inset-top);
   display: grid;
-  grid-template-columns: 32px 1fr 32px;
+  /* One control on the left, two on the right, and the wordmark still
+     centred: the sides share what it leaves. Its column can shrink to
+     nothing, so at large text on a narrow screen the wordmark ellipsizes
+     before the bar overflows. */
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
   gap: var(--space-3);
   padding-inline: var(--space-5);
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-primary);
+}
+
+.public-paper-nav-actions {
+  display: flex;
+  justify-self: end;
+  gap: var(--space-2);
+}
+
+/* Large text scales these rem gaps and not the 32px buttons, so on a phone
+   they are what leaves the wordmark too little. Tightened here; and at the
+   narrowest widths the left track stops matching the right one, which gives
+   the wordmark the room of the one-button side at the cost of sitting a
+   little off the centre. */
+@media (max-width: 480px) {
+  .public-paper-nav {
+    gap: var(--space-1);
+    padding-inline: var(--space-3);
+  }
+
+  .public-paper-nav-actions {
+    gap: var(--space-1);
+  }
+}
+
+@media (max-width: 340px) {
+  .public-paper-nav {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
 }
 
 .public-paper-nav-button {

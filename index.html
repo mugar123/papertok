@@ -18,7 +18,7 @@
          Measured in a browser, not assumed: with the default policy,
          `strict-origin-when-cross-origin`, a
          SAME-ORIGIN subresource request carries the full URL as `Referer` — so
-         a reader on /public/paper/<key> made the app's own
+         a reader on /paper/<key> made the app's own
          `<script src="/_vercel/insights/script.js">` announce that key to
          Vercel's edge, on every page view, in a header. The analytics payload
          itself has always been normalized (`sanitizeAnalyticsEventUrl`), and
@@ -26,9 +26,9 @@
          from `Referer`, so it read `https://papertok.app/` whatever route you
          were on. Real paths (src/main.tsx) put the identifier back in it.
 
-         /privacy.html promises the opposite in as many words: "Reading a
-         specific paper is recorded as /public/paper/:id [...] which one never
-         travels." `strict-origin` caps every request this document makes — the
+         /privacy.html promises the opposite in as many words: "Page
+         addresses have query strings, fragments and individual paper, list
+         and profile identifiers removed." `strict-origin` caps every request this document makes — the
          analytics script and requests, the API calls, an outbound link to a publisher — at
          the origin, so the promise does not depend on any one of them behaving.
          Not `no-referrer`: an origin-restricted API key checks this header, and
@@ -99,6 +99,132 @@
     <link rel="preconnect" href="https://api.papertok.app" crossorigin>
   </head>
   <body>
+    <!-- This screen must remain usable when the application assets fail to load. -->
+    <style>
+      body { margin: 0; }
+      #startup-status {
+        --bg-primary: #fbf8f0;
+        --text-primary: #1d2b53;
+        --accent-primary-hover: #3e4a6b;
+        --text-secondary: #46527a;
+        --brand-yellow: #ffd21e;
+        --text-on-brand: #1d2b53;
+        --accent-sky: #0369a1;
+        box-sizing: border-box;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: 32px 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        text-align: center;
+      }
+      html[data-theme="dark"] #startup-status {
+        --bg-primary: #14161d;
+        --text-primary: #f4ecd8;
+        --accent-primary-hover: #d2ccbc;
+        --text-secondary: #b9b1a0;
+        --accent-sky: #5bade9;
+      }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme]) #startup-status {
+          --bg-primary: #14161d;
+          --text-primary: #f4ecd8;
+          --accent-primary-hover: #d2ccbc;
+          --text-secondary: #b9b1a0;
+          --accent-sky: #5bade9;
+        }
+      }
+      .startup-petri {
+        display: block;
+        width: 8.5rem;
+        height: 8.25rem;
+        margin-bottom: 16px;
+        overflow: visible;
+      }
+      #startup-status[data-state="failed"] .startup-thinking,
+      #startup-status:not([data-state="failed"]) .startup-upset { display: none; }
+      #startup-status h1 {
+        max-width: 18ch;
+        margin: 0 0 12px;
+        font: 600 clamp(1.9rem, 4.2vw, 2.6rem)/1.08 "Iowan Old Style", Georgia, serif;
+        letter-spacing: -0.025em;
+        text-wrap: balance;
+      }
+      #startup-status p {
+        max-width: 34ch;
+        margin: 0 0 32px;
+        color: var(--text-secondary);
+        text-wrap: pretty;
+      }
+      #startup-status noscript p { margin: 24px 0 0; }
+      #startup-retry {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        min-width: 160px;
+        min-height: 44px;
+        padding: 0 20px;
+        border: 1px solid var(--text-primary);
+        border-radius: 3px;
+        background: var(--text-primary);
+        color: var(--bg-primary);
+        font: 600 15px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        text-decoration: none;
+        transition: scale 150ms ease-out, background-color 150ms ease-out;
+      }
+      #startup-status[data-state="loading"] #startup-retry { background: transparent; color: var(--text-primary); }
+      #startup-retry:active { scale: 0.97; }
+      #startup-retry:focus { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+      @media (hover: hover) and (pointer: fine) {
+        #startup-retry:hover { border-color: var(--accent-primary-hover); background: var(--accent-primary-hover); }
+        #startup-status[data-state="loading"] #startup-retry:hover {
+          border-color: var(--text-primary);
+          background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-primary));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #startup-retry { transition: none; }
+        #startup-retry:active { scale: none; }
+      }
+    </style>
+    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="failed">
+      <svg class="startup-petri" viewBox="14 22 128 124" aria-hidden="true" focusable="false">
+        <defs>
+          <pattern id="startup-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="1.4" height="4" fill="currentColor"/></pattern>
+        </defs>
+        <g stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+          <ellipse cx="78" cy="128" rx="62" ry="15" fill="var(--bg-primary)"/>
+          <ellipse cx="78" cy="124" rx="54" ry="10" fill="url(#startup-hatch)" stroke-width="1.6"/>
+          <path d="M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z" fill="var(--brand-yellow)" stroke="var(--brand-yellow)"/>
+          <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" stroke-width="2"/>
+          <g class="startup-thinking">
+            <circle cx="73" cy="87" r="3.4" fill="var(--text-on-brand)" stroke="none"/>
+            <circle cx="91" cy="87" r="3.4" fill="var(--text-on-brand)" stroke="none"/>
+            <path d="M86 76q5-3 10 0" fill="none" stroke="var(--text-on-brand)" stroke-width="2"/>
+            <path d="M73 98q8 7 16 0" fill="none" stroke="var(--text-on-brand)" stroke-width="2.2"/>
+            <path d="M108 40q0-10 10-10t10 9q0 6-6 9t-4 9" fill="none" stroke-width="4"/>
+            <circle cx="118" cy="66" r="2.6" fill="currentColor" stroke="none"/>
+          </g>
+          <g class="startup-upset">
+            <path d="M66 82l9-4M98 82l-9-4" fill="none" stroke="var(--text-on-brand)" stroke-width="2"/>
+            <circle cx="73" cy="88" r="3.4" fill="var(--text-on-brand)" stroke="none"/>
+            <circle cx="91" cy="88" r="3.4" fill="var(--text-on-brand)" stroke="none"/>
+            <path d="M74 102q7-5 14 0" fill="none" stroke="var(--text-on-brand)" stroke-width="2.2"/>
+            <path d="M103 66q-5 7-2 11 4 2 6-2 0-4-4-9Z" fill="var(--accent-sky)" stroke="var(--text-on-brand)" stroke-width="1.2"/>
+          </g>
+        </g>
+      </svg>
+      <h1 id="startup-title">PaperTok could not start</h1>
+      <p id="startup-message">Reload the page to try again.</p>
+      <a id="startup-retry" href="">Reload page</a>
+      <noscript><p>JavaScript is turned off. Enable it in your browser, then reload this page.</p></noscript>
+    </section>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -72,7 +72,6 @@ import {
   Package,
   Planet,
   Prohibit,
-  Quotes,
   Sigma,
   TestTube,
   Intersect,
@@ -93,7 +92,7 @@ import { Toggle } from '../ui/toggle.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getProjectForPaper } from '../../services/open-aire-service.ts';
-import { authorExplorerPath } from '../../utils/explorer-paths.ts';
+import { authorExplorerPath, projectExplorerPath } from '../../utils/explorer-paths.ts';
 import { Link } from 'react-router-dom';
 import { useStableNavigate } from '../../hooks/use-stable-navigate.ts';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -168,7 +167,7 @@ import {
 } from '../../utils/external-url.ts';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
@@ -1674,7 +1673,7 @@ const PaperCard = memo(function PaperCard({
     // identifier is the OpenAIRE id, which names one project.
     const path = publicMode
       ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+      : projectExplorerPath({ id: projectRouteId!, name: project.acronym!, funder: project.funder }, paperId);
     void trackEvent('select_content', {
       content_type: 'project',
       surface: analyticsSurface,
@@ -1907,19 +1906,9 @@ const PaperCard = memo(function PaperCard({
               </span>
             </>
           )}
-          {/* Why the feed placed this paper in a notable card's place; the
-              year and the count after it are the paper's own. */}
-          {paper._notable && (
-            <>
-              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
-              <span className="pc-notable-badge">
-                <Quotes size={12} aria-hidden="true" /> {'Highly cited'}
-              </span>
-            </>
-          )}
           {paper.year ? (
             <>
-              {(categoryLabel || hasFollowedAuthor || paper._notable) && <span className="pc-meta-dot">·</span>}
+              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
@@ -1929,7 +1918,7 @@ const PaperCard = memo(function PaperCard({
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || hasFollowedAuthor || paper._notable || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"

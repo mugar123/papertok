@@ -39,13 +39,18 @@ checks them now:
   makes the papers a page leaves out the newest of it (`markSeenLatest`), and gives
   `planUnshowablePage` `hasSeenRanking`'s answer for the main page. The decisions are tested
   in `src/context/` and `src/utils/`; the wiring inside the context is not.
-- `PaperCard` shows "Highly cited" on a notable card before the paper's own year and citation
-  count, and groups every citation count with `toLocaleString('en-US')`.
+- `PaperCard` shows a notable card's metadata line as any other card's, with the paper's own
+  year and citation count, and groups every citation count with `toLocaleString('en-US')`.
 - `FeedContainer` keys For You's place by the account (`forYouScrollKey`), and `App` clears
   every feed's place when the account changes (`feedResumeMemory.clear`).
 - The router keeps `useTransitions={false}` and keys the provider tree on `accountScopeKey`.
 - Every route `app.tsx` declares is matched by the `vercel.json` rewrite and normalizes to a
   named analytics path; the sitemap and `robots.txt` agree on protected routes.
+- A visitor's `PrivacyPopover` sits in the header of every page a shared link opens, and only when
+  no user is signed in: the public paper page's bar, the public list's header (wait and list),
+  the explorer's hero, its skeleton and its not-found and error state in public mode, and the
+  404 page. A session still being restored counts as no user on all but the 404 page, which
+  waits for `loading`.
 - Landmarks: each routed page has one `<main>` and one `<h1>`, every `<nav>` has a name, and
   the skip link targets a focusable `#main-content`.
 

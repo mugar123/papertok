@@ -1,4 +1,5 @@
 import { markAppForcedReload, PRELOAD_RELOAD_KEY } from '../utils/app-reload.ts';
+import { getPublicPaperPath } from '../utils/public-navigation.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { PostHogConfig } from 'posthog-js';
@@ -21,6 +22,7 @@ import {
   startAnalyticsClient,
   trackAcquisition,
   trackDay7Return,
+  trackProductEvent,
 } from './analytics-service.ts';
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -178,12 +180,19 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/paper/10.1234/private-id'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/explorer/person/private-id'), '/explorer/entity/:id');
   assert.equal(normalizeAnalyticsPath('/search/private-query'), '/unknown');
+  assert.equal(normalizeAnalyticsPath('/paper/private-key'), '/paper/:id');
+  // The address a paper had before ENG-44: an earlier visit's stored values
+  // still carry it.
   assert.equal(normalizeAnalyticsPath('/public/paper/private-key'), '/public/paper/:id');
   assert.equal(normalizeAnalyticsPath('/public/list/private-key'), '/public/list/:id');
   // Profile pages are gone; an old link to one is a not-found page, and the
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
+  assert.equal(normalizeAnalyticsPath(getPublicPaperPath('arxiv', '2401.12345')!), '/paper/:id');
 });
 
 test('classifies acquisition without exposing the referring URL', () => {
@@ -200,6 +209,113 @@ test('classifies acquisition without exposing the referring URL', () => {
     referrer: 'https://example.edu/private-path',
     location: { search: '?utm_medium=email&utm_campaign=private', origin: 'https://papertok.test' },
   }), 'email');
+});
+
+test('files a referrer by its whole host, not by a fragment of its name', () => {
+  const channelOf = (referrer: string) => inferAcquisitionChannel({
+    referrer,
+    location: { search: '', origin: 'https://papertok.test' },
+  });
+  const expected: Record<string, string> = {
+    // Search engines, including Google's country domains, its search properties
+    // (Scholar, Books, Images, News) and its Android search and News apps.
+    'https://google.com/': 'organic_search',
+    'https://www.google.com/': 'organic_search',
+    'https://www.google.co.uk/': 'organic_search',
+    'https://www.google.com.br/': 'organic_search',
+    'https://www.google.co.jp/': 'organic_search',
+    'https://www.google.de/': 'organic_search',
+    'https://www.google.cat/': 'organic_search',
+    'https://scholar.google.com/': 'organic_search',
+    'https://scholar.google.co.uk/': 'organic_search',
+    'https://scholar.google.de/': 'organic_search',
+    'https://books.google.com/': 'organic_search',
+    'https://images.google.com/': 'organic_search',
+    'https://news.google.com/': 'organic_search',
+    'https://ipv6.google.com/': 'organic_search',
+    'android-app://com.google.android.googlequicksearchbox/': 'organic_search',
+    'android-app://com.google.android.apps.searchlite/': 'organic_search',
+    'android-app://com.google.android.apps.magazines/': 'organic_search',
+    'https://www.bing.com/': 'organic_search',
+    'https://duckduckgo.com/': 'organic_search',
+    'https://html.duckduckgo.com/': 'organic_search',
+    'https://www.ecosia.org/': 'organic_search',
+    'https://ecosia.org/': 'organic_search',
+    'https://search.yahoo.com/': 'organic_search',
+    'https://uk.search.yahoo.com/': 'organic_search',
+    'https://search.yahoo.co.jp/': 'organic_search',
+    'https://de.search.yahoo.com/': 'organic_search',
+    'https://search.brave.com/': 'organic_search',
+    // Social networks, short links and the YouTube and YouTube Music apps included.
+    'https://t.co/abc': 'organic_social',
+    'https://x.com/': 'organic_social',
+    'https://www.x.com/': 'organic_social',
+    'https://mobile.twitter.com/': 'organic_social',
+    'https://l.facebook.com/': 'organic_social',
+    'https://old.reddit.com/': 'organic_social',
+    'https://m.youtube.com/': 'organic_social',
+    'android-app://com.google.android.youtube/': 'organic_social',
+    'android-app://com.google.android.apps.youtube.music/': 'organic_social',
+    // Other Google products and sites whose name only contains a search or social host.
+    'https://docs.google.com/': 'referral',
+    'https://mail.google.com/': 'referral',
+    'https://gemini.google.com/': 'referral',
+    'https://google.org/': 'referral',
+    'https://google.dev/': 'referral',
+    'https://translate.google.com/': 'referral',
+    'android-app://com.google.android.gm/': 'referral',
+    // A package name is matched whole: another vendor's package can end with a Google app's.
+    'android-app://net.example.com.google.android.youtube/': 'referral',
+    'android-app://net.example.com.google.android.googlequicksearchbox/': 'referral',
+    // Listed hosts do not apply to a package, nor packages to a web host.
+    'android-app://evil.t.co/': 'referral',
+    'android-app://com.example.x.com/': 'referral',
+    'android-app://com.example.youtube.com/': 'referral',
+    'android-app://com.example.facebook.com/': 'referral',
+    'android-app://t.co/': 'referral',
+    'https://com.google.android.youtube/': 'referral',
+    'https://com.google.android.googlequicksearchbox/': 'referral',
+
+    'https://notgoogle.example.org/': 'referral',
+    'https://www.yahoo.com/': 'referral',
+    'https://search.yahoo.example.org/': 'referral',
+    'https://notsearch.yahoo.com/': 'referral',
+    'https://search.yahoo.com.evil.example/': 'referral',
+    // A suffix that only looks like a country: any three-letter or generic TLD,
+    // and `co.com` / `com.com`, which anyone can register.
+    'https://search.yahoo.xyz/': 'referral',
+    'https://search.yahoo.net/': 'referral',
+    'https://a.search.yahoo.top/': 'referral',
+    'https://search.yahoo.co.com/': 'referral',
+    'https://search.yahoo.com.com/': 'referral',
+    'https://www.google.co.com/': 'referral',
+    'https://www.google.com.com/': 'referral',
+    'https://scholar.google.co.com/': 'referral',
+    'https://google.com.cat/': 'referral',
+    // A search engine's other sites link out too: only its search host is search.
+    'https://brave.com/download/': 'referral',
+    'https://community.brave.com/': 'referral',
+    'https://blog.ecosia.org/': 'referral',
+    'https://google.com.evil.example/': 'referral',
+    'https://chatgpt.com/': 'referral',
+    'https://copilot.microsoft.com/': 'referral',
+    'https://teams.microsoft.com/': 'referral',
+    'https://getpocket.com/': 'referral',
+    'https://dropbox.com/': 'referral',
+    'https://www.netflix.com/': 'referral',
+    'https://news.ycombinator.com/': 'referral',
+    'https://arxiv.org/abs/2401.00001': 'referral',
+    // A trailing dot names the host differently (referral, decided 2026-10-25) and
+    // upper case does not, for a listed host and for a pattern alike.
+    'https://t.co./': 'referral',
+    'https://www.google.com./': 'referral',
+    'https://search.yahoo.com./': 'referral',
+    'https://T.CO/abc': 'organic_social',
+    'https://WWW.Google.CO.UK/': 'organic_search',
+    'https://Search.Yahoo.Com/': 'organic_search',
+  };
+
+  assert.deepEqual(Object.fromEntries(Object.keys(expected).map(referrer => [referrer, channelOf(referrer)])), expected);
 });
 
 test('tracks acquisition once per browser session after consent', async t => {
@@ -326,10 +442,8 @@ test('builds page locations from the sanitized path and origin only', () => {
  * reads `location.href`, and since the router moved off the fragment that URL
  * carries the real entity id in the PATH -- so this is the function standing
  * between a paper id and a request leaving the browser. The policy published at
- * /privacy.html promises it never does: "Reading a specific paper is recorded
- * as /public/paper/:id [...] which one never travels. A search is recorded as
- * a search, with its type and how many results it returned, never with what
- * you searched for."
+ * /privacy.html promises it never does: "Page addresses have query strings,
+ * fragments and individual paper, list and profile identifiers removed."
  *
  * Every route on this origin that carries something belonging to a reader is
  * here: the paper, the author, the list, the handle in an old profile link (a
@@ -337,6 +451,10 @@ test('builds page locations from the sanitized path and origin only', () => {
  * search query (what they typed). None of them has a fragment any more.
  */
 test('strips the identifier out of the real path before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/paper/W2741809807'),
+    'https://papertok.app/paper/:id',
+  );
   assert.equal(
     sanitizeAnalyticsEventUrl('https://papertok.app/public/paper/W2741809807'),
     'https://papertok.app/public/paper/:id',
@@ -360,6 +478,7 @@ test('strips the identifier out of the real path before the page-view URL is sen
   // No fragment anywhere in the inputs above, and none in the outputs: an `#`
   // in a returned value would mean the id survived somewhere this reads past.
   for (const url of [
+    'https://papertok.app/paper/W2741809807',
     'https://papertok.app/public/paper/W2741809807',
     'https://papertok.app/explorer/author/a5023888391',
     'https://papertok.app/public/list/private-list-key',
@@ -727,6 +846,19 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   await pending;
   await identifyAnalyticsUser({ uid: 'also-discarded' });
   assert.deepEqual(changes, []);
+
+  const capturedAccounts: Array<string | null> = [];
+  t.mock.method(posthog, 'capture', () => { capturedAccounts.push(identifiedAs); return undefined; });
+  storage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
+  await Promise.all([
+    identifyAnalyticsUser({ uid: 'next-account' }),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  await Promise.all([
+    identifyAnalyticsUser(null),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

@@ -18,13 +18,14 @@ node scripts/generate-openalex-leaf-venues.ts --check
 
 ## Evidence
 
-`openalex-venue-reviews.json` has three keys:
+`openalex-venue-reviews.json` has four keys:
 
 | Key | Contents |
 | --- | --- |
 | `sources` | Each source ID the samples of `leaves` asked for, with the `name`, `publisher` and `type` (`journal`, `conference`) its curator verified with `/sources/<id>`, and `leaves`, the leaves its curator filed it under: the curated lists, kept here only. A source filed under none was sampled but left off the lists: the excluded insurance, derivatives and market microstructure journals of q-fin.RM, q-fin.PR and q-fin.TR, and the optional Journal of Portfolio Management and Financial Analysts Journal of q-fin.PM. Nine computer science sources the curator dropped after sampling (eight with no work since 2024, one re-dated repository copy) have no record, nor do the 24 sources only the queries of `otherSamples` name; a source without one cannot enter a lane. |
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
 | `otherSamples` | Labelled samples that no gate reads, each with the `leaf` it was taken for. The generator ignores them; they are label evidence for the leaf-filing calibration ([worker/leaf-filing-calibration.md](../worker/leaf-filing-calibration.md#reproduce)). 38 samples of 537 works (472 distinct): for physics (10) and engineering (9), lists the curators tried and did not recommend; for economics and finance (19), the lists with and without `has_abstract:true`, the econ.EM list with the Journal of Applied Econometrics, the own samples of six econ.GN journals and of the Journal of Financial and Quantitative Analysis, three econ.GN topic queries and the sample of Quantitative Finance. That one names no leaf: each of its labels carries the `leaf` its labeller judged nearest, and its tenth article (newest first), judged nearest to two leaves, is left out |
+| `notableSamples` | Per leaf, the labelled sample of the most-cited works of its venue lane that admits it to a notable lane from its venue lane ("Notable sample", below) |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
 address (cs.DS's was derived, below), every returned work (`id`, `type`,
@@ -102,8 +103,9 @@ from its store the second time. The lanes spend from the 3,000 of the
 harvest's 4,000 units a day that the category lanes share with the notable
 lanes: with the topic lanes (195 at most), the area lanes (9) and the
 working-paper series (4), a night's category calls are at most 448, and the
-notable lanes add 390 on their first night and at most 80 a night for
-re-listings (a new lane whose first listing failed is listed again beside
+notable lanes add ten for each new lane on its first night (440 for the 44
+journal lanes of 2026-10-26) and at most 190 a night for re-listings (19 of
+129 lanes; a new lane whose first listing failed is listed again beside
 them).
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
@@ -114,6 +116,100 @@ calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
 Crossref for its DOI's type, 20 DOIs a call: about 96 calls a night, and about
 1,080 for the about 21,700 articles of the lanes' first night, which the
 embedding passes also take.
+
+## Notable sample
+
+A leaf with a venue lane and no notable lane from its topics can get a
+notable lane from its venue lane: the 100 most-cited works of the lane's
+sources and types in each of the ten completed years before the current one,
+with or without an abstract (`openAlexNotableListingFilter` in
+`worker/paper-sources.ts`, source `openalex-notable`). The listing asks the
+venue lane's filter without the core-source filter the topic notables ask.
+These sources already passed the gate above and the review rule, and
+`primary_location.source.is_core:true` would drop the reviewed ones OpenAlex
+does not call core (ICPP in cs.DC, SPLASH in cs.PL, ACM TOIS in cs.IR).
+
+**Evidence.** `notableSamples` in `openalex-venue-reviews.json`, keyed by leaf,
+holds samples in the shape above whose works also keep `cited_by_count`. The
+query is the leaf's venue lane over the ten completed years before the capture
+year, most cited first:
+
+| Parameter | Value |
+| --- | --- |
+| `filter` | the lane's `primary_location.source.id` (sorted, joined by `\|`), its `type` and topic or author-count filters exactly as `OPENALEX_LEAF_VENUES` lists them (topic IDs sorted), `from_publication_date:<year−10>-01-01`, `to_publication_date:<year−1>-12-31`, `has_abstract:true`, `is_retracted:false`, and nothing else |
+| `sort` | `cited_by_count:desc` |
+| `page`, `per-page` | `1`, `15` |
+
+The sample asks `has_abstract:true` because the labellers read the abstracts;
+the lane does not. The works must come from the lane's sources, in
+non-increasing citation order and dated within the window, and every work is
+labelled as in the gate above.
+
+**Decision.** The gate's rule: a full page of 15, at least 10 on target
+without doubt. A passing leaf joins `OPENALEX_NOTABLE_VENUE_LEAVES`, the second
+export of `worker/openalex-leaf-venues.generated.ts`, and the report gives each
+sampled leaf `notable: { status, sampleSize, onTarget }`. The generator stops
+on a notable sample for a leaf without a venue lane, or on a passing one for a
+leaf with a notable lane from its topics (`openAlexNotableFilterForLeaf`): a
+notable lane has one OpenAlex listing. A rejected sample lists nothing and
+stays as evidence when a topic sample admits the leaf later, as mech.auto's
+did. Each batch of admitted leaves changes what every
+reader of those leaves is shown and adds ten OpenAlex list calls a week per
+leaf, so it is authorized under AGENTS.md before it is committed.
+
+## The 2026-10-26 journal notable sample
+
+Every leaf with a venue lane and no notable lane from its topics was sampled:
+51 leaves, with one keyless request each between 09:31 and 09:33 UTC on
+2026-10-26 (50 requests: cs.SY and eess.SY have the same lane, and share one
+page and its labels). Each sheet named the leaf in its heading and held
+shuffled opaque row IDs, the title and the first 1,500 characters of the
+decoded abstract, and nothing else. The samples were labelled by the agent at
+Nicolás's request: five fresh agent contexts, one per group below, each given
+only its own sheets (that a labeller read nothing else cannot be proved from
+the files), answering whether a researcher who chose the leaf would recognise
+the article as a notable work of their field. The labels were joined to the
+work IDs afterwards. 44 leaves passed; the counts are articles on target
+without doubt, of 15.
+
+| Group | Passed | Rejected |
+| --- | --- | --- |
+| Physics | astro-ph.EP 15, cond-mat.mtrl-sci 15, cond-mat.quant-gas 11, gr-qc 14, math-ph 12, physics.bio-ph 11, physics.comp-ph 14, physics.plasm-ph 11 (one doubted), quant-ph 15 | nucl-ex 8, nucl-th 8 |
+| Economics, finance and statistics | econ.EM 13, econ.GN 14, econ.TH 13, q-fin.MF 15, stat.AP 15, stat.ME 15, stat.ML 14, stat.TH 15 | none |
+| Computer science and electrical engineering | cs.CR 15, cs.DB 14, cs.DC 12, cs.GR 14, cs.HC 15, cs.IR 12, cs.PL 13, cs.RO 13, cs.SY and eess.SY 15, eess.SP 13 | cs.AI 9, cs.MM 3 |
+| Mathematics | math.AP 11 (one doubted), math.DG 12, math.FA 10, math.LO 14, math.MP 11 (one doubted), math.NA 15, math.NT 15, math.OC 15, math.PR 14, math.ST 15 | math.CA 7, math.GT 5 |
+| Engineering | chemeng.bio 10, chemeng.sep 12, civil.mat 13, civil.urban 13, mech.acoustics 14, mech.cad 13 | mech.auto 9 |
+
+What the off-target articles of the rejected leaves were about, by their
+labellers: nucl-ex and nucl-th, whose lanes share Physical Review C and the
+Journal of Physics G, 7 each, mostly particle physics, astroparticle and
+cosmology reports (PDF4LHC, KM3NeT, IceCube-Gen2, JUNO); cs.AI 6 of natural
+language processing and machine learning, which arXiv's cs.AI leaves out;
+cs.MM 12, mostly computer vision and medical image analysis; math.CA 8, mostly
+neural-network approximation and number theory; math.GT 10, mostly algebraic
+K-theory, quantum algebra and mathematical physics, with some symplectic and
+algebraic geometry; mech.auto 6 of railway vehicle dynamics. These leaves keep
+their venue lanes and get no notable lane from their journals. Later on
+2026-10-26 a topic sample gave mech.auto a notable lane from its vehicle
+topics (`scripts/README-openalex-leaf-topics.md`).
+
+The sample is evidence about the head of each lane's ten-year population with
+an abstract (`meta.count` of its response); the listing takes up to 100 works
+a year, with or without an abstract. For eight admitted leaves that population
+is under 1,000: math.DG 180, eess.SP 357, stat.ML 683, q-fin.MF 804, econ.TH
+838, cs.CR 846, math.FA 994 and cs.DC 995. Their listing reaches beyond what
+the sample measured: in a year with fewer than 100 works it lists every work
+the lane's journals published, uncited ones included, and, for a lane that
+publishes about 100 or fewer a year, the listing of the year just ended can
+hold its last months' works, which the feed then offers only as notable cards
+until the next listing. Ten more are under 2,000: cs.IR, cs.DB, stat.AP,
+physics.comp-ph, mech.acoustics, econ.EM, stat.TH, math.ST, physics.bio-ph and
+math.LO. As for the topic notables, the check after the lanes deploy covers
+the rest: count each admitted lane's works and citations a year. The 44 lanes
+bring up to about 41,000 new papers on their first night (44 lanes of up to
+1,000, less the near-identical listings of cs.SY and eess.SY, math-ph and
+math.MP, math.ST and stat.TH) for the nightly enrichment and embedding to
+reach.
 
 ## The 2026-10-23 and 2026-10-24 samples
 

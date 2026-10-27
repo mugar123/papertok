@@ -106,6 +106,18 @@ test('maps a bioRxiv preprint under the subject bioRxiv files it in', () => {
   assert.equal(paper!.authors.length, 2);
 });
 
+// Europe PMC's PPR source is its preprints (bioRxiv, medRxiv, Research Square
+// and others); its MED records are PubMed's.
+test('a Europe PMC preprint maps as a preprint, and a PubMed record as published', () => {
+  const preprint = mapEuropePmcSearchResult({ id: 'PPR12345', source: 'PPR', doi: '10.1101/2020.03.14.123456', title: 'A preprint', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([preprint!.publicationType, preprint!.publicationStatus], ['preprint', 'preprint']);
+  const article = mapEuropePmcSearchResult({ id: '123', source: 'MED', pmid: '123', title: 'An article', firstPublicationDate: '2020-03-14' });
+  assert.deepEqual([article!.publicationType, article!.publicationStatus], ['article', 'published']);
+  // PubMed indexes NIH-funded preprints, typed Preprint.
+  const indexed = mapEuropePmcSearchResult({ id: '124', source: 'MED', pmid: '124', title: 'An indexed preprint', firstPublicationDate: '2020-03-14', pubTypeList: { pubType: ['Preprint'] } });
+  assert.deepEqual([indexed!.publicationType, indexed!.publicationStatus], ['preprint', 'preprint']);
+});
+
 test('maps Europe PMC search results including free full text and biomedical terms', () => {
   const paper = mapEuropePmcSearchResult({
     id: '123',
@@ -391,6 +403,14 @@ test('maps NASA ADS records with citations, references and physics concepts', ()
   assert.deepEqual(paper!.categories, ['astro-ph.CO', 'Cosmology']);
   assert.ok(!paper!.concepts!.some(concept => concept.display_name === '11.25.Tq'));
   assert.ok(paper!.keywords!.includes('11.25.Tq'));
+});
+
+test('an ADS date with an unknown day or month keeps the month or year it names', () => {
+  const published = (pubdate: string) => mapAdsPaper({ bibcode: '2018PhRvL.120a0001A', title: ['A dated ADS record'], abstract: 'A.', year: 2018, pubdate })!.published;
+  assert.equal(published('2018-03-00'), '2018-03');
+  assert.equal(published('2018-00-00'), '2018');
+  assert.equal(published('2018-03-14'), '2018-03-14');
+  assert.equal(new Date(published('2018-03-00')!).toISOString(), '2018-03-01T00:00:00.000Z', 'read as the first day of the month');
 });
 
 // Real record, 2026NatSR..16.2819Z as ADS served it on 2026-09-23: the title

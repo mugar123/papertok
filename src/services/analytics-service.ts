@@ -1,3 +1,4 @@
+import { loadOptionalModule } from '../utils/module-load-recovery.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
 import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
@@ -70,8 +71,36 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
   'concept',
   'source',
 ]);
-const SEARCH_ENGINE_HOSTS = ['google.', 'bing.com', 'duckduckgo.com', 'search.yahoo.', 'ecosia.org', 'brave.com'];
-const SOCIAL_HOSTS = [
+// A referrer counts when its whole host is listed, or is a subdomain of a listed
+// one. A name that merely contains an entry is another site: chatgpt.com holds
+// `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
+// per country, so those two are patterns. Their suffix is `com`, a two-letter country
+// code, or a two-letter code under `co.` or `com.`; a generic suffix (`.xyz`) or
+// `co.com` and `com.com`, which anyone can register, is not. Any two letters pass, so
+// `google.com.de` counts as search.
+//
+// Only a provider's search properties count as search. Google's (web, Scholar, Books,
+// Images, News) do; Docs, Gmail, Gemini and the rest do not. Brave lists
+// `search.brave.com` and Ecosia `ecosia.org` and `www.ecosia.org`: brave.com, its forum
+// and blog.ecosia.org link out and are referrals. Bing and DuckDuckGo list their whole
+// domain, so every subdomain of them counts as search.
+//
+// Five Google apps on Android send their package name as the referrer and are filed
+// like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
+// Music as social. Other Google apps count as referral. A package names one app, not a
+// domain with subdomains, so it is matched whole, and only in an `android-app:` referrer:
+// another vendor's package can end with a Google app's or with `t.co`.
+const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
+  /^(?:www\.|ipv6\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  'bing.com',
+  'duckduckgo.com',
+  /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  /^(?:www\.)?ecosia\.org$/,
+  'search.brave.com',
+];
+const ANDROID_SEARCH_PACKAGES = /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/;
+const ANDROID_SOCIAL_PACKAGES = /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/;
+const SOCIAL_HOSTS: readonly (string | RegExp)[] = [
   'bsky.app',
   'facebook.com',
   'instagram.com',
@@ -289,6 +318,10 @@ export function normalizeAnalyticsPath(pathname = '/') {
       : 'entity';
     return `/public/entity/${type}/:id`;
   }
+  if (/^\/paper\/[^/]+$/.test(path)) return '/paper/:id';
+  // The address before ENG-44. What an earlier visit stored (its first URL, the
+  // previous page) still carries it, and it is on screen for one render when
+  // app.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
 
@@ -310,7 +343,7 @@ export function sanitizeAnalyticsLocation(pathname: string|undefined, browserLoc
  * The door that is easy to miss. Both transports read `location.href` on their
  * own: the Vercel script builds its payload's `url` field from it, and PostHog
  * fills `$current_url` from it on EVERY event, page view or not. That string is
- * whatever the address bar says: `https://papertok.app/public/paper/<the real
+ * whatever the address bar says: `https://papertok.app/paper/<the real
  * id>`, or `/search?q=<what was searched>`, precisely the value the privacy
  * policy promises never leaves the browser. AnalyticsContext's `beforeSend`
  * and `sanitizeAnalyticsCapture` are where it gets replaced, and this is what
@@ -382,7 +415,7 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   }
 }
 
-// Allowing only has to persist: AnalyticsProvider renders the Vercel script
+// Allowing only has to persist: PrivacyProvider renders the Vercel script
 // while analytics is on, and PostHog loads on the next event. A PostHog
 // already loaded in this tab switches level at once (see `applyConsent`).
 // Withdrawing stops recording at once: the provider stops rendering the Vercel
@@ -393,8 +426,13 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
   if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
-  const client = analyticsClient && await analyticsClient;
-  if (client) applyConsent(client, value as Consent);
+  // Persisting the preference must not wait for an SDK that a blocker can stall.
+  // Read the latest choice when it arrives, rather than applying a stale toggle.
+  if (analyticsClient) {
+    void analyticsClient.then(client => {
+      if (client) applyConsent(client, readAnalyticsConsent());
+    }).catch(error => { console.warn('Could not update analytics preferences', error); });
+  }
   return true;
 }
 
@@ -505,16 +543,15 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
  * capture made before `init` instead of queueing it, so every send waits for
  * this promise rather than firing into a client that is not ready yet.
  *
- * A load that fails is not retried: the tab stops reporting, and the next page
- * load tries again. Vite reports the failure like any other chunk's, so
- * main.jsx's reload (once a minute at most) applies to it, which is the right
- * answer when a deploy replaced the chunk. That is also why nothing is loaded
- * while the browser says it is offline: a failure there would only reload.
+ * A blocked SDK disables reporting for this page. Optional module failures do
+ * not invoke the application's stale-chunk reload policy.
  */
 function loadAnalyticsClient() {
   if (!analyticsClient && globalThis.navigator?.onLine === false) return Promise.resolve(null);
-  analyticsClient ??= import('posthog-js')
-    .then(({ posthog }) => {
+  analyticsClient ??= loadOptionalModule(() => import('posthog-js'))
+    .then(module => {
+      if (!module) return null;
+      const { posthog } = module;
       startAnalyticsClient(posthog, readAnalyticsConsent());
       return posthog;
     })
@@ -579,7 +616,7 @@ async function sendAnalyticsEvent(eventName: string, properties: Record<string, 
 
 /**
  * One view per change of concrete pathname, filed under its pattern: two papers
- * share `/public/paper/:id` and are still two views. PostHog's own page view
+ * share `/paper/:id` and are still two views. PostHog's own page view
  * capture stays off because it would read the address bar. The URL is fixed
  * here, from the route the view belongs to, so a navigation made while the
  * library loads cannot file this view under the next page.
@@ -599,8 +636,10 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
 }
 
-function hostnameMatches(hostname: string, patterns: string[]) {
-  return patterns.some(pattern => hostname === pattern || hostname.endsWith(`.${pattern}`) || hostname.includes(pattern));
+function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
+  return patterns.some(pattern => typeof pattern === 'string'
+    ? hostname === pattern || hostname.endsWith(`.${pattern}`)
+    : pattern.test(hostname));
 }
 
 export function inferAcquisitionChannel({
@@ -625,6 +664,10 @@ export function inferAcquisitionChannel({
     const currentOrigin = location?.origin ? new URL(location.origin).origin : '';
     if (currentOrigin && referrerUrl.origin === currentOrigin) return 'direct';
     const hostname = referrerUrl.hostname.toLowerCase();
+    if (referrerUrl.protocol === 'android-app:') {
+      if (ANDROID_SEARCH_PACKAGES.test(hostname)) return 'organic_search';
+      return ANDROID_SOCIAL_PACKAGES.test(hostname) ? 'organic_social' : 'referral';
+    }
     if (hostnameMatches(hostname, SEARCH_ENGINE_HOSTS)) return 'organic_search';
     if (hostnameMatches(hostname, SOCIAL_HOSTS)) return 'organic_social';
     return 'referral';
@@ -739,7 +782,7 @@ const PAGE_LOADED_AT = Date.now();
 let appCrashReported = false;
 
 /**
- * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
+ * The report for GlobalErrorBoundary, which sits outside PrivacyProvider.
  * A crash inside main.tsx's window after an earlier page's chunk reload counts
  * as the chunk failing again. A forced-reload mark written by this page means
  * the app is already reloading it, for a missing chunk (main.tsx) or for a

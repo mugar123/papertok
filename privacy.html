@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 25 October 2026.</p>
+      <p class="lp-updated">Last updated 26 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -124,7 +124,7 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 you viewed on a card marked as highly cited</td>
+              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 highly cited papers the feed offered you that you viewed</td>
               <td>Your use of the app</td>
               <td>Not showing you the same paper twice, and ordering the feed</td>
             </tr>
@@ -160,8 +160,8 @@
         or when you skip it. Besides your interactions with each paper, your account keeps a
         list of the last 500 papers you viewed, so that the feed on the other devices where
         you sign in does not show them again. Once the list is full, each new view pushes the
-        oldest one off the list. A second list keeps the last 1,200 papers you viewed on a
-        card marked as highly cited, so that the feed does not offer them again. Only your
+        oldest one off the list. A second list keeps the last 1,200 highly cited papers the
+        feed offered you that you viewed, so that it does not offer them again. Only your
         account can read these lists.
       </p>
 
@@ -251,10 +251,13 @@
       </p>
       <p>
         You can turn off both services in <strong>Settings → Privacy</strong> or, without
-        an account, with the <strong>Privacy</strong> button on the welcome screens and
-        feed. The choice is kept in this browser. Turning analytics off stops new browser
-        events and removes PostHog's stored browser identity; previously queued events
-        may still be delivered. On subsequent visits neither analytics library loads.
+        an account, with the <strong>Privacy</strong> button at the top of the welcome
+        screens and of the public pages a shared link opens: a paper, a list, an author,
+        institution, journal, topic or project page, and the page for a link that no longer
+        works. The choice is kept in this browser. Turning analytics off stops new
+        browser events and removes PostHog's stored browser identity; previously
+        queued events may still be delivered. On subsequent visits neither analytics
+        library loads.
         A previous rejection of detailed tracking remains disabled until you turn
         analytics on. To request deletion of previously collected data, write to the
         contact address below.
@@ -290,7 +293,7 @@
       </p>
       <p>
         When the in-app PDF reader requests a document, or a public request looks up
-        papers, open-access links or a shared page, that server uses the IP address
+        papers, paper figures, open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
@@ -304,7 +307,7 @@
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
         fails to run that cleanup, but expired counters do not affect later windows.
-        The arXiv and open-access lookup counters use the same cleanup schedule.
+        The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule.
         OpenAlex and shared-page lookup counters are stored with their daily
         allowance and are scheduled for deletion after three days.
       </p>

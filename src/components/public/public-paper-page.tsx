@@ -22,6 +22,7 @@ import SkeletonCard from '../feed/skeleton-card.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
+import PrivacyPopover from './privacy-popover.tsx';
 import './public-paper-page.css';
 
 const COPY = {
@@ -201,7 +202,7 @@ export default function PublicPaperPage({
 
   const canonicalRoute = identity
     ? getPublicPaperPath(identity.type, identity.value)
-    : `/public/paper/${encodeURIComponent(paperKey)}`;
+    : `/paper/${encodeURIComponent(paperKey)}`;
   // Built from the paper on screen, seed included: a page painted from a seed
   // is the paper from its first render, never a noindex «loading».
   const metadata = useMemo(() => publicPaperMetadata(paper, canonicalRoute), [canonicalRoute, paper]);
@@ -280,9 +281,16 @@ export default function PublicPaperPage({
             <ArrowLeft size={20} />
           </button>
           <div className="public-paper-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
-          <button type="button" className="public-paper-nav-button" onClick={() => { void navigate('/feed'); }} aria-label={text(COPY.home)} title={text(COPY.home)}>
-            <House size={19} />
-          </button>
+          <div className="public-paper-nav-actions">
+            {/* A shared link is many visitors' first page, and a visitor has
+                no Settings: the analytics switch is in the bar, as on the
+                welcome. Only here, in the visitor's chrome: a session has
+                Settings, and the switch's own words say "without an account". */}
+            <PrivacyPopover className="public-paper-nav-button" />
+            <button type="button" className="public-paper-nav-button" onClick={() => { void navigate('/feed'); }} aria-label={text(COPY.home)} title={text(COPY.home)}>
+              <House size={19} />
+            </button>
+          </div>
         </nav>
       )}
 

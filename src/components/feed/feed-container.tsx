@@ -25,14 +25,14 @@ interface FeedContainerProps {
   landmark?: { label: string; heading: string } | null;
 }
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { toast } from 'sonner';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 
 import useQuickSave from '../../hooks/use-quick-save.ts';
@@ -52,7 +52,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -642,7 +642,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   useEffect(() => {
     if (loading) initialLoadStartedRef.current = true;
-    if (papers.length > 0 || error || (initialLoadStartedRef.current && !loading)) {
+    if (firstLoadSettled({ hasPapers: papers.length > 0, loadStarted: initialLoadStartedRef.current, loading, error })) {
       setInitialFeedReady(true);
     }
   }, [error, loading, papers.length]);
@@ -1216,6 +1216,29 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
     return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+  }
+
+  if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
+    return (
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
+        <EmptyState
+          role="status"
+          art={<Petri pose="flask" className="feed-error-petri" />}
+          title={'No papers for your topics yet'}
+          actions={(
+            <>
+              <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
+              <Button size="sm" variant="outline" onClick={handleRefresh}>
+                <ArrowsClockwise size={16} aria-hidden="true" />
+                {'Check again'}
+              </Button>
+            </>
+          )}
+        >
+          {'The topics you picked have no papers in PaperTok yet. Add more topics, or check again after the next update.'}
+        </EmptyState>
+      </FeedLandmark>
+    );
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
