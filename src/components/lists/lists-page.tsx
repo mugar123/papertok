@@ -60,6 +60,7 @@ import ScientificText from '../scientific-text.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
 import {
   ArrowLeft,
+  CircleNotch,
   DotsThree,
   CaretDown,
   Check,
@@ -1814,14 +1815,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               must look under the same key (R8: ids differ by
                               entry route). */}
                           {isPhone ? (
-                            // Dimmed and renamed like the desktop Trash button
-                            // while the removal is pending: the sheet has
-                            // closed, so this button is the row's only cue.
-                            // It still opens the sheet, whose Edit works.
+                            // Renamed, and drawn as a spinner, while the removal
+                            // is pending: the sheet has closed, so this button
+                            // is the row's only cue. Not dimmed like the
+                            // desktop Trash button: it still opens the sheet,
+                            // whose Edit works, so its glyph keeps full contrast.
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className={removalPending ? 'opacity-50' : undefined}
                               aria-haspopup="dialog"
                               aria-label={removalPending ? `Actions for ${paper.title}, removing from list...` : `Actions for ${paper.title}`}
                               onClick={(e) => {
@@ -1831,7 +1832,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                                 setRowSheetOpen(true);
                               }}
                             >
-                              <DotsThree size={20} weight="bold" aria-hidden="true" />
+                              {removalPending
+                                ? <CircleNotch size={20} weight="bold" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                                : <DotsThree size={20} weight="bold" aria-hidden="true" />}
                             </Button>
                           ) : (
                             <>
