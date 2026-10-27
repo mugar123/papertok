@@ -222,8 +222,9 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
-// from arXiv, and for chemistry, which no other source lists: PubMed lists
-// journal articles for every leaf of medicine and biology. A paper a leaf of
+// from arXiv, and for chemistry, whose leaves no source lists (its lane also
+// holds ChemRxiv's preprints, `openalex-chemrxiv`): PubMed lists journal
+// articles for every leaf of medicine and biology. A paper a leaf of
 // its area holds leaves the area's lane (leaf-filing.ts), so it reaches that
 // leaf's readers and no other's. Not statistics while its label covers
 // OpenAlex's Decision Sciences (field 18): 147 of that field's 200 newest

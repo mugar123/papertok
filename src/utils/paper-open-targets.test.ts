@@ -18,6 +18,19 @@ test('ordena los destinos: la copia abierta manda, y el DOI nunca entra', () => 
   ]);
 });
 
+test('a ChemRxiv DOI opens the preprint, before a landing page of another record', () => {
+  // A journal record without a DOI of its own, merged with its ChemRxiv
+  // preprint (PaperBuilder.merge): the preprint's DOI, the journal record's page.
+  assert.deepEqual(openTargetsForPaper({ doi: '10.26434/chemrxiv.15010999/v1', landingPageUrl: 'https://pubmed.ncbi.nlm.nih.gov/40000001/', openAccess: false }), [
+    { mode: 'external', url: 'https://doi.org/10.26434/chemrxiv.15010999/v1' },
+    { mode: 'external', url: 'https://pubmed.ncbi.nlm.nih.gov/40000001/' },
+  ]);
+  // The preprint's own record lands on that DOI already.
+  assert.deepEqual(openTargetsForPaper({ doi: '10.26434/chemrxiv.15010999/v1', landingPageUrl: 'https://doi.org/10.26434/chemrxiv.15010999/v1' }), [
+    { mode: 'external', url: 'https://doi.org/10.26434/chemrxiv.15010999/v1' },
+  ]);
+});
+
 test('the library link goes first, in a new tab', () => {
   const resolver = 'https://eu01.alma.exlibrisgroup.com/view/uresolver/34BUC_USAL/openurl?rft.doi=10.1000/example';
   const targets = openTargetsForPaper({

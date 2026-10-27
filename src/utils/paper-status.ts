@@ -51,6 +51,15 @@ export function reviewStatusForPaper(paper: Partial<Paper> | null | undefined) {
   return null;
 }
 
+// ChemRxiv's DOIs. ChemRxiv lets anyone read the preprints it posts (its FAQ:
+// free for authors and readers), but OpenAlex called 89 of its 791 Chemistry
+// preprints of the 90 days to 2026-10-27 closed, not only the newest, and none
+// of 18 of them sampled, open or closed, has a licence in Crossref.
+const CHEMRXIV_DOI = /^10\.26434\/chemrxiv/i;
+
+/** Whether this is a ChemRxiv preprint's DOI, which resolves to a copy anyone can read. */
+export const isChemRxivDoi = (doi: unknown) => CHEMRXIV_DOI.test(String(doi || ''));
+
 /**
  * Whether the paper opens without a subscription: 'open', 'subscription', or
  * null when the record does not say.
@@ -70,8 +79,12 @@ export function accessStatusForPaper(paper: Partial<Paper> | null | undefined, {
   // `false`: OpenAlex reports `is_oa` for the *published* version, so a paper
   // that ran in a subscription journal reads as closed even while its arXiv
   // copy sits there free. The card links that copy; the chip should not
-  // contradict the button underneath it.
-  if (openCopy || paper.openAccess === true || paper.openAccessPdfUrl || paper.arxivId) {
+  // contradict the button underneath it. A ChemRxiv DOI outranks an explicit
+  // `false` too, and the card links it as well (paper-open-targets.ts). It is
+  // the paper's own DOI, so a journal article with a DOI of its own keeps its
+  // own answer when it merges with its preprint (PaperBuilder.merge); one
+  // without takes the preprint's DOI.
+  if (openCopy || paper.openAccess === true || paper.openAccessPdfUrl || paper.arxivId || isChemRxivDoi(paper.doi)) {
     return 'open';
   }
   if (paper.openAccess === false) return 'subscription';

@@ -532,6 +532,75 @@ test("an area's journal lane asks one page of 200 a night, and two on its first 
   assert.equal(urls.length, 3, 'a later run reads the newest page only');
 });
 
+// ─── ChemRxiv's Chemistry preprints ───
+
+// As OpenAlex returned it on 2026-10-27 (trimmed, its abstract shortened): one
+// of the 89 ChemRxiv Chemistry preprints of the 90 days before that it calls
+// closed.
+const chemRxivLocation = {
+  is_oa: false,
+  landing_page_url: 'https://doi.org/10.26434/chemrxiv.15010999/v1',
+  pdf_url: null,
+  version: 'acceptedVersion',
+  is_published: false,
+  source: { id: 'https://openalex.org/S4393918830', display_name: 'ChemRxiv', type: 'repository', is_core: false },
+};
+const chemRxivPreprint = {
+  id: 'https://openalex.org/W7223561333',
+  doi: 'https://doi.org/10.26434/chemrxiv.15010999/v1',
+  title: 'Computational Interactions between the Endohedral Metallofullerene Gd@C60 and Human Toll-Like Receptor 3: A Molecular Docking and Molecular Dynamics Study',
+  type: 'preprint',
+  publication_date: '2026-10-25',
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5052942510', display_name: 'Satyavani Kaliamurthi' }, institutions: [] }],
+  abstract_inverted_index: invertedIndex('Endohedral metallofullerenes (EMFs), such as the gadolinium fullerene Gd@C60, are being explored as kinetically stable alternatives to gadolinium chelate contrast agents.'),
+  primary_location: chemRxivLocation,
+  locations: [chemRxivLocation],
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+  is_retracted: false,
+  primary_topic: {
+    id: 'https://openalex.org/T10956',
+    display_name: 'Fullerene Chemistry and Applications',
+    subfield: { id: 'https://openalex.org/subfields/1605', display_name: 'Organic Chemistry' },
+    field: { id: 'https://openalex.org/fields/16', display_name: 'Chemistry' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  },
+};
+
+test("chemistry's lane also lists ChemRxiv's newest Chemistry preprints, filed under the area as preprints", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-27T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ results: [chemRxivPreprint] }));
+  const { items } = await SOURCES['openalex-chemrxiv'].fetchPage(env, { lane: 'area:chem', page: 1, since: '', waits: { seconds: 0 } });
+  const [url] = urls;
+  for (const filter of ['primary_location.source.id:S4393918830', 'primary_topic.field.id:16', 'type:preprint', 'is_retracted:false', 'from_publication_date:2026-07-29', 'to_publication_date:2026-10-27']) {
+    assert.ok(filtersOf(url).includes(filter), filter);
+  }
+  assert.equal(filtersOf(url).some(filter => filter.startsWith('primary_location.source.is_core')), false, 'a preprint server is not a core source');
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223561333', ['area:chem']]]);
+  const [{ paper }] = items;
+  // OpenAlex's answer on access is stored as it came; the card reads the
+  // ChemRxiv DOI as open (paper-status.ts).
+  assert.deepEqual([paper.doi, paper.openAccess, paper.pdfUrl, paper.publicationType, paper.publicationStatus], ['10.26434/chemrxiv.15010999/v1', false, null, 'preprint', 'preprint']);
+  assert.equal(areaLabelForPaper(paper), 'Chemistry');
+});
+
+// The cost: one list call a night, the lane's first night included.
+test("ChemRxiv's preprints are listed for chemistry alone, one page of 200 a night", async t => {
+  assert.deepEqual(categoryLaneJobs().filter(job => job.source === 'openalex-chemrxiv'), [{ source: 'openalex-chemrxiv', lane: 'area:chem' }]);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-27T03:00:00Z') });
+  const page = (number: number) => Array.from({ length: 200 }, (_, index) => ({
+    ...chemRxivPreprint, id: `https://openalex.org/W${number}${String(index).padStart(3, '0')}`, doi: `https://doi.org/10.26434/chemrxiv.${number}${index}/v1`, title: `Preprint ${number}-${index} on fullerene docking`,
+  }));
+  const { urls, env } = relay(t, url => ({ results: page(Number(url.searchParams.get('page'))) }));
+  const { binding } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-chemrxiv', lane: 'area:chem' });
+  assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200']], 'a full first page is not followed by another');
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-chemrxiv', lane: 'area:chem' });
+  assert.equal(urls.length, 2, 'a later run reads the newest page only');
+});
+
 // ─── Journal articles of a leaf's venues (PAP-104) ───
 
 const venueLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-venues').map(job => job.lane);
