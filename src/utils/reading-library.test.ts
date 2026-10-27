@@ -6,6 +6,7 @@ import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { paperLegacyAdapter, storedClassification } from '../models/paper.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
+import { SemanticScholarAdapter } from '../services/adapters/semantic-scholar-adapter.ts';
 import { mapEuropePmcSearchResult } from '../services/domain-source-records.ts';
 import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from '../utils/open-alex-work.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
@@ -171,6 +172,34 @@ test('a paper opened from a stored copy credits the source of the abstract its c
       assert.deepEqual([sourceAttribution(page)?.label, sourceAttribution(page)?.name], ['Abstract:', name], `${source}, ${copy}`);
     }
   }
+});
+
+// ENG-109. Semantic Scholar's own records, from a search or an author's
+// name-only results, carry its abstract. Merged into OpenAlex's record of the
+// paper, which had none, the card said only "With data from Semantic Scholar";
+// liked or saved, the record or the merged card left no credit in its copy,
+// and the page opened from there showed Semantic Scholar's text with none.
+test("a Semantic Scholar record's abstract keeps its credit in another record of the paper and in every stored copy", () => {
+  const text = 'The abstract Semantic Scholar lists for this journal article, in full.';
+  const work = { id: 'https://openalex.org/W4410000004', doi: 'https://doi.org/10.5555/s2-record', title: 'A journal article both list', type: 'article', publication_date: '2026-10-20' };
+  const openAlex = PaperBuilder.create(mapOpenAlexWork(work)!);
+  const s2 = () => new SemanticScholarAdapter().mapToStandard({ paperId: 'c'.repeat(40), title: work.title, abstract: text, externalIds: { DOI: '10.5555/s2-record' } });
+  const credit = (paper: Partial<Paper> | null) => [paper?.abstract, sourceAttribution(paper)?.label, sourceAttribution(paper)?.name];
+  const [record] = PaperBuilder.deduplicate([s2()]);
+  assert.deepEqual(credit(record), [text, 'From', 'Semantic Scholar'], 'the record');
+  for (const rows of [[openAlex, s2()], [s2(), openAlex]]) {
+    const merged = PaperBuilder.deduplicate(rows);
+    assert.equal(merged.length, 1);
+    assert.deepEqual(credit(merged[0]), [text, rows[0] === openAlex ? 'Abstract:' : 'From', 'Semantic Scholar'], `merged into ${rows[0].id}`);
+  }
+  const [merged] = PaperBuilder.deduplicate([openAlex, s2()]);
+  for (const card of [record, merged]) {
+    for (const [copy, stored] of storedCopies(card)) {
+      assert.deepEqual(credit(hydrateSeededPaper(stored, openAlex)), [text, 'Abstract:', 'Semantic Scholar'], `${card.id}, ${copy}`);
+    }
+  }
+  // A record without an abstract credits no one for the placeholder.
+  assert.equal(new SemanticScholarAdapter().mapToStandard({ paperId: 'd'.repeat(40), title: work.title }).abstractSource, undefined);
 });
 
 test("a stored copy credits no source for a text the source did not supply", () => {
