@@ -11,6 +11,16 @@
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-card);
+  /* Scrolls inside itself when the feed caps its height (feed-container.css);
+     it takes focus so the keyboard can scroll it (privacy-notice.tsx). */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* Inside, so the feed's top edge and the navbar do not clip the ring. */
+.privacy-notice:focus-visible {
+  outline-offset: -2px;
 }
 
 .privacy-notice-icon {

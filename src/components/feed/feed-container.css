@@ -28,18 +28,23 @@
    the page's flow, and the cards the rest: it covers nothing. The scroller, the
    pill and the loading veil share the second row, whose area is the containing
    block of the two absolute ones, so `top: 12px` and `inset: 0` measure from
-   the top of the cards. The cards keep at least half the height; at a text size
-   where the notice needs more, the wrapper scrolls to show all of it instead of
-   squeezing the cards away (WCAG 1.4.4, 1.4.10). */
+   the top of the cards. The notice takes at most 40% of the feed's height and
+   scrolls inside itself beyond that (a phone in landscape, 200% text), so the
+   cards always keep the rest on screen. A card shorter than its content clips
+   its head (.pc-sheet), and a second scroller around the feed could only be
+   moved from the notice: the feed keeps the arrow keys and contains the wheel. */
 .feed-wrapper[data-notice] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(50%, 1fr);
-  overflow-y: auto;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .feed-wrapper[data-notice] > .feed-notice-slot {
   grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(0.4 * (100vh - var(--nav-total)));
+  max-height: calc(0.4 * (100dvh - var(--nav-total)));
 }
 
 .feed-wrapper[data-notice] > :is(.feed-container, .feed-refresh, .feed-empty--veil) {

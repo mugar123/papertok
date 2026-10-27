@@ -8,13 +8,17 @@ import './privacy-notice.css';
 // The privacy policy change, told in a row of the feed page above the cards
 // (FeedContainer's `notice`), not in a panel over them: in the page's flow it
 // covers nothing, so no focused control can be hidden under it (WCAG 2.4.11),
-// and it is reached by Tab between the navbar and the first card. It takes no
-// focus and traps nothing. Got it is remembered for the account; Hide for now
-// puts it away for this visit.
+// and it is reached by Tab between the navbar and the first card. It is never
+// focused for the reader and traps nothing. Got it is remembered for the account;
+// Hide for now puts it away for this visit.
+//
+// The region is a Tab stop of its own: where the feed caps its height it
+// scrolls, and the arrow keys scroll it only while it has focus (the feed leaves
+// keys inside its notice slot alone).
 export default function PrivacyNotice({ onAcknowledge, onHide }: { onAcknowledge: () => void; onHide: () => void }) {
   const titleId = useId();
   return (
-    <section className="privacy-notice" aria-labelledby={titleId}>
+    <section className="privacy-notice" aria-labelledby={titleId} tabIndex={0}>
       <span className="privacy-notice-icon" aria-hidden="true"><ShieldCheck size={19} /></span>
       <div className="privacy-notice-copy">
         <h2 id={titleId}>{COPY.title}</h2>

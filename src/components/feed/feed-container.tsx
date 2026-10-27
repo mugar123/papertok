@@ -757,9 +757,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         const activeTarget = e.target instanceof Element ? e.target : null;
         // `[role="dialog"]` covers a non-modal popup over the feed, such as a
         // visitor's Privacy panel: its keys are its own, and with large text it
-        // scrolls with them.
+        // scrolls with them. So does the notice above the cards (`notice`).
         const exempt = activeTarget?.closest(
-          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"]',
+          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"], .feed-notice-slot',
         );
         // The Similar layer is a modal dialog this feed lives IN: its arrows
         // are this feed's, and the feed under it is the one that keeps still.
