@@ -301,11 +301,12 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
 }
 
 async function purgeAfterAuthDelete(env: WorkerEnv, uid: string) {
+  const keys = new Set<string>();
   try {
-    await purgeEmailSubscription(env, uid);
+    await purgeEmailSubscription(env, uid, keys);
   } catch {
     await new Promise(resolve => { setTimeout(resolve, KV_SAME_KEY_WRITE_INTERVAL_MS); });
-    await purgeEmailSubscription(env, uid);
+    await purgeEmailSubscription(env, uid, keys);
   }
 }
 
