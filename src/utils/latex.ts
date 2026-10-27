@@ -294,8 +294,11 @@ const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![
 // Authors bold and italicize in the abstract (`\textbf{H}arness`, `\emph{…}`)
 // and providers relay the source as written. The card paints plain prose, so
 // only the wrapper goes. One brace level of argument, as ENSUREMATH; the caller
-// repeats the pass to unwrap nesting.
-const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
+// repeats the pass to unwrap nesting. A backslash takes the one character after
+// it, so every character has a single reading and an unclosed wrapper fails in
+// linear time; reading `\ab` as a macro or as `\a` and `b` backtracked
+// exponentially.
+const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[\s\S]|[^{}\\]|\{[^{}]*\})*)\}/g;
 
 function unwrapTextFormatting(value: string) {
   let text = value;

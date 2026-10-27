@@ -144,6 +144,19 @@ test('a font command inside a formula is left to KaTeX', () => {
   assert.equal(normalizeLatexText('$x_{\\textbf{b}}$ and \\textbf{bold}'), '$x_{\\textbf{b}}$ and bold');
 });
 
+// An unclosed wrapper is left as written, and quickly: 18 macros after one took
+// seconds while a backslash could start a macro or stand alone.
+test('a font command left unclosed stays as written, at once however many macros follow it', () => {
+  const unclosed = `\\textbf{${'\\ab '.repeat(18)}x`;
+  const started = performance.now();
+  const normalized = normalizeLatexText(unclosed);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 100, `took ${elapsed.toFixed(1)} ms`);
+  assert.equal(normalized, unclosed);
+  // An escaped brace does not close it.
+  assert.equal(normalizeLatexText('a \\textbf{b\\} c'), 'a \\textbf{b\\} c');
+});
+
 test('renders the quasiparticle abstract with no raw macro left on screen', async () => {
   await loadKatex();
   const normalized = normalizeLatexText(QUASIPARTICLE_ABSTRACT);
