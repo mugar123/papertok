@@ -123,7 +123,7 @@ import {
   preserveFeedAbstracts,
 } from '../utils/feed-enrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
-import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
+import { classifyFeedPublications, dropUnreachedPublications, dropUnreachedRetractions } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
@@ -718,7 +718,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
       const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
-      update(enrich);
+      update(current => dropUnreachedRetractions(enrich(current), visiblePaperIdRef.current));
       // Out here, not in the update: React may run a state updater twice.
       if (feedSessionId.current !== sessionId) return;
       const shown = papersRef.current;
@@ -731,7 +731,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
-      update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
+      update(current => dropUnreachedRetractions(preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading), visiblePaperIdRef.current));
     });
     void recovery?.then((records) => {
       if (records.length === 0) return;

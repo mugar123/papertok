@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
-import { classifyFeedPublications, dropUnreachedPublications } from './feed-publication-service.ts';
-import { placeNotableCards } from '../utils/feed-enrichment.ts';
+import { classifyFeedPublications, dropUnreachedPublications, dropUnreachedRetractions } from './feed-publication-service.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europe-pmc-records.ts';
+import { mergeOpenAlexEnrichment, placeNotableCards } from '../utils/feed-enrichment.ts';
 import { isFeedPublication } from './feed-publication-rules.ts';
 import { dribblingFetch } from '../test-support/deadline-harness.ts';
 
@@ -375,4 +376,24 @@ test('a card marked retracted is not shown, whatever its type, and the same card
     assert.equal(isFeedPublication({ ...card, publicationStatus: 'retracted' }), false, publicationType);
     assert.equal(isFeedPublication(card), true, publicationType);
   }
+});
+
+// A queued card can learn it is retracted after it was listed: Europe PMC's
+// record carries a `Retracted Publication` type PubMed added since the
+// Worker's last refresh, or OpenAlex's says `is_retracted`. The card leaves
+// if the reader has not reached it, as a confirmed book does.
+test('a late Europe PMC or OpenAlex record that calls a queued card retracted takes it out, and the reached cards stay', () => {
+  const pubmed = (index: number): Paper => ({ ...paper(`10.5555/pubmed-${index}`), id: `pmid:${4280000 + index}`, pmid: String(4280000 + index), sources: { primary: 'pubmed', enrichedBy: [] } });
+  const shown = [...Array.from({ length: 6 }, (_, index) => pubmed(index)), { ...paper('10.5555/openalex'), id: 'openalex:W4280000099' }];
+  const retracted = (index: number) => [shown[index].pmid!, mapEuropePmcResult({ id: shown[index].pmid, pmid: shown[index].pmid, pubTypeList: { pubType: ['Retracted Publication', 'Journal Article'] } })!] as const;
+  const visible = shown[1].id;
+  // Europe PMC answers for the reader's card, the one after it and one further on.
+  const records = new Map([retracted(1), retracted(2), retracted(4)]);
+  const merged = mergeEuropePmcEnrichment(shown, records);
+  assert.deepEqual(dropUnreachedRetractions(merged, visible).map(work => work.id), shown.filter((_, index) => index !== 4).map(work => work.id));
+  // OpenAlex answers for the last card.
+  const fromOpenAlex = mergeOpenAlexEnrichment(shown, { 'openalex:W4280000099': { publicationStatus: 'retracted' } });
+  assert.deepEqual(dropUnreachedRetractions(fromOpenAlex, visible).map(work => work.id), shown.slice(0, 6).map(work => work.id));
+  // An answer that marks nothing leaves the list as it was.
+  assert.equal(dropUnreachedRetractions(shown, visible), shown);
 });

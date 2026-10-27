@@ -41,6 +41,15 @@ export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[],
   return [...papers.slice(0, lastReached + 1), ...keepNotablePlaces(unreached, kept.filter(paper => !paper._notable), kept.filter(paper => paper._notable))];
 }
 
+/**
+ * Removes the cards a late OpenAlex or Europe PMC record has called retracted
+ * (`PaperBuilder.merge` keeps a retraction whichever record states it), by
+ * the rule a confirmed book leaves by: only cards the reader has not reached.
+ */
+export function dropUnreachedRetractions<T extends Partial<Paper>>(papers: T[], visiblePaperId: string | null) {
+  return dropUnreachedPublications(papers, papers.filter(paper => paper.publicationStatus === 'retracted'), visiblePaperId);
+}
+
 // Results outlive the tab, so a reopened app does not ask Crossref again for
 // the DOIs it has just shown. Stored values are checked like a response.
 function restore() {
