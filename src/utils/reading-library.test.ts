@@ -6,12 +6,14 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { paperLegacyAdapter, storedClassification } from '../models/paper.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
 import { mapEuropePmcSearchResult } from '../services/domain-source-records.ts';
-import { mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from '../utils/open-alex-work.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from './area-accent.ts';
-import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeOpenAlexEnrichment } from './feed-enrichment.ts';
+import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment } from './feed-enrichment.ts';
+import { hydrateSeededPaper } from './paper-seed.ts';
 import { abstractExcerpt, papersToBibTeX, papersToRIS, serializeLibraryPaper } from './reading-library.ts';
 import { buildSavedPaperPayload } from './saved-paper-payload.ts';
+import { sourceAttribution } from './source-attribution.ts';
 
 const works = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as {
   sample: OpenAlexWork[]; named: OpenAlexWork[];
@@ -145,6 +147,42 @@ test('a paper liked and saved before OpenAlex answered keeps the field the answe
   // evidence: the document keeps its version, so the stamp is still dropped.
   const stamped = mergeIntoStored({ title: shown.title, primaryCategory: 'physics.bio-ph', savedAt: '2026-10-01T12:00:00.000Z' }, { primaryTopic });
   assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: shown.id, ...stamped })), 'Biology', 'savedPapers document from before PAP-60');
+});
+
+// ENG-109. The Worker recovered this journal article's abstract from Semantic
+// Scholar or Crossref, and the card credits that source. Liked, saved or put
+// in a list, the paper opens from there on its stored copy laid over
+// OpenAlex's record, which still has no abstract: the page showed the
+// recovered text and credited no one.
+test('a paper opened from a stored copy credits the source of the abstract its card showed', () => {
+  const work = { id: 'https://openalex.org/W4410000002', doi: 'https://doi.org/10.5555/recovered', title: 'A journal article OpenAlex lists without its abstract', type: 'article', publication_date: '2026-10-20' };
+  const openAlex = PaperBuilder.create(mapOpenAlexWork(work)!);
+  const text = 'The abstract this source holds for the journal article, in full.';
+  for (const [source, name] of [['semanticscholar', 'Semantic Scholar'], ['crossref', 'Crossref']] as const) {
+    const [card] = mergeFeedAbstracts([openAlex], [{ doi: '10.5555/recovered', abstract: text, sources: { primary: source, enrichedBy: [] } }]);
+    assert.deepEqual([sourceAttribution(card)?.label, sourceAttribution(card)?.name], ['Abstract:', name], 'the card');
+    for (const [copy, stored] of storedCopies(card)) {
+      const page = hydrateSeededPaper(stored, openAlex);
+      assert.equal(page?.abstract, text, `${source}, ${copy}`);
+      assert.deepEqual([sourceAttribution(page)?.label, sourceAttribution(page)?.name], ['Abstract:', name], `${source}, ${copy}`);
+    }
+  }
+});
+
+test("a stored copy credits no source for a text the source did not supply", () => {
+  const recovered = 'The abstract Semantic Scholar holds for this paper, in full.';
+  const card = { id: 'openalex:W4410000002', title: 'A journal article', abstract: recovered, abstractSource: 'semanticscholar' as const };
+  // The copy keeps the summary where one was built, which is another text.
+  const summarised = { ...card, summary: 'A summary another source wrote for this paper.' };
+  assert.equal('abstractSource' in serializeLibraryPaper(summarised), false, 'interaction copy');
+  assert.equal('abstractSource' in buildSavedPaperPayload(summarised, '2026-10-20T12:00:00.000Z'), false, 'savedPapers document');
+  // A value no card credits, as a document could hold it, credits no one.
+  for (const abstractSource of ['openalex', 'Semantic Scholar', '', null]) {
+    const stored: Partial<Paper> = paperLegacyAdapter(JSON.parse(JSON.stringify({ id: card.id, title: card.title, summary: recovered, abstractSource })));
+    assert.equal(stored.abstractSource, undefined, String(abstractSource));
+  }
+  // A copy without text credits no one for the placeholder it shows.
+  assert.equal(paperLegacyAdapter({ id: card.id, title: card.title, abstractSource: 'semanticscholar' }).abstractSource, undefined);
 });
 
 const paper = {

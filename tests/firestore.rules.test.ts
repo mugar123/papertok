@@ -1107,6 +1107,26 @@ test('the shape the modal used to send is still refused, so the fix is load-bear
   }));
 });
 
+// ENG-109: a saved paper keeps the source its card credits for the abstract,
+// so the paper opened from Saved or a list still credits it.
+test('savedPapers accepts the abstract source buildSavedPaperPayload sends, and no other value', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'savedPapers', 'openalex:W4410000002');
+  const abstract = 'The abstract Semantic Scholar holds for this journal article, in full.';
+  for (const abstractSource of ['semanticscholar', 'crossref'] as const) {
+    const payload = buildSavedPaperPayload({ id: 'openalex:W4410000002', title: 'A journal article', abstract, abstractSource }, new Date().toISOString());
+    assert.equal(payload.abstractSource, abstractSource);
+    await assertSucceeds(setDoc(ref, payload))
+      .catch((error: Error) => assert.fail(`${abstractSource} was refused: ${error.message}`));
+  }
+  const valid = buildSavedPaperPayload({ id: 'openalex:W4410000002', title: 'A journal article', abstract }, new Date().toISOString());
+  for (const abstractSource of ['openalex', 'Semantic Scholar', '', null, 1]) {
+    await assertFails(setDoc(ref, { ...valid, abstractSource }))
+      .catch((error: Error) => assert.fail(`${String(abstractSource)} was accepted: ${error.message}`));
+  }
+});
+
 /* --- Plain-words summaries (PAP-59) ---------------------------------------- */
 
 /**
