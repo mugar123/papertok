@@ -33,6 +33,7 @@ import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
+import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
 import { writeNewList } from './write-new-list.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
@@ -382,6 +383,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [createdListId, setCreatedListId] = useState<string | null>(null);
   const [foldersArrived, setFoldersArrived] = useState(false);
   const [removalOpen, setRemovalOpen] = useState(false);
+  // Rows whose removal the server has not answered yet, by `rowRemovalKey`.
+  const [pendingRemovals, setPendingRemovals] = useState<ReadonlySet<string>>(() => new Set());
   const [deletingList, setDeletingList] = useState<OwnList | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const isPhone = useIsPhone();
@@ -1179,11 +1182,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
   }, [rowSheetStep, prefersReducedMotion]);
 
+  const rowSheetRemovalPending = rowSheet !== null && pendingRemovals.has(rowRemovalKey(rowSheet.listId, rowSheet.paperId));
+
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
-    const markRemoval = removePaperFromMarkList(listId, paperId, paper as Paper, {
-      unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportRemovalFailed,
-    });
-    if (!markRemoval) void handleRemoveFromCustomList(listId, paperId);
+    removeRowOnce(pendingRemovals, setPendingRemovals, rowRemovalKey(listId, paperId), () => (
+      removePaperFromMarkList(listId, paperId, paper as Paper, {
+        unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportRemovalFailed,
+      }) ?? handleRemoveFromCustomList(listId, paperId)
+    ));
   };
 
   // The open card's toggles take a mark off at once, as they do in the feed.
@@ -1794,8 +1800,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                         )}
                       </motion.div>
                     );
+                    const removalPending = pendingRemovals.has(rowRemovalKey(list.id, paperId));
                     return (
                       <PaperListRow {...rowMotion} key={paperId}
+                        aria-busy={removalPending || undefined}
                         paper={paper}
                         onOpen={() => openPaperCard(paper)}
                         actions={(
@@ -1831,16 +1839,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             >
                               <PencilSimple size={16} aria-hidden="true" />
                             </Button>
+                            {/* Marked rather than disabled while the removal is
+                                pending: the dialog hands focus back here, and
+                                the new name tells a screen reader the removal is
+                                under way. A disabled button lets the click
+                                through to the row, which would open the card. */}
                             <Button
                               variant="ghost"
                               size="icon-sm"
+                              className={removalPending ? 'opacity-50' : undefined}
+                              aria-disabled={removalPending || undefined}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (removalPending) return;
                                 setRemoving({ listId: list.id, listName: list.name, paperId, paper });
                                 setRemovalOpen(true);
                               }}
-                              aria-label={'Remove from list'}
-                              title={'Remove from list'}
+                              aria-label={removalPending ? 'Removing from list...' : 'Remove from list'}
+                              title={removalPending ? 'Removing from list...' : 'Remove from list'}
                             >
                               <Trash size={16} aria-hidden="true" />
                             </Button>
@@ -2098,9 +2114,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       </button>
                     </li>
                     <li>
-                      <button type="button" className="pc-share-row" onClick={() => switchRowSheetStep('remove')}>
+                      <button
+                        type="button"
+                        className={`pc-share-row${rowSheetRemovalPending ? ' opacity-50' : ''}`}
+                        aria-disabled={rowSheetRemovalPending || undefined}
+                        onClick={() => { if (!rowSheetRemovalPending) switchRowSheetStep('remove'); }}
+                      >
                         <Trash size={20} aria-hidden="true" />
-                        {'Remove from list'}
+                        {rowSheetRemovalPending ? 'Removing from list...' : 'Remove from list'}
                       </button>
                     </li>
                   </ul>
