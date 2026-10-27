@@ -171,6 +171,51 @@ test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written
   }
 });
 
+function timedNormalization(text: string) {
+  const started = performance.now();
+  const normalized = normalizeLatexText(text);
+  return { normalized, elapsed: performance.now() - started };
+}
+
+const STACKREL_TILDE_OPENER = '\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}';
+
+// `\}` is an escaped brace, so none of these arguments closes. When a start
+// could read through the starts after it, each one rescanned the rest of the
+// text and 8000 of them took seconds.
+test('\\ensuremath starts whose argument never closes do not rescan one another', () => {
+  const unit = '\\ensuremath{a\\}';
+  const count = 8000;
+  const cases = [
+    unit.repeat(count),
+    `We study ${unit} `.repeat(count),
+    `$${'}'.repeat(count)}${unit.repeat(count)}$`,
+    `${STACKREL_TILDE_OPENER}{${unit.repeat(count)}`,
+  ];
+  for (const text of cases) {
+    const { normalized, elapsed } = timedNormalization(text);
+    assert.ok(elapsed < 100, `${text.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.equal(normalized.split('\\ensuremath{a\\}').length - 1, count, normalized.slice(0, 80));
+  }
+});
+
+test('an escaped brace inside \\ensuremath belongs to the formula and does not end it', () => {
+  assert.equal(normalizeLatexText('\\ensuremath{\\{}x\\ensuremath{\\}}'), '\\(\\{\\)x\\(\\}\\)');
+  assert.equal(normalizeLatexText('\\ensuremath{a\\}b} c'), '\\(a\\}b\\) c');
+  assert.equal(
+    normalizeLatexText(`${STACKREL_TILDE_OPENER}{\\{x}`),
+    '\\(\\tilde{\\{x}\\)',
+  );
+  // The same inside the one inner group an argument may carry.
+  assert.equal(normalizeLatexText('\\ensuremath{{a\\}b}} c'), '\\({a\\}b}\\) c');
+  assert.equal(
+    normalizeLatexText(`${STACKREL_TILDE_OPENER}{{a\\}b}} c`),
+    '\\(\\tilde{{a\\}b}}\\) c',
+  );
+  // With only an escaped closer there is no closing brace: the text stays raw.
+  assert.equal(normalizeLatexText('\\ensuremath{x\\} y'), '\\ensuremath{x\\} y');
+  assert.equal(normalizeLatexText('$x\\ensuremath{\\}y$'), '$x\\ensuremath{\\}y$');
+});
+
 test('an \\ifmmode without an \\else branch still yields its maths spelling', () => {
   assert.equal(normalizeLatexText('4\\ifmmode\\times\\fi{}4 sites'), '4\\(\\times\\)4 sites');
   assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');
