@@ -1492,8 +1492,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
-        // reader sees the error. A first load whose automatic retry is due
-        // sends it too, although the discovery screen covers its error.
+        // failed feed is on screen. A load whose automatic retry is due sends
+        // it too, although the feed's wait covers its error.
         const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
           kind: 'load_failed',
           failure,
