@@ -187,7 +187,8 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const onSelectPaperRef = useRef(onSelectPaper);
   const prefersReducedMotion = useReducedMotion();
   const { trackEvent } = useAnalyticsConsent();
-  // Sent from press handlers only, never from an effect, so a re-render, the
+  // Sent from press handlers, and `open_paper` from the hand-over in
+  // finishSelection, never from a render or an effect, so a re-render, the
   // graph's load or a StrictMode remount cannot send one twice. `inView` is
   // the view the press happened in; a switch reports the view it switched to.
   const track = useCallback((action: string, inView = view) => {
