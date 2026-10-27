@@ -7,11 +7,12 @@ import { writeMark } from './write-mark.ts';
  * are put back and the error is rethrown, so the paper keeps its place in
  * Reading history. With `afterWrite` (the Lists page) the mark stays until the
  * write is accepted, and then goes only if no newer change to it has started
- * (`stillNewest`, see `writeMark`). Other callers keep the optimistic state.
+ * (`stillNewest`) and the paper is still shown read (`stillRead`), see
+ * `writeMark`. Other callers keep the optimistic state.
  */
 export async function unmarkRead<Entry extends { readAt?: string | number | null }>(
   paperId: string,
-  { setReadIds, setLibrary, write, onUnmarked, onRestored, throwOnError = false, afterWrite = false, stillSignedIn, stillNewest }: {
+  { setReadIds, setLibrary, write, onUnmarked, onRestored, throwOnError = false, afterWrite = false, stillSignedIn, stillNewest, stillRead }: {
     setReadIds: (update: (ids: Set<string>) => Set<string>) => void;
     setLibrary: (update: (library: Record<string, Entry>) => Record<string, Entry>) => void;
     write: () => Promise<void>;
@@ -22,6 +23,8 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
     afterWrite?: boolean;
     stillSignedIn: () => boolean;
     stillNewest: () => boolean;
+    /** Whether the screen still shows the paper read (`stillAsStarted`). */
+    stillRead: () => boolean;
   },
 ) {
   // Set by the updater in `show`. React runs queued updaters in order, so the
@@ -54,5 +57,6 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
     throwOnError,
     stillSignedIn,
     stillNewest,
+    stillAsStarted: stillRead,
   });
 }

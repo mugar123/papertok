@@ -33,7 +33,11 @@ export function markChanges() {
  * come back when a removal is refused (ENG-156). The screen then changes only
  * once the write is accepted, and only if no newer change to the same mark
  * has started meanwhile, from any page (`stillNewest`): the newer change
- * shows its own value, and Firestore applies its write after this one.
+ * shows its own value, and Firestore applies its write after this one. Nor
+ * does it show when the mark no longer has the value this change started
+ * from (`stillAsStarted`): something that bypasses the toggles, such as a
+ * profile reload, already moved it, and showing again would tell the reading
+ * profile twice.
  *
  * On a refused write, `undo` (when given) takes the optimistic change back,
  * and `throwOnError` rejects with the error instead of only logging it. An
@@ -49,7 +53,7 @@ export function markChanges() {
  * paper back inside a set other toggles may have changed meanwhile, the feed
  * callers only log a refusal, and the Lists page needs `afterWrite`.
  */
-export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, stillNewest }: {
+export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, stillNewest, stillAsStarted }: {
   show: () => void;
   undo?: () => void;
   write: () => Promise<void>;
@@ -60,6 +64,8 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   stillSignedIn: () => boolean;
   /** From `markChanges`, started when this change was asked for. */
   stillNewest: () => boolean;
+  /** Whether the mark on screen still has the value this change started from. */
+  stillAsStarted: () => boolean;
 }) {
   if (!afterWrite) show();
   try {
@@ -70,5 +76,5 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
     if (throwOnError) throw error;
     return;
   }
-  if (afterWrite && stillSignedIn() && stillNewest()) show();
+  if (afterWrite && stillSignedIn() && stillNewest() && stillAsStarted()) show();
 }

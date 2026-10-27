@@ -230,6 +230,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const likedPaperIdsRef = useRef(likedPaperIds);
   const savedPaperIdsRef = useRef(savedPaperIds);
   const readPaperIdsRef = useRef(readPaperIds);
+  const personalLibraryRef = useRef(personalLibrary);
   const loadPapersRef = useRef<FeedContextValue['loadPapers'] | null>(null);
   const autoRetryUsedRef = useRef(false);
   const notInterestedIdsRef = useRef(notInterestedIds);
@@ -278,6 +279,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
   useEffect(() => { readPaperIdsRef.current = readPaperIds; }, [readPaperIds]);
+  useEffect(() => { personalLibraryRef.current = personalLibrary; }, [personalLibrary]);
   useEffect(() => { notInterestedIdsRef.current = notInterestedIds; }, [notInterestedIds]);
   // Read by handlers that must keep one identity across re-ranks: a handler
   // that lists `papers` in its deps is handed anew to every mounted card on
@@ -1807,6 +1809,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       stillNewest: startMarkChange(`like:${paper.id}`),
+      stillAsStarted: () => likedPaperIdsRef.current.has(paper.id) === isCurrentlyLiked,
       write: async () => {
         if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
@@ -2232,6 +2235,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       stillNewest: startMarkChange(`read:${paperId}`),
+      stillRead: () => readPaperIdsRef.current.has(paperId),
     });
   }, [recordProfileEvent, user?.uid, startMarkChange]);
 
@@ -2282,6 +2286,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       stillNewest: startMarkChange(`readLater:${paper.id}`),
+      stillAsStarted: () => Boolean(personalLibraryRef.current[paper.id]?.readLater) === Boolean(previous?.readLater),
     });
     return nextValue;
   }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, startMarkChange]);

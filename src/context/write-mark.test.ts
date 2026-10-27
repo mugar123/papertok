@@ -23,11 +23,12 @@ function likeOnScreen(initial: boolean) {
 }
 
 const newest = () => true;
+const asStarted = () => true;
 
 test('a refused unlike shows the like again, and the caller that asked hears of it', async () => {
   const { screen, show, undo } = likeOnScreen(true);
   await silenced(() => assert.rejects(writeMark({
-    show, undo, failure: 'refused', throwOnError: true, stillSignedIn: () => true, stillNewest: newest,
+    show, undo, failure: 'refused', throwOnError: true, stillSignedIn: () => true, stillNewest: newest, stillAsStarted: asStarted,
     write: () => Promise.reject(new Error('permission-denied')),
   }), /permission-denied/));
   assert.equal(screen.liked, true);
@@ -36,7 +37,7 @@ test('a refused unlike shows the like again, and the caller that asked hears of 
 test('a refusal that lands after the account changed puts nothing back on the new account', async () => {
   const { screen, show, undo } = likeOnScreen(true);
   await silenced(() => writeMark({
-    show, undo, failure: 'refused', stillSignedIn: () => false, stillNewest: newest,
+    show, undo, failure: 'refused', stillSignedIn: () => false, stillNewest: newest, stillAsStarted: asStarted,
     write: () => Promise.reject(new Error('permission-denied')),
   }));
   assert.equal(screen.liked, false);
@@ -44,9 +45,9 @@ test('a refusal that lands after the account changed puts nothing back on the ne
 
 test('with afterWrite an accepted change shows once the write is in, and only for the same account', async () => {
   const { screen, show, undo } = likeOnScreen(true);
-  await writeMark({ show, undo, failure: 'refused', afterWrite: true, stillSignedIn: () => false, stillNewest: newest, write: async () => {} });
+  await writeMark({ show, undo, failure: 'refused', afterWrite: true, stillSignedIn: () => false, stillNewest: newest, stillAsStarted: asStarted, write: async () => {} });
   assert.equal(screen.liked, true, 'nothing painted over another account');
-  await writeMark({ show, undo, failure: 'refused', afterWrite: true, stillSignedIn: () => true, stillNewest: newest, write: async () => {} });
+  await writeMark({ show, undo, failure: 'refused', afterWrite: true, stillSignedIn: () => true, stillNewest: newest, stillAsStarted: asStarted, write: async () => {} });
   assert.equal(screen.liked, false);
 });
 
@@ -72,11 +73,23 @@ function likedPaper() {
       ...options,
       stillSignedIn: () => true,
       stillNewest: startChange('like:p1'),
+      stillAsStarted: () => screen.liked === wasLiked,
     });
   };
   const acceptAll = () => answers.forEach((accept) => accept());
   return { startChange, screen, profile, press, acceptAll };
 }
+
+test('a Favorites removal answered after something else took the like off adds no second unlike', async () => {
+  const paper = likedPaper();
+  const removal = paper.press({ afterWrite: true });
+  // A profile reload, which numbers no change, brings the like back off.
+  paper.screen.liked = false;
+  paper.acceptAll();
+  await removal;
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.profile, [], 'the reading profile hears no unlike from the removal');
+});
 
 test('a Favorites removal answered after the heart was pressed twice leaves the last press on screen', async () => {
   const paper = likedPaper();

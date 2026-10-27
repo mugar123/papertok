@@ -44,6 +44,7 @@ test('a refused write the caller asked about puts the mark and its time back, an
     throwOnError: true,
     stillSignedIn: () => true,
     stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
   }), refused));
   assert.deepEqual([...state.readIds].sort(), ['p1', 'p2'], 'the row is still in Reading history');
   assert.equal(state.library.p2.readAt, '2026-10-21T09:00:00.000Z', 'and keeps its place in it');
@@ -62,6 +63,7 @@ test('the mark is gone while the write is in flight, and stays gone once it is a
     throwOnError: true,
     stillSignedIn: () => true,
     stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
   });
   assert.deepEqual([...state.readIds], ['p1']);
   accept();
@@ -82,6 +84,7 @@ test('a refusal that lands after the account changed leaves the new account alon
     throwOnError: true,
     stillSignedIn: () => false,
     stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
   }), /permission-denied/));
   assert.deepEqual([...state.readIds], ['p1']);
 });
@@ -100,6 +103,7 @@ test('callers that did not ask keep what they had: the refusal is logged, not th
       onRestored: () => { assert.fail('no rollback without throwOnError'); },
       stillSignedIn: () => true,
       stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
     });
   } finally {
     console.error = original;
@@ -123,6 +127,7 @@ test('with afterWrite the mark stays until the write is accepted, and a refusal 
     afterWrite: true,
     stillSignedIn: () => true,
     stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
   };
 
   const refused = unmarkRead('p2', options);
@@ -141,6 +146,30 @@ test('with afterWrite the mark stays until the write is accepted, and a refusal 
   assert.equal(unmarked, 1);
 });
 
+test('a Reading history removal answered after something else took the mark off tells the profile nothing', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  let accept!: () => void;
+  let unmarked = 0;
+  const removal = unmarkRead('p2', {
+    setReadIds,
+    setLibrary,
+    write: () => new Promise<void>((resolve) => { accept = resolve; }),
+    onUnmarked: () => { unmarked += 1; },
+    onRestored: () => { assert.fail('nothing was refused'); },
+    throwOnError: true,
+    afterWrite: true,
+    stillSignedIn: () => true,
+    stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
+  });
+  // A profile reload, which numbers no change, already shows the paper unread.
+  setReadIds((ids) => new Set([...ids].filter((id) => id !== 'p2')));
+  accept();
+  await removal;
+  assert.deepEqual([...state.readIds], ['p1']);
+  assert.equal(unmarked, 0, 'no second unread in the reading profile');
+});
+
 test('a Reading history removal answered after the card unmarked and marked the paper read leaves it read', async () => {
   const { state, setReadIds, setLibrary } = feedState();
   const startChange = markChanges();
@@ -156,6 +185,7 @@ test('a Reading history removal answered after the card unmarked and marked the 
     afterWrite,
     stillSignedIn: () => true,
     stillNewest: startChange('read:p2'),
+    stillRead: () => state.readIds.has('p2'),
   });
 
   const removal = unmark(true);

@@ -28,6 +28,7 @@ function favorites() {
     ...options,
     stillSignedIn: () => true,
     stillNewest: () => true,
+    stillAsStarted: () => true,
   });
   const unused = () => Promise.reject(new Error('not this list'));
   const remove = () => removePaperFromMarkList('__favorites__', 'p1', { id: 'p1' }, {

@@ -24,6 +24,7 @@ function markedLists() {
     ...options,
     stillSignedIn: () => true,
     stillNewest: () => true,
+    stillAsStarted: () => rows[listId].has(paperId),
   });
   return {
     rows,
