@@ -8,7 +8,7 @@ import { getCategoryLabel } from '../../data/categories.ts';
 import ScientificText from '../scientific-text.ts';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
 import { readPublicList } from '../../services/public-list-service.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';

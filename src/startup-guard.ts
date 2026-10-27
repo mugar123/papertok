@@ -42,9 +42,9 @@ export function installStartupGuard() {
 
   const onError = (event: Event) => {
     const target = event.target as StartupElement | null;
-    // Images and icons do not prevent the application from starting.
-    if (event.target === window || (target && target.tagName === 'SCRIPT')
-      || (target && target.tagName === 'LINK' && /^(stylesheet|modulepreload)$/.test(target.getAttribute('rel') || ''))) {
+    // Vite marks the initial app graph. Later optional imports and analytics
+    // scripts must not turn their own blocked requests into a startup failure.
+    if (event.target === window || (target && target.getAttribute('data-startup') === 'essential')) {
       showFailure();
     }
   };

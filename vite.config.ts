@@ -194,7 +194,11 @@ export default defineConfig(({ command, mode }) => {
             // script. Keep their order and native module readiness, but start
             // them after the recovery screen and its watchdog exist.
             const stylesheets: string[] = []
-            const document = html.replace(/<link\b[^>]*\brel="stylesheet"[^>]*>/g, (link) => {
+            const marked = html
+              .replace(/<link\b[^>]*\brel="(?:stylesheet|modulepreload)"[^>]*>/g, link => link.replace('<link', '<link data-startup="essential"'))
+              // Mark both dev and built entries here: Vite replaces the source tag.
+              .replace(/<script\b[^>]*\bsrc="(?:\/assets\/index-[^"]+\.js|\/src\/main\.tsx)"[^>]*>/g, script => script.replace('<script', '<script data-startup="essential"'))
+            const document = marked.replace(/<link\b[^>]*\brel="stylesheet"[^>]*>/g, (link) => {
               stylesheets.push(link)
               return ''
             })

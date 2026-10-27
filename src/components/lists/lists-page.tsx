@@ -77,7 +77,7 @@ import { downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import {
   PUBLIC_LIST_LIMITS,
   publishPublicList,

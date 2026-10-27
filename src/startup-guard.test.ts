@@ -10,12 +10,14 @@ function boot() {
     children = 0;
     readonly tagName: string;
     readonly rel: string;
-    constructor(tagName = 'DIV', rel = '') {
+    readonly essential: boolean;
+    constructor(tagName = 'DIV', rel = '', essential = false) {
       super();
       this.tagName = tagName;
       this.rel = rel;
+      this.essential = essential;
     }
-    getAttribute() { return this.rel; }
+    getAttribute(name: string) { return name === 'data-startup' ? (this.essential ? 'essential' : null) : this.rel; }
     hasChildNodes() { return this.children > 0; }
     remove() { this.connected = false; }
   }
@@ -65,9 +67,9 @@ function boot() {
       }
     },
     mount() { root.children = 1; if (observing) mutation(); },
-    resourceError(tagName: string, rel = '') {
+    resourceError(tagName: string, rel = '', essential = false) {
       const event = new Event('error');
-      Object.defineProperty(event, 'target', { value: new Element(tagName, rel) });
+      Object.defineProperty(event, 'target', { value: new Element(tagName, rel, essential) });
       win.dispatchEvent(event);
     },
   };
@@ -80,9 +82,9 @@ test('startup remains readable before the application renders', () => {
 });
 
 test('missing startup scripts and styles present an error with a working retry', () => {
-  for (const [tag, rel] of [['SCRIPT', ''], ['LINK', 'modulepreload'], ['LINK', 'stylesheet']]) {
+  for (const [tag, rel] of [['SCRIPT', 'module'], ['LINK', 'modulepreload'], ['LINK', 'stylesheet']]) {
     const page = boot();
-    page.resourceError(tag, rel);
+    page.resourceError(tag, rel, true);
     assert.equal(page.title.textContent, 'PaperTok could not start');
     assert.match(page.message.textContent, /Reload the page/);
     const click = new Event('click', { cancelable: true });
@@ -104,8 +106,11 @@ test('early runtime errors and rejected promises present the recovery screen', (
   }
 });
 
-test('unavailable images and icons do not report an application failure', () => {
+test('unavailable classic scripts, images and icons do not report an application failure', () => {
   const page = boot();
+  page.resourceError('SCRIPT');
+  page.resourceError('LINK', 'modulepreload');
+  page.resourceError('LINK', 'stylesheet');
   page.resourceError('IMG');
   page.resourceError('LINK', 'icon');
   assert.equal(page.title.textContent, 'Loading PaperTok');

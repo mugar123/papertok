@@ -1,3 +1,4 @@
+import { loadOptionalModule } from '../utils/module-load-recovery.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
 import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
@@ -414,7 +415,7 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   }
 }
 
-// Allowing only has to persist: AnalyticsProvider renders the Vercel script
+// Allowing only has to persist: PrivacyProvider renders the Vercel script
 // while analytics is on, and PostHog loads on the next event. A PostHog
 // already loaded in this tab switches level at once (see `applyConsent`).
 // Withdrawing stops recording at once: the provider stops rendering the Vercel
@@ -425,8 +426,13 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
   if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
-  const client = analyticsClient && await analyticsClient;
-  if (client) applyConsent(client, value as Consent);
+  // Persisting the preference must not wait for an SDK that a blocker can stall.
+  // Read the latest choice when it arrives, rather than applying a stale toggle.
+  if (analyticsClient) {
+    void analyticsClient.then(client => {
+      if (client) applyConsent(client, readAnalyticsConsent());
+    }).catch(error => { console.warn('Could not update analytics preferences', error); });
+  }
   return true;
 }
 
@@ -537,16 +543,15 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
  * capture made before `init` instead of queueing it, so every send waits for
  * this promise rather than firing into a client that is not ready yet.
  *
- * A load that fails is not retried: the tab stops reporting, and the next page
- * load tries again. Vite reports the failure like any other chunk's, so
- * main.jsx's reload (once a minute at most) applies to it, which is the right
- * answer when a deploy replaced the chunk. That is also why nothing is loaded
- * while the browser says it is offline: a failure there would only reload.
+ * A blocked SDK disables reporting for this page. Optional module failures do
+ * not invoke the application's stale-chunk reload policy.
  */
 function loadAnalyticsClient() {
   if (!analyticsClient && globalThis.navigator?.onLine === false) return Promise.resolve(null);
-  analyticsClient ??= import('posthog-js')
-    .then(({ posthog }) => {
+  analyticsClient ??= loadOptionalModule(() => import('posthog-js'))
+    .then(module => {
+      if (!module) return null;
+      const { posthog } = module;
       startAnalyticsClient(posthog, readAnalyticsConsent());
       return posthog;
     })
@@ -777,7 +782,7 @@ const PAGE_LOADED_AT = Date.now();
 let appCrashReported = false;
 
 /**
- * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
+ * The report for GlobalErrorBoundary, which sits outside PrivacyProvider.
  * A crash inside main.tsx's window after an earlier page's chunk reload counts
  * as the chunk failing again. A forced-reload mark written by this page means
  * the app is already reloading it, for a missing chunk (main.tsx) or for a

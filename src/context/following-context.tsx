@@ -18,7 +18,7 @@ import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 
 import { db } from '../services/firebase.ts';
 import { getRorInstitution, normalizeRorId } from '../services/ror-service.ts';
 import { useAuth } from './auth-context.tsx';
-import { useAnalyticsConsent } from './analytics-context.tsx';
+import { useAnalyticsConsent } from './privacy-context.tsx';
 import {
   createFollowEntity,
   createFollowKey,
