@@ -229,17 +229,21 @@ test('an \\ifmmode without an \\else branch still yields its maths spelling', ()
 });
 
 // With no `\fi` after them, 1000 `\ifmmode\else` pairs took seconds while each
-// start tried every later `\else` as its branch, and 30000 bare starts took
-// seconds while each one rescanned the rest of the text.
+// start tried every later `\else` as its branch, 30000 bare starts took
+// seconds while each one rescanned the rest of the text, and so did one start
+// followed by 20000 `\else`.
 test('\\ifmmode conditionals that never close stay as written, at once however many follow', () => {
   const closed = '4\\ifmmode\\times\\else\\texttimes\\fi{}4 ';
   const pairs = '\\ifmmode a\\else b'.repeat(1000);
   const starts = '\\ifmmode'.repeat(30000);
+  const elses = `\\ifmmode${'\\else x'.repeat(20000)}`;
   const cases = [
     { text: pairs, expected: pairs },
     { text: `$${pairs}$`, expected: `$${pairs}$` },
     { text: `${closed}${pairs}`, expected: `4\\(\\times\\)4 ${pairs}` },
     { text: starts, expected: starts },
+    { text: elses, expected: elses },
+    { text: `$${elses}$`, expected: `$${elses}$` },
   ];
   for (const { text, expected } of cases) {
     const { normalized, elapsed } = timedNormalization(text);
