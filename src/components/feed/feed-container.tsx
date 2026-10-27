@@ -647,15 +647,25 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     }
   }, [error, loading, papers.length]);
 
-  // Only show the atom loader if loading takes more than 1.5s
+  // The main feed's failed reset waits for its automatic retry under the wait
+  // it was in, the first one or an emptied feed's (ENG-116).
+  const autoRetryPending = !source && feed.autoRetryPending;
+
+  // Only show the atom loader if loading takes more than 1.5s. A failed load
+  // waiting for its automatic retry is already under the atom veil, which
+  // stays up through the retry instead of dropping to the skeleton.
   useEffect(() => {
+    if (papers.length === 0 && autoRetryPending) {
+      const keepTimer = setTimeout(() => setShowLoader(true), 0);
+      return () => clearTimeout(keepTimer);
+    }
     if (papers.length === 0 && loading && !error) {
       const timer = setTimeout(() => setShowLoader(true), 1500);
       return () => clearTimeout(timer);
     }
     const hideTimer = setTimeout(() => setShowLoader(false), 0);
     return () => clearTimeout(hideTimer);
-  }, [papers.length, loading, error]);
+  }, [autoRetryPending, papers.length, loading, error]);
 
   // Back to the top on a manual refresh — behind the cover, not in front of
   // it. It used to scroll smoothly the moment the refresh started, which from
@@ -1043,11 +1053,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     showLoader,
     // A source says for itself whether it is still on its first load (the
     // Following feed does); the main feed derives it from its own history.
-    initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && !error,
-    firstLoadRetryPending: !source && !initialFeedReady && feed.autoRetryPending,
+    initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && (!error || autoRetryPending),
+    autoRetryPending,
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
-  const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
+  const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
   useEffect(() => {

@@ -117,12 +117,24 @@ test('a first load that failed is still the first wait, so its retry gets the ve
 // ENG-116: the reader saw "Error loading papers" for the 2.5 s before the
 // automatic retry, even when that retry then brought the papers.
 test('a failed first load keeps the discovery screen while its automatic retry is due, and shows the error once none is', () => {
-  const failed = { ...baseState, error: 'FEED_LOAD_FAILED' };
-  assert.equal(getFeedDisplayState({ ...failed, firstLoadRetryPending: true }), FEED_DISPLAY_STATES.INITIAL_DISCOVERY);
-  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...failed, firstLoadRetryPending: true }) }), 'discovery');
-  assert.equal(getFeedDisplayState({ ...failed, firstLoadRetryPending: false }), FEED_DISPLAY_STATES.ERROR);
+  const failed = { ...baseState, error: 'FEED_LOAD_FAILED', initialLoadPending: true };
+  assert.equal(getFeedDisplayState({ ...failed, autoRetryPending: true }), FEED_DISPLAY_STATES.INITIAL_DISCOVERY);
+  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...failed, autoRetryPending: true }), autoRetryPending: true }), 'discovery');
+  assert.equal(getFeedDisplayState({ ...failed, autoRetryPending: false }), FEED_DISPLAY_STATES.ERROR);
   // An empty answer has no automatic retry, and stays the empty state.
   assert.equal(getFeedDisplayState({ ...baseState, error: FEED_EMPTY }), FEED_DISPLAY_STATES.EMPTY);
+});
+
+// A feed emptied for a reset, such as new interests with no snapshot, showed
+// the error and its alert for the 2.5 s before its automatic retry too.
+test('an emptied feed whose reset failed keeps its gathering wait while the automatic retry is due', () => {
+  const failed = { ...baseState, error: 'FEED_LOAD_FAILED' };
+  const waiting = getFeedDisplayState({ ...failed, autoRetryPending: true });
+  assert.notEqual(waiting, FEED_DISPLAY_STATES.ERROR);
+  assert.equal(feedAtomVeilCopy({ displayState: waiting, autoRetryPending: true }), 'gathering');
+  // The retry itself, once the loader has been up, keeps the same wait.
+  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...baseState, loading: true, showLoader: true }), loading: true }), 'gathering');
+  assert.equal(getFeedDisplayState(failed), FEED_DISPLAY_STATES.ERROR);
 });
 
 test('the first wait ends with papers, or with a load that finished empty and clean', () => {

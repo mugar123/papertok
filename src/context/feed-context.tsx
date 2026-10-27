@@ -1507,7 +1507,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Try again" so there is no cascade.
-        // While the retry is due, the feed shows its first wait, not the error.
+        // While the retry is due, the feed shows its wait, not the error.
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
           setAutoRetryFor(requestId);
