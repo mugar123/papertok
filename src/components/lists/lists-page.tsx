@@ -1186,6 +1186,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (!markRemoval) void handleRemoveFromCustomList(listId, paperId);
   };
 
+  // The open card's toggles take a mark off at once, as they do in the feed.
+  // A refused write puts it back, so a paper opened from Favorites or Reading
+  // history returns to its row, and the toast says why. The card can be open
+  // from any list, so the message names the mark, not a removal.
+  const toggleLikeInCard = (paper: Paper) => {
+    if (!likedPaperIds.has(interactionIdFor(paper)!)) return toggleLike(paper);
+    return toggleLike(paper, { throwOnError: true }).catch(() => {
+      toastError('The like could not be removed');
+    });
+  };
+  const unmarkReadInCard = (paperId: string) => unmarkAsRead(paperId, { throwOnError: true }).catch(() => {
+    toastError('The read mark could not be removed');
+  });
+
   const setListShareId = (listId: string, publicShareId: string | null | undefined) => {
     setPublicSnapshots((current) => {
       if (!(listId in current)) return current;
@@ -2020,10 +2034,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             isLiked={likedPaperIds.has(interactionIdFor(shownPaper)!)}
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
-            onLike={toggleLike}
+            onLike={toggleLikeInCard}
             onNotInterested={(paper) => { void markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
-            onUnmarkAsRead={unmarkAsRead}
+            onUnmarkAsRead={unmarkReadInCard}
             onOpenPdf={(paper) => onOpenPdf?.(paper)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}
