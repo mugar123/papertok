@@ -32,6 +32,7 @@ import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
+import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 import { writeNewList } from './write-new-list.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
@@ -1178,14 +1179,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
   }, [rowSheetStep, prefersReducedMotion]);
 
-  // Favorites, Read later and Reading history are drawn from FeedContext's
-  // marks. Each toggle hides the row at once and, with `throwOnError`, puts it
-  // back and rejects when Firestore refuses the write.
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
-    if (listId === '__read__') unmarkAsRead(paperId, { throwOnError: true }).catch(reportRemovalFailed);
-    else if (listId === '__favorites__') toggleLike(paper as Paper, { throwOnError: true }).catch(reportRemovalFailed);
-    else if (listId === '__read_later__') toggleReadLater(paper as Paper, false, { throwOnError: true }).catch(reportRemovalFailed);
-    else void handleRemoveFromCustomList(listId, paperId);
+    const markRemoval = removePaperFromMarkList(listId, paperId, paper as Paper, {
+      unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportRemovalFailed,
+    });
+    if (!markRemoval) void handleRemoveFromCustomList(listId, paperId);
   };
 
   const setListShareId = (listId: string, publicShareId: string | null | undefined) => {

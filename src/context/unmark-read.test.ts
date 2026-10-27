@@ -30,7 +30,7 @@ const silenced = async (run: () => Promise<unknown>) => {
   }
 };
 
-test('a refused write the Lists page asked about puts the mark and its time back, and says so', async () => {
+test('a refused write the caller asked about puts the mark and its time back, and says so', async () => {
   const { state, setReadIds, setLibrary } = feedState();
   const refused = new Error('permission-denied');
   let restored = 0;
@@ -38,6 +38,7 @@ test('a refused write the Lists page asked about puts the mark and its time back
     setReadIds,
     setLibrary,
     write: () => Promise.reject(refused),
+    onUnmarked: () => {},
     onRestored: () => { restored += 1; },
     throwOnError: true,
     stillSignedIn: () => true,
@@ -54,6 +55,7 @@ test('the mark is gone while the write is in flight, and stays gone once it is a
     setReadIds,
     setLibrary,
     write: () => new Promise<void>((resolve) => { accept = resolve; }),
+    onUnmarked: () => {},
     onRestored: () => { assert.fail('the write was accepted'); },
     throwOnError: true,
     stillSignedIn: () => true,
@@ -72,6 +74,7 @@ test('a refusal that lands after the account changed leaves the new account alon
     setReadIds,
     setLibrary,
     write: () => Promise.reject(new Error('permission-denied')),
+    onUnmarked: () => {},
     onRestored: () => { assert.fail('nothing is put back over another account'); },
     throwOnError: true,
     stillSignedIn: () => false,
@@ -89,6 +92,7 @@ test('callers that did not ask keep what they had: the refusal is logged, not th
       setReadIds,
       setLibrary,
       write: () => Promise.reject(new Error('permission-denied')),
+      onUnmarked: () => {},
       onRestored: () => { assert.fail('no rollback without throwOnError'); },
       stillSignedIn: () => true,
     });
@@ -97,4 +101,36 @@ test('callers that did not ask keep what they had: the refusal is logged, not th
   }
   assert.deepEqual([...state.readIds], ['p1']);
   assert.equal(logged.length, 1);
+});
+
+test('with afterWrite the mark stays until the write is accepted, and a refusal leaves it untouched', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  let unmarked = 0;
+  let answer!: { accept: () => void; refuse: (error: Error) => void };
+  const write = () => new Promise<void>((accept, refuse) => { answer = { accept, refuse }; });
+  const options = {
+    setReadIds,
+    setLibrary,
+    write,
+    onUnmarked: () => { unmarked += 1; },
+    onRestored: () => { assert.fail('nothing was taken off'); },
+    throwOnError: true,
+    afterWrite: true,
+    stillSignedIn: () => true,
+  };
+
+  const refused = unmarkRead('p2', options);
+  assert.deepEqual([...state.readIds].sort(), ['p1', 'p2'], 'the row stays while the write is in flight');
+  answer.refuse(new Error('permission-denied'));
+  await silenced(() => assert.rejects(refused, /permission-denied/));
+  assert.deepEqual([...state.readIds].sort(), ['p1', 'p2']);
+  assert.equal(state.library.p2.readAt, '2026-10-21T09:00:00.000Z');
+  assert.equal(unmarked, 0, 'the profile never hears of a removal that did not happen');
+
+  const accepted = unmarkRead('p2', options);
+  answer.accept();
+  await accepted;
+  assert.deepEqual([...state.readIds], ['p1']);
+  assert.equal(state.library.p2.readAt, null);
+  assert.equal(unmarked, 1);
 });
