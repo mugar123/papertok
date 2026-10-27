@@ -158,19 +158,6 @@ test('a text-mode \\stackrel tilde becomes one formula, not a stackrel around tw
   );
 });
 
-// An unclosed argument is left as written, and quickly: 18 macros after one
-// took seconds while a backslash could start a macro or stand alone.
-test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written, at once however many macros follow it', () => {
-  const macros = `${'\\ab '.repeat(18)}x`;
-  for (const unclosed of [`\\ensuremath{${macros}`, `$\\ensuremath{${macros}$`, `\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{${macros}`]) {
-    const started = performance.now();
-    const normalized = normalizeLatexText(unclosed);
-    const elapsed = performance.now() - started;
-    assert.ok(elapsed < 100, `${unclosed.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
-    assert.ok(normalized.includes(`{${macros}`), normalized);
-  }
-});
-
 function timedNormalization(text: string) {
   const started = performance.now();
   const normalized = normalizeLatexText(text);
@@ -178,6 +165,26 @@ function timedNormalization(text: string) {
 }
 
 const STACKREL_TILDE_OPENER = '\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}';
+
+// An unclosed argument is left as written, and quickly: 18 macros after one
+// took seconds while a backslash could start a macro or stand alone. The `$}`
+// forms balance the argument's `{`, which is what lets the formula close and
+// its text go through the maths pass; a lone `$\ensuremath{…$` never closes and
+// stays prose.
+test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written, at once however many macros follow it', () => {
+  const macros = `${'\\ab '.repeat(18)}x`;
+  const cases = [
+    `\\ensuremath{${macros}`,
+    `$}\\ensuremath{${macros}$`,
+    `${STACKREL_TILDE_OPENER}{${macros}`,
+    `$}${STACKREL_TILDE_OPENER}{${macros}$`,
+  ];
+  for (const unclosed of cases) {
+    const { normalized, elapsed } = timedNormalization(unclosed);
+    assert.ok(elapsed < 100, `${unclosed.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.ok(normalized.includes(`{${macros}`), normalized);
+  }
+});
 
 // `\}` is an escaped brace, so none of these arguments closes. When a start
 // could read through the starts after it, each one rescanned the rest of the
