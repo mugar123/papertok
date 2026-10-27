@@ -2052,6 +2052,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
+            analyticsSurface="lists"
           />
         )}
       </PaperOverlay>

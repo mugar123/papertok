@@ -27,7 +27,11 @@ export interface PaperCardProps {
   titleAs?: 'h1' | 'h2';
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
-  analyticsSurface?: string;
+  /**
+   * The surface this card's events report. Required: a host that left it out
+   * used to report 'feed', which counted Search and Lists opens as For You.
+   */
+  analyticsSurface: string;
   position?: number;
   /** A feed request may still supply this paper's missing abstract. */
   abstractLoading?: boolean;
@@ -401,7 +405,7 @@ const PaperCard = memo(function PaperCard({
   titleAs = 'h2',
   publicMode = false,
   onAuthRequired,
-  analyticsSurface = 'feed',
+  analyticsSurface,
   position,
   abstractLoading = false,
 }: PaperCardProps) {
