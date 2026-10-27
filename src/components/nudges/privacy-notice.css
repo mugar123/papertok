@@ -6,21 +6,20 @@
   z-index: 6;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
+  /* The row may be shorter than the copy: the feed caps the notice's height
+     (feed-container.css). Then only the copy scrolls, and Got it and Hide for
+     now stay in view beside or under it. The copy keeps at least the title's
+     line; only where even that and the actions do not fit (200% text on a
+     small phone) does the whole notice scroll. */
+  grid-template-rows: minmax(1.5rem, 1fr);
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-card);
-  /* Scrolls inside itself when the feed caps its height (feed-container.css);
-     it takes focus so the keyboard can scroll it (privacy-notice.tsx). */
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-}
-
-/* Inside, so the feed's top edge and the navbar do not clip the ring. */
-.privacy-notice:focus-visible {
-  outline-offset: -2px;
 }
 
 .privacy-notice-icon {
@@ -34,8 +33,17 @@
   background: var(--bg-secondary);
 }
 
+/* Takes focus while it scrolls, so the keyboard can scroll it
+   (privacy-notice.tsx). Positioned, so the link's visually hidden words are
+   clipped by this scroller and do not make the whole notice scroll. */
 .privacy-notice-copy {
+  position: relative;
+  align-self: stretch;
+  align-content: center;
   max-width: 48rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .privacy-notice-copy h2 {
@@ -69,6 +77,7 @@
 @media (max-width: 640px) {
   .privacy-notice {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(1.5rem, 1fr) auto;
     padding: var(--space-3);
   }
 
@@ -78,5 +87,33 @@
 
   .privacy-notice-actions {
     justify-content: flex-start;
+  }
+}
+
+/* Short screens (a phone on its side): one line of title, link and actions.
+   The summary is left to the policy behind the link; in 40% of a landscape
+   phone's feed it showed two lines, and the cards below lost the ends of their
+   side rail. The breakpoint is the cards' own (paper-card.css). */
+@media (max-height: 500px) {
+  .privacy-notice {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
+    padding-block: var(--space-2);
+  }
+
+  .privacy-notice-icon,
+  .privacy-notice-summary {
+    display: none;
+  }
+
+  .privacy-notice-copy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-3);
+  }
+
+  .privacy-notice-copy p {
+    margin-top: 0;
   }
 }
