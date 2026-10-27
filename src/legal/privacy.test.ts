@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -148,35 +148,25 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
 
-test('the in-app summary is short: at most two sentences, PostHog named up front, the full list left to the page', () => {
+test('the in-app summary is short: at most two sentences, its lead change up front, the full list left to the page', () => {
   const sentences = PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length ?? 0;
   assert.ok(sentences >= 1 && sentences <= 2, 'one or two sentences');
   // The dialog has to fit it on a phone's screen; the page has every detail.
   assert.ok(PRIVACY_POLICY_CHANGE.length <= 400, PRIVACY_POLICY_CHANGE.length + ' characters');
-  // An account from before 15 October read a page with Vercel Web Analytics and no PostHog.
-  const at = PRIVACY_POLICY_CHANGE.indexOf('PostHog');
-  assert.ok(at >= 0 && at < 40, 'the provider is in the lead clause');
+  const { lead } = PRIVACY_POLICY_CHANGE_EVIDENCE;
+  const at = PRIVACY_POLICY_CHANGE.indexOf(lead);
+  assert.ok(at >= 0 && at < 40, `"${lead}" is in the lead clause`);
 });
 
 test("every clause of the in-app summary is the page's own words", () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  const clauses: [summary: string, page: RegExp][] = [
-    ['run by PostHog', /PaperTok uses <strong>PostHog<\/strong>/],
-    ['connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
-    ['records the papers you view, like or save', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
-    ['linked to your account when you sign in', /When you sign in, PaperTok links that activity to your account identifier/],
-    ['(turn it off in Settings)', /turn off both services in <strong>Settings → Privacy<\/strong>/],
-    // What a request for more papers carries, per the page's feed paragraph.
-    ['Each request for more papers now sends the server your interests', /Each request for more papers sends it your interests/],
-    ['what you follow', /the subjects you removed, what you follow, the identifiers of up to 24 papers you liked, saved or read at length/],
-    ['the identifiers of up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
-    ['to rank the page', /They are used to choose and rank that page/],
-  ];
+  const { clauses, unsaid } = PRIVACY_POLICY_CHANGE_EVIDENCE;
+  assert.ok(clauses.length > 0, 'the summary names where on the page it comes from');
   for (const [said, onPage] of clauses) {
     assert.ok(PRIVACY_POLICY_CHANGE.includes(said), 'the summary says "' + said + '"');
     assert.match(html, onPage);
   }
-  assert.doesNotMatch(PRIVACY_POLICY_CHANGE, /on by default/, 'anonymous analytics was already on by default on 20 October');
+  for (const [claim, why] of unsaid) assert.doesNotMatch(PRIVACY_POLICY_CHANGE, claim, why);
 });
 
 test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {

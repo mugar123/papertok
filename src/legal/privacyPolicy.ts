@@ -9,7 +9,7 @@
  * and rewrites the change to say the main changes since the previous version, in
  * one or two short sentences that lead with the change a reader would most want to
  * know. The dialog has to hold it on a phone's screen, so the full list stays on
- * the page.
+ * the page. PRIVACY_POLICY_CHANGE_EVIDENCE below is rewritten with it.
  * Raising the date means re-reading `git diff <previous version>..HEAD --
  * privacy.html`, not only the commits you made: a merge brings in others'
  * edits to the page. privacy.test.ts fails while the version and the page's date
@@ -46,3 +46,30 @@ export const PRIVACY_POLICY_VERSION = '2026-10-26';
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-10-26T05:00:00Z';
 
 export const PRIVACY_POLICY_CHANGE = 'Usage analytics, run by PostHog, now connects your visits across days and records the papers you view, like or save, linked to your account when you sign in (turn it off in Settings). Each request for more papers now sends the server your interests, what you follow and the identifiers of up to 24 papers you liked, saved or read at length, to rank the page, and the policy lists the rest.';
+
+/**
+ * Where PRIVACY_POLICY_CHANGE comes from, checked by privacy.test.ts: the
+ * change it leads with, each clause beside the privacy.html sentence that
+ * says it, and what it must not claim. Rewrite this with the summary.
+ */
+export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
+  lead: string;
+  clauses: readonly (readonly [said: string, onPage: RegExp])[];
+  unsaid: readonly (readonly [claim: RegExp, why: string])[];
+} = {
+  // An account from before 15 October read a page with Vercel Web Analytics and no PostHog.
+  lead: 'PostHog',
+  clauses: [
+    ['run by PostHog', /PaperTok uses <strong>PostHog<\/strong>/],
+    ['connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
+    ['records the papers you view, like or save', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
+    ['linked to your account when you sign in', /When you sign in, PaperTok links that activity to your account identifier/],
+    ['(turn it off in Settings)', /turn off both services in <strong>Settings → Privacy<\/strong>/],
+    // What a request for more papers carries, per the page's feed paragraph.
+    ['Each request for more papers now sends the server your interests', /Each request for more papers sends it your interests/],
+    ['what you follow', /the subjects you removed, what you follow, the identifiers of up to 24 papers you liked, saved or read at length/],
+    ['the identifiers of up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
+    ['to rank the page', /They are used to choose and rank that page/],
+  ],
+  unsaid: [[/on by default/, 'anonymous analytics was already on by default on 20 October']],
+};
