@@ -18,6 +18,7 @@ import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { mergeFeedAbstracts, notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
+import { sourceAttribution } from '../src/utils/source-attribution.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -211,9 +212,28 @@ test("an abstract recovered from Semantic Scholar keeps its credit while the row
   db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(withAbstract));
   await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
   assert.deepEqual([stored().abstract, stored().abstractSource], [recovered, 'semanticscholar']);
+  assert.deepEqual(sourceAttribution(stored()), { label: 'Abstract:', name: 'Semantic Scholar', href: 'https://www.semanticscholar.org/?utm_source=api' });
   const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
   await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
   assert.deepEqual([stored().abstract, stored().abstractSource], ['OpenAlex now lists the abstract its publisher deposited for this article.', undefined]);
+  assert.equal(sourceAttribution(stored()), null, 'the card credits Semantic Scholar for nothing it shows');
+});
+
+// A row recovered before ENG-109 names Semantic Scholar only among the sources
+// merged in, and its card says "With data from Semantic Scholar" for the
+// recovered text. That text replaced, the card credits no one.
+test('a row recovered before its source was recorded credits Semantic Scholar until its own source lists an abstract', async () => {
+  const { env, db } = corpus();
+  const work = { id: 'https://openalex.org/W4410000010', doi: 'https://doi.org/10.5555/recovered-earlier', title: 'A journal article recovered before the field existed', type: 'article', publication_date: '2026-10-20' };
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  const earlier = PaperBuilder.merge(stored(), { abstract: 'The abstract Semantic Scholar held for this journal article, in full.' }, 'semanticscholar');
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(earlier));
+  assert.equal(sourceAttribution(stored())?.label, 'With data from');
+  const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
+  await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
+  assert.equal(stored().abstract, 'OpenAlex now lists the abstract its publisher deposited for this article.');
+  assert.equal(sourceAttribution(stored()), null);
 });
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
