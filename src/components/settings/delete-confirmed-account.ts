@@ -1,3 +1,5 @@
+import { forgetPrivacyNotice } from '../../utils/nudges.ts';
+
 /**
  * The order of an account deletion once the person has typed the phrase.
  *
@@ -6,15 +8,21 @@
  * The uid it returns, the account that just signed in again, is the one
  * deleted: the session can switch while the sign-in window is open, so
  * whoever holds it afterwards is never asked.
+ *
+ * Once that account is deleted, this browser forgets the privacy notice it
+ * kept for the uid. Sign-out sweeps everything else an account leaves on the
+ * device; that one key is kept across sign-outs on purpose (utils/nudges.ts).
  */
-export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, deleteAccount, onDeleted }: {
+export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, deleteAccount, onDeleted, storage }: {
   reauthenticate: () => Promise<string>;
   onSignedIn: () => void;
   deleteAccount: (confirmedUid: string) => Promise<unknown>;
-  onDeleted: (deletedUid: string) => void | Promise<void>;
+  onDeleted: () => void | Promise<void>;
+  storage?: Parameters<typeof forgetPrivacyNotice>[1];
 }) {
   const confirmedUid = await reauthenticate();
   onSignedIn();
   await deleteAccount(confirmedUid);
-  await onDeleted(confirmedUid);
+  forgetPrivacyNotice(confirmedUid, storage);
+  await onDeleted();
 }

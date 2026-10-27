@@ -38,7 +38,6 @@ import { PreparingNote } from '../public/provider-sign-in.tsx';
 import InstitutionDialog from '../institution/institution-dialog.tsx';
 import InstitutionPill from '../institution/institution-pill.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
-import { forgetPrivacyNotice } from '../../utils/nudges.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { FollowingSheet } from './following-settings-page.tsx';
@@ -250,8 +249,7 @@ function ProfileAccountPage() {
     }
   };
 
-  const handleAccountDeleted = async (deletedUid: string) => {
-    forgetPrivacyNotice(deletedUid);
+  const handleAccountDeleted = async () => {
     try {
       await signOut();
     } catch {
