@@ -37,7 +37,10 @@ import PrivacyNotice from './privacy-notice.tsx';
 // A privacy policy change takes the visit's turn before any nudge. Only
 // signed-in accounts are told, in a dialog that opens on arrival at the feed and
 // returns on later visits until the reader chooses Got it; utils/nudges.ts
-// decides who is owed it. Whatever was picked is shown on the feed only and
+// decides who is owed it. While it is owed it is the visit's one notice, so
+// Hide for now (or Escape, Back, the X) leaves the visit with nothing: the email
+// nudge waits for a visit after Got it, by the one-per-visit rule above.
+// Whatever was picked is shown on the feed only and
 // comes back when the reader returns to it. A change of account remounts this
 // component, which clears what was picked for the previous reader.
 
