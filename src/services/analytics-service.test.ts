@@ -924,13 +924,13 @@ test('what a reader does in the connections map is one of six actions in the map
   assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
 });
 
-test('a paper seen or opened from connections or similar papers is filed under where it came from', () => {
+test('connections and similar are allowed surfaces for paper events', () => {
   for (const surface of ['connections', 'similar']) {
     assert.deepEqual(sanitizeProductEventParams('paper_open', { surface, destination: 'pdf', position: 2 }), { surface, destination: 'pdf', position: 2 });
     assert.deepEqual(sanitizeProductEventParams('paper_view', { surface, position: 0 }), { surface, position: 0 });
     assert.deepEqual(sanitizeProductEventParams('paper_dwell', { surface, seconds: 9 }), { surface, seconds: 9 });
+    assert.deepEqual(sanitizeProductEventParams('save_change', { action: 'add', surface }), { action: 'add', surface });
   }
-  assert.deepEqual(sanitizeProductEventParams('save_change', { action: 'add', surface: 'similar' }), { action: 'add', surface: 'similar' });
 });
 
 test('an app error leaves with its kind and nothing from the error, and not at all once analytics is off', () => {
