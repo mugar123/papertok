@@ -20,6 +20,11 @@ export interface MarkWriteOptions { throwOnError: boolean; afterWrite?: boolean 
  *
  * Nothing is shown or put back once another account is signed in: a late
  * answer must not paint the previous account's mark over the new one.
+ *
+ * `writeOptimistically` (optimistic-write.ts) puts back a whole previous
+ * value and always rethrows. A mark cannot use it: its undo moves only this
+ * paper back inside a set other toggles may have changed meanwhile, the feed
+ * callers only log a refusal, and the Lists page needs `afterWrite`.
  */
 export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn }: {
   show: () => void;
