@@ -122,6 +122,10 @@ export interface Paper {
   sources: PaperSources;
   title: string;
   abstract: string;
+  // The source a card credits for `abstract` when the paper's own record had
+  // none and Crossref or Semantic Scholar supplied it (`mergeFeedAbstracts`).
+  // Absent for a record's own text, and on rows recovered before ENG-109.
+  abstractSource?: 'crossref' | 'semanticscholar';
   language?: string;
   // The builder preserves older name-only arrays; enrichment must accept both.
   authors: Array<PaperAuthor | string>;

@@ -376,10 +376,11 @@ const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.pri
 // `merge` only fills a gap. A listing without an abstract keeps the stored one,
 // unless that opens as a funding note, thanks or a disclaimer: a row an earlier
 // Worker filed with one (ENG-105) has no abstract once its source lists it.
+// The source's own text credits no other source (`abstractSource`).
 function withOwnText(row: Paper, own: Paper | undefined): Paper {
   if (!own) return row;
   return hasUsableAIAbstract(own.abstract) || opensAsFrontMatter(row.abstract)
-    ? { ...row, title: own.title, abstract: own.abstract }
+    ? { ...row, title: own.title, abstract: own.abstract, abstractSource: undefined }
     : { ...row, title: own.title };
 }
 

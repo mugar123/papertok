@@ -137,6 +137,7 @@ export class PaperBuilder {
       sources: data.sources || { primary: 'unknown', enrichedBy: [] },
       title: data.title || 'Untitled',
       abstract: data.abstract || 'No abstract available.',
+      ...(data.abstractSource && { abstractSource: data.abstractSource }),
       authors: Array.isArray(data.authors) ? data.authors : [],
       arxivId: data.arxivId || undefined,
       pmid: data.pmid || undefined,
@@ -277,6 +278,16 @@ export class PaperBuilder {
     if (!hasUsableAIAbstract(merged.abstract) && hasUsableAIAbstract(enrichmentData.abstract)) {
       merged.abstract = enrichmentData.abstract;
       if (!hasUsableAIAbstract(merged.summary)) merged.summary = enrichmentData.abstract;
+      // The text keeps the source a card credits for it (`abstractSource`), and
+      // that source stays among the ones merged in: the record bringing the
+      // text may have taken it from that source in a merge of its own.
+      const { abstractSource } = enrichmentData;
+      if (abstractSource) {
+        merged.abstractSource = abstractSource;
+        if (!merged.sources.enrichedBy.includes(abstractSource)) {
+          merged.sources = { ...merged.sources, enrichedBy: [...merged.sources.enrichedBy, abstractSource] };
+        }
+      }
     }
 
     if (sourceName === 'scopus') {

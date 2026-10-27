@@ -275,3 +275,22 @@ test('recovered abstracts apply in the order arXiv, INSPIRE, Crossref, Semantic 
   const unrelated = [{ doi: '10.1000/other', abstract: from('another paper'), sources: { primary: 'crossref', enrichedBy: [] } }];
   assert.equal(mergeFeedAbstracts([{ ...paper, arxivId: undefined }], unrelated)[0].abstract, 'No abstract available.');
 });
+
+// ENG-109: a card credits Crossref or Semantic Scholar for an abstract it
+// shows from them, so the paper names that source beside the text.
+test('an abstract recovered from Crossref or Semantic Scholar names its source; one from arXiv or INSPIRE, a refused one and a kept one do not', () => {
+  const paper = { id: 'W8', arxivId: '2601.00002', doi: '10.1000/credited', title: 'Synthetic paper W8', authors: [], abstract: 'No abstract available.', sources: { primary: 'openalex', enrichedBy: [] } } as Paper;
+  const record = (primary: string, abstract: string) => ({ arxivId: '2601.00002', doi: '10.1000/credited', abstract, sources: { primary, enrichedBy: [] } });
+  const text = 'The abstract this source holds for the paper, in full.';
+  const recovered = (records: Partial<Paper>[], base = paper) => mergeFeedAbstracts([base], records)[0];
+  assert.equal(recovered([record('semanticscholar', text)]).abstractSource, 'semanticscholar');
+  assert.equal(recovered([record('crossref', text)]).abstractSource, 'crossref');
+  assert.equal(recovered([record('arxiv', text)]).abstractSource, undefined);
+  assert.equal(recovered([record('inspire', text)]).abstractSource, undefined);
+  // Semantic Scholar's text past 6,000 characters is no abstract: the paper keeps none, and credits no one.
+  const refused = recovered([record('semanticscholar', 'x'.repeat(6001))]);
+  assert.deepEqual([refused.abstract, refused.abstractSource], ['No abstract available.', undefined]);
+  // A paper with its own abstract keeps it, uncredited.
+  const own = recovered([record('semanticscholar', text)], { ...paper, abstract: 'The text OpenAlex lists for this paper itself.' });
+  assert.deepEqual([own.abstract, own.abstractSource], ['The text OpenAlex lists for this paper itself.', undefined]);
+});
