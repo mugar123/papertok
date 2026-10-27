@@ -866,8 +866,10 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // for its abstract again, at about one OpenAlex refresh call per 50 such
   // papers every 14 days. Nor does it renew a paper with a PubMed id: the
   // listing leaves out only what OpenAlex marks retracted, and the refresh is
-  // what reads PubMed's `Retracted Publication` type from Europe PMC, at the
-  // same cost of one OpenAlex call per 50 such papers every 14 days.
+  // what reads PubMed's `Retracted Publication` type from Europe PMC. Nearly
+  // every paper of the 26 medicine and biology notable lanes has one, about
+  // 26,000 papers: about 260 OpenAlex refresh calls and 650 Crossref type
+  // calls a week, with their iCite and Europe PMC calls.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
       AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40 AND paper ->> '$.pmid' IS NULL
