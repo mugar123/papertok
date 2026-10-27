@@ -84,6 +84,19 @@ test('the copy only lays over the provider where it speaks', () => {
   assert.equal(hydrateSeededPaper(seed, null), seed, 'no answer: the copy is the paper, as before');
 });
 
+// ENG-109: a feed card's abstract can come from Semantic Scholar, which the
+// card credits. The search palette hands that card to the paper page, whose
+// provider has no abstract or its own.
+test('the abstract the page keeps brings the source credited for it', () => {
+  const credited = { ...seed, abstractSource: 'semanticscholar' as const };
+  assert.equal(hydrateSeededPaper(credited, { ...provider, abstract: 'No abstract available.' })!.abstractSource, 'semanticscholar');
+  assert.equal(hydrateSeededPaper(credited, provider)!.abstractSource, 'semanticscholar', 'the text the reader read in the feed stays, and so does its credit');
+  // A text as long as a stored copy's cap reads as cut, so the provider's own text replaces it.
+  const long = { ...credited, abstract: 'S'.repeat(STORED_SUMMARY_CAP) };
+  const hydrated = hydrateSeededPaper(long, provider)!;
+  assert.deepEqual([hydrated.abstract, hydrated.abstractSource], [provider.abstract, undefined]);
+});
+
 test('a whole stored abstract stays; one cut at the cap gives way to the provider\'s', () => {
   const whole = 'W'.repeat(LEGACY_STORED_SUMMARY_CAP - 1);
   assert.equal(hydratedAbstract(whole, 'Provider text.'), whole);
