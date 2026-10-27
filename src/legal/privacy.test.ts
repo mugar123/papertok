@@ -151,7 +151,7 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
 test('the in-app summary is short: at most two sentences, PostHog named up front, the full list left to the page', () => {
   const sentences = PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length ?? 0;
   assert.ok(sentences >= 1 && sentences <= 2, 'one or two sentences');
-  // The panel covers the card being read on a phone; the page has every detail.
+  // The notice pushes the cards down on a phone; the page has every detail.
   assert.ok(PRIVACY_POLICY_CHANGE.length <= 400, PRIVACY_POLICY_CHANGE.length + ' characters');
   // An account from before 15 October read a page with Vercel Web Analytics and no PostHog.
   const at = PRIVACY_POLICY_CHANGE.indexOf('PostHog');
@@ -183,7 +183,10 @@ test('the page lists the notice key among what the browser keeps, and says only 
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
   assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
-  assert.match(html, /When you choose Got it, this browser remembers that version/);
-  assert.match(html, /Choosing Hide for now only hides it for that visit/);
-  assert.doesNotMatch(html, /Escape|close button/, 'the notice is a banner in the page, with no Escape or close button');
+  const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
+  assert.match(changes, /When you choose Got it, this browser remembers that version/);
+  assert.match(changes, /Choosing Hide for now only hides it for that visit/);
+  for (const about of [storage, changes]) {
+    assert.doesNotMatch(about, /Escape|close button/, 'the notice is a banner in the page, with no Escape or close button');
+  }
 });

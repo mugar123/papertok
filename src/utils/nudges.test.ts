@@ -329,11 +329,11 @@ test('the status message is set once, held back while a modal is open, and not s
 // What the focus tracker reads of the page: an element on it, the body that holds
 // focus when nothing does, an element inside the notice; and a document whose
 // focusin listeners the test can fire.
-const pageElement = (tagName = 'BUTTON', { connected = true, inPanel = false } = {}) => ({
+const pageElement = (tagName = 'BUTTON', { connected = true, inNotice = false } = {}) => ({
   tagName,
   isConnected: connected,
   focus: () => undefined,
-  closest: (selector: string) => (inPanel && selector === PRIVACY_NOTICE_SELECTOR ? {} : null),
+  closest: (selector: string) => (inNotice && selector === PRIVACY_NOTICE_SELECTOR ? {} : null),
 });
 
 type FocusInListener = (event: { target: unknown }) => void;
@@ -353,7 +353,7 @@ test('a control that already holds focus when the notice appears is where Got it
   const tracker = trackFocusOutsideNotice(source);
   // The reader's next Tab lands in the notice. That focus event is inside it, so
   // the control focused before is the only thing the tracker has to go on.
-  source.focusIn(pageElement('A', { inPanel: true }));
+  source.focusIn(pageElement('A', { inNotice: true }));
   assert.equal(tracker.target(), control);
 });
 
@@ -363,7 +363,7 @@ test('the last control on the page that took focus is remembered, and nothing in
   const later = pageElement('A');
   source.focusIn(later);
   assert.equal(tracker.target(), later, 'focus moved to another control after the notice appeared');
-  source.focusIn(pageElement('BUTTON', { inPanel: true }));
+  source.focusIn(pageElement('BUTTON', { inNotice: true }));
   source.focusIn(pageElement('BODY'));
   source.focusIn({ tagName: 'DIV' });
   source.focusIn({});
@@ -374,10 +374,10 @@ test('the last control on the page that took focus is remembered, and nothing in
 test('with no control focused outside the notice there is nothing to return to', () => {
   const source = focusSource(pageElement('BODY'));
   const tracker = trackFocusOutsideNotice(source);
-  source.focusIn(pageElement('BUTTON', { inPanel: true }));
+  source.focusIn(pageElement('BUTTON', { inNotice: true }));
   assert.equal(tracker.target(), null, 'nothing was focused: the page is the active element');
   assert.equal(trackFocusOutsideNotice(focusSource(null)).target(), null, 'no active element at all');
-  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { inPanel: true }))).target(), null, 'focus already in the notice');
+  assert.equal(trackFocusOutsideNotice(focusSource(pageElement('BUTTON', { inNotice: true }))).target(), null, 'focus already in the notice');
 });
 
 test('a remembered control the feed has unmounted is not returned to, and a stopped tracker remembers nothing more', () => {
