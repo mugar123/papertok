@@ -3,11 +3,11 @@ export const rowRemovalKey = (listId: string, paperId: string) => `${listId}:${p
 
 /**
  * One removal per row at a time. A row now stays on screen until its removal
- * is accepted, so its Remove control can be pressed again meanwhile. A second
- * Favorites removal would send a second unlike, and each accepted unlike
- * takes the paper's weight out of the reading profile again. While a
- * removal is pending, a repeat is dropped and the row can show that it is
- * waiting.
+ * is accepted, so its Remove control can be pressed again meanwhile. A repeat
+ * would send the same write again, and from Favorites a second like_change
+ * event; FeedContext shows only the newest, so the reading profile counts the
+ * removal once either way. While a removal is pending, a repeat is dropped
+ * and the row can show that it is waiting.
  */
 export function removeRowOnce(
   pending: ReadonlySet<string>,

@@ -6,11 +6,12 @@ import { writeMark } from './write-mark.ts';
  * A refused write is logged. With `throwOnError` the mark and its read time
  * are put back and the error is rethrown, so the paper keeps its place in
  * Reading history. With `afterWrite` (the Lists page) the mark stays until the
- * write is accepted. Other callers keep the optimistic state.
+ * write is accepted, and then goes only if no newer change to it has started
+ * (`stillNewest`, see `writeMark`). Other callers keep the optimistic state.
  */
 export async function unmarkRead<Entry extends { readAt?: string | number | null }>(
   paperId: string,
-  { setReadIds, setLibrary, write, onUnmarked, onRestored, throwOnError = false, afterWrite = false, stillSignedIn }: {
+  { setReadIds, setLibrary, write, onUnmarked, onRestored, throwOnError = false, afterWrite = false, stillSignedIn, stillNewest }: {
     setReadIds: (update: (ids: Set<string>) => Set<string>) => void;
     setLibrary: (update: (library: Record<string, Entry>) => Record<string, Entry>) => void;
     write: () => Promise<void>;
@@ -20,6 +21,7 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
     throwOnError?: boolean;
     afterWrite?: boolean;
     stillSignedIn: () => boolean;
+    stillNewest: () => boolean;
   },
 ) {
   // Set by the updater in `show`. React runs queued updaters in order, so the
@@ -51,5 +53,6 @@ export async function unmarkRead<Entry extends { readAt?: string | number | null
     afterWrite,
     throwOnError,
     stillSignedIn,
+    stillNewest,
   });
 }

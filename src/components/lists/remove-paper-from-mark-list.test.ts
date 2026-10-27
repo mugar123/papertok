@@ -23,6 +23,7 @@ function markedLists() {
     failure: 'refused',
     ...options,
     stillSignedIn: () => true,
+    stillNewest: () => true,
   });
   return {
     rows,

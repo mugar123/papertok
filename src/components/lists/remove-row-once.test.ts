@@ -16,7 +16,7 @@ function pendingRemovals() {
   };
 }
 
-// A Favorites unlike the way FeedContext sends it: each call writes, and each
+// A Favorites unlike the way FeedContext sends it: each call writes, and an
 // accepted write records an unlike in the reading profile.
 function favorites() {
   const writes: Array<() => void> = [];
@@ -27,6 +27,7 @@ function favorites() {
     failure: 'refused',
     ...options,
     stillSignedIn: () => true,
+    stillNewest: () => true,
   });
   const unused = () => Promise.reject(new Error('not this list'));
   const remove = () => removePaperFromMarkList('__favorites__', 'p1', { id: 'p1' }, {

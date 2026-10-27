@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unmarkRead } from './unmark-read.ts';
+import { markChanges } from './write-mark.ts';
 
 type Entry = { paperId: string; readAt?: string | null };
 
@@ -42,6 +43,7 @@ test('a refused write the caller asked about puts the mark and its time back, an
     onRestored: () => { restored += 1; },
     throwOnError: true,
     stillSignedIn: () => true,
+    stillNewest: () => true,
   }), refused));
   assert.deepEqual([...state.readIds].sort(), ['p1', 'p2'], 'the row is still in Reading history');
   assert.equal(state.library.p2.readAt, '2026-10-21T09:00:00.000Z', 'and keeps its place in it');
@@ -59,6 +61,7 @@ test('the mark is gone while the write is in flight, and stays gone once it is a
     onRestored: () => { assert.fail('the write was accepted'); },
     throwOnError: true,
     stillSignedIn: () => true,
+    stillNewest: () => true,
   });
   assert.deepEqual([...state.readIds], ['p1']);
   accept();
@@ -78,6 +81,7 @@ test('a refusal that lands after the account changed leaves the new account alon
     onRestored: () => { assert.fail('nothing is put back over another account'); },
     throwOnError: true,
     stillSignedIn: () => false,
+    stillNewest: () => true,
   }), /permission-denied/));
   assert.deepEqual([...state.readIds], ['p1']);
 });
@@ -95,6 +99,7 @@ test('callers that did not ask keep what they had: the refusal is logged, not th
       onUnmarked: () => {},
       onRestored: () => { assert.fail('no rollback without throwOnError'); },
       stillSignedIn: () => true,
+      stillNewest: () => true,
     });
   } finally {
     console.error = original;
@@ -117,6 +122,7 @@ test('with afterWrite the mark stays until the write is accepted, and a refusal 
     throwOnError: true,
     afterWrite: true,
     stillSignedIn: () => true,
+    stillNewest: () => true,
   };
 
   const refused = unmarkRead('p2', options);
@@ -133,4 +139,36 @@ test('with afterWrite the mark stays until the write is accepted, and a refusal 
   assert.deepEqual([...state.readIds], ['p1']);
   assert.equal(state.library.p2.readAt, null);
   assert.equal(unmarked, 1);
+});
+
+test('a Reading history removal answered after the card unmarked and marked the paper read leaves it read', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  const startChange = markChanges();
+  const answers: Array<() => void> = [];
+  let unmarked = 0;
+  const unmark = (afterWrite: boolean) => unmarkRead('p2', {
+    setReadIds,
+    setLibrary,
+    write: () => new Promise<void>((accept) => { answers.push(accept); }),
+    onUnmarked: () => { unmarked += 1; },
+    onRestored: () => { assert.fail('nothing was refused'); },
+    throwOnError: true,
+    afterWrite,
+    stillSignedIn: () => true,
+    stillNewest: startChange('read:p2'),
+  });
+
+  const removal = unmark(true);
+  // The open card still shows the paper read: its toggle takes the mark off,
+  // then puts it back the way markAsRead does.
+  const cardUnmark = unmark(false);
+  startChange('read:p2');
+  setReadIds((ids) => new Set(ids).add('p2'));
+  setLibrary((library) => ({ ...library, p2: { ...library.p2, readAt: '2026-10-26T09:00:00.000Z' } }));
+  answers.forEach((accept) => accept());
+  await Promise.all([removal, cardUnmark]);
+
+  assert.deepEqual([...state.readIds].sort(), ['p1', 'p2'], 'the paper is still in Reading history');
+  assert.equal(state.library.p2.readAt, '2026-10-26T09:00:00.000Z', 'with the time it was marked read again');
+  assert.equal(unmarked, 1, 'the profile hears only the card\'s unmark');
 });

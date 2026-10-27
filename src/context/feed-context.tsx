@@ -87,7 +87,7 @@ import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { writeMark } from './write-mark.ts';
+import { markChanges, writeMark } from './write-mark.ts';
 import { restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
@@ -257,6 +257,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // write is coalesced behind it.
   const [initialInteractionProfile] = useState(createEmptyInteractionProfile);
   const interactionProfile = useRef(initialInteractionProfile);
+  // Numbers each change to a paper's like, read or Read later mark, so a
+  // removal answered late cannot undo a newer change (see writeMark).
+  const [startMarkChange] = useState(markChanges);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -1803,6 +1806,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
+      stillNewest: startMarkChange(`like:${paper.id}`),
       write: async () => {
         if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
@@ -1824,7 +1828,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         });
       },
     });
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, startMarkChange]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1907,6 +1911,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId) return;
+    // A Reading history removal answered after this must leave the mark on.
+    startMarkChange(`read:${paper.id}`);
     const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
@@ -1945,7 +1951,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving read status:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, user?.uid, startMarkChange]);
 
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
@@ -2225,8 +2231,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
+      stillNewest: startMarkChange(`read:${paperId}`),
     });
-  }, [recordProfileEvent, user?.uid]);
+  }, [recordProfileEvent, user?.uid, startMarkChange]);
 
   const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
@@ -2274,9 +2281,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
+      stillNewest: startMarkChange(`readLater:${paper.id}`),
     });
     return nextValue;
-  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, startMarkChange]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
