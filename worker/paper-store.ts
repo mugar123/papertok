@@ -396,7 +396,10 @@ function isJournalArticleRecord(paper: Paper, raw: unknown) {
 function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   const merged = PaperBuilder.merge(article, row, row.provider || row.sources?.primary);
   if (merged.peerReviewed !== true || merged.workingPaper) return undefined;
-  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length) });
+  // The article is the merge base, so the row's own enrichments (an abstract
+  // from Semantic Scholar) keep their credit only through this list.
+  const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
+  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
 
 /**

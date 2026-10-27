@@ -30,6 +30,7 @@ import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapCoreWork, mapEuropePmcSearchResult, mapOstiRecord } from '../src/services/domain-source-records.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { mergeFeedAbstracts } from '../src/utils/feed-enrichment.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
@@ -810,6 +811,30 @@ test('a journal article that adds a coauthor, an institution, a topic or a conce
       assert.deepEqual(page.map(paper => [paper.doi, paper.peerReviewed]), [[gmmArticle.doi.slice('https://doi.org/'.length), true]], `${name}: ${follow.canonicalId}`);
     }
   }
+});
+
+// The 14-day refresh can recover a working paper's abstract from Semantic
+// Scholar. An article without one leaves that text on the upgraded row, and
+// the credit the card's attribution reads stays with it.
+test("a working-paper row upgraded by a journal article without an abstract keeps the abstract Semantic Scholar recovered, and its credit", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const recovered = 'We compare the efficiency and the pricing accuracy of GMM estimators of multifactor linear asset pricing models in two representations.';
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const article = { ...gmmArticle, abstract_inverted_index: null };
+  const { env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [article] : [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const stored = () => JSON.parse(String((db.prepare('SELECT paper FROM works').all()[0] as { paper: string }).paper)) as Paper;
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-series')!);
+  const [withAbstract] = mergeFeedAbstracts([stored()], [{ doi: '10.3386/w35104', abstract: recovered, sources: { primary: 'semanticscholar', enrichedBy: [] } }]);
+  assert.ok(withAbstract.sources.enrichedBy.includes('semanticscholar'));
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(withAbstract));
+
+  t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-venues' && job.lane === 'econ.EM')!);
+  const paper = stored();
+  assert.deepEqual([paper.doi, paper.peerReviewed, paper.abstract], ['10.1080/07350015.2026.2743244', true, recovered]);
+  assert.ok(paper.sources.enrichedBy.includes('semanticscholar'), `enrichedBy: ${paper.sources.enrichedBy}`);
 });
 
 // The row keeps the working paper's id, yet its text is the article's, so the
