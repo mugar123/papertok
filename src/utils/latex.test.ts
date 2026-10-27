@@ -158,6 +158,19 @@ test('a text-mode \\stackrel tilde becomes one formula, not a stackrel around tw
   );
 });
 
+// An unclosed argument is left as written, and quickly: 18 macros after one
+// took seconds while a backslash could start a macro or stand alone.
+test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written, at once however many macros follow it', () => {
+  const macros = `${'\\ab '.repeat(18)}x`;
+  for (const unclosed of [`\\ensuremath{${macros}`, `$\\ensuremath{${macros}$`, `\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{${macros}`]) {
+    const started = performance.now();
+    const normalized = normalizeLatexText(unclosed);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 100, `${unclosed.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.ok(normalized.includes(`{${macros}`), normalized);
+  }
+});
+
 test('an \\ifmmode without an \\else branch still yields its maths spelling', () => {
   assert.equal(normalizeLatexText('4\\ifmmode\\times\\fi{}4 sites'), '4\\(\\times\\)4 sites');
   assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');

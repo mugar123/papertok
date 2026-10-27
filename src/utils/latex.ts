@@ -258,14 +258,17 @@ function unwrapEnsureMath(match: string, expression: string, offset: number, sou
 }
 
 // One brace level deep is as far as OpenAlex's `\ensuremath` arguments go
-// (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came.
-const ENSUREMATH = /\\ensuremath\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
+// (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came. A backslash
+// takes the one character after it, so every character has a single reading
+// and an unclosed argument fails in linear time; reading `\ab` as a macro or
+// as `\a` and `b` backtracked exponentially.
+const ENSUREMATH = /\\ensuremath\{((?:\\[\s\S]|[^{}\\]|\{[^{}]*\})*)\}/g;
 // `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one.
 const IFMMODE = /\\ifmmode\s*([\s\S]*?)(?:\\else\s*([\s\S]*?))?\\fi(?:\{\})?/g;
 // The argument may carry one brace level (`{\ensuremath{\gamma}}`): in prose
 // it is matched BEFORE the generic `\ensuremath` pass, so that pass cannot
-// have flattened it yet.
-const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})+)\}/g;
+// have flattened it yet. Its argument reads a backslash as ENSUREMATH does.
+const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[\s\S]|[^{}\\]|\{[^{}]*\})+)\}/g;
 
 /**
  * Text-only macros with no maths spelling: the character is the whole answer.
