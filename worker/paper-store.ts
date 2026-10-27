@@ -215,10 +215,10 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // year of 40 and every day for a year of two; a paper ADS listed waits for its
 // enrichment first (`readNotableCandidates`). The candidates and vectors
 // ranked per request are 250 a lane at most. Numbering the years reads every
-// row of the lane's window from its index (about 1,000, or 2,000), and the
-// read returns each work id with whether the day's slice holds it, so that a
-// paper of the lane outside the slice is not ranked from the reader's other
-// lanes either. How many of them a reader sees is ENG-128's.
+// row of the lane's window from its index (about 1,000, or 2,000), once each,
+// and the read returns each work id with whether the day's slice holds it, so
+// that a paper of the lane outside the slice is not ranked from the reader's
+// other lanes either. How many of them a reader sees is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
@@ -345,7 +345,7 @@ const WRITE_CHUNK = 100;
 async function lookUpKeys(db: D1Database, keys: string[]) {
   const found = new Map<string, number>();
   for (let start = 0; start < keys.length; start += 500) {
-    const { results } = await db.prepare('SELECT key, work_id FROM work_keys WHERE key IN (SELECT value FROM json_each(?))')
+    const { results } = await db.prepare('SELECT k.key, k.work_id FROM json_each(?) j JOIN work_keys k ON k.key = j.value')
       .bind(JSON.stringify(keys.slice(start, start + 500))).all<{ key: string; work_id: number }>();
     results.forEach(row => found.set(row.key, row.work_id));
   }
@@ -355,7 +355,7 @@ async function lookUpKeys(db: D1Database, keys: string[]) {
 async function readWorks(db: D1Database, ids: number[]) {
   const works = new Map<number, WorkRow>();
   for (let start = 0; start < ids.length; start += 200) {
-    const { results } = await db.prepare('SELECT id, paper, kept_until FROM works WHERE id IN (SELECT value FROM json_each(?))')
+    const { results } = await db.prepare('SELECT w.id, w.paper, w.kept_until FROM json_each(?) j JOIN works w ON w.id = j.value')
       .bind(JSON.stringify(ids.slice(start, start + 200))).all<WorkRow>();
     results.forEach(row => works.set(row.id, row));
   }
@@ -874,8 +874,8 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
 /** Keeps these liked works for KEEP_LIKED_DAYS, past their keeping date and outside every lane (`evictExpired`). */
 export async function keepLiked(db: D1Database, workIds: number[], now = Date.now()) {
   if (workIds.length === 0) return;
-  await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
-    AND (liked_until IS NULL OR liked_until < ?)`)
+  await db.prepare(`UPDATE works SET liked_until = ? FROM json_each(?) j WHERE works.id = j.value
+    AND (works.liked_until IS NULL OR works.liked_until < ?)`)
     .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
 }
 
@@ -900,8 +900,8 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
 }
 
 /**
- * The notable lanes at `now`, in one statement per lane: `candidates` are, of
- * each year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
+ * The notable lanes at `now`, in two round trips: `candidates` are, of each
+ * year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
  * newest first; `inLanes` is every work the lanes hold in the window, slice
  * or not. A notable lane keeps a paper two weeks past its last listing; from
  * 1 January, the year that left the window is not read, and a row of the
@@ -909,25 +909,43 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
  * not read until that year is over.
  */
 export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
-  const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
+  // Each lane's window in the order of `work_lanes_recent`, whose entries end
+  // with the primary key's work id, so D1 reads each row once: numbering the
+  // years in SQL with window functions sorted the rows into temporary tables,
+  // about eight rows read a row (ENG-150).
+  const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
+    'SELECT work_id, published FROM work_lanes WHERE lane = ? AND published >= ? AND published < ? ORDER BY published DESC, work_id',
+  ).bind(lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  const slices = perLane.map(({ results }) => daySlice(results, Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR));
   // OpenAlex's listing leaves out what OpenAlex marks retracted and Europe
   // PMC's what PubMed types as retracted; ADS's cannot, so a paper ADS listed
   // is offered once the enrichment has looked it up in OpenAlex (`enriched_at`),
   // which is what learns a retraction (README step 5). Asked only for the day's
   // slice.
-  const perLane = await db.batch<{ work_id: number; published: string; offered: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
-      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
-        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
-      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
-      SELECT work_id, published,
-             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
-             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
-      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
-    )) s ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  const lookups = slices.filter(slice => slice.length > 0).map(slice => db.prepare(`SELECT w.id FROM json_each(?) j JOIN works w ON w.id = j.value
+    WHERE w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL`).bind(JSON.stringify(slice.map(row => row.work_id))));
+  const offered = new Set((lookups.length ? await db.batch<{ id: number }>(lookups) : []).flatMap(({ results }) => results.map(row => row.id)));
   return {
-    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.offered) }))),
+    candidates: mergeLaneRows(lanes, slices.map(slice => ({ results: slice.filter(row => offered.has(row.work_id)) }))),
     inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
   };
+}
+
+/**
+ * The rows of the day's slice, in their order: the rows of each year are
+ * numbered from 0 in the order given, and the slice holds those whose number
+ * plus `offset`, modulo the year's count, is under NOTABLE_READ_PER_YEAR.
+ */
+function daySlice<T extends { published: string }>(rows: T[], offset: number) {
+  const year = (row: T) => row.published.slice(0, 4);
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(year(row), (counts.get(year(row)) ?? 0) + 1);
+  const numbered = new Map<string, number>();
+  return rows.filter(row => {
+    const number = numbered.get(year(row)) ?? 0;
+    numbered.set(year(row), number + 1);
+    return (number + offset) % counts.get(year(row))! < NOTABLE_READ_PER_YEAR;
+  });
 }
 
 // The lanes' rows in turns, each lane's in its own order: a work listed by
@@ -955,7 +973,7 @@ async function readVectors(db: D1Database, workIds: number[]) {
   const vectors = new Map<number, Int8Array>();
   const chunks: D1PreparedStatement[] = [];
   for (let start = 0; start < workIds.length; start += 2_000) {
-    chunks.push(db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
+    chunks.push(db.prepare('SELECT v.work_id, v.embedding FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value')
       .bind(JSON.stringify(workIds.slice(start, start + 2_000))));
   }
   if (chunks.length === 0) return vectors;
@@ -1308,7 +1326,7 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
     const chunk = ranks.slice(end, bound);
     const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && (recheck ? candidate.paperId !== '' : candidate.paperId === undefined));
     if (unread.length) {
-      const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
+      const { results } = await db.prepare("SELECT w.id, w.paper ->> '$.id' AS paper_id FROM json_each(?) j JOIN works w ON w.id = j.value")
         .bind(JSON.stringify(unread.map(candidate => candidate.workId))).all<{ id: number; paper_id: string | null }>();
       const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
       for (const candidate of unread) candidate.paperId = paperIds.get(candidate.workId) ?? '';
@@ -1431,7 +1449,7 @@ function groupsOfLike(groups: FeedGroup[]) {
 async function readAreaLanes(db: D1Database, workIds: number[]) {
   const areas = new Map<number, string[]>();
   if (workIds.length === 0) return areas;
-  const { results } = await db.prepare("SELECT work_id, lane FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'area:%'")
+  const { results } = await db.prepare("SELECT l.work_id, l.lane FROM json_each(?) j JOIN work_lanes l ON l.work_id = j.value WHERE l.lane LIKE 'area:%'")
     .bind(JSON.stringify(workIds)).all<{ work_id: number; lane: string }>();
   for (const row of results) areas.set(row.work_id, [...(areas.get(row.work_id) ?? []), row.lane.slice(areaLane('').length)]);
   return areas;
