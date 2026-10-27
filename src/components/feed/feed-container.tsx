@@ -1044,6 +1044,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     // A source says for itself whether it is still on its first load (the
     // Following feed does); the main feed derives it from its own history.
     initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && !error,
+    firstLoadRetryPending: !source && !initialFeedReady && feed.autoRetryPending,
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });

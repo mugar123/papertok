@@ -114,6 +114,17 @@ test('a first load that failed is still the first wait, so its retry gets the ve
   );
 });
 
+// ENG-116: the reader saw "Error loading papers" for the 2.5 s before the
+// automatic retry, even when that retry then brought the papers.
+test('a failed first load keeps the discovery screen while its automatic retry is due, and shows the error once none is', () => {
+  const failed = { ...baseState, error: 'FEED_LOAD_FAILED' };
+  assert.equal(getFeedDisplayState({ ...failed, firstLoadRetryPending: true }), FEED_DISPLAY_STATES.INITIAL_DISCOVERY);
+  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...failed, firstLoadRetryPending: true }) }), 'discovery');
+  assert.equal(getFeedDisplayState({ ...failed, firstLoadRetryPending: false }), FEED_DISPLAY_STATES.ERROR);
+  // An empty answer has no automatic retry, and stays the empty state.
+  assert.equal(getFeedDisplayState({ ...baseState, error: FEED_EMPTY }), FEED_DISPLAY_STATES.EMPTY);
+});
+
 test('the first wait ends with papers, or with a load that finished empty and clean', () => {
   assert.equal(firstLoadSettled({ hasPapers: true, loadStarted: false, loading: true, error: null }), true);
   assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: true, loading: false, error: null }), true);

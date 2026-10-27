@@ -15,10 +15,15 @@ export function firstLoadSettled({ hasPapers, loadStarted, loading, error }: { h
   return hasPapers || (loadStarted && !loading && (!error || error === FEED_EMPTY));
 }
 
-export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; hasSourceEmptyState?: boolean }) {
-  if (error && error !== FEED_EMPTY && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
+/**
+ * `firstLoadRetryPending`: the first load failed and its one automatic retry
+ * is still due. That is still the first wait, so the error waits for the
+ * retry's verdict (ENG-116).
+ */
+export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, firstLoadRetryPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; firstLoadRetryPending?: boolean; hasSourceEmptyState?: boolean }) {
+  if (error && error !== FEED_EMPTY && !hasPapers && !firstLoadRetryPending) return FEED_DISPLAY_STATES.ERROR;
   if (hasPapers) return FEED_DISPLAY_STATES.FEED;
-  if (initialLoadPending) return FEED_DISPLAY_STATES.INITIAL_DISCOVERY;
+  if (initialLoadPending || firstLoadRetryPending) return FEED_DISPLAY_STATES.INITIAL_DISCOVERY;
   if (loading && !showLoader && !isRefreshing) return FEED_DISPLAY_STATES.SKELETON;
   if (hasSourceEmptyState && !loading && !isRefreshing) return FEED_DISPLAY_STATES.SOURCE_EMPTY;
   return FEED_DISPLAY_STATES.EMPTY;
