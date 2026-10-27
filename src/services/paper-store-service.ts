@@ -7,8 +7,11 @@ import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
-// Inside the feed's 4 s first-paint budget, with room for the response. It
-// starts once the ID token is in hand (authenticatedWorkerFetch).
+// Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
+// so a token refresh does not spend it. The feed's 4 s first-paint budget
+// bounds the main request only when the token is cached; the exploration and
+// follows requests keep their own budgets, counted from before the token
+// (feed-context.tsx), and fall back to no papers when those run out.
 const STORE_TIMEOUT_MS = 3_500;
 
 export interface CorpusPageRequest {
