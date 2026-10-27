@@ -415,6 +415,10 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   }, [trail.length, track]);
 
   const isWalking = trail.length > 1;
+  // A view switch counts only when some graph can show in that view: this
+  // centre's, once it loads, or an earlier one Back returns to. Without a
+  // DOI, after an error or on an empty first graph, none ever does.
+  const canShowGraph = graphStatus === 'ready' || graphStatus === 'loading' || isWalking;
   const previousCentre = isWalking ? trail[trail.length - 2] : null;
   const previousIdentity = previousCentre ? getRelatedPaperIdentity(previousCentre) : '';
   const isLeaving = phase === 'leaving';
@@ -786,7 +790,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               className="graph-view-button"
               pressed={view === 'list'}
               onPressedChange={(next) => {
-                track('switch_view', next ? 'list' : 'map');
+                if (canShowGraph) track('switch_view', next ? 'list' : 'map');
                 if (!next) setIsMapReturning(true);
                 setHasSwitched(true);
                 setView(next ? 'list' : 'map');
