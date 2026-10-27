@@ -1772,7 +1772,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const toggleLike = useCallback(async (paperInput: Paper, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
-    const isCurrentlyLiked = likedPaperIds.has(paper.id);
+    // A removal from Favorites (`afterWrite`) only ever takes the like off, so
+    // it starts from a liked paper whatever the screen shows by now: if the
+    // like has already gone, writeMark sends nothing rather than liking it.
+    const isCurrentlyLiked = Boolean(options?.afterWrite) || likedPaperIds.has(paper.id);
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
@@ -2286,7 +2289,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       stillNewest: startMarkChange(`readLater:${paper.id}`),
-      stillAsStarted: () => Boolean(personalLibraryRef.current[paper.id]?.readLater) === Boolean(previous?.readLater),
+      // Started from the value this change replaces: a removal from Read
+      // later (`afterWrite`) starts from a saved paper, not from whatever the
+      // screen showed when it was asked for.
+      stillAsStarted: () => Boolean(personalLibraryRef.current[paper.id]?.readLater) !== nextValue,
     });
     return nextValue;
   }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, startMarkChange]);

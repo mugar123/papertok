@@ -187,6 +187,27 @@ test('a Reading history removal answered after something else took the mark off 
   assert.equal(unmarked, 0, 'no second unread in the reading profile');
 });
 
+test('a Reading history removal asked for once the paper is already unread sends nothing', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  // The first removal was accepted; a sheet left open offers Remove again.
+  setReadIds((ids) => new Set([...ids].filter((id) => id !== 'p2')));
+  let writes = 0;
+  await unmarkRead('p2', {
+    setReadIds,
+    setLibrary,
+    write: async () => { writes += 1; },
+    onUnmarked: () => { assert.fail('the profile hears no second unread'); },
+    onRestored: () => { assert.fail('nothing was refused'); },
+    throwOnError: true,
+    afterWrite: true,
+    stillSignedIn: () => true,
+    stillNewest: () => true,
+    stillRead: () => state.readIds.has('p2'),
+  });
+  assert.equal(writes, 0);
+  assert.deepEqual([...state.readIds], ['p1']);
+});
+
 test('a Reading history removal answered after the card unmarked and marked the paper read leaves it read', async () => {
   const { state, setReadIds, setLibrary } = feedState();
   const startChange = markChanges();

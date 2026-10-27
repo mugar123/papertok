@@ -1,7 +1,8 @@
 /**
  * What a caller of a mark toggle may ask for. `throwOnError`: a refused write
- * rejects instead of only being logged. `afterWrite`: the screen changes once
- * the write is accepted, not before.
+ * rejects instead of only being logged. `afterWrite`: the change takes the
+ * mark off a paper in a saved list, and the screen changes once the write is
+ * accepted, not before.
  */
 export interface MarkWriteOptions { throwOnError: boolean; afterWrite?: boolean }
 
@@ -37,13 +38,17 @@ export function markChanges() {
  * does it show when the mark no longer has the value this change started
  * from (`stillAsStarted`): something that bypasses the toggles, such as a
  * profile reload, already moved it, and showing again would tell the reading
- * profile twice.
+ * profile twice. An `afterWrite` change is a removal: the caller states the
+ * value it starts from (the mark on), and when the mark is already off as the
+ * change is asked for, nothing is written.
  *
  * On a refused write, `undo` (when given) takes the optimistic change back,
  * and `throwOnError` rejects with the error instead of only logging it. An
  * undo runs even after a newer change: it takes back only what its own
  * `show` did, so the reading profile stays balanced when several writes are
- * refused in turn.
+ * refused in turn. It does not keep the screen equal to the server: when two
+ * changes to one mark are both refused, the screen ends on the first one's
+ * value, as it did before writeMark.
  *
  * Nothing is shown or put back once another account is signed in: a late
  * answer must not paint the previous account's mark over the new one.
@@ -67,6 +72,10 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   /** Whether the mark on screen still has the value this change started from. */
   stillAsStarted: () => boolean;
 }) {
+  // A removal asked for once its mark has already gone, such as a second
+  // Remove from a sheet left open over a row that has since left its list,
+  // has nothing to take off: it sends nothing and shows nothing.
+  if (afterWrite && !stillAsStarted()) return;
   if (!afterWrite) show();
   try {
     await write();

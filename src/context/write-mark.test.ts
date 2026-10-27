@@ -52,15 +52,16 @@ test('with afterWrite an accepted change shows once the write is in, and only fo
 });
 
 // A liked paper's heart the way FeedContext toggles it: each press numbers its
-// change, flips the like the screen shows and tells the reading profile. The
-// test answers the writes, in the order they were sent, as Firestore does.
+// change, flips the like the screen shows and tells the reading profile. A
+// removal (`afterWrite`) starts from a liked paper. The test answers the
+// writes, in the order they were sent, as Firestore does.
 function likedPaper() {
   const startChange = markChanges();
   const screen = { liked: true };
   const profile: string[] = [];
   const answers: Array<() => void> = [];
   const press = (options: { afterWrite?: boolean } = {}) => {
-    const wasLiked = screen.liked;
+    const wasLiked = Boolean(options.afterWrite) || screen.liked;
     const showLiked = (liked: boolean) => {
       screen.liked = liked;
       profile.push(liked ? 'like' : 'unlike');
@@ -76,9 +77,45 @@ function likedPaper() {
       stillAsStarted: () => screen.liked === wasLiked,
     });
   };
-  const acceptAll = () => answers.forEach((accept) => accept());
-  return { startChange, screen, profile, press, acceptAll };
+  const acceptAll = () => answers.splice(0).forEach((accept) => accept());
+  return { startChange, screen, profile, answers, press, acceptAll };
 }
+
+test('a Favorites removal asked for after the first was accepted sends nothing and leaves the paper unliked', async () => {
+  const paper = likedPaper();
+  const first = paper.press({ afterWrite: true });
+  paper.acceptAll();
+  await first;
+  // A phone sheet opened while the first removal was pending still offers Remove.
+  const second = paper.press({ afterWrite: true });
+  assert.equal(paper.answers.length, 0, 'no write is sent, so nothing can like the paper again');
+  await second;
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.profile, ['unlike']);
+});
+
+test('a Favorites removal asked for after the card took the like off sends nothing', async () => {
+  const paper = likedPaper();
+  const unlike = paper.press();
+  // The row stays until it is rerendered; its Remove is pressed meanwhile.
+  const removal = paper.press({ afterWrite: true });
+  assert.equal(paper.answers.length, 1, 'only the card\'s unlike is sent');
+  paper.acceptAll();
+  await Promise.all([unlike, removal]);
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.profile, ['unlike']);
+});
+
+test('a Favorites removal answered after the card unliked the paper tells the reading profile once', async () => {
+  const paper = likedPaper();
+  const removal = paper.press({ afterWrite: true });
+  // The open card still shows the like, and its heart takes it off.
+  const unlike = paper.press();
+  paper.acceptAll();
+  await Promise.all([removal, unlike]);
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.profile, ['unlike'], 'the card\'s unlike only');
+});
 
 test('a Favorites removal answered after something else took the like off adds no second unlike', async () => {
   const paper = likedPaper();

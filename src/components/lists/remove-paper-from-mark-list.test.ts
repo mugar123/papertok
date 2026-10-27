@@ -8,31 +8,47 @@ type Paper = { id: string };
 
 // The three lists drawn from FeedContext's marks, with toggles that change a
 // mark the way the context does: through `writeMark`, honouring the options
-// they are given, against a write the test answers.
+// they are given, against writes the test answers. `toggleLike` flips the like
+// unless it is a removal (`afterWrite`), which starts from a liked paper;
+// `toggleReadLater` sets the value it is given.
 function markedLists() {
   const rows: Record<string, Set<string>> = {
     __read__: new Set(['p1', 'p2']),
     __favorites__: new Set(['p1', 'p2']),
     __read_later__: new Set(['p1', 'p2']),
   };
+  const writes: string[] = [];
   let answer!: { accept: () => void; refuse: (error: Error) => void };
-  const take = (listId: string, paperId: string, options: MarkWriteOptions) => writeMark({
-    show: () => { rows[listId].delete(paperId); },
-    undo: () => { rows[listId].add(paperId); },
-    write: () => new Promise<void>((accept, refuse) => { answer = { accept, refuse }; }),
+  const take = (listId: string, paperId: string, value: boolean, startedFrom: boolean, options: MarkWriteOptions) => writeMark({
+    show: () => {
+      if (value) rows[listId].add(paperId);
+      else rows[listId].delete(paperId);
+    },
+    undo: () => {
+      if (startedFrom) rows[listId].add(paperId);
+      else rows[listId].delete(paperId);
+    },
+    write: () => new Promise<void>((accept, refuse) => {
+      writes.push(`${listId}:${paperId}=${value}`);
+      answer = { accept, refuse };
+    }),
     failure: 'refused',
     ...options,
     stillSignedIn: () => true,
     stillNewest: () => true,
-    stillAsStarted: () => rows[listId].has(paperId),
+    stillAsStarted: () => rows[listId].has(paperId) === startedFrom,
   });
   return {
     rows,
+    writes,
     answer: () => answer,
     marks: {
-      unmarkAsRead: (id: string, options: MarkWriteOptions) => take('__read__', id, options),
-      toggleLike: (paper: Paper, options: MarkWriteOptions) => take('__favorites__', paper.id, options),
-      toggleReadLater: (paper: Paper, value: boolean, options: MarkWriteOptions) => take('__read_later__', paper.id, options),
+      unmarkAsRead: (id: string, options: MarkWriteOptions) => take('__read__', id, false, true, options),
+      toggleLike: (paper: Paper, options: MarkWriteOptions) => {
+        const wasLiked = Boolean(options.afterWrite) || rows.__favorites__.has(paper.id);
+        return take('__favorites__', paper.id, !wasLiked, wasLiked, options);
+      },
+      toggleReadLater: (paper: Paper, value: boolean, options: MarkWriteOptions) => take('__read_later__', paper.id, value, !value, options),
     },
   };
 }
@@ -67,6 +83,18 @@ for (const listId of ['__read__', '__favorites__', '__read_later__']) {
     answer().accept();
     await removal;
     assert.deepEqual([...rows[listId]], ['p1']);
+  });
+
+  test(`${listId}: a removal asked for again after the first was accepted sends nothing and puts nothing back`, async () => {
+    const { rows, writes, answer, marks } = markedLists();
+    const removal = removePaperFromMarkList(listId, 'p2', { id: 'p2' }, { ...marks, onFailed: () => assert.fail('accepted') });
+    answer().accept();
+    await removal;
+    // A phone sheet opened while the first removal was pending still offers Remove.
+    const again = removePaperFromMarkList(listId, 'p2', { id: 'p2' }, { ...marks, onFailed: () => assert.fail('nothing to refuse') });
+    assert.deepEqual(writes, [`${listId}:p2=false`], 'one write, taking the mark off');
+    await again;
+    assert.deepEqual([...rows[listId]], ['p1'], 'the paper stays out of the list');
   });
 }
 
