@@ -4,6 +4,7 @@ interface StartupElement extends EventTarget {
   textContent: string | null;
   tagName: string;
   getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
   hasChildNodes(): boolean;
   remove(): void;
 }
@@ -30,12 +31,14 @@ export function installStartupGuard() {
 
   let finished = false;
   let failed = false;
+  panel.setAttribute('data-state', 'loading');
   title.textContent = 'Loading PaperTok';
   message.textContent = 'Your page will appear here shortly.';
 
   const showFailure = () => {
     if (finished) return;
     failed = true;
+    panel.setAttribute('data-state', 'failed');
     title.textContent = 'PaperTok could not start';
     message.textContent = 'Reload the page to try again. If it still does not load, try another connection.';
   };
@@ -56,6 +59,7 @@ export function installStartupGuard() {
 
   const timer = window.setTimeout(function () {
     if (finished || failed) return;
+    panel.setAttribute('data-state', 'slow');
     title.textContent = 'PaperTok is taking longer than expected';
     message.textContent = 'You can keep waiting or reload the page to try again.';
   }, 15000);

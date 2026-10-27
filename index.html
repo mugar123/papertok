@@ -103,41 +103,114 @@
     <style>
       body { margin: 0; }
       #startup-status {
+        --paper: #fbf8f0;
+        --ink: #1d2b53;
+        --ink-hover: #3e4a6b;
+        --ink-secondary: #46527a;
+        --petri-body: #ffd21e;
+        --petri-face: #1d2b53;
+        --petri-tear: #0369a1;
         box-sizing: border-box;
         min-height: 100vh;
+        min-height: 100dvh;
         padding: 32px 24px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: #fbf8f0;
-        color: #1d2b53;
-        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         text-align: center;
       }
-      #startup-status h1 {
-        max-width: 24ch;
-        margin: 0 0 16px;
-        font: 400 32px/1.2 Georgia, serif;
+      html[data-theme="dark"] #startup-status {
+        --paper: #14161d;
+        --ink: #f4ecd8;
+        --ink-hover: #d2ccbc;
+        --ink-secondary: #b9b1a0;
+        --petri-tear: #5bade9;
       }
-      #startup-status p { max-width: 44ch; margin: 0 0 24px; }
+      .startup-petri {
+        display: block;
+        width: 8.5rem;
+        height: 8.25rem;
+        margin-bottom: 16px;
+        overflow: visible;
+      }
+      #startup-status[data-state="failed"] .startup-thinking,
+      #startup-status:not([data-state="failed"]) .startup-upset { display: none; }
+      #startup-status h1 {
+        max-width: 18ch;
+        margin: 0 0 12px;
+        font: 600 clamp(1.625rem, 6vw, 2.125rem)/1.15 "Iowan Old Style", Georgia, serif;
+        letter-spacing: -0.015em;
+        text-wrap: balance;
+      }
+      #startup-status p {
+        max-width: 34ch;
+        margin: 0 0 32px;
+        color: var(--ink-secondary);
+        text-wrap: pretty;
+      }
+      #startup-status noscript p { margin: 24px 0 0; }
       #startup-retry {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        box-sizing: border-box;
+        min-width: 160px;
         min-height: 44px;
         padding: 0 20px;
-        border: 1px solid currentColor;
+        border: 1px solid var(--ink);
         border-radius: 3px;
-        color: inherit;
-        font-weight: 600;
-        text-decoration: underline;
-        text-underline-offset: 3px;
+        background: var(--ink);
+        color: var(--paper);
+        font: 600 15px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        text-decoration: none;
+        transition: scale 150ms ease-out, background-color 150ms ease-out;
       }
-      #startup-retry:focus { outline: 3px solid currentColor; outline-offset: 4px; }
-      html[data-theme="dark"] #startup-status { background: #14161d; color: #f4ecd8; }
+      #startup-status[data-state="loading"] #startup-retry { background: transparent; color: var(--ink); }
+      #startup-retry:active { scale: 0.97; }
+      #startup-retry:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
+      @media (hover: hover) and (pointer: fine) {
+        #startup-retry:hover { border-color: var(--ink-hover); background: var(--ink-hover); }
+        #startup-status[data-state="loading"] #startup-retry:hover {
+          border-color: var(--ink);
+          background: color-mix(in srgb, var(--ink) 7%, var(--paper));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #startup-retry { transition: none; }
+        #startup-retry:active { scale: none; }
+      }
     </style>
-    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true">
+    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="failed">
+      <svg class="startup-petri" viewBox="14 22 128 124" aria-hidden="true" focusable="false">
+        <defs>
+          <pattern id="startup-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="1.4" height="4" fill="currentColor"/></pattern>
+        </defs>
+        <g stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+          <ellipse cx="78" cy="128" rx="62" ry="15" fill="var(--paper)"/>
+          <ellipse cx="78" cy="124" rx="54" ry="10" fill="url(#startup-hatch)" stroke-width="1.6"/>
+          <path d="M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z" fill="var(--petri-body)" stroke="var(--petri-body)"/>
+          <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" stroke-width="2"/>
+          <g class="startup-thinking">
+            <circle cx="73" cy="87" r="3.4" fill="var(--petri-face)" stroke="none"/>
+            <circle cx="91" cy="87" r="3.4" fill="var(--petri-face)" stroke="none"/>
+            <path d="M86 76q5-3 10 0" fill="none" stroke="var(--petri-face)" stroke-width="2"/>
+            <path d="M73 98q8 7 16 0" fill="none" stroke="var(--petri-face)" stroke-width="2.2"/>
+            <path d="M108 40q0-10 10-10t10 9q0 6-6 9t-4 9" fill="none" stroke-width="4"/>
+            <circle cx="118" cy="66" r="2.6" fill="currentColor" stroke="none"/>
+          </g>
+          <g class="startup-upset">
+            <path d="M66 82l9-4M98 82l-9-4" fill="none" stroke="var(--petri-face)" stroke-width="2"/>
+            <circle cx="73" cy="88" r="3.4" fill="var(--petri-face)" stroke="none"/>
+            <circle cx="91" cy="88" r="3.4" fill="var(--petri-face)" stroke="none"/>
+            <path d="M74 102q7-5 14 0" fill="none" stroke="var(--petri-face)" stroke-width="2.2"/>
+            <path d="M103 66q-5 7-2 11 4 2 6-2 0-4-4-9Z" fill="var(--petri-tear)" stroke="var(--petri-face)" stroke-width="1.2"/>
+          </g>
+        </g>
+      </svg>
       <h1 id="startup-title">PaperTok could not start</h1>
       <p id="startup-message">Reload the page to try again.</p>
       <a id="startup-retry" href="">Reload page</a>
