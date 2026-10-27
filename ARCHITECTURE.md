@@ -44,6 +44,8 @@ flowchart TD
 ```
 
 - [index.html](index.html) contains a startup recovery screen with inline styles.
+  Its initial markup shows loading before any script runs; only a detected
+  startup failure changes it to an error.
   Vite embeds [startup-guard.ts](src/startup-guard.ts) as an independent inline
   script before the generated stylesheet links, so a stalled stylesheet cannot
   delay the watchdog. Only resources marked as part of the initial app graph
