@@ -220,6 +220,19 @@ test('late metadata keeps displayed abstract and summary stable without losing c
   assert.equal(preserveFeedAbstracts(current, [{ ...current[0], abstract: 'Late text' }])[0], current[0]);
 });
 
+// ENG-109: the card credits the source of the text it keeps showing, not the
+// source of a late text it does not show.
+test('late metadata keeps the credit of the abstract the card shows', () => {
+  const base = { id: 'openalex:W1', title: 'Synthetic paper W1', authors: [], sources: { primary: 'openalex', enrichedBy: ['semanticscholar'] } };
+  const card = { ...base, abstract: 'The text Semantic Scholar supplied.', summary: 'The text Semantic Scholar supplied.', abstractSource: 'semanticscholar' } as Paper;
+  const kept = preserveFeedAbstracts([card], [{ ...base, abstract: 'Late text', summary: 'Late text', citationCount: 4 }])[0];
+  assert.deepEqual([kept.abstract, kept.abstractSource, kept.citationCount], [card.abstract, 'semanticscholar', 4]);
+  // A card that credits no one keeps crediting no one, and stays the same object.
+  const own = { ...base, abstract: 'The text OpenAlex lists.', summary: 'The text OpenAlex lists.' } as Paper;
+  const late = preserveFeedAbstracts([own], [{ ...own, abstract: 'Late text', summary: 'Late text', abstractSource: 'crossref' }])[0];
+  assert.equal(late, own);
+});
+
 test('late text fills only a card that says its abstract is loading', () => {
   const card = (id: string, abstract: string) => ({ id, title: `Synthetic paper ${id}`, authors: [], abstract, summary: abstract, sources: { primary: 'openalex', enrichedBy: [] } }) as Paper;
   const current = [card('loading', ''), card('settled', ''), card('shown', 'Publisher text.')];

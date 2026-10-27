@@ -278,15 +278,18 @@ export class PaperBuilder {
     if (!hasUsableAIAbstract(merged.abstract) && hasUsableAIAbstract(enrichmentData.abstract)) {
       merged.abstract = enrichmentData.abstract;
       if (!hasUsableAIAbstract(merged.summary)) merged.summary = enrichmentData.abstract;
-      // The text keeps the source a card credits for it (`abstractSource`), and
-      // that source stays among the ones merged in: the record bringing the
-      // text may have taken it from that source in a merge of its own.
+      // The text keeps the source a card credits for it (`abstractSource`), or
+      // none, whatever the base credited for the text it lacked. That source
+      // stays among the ones merged in: the record bringing the text may have
+      // taken it from that source in a merge of its own.
       const { abstractSource } = enrichmentData;
       if (abstractSource) {
         merged.abstractSource = abstractSource;
         if (!merged.sources.enrichedBy.includes(abstractSource)) {
           merged.sources = { ...merged.sources, enrichedBy: [...merged.sources.enrichedBy, abstractSource] };
         }
+      } else {
+        delete merged.abstractSource;
       }
     }
 

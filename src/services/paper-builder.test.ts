@@ -1873,6 +1873,12 @@ test('an abstract recovered from another source keeps its credit, whichever reco
   // A paper with an abstract of its own keeps it, crediting no other source.
   const own = PaperBuilder.merge(PaperBuilder.create({ id: 'openalex:W3', abstract: 'The text OpenAlex lists for this paper itself.' }), recovered, 'openalex');
   assert.deepEqual([own.abstract, own.abstractSource], ['The text OpenAlex lists for this paper itself.', undefined]);
+  // A credit the base holds without a usable text does not pass to the text
+  // another record brings.
+  const placeholder = { ...article, abstractSource: 'semanticscholar' as const };
+  const arxiv = PaperBuilder.merge(placeholder, { abstract: 'The abstract arXiv lists for this paper.' }, 'arxiv');
+  assert.deepEqual([arxiv.abstract, 'abstractSource' in arxiv], ['The abstract arXiv lists for this paper.', false]);
+  assert.equal(PaperBuilder.merge(placeholder, { abstract: 'The abstract Crossref holds.', abstractSource: 'crossref' }, 'crossref').abstractSource, 'crossref');
 });
 
 test('OpenAlex ids are grafted onto the authors a card already shows, without touching the names', () => {

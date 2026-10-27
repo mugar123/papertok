@@ -294,7 +294,10 @@ export function preserveFeedAbstracts(current: Paper[], enriched: Paper[], loadi
     const previous = current[index];
     if (paper.abstract === previous.abstract && paper.summary === previous.summary) return paper;
     if (loading.has(previous.id) && !hasUsableAIAbstract(previous.abstract) && hasUsableAIAbstract(paper.abstract)) return paper;
-    const stable = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    // The credit for the text (`abstractSource`) stays with it.
+    const stable: Paper = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    if (previous.abstractSource) stable.abstractSource = previous.abstractSource;
+    else delete stable.abstractSource;
     return paperFieldsEqual(stable, previous) ? previous : stable;
   });
 }
