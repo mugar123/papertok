@@ -26,6 +26,16 @@ workers_dev = false
 cpu_ms = 120_000
 subrequests = 100_000
 
+# The paper store's D1 primary runs in Western Europe (WEUR) without read
+# replicas, and a first /store/papers page makes several D1 calls in sequence,
+# each a round trip from wherever the fetch handler runs. Smart Placement runs
+# the fetch handler near that I/O rather than at the reader's location, for every
+# route. It does not move the crons, the harvest Workflow or the Durable Objects.
+# Keep it here: a dashboard setting is undone by the next deploy from the repo
+# (worker/README.md, the paper store's placement).
+[placement]
+mode = "smart"
+
 # The share card's renderer (worker/share-card-render.ts): its two
 # WebAssembly engines travel compiled, the only way a Worker may run them, and
 # its fonts and etchings as bytes. `wrangler types` declares these modules.
