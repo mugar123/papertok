@@ -140,6 +140,31 @@ test('text-mode font commands paint as their plain text', () => {
   );
 });
 
+// The wrapper goes after the symbol and formula macros inside it are read, so
+// letters glued to its closing brace cannot hide a macro.
+test('a font command around a text symbol or a macro formula paints both', () => {
+  assert.equal(normalizeLatexText('\\textbf{\\AA}ngstrom and 5 \\textbf{\\textmu}m'), 'Ångstrom and 5 µm');
+  assert.equal(
+    normalizeLatexText('the \\textbf{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}} decays'),
+    'the \\(\\tilde{\\gamma}\\) decays',
+  );
+  assert.equal(normalizeLatexText('\\emph{\\ensuremath{\\sigma}}ma'), '\\(\\sigma\\)ma');
+});
+
+test('an escaped brace never closes a font command argument or its inner group', () => {
+  assert.equal(normalizeLatexText('a \\textbf{x {y\\} z} w'), 'a \\textbf{x {y\\} z} w');
+  const unclosed = `\\textbf{${'{\\ab '.repeat(5000)}x`;
+  const started = performance.now();
+  assert.equal(normalizeLatexText(unclosed), unclosed);
+  assert.ok(performance.now() - started < 200);
+});
+
+test('a font command around an unpaired formula delimiter stays as written', () => {
+  assert.equal(normalizeLatexText('cost $ \\textbf{b $ c} end'), 'cost $ \\textbf{b $ c} end');
+  assert.equal(normalizeLatexText('cost \\( \\textbf{b \\) c} end'), 'cost \\( \\textbf{b \\) c} end');
+  assert.ok(splitLatexText(normalizeLatexText('cost $ \\textbf{b $ c} end')).every(chunk => chunk.type === 'text'));
+});
+
 test('a font command inside a formula is left to KaTeX', () => {
   assert.equal(normalizeLatexText('$x_{\\textbf{b}}$ and \\textbf{bold}'), '$x_{\\textbf{b}}$ and bold');
 });

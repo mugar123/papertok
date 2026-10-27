@@ -298,14 +298,22 @@ const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![
 // it, so every character has a single reading and an unclosed wrapper fails in
 // linear time; reading `\ab` as a macro or as `\a` and `b` backtracked
 // exponentially.
-const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[\s\S]|[^{}\\]|\{[^{}]*\})*)\}/g;
+const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[\s\S]|[^{}\\]|\{(?:\\[\s\S]|[^{}\\])*\})*)\}/g;
+
+// Removing the braces must not hand the formula walk a delimiter it did not see
+// with them: an unpaired `$`, `\(` or `\)` in the argument keeps the wrapper.
+// The `\( \)` pairs the prose pass has already written are not unpaired.
+function opensFormula(argument: string) {
+  const unpaired = argument.replace(/\\\([\s\S]*?\\\)/g, '');
+  return (unpaired.match(/\\[\s\S]|\$/g) ?? []).some(token => token === '$' || token === '\\(' || token === '\\)');
+}
 
 function unwrapTextFormatting(value: string) {
   let text = value;
   let previous;
   do {
     previous = text;
-    text = text.replace(TEXT_FORMATTING, '$1');
+    text = text.replace(TEXT_FORMATTING, (match, argument) => (opensFormula(argument) ? match : argument));
   } while (text !== previous);
   return text;
 }
@@ -359,11 +367,11 @@ function normalizeMathRun(value: string) {
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
 function normalizeProseRun(value: string) {
-  return unwrapTextFormatting(value)
+  return unwrapTextFormatting(value
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
     .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
-    .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
+    .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]));
 }
 
 export function normalizeLatexText(text: unknown) {
