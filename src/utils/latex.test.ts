@@ -228,6 +228,26 @@ test('an \\ifmmode without an \\else branch still yields its maths spelling', ()
   assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');
 });
 
+// With no `\fi` after them, 1000 `\ifmmode\else` pairs took seconds while each
+// start tried every later `\else` as its branch, and 30000 bare starts took
+// seconds while each one rescanned the rest of the text.
+test('\\ifmmode conditionals that never close stay as written, at once however many follow', () => {
+  const closed = '4\\ifmmode\\times\\else\\texttimes\\fi{}4 ';
+  const pairs = '\\ifmmode a\\else b'.repeat(1000);
+  const starts = '\\ifmmode'.repeat(30000);
+  const cases = [
+    { text: pairs, expected: pairs },
+    { text: `$${pairs}$`, expected: `$${pairs}$` },
+    { text: `${closed}${pairs}`, expected: `4\\(\\times\\)4 ${pairs}` },
+    { text: starts, expected: starts },
+  ];
+  for (const { text, expected } of cases) {
+    const { normalized, elapsed } = timedNormalization(text);
+    assert.ok(elapsed < 100, `${text.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.equal(normalized, expected);
+  }
+});
+
 /* --- Environments the delimiter list knows and KaTeX does not ------------- */
 
 // `\begin{eqnarray}` and `\begin{math}` joined LATEX_DELIMITERS in f43ac59,
