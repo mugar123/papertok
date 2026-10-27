@@ -1011,7 +1011,9 @@ const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) 
  * follows and exploration. `request` changes a load's request, and
  * `minutesPerLoad` moves the clock after each load, `pause` before one. With
  * `filing`, the harvest files two recent papers and a notable one after each
- * load, newer than any before: a ranking made after that puts them first.
+ * load, newer than any before: a ranking made after that puts the recent ones
+ * first, and the notable one in its year's turns, one notable card in ten
+ * without likes (ENG-166).
  * The corpus also holds 300 papers of FOLLOWED_TOPIC, which the reader does
  * not ask for: they are ten minutes apart, so the newest 150 are newer than
  * the papers a walk reaches after 100 loads.
@@ -1083,7 +1085,9 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
 // What a session got: 15 papers of the ranking each load and two notable
 // cards, no paper of the ranking twice, so none the walks passed over came
 // back, and the papers filed before its last 20 loads, which a ranking after
-// their filing puts right after the ones passed over. A false positive of the
+// their filing puts right after the ones passed over. A notable one comes in
+// its year's turns, its lane's newest first (ENG-166): it may still wait
+// behind a newer one its lane filed later, which came. A false positive of the
 // filter passes over one of those too (2611.00052 here, from the first load).
 function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   const short = session.flatMap(({ shown, placed }, load) => (shown.length < 15 || placed.length < 2 ? [`load ${load}: ${shown.length} papers, ${placed.length} notable`] : []));
@@ -1093,7 +1097,12 @@ function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   assert.deepEqual(returned.filter((id, index) => viewedBefore.has(id) || returned.indexOf(id) !== index), [], 'no paper the reader had seen comes back');
   const got = new Set(session.flatMap(load => [...load.shown, ...load.placed]));
   const filed = session.slice(0, -20).flatMap(load => load.filed);
-  const missed = filed.filter(id => !got.has(id));
+  const newerOfLaneCame = (id: string) => {
+    const load = session.findIndex(({ filed: ids }) => ids.includes(id));
+    return id.startsWith('1902.') && session.some(({ filed: ids }, later) => later > load
+      && later % SESSION_CATEGORIES.length === load % SESSION_CATEGORIES.length && ids.some(other => other.startsWith('1902.') && got.has(other)));
+  };
+  const missed = filed.filter(id => !got.has(id) && !newerOfLaneCame(id));
   assert.ok(missed.length <= 0.02 * filed.length, `${missed.length} of ${filed.length} papers filed during the session never came: ${missed.slice(0, 5)}`);
 }
 

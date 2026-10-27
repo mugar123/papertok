@@ -1449,6 +1449,60 @@ test("with twelve categories asked, a notable lane holding more than its listing
   assert.ok(offered.every(id => unseenListing.includes(id)), `${offered} are papers of the listing the reader has not seen`);
 });
 
+// Two papers of each year of the window in each of two leaves' notable lanes,
+// the second one newer; the id is the year, the leaf (1 or 2) and the rank.
+const LEAVES = ['cs.LG', 'cs.CV'];
+const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
+async function notableLeavesCorpus() {
+  const store = corpus();
+  await ingestPapers(store.env, recentPapers(60), { now: NOW });
+  const listed = LEAVES.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
+    paper: notableWork(`W${year}${leafIndex + 1}${rank}`, `Highly cited study ${rank} of ${year} in ${leaf}`, `${year}-0${3 + rank}-01`, 5000, true),
+    lanes: [`notable:${leaf}`],
+  }))));
+  await ingestPapers(store.env, listed, { now: NOW, keepUntil: LISTED_UNTIL });
+  return store;
+}
+
+test("a reader without likes gets the notable years in turns, newest first, and the asked leaves in turns, while their own papers stay newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const notable: Array<{ id: string; year: number | null | undefined; leaves: string[] | undefined }> = [];
+  for (let page = 0; page < 4; page += 1) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, page, pageSize: 15, seen: feedSeenFilter(shown), notable: 5 }), { now: NOW });
+    assert.deepEqual(answer.filter(paper => !paper._notable).map(paper => paper.id), recentIds(15 * page, 15 * (page + 1)), `page ${page}: the ranks stay newest first`);
+    for (const paper of answer.filter(card => card._notable)) notable.push({ id: paper.id, year: paper.year, leaves: paper._fetchedFor });
+    shown.push(...answer.map(paper => paper.id));
+  }
+  // One paper of each year, newest first, then each year again; a year's
+  // leaves take turns, and so do consecutive cards. Each comes with its
+  // lane's newest paper of the year first.
+  const expected = Array.from({ length: 20 }, (_, card) => {
+    const year = WINDOW_YEARS[card % 10];
+    const leaf = (card % 10 + Math.floor(card / 10)) % 2;
+    return { id: `openalex:W${year}${leaf + 1}1`, year, leaves: [LEAVES[leaf]] };
+  });
+  assert.deepEqual(notable, expected);
+});
+
+test('with a like, the notable cards follow the closest papers, whatever their year or leaf', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Closest first, in an order neither the years nor the leaves give; their
+  // likeness to each other stays under the diversity pass's threshold.
+  const closest = ['W201811', 'W202420', 'W201610', 'W202511', 'W202120'];
+  closest.forEach((id, index) => {
+    const values = [0.8 - index * 0.15, 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - values[0] ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
+});
+
 // ─── A reload in one request ───
 
 // The filter holds the papers earlier sessions showed the reader. A page that
