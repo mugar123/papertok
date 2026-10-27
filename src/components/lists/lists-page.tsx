@@ -1143,30 +1143,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList === listId) setExpandedList(null);
   };
 
-  // Taking a read mark back, from the row's own button or from the card's
-  // read toggle in the overlay: the mark goes, and the row leaves the list.
-  const forgetRead = (paperId: string) => {
-    void unmarkAsRead(paperId);
-    setLists((prev) => prev.map((list) => {
-      if (list.id === '__read__') {
-        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
-      }
-      return list;
-    }));
-  };
-
-  const handleUnmarkAsRead = (paperId: string) => {
-    forgetRead(paperId);
-  };
-
-  const handleUnlike = async (paperId: string, paper: Partial<Paper>) => {
-    await toggleLike(paper as Paper);
-    setLists((prev) => prev.map((list) => {
-      if (list.id === '__favorites__') {
-        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
-      }
-      return list;
-    }));
+  // Firestore retries transient failures itself and rejects only a write that
+  // cannot succeed (list deleted elsewhere, rule refusal), so "Try again" would
+  // fail the same way.
+  const reportRemovalFailed = (removeError: unknown) => {
+    console.error('Error removing paper from list:', removeError);
+    toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
   };
 
   const handleRemoveFromCustomList = (listId: string, paperId: string) => removePaperFromList(listId, paperId, {
@@ -1177,13 +1159,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       updatedAt: serverTimestamp(),
     }),
     apply: setLists,
-    onFailed: (removeError) => {
-      console.error('Error removing paper from custom list:', removeError);
-      // Firestore retries transient failures itself and rejects only a write
-      // that cannot succeed (list deleted elsewhere, rule refusal), so
-      // "Try again" would fail the same way.
-      toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
-    },
+    onFailed: reportRemovalFailed,
   });
 
   const switchRowSheetStep = (step: 'menu' | 'remove' | 'edit') => {
@@ -1202,10 +1178,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
   }, [rowSheetStep, prefersReducedMotion]);
 
+  // Favorites, Read later and Reading history are drawn from FeedContext's
+  // marks. Each toggle hides the row at once and, with `throwOnError`, puts it
+  // back and rejects when Firestore refuses the write.
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
-    if (listId === '__read__') handleUnmarkAsRead(paperId);
-    else if (listId === '__favorites__') void handleUnlike(paperId, paper);
-    else if (listId === '__read_later__') void toggleReadLater(paper as Paper);
+    if (listId === '__read__') unmarkAsRead(paperId, { throwOnError: true }).catch(reportRemovalFailed);
+    else if (listId === '__favorites__') toggleLike(paper as Paper, { throwOnError: true }).catch(reportRemovalFailed);
+    else if (listId === '__read_later__') toggleReadLater(paper as Paper, false, { throwOnError: true }).catch(reportRemovalFailed);
     else void handleRemoveFromCustomList(listId, paperId);
   };
 
@@ -2046,7 +2025,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             onLike={toggleLike}
             onNotInterested={(paper) => { void markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
-            onUnmarkAsRead={forgetRead}
+            onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => onOpenPdf?.(paper)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}

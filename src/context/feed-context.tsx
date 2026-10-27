@@ -31,13 +31,13 @@ export interface FeedContextValue {
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
-  toggleLike: (paper: Paper) => Promise<void>;
+  toggleLike: (paper: Paper, options?: { throwOnError: boolean }) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
-  unmarkAsRead: (id: string) => Promise<void>;
+  unmarkAsRead: (id: string, options?: { throwOnError: boolean }) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
   toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
@@ -85,6 +85,7 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
+import { unmarkRead } from './unmark-read.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
@@ -1760,7 +1761,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, []);
 
-  const toggleLike = useCallback(async (paperInput: Paper) => {
+  const toggleLike = useCallback(async (paperInput: Paper, options?: { throwOnError: boolean }) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
@@ -1810,6 +1811,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       } catch (err) {
         console.error('Error saving like:', err);
         setLikedPaperIds(likedPaperIds);
+        if (options?.throwOnError) throw err;
       }
     }
   }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
@@ -2198,29 +2200,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
 
-  const unmarkAsRead = useCallback(async (paperId: string) => {
+  const unmarkAsRead = useCallback(async (paperId: string, options?: { throwOnError: boolean }) => {
     const userId = user?.uid;
     if (!userId) return;
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.delete(paperId);
-    setReadPaperIds(newRead);
-    setPersonalLibrary((current) => {
-      if (!current[paperId]) return current;
-      const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-
-      return next;
+    await unmarkRead(paperId, {
+      setReadIds: setReadPaperIds,
+      setLibrary: setPersonalLibrary,
+      write: async () => {
+        recordProfileEvent({ paperId, kind: 'unread' });
+        await updateDoc(interactionDocRef(userId, paperId), {
+          read: deleteField(),
+          readAt: deleteField(),
+        });
+      },
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
+      throwOnError: options?.throwOnError,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
     });
-
-    try {
-      recordProfileEvent({ paperId, kind: 'unread' });
-      const ref = interactionDocRef(userId, paperId);
-      await updateDoc(ref, {
-        read: deleteField(),
-        readAt: deleteField(),
-      });
-    } catch (err) {
-      console.error('Error unmarking read status:', err);
-    }
   }, [recordProfileEvent, user?.uid]);
 
   const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: { throwOnError: boolean }) => {
