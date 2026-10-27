@@ -23,6 +23,7 @@ import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
@@ -1125,6 +1126,33 @@ test('savedPapers accepts the abstract source buildSavedPaperPayload sends, and 
     await assertFails(setDoc(ref, { ...valid, abstractSource }))
       .catch((error: Error) => assert.fail(`${String(abstractSource)} was accepted: ${error.message}`));
   }
+});
+
+// ENG-109: every write of a saved paper, and of an interaction's copy, merges
+// into the stored document. A copy whose text no source is credited for, as
+// the paper's own abstract that replaced a recovered one, takes away the
+// credit the earlier copy stored.
+test('a later save or read without a credit removes the abstract credit an earlier one stored', async () => {
+  await reset();
+  const db = asAlice();
+  const id = 'openalex:W4410000003';
+  const card = { id, title: 'A journal article' };
+  const credited = { ...card, abstract: 'The abstract Semantic Scholar holds for this journal article, in full.', abstractSource: 'semanticscholar' as const };
+  const own = { ...card, abstract: 'The abstract OpenAlex now lists for this journal article itself.' };
+
+  const saved = doc(db, 'users', ALICE, 'savedPapers', id);
+  await assertSucceeds(setDoc(saved, copyForMergeWrite(buildSavedPaperPayload(credited, new Date().toISOString())), { merge: true }));
+  assert.equal((await getDoc(saved)).data()?.abstractSource, 'semanticscholar');
+  await assertSucceeds(setDoc(saved, copyForMergeWrite(buildSavedPaperPayload(own, new Date().toISOString())), { merge: true }));
+  const savedAgain = (await getDoc(saved)).data()!;
+  assert.deepEqual([savedAgain.summary, 'abstractSource' in savedAgain], [own.abstract, false], 'savedPapers document');
+
+  const interaction = doc(db, 'users', ALICE, 'interactions', id);
+  await assertSucceeds(setDoc(interaction, { liked: true, paper: copyForMergeWrite(serializeLibraryPaper(credited)) }, { merge: true }));
+  assert.equal((await getDoc(interaction)).data()?.paper.abstractSource, 'semanticscholar');
+  await assertSucceeds(setDoc(interaction, { read: true, paper: copyForMergeWrite(serializeLibraryPaper(own)) }, { merge: true }));
+  const copy = (await getDoc(interaction)).data()!.paper;
+  assert.deepEqual([copy.summary, 'abstractSource' in copy], [own.abstract, false], 'interaction copy');
 });
 
 /* --- Plain-words summaries (PAP-59) ---------------------------------------- */

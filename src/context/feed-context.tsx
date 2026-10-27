@@ -87,6 +87,7 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
+import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
@@ -1800,7 +1801,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
           // kicker from. Written on like only; an unlike changes the flag.
-          paper: isCurrentlyLiked ? undefined : serializeLibraryPaper(paper),
+          paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
@@ -1927,7 +1928,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         paperCategory: paper.primaryCategory,
         timestamp: readAt,
         readAt,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         deviceType: getDeviceInfo().type,
       }), { merge: true });
     } catch (err) {
@@ -2139,9 +2140,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        if (paper) interactionData.paper = serializeLibraryPaper(paper);
-
-        await setDoc(ref, interactionData, { merge: true });
+        await setDoc(ref, paper
+          ? { ...interactionData, paper: copyForMergeWrite(serializeLibraryPaper(paper)) }
+          : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
         if (options?.throwOnError) throw err;
@@ -2257,7 +2258,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
       await setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
@@ -2314,7 +2315,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       await setDoc(interactionDocRef(userId, paper.id), definedFields({
         note: note.trim(),
         tags: normalizedTags,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
