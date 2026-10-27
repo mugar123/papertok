@@ -117,6 +117,15 @@ status under the Worker's Settings, General, Placement in the dashboard. If the
 status is not `SUCCESS` a day after the deploy, an explicit
 `region = "aws:eu-central-1"` in place of `mode` is the alternative: it always
 runs in Europe, with no baseline and no revert. Choosing it is Pablo's call.
+The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
+`worker/request-quota-ledger.ts`). The feed reserves its minute beside its first
+D1 read, and the feed's ledger is a new object every UTC minute, created near
+the first request of that minute and never moved, so without the hint a minute
+opened by a reader on another continent sent every reservation of that minute
+there. Cloudflare reads the hint only when it creates an object, as a best
+effort: objects created before the deploy, such as the providers' pace objects,
+stay where they are, and minute, hour and day objects are created in WEUR as
+their periods start. Reservations stay one transaction in one object per period.
 
 
 The For You feed reads one paper corpus instead of each source per reader and page. `worker/paper-store.ts` keeps it in D1 (`PAPER_STORE`, database `papertok-paper-store`): one row per paper in the app's `Paper` contract, the identifiers it is known by (`PaperBuilder.identityKeys`), the lanes it can be asked for under, and an int8 vector from Workers AI (`@cf/qwen/qwen3-embedding-0.6b`): the leading 256 of the model's 1,024 dimensions, which it is trained to make an embedding of their own (migration 0004 cut the vectors stored before). A row carries neither `openAlex`, the enrichment's copy of OpenAlex's answer, whose fields the app reads are already merged into the paper, nor `summary`, which repeats `abstract` (`storedPaper`). Enrichment's `rewriteWorks` compares rows in that stored form, so an enrichment that changes nothing leaves the stored paper unwritten. A row an earlier Worker stored keeps both until its next ingest or enrichment rewrites it. The app's library copies, interaction excerpts and RIS export read `abstract` when a paper has no `summary`; an older bundle reads only `summary`, so publish the frontend before deploying the Worker that stops storing `summary`.
