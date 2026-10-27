@@ -77,11 +77,26 @@ function boot() {
   };
 }
 
-test('startup remains readable before the application renders', () => {
+test('a quick startup finishes before the recovery content is revealed', () => {
   const page = boot();
   assert.equal(page.title.textContent, 'Loading PaperTok');
-  assert.equal(page.panel.attributes.get('data-state'), 'loading');
+  assert.equal(page.panel.attributes.get('data-state'), 'pending');
   assert.equal(page.panel.connected, true);
+  page.advance(50);
+  page.mount();
+  page.advance(1000);
+  assert.equal(page.panel.connected, false);
+  assert.equal(page.panel.attributes.get('data-state'), 'pending');
+  assert.equal(page.pendingTimers(), 0);
+});
+
+test('a startup still pending after half a second reveals loading feedback', () => {
+  const page = boot();
+  page.advance(499);
+  assert.equal(page.panel.attributes.get('data-state'), 'pending');
+  page.advance(1);
+  assert.equal(page.panel.attributes.get('data-state'), 'loading');
+  assert.equal(page.title.textContent, 'Loading PaperTok');
 });
 
 test('missing startup scripts and styles present an error with a working retry', () => {
@@ -131,8 +146,9 @@ test('a stalled startup offers retry without claiming a known cause', () => {
 });
 
 test('a successful or late mount removes recovery and stops monitoring', () => {
-  for (const state of ['normal', 'slow', 'failed']) {
+  for (const state of ['normal', 'loading', 'slow', 'failed']) {
     const page = boot();
+    if (state === 'loading') page.advance(500);
     if (state === 'slow') page.advance(30000);
     if (state === 'failed') page.win.dispatchEvent(new Event('error'));
     page.mount();
