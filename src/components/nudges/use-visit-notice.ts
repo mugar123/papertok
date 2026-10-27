@@ -20,6 +20,7 @@ import {
   statusIsSet,
   trackFocusOutsideNotice,
   visitChoiceDue,
+  visitReaderReady,
 } from '../../utils/nudges.ts';
 
 export const PRIVACY_NOTICE_COPY = {
@@ -59,7 +60,7 @@ function subscribeToModals(onChange: () => void) {
 // the feed only and comes back when the reader returns to it. A change of account
 // remounts AppContent, which clears what was picked for the previous reader.
 export function useVisitNotice() {
-  const { user, loading: authLoading, onboardingComplete } = useAuth();
+  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
 
@@ -73,7 +74,7 @@ export function useVisitNotice() {
   // the same reason) as the guest interests sheet.
   const [choiceMade, setChoiceMade] = useState(false);
 
-  const signedIn = Boolean(user) && !authLoading && onboardingComplete;
+  const signedIn = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
 
   useEffect(() => {

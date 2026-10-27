@@ -137,7 +137,17 @@ export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountC
 }
 
 /**
- * What NudgeHost asks of the policy: the signed-in account, when it was
+ * Whether the reader can be told or asked anything: signed in, onboarded and
+ * with a profile that loaded. While the profile read has failed, ProtectedRoute
+ * shows its retry screen instead of the feed, so neither notice has a page to
+ * be on (app.tsx's showNavbar asks the same).
+ */
+export function visitReaderReady({ user, loading, onboardingComplete, profileLoadError }: { user: unknown; loading: boolean; onboardingComplete: boolean; profileLoadError: string | null }) {
+  return Boolean(user) && !loading && onboardingComplete && !profileLoadError;
+}
+
+/**
+ * What useVisitNotice asks of the policy: the signed-in account, when it was
  * created and what this browser has stored for its uid. Kept here so the
  * arguments that decide who is told are tested, not only the rule itself.
  */

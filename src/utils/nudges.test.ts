@@ -21,6 +21,7 @@ import {
   rememberPrivacyNotice,
   trackFocusOutsideNotice,
   visitChoiceDue,
+  visitReaderReady,
 } from './nudges.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
 
@@ -267,6 +268,23 @@ test('the notice is shown only to a signed-in reader on the feed, and returns wh
   }
   assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+test('nothing is picked or announced while the profile could not be loaded, and it is once a retry loads it', () => {
+  const user = { uid: 'u1' };
+  const ready = (over: Partial<Parameters<typeof visitReaderReady>[0]> = {}) => visitReaderReady({ user, loading: false, onboardingComplete: true, profileLoadError: null, ...over });
+  assert.equal(ready(), true);
+  // The stored onboarding marks it complete before the profile read fails, and the feed route shows its retry screen.
+  assert.equal(ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), false, 'the profile read failed');
+  assert.equal(ready({ loading: true }), false, 'still loading');
+  assert.equal(ready({ onboardingComplete: false }), false, 'not onboarded');
+  assert.equal(ready({ user: null }), false, 'signed out');
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null);
+  assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed' }), null, 'the email nudge too');
+  // Off screen, the status is cleared, so the notice is announced when Try again brings the feed back.
+  assert.equal(statusIsSet({ shown: false, modalOpen: false, announced: true }), false);
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed' }), PRIVACY_NOTICE_ID);
+  assert.equal(statusIsSet({ shown: true, modalOpen: false, announced: false }), true);
 });
 
 test('the status message is set once, held back while a modal is open, and not set again after one closes', () => {
