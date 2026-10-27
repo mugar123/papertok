@@ -7,7 +7,8 @@ import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
-// Inside the feed's 4 s first-paint budget, with room for the response.
+// Inside the feed's 4 s first-paint budget, with room for the response. It
+// starts once the ID token is in hand (authenticatedWorkerFetch).
 const STORE_TIMEOUT_MS = 3_500;
 
 export interface CorpusPageRequest {
@@ -43,7 +44,7 @@ export interface CorpusPageRequest {
 }
 
 interface StoreOptions {
-  fetchWorker?: (url: string, init: RequestInit) => Promise<Response>;
+  fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
 
@@ -59,8 +60,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-  }).catch(markUnreachable);
+  }, STORE_TIMEOUT_MS).catch(markUnreachable);
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.

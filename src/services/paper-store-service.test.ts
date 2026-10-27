@@ -4,6 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { withRequestDeadline } from '../utils/request-deadline.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -269,6 +270,25 @@ test('a request that got no answer is marked unreachable, while a deadline or a 
   const signedOut = new WorkerApiAuthError();
   const { options: noSession } = harness(async () => { throw signedOut; });
   await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, noSession), (error) => error === signedOut);
+});
+
+// ENG-116: the 3.5 s deadline started before the Firebase ID token was in hand,
+// so a slow token refresh spent the request's budget and readers saw a timeout
+// for a store that answered in time. The fake does what authenticatedWorkerFetch
+// does: the token first, then the request under the budget it was given.
+test('a slow ID token does not spend the deadline of the store request', async () => {
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const user = { getIdToken: async () => { await wait(2_000); return 'token'; } };
+  const store = (signal: AbortSignal) => new Promise<Response>((resolve, reject) => {
+    const answer = setTimeout(() => resolve(new Response(JSON.stringify({ papers: [STORED] }), { status: 200 })), 1_600);
+    signal.addEventListener('abort', () => { clearTimeout(answer); reject(signal.reason); }, { once: true });
+  });
+  const fetchWorker = async (_url: string, init: RequestInit, timeoutMs?: number) => {
+    await user.getIdToken();
+    return store(withRequestDeadline(init, timeoutMs).signal);
+  };
+  const { papers } = await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15 }, { apiBase: WORKER, fetchWorker });
+  assert.deepEqual(papers, [STORED]);
 });
 
 test('a connection lost while the answer arrives is marked unreachable too', async () => {
