@@ -32,7 +32,7 @@ import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { toast } from 'sonner';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 
 import useQuickSave from '../../hooks/use-quick-save.ts';
