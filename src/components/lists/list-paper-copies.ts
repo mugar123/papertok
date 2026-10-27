@@ -5,8 +5,8 @@ import { paperLegacyAdapter, storedAbstractSource } from '../../models/paper.ts'
  * A list's paper when the library holds two copies of it: the interaction's
  * (`libraryCopy`: a read mark, Read later, a note or tags) and another
  * (`otherCopy`: the `savedPapers` document read back, or the interaction's
- * copy as the library first read it, which a read mark in this session has
- * since replaced). The interaction's copy fills the links and the text.
+ * copy as the library read it on load, which a write in this session can
+ * have replaced since). The interaction's copy fills the links and the text.
  *
  * The credit for the text (ENG-109) is the one the copy holding that text
  * gives it. The two copies can hold different texts, and taking the other
