@@ -99,30 +99,47 @@ of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
 invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline,
 while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
 that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
-sets `[placement] mode = "smart"`, so Cloudflare may run the fetch handler near
-the I/O it waits on rather than at the reader's location. It does so per Worker,
-not per route: the provider relays, share pages and preflights move with the
-feed, and a reader outside Europe then pays one more hop to reach them. It does
-not move the crons, the harvest Workflow or the Durable Objects. Cloudflare
-analyses the Worker for up to 15 minutes after a deploy, needs steady traffic
-from several locations (status `INSUFFICIENT_INVOCATIONS` until then), keeps
-about 1% of requests at their own location as a baseline and reverts placement
-that makes the Worker slower (`UNSUPPORTED_APPLICATION`). The Cache API is per
-location, so after the first placed deploy the readers' kept rankings are not
-found once (`Feed walk has no kept order to go on with`), and the baseline
-requests miss the placed location's entries. To see whether it acted, look for
-`cf-placement: remote-XXX` (forwarded) or `local-XXX` on any response, for
-example `curl -s -D - -o /dev/null https://api.papertok.app/health`, and for the
-status under the Worker's Settings, General, Placement in the dashboard. If the
-status is not `SUCCESS` a day after the deploy, an explicit
-`region = "aws:eu-central-1"` in place of `mode` is the alternative: it always
-runs in Europe, with no baseline and no revert. Choosing it is Pablo's call.
+sets `[placement] region = "aws:eu-central-1"`, so the fetch handler runs near
+Frankfurt, next to the I/O it waits on, rather than at the reader's location.
+Cloudflare picks the data center with the lowest latency to that region and may
+change it for maintenance or network changes, so the city is not fixed.
+Smart Placement (`mode = "smart"`, deployed on 2026-10-27) never moved it: eight
+hours later every response still read `cf-placement: local-LAX`. Its status in
+the dashboard was not read; it probably lacked the steady traffic from several
+locations it needs. An explicit region has no analysis, no 1% baseline and no
+revert-if-slower, so Pablo chose it on 2026-10-28. It applies per Worker, not per
+route. Outside Europe every route pays the hop from the reader to Frankfurt: the
+provider relays, the AI routes (`/ai/rewrite`, `/ai/annotate`), share pages and
+preflights as well as the feed. The relays to providers hosted in the US (arXiv,
+OpenAlex, Crossref, Semantic Scholar, NCBI, ADS, Unpaywall, Resend) also pay a
+round trip from Frankfurt on every upstream call, so routes that call in
+sequence, such as `/sources/pubmed`, `/access` and the `/institution/services`
+probes, pay it several times, against unchanged deadlines. Unlike Smart
+Placement, a region never reverts a slower placement. It does not move the
+crons, the nightly harvest they start or Durable Objects that already exist. An
+object is created near the code that first calls `get()`, so objects the fetch
+handler creates from now on, such as each `/ai/rewrite` session, are created
+near Frankfurt. Likewise, the harvest Workflow runs that `/store/papers` starts
+for newly followed lanes are created from Frankfurt; where Cloudflare then runs
+their steps was not checked. The Cache API is per location, so after the first placed deploy the
+readers' kept rankings are not found once (`Feed walk has no kept order to go on
+with`). To check it, look at `cf-placement` on any response, for example
+`curl -s -D - -o /dev/null https://api.papertok.app/health`. `remote-XXX` means
+the request was forwarded to the placed data center, `FRA` on 2026-10-28; Cloudflare
+may choose another one near the region. `local-XXX` means the request ran where it
+entered: expected for a request entering near Frankfurt, but repeated for readers far
+away it suggests placement is not applied. A code other than `FRA` alone proves
+neither. Per-address limits
+(`worker/caller-quota.ts`) read `CF-Connecting-IP`. After a placement change,
+check that the routes they protect still answer: with a missing or invalid
+header the provider relays, `/openalex` and `/pdf` answer 503, and share pages
+skip the lookup.
 The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
-`worker/request-quota-ledger.ts`). The feed reserves its minute beside its first
-D1 read, and the feed's ledger is a new object every UTC minute, created near
-the first request of that minute and never moved, so without the hint a minute
-opened by a reader on another continent sent every reservation of that minute
-there. Cloudflare reads the hint only when it creates an object, as a best
+`worker/request-quota-ledger.ts`). Most periods are a new object every UTC
+minute, hour or day, created near the first caller of that period and never
+moved. With the region, the fetch handler already runs in Frankfurt, so the
+hint matters for objects first opened outside the fetch handler, by the crons
+or by harvest Workflow runs, and keeps the ledger in WEUR if placement changes. Cloudflare reads the hint only when it creates an object, as a best
 effort: objects created before the deploy, such as the providers' pace objects,
 stay where they are, and minute, hour and day objects are created in WEUR as
 their periods start. Reservations stay one transaction in one object per period.
@@ -680,6 +697,13 @@ that address verified, whether the account owns it, the sign-in time and the dis
 collapsed, at most 160 characters). Routes documented as having no identity cache ask Identity
 Toolkit on every request.
 
+A token Identity Toolkit refuses (a 400 such as `INVALID_ID_TOKEN` or `USER_NOT_FOUND`), or an
+answer without a user, is `401 AUTH_REQUIRED`. When Identity Toolkit cannot be reached, stalls past
+4 s, or answers 5xx or 429, the verifier answers `503 AUTH_UNAVAILABLE` and caches nothing, so the
+next request asks again: an outage says nothing about the session, and a 401 would read as a
+sign-out. The AI routes answer it as `503 AI_UNAVAILABLE`, the notification routes as
+`503 EMAIL_UNAVAILABLE`, and the other protected routes pass `503 AUTH_UNAVAILABLE` through.
+
 Notification routes use this same verifier, and digests greet the reader with
 its verified display name. Only the settings read (`GET /notifications/preferences`)
 uses the 60-second identity cache. `PUT /notifications/preferences` and
@@ -694,8 +718,8 @@ costs one more lookup than the cache would.
 They still require
 an email address whose ownership Firebase proves. Invalid credentials remain
 `401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
-and an unreachable verifier is `503 EMAIL_UNAVAILABLE`. Recipient addresses use
-the shared verifier’s trimmed, lowercase form.
+and a verifier that is unreachable or answers 5xx or 429 is `503 EMAIL_UNAVAILABLE`.
+Recipient addresses use the shared verifier’s trimmed, lowercase form.
 
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
