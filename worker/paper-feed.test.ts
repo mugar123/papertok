@@ -1087,7 +1087,8 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
 // back, and the papers filed before its last 20 loads, which a ranking after
 // their filing puts right after the ones passed over. A notable one comes in
 // its year's turns, its lane's newest first (ENG-166): it may still wait
-// behind a newer one its lane filed later, which came. A false positive of the
+// behind a newer one its lane filed later, which came, up to a fifth of them.
+// A false positive of the
 // filter passes over one of those too (2611.00052 here, from the first load).
 function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   const short = session.flatMap(({ shown, placed }, load) => (shown.length < 15 || placed.length < 2 ? [`load ${load}: ${shown.length} papers, ${placed.length} notable`] : []));
@@ -1104,6 +1105,12 @@ function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   };
   const missed = filed.filter(id => !got.has(id) && !newerOfLaneCame(id));
   assert.ok(missed.length <= 0.02 * filed.length, `${missed.length} of ${filed.length} papers filed during the session never came: ${missed.slice(0, 5)}`);
+  // The session files a notable paper of the newest year each load, more than
+  // that year's turns place, so some wait; a lane whose older papers of a year
+  // never get a turn would leave many more.
+  const notableFiled = filed.filter(id => id.startsWith('1902.'));
+  const waiting = notableFiled.filter(id => !got.has(id) && newerOfLaneCame(id));
+  assert.ok(waiting.length <= 0.2 * notableFiled.length, `${waiting.length} of ${notableFiled.length} notable papers filed during the session waited behind a newer one of their lane`);
 }
 
 // Every paper of the ranking before the last one the session got so far, and
