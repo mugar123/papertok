@@ -20,7 +20,8 @@ import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestination
  * A card's Save button, the same wherever the card is: a tap saves the paper
  * to Read later and offers "Add to list" in the toast; a tap on a saved paper
  * takes it out of every list, with Undo. `onSaveToList` opens the list picker,
- * for that toast action and for a saved paper whose lists cannot be read.
+ * for that toast action and for a saved paper whose lists cannot be read,
+ * with the surface the save reported, for the picker's own save to carry.
  *
  * The button changes at the tap and the writes follow; a write that is
  * refused puts it back and says so. It used to change only once Firestore
@@ -31,7 +32,7 @@ import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestination
  * emulator behind a 120 ms proxy: eight taps 300 ms apart, nothing for 1.4 s,
  * then three changes and seven toasts, the last change 0.4 s after the last tap.
  */
-export default function useQuickSave(onSaveToList: (paper: Paper) => void, surface: string) {
+export default function useQuickSave(onSaveToList: (paper: Paper, surface?: string) => void, surface: string) {
   const { markActivation, trackEvent } = useAnalyticsConsent();
   const { savedPaperIds, interactionIdFor, personalLibrary, toggleReadLater, markSaved, unmarkSaved } = useFeed();
   const { user } = useAuth();
@@ -93,7 +94,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
           await restoreSave(paper, [], true, saveSurface);
           void markActivation();
           toast.success('Saved to Read later', {
-            action: { label: 'Add to list', onClick: () => onSaveToList(paper) },
+            action: { label: 'Add to list', onClick: () => onSaveToList(paper, saveSurface) },
           });
         } catch {
           toast.error('Could not save this paper');
@@ -128,7 +129,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
         });
         if (!held) {
           // A full page may hide more lists: let the picker show them all.
-          onSaveToList(paper);
+          onSaveToList(paper, saveSurface);
           return;
         }
         lists = held;

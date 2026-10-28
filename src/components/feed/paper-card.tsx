@@ -24,9 +24,10 @@ export interface PaperCardProps {
   /**
    * Holding Save on a touch screen. Where a tap on Save already opens the list
    * picker it does the same; the feed, whose tap quick-saves to Read later,
-   * passes the picker here.
+   * passes the picker here. `surface` is the card's own (`analyticsSurface`),
+   * which the picker's save carries (forYouCardNotable).
    */
-  onPickList?: (paper: Paper) => void | Promise<void>;
+  onPickList?: (paper: Paper, surface?: string) => void | Promise<void>;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
@@ -1425,9 +1426,9 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => {
     pickListRef.current = () => {
       if (publicMode) requireAuthentication('save');
-      else void onPickList(paper);
+      else void onPickList(paper, analyticsSurface);
     };
-  }, [onPickList, paper, publicMode, requireAuthentication]);
+  }, [analyticsSurface, onPickList, paper, publicMode, requireAuthentication]);
   const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
   // A card that leaves mid-hold must not open the picker afterwards.
   useEffect(() => saveHold.onPointerCancel, [saveHold]);

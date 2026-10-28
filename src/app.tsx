@@ -112,7 +112,10 @@ function AppContent() {
   // touch screen (pdf-pages.tsx), so the paper stays in PaperTok on a phone as
   // it does on a desktop (2026-10-09).
   const openPdf = setPdfPaper
-  const [saveModalPaper, setSaveModalPaper] = useState<Paper | null>(null)
+  // The paper the list picker is open for, with the surface of the card that
+  // opened it: the picker's save carries it (forYouCardNotable).
+  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string } | null>(null)
+  const openSaveModal = useCallback((paper: Paper, surface?: string) => setSaveModal({ paper, surface }), [])
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -323,7 +326,7 @@ function AppContent() {
 
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/feed'}>
-    <SimilarFeedProvider onOpenPdf={openPdf} onSaveToList={setSaveModalPaper}>
+    <SimilarFeedProvider onOpenPdf={openPdf} onSaveToList={openSaveModal}>
       <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
         {'Skip to content'}
       </a>
@@ -383,7 +386,7 @@ function AppContent() {
                       heading: 'For you',
                     }}
                     onOpenPdf={openPdf}
-                    onSaveToList={setSaveModalPaper}
+                    onSaveToList={openSaveModal}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -394,7 +397,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={openPdf} onEditPaper={setSaveModalPaper} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={openSaveModal} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -411,7 +414,7 @@ function AppContent() {
                 <PageTransition>
                   <FollowingFeedPage
                     onOpenPdf={openPdf}
-                    onSaveToList={setSaveModalPaper}
+                    onSaveToList={openSaveModal}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -424,7 +427,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <SearchPage onSaveToList={setSaveModalPaper} searchSlot={searchSlot} />
+                  <SearchPage onSaveToList={openSaveModal} searchSlot={searchSlot} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -502,7 +505,7 @@ function AppContent() {
                   appChrome={showNavbar}
                   publicMode={!user}
                   onAuthRequired={requestAuthentication}
-                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                  onSaveToList={user ? openSaveModal : requestAuthentication}
                 />
               </PageTransition>
             }
@@ -514,7 +517,7 @@ function AppContent() {
                 <EntityExplorer
                   publicMode={!user}
                   onAuthRequired={requestAuthentication}
-                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                  onSaveToList={user ? openSaveModal : requestAuthentication}
                 />
               </PageTransition>
             }
@@ -528,7 +531,7 @@ function AppContent() {
                   isAuthenticated={Boolean(user)}
                   onAuthRequired={requestAuthentication}
                   onOpenPdf={openPdf}
-                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                  onSaveToList={user ? openSaveModal : requestAuthentication}
                 />
               </PageTransition>
             }
@@ -592,10 +595,11 @@ function AppContent() {
       </Suspense>
 
       <Suspense fallback={null}>
-        {saveModalPaper && (
+        {saveModal && (
           <SaveToListModal
-            paper={saveModalPaper}
-            onClose={() => setSaveModalPaper(null)}
+            paper={saveModal.paper}
+            surface={saveModal.surface}
+            onClose={() => setSaveModal(null)}
           />
         )}
       </Suspense>

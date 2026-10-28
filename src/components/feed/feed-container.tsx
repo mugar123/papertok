@@ -19,7 +19,8 @@ interface FeedSource {
 }
 interface FeedContainerProps {
   onOpenPdf?: (paper: Paper) => void;
-  onSaveToList?: (paper: Paper) => void;
+  /** Opens the list picker; `surface` is the card's (PaperCard's `onPickList`). */
+  onSaveToList?: (paper: Paper, surface?: string) => void;
   source?: FeedSource | null;
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
