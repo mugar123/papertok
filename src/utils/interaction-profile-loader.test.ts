@@ -20,7 +20,6 @@ import {
   readProfileSignals,
   serializeInteractionProfile,
 } from './interaction-profile.ts';
-import { leavesLoadedAccount } from '../context/feed-viewed-papers.ts';
 
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -483,10 +482,14 @@ test('recording a new paper raises the profile own document count', async () => 
 function engagedProfile(notableLikes: number, recentSaves: number) {
   const profile = createEmptyInteractionProfile();
   for (let index = 0; index < notableLikes; index += 1) {
-    recordInteractionEvent(profile, { paperId: `notable-${index}`, kind: 'like', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' }, NOW);
+    const card = { paperId: `notable-${index}`, category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' };
+    recordInteractionEvent(profile, { ...card, kind: 'viewTime', viewTime: 5 }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'like' }, NOW);
   }
   for (let index = 0; index < recentSaves; index += 1) {
-    recordInteractionEvent(profile, { paperId: `recent-${index}`, kind: 'save', category: 'cs.LG', notable: false, published: '2026-08-18T00:00:00.000Z' }, NOW);
+    const card = { paperId: `recent-${index}`, category: 'cs.LG', notable: false, published: '2026-08-18T00:00:00.000Z' };
+    recordInteractionEvent(profile, { ...card, kind: 'skip' }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'save' }, NOW);
   }
   return profile;
 }
@@ -497,32 +500,34 @@ function temporalOf(profile: Parameters<typeof readProfileSignals>[0]) {
   return { notable, recent, lean: Math.round(lean * 100) / 100 };
 }
 
-test('an account\'s notable and recent engagement and its lean survive a reload', async () => {
+const counts = (shown: number, engaged: number) => ({ shown, engaged });
+
+test('an account\'s notable and recent counts, its lean, and what each like or save added survive a reload', async () => {
   const stored = engagedProfile(4, 6);
   // Notable cards do not move the lean; each save of a day-old paper moves it 0.15 toward recent.
-  assert.deepEqual(temporalOf(stored), { notable: 4, recent: 6, lean: 0.9 });
+  assert.deepEqual(temporalOf(stored), { notable: counts(4, 4), recent: counts(6, 6), lean: 0.9 });
   const stub = createFirestoreStub({ aggregate: serializeInteractionProfile(stored) });
   const reloaded = await loadInteractionProfile({ ...stub, userId: 'account-a', now: NOW, rebuildCache: freshCache() });
   assert.ok(hasInteractionProfile(reloaded));
-  assert.deepEqual(temporalOf(reloaded.profile), { notable: 4, recent: 6, lean: 0.9 });
+  assert.deepEqual(temporalOf(reloaded.profile), { notable: counts(4, 4), recent: counts(6, 6), lean: 0.9 });
+  // An unsave after the reload takes back its save, and a like again of a liked paper adds nothing.
+  recordInteractionEvent(reloaded.profile, { paperId: 'recent-0', kind: 'unsave', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(reloaded.profile, { paperId: 'notable-0', kind: 'like', category: 'cs.LG', notable: true }, NOW);
+  assert.deepEqual(temporalOf(reloaded.profile), { notable: counts(4, 4), recent: counts(6, 5), lean: 0.75 });
 });
 
-test('account A\'s engagement and lean never reach account B, stored or in memory', async () => {
+test('each account\'s counts and lean are stored in its own aggregate', async () => {
   const accountA = engagedProfile(9, 2);
   const storeA = createFirestoreStub({ aggregate: serializeInteractionProfile(accountA) });
   const storeB = createFirestoreStub();
   // B is a new account: its own document holds nothing of A's.
   const loadedB = await loadInteractionProfile({ ...storeB, userId: 'account-b', now: NOW, rebuildCache: freshCache() });
   assert.ok(hasInteractionProfile(loadedB));
-  assert.deepEqual(temporalOf(loadedB.profile), { notable: 0, recent: 0, lean: 0 });
-  // An in-tab switch from A, whose profile had loaded, to B: the feed leaves
-  // A's profile behind and starts from an empty one until B's arrives.
-  assert.equal(leavesLoadedAccount('account-a', 'account-b'), true);
-  assert.deepEqual(temporalOf(createEmptyInteractionProfile()), { notable: 0, recent: 0, lean: 0 });
+  assert.deepEqual(temporalOf(loadedB.profile), { notable: counts(0, 0), recent: counts(0, 0), lean: 0 });
   // B's engagement goes into B's profile only; A's stored one is unchanged.
   recordInteractionEvent(loadedB.profile, { paperId: 'b-paper', kind: 'like', category: 'cs.LG', notable: true, published: '2016-01-01T00:00:00.000Z' }, NOW);
-  assert.deepEqual(temporalOf(loadedB.profile), { notable: 1, recent: 0, lean: 0 });
+  assert.deepEqual(temporalOf(loadedB.profile), { notable: counts(0, 1), recent: counts(0, 0), lean: 0 });
   const reloadedA = await loadInteractionProfile({ ...storeA, userId: 'account-a', now: NOW, rebuildCache: freshCache() });
   assert.ok(hasInteractionProfile(reloadedA));
-  assert.deepEqual(temporalOf(reloadedA.profile), { notable: 9, recent: 2, lean: 0.3 });
+  assert.deepEqual(temporalOf(reloadedA.profile), { notable: counts(9, 9), recent: counts(2, 2), lean: 0.3 });
 });

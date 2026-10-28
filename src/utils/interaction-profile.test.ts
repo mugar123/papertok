@@ -142,7 +142,7 @@ test('a new profile is empty and at the current schema version', () => {
     interactionCount: 0,
     dwellMedianSeconds: 6,
     positiveExamples: [],
-    temporal: { notable: 0, recent: 0, lean: 0 },
+    temporal: { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0 },
   });
   assert.equal(curatedIds(profile, 'liked').length, 0);
   assert.equal(isPaperKnown(profile, 'arxiv:2401.00001'), false);
@@ -962,4 +962,62 @@ test('over the curated budget the viewed notable cards go after the ring and bef
   assert.equal(curated.viewed, undefined, 'the ring went first');
   assert.ok(curated.viewedNotable.length > 0 && curated.viewedNotable.length < 600, `the notable cards were trimmed to ${curated.viewedNotable.length}`);
   assert.equal(curated.viewedNotable[0], ringId(599), 'the newest are the ones kept');
+});
+
+// ENG-166, decision 2: a paper adds to its kind at most once per signal, and
+// an unlike or unsave takes back exactly what its like or save added.
+const temporalOf = (profile: Parameters<typeof readProfileSignals>[0]) => readProfileSignals(profile, NOW).temporal;
+
+test('liking and unliking, or saving and unsaving, a card leaves its kind\'s counts and the lean as they were', () => {
+  for (const [notable, published] of [[true, '2018-01-01T00:00:00.000Z'], [false, '2026-08-18T00:00:00.000Z'], [false, '2020-01-01T00:00:00.000Z']] as const) {
+    const profile = createEmptyInteractionProfile();
+    recordInteractionEvent(profile, { paperId: 'other', kind: 'save', category: 'cs.LG', notable: !notable, published: '2026-08-18T00:00:00.000Z' }, NOW);
+    recordInteractionEvent(profile, { paperId: 'card', kind: 'viewTime', viewTime: 4, category: 'cs.LG', notable, published }, NOW);
+    const before = temporalOf(profile);
+    for (let round = 0; round < 5; round += 1) {
+      recordInteractionEvent(profile, { paperId: 'card', kind: 'like', category: 'cs.LG', notable, published }, NOW);
+      recordInteractionEvent(profile, { paperId: 'card', kind: 'save', category: 'cs.LG', notable, published }, NOW);
+      // The paper may have left the list by the time it is unliked.
+      recordInteractionEvent(profile, { paperId: 'card', kind: 'unlike', category: 'cs.LG' }, NOW);
+      recordInteractionEvent(profile, { paperId: 'card', kind: 'unsave', category: 'cs.LG' }, NOW);
+    }
+    assert.deepEqual(temporalOf(profile), before, `a ${notable ? 'notable' : `card published ${published}`}`);
+  }
+});
+
+test('a paper liked, saved or opened again counts once for each, and a card viewed again is shown once', () => {
+  const profile = createEmptyInteractionProfile();
+  const card = { paperId: 'card', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' };
+  for (let time = 0; time < 3; time += 1) {
+    recordInteractionEvent(profile, { ...card, kind: 'viewTime', viewTime: 5 }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'skip' }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'like' }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'save' }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'openedPdf' }, NOW);
+  }
+  assert.deepEqual(temporalOf(profile).notable, { shown: 1, engaged: 3 });
+  // A paper off the For You feed counts toward neither kind.
+  recordInteractionEvent(profile, { paperId: 'library-row', kind: 'like', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'library-row', kind: 'viewTime', viewTime: 5, category: 'cs.LG' }, NOW);
+  assert.deepEqual(temporalOf(profile), { notable: { shown: 1, engaged: 3 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
+});
+
+// ENG-166, decision 4.
+test('once two thousand cards were shown every count is halved, and an unlike after it takes back the halved like', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'like', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' }, NOW);
+  for (let index = 0; index < 1999; index += 1) {
+    recordInteractionEvent(profile, { paperId: `card-${index}`, kind: 'skip', category: 'cs.LG', notable: index % 10 === 0 }, NOW);
+  }
+  assert.deepEqual(temporalOf(profile).notable, { shown: 200, engaged: 1 });
+  recordInteractionEvent(profile, { paperId: 'card-last', kind: 'skip', category: 'cs.LG', notable: false }, NOW);
+  assert.deepEqual(temporalOf(profile), { notable: { shown: 100, engaged: 0.5 }, recent: { shown: 900, engaged: 0 }, lean: 0 });
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'unlike', category: 'cs.LG' }, NOW);
+  assert.deepEqual(temporalOf(profile).notable, { shown: 100, engaged: 0 });
+  // And the halved counts and the papers behind them survive a reload.
+  recordInteractionEvent(profile, { paperId: 'saved', kind: 'save', category: 'cs.LG', notable: false, published: '2026-08-18T00:00:00.000Z' }, NOW);
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  assert.deepEqual(temporalOf(reloaded), temporalOf(profile));
+  recordInteractionEvent(reloaded, { paperId: 'saved', kind: 'unsave', category: 'cs.LG' }, NOW);
+  assert.deepEqual(temporalOf(reloaded), { notable: { shown: 100, engaged: 0 }, recent: { shown: 900, engaged: 0 }, lean: 0 });
 });
