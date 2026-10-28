@@ -94,8 +94,8 @@ function corpus() {
 }
 
 // Synthetic, in the shape the arXiv harvest stores.
-const paper = (id: string, title: string) => arxivRecordPaper({
-  arxivId: id, title, abstract: `${title}, in short.`, authors: ['Ana Pérez'], categories: [], doi: null, journalRef: null, comments: null,
+const paper = (id: string, title: string, doi: string | null = null) => arxivRecordPaper({
+  arxivId: id, title, abstract: `${title}, in short.`, authors: ['Ana Pérez'], categories: [], doi, journalRef: null, comments: null,
   published: new Date(Date.now() - 86_400_000).toISOString(), updated: '',
 });
 
@@ -187,13 +187,14 @@ test("the longest enrichment phase fits in half of an invocation's subrequests",
     OPENALEX_API_KEY: 'test-key',
     AI: { run: async (_model: string, { text }: { text: string[] }) => { calls.ai += 1; return { data: text.map(() => Array.from({ length: 1024 }, (_, dimension) => Math.cos(dimension))) }; } },
   } as unknown as WorkerEnv;
-  // A batch that asks every source: arXiv preprints, which OpenAlex is asked
-  // about by arXiv id, and OpenAlex's own records without an abstract, with a
-  // DOI and a PubMed id, for which Crossref, iCite, Europe PMC and Semantic
-  // Scholar are asked.
+  // The longest batch, which asks every source: arXiv papers with a journal
+  // DOI, which OpenAlex is asked about by arXiv id, 25 a call, and by that
+  // DOI, 50 a call, the most calls a paper makes; and OpenAlex's own records
+  // without an abstract, with a DOI and a PubMed id, for which Crossref,
+  // iCite, Europe PMC and Semantic Scholar are asked.
   await ingestPapers(env, [
-    ...Array.from({ length: 250 }, (_, index) => ({ paper: paper(`2610.${50_000 + index}`, `Preprint ${index}`), lanes: ['cs.CL'] })),
-    ...Array.from({ length: 251 }, (_, index) => ({
+    ...Array.from({ length: 499 }, (_, index) => ({ paper: paper(`2610.${50_000 + index}`, `Preprint ${index}`, `10.1103/PhysRevD.${index}`), lanes: ['cs.CL'] })),
+    ...Array.from({ length: 2 }, (_, index) => ({
       paper: mapOpenAlexWork({
         id: `https://openalex.org/W44${String(index).padStart(8, '0')}`, doi: `https://doi.org/10.5555/journal.${index}`, ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${40_000_000 + index}` },
         title: `Journal article ${index}`, type: 'article', publication_date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
