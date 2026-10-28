@@ -114,10 +114,12 @@ round trip from Frankfurt on every upstream call, so routes that call in
 sequence, such as `/sources/pubmed`, `/access` and the `/institution/services`
 probes, pay it several times, against unchanged deadlines. Unlike Smart
 Placement, a region never reverts a slower placement. It does not move the
-crons, the harvest Workflow or Durable Objects that already exist. An object is
-created near the code that first calls `get()`, so objects the fetch handler
-creates from now on, such as each `/ai/rewrite` session, are created near
-Frankfurt. The Cache API is per location, so after the first placed deploy the
+crons, the nightly harvest they start or Durable Objects that already exist. An
+object is created near the code that first calls `get()`, so objects the fetch
+handler creates from now on, such as each `/ai/rewrite` session, are created
+near Frankfurt. Likewise, the harvest Workflow runs that `/store/papers` starts
+for newly followed lanes are created from Frankfurt; where Cloudflare then runs
+their steps was not checked. The Cache API is per location, so after the first placed deploy the
 readers' kept rankings are not found once (`Feed walk has no kept order to go on
 with`). To check it, look at `cf-placement` on any response, for example
 `curl -s -D - -o /dev/null https://api.papertok.app/health`: `remote-FRA`
@@ -131,9 +133,8 @@ The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
 `worker/request-quota-ledger.ts`). Most periods are a new object every UTC
 minute, hour or day, created near the first caller of that period and never
 moved. With the region, the fetch handler already runs in Frankfurt, so the
-hint matters for objects first opened by the crons or the harvest Workflow,
-which placement does not move, and keeps the ledger in WEUR if placement
-changes. Cloudflare reads the hint only when it creates an object, as a best
+hint matters for objects first opened outside the fetch handler, by the crons
+or by harvest Workflow runs, and keeps the ledger in WEUR if placement changes. Cloudflare reads the hint only when it creates an object, as a best
 effort: objects created before the deploy, such as the providers' pace objects,
 stay where they are, and minute, hour and day objects are created in WEUR as
 their periods start. Reservations stay one transaction in one object per period.

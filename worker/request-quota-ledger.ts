@@ -281,8 +281,8 @@ async function sha256(value: unknown) {
 // whichever request opened the period decided how far all of its reservations
 // travel. The feed reserves beside a D1 read, and D1 is in Western Europe. The
 // region placement already runs the fetch handler in Frankfurt, so the hint
-// places objects first opened by the crons or the harvest Workflow, which
-// placement does not move, and keeps the ledger in WEUR if placement changes
+// places objects first opened outside it, by the crons or by harvest Workflow
+// runs, and keeps the ledger in WEUR if placement changes
 // (worker/README.md, the paper store's placement). Cloudflare reads the hint
 // only when it creates the object, and treats it as best effort.
 const LEDGER_LOCATION_HINT: DurableObjectLocationHint = 'weur';
