@@ -279,10 +279,12 @@ async function sha256(value: unknown) {
 // A ledger object is created near its first get() and never moves, and most
 // periods are a new object every UTC minute, hour or day: without a hint,
 // whichever request opened the period decided how far all of its reservations
-// travel. The feed reserves beside a D1 read, and D1 is in Western Europe, where
-// placement runs the Worker when it acts (worker/README.md, the paper store's
-// placement). Cloudflare reads the hint only when it creates the object, and
-// treats it as best effort.
+// travel. The feed reserves beside a D1 read, and D1 is in Western Europe. The
+// region placement already runs the fetch handler in Frankfurt, so the hint
+// places objects first opened by the crons or the harvest Workflow, which
+// placement does not move, and keeps the ledger in WEUR if placement changes
+// (worker/README.md, the paper store's placement). Cloudflare reads the hint
+// only when it creates the object, and treats it as best effort.
 const LEDGER_LOCATION_HINT: DurableObjectLocationHint = 'weur';
 
 async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, action: string, {

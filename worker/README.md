@@ -102,26 +102,38 @@ that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
 sets `[placement] region = "aws:eu-central-1"`, so the fetch handler runs in
 Frankfurt, next to the I/O it waits on, rather than at the reader's location.
 Smart Placement (`mode = "smart"`, deployed on 2026-10-27) never moved it: eight
-hours later every response still read `cf-placement: local-LAX`, because it
-needs steady traffic from several locations. An explicit region has no analysis,
-no 1% baseline and no revert-if-slower, so Pablo chose it on 2026-10-28. It
-applies per Worker, not per route: the provider relays, share pages and
-preflights move with the feed, and a reader outside Europe pays one more hop to
-reach them. It does not move the crons, the harvest Workflow or the Durable
-Objects. The Cache API is per location, so after the first placed deploy the
+hours later every response still read `cf-placement: local-LAX`. Its status in
+the dashboard was not read; it probably lacked the steady traffic from several
+locations it needs. An explicit region has no analysis, no 1% baseline and no
+revert-if-slower, so Pablo chose it on 2026-10-28. It applies per Worker, not per
+route. Outside Europe every route pays the hop from the reader to Frankfurt: the
+provider relays, the AI routes (`/ai/rewrite`, `/ai/annotate`), share pages and
+preflights as well as the feed. The relays to providers hosted in the US (arXiv,
+OpenAlex, Crossref, Semantic Scholar, NCBI, ADS, Unpaywall, Resend) also pay a
+round trip from Frankfurt on every upstream call, so routes that call in
+sequence, such as `/sources/pubmed`, `/access` and the `/institution/services`
+probes, pay it several times, against unchanged deadlines. Unlike Smart
+Placement, a region never reverts a slower placement. It does not move the
+crons, the harvest Workflow or Durable Objects that already exist. An object is
+created near the code that first calls `get()`, so objects the fetch handler
+creates from now on, such as each `/ai/rewrite` session, are created near
+Frankfurt. The Cache API is per location, so after the first placed deploy the
 readers' kept rankings are not found once (`Feed walk has no kept order to go on
-with`). To check it, look for `cf-placement: remote-XXX` (forwarded) on any
-response, for example
-`curl -s -D - -o /dev/null https://api.papertok.app/health`. Per-address limits
+with`). To check it, look at `cf-placement` on any response, for example
+`curl -s -D - -o /dev/null https://api.papertok.app/health`: `remote-FRA`
+(forwarded), or `local-FRA` when the request already enters at Frankfurt,
+confirms it; any other `local-XXX` means it is not applied. Per-address limits
 (`worker/caller-quota.ts`) read `CF-Connecting-IP`. After a placement change,
-check that the routes they protect still answer: a missing or invalid header
-answers 503.
+check that the routes they protect still answer: with a missing or invalid
+header the provider relays, `/openalex` and `/pdf` answer 503, and share pages
+skip the lookup.
 The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
-`worker/request-quota-ledger.ts`). The feed reserves its minute beside its first
-D1 read, and the feed's ledger is a new object every UTC minute, created near
-the first request of that minute and never moved, so without the hint a minute
-opened by a reader on another continent sent every reservation of that minute
-there. Cloudflare reads the hint only when it creates an object, as a best
+`worker/request-quota-ledger.ts`). Most periods are a new object every UTC
+minute, hour or day, created near the first caller of that period and never
+moved. With the region, the fetch handler already runs in Frankfurt, so the
+hint matters for objects first opened by the crons or the harvest Workflow,
+which placement does not move, and keeps the ledger in WEUR if placement
+changes. Cloudflare reads the hint only when it creates an object, as a best
 effort: objects created before the deploy, such as the providers' pace objects,
 stay where they are, and minute, hour and day objects are created in WEUR as
 their periods start. Reservations stay one transaction in one object per period.

@@ -31,9 +31,11 @@ subrequests = 100_000
 # each a round trip from wherever the fetch handler runs. The fetch handler runs
 # in Frankfurt (aws:eu-central-1), next to that I/O, for every route, instead of
 # at the reader's location. Smart Placement (mode = "smart") never moved it at
-# PaperTok's traffic. This does not move the crons, the harvest Workflow or the
-# Durable Objects. Keep it here: a dashboard setting is undone by the next deploy
-# from the repo (worker/README.md, the paper store's placement).
+# PaperTok's traffic. This does not move the crons, the harvest Workflow or
+# Durable Objects that already exist; objects the fetch handler creates from now
+# on, such as each /ai/rewrite session, are created near Frankfurt. Keep it here:
+# a dashboard setting is undone by the next deploy from the repo
+# (worker/README.md, the paper store's placement).
 [placement]
 region = "aws:eu-central-1"
 
