@@ -1649,11 +1649,15 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // The closest notable papers first, without recency: they are years old by
   // design. A reader without likes gets them with the years in turns; a
   // rejection says nothing about the years they want, so it only moves near
-  // copies of the rejected papers after the others, the nearest last.
+  // copies of the rejected papers after the others, the nearest last. The
+  // turns are taken before the excluded papers leave, as turns already passed:
+  // the app excludes the cards it showed on every fresh load, which would
+  // otherwise start the turns again from the first year (ENG-166).
   const rejectedVectors = negatives.map(unitVector);
   const notable = likes.length
     ? rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
-    : notableYearsInTurns(offeredNotable, notableLanes)
+    : notableYearsInTurns(notableRead.candidates, notableLanes)
+      .filter(candidate => !excluded.has(candidate.workId))
       .map(row => {
         const embedding = vectors.get(row.workId);
         return { row, semanticScore: -rejection(embedding ? unitVector(embedding) : null, rejectedVectors) };

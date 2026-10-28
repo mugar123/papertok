@@ -1657,6 +1657,26 @@ test("a reader without likes gets the notable years in turns, newest first, and 
   assert.deepEqual(notable, expected);
 });
 
+// The app excludes the cards it showed on every fresh load (a reload, a
+// refresh, the next session): they count as turns already passed, so the
+// years' turns go on rather than starting again from the first (ENG-166 review).
+test('a fresh load that excludes the notable cards shown before continues the years in turns', async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const excludedIds: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (let load = 0; load < 3; load += 1) {
+    // The third load rejects the cards of the second instead.
+    const negativeIds = load === 2 ? excludedIds.splice(2) : [];
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter(shown), excludedIds, negativeIds, notable: 2 }), { now: NOW });
+    const cards = answer.filter(paper => paper._notable);
+    years.push(cards.map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
+    excludedIds.push(...negativeIds, ...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
 test('with a like, the notable cards follow the closest papers, whatever their year or leaf', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
