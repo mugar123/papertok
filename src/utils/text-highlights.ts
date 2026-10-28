@@ -14,9 +14,9 @@ import { normalizeLatexText, normalizeSavedLatexText, savedHighlightSpace, split
  *
  * 1. `splitLatexText` runs its input through `normalizeLatexText` first, which
  *    strips markup, collapses whitespace and escapes `%`. Offsets in the raw
- *    string therefore do not survive. Everything here works in *normalized*
- *    space, and quotes are normalized too before being searched, keeping
- *    their font commands (`normalizeHighlightQuote`).
+ *    string therefore do not survive. Ranges are in *normalized* space, and
+ *    quotes are cut from that text before its font commands are unwrapped
+ *    (`savedHighlightSpace`) and found there again.
  *
  * 2. A highlight must never cross *into* a maths chunk. Wrapping part of a
  *    `$...$` expression in a `<mark>` would hand KaTeX a broken fragment, so
@@ -34,10 +34,9 @@ import { normalizeLatexText, normalizeSavedLatexText, savedHighlightSpace, split
 const MIN_QUOTE_LENGTH = 8;
 
 /**
- * A quote keeps its font commands. Whether one unwraps depends on the formulas
- * around it in the paragraph, which a quote on its own does not have, so a
- * quote cut from the normalized text stays verbatim, and one saved with
- * wrappers is found in `savedHighlightSpace`.
+ * A quote keeps its font commands: it lives in `savedHighlightSpace`, and
+ * whether a wrapper unwraps depends on the formulas around it in the
+ * paragraph, which a quote on its own does not have.
  */
 export function normalizeHighlightQuote(quote: unknown) {
   return normalizeSavedLatexText(quote);
@@ -69,11 +68,10 @@ function byLayer(a: HighlightRange, b: HighlightRange) {
  * highlight is invisible, whereas a mis-placed one is a lie about the text.
  */
 export function resolveHighlightRanges(text: unknown, highlights: HighlightInput[] = []) {
-  const normalized = normalizeLatexText(text);
-  if (!normalized) return [];
+  const space = savedHighlightSpace(text);
+  if (!space.current) return [];
 
   const ranges: HighlightRange[] = [];
-  let saved: ReturnType<typeof savedHighlightSpace> | undefined;
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
     const source = highlight?.source || 'ai';
@@ -96,13 +94,11 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
       return null;
     };
     if (quote.length < MIN_QUOTE_LENGTH) continue;
-    let found = findFree(normalized, quote);
-    // A quote saved before font commands were unwrapped may hold one, or start
-    // or end inside one; it is found in the text it was cut from.
-    if (!found) {
-      saved ??= savedHighlightSpace(text);
-      if (saved.text !== normalized) found = findFree(saved.text, quote, saved.toCurrent);
-    }
+    // Found in the text it was cut from, where main found it too. A quote not
+    // cut from it, such as one the model wrote or a selection read off the
+    // screen, may only occur in the painted text.
+    const found = findFree(space.text, quote, space.toCurrent)
+      ?? (space.text === space.current ? null : findFree(space.current, quote));
     if (!found) continue;
     const { start, end } = found;
 
@@ -248,13 +244,40 @@ export function buildSelectionAnchor(selectedText: string) {
  * `resolveHighlightRanges` can find again on the next render.
  */
 export function buildRangeAnchor(text: unknown, start: number, end: number) {
-  const normalized = normalizeLatexText(text);
-  if (!normalized) return null;
-  const from = Math.max(0, Math.min(start, end));
-  const to = Math.min(normalized.length, Math.max(start, end));
-  const quote = normalized.slice(from, to).trim();
-  if (quote.length < MIN_QUOTE_LENGTH) return null;
-  return { quote, kind: 'user' };
+  const space = savedHighlightSpace(text);
+  let from = Math.max(0, Math.min(start, end));
+  let to = Math.min(space.current.length, Math.max(start, end));
+  while (from < to && /\s/.test(space.current[from])) from += 1;
+  while (to > from && /\s/.test(space.current[to - 1])) to -= 1;
+  const words = space.current.slice(from, to);
+  if (words.length < MIN_QUOTE_LENGTH) return null;
+  return { quote: savedQuote(space, from, to, words), kind: 'user' };
+}
+
+/**
+ * The painted characters `from`..`to` as the slice of the saved space they
+ * came from. Font commands the selection covers whole come with it, so it reads
+ * as the selected words and selecting `HERMES harness` stores the
+ * `\textbf{HERMES} harness` a reader selected on main. A selection that cuts
+ * across a wrapper keeps the brace between, which still marks it.
+ */
+function savedQuote({ text: saved, source }: ReturnType<typeof savedHighlightSpace>, from: number, to: number, words: string) {
+  const firsts = [];
+  for (let index = from > 0 ? source[from - 1] + 1 : 0; index < source[from]; index += 1) {
+    if (saved[index] === '\\') firsts.push(index);
+  }
+  firsts.push(source[from]);
+  const lasts = [];
+  for (let index = to < source.length ? source[to] : saved.length; index > source[to - 1] + 1; index -= 1) {
+    if (saved[index - 1] === '}') lasts.push(index);
+  }
+  lasts.push(source[to - 1] + 1);
+  for (const first of firsts) {
+    for (const last of lasts) {
+      if (normalizeLatexText(saved.slice(first, last)) === words) return saved.slice(first, last);
+    }
+  }
+  return saved.slice(source[from], source[to - 1] + 1);
 }
 
 export const HIGHLIGHT_MIN_QUOTE_LENGTH = MIN_QUOTE_LENGTH;

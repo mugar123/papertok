@@ -501,22 +501,24 @@ export function normalizeSavedLatexText(text: unknown) {
 }
 
 /**
- * Highlight quotes saved before font commands were unwrapped were cut from the
- * text with its wrappers, so one that starts or ends inside a wrapper
- * (`HERMES}, a harness`) no longer occurs in `normalizeLatexText`. This is that
- * earlier text, with `toCurrent` mapping an offset in it onto the current one:
- * the number of characters before it that unwrapping kept.
+ * The text highlight quotes are cut from: `normalizeLatexText` before font
+ * commands are unwrapped. Quotes saved before the unwrapping hold wrappers, or
+ * start or end inside one (`HERMES}, a harness`), and an unwrapped mention
+ * reads exactly like a plain one with the same words, so this stays the one
+ * space quotes live in. `current` is the painted text, `source` the index in
+ * `text` of each of its characters, and `toCurrent` maps an offset in `text`
+ * onto `current`: the number of characters before it that unwrapping kept.
  */
 export function savedHighlightSpace(text: unknown) {
   const saved = normalizeSavedLatexText(text);
-  const { source } = unwrapTextFormatting(saved);
+  const { text: current, source } = unwrapTextFormatting(saved);
   const offsets = new Array<number>(saved.length + 1);
   let kept = 0;
   for (let index = 0; index <= saved.length; index += 1) {
     while (kept < source.length && source[kept] < index) kept += 1;
     offsets[index] = kept;
   }
-  return { text: saved, toCurrent: (offset: number) => offsets[offset] };
+  return { text: saved, current, source, toCurrent: (offset: number) => offsets[offset] };
 }
 
 /**

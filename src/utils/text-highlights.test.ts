@@ -159,6 +159,40 @@ test('a saved quote with a whole font command marks the wrapped mention', () => 
   assert.deepEqual([range.start, range.end], [start, start + 'HERMES harness runs'.length]);
 });
 
+// Unwrapped, the first mention reads like the plain one a reader marked on
+// main, so a quote is searched in the text it was cut from first.
+test('a quote saved before font commands were unwrapped keeps the mention it marked', () => {
+  const text = 'the \\textbf{alpha beta} gamma shows up and later alpha beta gamma again';
+  const plain = { quote: 'alpha beta gamma', source: 'user', id: 'plain' };
+  const wrapped = { quote: '\\textbf{alpha beta} gamma', source: 'user', id: 'wrapped' };
+  for (const order of [[plain, wrapped], [wrapped, plain]]) {
+    const ranges = resolveHighlightRanges(text, order);
+    assert.deepEqual(ranges.map(range => [range.id, range.start, range.end]), [['wrapped', 4, 20], ['plain', 40, 56]]);
+  }
+  const [range] = resolveHighlightRanges('We call it the \\textbf{HERMES harness}. Later, the HERMES harness runs fast.', [{ quote: 'the HERMES harness', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [38, 56]);
+});
+
+// A selection is stored as the slice of that text it covers, wrappers whole
+// where it covers them whole, so it marks the mention that was selected.
+test('a selection over unwrapped words marks the mention that was selected', () => {
+  const text = 'the \\textbf{alpha beta} gamma shows up and later alpha beta gamma again';
+  for (const [start, end, quote] of [
+    [4, 20, '\\textbf{alpha beta} gamma'],
+    [40, 56, 'alpha beta gamma'],
+    [10, 20, 'beta} gamma'],
+  ] as const) {
+    const anchor = buildRangeAnchor(text, start, end);
+    assert.equal(anchor?.quote, quote);
+    for (const highlight of [{ quote, pending: true }, { quote, source: 'user' }]) {
+      const ranges = resolveHighlightRanges(text, [highlight]);
+      assert.deepEqual(ranges.map(range => [range.start, range.end]), [[start, end]], quote);
+    }
+  }
+  const nested = 'a \\textbf{\\emph{HERMES}} harness for agents';
+  assert.equal(buildRangeAnchor(nested, 2, 16)?.quote, '\\textbf{\\emph{HERMES}} harness');
+});
+
 // A closing brace glued to the wrapper's own closer belongs to the text.
 test('a saved quote ending on a font command closer maps onto the wrapped words alone', () => {
   const text = 'x\\emph{ab}} and the rest of it';

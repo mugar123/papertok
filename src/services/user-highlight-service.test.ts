@@ -172,6 +172,16 @@ test('a whole paragraph with a spaced font command still marks after it is saved
   }
 });
 
+// The id is a fingerprint of the quote, so selecting again a passage saved on
+// main must store the quote main stored, or it writes a second document.
+test('selecting again a passage saved with a font command keeps its id', () => {
+  const paragraph = 'a \\textbf{HERMES} harness for agents';
+  const saved = normalizeUserHighlight({ ...SPAN, quote: '\\textbf{HERMES} harness' });
+  const start = normalizeLatexText(paragraph).indexOf('HERMES');
+  const again = normalizeUserHighlight({ ...SPAN, quote: buildRangeAnchor(paragraph, start, start + 'HERMES harness'.length)?.quote });
+  assert.equal(buildHighlightId(again!), buildHighlightId(saved!));
+});
+
 test('a passage inside one paragraph keeps the id it always had', () => {
   assert.equal(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: undefined }));
   assert.notEqual(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' }));
