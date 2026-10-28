@@ -1715,17 +1715,20 @@ test('with only rejections, the notable papers take the years in turns, the near
   const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
   insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
   insert.run(idOf('2610.00058'), vector([0, 1, 0, 0, 0, 0]));
-  // The first five cards of the years' turns are offered: the first is a copy
-  // of the first rejection, the third a near copy of the second, the fourth
-  // far from both.
-  const offered = ['W202511', 'W202421', 'W202311', 'W202221', 'W202111'];
+  // Five papers are offered, in the years' turns: one of 2025, 2024, 2023 and
+  // 2022, then 2025's other one. The first is a copy of the first rejection,
+  // the third a near copy of the second, the fourth far from both.
+  const offered = ['W202511', 'W202421', 'W202311', 'W202221', 'W202510'];
   insert.run(idOf('openalex:W202511'), vector([1, 0, 0, 0, 0, 0]));
   insert.run(idOf('openalex:W202311'), vector([0, 0.9, 0.436, 0, 0, 0]));
   insert.run(idOf('openalex:W202221'), vector([0, 0, 1, 0, 0, 0]));
   const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => `W${year}${leaf + 1}${rank}`)))
     .filter(id => !offered.includes(id)).map(id => `openalex:${id}`);
   const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
-  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W202421', 'W202221', 'W202111', 'W202311', 'W202511'].map(id => `openalex:${id}`));
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W202421', 'W202221', 'W202510', 'W202311', 'W202511'].map(id => `openalex:${id}`));
+  // With every notable paper offered, the near copies wait behind all others.
+  const all = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(all.filter(paper => paper._notable).map(paper => paper.year), [2024, 2022, 2021, 2020, 2019]);
 });
 
 test('a reader without likes or rejections reads no vectors for the notable papers', async t => {
