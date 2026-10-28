@@ -1706,17 +1706,34 @@ test('with a like, the diversity pass orders near copies of the notable papers a
   assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
 });
 
-test('with only a rejection, the notable papers stay newest first, the near copy of the rejected paper last, rather than taking the years in turns', async () => {
+// A rejection says nothing about the years the reader wants: "Not interested"
+// on a card with a vector left every notable card of the newest year (ENG-166 review).
+test('with only rejections, the notable papers take the years in turns, the near copies of the rejected papers last, the nearest last of all', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
   const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
   const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
   insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
-  insert.run(idOf('openalex:W202521'), vector([1, 0, 0, 0, 0, 0]));
-  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
-  const notable = answer.filter(paper => paper._notable);
-  assert.deepEqual(notable.map(paper => paper.year), [2025, 2025, 2025, 2024, 2024]);
-  assert.ok(!notable.some(paper => paper.id === 'openalex:W202521'), 'the near copy of the rejected paper comes after the others');
+  insert.run(idOf('2610.00058'), vector([0, 1, 0, 0, 0, 0]));
+  // The first five cards of the years' turns are offered: the first is a copy
+  // of the first rejection, the third a near copy of the second, the fourth
+  // far from both.
+  const offered = ['W202511', 'W202421', 'W202311', 'W202221', 'W202111'];
+  insert.run(idOf('openalex:W202511'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202311'), vector([0, 0.9, 0.436, 0, 0, 0]));
+  insert.run(idOf('openalex:W202221'), vector([0, 0, 1, 0, 0, 0]));
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => `W${year}${leaf + 1}${rank}`)))
+    .filter(id => !offered.includes(id)).map(id => `openalex:${id}`);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W202421', 'W202221', 'W202111', 'W202311', 'W202511'].map(id => `openalex:${id}`));
+});
+
+test('a reader without likes or rejections reads no vectors for the notable papers', async t => {
+  const { env } = await notableLeavesCorpus();
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.equal(answer.filter(paper => paper._notable).length, 5);
+  assert.deepEqual(trips.flat().filter(sql => sql.includes('work_vectors')), [], 'the years in turns need no vector');
 });
 
 // ─── A reload in one request ───
