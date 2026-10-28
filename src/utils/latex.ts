@@ -411,15 +411,25 @@ function unwrapTextFormatting(value: string) {
         continue;
       }
       keep(cursor, start);
-      keep(end - 1 - argument.length, end - 1);
+      // Whitespace was collapsed before unwrapping, so a removal must not join
+      // two runs: the argument's edge against the space around the wrapper, or
+      // the spaces either side of an empty one. The space that stays is the
+      // one written first, so a control space (`\ `) keeps its own.
+      let from = end - 1 - argument.length;
+      if (/\s$/.test(tail)) while (from < end - 1 && /\s/.test(text[from])) from += 1;
+      keep(from, end - 1);
       cursor = end;
+      if (/\s$/.test(tail)) while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
       changed = true;
     }
     keep(cursor, text.length);
     text = output.join('');
     source = outputSource;
   }
-  return { text, source };
+  // An argument's edge space at either end of the text is left over too.
+  const first = text.length - text.trimStart().length;
+  const last = text.trimEnd().length;
+  return { text: text.slice(first, last), source: source.slice(first, last) };
 }
 
 /**

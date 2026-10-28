@@ -221,6 +221,23 @@ test('a long text with many font commands and formulas normalizes at once', () =
   assert.ok(performance.now() - started < 250);
 });
 
+// Whitespace is collapsed before font commands are unwrapped, so a removal
+// must not join a space inside the braces to one outside them.
+test('a font command with a space at the edge of its argument leaves one space', () => {
+  for (const [text, painted] of [
+    ['\\textbf{Keywords:} \\emph{ deep learning}, robotics', 'Keywords: deep learning, robotics'],
+    ['the \\textit{in vivo } and in vitro', 'the in vivo and in vitro'],
+    ['an empty \\emph{} wrapper', 'an empty wrapper'],
+    ['a \\textbf{ \\emph{ nested } } word', 'a nested word'],
+    ['\\emph{ leading} and \\textsc{trailing }', 'leading and trailing'],
+    ['a \\emph{x} \\textbf{ y}', 'a x y'],
+    // `\ ` is a control space: the space dropped is the one after the wrapper.
+    ['a \\emph{x\\ } b', 'a x\\ b'],
+  ]) {
+    assert.equal(normalizeLatexText(text), painted, text);
+  }
+});
+
 test('a font command around a formula paints its words and the formula', () => {
   assert.equal(normalizeLatexText('\\textbf{the $x$ value} rises'), 'the $x$ value rises');
 });

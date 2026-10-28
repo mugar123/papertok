@@ -152,6 +152,26 @@ test('a selection over a font command the paragraph keeps still marks after it i
   assert.equal(ranges.length, 1);
 });
 
+// Unwrapping a font command with a space inside its braces next to a space
+// outside left two in the paragraph, and the stored quote, which collapses
+// them, then matched nothing: the keyboard marks the whole paragraph.
+test('a whole paragraph with a spaced font command still marks after it is saved', () => {
+  for (const paragraph of [
+    '\\textbf{Keywords:} \\emph{ deep learning}, robotics and control',
+    'We compare the \\textit{in vivo } and in vitro results here',
+    'an empty \\emph{} wrapper between spaces in a sentence',
+    'a \\textbf{ \\emph{ nested } } word inside a sentence',
+  ]) {
+    const normalized = normalizeLatexText(paragraph);
+    const anchor = buildRangeAnchor(paragraph, 0, normalized.length);
+    const stored = normalizeUserHighlight({ ...SPAN, quote: anchor?.quote });
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: stored?.quote, source: 'user' }]) {
+      const ranges = resolveHighlightRanges(paragraph, [highlight]);
+      assert.deepEqual(ranges.map(range => [range.start, range.end]), [[0, normalized.length]], paragraph);
+    }
+  }
+});
+
 test('a passage inside one paragraph keeps the id it always had', () => {
   assert.equal(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: undefined }));
   assert.notEqual(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' }));
