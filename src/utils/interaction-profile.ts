@@ -1070,6 +1070,12 @@ function serializeAffinities(profile: InteractionProfile) {
     payload.authors = weakestHalfRemoved(payload.authors);
     serialized = JSON.stringify(payload);
   }
+  // Then the oldest engaged papers: an unlike of one no longer takes its
+  // count back, which only the papers past MAX_ENGAGED_PAPERS risk otherwise.
+  while (serialized.length > MAX_AFFINITY_JSON_BYTES && payload.temporal.p.length > 0) {
+    payload.temporal.p = payload.temporal.p.slice(Math.ceil(payload.temporal.p.length / 2));
+    serialized = JSON.stringify(payload);
+  }
   return serialized;
 }
 

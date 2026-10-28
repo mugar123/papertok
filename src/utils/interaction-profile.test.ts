@@ -757,6 +757,31 @@ test('a heavily used profile keeps its learned maps inside the stored budget', (
   assert.ok(Object.keys(readProfileSignals(deserializeInteractionProfile(stored), NOW).conceptAffinities).length > 0);
 });
 
+test('a profile whose categories fill the stored budget gives up its oldest engaged papers, not the write', () => {
+  const profile = createEmptyInteractionProfile();
+  // Categories liked on each of 46 days, until the affinities are 6 kB short of the budget.
+  for (let category = 0; serializeInteractionProfile(profile).affinities.length < MAX_AFFINITY_JSON_BYTES - 6000; category += 1) {
+    for (let day = 0; day < 46; day += 1) {
+      recordInteractionEvent(profile, { paperId: `c${category}-${day}`, kind: 'readLater', category: `cat.${category}` }, NOW);
+      recordInteractionEvent(profile, { paperId: `c${category}-${day}`, kind: 'pdfBounce', category: `cat.${category}`, timestamp: NOW - day * DAY_MS }, NOW);
+    }
+  }
+  // Two hundred For You cards with long DOI ids, liked and saved.
+  for (let index = 0; index < 200; index += 1) {
+    const card = { paperId: `10.1000/${String(index).padStart(40, '0')}`, category: 'cs.LG', notable: index % 2 === 0, published: '2026-08-18T00:00:00.000Z' };
+    recordInteractionEvent(profile, { ...card, kind: 'like' }, NOW);
+    recordInteractionEvent(profile, { ...card, kind: 'save' }, NOW);
+  }
+  const stored = serializeInteractionProfile(profile);
+  assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES);
+  const reloaded = deserializeInteractionProfile(stored)!;
+  assert.deepEqual(temporalOf(reloaded), temporalOf(profile));
+  // The newest paper's save is still taken back after the reload; an old one's is not.
+  recordInteractionEvent(reloaded, { paperId: `10.1000/${String(199).padStart(40, '0')}`, kind: 'unsave', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(reloaded, { paperId: `10.1000/${String(0).padStart(40, '0')}`, kind: 'unsave', category: 'cs.LG' }, NOW);
+  assert.deepEqual(temporalOf(reloaded), { notable: { shown: 0, engaged: 200 }, recent: { shown: 0, engaged: 199 }, lean: 1 });
+});
+
 // The ring of papers the reader really viewed: what lets a second device skip
 // them. A view and a skip both leave an interaction document, so both count; a
 // like of a paper never shown does not, and the ring is never a reason to hide
@@ -966,7 +991,9 @@ test('over the curated budget the viewed notable cards go after the ring and bef
 
 // ENG-166, decision 2: a paper adds to its kind at most once per signal, and
 // an unlike or unsave takes back exactly what its like or save added.
-const temporalOf = (profile: Parameters<typeof readProfileSignals>[0]) => readProfileSignals(profile, NOW).temporal;
+function temporalOf(profile: Parameters<typeof readProfileSignals>[0]) {
+  return readProfileSignals(profile, NOW).temporal;
+}
 
 test('liking and unliking, or saving and unsaving, a card leaves its kind\'s counts and the lean as they were', () => {
   for (const [notable, published] of [[true, '2018-01-01T00:00:00.000Z'], [false, '2026-08-18T00:00:00.000Z'], [false, '2020-01-01T00:00:00.000Z']] as const) {
