@@ -149,6 +149,13 @@ test('a saved quote of one wrapper whose words fall under the minimum still mark
   assert.deepEqual(resolveHighlightRanges('the HERMES system', [{ quote: 'HERMES', source: 'user' }]), []);
 });
 
+// A closing brace glued to the wrapper's own closer belongs to the text.
+test('a saved quote ending on a font command closer maps onto the wrapped words alone', () => {
+  const text = 'x\\emph{ab}} and the rest of it';
+  const [range] = resolveHighlightRanges(text, [{ quote: 'x\\emph{ab}', source: 'user' }]);
+  assert.equal(normalizeLatexText(text).slice(range.start, range.end), 'xab');
+});
+
 test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);

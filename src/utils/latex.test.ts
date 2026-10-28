@@ -195,6 +195,32 @@ test('a font command whose removal opens a formula closing past a later one stay
   }
 });
 
+// `\\` is a line break, so the word after it is prose, not a font command.
+test('a font command name after an escaped backslash stays as written', () => {
+  assert.equal(normalizeLatexText('line one \\\\textbf{Keywords}: a, b'), 'line one \\\\textbf{Keywords}: a, b');
+  assert.equal(normalizeLatexText('a \\\\emph{x} b'), 'a \\\\emph{x} b');
+});
+
+// Each wrapper used to walk every formula of the whole text again.
+test('a long text with many font commands and formulas normalizes at once', () => {
+  for (const [unit, painted] of [
+    ['\\textbf{a} $x$ ', 'a $x$ '],
+    ['We study \\textbf{model i} with $x_i^2$ and \\emph{robust} fits. ', 'We study model i with $x_i^2$ and robust fits. '],
+    ['$\\textbf{E}_i$ and \\emph{b} ', '$\\textbf{E}_i$ and b '],
+    ['\\emph{nested \\textbf{x}} $y$ ', 'nested x $y$ '],
+  ]) {
+    const started = performance.now();
+    const normalized = normalizeLatexText(unit.repeat(1000));
+    const elapsed = performance.now() - started;
+    assert.equal(normalized, painted.repeat(1000).trim());
+    assert.ok(elapsed < 250, `${unit} took ${elapsed.toFixed(1)} ms`);
+  }
+  const kept = '\\textbf{b $ c} '.repeat(1000);
+  const started = performance.now();
+  assert.equal(normalizeLatexText(kept), kept.trim());
+  assert.ok(performance.now() - started < 250);
+});
+
 test('a font command around a formula paints its words and the formula', () => {
   assert.equal(normalizeLatexText('\\textbf{the $x$ value} rises'), 'the $x$ value rises');
 });
