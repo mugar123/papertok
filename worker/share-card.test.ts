@@ -100,11 +100,16 @@ test('when three authors do not fit, fewer are named and "et al." stays', () => 
     ],
   })!;
   assert.equal(card.authors, 'Maria Fernanda Rodríguez-Villalobos et al.');
+  const three = paperShareCardFor({
+    title: 'A title',
+    authors: ['Alexandra Kowalczyk-Brennan', 'Christopher Montgomery', 'Elizabeth Fairweather', 'Sam Lee'],
+  })!;
+  assert.equal(three.authors, 'Alexandra Kowalczyk-Brennan, Christopher Montgomery et al.', 'three names here clipped "et al." on the rendered card');
 });
 
 test('a title the fonts cannot draw has no card; such authors or a venue are left off', () => {
   assert.equal(paperShareCardFor({ title: 'Readout with α-tuned pulses', authors: [] }), null);
   const card = paperShareCardFor({ title: 'Deep learning', authors: ['张伟', 'Li Wei'], journal: 'Zeitschrift für Physik', year: 2020 })!;
   assert.equal(card.authors, '', 'a line with a name the fonts lack is left off whole, not with the name skipped');
-  assert.equal(card.venue, '', 'the mono font carries no ü');
+  assert.equal(card.venue, '2020', 'the mono font carries no ü, so only the year is printed');
 });

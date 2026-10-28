@@ -260,6 +260,7 @@ test('a paper\'s card is drawn from its record once, then answered from the cach
     const response = await handleShareImage(cardRequest(PAPER_PATH), deps);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=86400');
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), PNG);
   }
   assert.equal(calls.lookups, 1);
@@ -279,5 +280,6 @@ test('a paper that is missing, undrawable or fails to draw sends the default ima
     const response = await handleShareImage(cardRequest(PAPER_PATH), deps);
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('location'), 'https://papertok.app/og/papertok-share-0.3.png');
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=300');
   }
 });

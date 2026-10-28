@@ -70,7 +70,9 @@ const MAX_NAME_LENGTH = 110;
 // IBM Plex Mono is cut to printable ASCII and a few marks (share-card-assets/README.md).
 const MONO_RANGES = [[0x0020, 0x007e], [0x00b7, 0x00b7], [0x2013, 0x2014], [0x2019, 0x2019], [0x2026, 0x2026]];
 const MAX_TITLE_LENGTH = 200;
-const MAX_AUTHORS_LENGTH = 84;
+// Measured: at 28px Newsreader Text the 960px column clips near 73 characters,
+// so 66 leaves room for wide letters.
+const MAX_AUTHORS_LENGTH = 66;
 const MAX_VENUE_LENGTH = 60;
 
 const MAX_SUBTITLE_LENGTH = 70;
@@ -206,8 +208,8 @@ export function paperShareCardFor(paper: ShareCardPaper): PaperShareCard | null 
   if (!title || !drawable(title)) return null;
   const line = cardAuthorLine(paper.authors.map(name => name.trim()).filter(Boolean));
   const authors = drawable(line) ? line : '';
-  const venueLine = clip([paper.journal?.trim(), paper.year].filter(Boolean).join(' · '), MAX_VENUE_LENGTH);
-  const venue = drawable(venueLine.toUpperCase(), MONO_RANGES) ? venueLine : '';
+  const journal = clip(paper.journal?.trim() || '', MAX_VENUE_LENGTH);
+  const venue = [drawable(journal.toUpperCase(), MONO_RANGES) ? journal : '', paper.year].filter(Boolean).join(' · ');
   return { title, authors, venue, alt: `${title}${authors ? `, by ${authors}` : ''}: a paper on PaperTok.` };
 }
 
@@ -330,7 +332,7 @@ export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNod
 }
 
 // Print grain under a paper's card: faint warm noise, one tile repeated so the
-// PNG stays near 230 KB (noise does not compress; a repeat within a row does).
+// PNG stays near 200 KB (noise does not compress; a repeat within a row does).
 const GRAIN_TILE = 48;
 const GRAIN = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CARD_WIDTH}" height="${SHARE_CARD_HEIGHT}">`
   + '<filter id="g" x="0" y="0" width="100%" height="100%">'
