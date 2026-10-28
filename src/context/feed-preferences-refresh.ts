@@ -3,8 +3,8 @@
  *
  * `applied` is the signature of the interests the feed last acted on, or null
  * before it acted on any (a cold mount). The caller records `signature` as
- * applied when the plan takes effect: at once for 'keep-restored', and only
- * when the scheduled load runs for 'load'. A load cancelled before it ran (its
+ * applied when the plan takes effect: at once for 'keep-restored', and through
+ * scheduleRefresh, when the load runs, for 'load'. A load cancelled before it ran (its
  * effect cleaned up because a dependency changed, such as the account profile
  * applying) leaves `applied` as it was, so the next run plans it again with the
  * newest interests. Recording it at schedule time lost the first page of a cold
@@ -34,4 +34,20 @@ export function planPreferencesRefresh({ applied, signature, ready, onFeedRoute,
   const coldMount = applied === null;
   if (coldMount && restored) return { action: 'keep-restored' };
   return { action: 'load', coldMount };
+}
+
+/**
+ * Runs `run` in a 0 ms timer and records `signature` in `applied` when the
+ * timer fires, not when it is set. Returns the effect cleanup that clears it.
+ *
+ * A render between the two (the account profile applying, or another effect's
+ * timer changing the papers and so loadPapers) runs the cleanup first. Nothing
+ * is recorded then, so the effect's next run schedules the same work again.
+ */
+export function scheduleRefresh<T>(applied: { current: T }, signature: T, run: () => void): () => void {
+  const timer = setTimeout(() => {
+    applied.current = signature;
+    run();
+  }, 0);
+  return () => clearTimeout(timer);
 }

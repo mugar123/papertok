@@ -1,16 +1,40 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { planPreferencesRefresh } from './feed-preferences-refresh.ts';
+import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
 
 const reader = { signature: 'cs.LG', ready: true, onFeedRoute: true, restored: false };
 
-test('a cold start whose first load was cancelled before it ran plans that load again, with the newest interests', () => {
-  // The interests effect plans the first page; the account profile applies
-  // before the 0 ms timer fires, so the cleanup cancels it and nothing was applied.
+test.afterEach(() => mock.timers.reset());
+
+test('an unapplied cold mount with interests plans a cold load for the current interests', () => {
   assert.deepEqual(planPreferencesRefresh({ ...reader, applied: null }), { action: 'load', coldMount: true });
-  assert.deepEqual(planPreferencesRefresh({ ...reader, applied: null, signature: 'cs.AI|cs.LG' }), { action: 'load', coldMount: true });
-  // Once the load ran, its interests are applied and a re-run loads nothing more.
   assert.deepEqual(planPreferencesRefresh({ ...reader, applied: 'cs.AI|cs.LG', signature: 'cs.AI|cs.LG' }), { action: 'none' });
+});
+
+test('a first load cleaned up before its timer fired is planned and scheduled again, and applied once it runs', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  const applied = { current: null as string | null };
+  const loads: string[] = [];
+  const effect = (signature: string) => {
+    const plan = planPreferencesRefresh({ ...reader, signature, applied: applied.current });
+    return plan.action === 'load' ? scheduleRefresh(applied, signature, () => loads.push(signature)) : null;
+  };
+
+  // The interests effect schedules the first page; a render before the 0 ms
+  // timer fires (the account profile applying) runs its cleanup.
+  const cleanup = effect('cs.LG');
+  assert.ok(cleanup);
+  cleanup();
+  mock.timers.tick(0);
+  assert.equal(applied.current, null);
+  assert.deepEqual(loads, []);
+
+  // The re-run, with the newest interests, still has a load to make.
+  assert.ok(effect('cs.AI|cs.LG'));
+  mock.timers.tick(0);
+  assert.equal(applied.current, 'cs.AI|cs.LG');
+  assert.deepEqual(loads, ['cs.AI|cs.LG']);
+  assert.equal(effect('cs.AI|cs.LG'), null);
 });
 
 test('a cold start over the restored snapshot of these interests keeps it; changed interests replace the feed', () => {

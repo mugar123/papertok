@@ -82,7 +82,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { planPreferencesRefresh } from './feed-preferences-refresh.ts';
+import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
 import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -1627,10 +1627,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    // The signature is applied when this timer runs, not when it is set: a
-    // cleanup that clears it first leaves the load to the next run.
-    const refreshTimer = setTimeout(() => {
-      preferencesSignatureRef.current = signature;
+    return scheduleRefresh(preferencesSignatureRef, signature, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
         if (plan.coldMount) return;
@@ -1640,8 +1637,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setHasMore(true);
       }
       void loadPapers(true, null);
-    }, 0);
-    return () => clearTimeout(refreshTimer);
+    });
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // The last following signature the FEED applied, or null while there is no
