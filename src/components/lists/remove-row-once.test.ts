@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { MarkWriteOptions } from '../../context/write-mark.ts';
-import { writeMark } from '../../context/write-mark.ts';
+import { markChanges, writeMark } from '../../context/write-mark.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
 
@@ -20,15 +20,23 @@ function pendingRemovals() {
 // accepted write records an unlike in the reading profile.
 function favorites() {
   const writes: Array<() => void> = [];
+  const changes = markChanges();
+  let liked = true;
   let unlikes = 0;
   const toggleLike = (paper: Paper, options: MarkWriteOptions) => writeMark({
-    show: () => { unlikes += 1; },
+    show: () => {
+      liked = false;
+      unlikes += 1;
+    },
     write: () => new Promise<void>((accept) => { writes.push(accept); }),
     failure: 'refused',
     ...options,
     stillSignedIn: () => true,
-    stillNewest: () => true,
-    stillAsStarted: () => true,
+    changes,
+    markKey: `u1:like:${paper.id}`,
+    from: true,
+    to: false,
+    isOn: () => liked,
   });
   const unused = () => Promise.reject(new Error('not this list'));
   const remove = () => removePaperFromMarkList('__favorites__', 'p1', { id: 'p1' }, {

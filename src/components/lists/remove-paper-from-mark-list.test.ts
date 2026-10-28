@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { MarkWriteOptions } from '../../context/write-mark.ts';
-import { markStartsOn, writeMark } from '../../context/write-mark.ts';
+import { markChanges, markStartsOn, writeMark } from '../../context/write-mark.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 
 type Paper = { id: string };
@@ -18,6 +18,7 @@ function markedLists() {
     __read_later__: new Set(['p1', 'p2']),
   };
   const writes: string[] = [];
+  const changes = markChanges();
   let answer!: { accept: () => void; refuse: (error: Error) => void };
   const take = (listId: string, paperId: string, value: boolean, startedFrom: boolean, options: MarkWriteOptions) => writeMark({
     show: () => {
@@ -35,8 +36,11 @@ function markedLists() {
     failure: 'refused',
     ...options,
     stillSignedIn: () => true,
-    stillNewest: () => true,
-    stillAsStarted: () => rows[listId].has(paperId) === startedFrom,
+    changes,
+    markKey: `u1:${listId}:${paperId}`,
+    from: startedFrom,
+    to: value,
+    isOn: () => rows[listId].has(paperId),
   });
   return {
     rows,
