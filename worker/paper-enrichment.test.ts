@@ -5,7 +5,7 @@ import type { Paper } from '../src/models/paper.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
-import { embedWorks, evictExpired, ingestPapers } from './paper-store.ts';
+import { embedWorks, evictExpired, ingestPapers, readNotableCandidates } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { mapPubmedSummary, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -502,6 +502,43 @@ for (const [order, works] of [['first', [RETRACTED_WORK, EPRINT_WORK]], ['last',
     assert.deepEqual(laneRows(db), []);
   });
 }
+
+// OpenAlex can also hold the journal's article apart, without the arXiv
+// location, so that the arXiv id finds only the unretracted eprint. Synthetic:
+// the captured work without its arXiv location.
+const JOURNAL_ONLY_WORK = { ...RETRACTED_WORK, locations: RETRACTED_WORK.locations.slice(0, 1) };
+
+test("an ADS paper whose arXiv id finds an unretracted eprint is retracted by its journal DOI's work, and is not offered as notable", async t => {
+  const filters: string[] = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const filter = url.searchParams.get('filter') ?? '';
+    filters.push(filter.slice(0, filter.indexOf(':')));
+    const selected = url.searchParams.get('select')?.split(',') ?? [];
+    const works = filter.startsWith('doi:') ? [JOURNAL_ONLY_WORK] : [EPRINT_WORK];
+    return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: ADS_LISTING, lanes: [NOTABLE_LANE] }], { now: NOW, keepUntil: keptFrom(NOW) });
+
+  await enrichPending(env, 50, NOW);
+  assert.deepEqual(filters, ['locations.landing_page_url', 'doi'], 'one call by arXiv id, one by the journal DOI');
+  const { paper, enrichedAt } = stored(db)['ads:2018Natur.556...74Z'];
+  assert.equal(paper.publicationStatus, 'retracted');
+  assert.ok(enrichedAt);
+  assert.deepEqual(laneRows(db), []);
+  assert.deepEqual((await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).candidates, []);
+});
 
 // A search, a reader's lookup of a liked paper by DOI and the lanes of
 // followed entities ask OpenAlex without leaving retracted works out.

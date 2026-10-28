@@ -4,7 +4,7 @@ import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
 import type { WorkerEnv } from './env.ts';
 import type { StoreEnv } from './paper-store.ts';
 
-import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
+import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, normalizeEnrichmentDoi, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
 import { normalizeScientificMarkup } from '../src/utils/latex.ts';
@@ -251,11 +251,26 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   if (rows.length === 0) return { workIds: [], stop: true };
   const papers = rows.map(row => JSON.parse(row.paper) as Paper);
   const asksOpenAlex = rows.map((row, index) => (row.refresh || needsOpenAlexEnrichment(papers[index])) && Boolean(getOpenAlexEnrichmentId(papers[index])));
+  // A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
+  // can hold the journal's article as a work of its own, without the arXiv
+  // location, and only that work then says it is retracted. Only the
+  // retraction is taken from it. One call per 50 such papers, in the same budget.
+  const journalDois = papers.map((paper, index) => (asksOpenAlex[index] && !getOpenAlexEnrichmentId(paper).includes(':')
+    ? normalizeEnrichmentDoi(paper.doi) : ''));
 
   let openAlex: Record<string, Partial<Paper>> = {};
   let openAlexAnswered = true;
   try {
-    openAlex = await openAlexEnrichments(env, [...new Set(papers.filter((_, index) => asksOpenAlex[index]).map(getOpenAlexEnrichmentId))]);
+    openAlex = await openAlexEnrichments(env, [...new Set([
+      ...papers.filter((_, index) => asksOpenAlex[index]).map(getOpenAlexEnrichmentId),
+      ...journalDois.filter(Boolean).map(doi => `doi:${doi}`),
+    ])]);
+    papers.forEach((paper, index) => {
+      const id = getOpenAlexEnrichmentId(paper);
+      if (journalDois[index] && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' && openAlex[id]?.publicationStatus !== 'retracted') {
+        openAlex[id] = { ...openAlex[id], publicationStatus: 'retracted' };
+      }
+    });
   } catch (error) {
     if (!(error instanceof OpenAlexUnavailable)) throw error;
     console.warn('OpenAlex enrichment stopped for this run', error.message);

@@ -120,7 +120,8 @@ export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | nul
   return '';
 }
 
-function normalizeEnrichmentDoi(value: unknown) {
+/** A publisher's DOI, lower-cased; '' for none, a malformed one or arXiv's pseudo-DOI. */
+export function normalizeEnrichmentDoi(value: unknown) {
   const doi = String(value || '').trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
   if (!/^10\.\d{4,9}\/\S+$/.test(doi) || /^10\.48550\/arxiv\./.test(doi)) return '';
   return doi;
