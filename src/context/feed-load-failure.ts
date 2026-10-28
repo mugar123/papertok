@@ -85,11 +85,13 @@ interface FeedScreen {
 }
 
 /**
- * Whether the reader is looking at the error now. The provider keeps loading
- * on other pages, so a failure there is held until the reader returns to
- * /feed and the error is still on screen.
+ * Whether the failed attempt is on the reader's screen now: /feed with no
+ * card. The screen shows the error, or, while the attempt's automatic retry is
+ * due, the feed's wait over it (ENG-116). The provider keeps loading on other
+ * pages, so a failure there is held until the reader returns to /feed and no
+ * card covers it.
  */
-function feedErrorOnScreen({ feedVisible, error, shownPapers }: FeedScreen) {
+function failedLoadOnScreen({ feedVisible, error, shownPapers }: FeedScreen) {
   return feedVisible && error !== null && shownPapers === 0;
 }
 
@@ -99,14 +101,17 @@ type FeedFailureChange =
   | { kind: 'screen_changed'; screen: FeedScreen };
 
 /**
- * What the provider does with the `app_error` a failed load owes. It is sent
- * once, where the load runs, when the reader sees the error: at once on /feed
- * with no card, or later, when the last card is dismissed or the reader
- * returns to /feed. A new load drops the event a previous attempt still held.
+ * What the provider does with the `app_error` a failed load owes. It marks a
+ * failed attempt on /feed with no card, sent once, where the load runs: at
+ * once, or later, when the last card is dismissed or the reader returns to
+ * /feed. The reader may not see the error itself: while the attempt's
+ * automatic retry is due the feed shows its wait instead, and the event is
+ * still sent, so each attempt has its outcome for the retry diagnostics
+ * (ENG-116). A new load drops the event a previous attempt still held.
  */
 export function feedFailureEventStep(held: FeedLoadFailedEvent | null, change: FeedFailureChange) {
   if (change.kind === 'load_started') return { send: null, hold: null };
   const owed = change.kind === 'load_failed' ? feedLoadFailedEvent(change.failure) : held;
   if (!owed) return { send: null, hold: null };
-  return feedErrorOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
+  return failedLoadOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
 }
