@@ -929,10 +929,9 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string |
 /**
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
- * Rows of one score go newest first, and rows it cannot tell apart keep their
- * order (`readCandidates`); with `tiesKeepOrder`, rows of one score keep it.
+ * Rows it cannot tell apart keep their order (`readCandidates`).
  */
-export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [], tiesKeepOrder = false }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[]; tiesKeepOrder?: boolean } = {}) {
+export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
   const likedVectors = positives.map(unitVector);
   const rejectedVectors = negatives.map(unitVector);
@@ -950,7 +949,7 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
       const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
       return { row, embedding, score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(row.published), semanticScore };
     })
-    .sort((a, b) => b.score - a.score || (tiesKeepOrder ? 0 : b.row.published.localeCompare(a.row.published)));
+    .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
   if (!positives.length && !negatives.length) return ranked;
   // Limit both the pool and selected prefix: a full 4,000 x 4,000 MMR pass
   // would dominate Worker CPU. The untouched tail remains available.
@@ -1621,7 +1620,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
   // A paper of the reader's notable lanes comes only as a notable card.
   const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
-  const offeredNotable = notableYearsInTurns(notableRead.candidates.filter(candidate => !excluded.has(candidate.workId)), notableLanes);
+  const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
   const [vectors] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
     likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
@@ -1631,14 +1630,16 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
+  // The closest notable papers first, without recency: they are years old by
+  // design. A reader without likes or rejections gets them with the years in turns.
+  const notable = likes.length || negatives.length
+    ? rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
+    : notableYearsInTurns(offeredNotable, notableLanes).map(row => ({ row, semanticScore: 0 }));
   return {
     // Each group ranked by its own likes, then the page shared by weight.
     ranks: interleaveByWeight(members.map((rows, index) => rankBySimilarity(rows.map(withVector), groupLikes[index], { now, order: query.order, negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight)),
-    // The closest notable papers first, without recency: they are years old by
-    // design. Papers of one score keep the years' turns.
-    notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives, tiesKeepOrder: true })
-      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+    notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
   };
 }
@@ -1646,8 +1647,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 /**
  * The notable candidates with the years in turns, newest first, and the asked
  * lanes in turns within each year, each lane's rows in their order. A reader
- * without likes or rejections ranks them all alike and gets them in this
- * order: one paper of each year in turn, rather than every paper of the
+ * without likes or rejections has nothing to rank them by and gets them in
+ * this order: one paper of each year in turn, rather than every paper of the
  * newest year first (ENG-166). The years start their turns from successive
  * lanes, so consecutive papers come from different lanes too.
  */

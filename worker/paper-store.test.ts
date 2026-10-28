@@ -1634,6 +1634,18 @@ test('with a like, the notable cards follow the closest papers, whatever their y
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
 });
 
+test('with a like, the notable papers it cannot tell apart stay newest first rather than taking the years in turns', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Only one notable paper has a vector; the others tie.
+  insert.run(idOf('openalex:W201811'), vector([0.8, 0.6, 0, 0, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.year), [2018, 2025, 2025, 2025, 2025]);
+});
+
 // ─── A reload in one request ───
 
 // The filter holds the papers earlier sessions showed the reader. A page that
