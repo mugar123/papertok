@@ -243,6 +243,11 @@ const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 // unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
 // A paper names one journal (`source:S…`, ENG-123), and readers follow few of them.
 const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution', 'source'] as const;
+// A journal's lane holds only the types its own listing asks for: an editorial
+// or letter that an author's lane brings stays out of it, and a row the lane
+// holds leaves it once a record or the enrichment gives it another type.
+const fitsJournalLane = (paper: Partial<Paper>) => FOLLOWED_JOURNAL_WORK_TYPES.includes(paper.publicationType || '');
+const isJournalLane = (lane: string) => lane.startsWith('source:');
 
 // The OpenAlex authors, institutions, topics, concepts and journal a paper names, as lanes.
 function namedEntityLanes(paper: Partial<Paper>) {
@@ -252,9 +257,7 @@ function namedEntityLanes(paper: Partial<Paper>) {
   }
   for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
-  // Only the types the journal's own lane lists: an editorial or letter that
-  // an author's lane brings stays out of the journal's.
-  if (FOLLOWED_JOURNAL_WORK_TYPES.includes(paper.publicationType || '')) lanes.add(entityLane(paper.venueId));
+  if (fitsJournalLane(paper)) lanes.add(entityLane(paper.venueId));
   lanes.delete('');
   return [...lanes];
 }
@@ -563,6 +566,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
   const withdrawn: number[] = [];
+  // Rows stored as an article or review that the merged record types otherwise.
+  const leftJournals: number[] = [];
   // The groups written as a working paper's row: only their articles can
   // upgrade one, and the step reads no other row.
   const workingPaperGroups = new Set<Group>();
@@ -596,8 +601,12 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     // The merged row can be one the feed does not show: a retracted paper,
     // whether this record or the stored row says so. It is filed under no
     // lane, and leaves those it holds, a folded row's included.
-    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
-    else withdrawn.push(id);
+    if (isFeedPublication(paper)) {
+      filings.push({ id, paper, published, lanes: group.lanes });
+      if (!fitsJournalLane(paper) && stored.some(work => fitsJournalLane(work.paper))) leftJournals.push(id);
+    } else {
+      withdrawn.push(id);
+    }
     if (isWorkingPaperRow(paper)) workingPaperGroups.add(group);
   }
   // Asked once the records are merged: a stored row names entities, such as
@@ -605,6 +614,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
   for (const { id, paper, published, lanes } of filings) {
     for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
+      // A journal's listing names the type of its own record, which another record of the row can change.
+      if (isJournalLane(lane) && !fitsJournalLane(paper)) continue;
       laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
     }
   }
@@ -625,6 +636,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
+  }
+  // After the folds, which bring a folded row's lanes along.
+  for (let start = 0; start < leftJournals.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'source:%'`)
+      .bind(JSON.stringify(leftJournals.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
@@ -673,6 +689,7 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       // A book, an erratum or another type the feed does not show, or a
       // retracted paper, leaves every lane once the enrichment reveals it.
       offered: isFeedPublication(paper),
+      leftJournal: fitsJournalLane(before) && !fitsJournalLane(paper),
       keys: workKeys(paper),
       lanes: published >= since ? recordLanes(paper, followed) : [],
     },
@@ -693,6 +710,11 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
         SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
+      // Sent only when needed: D1 counts each statement against the invocation.
+      ...(slice.some(change => change.filing.leftJournal)
+        ? [db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'leftJournal')
+          AND lane LIKE 'source:%'`).bind(chunk)]
+        : []),
     ]);
   }
   return changed.length;

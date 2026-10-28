@@ -2025,6 +2025,64 @@ test("a followed journal's lane takes the reviews other lanes list, not their ed
   assert.deepEqual(filed.map(row => row.title), ['Fifty years of the term structure: a review']);
 });
 
+// ENG-123: the type decides the journal's lane whenever the row is written
+// again, not only when it is first filed. A row the journal's lane holds
+// leaves it once a record or the enrichment calls it an editorial, keeps its
+// other lanes, and comes back once it is an article again.
+const aerWork = (type: string) => mapOpenAlexWork({
+  id: 'https://openalex.org/W7000000021',
+  doi: 'https://doi.org/10.1257/aer.20260021',
+  title: 'Monetary policy and the term structure of interest rates, revisited',
+  type,
+  publication_date: '2026-10-12',
+  abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+  authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+  primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+})!;
+const aerFollow = { type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' };
+
+function followedJournalCorpus() {
+  const store = corpus();
+  store.db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  const lanes = () => rows(store.db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane);
+  const journalPage = async () => (await readFeedPage(store.env, parseFeedRequest({ categories: [], follows: [aerFollow], page: 0, pageSize: 15 }), { now: NOW }))
+    .map(entry => [entry.id, entry._followedEntityMatches]);
+  return { ...store, lanes, journalPage };
+}
+
+test("an article a listing reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
+  const { env, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+  assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
+
+  await ingestPapers(env, [{ paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ'], 'the area lane keeps it');
+  assert.deepEqual(await journalPage(), []);
+
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+});
+
+test("a journal's own listing does not keep in its lane a row another record of the batch calls an editorial", async () => {
+  const { env, lanes } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['source:S23254222'] }, { paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ']);
+});
+
+test("an article the enrichment reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
+  const { env, db, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  const stored = () => rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'editorial' } })), NOW);
+  assert.deepEqual(lanes(), ['area:econ']);
+  assert.deepEqual(await journalPage(), []);
+
+  await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'article' } })), NOW);
+  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+  assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
+});
+
 test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {
   const { env, db } = corpus();
   await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
