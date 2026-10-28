@@ -14,7 +14,6 @@ import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '
 import {
   domainSourceRequests,
   getDomainSourcePlan,
-  europePmcLabelQuery,
   getEligibleDomainSources,
   mapAdsPaper,
   mapBioRxivPaper,
@@ -32,7 +31,8 @@ import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provide
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
-import { EUROPE_PMC_NOTABLE_LEAVES } from './europepmc-notable-leaves.generated.ts';
+import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
+import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -306,9 +306,9 @@ const NOTABLE_LEAVES = LEAVES.filter(leaf => openAlexNotableListingFilter(leaf.i
 // (eess.optics); these are arXiv's own codes.
 const ARXIV_CODE = /^(?:(?:cs|math|eess|econ|q-fin|stat|q-bio|nlin|astro-ph)\.[A-Z]{2}|(?:cond-mat|physics)\.[a-z]+(?:-[a-z]+)*|astro-ph|cond-mat|gr-qc|hep-(?:ex|lat|ph|th)|nucl-(?:ex|th)|quant-ph|math-ph|nlin)$/;
 const ADS_NOTABLE_LEAVES = LEAVES.filter(leaf => ARXIV_CODE.test(leaf.id));
-// The medicine and biology leaves whose Europe PMC sample passed
-// (scripts/README-europepmc-notable.md).
-const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => EUROPE_PMC_NOTABLE_LEAVES.includes(leaf.id));
+// The medicine and biology leaves whose Europe PMC sample passed, each listed
+// with the query its sample asked (scripts/README-europepmc-notable.md).
+const EUROPE_PMC_LEAVES = LEAVES.filter(leaf => Object.hasOwn(EUROPE_PMC_NOTABLE_QUERIES, leaf.id));
 // PubMed's records and the preprint servers' (not patents, theses or books),
 // without retracted papers, which stay cited, retraction notices and errata,
 // and, as the PubMed lane, editorials, letters and comments without an
@@ -345,6 +345,9 @@ export const WORKING_PAPER_SERIES_IDS = [
 // sensor materials, biomass conversion and tissue scaffolds among them.
 const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
 
+// ChemRxiv, the chemistry preprint server (`openalex-chemrxiv`).
+const CHEMRXIV_SOURCE_ID = 'S4393918830';
+
 /**
  * The works filter of a leaf's venue lane (PAP-104): the OpenAlex sources its
  * labelled sample found on target, sorted, and the types and topic or author
@@ -372,7 +375,7 @@ export function openAlexNotableListingFilter(leaf: string, year: number) {
 }
 
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-series'
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-notable' | 'openalex-areas' | 'openalex-chemrxiv' | 'openalex-series'
   | 'openalex-follows' | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface'
   | 'ads-notable' | 'europepmc-notable';
 
@@ -633,10 +636,12 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // The arXiv side of an arXiv category's notable lane: ADS's 100 most-cited
   // papers of the class in each of the ten completed years, preprints and
   // published versions alike, filed under the same lane and kept as
-  // OpenAlex's are. Its listing does not renew the enrichment
-  // (`renewsEnrichment`), so the 14-day refresh asks OpenAlex for a paper only
-  // ADS lists; a paper both list shows the higher count, as for any two
-  // sources (`PaperBuilder.merge`).
+  // OpenAlex's are. For a leaf of `ADS_NOTABLE_OWN_CLASS_LEAVES`, only papers
+  // arXiv files under the class first: most of those leaves' most-cited
+  // papers were cross-listed from a neighbouring class. Its listing does not
+  // renew the enrichment (`renewsEnrichment`), so the 14-day refresh asks
+  // OpenAlex for a paper only ADS lists; a paper both list shows the higher
+  // count, as for any two sources (`PaperBuilder.merge`).
   'ads-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {
@@ -645,7 +650,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
       let docs: unknown[];
       try {
-        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR));
+        ({ docs } = await fetchAdsNotable(env, leaf, notableListedYear(page), NOTABLE_PER_YEAR, ADS_NOTABLE_OWN_CLASS_LEAVES.includes(leaf)));
       } catch (error) {
         // ADS answers a spent day with 429; the lane waits for the next night.
         // Any other failure, a rejected token among them, stays an error.
@@ -656,19 +661,22 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     },
   },
   // The medicine and biology side of a notable lane: Europe PMC's 100
-  // most-cited records of each of the ten years whose title, abstract or
-  // keywords name the leaf, PubMed's articles and the preprint servers' alike,
-  // filed and kept as OpenAlex's are. Europe PMC's counts are not OpenAlex's
-  // either, so the listing does not renew the enrichment.
+  // most-cited records of each of the ten years that the leaf's query matches
+  // (its label, MeSH descriptors or journals, as its sample asked), PubMed's
+  // articles and the preprint servers' alike, filed and kept as OpenAlex's
+  // are. Europe PMC's counts are not OpenAlex's either, so the listing does
+  // not renew the enrichment.
   'europepmc-notable': {
     firstPages: NOTABLE_YEARS, dailyPages: NOTABLE_YEARS, dated: false, overlapDays: 0, keepsOld: true, separateListings: true,
     fetchPage: async (env, { lane, page }) => {
       const leaf = lane.slice(NOTABLE_LANE_PREFIX.length);
+      // A job saved by an earlier deployment can name a leaf this one no longer admits.
+      if (!Object.hasOwn(EUROPE_PMC_NOTABLE_QUERIES, leaf)) throw new Error(`${lane} has no Europe PMC notable listing`);
       const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
       // By first publication, the date the store files and reads the paper by
       // (`published`); the issue year can be the next one.
       const year = notableListedYear(page);
-      url.searchParams.set('query', `${europePmcLabelQuery([leaf])} AND FIRST_PDATE:[${year}-01-01 TO ${year}-12-31] AND ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
+      url.searchParams.set('query', `${EUROPE_PMC_NOTABLE_QUERIES[leaf]} AND FIRST_PDATE:[${year}-01-01 TO ${year}-12-31] AND ${EUROPE_PMC_NOTABLE_RECORDS} sort_cited:y`);
       url.searchParams.set('format', 'json');
       url.searchParams.set('resultType', 'core');
       url.searchParams.set('pageSize', String(NOTABLE_PER_YEAR));
@@ -697,6 +705,27 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'is_retracted:false',
       'primary_location.source.is_core:true',
       OPENALEX_NOT_LISTED_SERIES_FILTER,
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
+  },
+  // ChemRxiv's newest preprints, filed under the chemistry area beside its
+  // journal articles: no arXiv category stands for a chemistry leaf, so
+  // without them the area had no preprints. Only those OpenAlex labels
+  // Chemistry, as the area lane asks: 791 in the 90 days to 2026-10-27, about
+  // 9 a day, 788 with an abstract. Its other preprints, labelled Materials
+  // Science, Engineering or Biochemistry among others, would reach Chemistry's
+  // readers under another area's label. The source is named, as a venue lane
+  // names its journals, so `is_core` does not apply. One page of 200, about
+  // three weeks of preprints, also on the lane's first run: a reader's page
+  // reads at most the newest 800 rows of an area lane (paper-store.ts
+  // `readCandidates`), a few days of chemistry's.
+  'openalex-chemrxiv': {
+    firstPages: 1, dailyPages: 1, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      `primary_location.source.id:${CHEMRXIV_SOURCE_ID}`,
+      openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      windowFilter(),
+      'type:preprint',
+      'is_retracted:false',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   'openalex-series': {
@@ -770,6 +799,9 @@ export function categoryLaneJobs(): LaneJob[] {
       if (request.source !== 'biorxiv') jobs.push({ source: request.source, lane: leaf.id });
     }
   }
+  // Last: the harvest names a lane's steps by its place here (paper-harvest.ts
+  // `runLaneJobs`), so the lanes before it keep theirs.
+  jobs.push({ source: 'openalex-chemrxiv', lane: areaLane('chem') });
   return jobs;
 }
 

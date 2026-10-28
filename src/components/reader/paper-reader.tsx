@@ -48,7 +48,7 @@ import {
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { journalExplorerLink } from '../../utils/explorer-paths.ts';
 import { Link } from 'react-router-dom';

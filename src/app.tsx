@@ -22,7 +22,7 @@ import NotFoundPage from './components/layout/not-found-page.tsx'
 import { AuthProvider, useAuth } from './context/auth-context.tsx'
 import { LanguageProvider } from './context/language-context.tsx'
 import { ThemeProvider } from './context/theme-context.tsx'
-import { AnalyticsProvider } from './context/analytics-context.tsx'
+import { PrivacyProvider } from './context/privacy-context.tsx'
 import { FeedProvider } from './context/feed-context.tsx'
 import { SimilarFeedProvider } from './context/similar-feed-context.tsx'
 import { FollowingProvider } from './context/following-context.tsx'
@@ -640,11 +640,11 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <LanguageProvider>
-          <AnalyticsProvider>
+          <PrivacyProvider>
             <TooltipProvider>
               <UserScopedAppContent />
             </TooltipProvider>
-          </AnalyticsProvider>
+          </PrivacyProvider>
         </LanguageProvider>
       </AuthProvider>
     </ThemeProvider>

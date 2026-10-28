@@ -4,7 +4,7 @@ import type { FollowingUpdatesContextValue } from './following-updates-context.t
 import type { FollowingContextValue } from './following-context.tsx';
 import type { LanguageContextValue } from './language-context.tsx';
 import type { ThemeContextValue } from './theme-context.tsx';
-import type { AnalyticsContextValue } from './analytics-context.tsx';
+import type { AnalyticsContextValue } from './privacy-context.tsx';
 import type { AuthContextValue } from './auth-context.tsx';
 import type { SimilarFeedContextValue } from './similar-feed-context.tsx';
 

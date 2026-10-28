@@ -7,7 +7,11 @@ import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { servedFollows } from '../utils/follow-lanes.ts';
 
-// Inside the feed's 4 s first-paint budget, with room for the response.
+// Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
+// so a token refresh does not spend it. The feed's 4 s first-paint budget
+// bounds the main request only when the token is cached; the exploration and
+// follows requests keep their own budgets, counted from before the token
+// (feed-context.tsx), and fall back to no papers when those run out.
 const STORE_TIMEOUT_MS = 3_500;
 
 export interface CorpusPageRequest {
@@ -43,7 +47,7 @@ export interface CorpusPageRequest {
 }
 
 interface StoreOptions {
-  fetchWorker?: (url: string, init: RequestInit) => Promise<Response>;
+  fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
 
@@ -59,8 +63,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-  }).catch(markUnreachable);
+  }, STORE_TIMEOUT_MS).catch(markUnreachable);
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.

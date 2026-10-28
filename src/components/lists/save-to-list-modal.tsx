@@ -26,7 +26,7 @@ import {
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { saveModalCloseRequest } from './save-modal-close-request.ts';
@@ -46,6 +46,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { copyForMergeWrite } from '../../utils/stored-copy-write.ts';
 import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
@@ -542,7 +543,7 @@ export default function SaveToListModal({
       if (savesPaper) {
         await setDoc(
           savedPaperDocRef(user!.uid, paper.id),
-          buildSavedPaperPayload(paper, new Date().toISOString()),
+          copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())),
           { merge: true },
         );
         // The aggregate learns of the save only once the document exists.

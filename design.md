@@ -168,7 +168,8 @@ A document-first product printed like a single-ink page — one navy ink on warm
 a spot yellow and, on the welcome page, a faint paper grain — that reads like a machine-generated
 index over editorial content. The tone is sober, editorial and curious: serious
 with the science, with a spark of play (Petri the mascot, the engravings, the
-twinkling stars) kept for first-run moments only.
+twinkling stars) kept for first-run moments. Petri also marks empty, error and
+startup states.
 
 Structure comes from **hairline rules**, not shadows; metadata is set in
 **mono**; anything you read as prose is set in a **serif**; and every splash of
@@ -490,6 +491,14 @@ An error, a not-found or an empty result is a glyph on a `56px` tinted square
 (`--tint-red-*` when a request failed, `--tint-neutral-*` when nothing did), a
 serif heading, one sentence saying what to do, and the way out as labelled
 `Button`s. Never an emoji, never a bare icon button as the only exit.
+
+The startup recovery screen in `index.html` is the one status screen drawn before
+the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the
+one documented exception to the No New Hex Rule. It copies the token values it
+uses into local custom properties with the tokens' own names, sets type in system
+fonts and draws Petri inline: thinking while PaperTok loads or is slow, upset
+when it fails. A change to those tokens or to `petri-frame.tsx`,
+`petri-thinking.tsx` or `petri-upset.tsx` needs the same change there.
 
 ## Do's and Don'ts
 

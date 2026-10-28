@@ -24,7 +24,7 @@ function arxivIdKey(value: unknown) {
 
 // A DOI a publisher issued. arXiv's own DataCite DOI (10.48550/arXiv.<id>)
 // names the eprint, as the arXiv id does.
-function isPublisherDoi(normalizedDoi: string) {
+export function isPublisherDoi(normalizedDoi: string) {
   return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
 }
 
@@ -137,6 +137,7 @@ export class PaperBuilder {
       sources: data.sources || { primary: 'unknown', enrichedBy: [] },
       title: data.title || 'Untitled',
       abstract: data.abstract || 'No abstract available.',
+      ...(data.abstractSource && { abstractSource: data.abstractSource }),
       authors: Array.isArray(data.authors) ? data.authors : [],
       arxivId: data.arxivId || undefined,
       pmid: data.pmid || undefined,
@@ -282,6 +283,19 @@ export class PaperBuilder {
     if (!hasUsableAIAbstract(merged.abstract) && hasUsableAIAbstract(enrichmentData.abstract)) {
       merged.abstract = enrichmentData.abstract;
       if (!hasUsableAIAbstract(merged.summary)) merged.summary = enrichmentData.abstract;
+      // The text keeps the source a card credits for it (`abstractSource`), or
+      // none, whatever the base credited for the text it lacked. That source
+      // stays among the ones merged in: the record bringing the text may have
+      // taken it from that source in a merge of its own.
+      const { abstractSource } = enrichmentData;
+      if (abstractSource) {
+        merged.abstractSource = abstractSource;
+        if (!merged.sources.enrichedBy.includes(abstractSource)) {
+          merged.sources = { ...merged.sources, enrichedBy: [...merged.sources.enrichedBy, abstractSource] };
+        }
+      } else {
+        delete merged.abstractSource;
+      }
     }
 
     if (sourceName === 'scopus') {
