@@ -174,14 +174,30 @@ export function notablePlaces(cardsBefore: ReadonlyArray<Partial<Paper>>, others
 }
 
 /**
+ * The page's spacing: `every`, or, when the page has fewer notable cards than
+ * places at `every` (the corpus sends five at most, FEED_MAX_NOTABLE in
+ * worker/paper-store.ts), the closest spacing up to NOTABLE_EVERY whose places
+ * they fill, so they spread over the page rather than all coming at its top
+ * (ENG-166, decision 6).
+ */
+function pageSpacing(others: number, notable: number, cardsBefore: ReadonlyArray<Partial<Paper>>, notableAfter: string | null, every: number) {
+  let spacing = every;
+  const places = (step: number) => Math.floor((cardsSinceNotable(cardsBefore, notableAfter, step) + others) / (step - 1));
+  while (spacing < NOTABLE_EVERY && places(spacing) > notable) spacing += 1;
+  return spacing;
+}
+
+/**
  * The page shown after the feed's `cardsBefore`: every other card, in order,
  * with the notable cards (`_notable`), in theirs, at the places: every
- * `every`-th card since the last notable one, the place right after the
+ * `every`-th card since the last notable one (spread when there are fewer
+ * notable cards than places, `pageSpacing`), the place right after the
  * page's last card included, and the page's first card when the feed has
  * passed a place. A place with no notable card left takes the next other
  * card, and a notable card with no place is left out.
  */
-export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable: T[], cardsBefore: ReadonlyArray<Partial<Paper>> = [], notableAfter: string | null = null, every = NOTABLE_EVERY) {
+export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable: T[], cardsBefore: ReadonlyArray<Partial<Paper>> = [], notableAfter: string | null = null, sampled = NOTABLE_EVERY) {
+  const every = pageSpacing(others.length, notable.length, cardsBefore, notableAfter, sampled);
   const since = cardsSinceNotable(cardsBefore, notableAfter, every);
   const left = [...notable];
   const page: T[] = [];
