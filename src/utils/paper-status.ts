@@ -22,8 +22,9 @@ type OpenCopy = Partial<NonNullable<ReturnType<typeof mapUnpaywallResult>>> | nu
  */
 
 /**
- * Peer review, as far as the record goes: 'preprint', 'workingPaper',
- * 'verified', or null.
+ * Peer review, as far as the record goes: 'retracted', 'preprint',
+ * 'workingPaper', 'verified', or null. A retraction outranks everything
+ * else: a retracted preprint or journal article is first of all retracted.
  *
  * The contract in `paper.ts` keeps review and publication metadata optional.
  * If either `publicationStatus` or `publicationType` says preprint, the
@@ -35,6 +36,7 @@ type OpenCopy = Partial<NonNullable<ReturnType<typeof mapUnpaywallResult>>> | nu
  */
 export function reviewStatusForPaper(paper: Partial<Paper> | null | undefined) {
   if (!paper) return null;
+  if (paper.publicationStatus === 'retracted') return 'retracted';
   if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') {
     return 'preprint';
   }
@@ -94,6 +96,18 @@ export function accessStatusForPaper(paper: Partial<Paper> | null | undefined, {
 }
 
 const REVIEW_TAGS = {
+  // The paper's own retraction, as its record states it (OpenAlex's
+  // `is_retracted`, PubMed's `Retracted Publication`); it says nothing about
+  // why, or about the authors. Amber, as the other caveats: the word and the
+  // icon carry the meaning, not the colour.
+  retracted: {
+    key: 'retracted',
+    tone: 'amber',
+    label: { en: 'Retracted' },
+    hint: {
+      en: 'Retracted: the journal or publisher has withdrawn this paper.',
+    },
+  },
   preprint: {
     key: 'preprint',
     tone: 'amber',
@@ -114,8 +128,8 @@ const REVIEW_TAGS = {
      2026-09-12: it marked the norm, not the exception. Most of what is read
      here has been through review, so the badge said nothing and competed with
      the title for attention. `reviewStatusForPaper` still returns 'verified'
-     (it is a fact of the record), but only the caveats get a tag: preprint
-     and working paper. */
+     (it is a fact of the record), but only the caveats get a tag: retracted,
+     preprint and working paper. */
 };
 
 const ACCESS_TAGS = {

@@ -70,6 +70,22 @@ test('a working paper carries its own tag, while a reviewed or unknown paper car
   assert.equal(reviewTagForPaper({ publicationStatus: 'preprint', peerReviewed: false, workingPaper: true })?.label, 'Preprint');
 });
 
+test('a retracted paper is tagged Retracted, over a preprint, a working paper or a journal', () => {
+  for (const paper of [
+    { publicationStatus: 'retracted' as const },
+    { publicationStatus: 'retracted' as const, publicationType: 'article', journal: 'The Lancet', peerReviewed: true },
+    { publicationStatus: 'retracted' as const, publicationType: 'preprint' },
+    { publicationStatus: 'retracted' as const, workingPaper: true, peerReviewed: false },
+  ]) {
+    assert.equal(reviewStatusForPaper(paper), 'retracted', JSON.stringify(paper));
+    const tag = reviewTagForPaper(paper);
+    assert.ok(tag);
+    assert.equal(tag.label, 'Retracted');
+    assert.equal(tag.tone, 'amber');
+    assert.match(tag.hint, /retracted/i);
+  }
+});
+
 test('an arXiv copy outranks a publisher that says the paper is closed', () => {
   // OpenAlex reports `is_oa` for the published version. A paper that ran in a
   // subscription journal reads as closed there while its arXiv copy sits free,

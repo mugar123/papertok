@@ -154,6 +154,7 @@ const SLOT_MORPH_MS = 240;
  * React and can be read straight by `node --test`.
  */
 const STATUS_CHIP_ICONS = {
+  retracted: Prohibit,
   preprint: NotePencil,
   workingPaper: Files,
   open: LockKeyOpen,
