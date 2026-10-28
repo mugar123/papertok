@@ -69,7 +69,6 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
   let saved: ReturnType<typeof savedHighlightSpace> | undefined;
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
-    if (quote.length < MIN_QUOTE_LENGTH) continue;
     const source = highlight?.source || 'ai';
     const pending = Boolean(highlight?.pending);
 
@@ -89,12 +88,14 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
       }
       return null;
     };
-    let found = findFree(normalized, quote);
+    let found = quote.length >= MIN_QUOTE_LENGTH ? findFree(normalized, quote) : null;
     // A quote saved before font commands were unwrapped may start or end
-    // inside one; it is found in the text it was cut from.
-    if (!found) {
+    // inside one, or shrink below the minimum once unwrapped
+    // (`\textbf{HERMES}`); it is found in the text it was cut from.
+    const savedQuote = found ? '' : normalizeSavedLatexText(highlight?.quote);
+    if (savedQuote.length >= MIN_QUOTE_LENGTH) {
       saved ??= savedHighlightSpace(text);
-      if (saved.text !== normalized) found = findFree(saved.text, normalizeSavedLatexText(highlight?.quote), saved.toCurrent);
+      if (saved.text !== normalized) found = findFree(saved.text, savedQuote, saved.toCurrent);
     }
     if (!found) continue;
     const { start, end } = found;

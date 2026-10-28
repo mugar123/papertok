@@ -140,6 +140,15 @@ test('a quote saved before font commands were unwrapped still marks its words', 
   }
 });
 
+// `\textbf{HERMES}` was long enough to save; its unwrapped words are not.
+test('a saved quote of one wrapper whose words fall under the minimum still marks them', () => {
+  const text = 'the \\textbf{HERMES} system and more words';
+  const ranges = resolveHighlightRanges(text, [{ quote: '\\textbf{HERMES}', source: 'user' }]);
+  assert.equal(ranges.length, 1);
+  assert.equal(normalizeLatexText(text).slice(ranges[0].start, ranges[0].end), 'HERMES');
+  assert.deepEqual(resolveHighlightRanges('the HERMES system', [{ quote: 'HERMES', source: 'user' }]), []);
+});
+
 test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);
