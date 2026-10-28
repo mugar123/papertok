@@ -75,7 +75,7 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
     const workByPaperId = await findWorks(db, positiveIds);
     const workIds = [...new Set(workByPaperId.values())];
     const { results } = workIds.length
-      ? await db.prepare('SELECT work_id FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
+      ? await db.prepare('SELECT v.work_id FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
       : { results: [] };
     if (results.length >= ENOUGH_STORED_POSITIVES) return false;
     const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);

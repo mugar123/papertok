@@ -1,12 +1,15 @@
 import type { BloomFilter } from 'bloomfilter';
 import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
+import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 
-import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { PaperBuilder, isPublisherDoi } from '../src/services/paper-builder.ts';
 import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
+import { normalizeDoi } from '../src/utils/public-navigation.ts';
+import { openAlexIsJournalArticle } from '../src/utils/publication-status.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -215,15 +218,16 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // year of 40 and every day for a year of two; a paper ADS listed waits for its
 // enrichment first (`readNotableCandidates`). The candidates and vectors
 // ranked per request are 250 a lane at most. Numbering the years reads every
-// row of the lane's window from its index (about 1,000, or 2,000), and the
-// read returns each work id with whether the day's slice holds it, so that a
-// paper of the lane outside the slice is not ranked from the reader's other
-// lanes either. How many of them a reader sees is ENG-128's.
+// row of the lane's window from its index (about 1,000, or 2,000), once each,
+// and the read returns each work id with whether the day's slice holds it, so
+// that a paper of the lane outside the slice is not ranked from the reader's
+// other lanes either. How many of them a reader sees is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
-// from arXiv, and for chemistry, which no other source lists: PubMed lists
-// journal articles for every leaf of medicine and biology. A paper a leaf of
+// from arXiv, and for chemistry, whose leaves no source lists (its lane also
+// holds ChemRxiv's preprints, `openalex-chemrxiv`): PubMed lists journal
+// articles for every leaf of medicine and biology. A paper a leaf of
 // its area holds leaves the area's lane (leaf-filing.ts), so it reaches that
 // leaf's readers and no other's. Not statistics while its label covers
 // OpenAlex's Decision Sciences (field 18): 147 of that field's 200 newest
@@ -345,7 +349,7 @@ const WRITE_CHUNK = 100;
 async function lookUpKeys(db: D1Database, keys: string[]) {
   const found = new Map<string, number>();
   for (let start = 0; start < keys.length; start += 500) {
-    const { results } = await db.prepare('SELECT key, work_id FROM work_keys WHERE key IN (SELECT value FROM json_each(?))')
+    const { results } = await db.prepare('SELECT k.key, k.work_id FROM json_each(?) j JOIN work_keys k ON k.key = j.value')
       .bind(JSON.stringify(keys.slice(start, start + 500))).all<{ key: string; work_id: number }>();
     results.forEach(row => found.set(row.key, row.work_id));
   }
@@ -355,21 +359,123 @@ async function lookUpKeys(db: D1Database, keys: string[]) {
 async function readWorks(db: D1Database, ids: number[]) {
   const works = new Map<number, WorkRow>();
   for (let start = 0; start < ids.length; start += 200) {
-    const { results } = await db.prepare('SELECT id, paper, kept_until FROM works WHERE id IN (SELECT value FROM json_each(?))')
+    const { results } = await db.prepare('SELECT w.id, w.paper, w.kept_until FROM json_each(?) j JOIN works w ON w.id = j.value')
       .bind(JSON.stringify(ids.slice(start, start + 200))).all<WorkRow>();
     results.forEach(row => works.set(row.id, row));
   }
   return works;
 }
 
+// ─── Working paper to journal article (ENG-133) ───
+
+// A working paper says it was not reviewed and its journal article says it
+// was; `merge` keeps the working paper's `false` whichever record it merges, so
+// the upgrade is a step of its own over stored rows, after the batch is saved
+// (Pablo, 2026-10-26). Only OpenAlex's working-paper row becomes the journal's,
+// and only on OpenAlex's own record of the journal article. A row another
+// source started, or a journal record from another source (PubMed, Europe PMC,
+// an arXiv eprint naming its journal, a repository's copy), stays as `merge`
+// left it (ENG-145).
+const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 'openalex' && paper.workingPaper === true && paper.peerReviewed === false;
+
+// The evidence is one listed record, never a merged row: OpenAlex's own record
+// typed `article` in a `journal` that `openAlexPeerReviewed` calls reviewed,
+// with a publisher's DOI. Without one, the reviewed row would keep the working
+// paper's DOI and link to the unreviewed version.
+function isJournalArticleRecord(paper: Paper, raw: unknown) {
+  return paper.sources?.primary === 'openalex' && /^openalex:W\d+$/i.test(paper.id)
+    && paper.peerReviewed === true && paper.workingPaper !== true && isPublisherDoi(normalizeDoi(paper.doi))
+    && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
+}
+
+// The row as the article's record would make it with the row merged in: the
+// article's DOI, landing page, title, abstract, venue and date, and what the
+// row adds (the working paper's abstract fills a missing one). It keeps the id
+// readers liked or saved it under and names the article's work in
+// `openAlexId`, which enrichment and the row's own listing follow. Undefined
+// when the row's evidence still denies review.
+function asJournalRow(row: Paper, article: Paper): Paper | undefined {
+  const merged = PaperBuilder.merge(article, row, row.provider || row.sources?.primary);
+  if (merged.peerReviewed !== true || merged.workingPaper) return undefined;
+  // The article is the merge base, so the row's own enrichments (an abstract
+  // from Semantic Scholar) keep their credit only through this list.
+  const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
+  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
+}
+
+/**
+ * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
+ * record of `articles` was filed under (by the article's work id or DOI) the
+ * journal's reviewed row, with its date in every lane it holds, and filed
+ * under the lanes the article's record adds (`recordLanes`). An upgraded row
+ * is no working paper, so the step applies once whatever the order of the
+ * records and however often they are listed. Returns how many rows changed.
+ */
+async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number) {
+  if (articles.length === 0) return 0;
+  const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
+  const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
+  const works = await readWorks(db, [...new Set(found.values())]);
+  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: string[] }> = [];
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  // In id order, so the same records upgrade a row the same way in any order.
+  for (const [id, work] of [...works].sort(([a], [b]) => a - b)) {
+    const row = JSON.parse(work.paper) as Paper;
+    if (!isWorkingPaperRow(row)) continue;
+    const upgraded = articles
+      .filter(article => keysOf(article).some(key => found.get(key) === id))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map(article => asJournalRow(row, article))
+      .find(Boolean);
+    if (!upgraded) continue;
+    const published = publishedOf(upgraded, now) || publishedOf(row, now);
+    upgrades.push({
+      id,
+      paper: JSON.stringify(upgraded),
+      published,
+      keptUntil: [daysFromNow(CORPUS_DAYS, Date.parse(published)), work.kept_until].sort().at(-1)!,
+      textChanged: embeddingText(upgraded) !== embeddingText(row),
+      lanes: [],
+    });
+  }
+  // The article can name entities the working paper did not (a coauthor it
+  // added): the upgraded row is filed under its own record's lanes, as
+  // `ingestPapers` files a merged row.
+  const upgradedRows = upgrades.map(upgrade => ({ upgrade, paper: JSON.parse(upgrade.paper) as Paper }))
+    .filter(({ upgrade, paper }) => upgrade.published >= since && isFeedPublication(paper));
+  const followed = await followedLanesAmong(db, upgradedRows.flatMap(({ paper }) => followOnlyLanes(paper)));
+  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed);
+  // One batch a chunk: the row, its date in each of its lanes, its lanes,
+  // keys and vector change together.
+  for (let start = 0; start < upgrades.length; start += WRITE_CHUNK) {
+    const slice = upgrades.slice(start, start + WRITE_CHUNK);
+    const chunk = JSON.stringify(slice);
+    await db.batch([
+      db.prepare(`UPDATE works SET paper = j.value ->> 'paper', published = j.value ->> 'published',
+        kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+      db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
+        WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
+        SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
+        .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
+      db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
+    ]);
+  }
+  return upgrades.length;
+}
+
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
 // arXiv, so arXiv's listing carries a new version to a row Hugging Face
-// started, and Hugging Face's copy never replaces it.
+// started, and Hugging Face's copy never replaces it. An OpenAlex row that
+// became its journal article keeps the working paper's id and follows the
+// article's own listing (`openAlexId`), never the working paper's.
 const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
   ? listed.get(sourceRecordKey('arxiv', row.arxivId))
-  : listed.get(sourceRecordKey(row.sources?.primary, row.id)));
+  : listed.get(sourceRecordKey(row.sources?.primary, row.sources?.primary === 'openalex' && row.openAlexId ? `openalex:${row.openAlexId}` : row.id)));
 
 // A row's title and abstract are those of the source it was built from, and
 // that source listing it again (a new arXiv version) replaces them, where
@@ -391,7 +497,9 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * replaces its title and abstract (`withOwnText`). A merge that changes the
  * title or abstract drops the vector for the embedding pass. A notable lane's
  * row is kept until `keepUntil`, the listing's own keeping date
- * (`listed_until`). Returns how many rows were written.
+ * (`listed_until`). Once the batch is saved, OpenAlex's journal articles in it
+ * upgrade the working-paper rows they were filed under
+ * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
@@ -399,6 +507,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
   const listed = new Map<string, Paper>();
+  const articles: Paper[] = [];
   for (const item of items) {
     // A mapper stands "Untitled" in for a title its source left out.
     if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublicationType(item.paper)) continue;
@@ -421,6 +530,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       }
       group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
     }
+    if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
     item.lanes.forEach(lane => group.lanes.add(lane));
     keys.forEach(key => group.keys.add(key));
     group.keys.forEach(key => groupOfKey.set(key, group));
@@ -436,6 +546,9 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
   const withdrawn: number[] = [];
+  // The groups written as a working paper's row: only their articles can
+  // upgrade one, and the step reads no other row.
+  const workingPaperGroups = new Set<Group>();
 
   for (const group of groups) {
     const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
@@ -468,6 +581,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     // lane, and leaves those it holds, a folded row's included.
     if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
     else withdrawn.push(id);
+    if (isWorkingPaperRow(paper)) workingPaperGroups.add(group);
   }
   // Asked once the records are merged: a stored row names entities, such as
   // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
@@ -515,7 +629,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
         WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
-  return rows.length;
+  const candidates = articles.filter(article => workingPaperGroups.has(groupOfKey.get(`id:${article.id.toLowerCase()}`)!));
+  return rows.length + await upgradeWorkingPapers(db, candidates, now);
 }
 
 /**
@@ -874,8 +989,8 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
 /** Keeps these liked works for KEEP_LIKED_DAYS, past their keeping date and outside every lane (`evictExpired`). */
 export async function keepLiked(db: D1Database, workIds: number[], now = Date.now()) {
   if (workIds.length === 0) return;
-  await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
-    AND (liked_until IS NULL OR liked_until < ?)`)
+  await db.prepare(`UPDATE works SET liked_until = ? FROM json_each(?) j WHERE works.id = j.value
+    AND (works.liked_until IS NULL OR works.liked_until < ?)`)
     .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
 }
 
@@ -900,8 +1015,8 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
 }
 
 /**
- * The notable lanes at `now`, in one statement per lane: `candidates` are, of
- * each year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
+ * The notable lanes at `now`, in two round trips: `candidates` are, of each
+ * year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
  * newest first; `inLanes` is every work the lanes hold in the window, slice
  * or not. A notable lane keeps a paper two weeks past its last listing; from
  * 1 January, the year that left the window is not read, and a row of the
@@ -909,25 +1024,43 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
  * not read until that year is over.
  */
 export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
-  const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
+  // Each lane's window in the order of `work_lanes_recent`, whose entries end
+  // with the primary key's work id, so D1 reads each row once: numbering the
+  // years in SQL with window functions sorted the rows into temporary tables,
+  // about eight rows read a row (ENG-150).
+  const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
+    'SELECT work_id, published FROM work_lanes WHERE lane = ? AND published >= ? AND published < ? ORDER BY published DESC, work_id',
+  ).bind(lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  const slices = perLane.map(({ results }) => daySlice(results, Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR));
   // OpenAlex's listing leaves out what OpenAlex marks retracted and Europe
   // PMC's what PubMed types as retracted; ADS's cannot, so a paper ADS listed
   // is offered once the enrichment has looked it up in OpenAlex (`enriched_at`),
   // which is what learns a retraction (README step 5). Asked only for the day's
   // slice.
-  const perLane = await db.batch<{ work_id: number; published: string; offered: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
-      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
-        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
-      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
-      SELECT work_id, published,
-             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
-             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
-      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
-    )) s ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  const lookups = slices.filter(slice => slice.length > 0).map(slice => db.prepare(`SELECT w.id FROM json_each(?) j JOIN works w ON w.id = j.value
+    WHERE w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL`).bind(JSON.stringify(slice.map(row => row.work_id))));
+  const offered = new Set((lookups.length ? await db.batch<{ id: number }>(lookups) : []).flatMap(({ results }) => results.map(row => row.id)));
   return {
-    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.offered) }))),
+    candidates: mergeLaneRows(lanes, slices.map(slice => ({ results: slice.filter(row => offered.has(row.work_id)) }))),
     inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
   };
+}
+
+/**
+ * The rows of the day's slice, in their order: the rows of each year are
+ * numbered from 0 in the order given, and the slice holds those whose number
+ * plus `offset`, modulo the year's count, is under NOTABLE_READ_PER_YEAR.
+ */
+function daySlice<T extends { published: string }>(rows: T[], offset: number) {
+  const year = (row: T) => row.published.slice(0, 4);
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(year(row), (counts.get(year(row)) ?? 0) + 1);
+  const numbered = new Map<string, number>();
+  return rows.filter(row => {
+    const number = numbered.get(year(row)) ?? 0;
+    numbered.set(year(row), number + 1);
+    return (number + offset) % counts.get(year(row))! < NOTABLE_READ_PER_YEAR;
+  });
 }
 
 // The lanes' rows in turns, each lane's in its own order: a work listed by
@@ -955,7 +1088,7 @@ async function readVectors(db: D1Database, workIds: number[]) {
   const vectors = new Map<number, Int8Array>();
   const chunks: D1PreparedStatement[] = [];
   for (let start = 0; start < workIds.length; start += 2_000) {
-    chunks.push(db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
+    chunks.push(db.prepare('SELECT v.work_id, v.embedding FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value')
       .bind(JSON.stringify(workIds.slice(start, start + 2_000))));
   }
   if (chunks.length === 0) return vectors;
@@ -1308,7 +1441,7 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
     const chunk = ranks.slice(end, bound);
     const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && (recheck ? candidate.paperId !== '' : candidate.paperId === undefined));
     if (unread.length) {
-      const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
+      const { results } = await db.prepare("SELECT w.id, w.paper ->> '$.id' AS paper_id FROM json_each(?) j JOIN works w ON w.id = j.value")
         .bind(JSON.stringify(unread.map(candidate => candidate.workId))).all<{ id: number; paper_id: string | null }>();
       const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
       for (const candidate of unread) candidate.paperId = paperIds.get(candidate.workId) ?? '';
@@ -1431,7 +1564,7 @@ function groupsOfLike(groups: FeedGroup[]) {
 async function readAreaLanes(db: D1Database, workIds: number[]) {
   const areas = new Map<number, string[]>();
   if (workIds.length === 0) return areas;
-  const { results } = await db.prepare("SELECT work_id, lane FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'area:%'")
+  const { results } = await db.prepare("SELECT l.work_id, l.lane FROM json_each(?) j JOIN work_lanes l ON l.work_id = j.value WHERE l.lane LIKE 'area:%'")
     .bind(JSON.stringify(workIds)).all<{ work_id: number; lane: string }>();
   for (const row of results) areas.set(row.work_id, [...(areas.get(row.work_id) ?? []), row.lane.slice(areaLane('').length)]);
   return areas;

@@ -889,7 +889,7 @@ for (const { followed, minutes, name } of fallbackCases) {
     const read: number[] = [];
     t.mock.method(binding, 'prepare', (sql: string) => {
       const statement = prepare(sql);
-      if (!sql.startsWith('SELECT id, paper, kept_until')) return statement;
+      if (!sql.startsWith('SELECT w.id, w.paper, w.kept_until')) return statement;
       return { bind: (list: string) => { read.push(...JSON.parse(list) as number[]); return statement.bind(list); } };
     });
     assert.deepEqual(ids((await ask(continued)).papers), ids(papers.slice(15, 30)), 'after another follow');
@@ -976,7 +976,7 @@ for (const pageSize of [1, 15, 30]) {
     });
     const answer = await ask(request(2, ids(papers.slice(0, 600 + pageSize))));
     assert.deepEqual(ids(answer.papers), ids(papers.slice(1_000 + pageSize, 1_000 + 2 * pageSize)));
-    const workReads = statements.filter(sql => sql.startsWith('SELECT id, paper, kept_until')).length;
+    const workReads = statements.filter(sql => sql.startsWith('SELECT w.id, w.paper, w.kept_until')).length;
     assert.ok(workReads <= 2 && statements.length <= 6, `${statements.length} statements, ${workReads} of them reads of works`);
   });
 }

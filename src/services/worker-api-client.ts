@@ -119,7 +119,13 @@ export async function fetchWorkerSourceJson<T = unknown>(path: string, params: R
   return response.json() as Promise<T>;
 }
 
-export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}) {
+/**
+ * `timeoutMs` is the request's own budget. It starts once the ID token is in
+ * hand: a token refresh can take seconds, and a deadline armed before it spent
+ * the feed's 3.5 s on the refresh (ENG-116). The deadline covers the response
+ * body too (request-deadline.ts).
+ */
+export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}, timeoutMs?: number) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
   const currentUser = auth.currentUser;
@@ -131,5 +137,5 @@ export async function authenticatedWorkerFetch(input: string | URL, options: Req
   // could wait on a stalled Worker until the tab was closed. The default closes
   // that hole and the next one like it; a caller with its own budget — the AI
   // explanation spends seventy seconds legitimately — still overrides it.
-  return fetch(url, withRequestDeadline({ ...options, headers }));
+  return fetch(url, withRequestDeadline({ ...options, headers }, timeoutMs));
 }

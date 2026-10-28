@@ -92,7 +92,7 @@ export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
 export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | null | undefined) {
   const candidates = typeof paperOrId === 'string'
     ? [paperOrId]
-    : [paperOrId?.id, paperOrId?.arxivId];
+    : [paperOrId?.openAlexId, paperOrId?.id, paperOrId?.arxivId];
 
   for (const value of candidates) {
     if (!value) continue;

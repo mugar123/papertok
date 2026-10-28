@@ -148,6 +148,13 @@
       }
       #startup-status[data-state="failed"] .startup-thinking,
       #startup-status:not([data-state="failed"]) .startup-upset { display: none; }
+      /* Preserve the native fallback if the inline guard itself cannot run. */
+      #startup-status[data-state="pending"] > * {
+        visibility: hidden;
+        animation: startup-unmonitored 0s 1s forwards;
+      }
+      @keyframes startup-unmonitored { to { visibility: visible; } }
+      #startup-status[data-state="loading"] #startup-retry { visibility: hidden; }
       #startup-status h1 {
         max-width: 18ch;
         margin: 0 0 12px;
@@ -161,7 +168,6 @@
         color: var(--text-secondary);
         text-wrap: pretty;
       }
-      #startup-status noscript p { margin: 24px 0 0; }
       #startup-retry {
         display: inline-flex;
         align-items: center;
@@ -178,22 +184,17 @@
         text-decoration: none;
         transition: scale 150ms ease-out, background-color 150ms ease-out;
       }
-      #startup-status[data-state="loading"] #startup-retry { background: transparent; color: var(--text-primary); }
       #startup-retry:active { scale: 0.97; }
       #startup-retry:focus { outline: 2px solid var(--text-primary); outline-offset: 3px; }
       @media (hover: hover) and (pointer: fine) {
         #startup-retry:hover { border-color: var(--accent-primary-hover); background: var(--accent-primary-hover); }
-        #startup-status[data-state="loading"] #startup-retry:hover {
-          border-color: var(--text-primary);
-          background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-primary));
-        }
       }
       @media (prefers-reduced-motion: reduce) {
         #startup-retry { transition: none; }
         #startup-retry:active { scale: none; }
       }
     </style>
-    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="failed">
+    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="pending">
       <svg class="startup-petri" viewBox="14 22 128 124" aria-hidden="true" focusable="false">
         <defs>
           <pattern id="startup-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="1.4" height="4" fill="currentColor"/></pattern>
@@ -220,10 +221,17 @@
           </g>
         </g>
       </svg>
-      <h1 id="startup-title">PaperTok could not start</h1>
-      <p id="startup-message">Reload the page to try again.</p>
+      <h1 id="startup-title">Loading PaperTok</h1>
+      <p id="startup-message">Your page will appear here shortly.</p>
+      <noscript>
+        <style>
+          #startup-title, #startup-message { display: none; }
+          #startup-status[data-state="pending"] > * { visibility: visible; animation: none; }
+        </style>
+        <h1>JavaScript is turned off</h1>
+        <p>Enable JavaScript in your browser, then reload this page.</p>
+      </noscript>
       <a id="startup-retry" href="">Reload page</a>
-      <noscript><p>JavaScript is turned off. Enable it in your browser, then reload this page.</p></noscript>
     </section>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

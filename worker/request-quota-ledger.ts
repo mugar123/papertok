@@ -276,6 +276,17 @@ async function sha256(value: unknown) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+// A ledger object is created near its first get() and never moves, and most
+// periods are a new object every UTC minute, hour or day: without a hint,
+// whichever request opened the period decided how far all of its reservations
+// travel. The feed reserves beside a D1 read, and D1 is in Western Europe. The
+// region placement already runs the fetch handler in Frankfurt, so the hint
+// places objects first opened outside it, by the crons or by harvest Workflow
+// runs, and keeps the ledger in WEUR if placement changes
+// (worker/README.md, the paper store's placement). Cloudflare reads the hint
+// only when it creates the object, and treats it as best effort.
+const LEDGER_LOCATION_HINT: DurableObjectLocationHint = 'weur';
+
 async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, action: string, {
   periodKey,
   subject,
@@ -295,7 +306,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   const subjectKey = await sha256(subject);
   const partKey = part ? await sha256(part.subject) : undefined;
   const id = namespace.idFromName(String(periodKey).slice(0, 160));
-  const response = await namespace.get(id).fetch(`https://papertok.internal/quota/${action}`, {
+  const response = await namespace.get(id, { locationHint: LEDGER_LOCATION_HINT }).fetch(`https://papertok.internal/quota/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
