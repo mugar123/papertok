@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ShareCard } from './share-card.ts';
+import type { PaperShareCard, ShareCard } from './share-card.ts';
 import type { ShareOutcome } from './share-pages.ts';
 import { createPhotoLoader, handleShareImage } from './share-image.ts';
 
@@ -232,4 +232,52 @@ test('more than three redirects is no picture', async () => {
   const { asked, fetchImpl } = fakeFetch(answers);
   assert.equal(await createPhotoLoader({ fetchImpl })(hops[0]), null);
   assert.equal(asked.length, 4);
+});
+
+const PAPER = { found: true, record: { paper: { title: 'Using thematic analysis in psychology', authors: ['Virginia Braun', 'Victoria Clarke'], journal: 'Qualitative Research in Psychology', year: 2006 } } };
+const PAPER_PATH = '/share/image/paper/b3BlbmFsZXg6VzE5NzkyOTAyNjQ';
+
+function paperHarness(outcome: ShareOutcome, renderError: Error | null = null) {
+  const { calls, deps } = harness(outcome);
+  const cards: PaperShareCard[] = [];
+  return {
+    calls,
+    cards,
+    deps: {
+      ...deps,
+      renderPaperCard: async (card: PaperShareCard) => {
+        if (renderError) throw renderError;
+        cards.push(card);
+        return PNG;
+      },
+    },
+  };
+}
+
+test('a paper\'s card is drawn from its record once, then answered from the cache', async () => {
+  const { calls, cards, deps } = paperHarness(PAPER);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await handleShareImage(cardRequest(PAPER_PATH), deps);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), PNG);
+  }
+  assert.equal(calls.lookups, 1);
+  assert.deepEqual(cards.map(card => [card.title, card.authors, card.venue]), [
+    ['Using thematic analysis in psychology', 'Virginia Braun, Victoria Clarke', 'Qualitative Research in Psychology · 2006'],
+  ]);
+});
+
+test('a paper that is missing, undrawable or fails to draw sends the default image', async () => {
+  for (const [outcome, renderError] of [
+    [{ found: false }, null],
+    [{ failed: true }, null],
+    [{ found: true, record: { paper: { title: 'Readout with α-tuned pulses', authors: [] } } }, null],
+    [PAPER, new Error('the renderer broke')],
+  ] as Array<[ShareOutcome, Error | null]>) {
+    const { deps } = paperHarness(outcome, renderError);
+    const response = await handleShareImage(cardRequest(PAPER_PATH), deps);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), 'https://papertok.app/og/papertok-share-0.3.png');
+  }
 });

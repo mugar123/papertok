@@ -7,8 +7,11 @@ import { nameInitials } from '../src/utils/name-initials.ts';
  * else gets what the Explorer's header shows, an author's initials or the
  * type's icon. No author has a photo anywhere in PaperTok.
  *
- * This module is pure: `shareCardFor` decides what the card says and
- * `shareCardTree` lays it out for satori. share-card-render.ts draws it, so
+ * A shared paper gets a card of its own: its title, authors and venue on
+ * grained paper inside the same frame and stars.
+ *
+ * This module is pure: `shareCardFor` and `paperShareCardFor` decide what a
+ * card says, and `shareCardTree` and `paperCardTree` lay it out for satori. share-card-render.ts draws it, so
  * the Node tests never load the WebAssembly renderer.
  */
 
@@ -35,6 +38,20 @@ export interface ShareCard {
   alt: string;
 }
 
+export interface PaperShareCard {
+  title: string;
+  authors: string;
+  venue: string;
+  alt: string;
+}
+
+export interface ShareCardPaper {
+  title: string;
+  authors: string[];
+  journal?: string;
+  year?: number | null;
+}
+
 export interface ShareCardAssets {
   art: Record<CardArt, string>;
   photo?: string | null;
@@ -50,6 +67,11 @@ const DRAWABLE_RANGES = [
   [0x2010, 0x2027], [0x2030, 0x203a], [0x20ac, 0x20ac],
 ];
 const MAX_NAME_LENGTH = 110;
+// IBM Plex Mono is cut to printable ASCII and a few marks (share-card-assets/README.md).
+const MONO_RANGES = [[0x0020, 0x007e], [0x00b7, 0x00b7], [0x2013, 0x2014], [0x2019, 0x2019], [0x2026, 0x2026]];
+const MAX_TITLE_LENGTH = 200;
+const MAX_AUTHORS_LENGTH = 84;
+const MAX_VENUE_LENGTH = 60;
 
 const MAX_SUBTITLE_LENGTH = 70;
 // The files whose thumbnail is a PNG or a JPEG, the two the card can draw: an
@@ -91,10 +113,10 @@ function count(value: number | null | undefined, one: string, many: string) {
   return `${COUNT.format(value)} ${value === 1 ? one : many}`;
 }
 
-function drawable(text: string) {
+function drawable(text: string, ranges = DRAWABLE_RANGES) {
   return [...text].every((character) => {
     const code = character.codePointAt(0)!;
-    return DRAWABLE_RANGES.some(([first, last]) => code >= first && code <= last);
+    return ranges.some(([first, last]) => code >= first && code <= last);
   });
 }
 
@@ -161,6 +183,32 @@ export function shareCardFor(type: string, typeLabel: string, entity: ShareCardE
     art: look.art,
     alt: `${name}, ${typeLabel.toLowerCase()} on PaperTok.${described ? ` ${described}.` : ''}`,
   };
+}
+
+/**
+ * The first three authors, or fewer when three do not fit on the card's one
+ * line, so that "et al." is never what gets clipped.
+ */
+function cardAuthorLine(names: string[]) {
+  for (let shown = Math.min(3, names.length); shown > 0; shown -= 1) {
+    const line = `${names.slice(0, shown).join(', ')}${names.length > shown ? ' et al.' : ''}`;
+    if (line.length <= MAX_AUTHORS_LENGTH || shown === 1) return clip(line, MAX_AUTHORS_LENGTH);
+  }
+  return '';
+}
+
+/**
+ * What a paper's card says, or null when its title cannot be drawn. An author
+ * line or a venue the fonts cannot draw is left off rather than printed as boxes.
+ */
+export function paperShareCardFor(paper: ShareCardPaper): PaperShareCard | null {
+  const title = clip(paper.title.trim(), MAX_TITLE_LENGTH);
+  if (!title || !drawable(title)) return null;
+  const line = cardAuthorLine(paper.authors.map(name => name.trim()).filter(Boolean));
+  const authors = drawable(line) ? line : '';
+  const venueLine = clip([paper.journal?.trim(), paper.year].filter(Boolean).join(' · '), MAX_VENUE_LENGTH);
+  const venue = drawable(venueLine.toUpperCase(), MONO_RANGES) ? venueLine : '';
+  return { title, authors, venue, alt: `${title}${authors ? `, by ${authors}` : ''}: a paper on PaperTok.` };
 }
 
 // ------------------------------------------------------------------ layout
@@ -279,4 +327,63 @@ export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNod
   h('div', {
     style: { display: 'flex', fontFamily: 'IBM Plex Mono', fontSize: 15, letterSpacing: 2.5, textTransform: 'uppercase', color: INK_SECONDARY },
   }, 'papertok.app')));
+}
+
+// Print grain under a paper's card: faint warm noise, one tile repeated so the
+// PNG stays near 230 KB (noise does not compress; a repeat within a row does).
+const GRAIN_TILE = 48;
+const GRAIN = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CARD_WIDTH}" height="${SHARE_CARD_HEIGHT}">`
+  + '<filter id="g" x="0" y="0" width="100%" height="100%">'
+  + '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>'
+  + '<feColorMatrix values="0 0 0 0 0.42 0 0 0 0 0.34 0 0 0 0 0.2 0 0 0 0.42 -0.18"/></filter>'
+  + `<pattern id="p" width="${GRAIN_TILE}" height="${GRAIN_TILE}" patternUnits="userSpaceOnUse">`
+  + `<rect width="${GRAIN_TILE}" height="${GRAIN_TILE}" filter="url(#g)"/></pattern>`
+  + '<rect width="100%" height="100%" fill="url(#p)"/></svg>')}`;
+
+function titleSize(title: string) {
+  if (title.length <= 60) return 68;
+  if (title.length <= 100) return 58;
+  if (title.length <= 150) return 50;
+  return 44;
+}
+
+/** A paper's card as a satori tree. The stars keep to the right margin, clear of the text. */
+export function paperCardTree(card: PaperShareCard): CardNode {
+  const mono = { fontFamily: 'IBM Plex Mono', letterSpacing: 2.5, textTransform: 'uppercase', color: INK_SECONDARY };
+  return h('div', {
+    style: {
+      display: 'flex', position: 'relative', width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT,
+      background: PAPER, color: INK, fontFamily: 'Newsreader Text',
+    },
+  },
+  h('img', { src: GRAIN, width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT, style: { position: 'absolute', left: 0, top: 0 } }),
+  h('div', { style: { position: 'absolute', left: 22, top: 22, right: 22, bottom: 22, border: `2px solid ${INK}`, borderRadius: 6 } }),
+  star(1104, 64, 28, true),
+  star(1062, 52, 12, false),
+  star(1134, 224, 12, false),
+  star(1116, 384, 22, true),
+  star(1140, 470, 12, false),
+  h('div', {
+    style: {
+      position: 'absolute', left: 84, top: 72, bottom: 58, width: 960,
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+    },
+  },
+  h('div', { style: { display: 'flex', flexDirection: 'column' } },
+    h('div', { style: { ...mono, display: 'flex', alignItems: 'center', fontSize: 18, letterSpacing: 3 } },
+      h('div', { style: { width: 34, height: 2, background: INK, marginRight: 12 } }), card.venue || 'Paper'),
+    h('div', {
+      style: {
+        display: 'block', marginTop: 22, fontFamily: 'Newsreader Display', fontSize: titleSize(card.title),
+        lineHeight: 1.06, letterSpacing: -1, lineClamp: 4,
+      },
+    }, card.title)),
+  h('div', { style: { display: 'flex', flexDirection: 'column' } },
+    card.authors
+      ? h('div', { style: { display: 'block', fontSize: 28, color: INK_SECONDARY, lineClamp: 1 } }, card.authors)
+      : null,
+    h('div', {
+      style: { ...mono, display: 'flex', fontSize: 15, marginTop: 24, paddingTop: 20, borderTop: `1.5px solid ${INK_SECONDARY}` },
+    }, 'papertok.app')),
+  ));
 }
