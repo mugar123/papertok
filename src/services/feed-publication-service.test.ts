@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
-import { classifyFeedPublications, dropUnreachedPublications, withLateAnswer } from './feed-publication-service.ts';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europe-pmc-records.ts';
-import { mergeOpenAlexEnrichment, placeNotableCards } from '../utils/feed-enrichment.ts';
+import { classifyFeedPublications, dropUnreachedPublications, withLateEuropePmcAnswer, withLateOpenAlexAnswer } from './feed-publication-service.ts';
+import { mapEuropePmcResult } from './europe-pmc-records.ts';
+import { placeNotableCards } from '../utils/feed-enrichment.ts';
 import { isFeedPublication } from './feed-publication-rules.ts';
 import { dribblingFetch } from '../test-support/deadline-harness.ts';
 
@@ -394,13 +394,13 @@ test('a late Europe PMC or OpenAlex answer that calls a restored card retracted 
   // on, and brings an abstract for two cards, one of which waits for it.
   const records = new Map([retracted(1), retracted(2), retracted(4), record(3, { abstractText }), record(5, { abstractText })]);
   const loading = new Set([shown[3].id]);
-  const kept = withLateAnswer(shown, mergeEuropePmcEnrichment(shown, records), loading, visible);
+  const kept = withLateEuropePmcAnswer(shown, records, loading, visible);
   assert.deepEqual(kept.map(work => work.id), shown.filter((_, index) => index !== 4).map(work => work.id));
   assert.deepEqual(kept.map(work => work.publicationStatus === 'retracted'), [false, true, true, false, false, false]);
   assert.deepEqual(kept.map(work => work.abstract === abstractText), [false, false, false, true, false, false]);
   // OpenAlex answers for the last card.
-  const fromOpenAlex = mergeOpenAlexEnrichment(shown, { 'openalex:W4280000099': { publicationStatus: 'retracted' } });
-  assert.deepEqual(withLateAnswer(shown, fromOpenAlex, new Set(), visible).map(work => work.id), shown.slice(0, 6).map(work => work.id));
+  const fromOpenAlex = { 'openalex:W4280000099': { publicationStatus: 'retracted' as const } };
+  assert.deepEqual(withLateOpenAlexAnswer(shown, fromOpenAlex, new Set(), visible).map(work => work.id), shown.slice(0, 6).map(work => work.id));
   // An answer that changes nothing leaves the list as it was.
-  assert.equal(withLateAnswer(shown, shown, new Set(), visible), shown);
+  assert.equal(withLateOpenAlexAnswer(shown, {}, new Set(), visible), shown);
 });

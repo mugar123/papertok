@@ -127,7 +127,7 @@ import {
   preserveFeedAbstracts,
 } from '../utils/feed-enrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
-import { classifyFeedPublications, dropUnreachedPublications, withLateAnswer } from '../services/feed-publication-service.ts';
+import { classifyFeedPublications, dropUnreachedPublications, withLateEuropePmcAnswer, withLateOpenAlexAnswer } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
@@ -135,7 +135,6 @@ import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusReques
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
-import { mergeEuropePmcEnrichment } from '../services/europe-pmc-records.ts';
 import { recoverFeedAbstracts } from '../services/feed-abstract-service.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feed-abstract-wait.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
@@ -692,12 +691,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const keepLateTopicsRef = useRef(keepLateTopics);
   useEffect(() => { keepLateTopicsRef.current = keepLateTopics; }, [keepLateTopics]);
 
-  // Requests that answer after cards are shown, from a fresh page or a
-  // restored snapshot, change those cards in place, and the feed cache and
-  // snapshot with them, while the account stays the same. Only the cards in
-  // `waiting` say their abstract is loading, so only they can receive one,
-  // until their requests settle. A confirmed book leaves only if the reader
-  // has not reached it. A null request has nothing left to answer.
+  // Requests that answer after the cards of a restored snapshot are shown
+  // change those cards in place, and the feed cache and snapshot with them,
+  // while the account stays the same. Only the cards in `waiting` say their
+  // abstract is loading, so only they can receive one, until their requests
+  // settle. A confirmed book, or a card a late OpenAlex or Europe PMC answer
+  // calls retracted, leaves only if the reader has not reached it. A null
+  // request has nothing left to answer.
   const followShownPapers = useCallback(({ mode, sessionId, signature, waiting, openAlex, iCite, europePmc, recovery, publications }: {
     mode: string; sessionId: number; signature: string; waiting: ReadonlySet<string>;
     openAlex: ReturnType<typeof enrichPapersBatch> | null;
@@ -725,7 +725,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
-      update(current => withLateAnswer(current, mergeOpenAlexEnrichment(current, records), loading, visiblePaperIdRef.current));
+      update(current => withLateOpenAlexAnswer(current, records, loading, visiblePaperIdRef.current));
       // Out here, not in the update: React may run a state updater twice.
       if (feedSessionId.current !== sessionId) return;
       const shown = papersRef.current;
@@ -738,7 +738,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
-      update(current => withLateAnswer(current, mergeEuropePmcEnrichment(current, records), loading, visiblePaperIdRef.current));
+      update(current => withLateEuropePmcAnswer(current, records, loading, visiblePaperIdRef.current));
     });
     void recovery?.then((records) => {
       if (records.length === 0) return;
