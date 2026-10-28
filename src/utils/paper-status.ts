@@ -130,7 +130,7 @@ const REVIEW_TAGS = {
      the title for attention. `reviewStatusForPaper` still returns 'verified'
      (it is a fact of the record), but only the caveats get a tag: retracted,
      preprint and working paper. */
-};
+} as const;
 
 const ACCESS_TAGS = {
   open: {
@@ -160,9 +160,12 @@ const ACCESS_TAGS = {
       en: 'The full text may require a subscription or payment.',
     },
   },
-};
+} as const;
 
-function localize(tag: { key: string; tone: string; label: { en: string }; hint: { en: string } }) {
+/** The key of every tag a card can show; a component keyed by it covers them all. */
+export type StatusTagKey = keyof typeof REVIEW_TAGS | keyof typeof ACCESS_TAGS;
+
+function localize<Key extends StatusTagKey>(tag: { key: Key; tone: string; label: { en: string }; hint: { en: string } }) {
   return {
     key: tag.key,
     tone: tag.tone,

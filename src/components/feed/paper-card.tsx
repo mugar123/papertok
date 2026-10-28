@@ -83,6 +83,7 @@ import {
   Sparkle,
   TrendUp,
   UserCheck,
+  Warning,
   X,
 } from '@phosphor-icons/react';
 import { useSimilarFeed } from '../../hooks/use-similar-feed.ts';
@@ -130,6 +131,7 @@ import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
+import type { StatusTagKey } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
@@ -148,13 +150,14 @@ const ABSTRACT_MOTION_MS = 300;
 const SLOT_MORPH_MS = 240;
 
 /**
- * A glyph per status, keyed the same way the tags are.
+ * A glyph per status, keyed the same way the tags are: a tag without one does
+ * not compile. Retracted is not `Prohibit`, which the menu's Not interested uses.
  *
  * The icons stay here rather than in `paper-status.ts` so that module holds no
  * React and can be read straight by `node --test`.
  */
-const STATUS_CHIP_ICONS = {
-  retracted: Prohibit,
+const STATUS_CHIP_ICONS: Record<StatusTagKey, Icon> = {
+  retracted: Warning,
   preprint: NotePencil,
   workingPaper: Files,
   open: LockKeyOpen,
@@ -1697,7 +1700,7 @@ const PaperCard = memo(function PaperCard({
             <h3 className="pc-about-heading">{'Status'}</h3>
             <div className="pc-chips">
     {reviewTag && (() => {
-      const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
+      const Glyph = STATUS_CHIP_ICONS[reviewTag.key];
       return (
         <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
           <Glyph size={12} weight="bold" /> {reviewTag.label}
@@ -1707,7 +1710,7 @@ const PaperCard = memo(function PaperCard({
 
     <AnimatePresence mode="wait" initial={false}>
       {accessTag && (() => {
-        const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+        const Glyph = STATUS_CHIP_ICONS[accessTag.key];
         return (
           <motion.span
             key={accessTag.key}
