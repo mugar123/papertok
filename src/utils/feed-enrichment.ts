@@ -120,10 +120,15 @@ export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | nul
   return '';
 }
 
-/** A publisher's DOI, lower-cased; '' for none, a malformed one or arXiv's pseudo-DOI. */
+/**
+ * A publisher's DOI, lower-cased; '' for none, a malformed one or arXiv's
+ * pseudo-DOI. A value holding `,` or `|` counts as malformed: OpenAlex reads
+ * both as separators in a filter, so two DOIs an author put in one field
+ * (`10.1103/a,10.1103/b`) would make the whole chunk a bad request.
+ */
 export function normalizeEnrichmentDoi(value: unknown) {
   const doi = String(value || '').trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
-  if (!/^10\.\d{4,9}\/\S+$/.test(doi) || /^10\.48550\/arxiv\./.test(doi)) return '';
+  if (!/^10\.\d{4,9}\/[^\s,|]+$/.test(doi) || /^10\.48550\/arxiv\./.test(doi)) return '';
   return doi;
 }
 

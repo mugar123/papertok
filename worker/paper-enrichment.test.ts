@@ -540,6 +540,53 @@ test("an ADS paper whose arXiv id finds an unretracted eprint is retracted by it
   assert.deepEqual((await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).candidates, []);
 });
 
+// An author can put two DOIs in the one field arXiv, NASA ADS and the other
+// sources keep. OpenAlex reads a comma in a filter as the start of the next
+// filter and refuses the request (synthetic 400, which the relay passes on),
+// which used to fail the chunk and stop the whole pass.
+test('a DOI holding a comma is never put in an OpenAlex filter: the paper is asked by its arXiv id and the pass goes on', async t => {
+  const filters: string[] = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const filter = url.searchParams.get('filter') ?? '';
+    filters.push(filter);
+    if (filter.includes(',')) return Response.json({ error: 'Invalid query parameters error.' }, { status: 400 });
+    return Response.json({ results: filter.includes('2610.33333') ? [{
+      id: 'https://openalex.org/W4400000033',
+      ids: { arxiv: 'https://arxiv.org/abs/2610.33333' },
+      cited_by_count: 4,
+      type: 'preprint',
+      locations: [{ landing_page_url: 'https://arxiv.org/abs/2610.33333' }],
+    }] : [] });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  t.mock.method(console, 'warn', () => {});
+  const onArxiv = { ...preprint, id: '2610.33333', arxivId: '2610.33333', doi: '10.1103/PhysRevD.1,10.1103/PhysRevD.2', title: 'A paper that lists both its journal versions' };
+  // A record OpenAlex could be asked about only by its DOI.
+  const doiOnly = mapAdsPaper({ bibcode: '2026PhRvD.111a0001X', title: ['A record with two DOIs and no arXiv id'], abstract: 'A measurement that its record lists under two journal DOIs at once.', author: ['Pérez, Ana'], doi: ['10.1103/PhysRevD.3,10.1103/PhysRevD.4'], doctype: 'article', pub: 'Physical Review D', pubdate: '2026-10-00', year: '2026' })!;
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: onArxiv, lanes: ['hep-th'] }, { paper: doiOnly, lanes: [] }], { now: NOW });
+
+  const { workIds, stop } = await enrichPending(env, 50, NOW);
+  assert.equal(stop, false, 'OpenAlex answered: the pass goes on');
+  assert.equal(workIds.length, 2);
+  assert.deepEqual(filters.filter(filter => filter.includes(',')), [], 'neither DOI was asked');
+  const works = stored(db);
+  assert.equal(works['2610.33333'].paper.citationCount, 4);
+  assert.equal(works['2610.33333'].misses, 0);
+  assert.ok(works['2610.33333'].enrichedAt);
+  assert.ok(works['ads:2026PhRvD.111a0001X'].enrichedAt, 'a paper with no way into OpenAlex is done, not left waiting');
+});
+
 // A search, a reader's lookup of a liked paper by DOI and the lanes of
 // followed entities ask OpenAlex without leaving retracted works out.
 test("OpenAlex's own record of a retracted paper is stored under no lane: a filed copy leaves its lanes, and a reader's like of it is kept", async () => {
