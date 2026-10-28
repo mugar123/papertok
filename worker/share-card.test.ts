@@ -107,6 +107,15 @@ test('when three authors do not fit, fewer are named and "et al." stays', () => 
   assert.equal(three.authors, 'Alexandra Kowalczyk-Brennan, Christopher Montgomery et al.', 'three names here clipped "et al." on the rendered card');
 });
 
+test('a first author too long for the line is clipped before "et al.", not with it', () => {
+  const consortium = 'The International Consortium for Long-Term Observational Studies of Coastal Ecosystems';
+  const shared = paperShareCardFor({ title: 'A title', authors: [consortium, 'Jane Doe'] })!;
+  assert.equal(shared.authors, 'The International Consortium for Long-Term Observational S… et al.');
+  assert.ok(shared.authors.length <= 66, 'the line still fits the card');
+  const alone = paperShareCardFor({ title: 'A title', authors: [consortium] })!;
+  assert.equal(alone.authors, 'The International Consortium for Long-Term Observational Studies…', 'a sole author claims no "et al."');
+});
+
 test('a title the fonts cannot draw has no card; such authors or a venue are left off', () => {
   assert.equal(paperShareCardFor({ title: 'Readout with α-tuned pulses', authors: [] }), null);
   const card = paperShareCardFor({ title: 'Deep learning', authors: ['张伟', 'Li Wei'], journal: 'Zeitschrift für Physik', year: 2020 })!;

@@ -192,11 +192,14 @@ export function shareCardFor(type: string, typeLabel: string, entity: ShareCardE
  * line, so that "et al." is never what gets clipped.
  */
 function cardAuthorLine(names: string[]) {
+  if (names.length === 0) return '';
   for (let shown = Math.min(3, names.length); shown > 0; shown -= 1) {
     const line = `${names.slice(0, shown).join(', ')}${names.length > shown ? ' et al.' : ''}`;
-    if (line.length <= MAX_AUTHORS_LENGTH || shown === 1) return clip(line, MAX_AUTHORS_LENGTH);
+    if (line.length <= MAX_AUTHORS_LENGTH) return line;
   }
-  return '';
+  // Even the first name alone is too long: it is clipped, never the suffix.
+  const suffix = names.length > 1 ? ' et al.' : '';
+  return `${clip(names[0], MAX_AUTHORS_LENGTH - suffix.length)}${suffix}`;
 }
 
 /**
