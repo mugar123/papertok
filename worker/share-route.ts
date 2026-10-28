@@ -145,6 +145,7 @@ export async function handleShareRoute(request: Request, env: WorkerEnv) {
         // Evaluated on the first card, so no other route starts the renderer,
         // and a Node test, which cannot load its WebAssembly, never does.
         renderCard: async (card, photo) => (await import('./share-card-render.ts')).renderShareCard(card, photo),
+        renderPaperCard: async card => (await import('./share-card-render.ts')).renderPaperCard(card),
       });
     }
     return await handleSharePage(request, {
