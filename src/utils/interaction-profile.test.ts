@@ -1038,6 +1038,17 @@ test('a paper liked, saved or opened again counts once for each, and a card view
   assert.deepEqual(temporalOf(profile), { notable: { shown: 1, engaged: 3 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
 });
 
+// The verifier's case B on PR #419: For You holds a notable card the reader
+// reads in Search first, and the ring remembers that view.
+test('a notable card viewed off For You first is shown once when For You shows it, so its like counts against a card shown', () => {
+  const profile = createEmptyInteractionProfile();
+  const paper = { paperId: 'classic', category: 'cs.LG', published: '2018-01-01T00:00:00.000Z' };
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5 }, NOW);
+  for (const kind of ['viewTime', 'skip', 'viewTime']) recordInteractionEvent(profile, { ...paper, kind, viewTime: 5, notable: true }, NOW);
+  recordInteractionEvent(profile, { ...paper, kind: 'like', notable: true }, NOW);
+  assert.deepEqual(temporalOf(profile).notable, { shown: 1, engaged: 1 });
+});
+
 // ENG-166, decision 4.
 test('once two thousand cards were shown every count is halved, and an unlike after it takes back the halved like', () => {
   const profile = createEmptyInteractionProfile();

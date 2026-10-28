@@ -512,10 +512,15 @@ function halveWhenFull(temporal: TemporalState) {
 const countsOf = (temporal: TemporalState, notable: boolean) => (notable ? temporal.notable : temporal.recent);
 
 // A view or a skip of a For You card counts it shown, once while the viewed
-// lists remember it.
+// lists remember it. A notable card counts once while its own list does: the
+// ring also holds the paper's views off For You, such as in Search, which
+// counted no card.
 function countShown(profile: InteractionProfile, event: InteractionEvent) {
   if (typeof event.notable !== 'boolean') return;
-  if (profile.viewed.includes(event.paperId) || profile.viewedNotable.includes(event.paperId)) return;
+  const counted = event.notable
+    ? profile.viewedNotable.includes(event.paperId)
+    : profile.viewed.includes(event.paperId) || profile.viewedNotable.includes(event.paperId);
+  if (counted) return;
   countsOf(profile.temporal, event.notable).shown += 1;
   halveWhenFull(profile.temporal);
 }
