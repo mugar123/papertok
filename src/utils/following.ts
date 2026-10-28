@@ -158,11 +158,18 @@ export class FollowsUnavailableError extends Error {
  */
 export type FollowListState = 'waiting' | 'listed' | 'failed';
 
-/** A journal follow refused by `planFollowToggle`; nothing was written. */
+/**
+ * A journal follow refused by `planFollowToggle`; nothing was written.
+ * `followed` is how many journals the list holds, which two devices following
+ * at once can take past MAX_FOLLOWED_JOURNALS.
+ */
 export class JournalFollowLimitError extends Error {
-  constructor() {
+  readonly followed: number;
+
+  constructor(followed: number) {
     super(`A reader follows at most ${MAX_FOLLOWED_JOURNALS} journals.`);
     this.name = 'JournalFollowLimitError';
+    this.followed = followed;
   }
 }
 
@@ -179,7 +186,8 @@ export function planFollowToggle(followedEntities: FollowEntity[], entity: Follo
   if (existing) return { existing, next: followedEntities.filter(follow => !followsEntity([follow], entity)) };
   if (entity.type === 'journal') {
     if (list !== 'listed') throw new FollowsUnavailableError({ retryable: list === 'waiting' });
-    if (followedEntities.filter(follow => follow.type === 'journal').length >= MAX_FOLLOWED_JOURNALS) throw new JournalFollowLimitError();
+    const journals = followedEntities.filter(follow => follow.type === 'journal').length;
+    if (journals >= MAX_FOLLOWED_JOURNALS) throw new JournalFollowLimitError(journals);
   }
   return { existing, next: [...followedEntities, entity] };
 }

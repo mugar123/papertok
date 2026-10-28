@@ -16,7 +16,12 @@ export function toastFollowRefused(error: unknown, { name, following, openSettin
   openSettings?: () => void;
 }) {
   if (error instanceof JournalFollowLimitError) {
-    return toastError(`You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${name}.`, {
+    // Two devices following at once can store more than the limit.
+    const excess = error.followed - MAX_FOLLOWED_JOURNALS;
+    const message = excess > 0
+      ? `You follow ${error.followed} journals, more than the ${MAX_FOLLOWED_JOURNALS} you can. Unfollow ${excess + 1} in Settings to follow ${name}.`
+      : `You already follow ${MAX_FOLLOWED_JOURNALS} journals, the most you can. Unfollow one in Settings to follow ${name}.`;
+    return toastError(message, {
       action: openSettings && { label: 'Open Settings', onClick: openSettings },
     });
   }

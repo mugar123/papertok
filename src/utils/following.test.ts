@@ -221,7 +221,10 @@ test('a reader who follows ten journals cannot follow an eleventh, and can still
   const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
 
   assert.equal(planFollowToggle(journals.slice(0, 9), another, listed).next.at(-1)?.canonicalId, 'S23254222');
-  assert.throws(() => planFollowToggle(journals, another, listed), JournalFollowLimitError);
+  assert.throws(() => planFollowToggle(journals, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 10);
+  // Two devices following at once can store an eleventh; the refusal counts it.
+  const eleven = [...journals, createFollowEntity({ type: 'journal', id: 'S2000', displayName: 'Journal 10' })!];
+  assert.throws(() => planFollowToggle(eleven, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 11);
   const unfollow = planFollowToggle(journals, journals[3], listed);
   assert.equal(unfollow.existing, journals[3]);
   assert.deepEqual(unfollow.next.map(follow => follow.canonicalId), ['S1000', 'S1001', 'S1002', 'S1004', 'S1005', 'S1006', 'S1007', 'S1008', 'S1009']);

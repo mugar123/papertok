@@ -19,7 +19,7 @@ function shown(id: string | number) {
 // the page, so a keyboard user needs time to get to the action.
 test('a journal past the limit is refused in a toast that stays, with a way to Settings', () => {
   let opened = 0;
-  const toastShown = shown(toastFollowRefused(new JournalFollowLimitError(), {
+  const toastShown = shown(toastFollowRefused(new JournalFollowLimitError(10), {
     name: 'Econometrica', following: false, openSettings: () => { opened += 1; },
   }));
   assert.deepEqual({ ...toastShown, action: toastShown.action?.label }, {
@@ -31,7 +31,16 @@ test('a journal past the limit is refused in a toast that stays, with a way to S
   });
   toastShown.action!.onClick({} as Parameters<Action['onClick']>[0]);
   assert.equal(opened, 1);
-  assert.equal(shown(toastFollowRefused(new JournalFollowLimitError(), { name: 'Econometrica', following: false })).action, null, 'no way to Settings from Settings');
+  assert.equal(shown(toastFollowRefused(new JournalFollowLimitError(10), { name: 'Econometrica', following: false })).action, null, 'no way to Settings from Settings');
+});
+
+// Two devices following at once can store an eleventh journal; the toast
+// counts what the reader follows, as the Journals tab's note does.
+test('a reader already past the journal limit is told how many they follow and how many to unfollow', () => {
+  const toastShown = shown(toastFollowRefused(new JournalFollowLimitError(11), { name: 'Econometrica', following: false, openSettings: () => {} }));
+  assert.deepEqual([toastShown.title, toastShown.action?.label], [
+    'You follow 11 journals, more than the 10 you can. Unfollow 2 in Settings to follow Econometrica.', 'Open Settings',
+  ]);
 });
 
 test('a follow list that has not loaded refuses in a toast that stays, offering a reload only once the listener ended', () => {
