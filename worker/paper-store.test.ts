@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
+  notableSince, readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
@@ -17,7 +17,8 @@ import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
-import { notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
+import { mergeFeedAbstracts, notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
+import { sourceAttribution } from '../src/utils/source-attribution.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -196,6 +197,43 @@ test('a funding note stored as the abstract is replaced when its source lists th
   await ingestPapers(env, [{ paper: listed, lanes: ['area:physics'] }], { now: NOW });
   assert.equal(stored().abstract, 'No abstract available.');
   assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the paper is embedded again, by its title');
+});
+
+// ENG-109: a card credits Semantic Scholar for the abstract recovered from it.
+// The row's own source listing the paper with an abstract replaces that text,
+// and the credit goes with it.
+test("an abstract recovered from Semantic Scholar keeps its credit while the row's source lists the paper without one, and loses it to that source's text", async () => {
+  const { env, db } = corpus();
+  const work = { id: 'https://openalex.org/W4410000009', doi: 'https://doi.org/10.5555/recovered', title: 'A journal article OpenAlex lists without its abstract', type: 'article', publication_date: '2026-10-20' };
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
+  const [withAbstract] = mergeFeedAbstracts([stored()], [{ doi: '10.5555/recovered', abstract: recovered, sources: { primary: 'semanticscholar', enrichedBy: [] } }]);
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(withAbstract));
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  assert.deepEqual([stored().abstract, stored().abstractSource], [recovered, 'semanticscholar']);
+  assert.deepEqual(sourceAttribution(stored()), { label: 'Abstract:', name: 'Semantic Scholar', href: 'https://www.semanticscholar.org/?utm_source=api' });
+  const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
+  await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
+  assert.deepEqual([stored().abstract, stored().abstractSource], ['OpenAlex now lists the abstract its publisher deposited for this article.', undefined]);
+  assert.equal(sourceAttribution(stored()), null, 'the card credits Semantic Scholar for nothing it shows');
+});
+
+// A row recovered before ENG-109 names Semantic Scholar only among the sources
+// merged in, and its card says "With data from Semantic Scholar" for the
+// recovered text. That text replaced, the card credits no one.
+test('a row recovered before its source was recorded credits Semantic Scholar until its own source lists an abstract', async () => {
+  const { env, db } = corpus();
+  const work = { id: 'https://openalex.org/W4410000010', doi: 'https://doi.org/10.5555/recovered-earlier', title: 'A journal article recovered before the field existed', type: 'article', publication_date: '2026-10-20' };
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  const earlier = PaperBuilder.merge(stored(), { abstract: 'The abstract Semantic Scholar held for this journal article, in full.' }, 'semanticscholar');
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(earlier));
+  assert.equal(sourceAttribution(stored())?.label, 'With data from');
+  const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
+  await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
+  assert.equal(stored().abstract, 'OpenAlex now lists the abstract its publisher deposited for this article.');
+  assert.equal(sourceAttribution(stored()), null);
 });
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
@@ -1361,6 +1399,140 @@ test('a notable of the current year is not read until that year is over', async 
   await ingestPapers(store.env, [{ paper: notableWork('W2026999', 'A highly cited study of March 2026', '2026-03-01', 8000, true), lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: LISTED_UNTIL });
   assert.deepEqual(await notableRead(store, ['notable:cs.LG'], NOW), []);
   assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2026999'], 'the last completed year');
+});
+
+// A notable lane is read in two round trips: its rows, then the stored row of
+// each of the day's slice. An enrichment batch rewrites its papers, which takes
+// a retracted one or an erratum out of every lane, and only then marks them
+// enriched (`enrichPending`); a page that reads in between must not offer them.
+test('a notable paper the enrichment takes out of its lane between the two reads of the lane is not offered', async t => {
+  const { env, db } = corpus();
+  const adsListed = mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    abstract: 'A synthetic abstract about Majorana zero modes in hybrid nanowires.', year: '2018', pubdate: '2018-04-00',
+    identifier: ['arXiv:1710.10701'], arxiv_class: ['cond-mat.mes-hall'], citation_count: 1500, doctype: 'article',
+  }, ['cs.LG'])!;
+  const listed = [...NOTABLE, adsListed];
+  await ingestPapers(env, listed.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: LISTED_UNTIL });
+  const stored = (paper: Paper) => {
+    const row = db.prepare("SELECT id, paper FROM works WHERE paper ->> '$.id' = ?").get(paper.id) as { id: number; paper: string };
+    return { id: row.id, before: JSON.parse(row.paper) as Paper };
+  };
+  const binding = env.PAPER_STORE!;
+  const batch = binding.batch.bind(binding);
+  let reads = 0;
+  t.mock.method(binding, 'batch', async <T>(statements: D1PreparedStatement[]) => {
+    const answered = await batch<T>(statements);
+    reads += 1;
+    if (reads === 1) {
+      // The lane's rows are read. The enrichment finds the ADS paper retracted
+      // and the paper OpenAlex listed last an erratum, then marks the batch done.
+      const retracted = stored(adsListed);
+      const erratum = stored(NOTABLE[2]);
+      await rewriteWorks(env, [
+        { ...retracted, after: { ...retracted.before, publicationStatus: 'retracted' } },
+        { ...erratum, after: { ...erratum.before, publicationType: 'erratum' } },
+      ], NOW);
+      db.prepare('UPDATE works SET enriched_at = ?').run(new Date(NOW).toISOString());
+    }
+    return answered;
+  });
+  const read = await notableRead({ env, db }, ['notable:cs.LG'], NOW);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'notable:cs.LG'").length, 2, 'the enrichment ran between the reads and took two papers out of the lane');
+  assert.deepEqual(read.map(candidate => candidate.id), [NOTABLE[0].id, NOTABLE[1].id]);
+});
+
+// The statement each notable lane was read with before ENG-150, which numbered
+// the years in SQL with window functions: kept here only as the oracle that the
+// read in index order must match.
+const WINDOW_FUNCTION_NOTABLE_READ = `SELECT work_id, published,
+      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
+        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
+      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+      SELECT work_id, published,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
+             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
+      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
+    )) s ORDER BY published DESC, work_id`;
+
+test('a notable lane read in index order offers the same candidates, in the same order, as the window functions did on every day', async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until, enriched_at) VALUES (?, ?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  // Rows per year: a year before the window, an empty one, one shorter than
+  // the slice, one of the slice, one past it, a listing, a listing with its
+  // drop-outs, two listings, and the current year's. Most of a year shares a
+  // few dates, as OpenAlex's 1 January does, so the work id breaks the ties;
+  // ids are out of date order.
+  const perYear: Array<[number, number]> = [[2015, 7], [2016, 0], [2017, 1], [2018, 24], [2019, 25], [2020, 26], [2021, 100], [2022, 110], [2023, 200], [2024, 3], [2025, 57], [2026, 4]];
+  let number = 0;
+  const lanes = { lg: 'notable:cs.LG', cv: 'notable:cs.CV' };
+  db.exec('BEGIN');
+  for (const [year, count] of perYear) {
+    for (let rank = 0; rank < count; rank += 1) {
+      number += 1;
+      const id = 1 + ((number * 7_919) % 100_003);
+      const day = [0, 0, 0, 31, 59, 180, 364][rank % 7];
+      const published = new Date(Date.UTC(year, 0, 1 + day, rank % 5 === 0 ? 0 : 12)).toISOString();
+      // Every fourth is a paper ADS listed: half of those enriched since.
+      const fromAds = number % 4 === 0;
+      const paper = { id: `openalex:W${id}`, title: `Highly cited study ${id}`, ...(fromAds ? { adsBibcode: `${year}Natur.${id}` } : {}) };
+      // A lane row whose stored row is gone is not offered.
+      if (number % 37 !== 0) insertWork.run(id, JSON.stringify(paper), published, '2027-03-01T00:00:00.000Z', fromAds && number % 8 === 0 ? '2026-10-01T00:00:00.000Z' : null);
+      insertLane.run(lanes.lg, id, published);
+      // A third of them are listed in cs.CV too, and cs.CV has its own.
+      if (number % 3 === 0) insertLane.run(lanes.cv, id, published);
+    }
+  }
+  for (let rank = 0; rank < 40; rank += 1) {
+    const id = 200_000 + ((rank * 13) % 40);
+    const published = new Date(Date.UTC(2019 + (rank % 3), 5, 1)).toISOString();
+    insertWork.run(id, JSON.stringify({ id: `openalex:W${id}`, title: `Vision study ${id}` }), published, '2027-03-01T00:00:00.000Z', null);
+    insertLane.run(lanes.cv, id, published);
+  }
+  db.exec('COMMIT');
+
+  // The window functions' rows of each lane, and the candidates the lanes
+  // give: their offered rows in turns, a work listed by two lanes once, at its
+  // first turn, with both lanes and its newest date.
+  const oracle = (lane: string, now: number) => db.prepare(WINDOW_FUNCTION_NOTABLE_READ)
+    .all(Math.floor(now / DAY) * 25, 25, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`) as Array<{ work_id: number; published: string; offered: number }>;
+  const inTurns = (asked: string[], perLane: Array<Array<{ work_id: number; published: string }>>) => {
+    const byWork = new Map<number, { workId: number; published: string; lanes: string[] }>();
+    for (let position = 0; position < Math.max(...perLane.map(rows => rows.length)); position += 1) {
+      perLane.forEach((rows, index) => {
+        const row = rows[position];
+        if (!row) return;
+        const candidate = byWork.get(row.work_id);
+        if (!candidate) byWork.set(row.work_id, { workId: row.work_id, published: row.published, lanes: [asked[index]] });
+        else {
+          candidate.lanes.push(asked[index]);
+          if (row.published > candidate.published) candidate.published = row.published;
+        }
+      });
+    }
+    return [...byWork.values()];
+  };
+  // Ten days in a row, the slices of a year of 200 wrapping around, and a day
+  // in January, when the window moves on by a year.
+  const days = [...Array.from({ length: 10 }, (_, day) => NOW + day * DAY), Date.parse('2027-01-02T12:00:00Z')];
+  for (const now of days) {
+    for (const asked of [[lanes.lg], [lanes.cv], [lanes.lg, lanes.cv], [lanes.cv, lanes.lg, 'notable:cs.AI']]) {
+      const expected = asked.map(lane => oracle(lane, now));
+      const read = await readNotableCandidates(env.PAPER_STORE!, asked, now);
+      const label = `${asked.join(', ')} on ${new Date(now).toISOString().slice(0, 10)}`;
+      assert.deepEqual(read.candidates, inTurns(asked, expected.map(rows => rows.filter(row => row.offered))), label);
+      assert.deepEqual([...read.inLanes].sort((a, b) => a - b), [...new Set(expected.flat().map(row => row.work_id))].sort((a, b) => a - b), label);
+    }
+  }
+  // The data reaches every case: of cs.LG's 546 rows in the window on the
+  // first day, the day's slice holds 178 (25 of a year, or a shorter year
+  // whole), and some of those are not offered: a paper ADS listed and not yet
+  // enriched, or a row whose stored row is gone.
+  const today = oracle(lanes.lg, NOW);
+  const offered = today.filter(row => row.offered).length;
+  assert.equal(today.length, 546);
+  assert.ok(offered > 0 && offered < 178, `${offered} of the slice's 178 offered`);
 });
 
 test("a notable paper one of the reader's own lanes also holds comes as a notable card on the day of its slice, and as no rank on the other days", async () => {

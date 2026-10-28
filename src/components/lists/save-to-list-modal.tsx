@@ -46,6 +46,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { copyForMergeWrite } from '../../utils/stored-copy-write.ts';
 import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
@@ -542,7 +543,7 @@ export default function SaveToListModal({
       if (savesPaper) {
         await setDoc(
           savedPaperDocRef(user!.uid, paper.id),
-          buildSavedPaperPayload(paper, new Date().toISOString()),
+          copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())),
           { merge: true },
         );
         // The aggregate learns of the save only once the document exists.
