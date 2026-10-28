@@ -6,6 +6,8 @@ import {
   reviewTagForPaper,
   accessTagForPaper,
 } from './paper-status.ts';
+import { mapOpenAlexWork } from './open-alex-work.ts';
+import { PaperBuilder } from '../services/paper-builder.ts';
 
 test('either field naming a preprint makes it one', () => {
   assert.equal(reviewStatusForPaper({ publicationStatus: 'preprint' }), 'preprint');
@@ -74,6 +76,61 @@ test('an arXiv copy outranks a publisher that says the paper is closed', () => {
   // and the card links that copy — the chip must not contradict the button
   // underneath it.
   assert.equal(accessStatusForPaper({ openAccess: false, arxivId: '2401.00001' }), 'open');
+});
+
+// OpenAlex's record of a ChemRxiv preprint it calls closed, as returned on
+// 2026-10-27 (trimmed), and a synthetic closed journal version of it: same
+// title and first author, so the corpus files the two as one paper.
+const CHEMRXIV_WORK = {
+  id: 'https://openalex.org/W7223561333',
+  doi: 'https://doi.org/10.26434/chemrxiv.15010999/v1',
+  title: 'Computational Interactions between the Endohedral Metallofullerene Gd@C60 and Human Toll-Like Receptor 3: A Molecular Docking and Molecular Dynamics Study',
+  type: 'preprint',
+  publication_date: '2026-10-25',
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5052942510', display_name: 'Satyavani Kaliamurthi' }, institutions: [] }],
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.26434/chemrxiv.15010999/v1',
+    pdf_url: null,
+    version: 'acceptedVersion',
+    is_published: false,
+    source: { id: 'https://openalex.org/S4393918830', display_name: 'ChemRxiv', type: 'repository' },
+  },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+};
+const JOURNAL_VERSION = {
+  ...CHEMRXIV_WORK,
+  id: 'https://openalex.org/W1000000001',
+  doi: 'https://doi.org/10.1021/acs.jcim.6c00001',
+  type: 'article',
+  publication_date: '2026-10-26',
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.1021/acs.jcim.6c00001',
+    pdf_url: null,
+    version: 'publishedVersion',
+    is_published: true,
+    source: { id: 'https://openalex.org/S1000000001', display_name: 'Journal of Chemical Information and Modeling', type: 'journal' },
+  },
+};
+
+test('a ChemRxiv preprint is open whatever OpenAlex says, and a journal article merged with it keeps its own answer', () => {
+  const preprint = mapOpenAlexWork(CHEMRXIV_WORK)!;
+  const article = mapOpenAlexWork(JOURNAL_VERSION)!;
+  assert.equal(accessTagForPaper(preprint)?.label, 'Open access');
+  assert.equal(accessTagForPaper(article)?.label, 'Closed access');
+  // Whichever record the corpus stored first, the merged paper answers for
+  // the DOI it keeps.
+  const articleFirst = PaperBuilder.merge(article, preprint, preprint.provider);
+  assert.deepEqual([articleFirst.doi, accessStatusForPaper(articleFirst)], ['10.1021/acs.jcim.6c00001', 'subscription']);
+  const preprintFirst = PaperBuilder.merge(preprint, article, article.provider);
+  assert.deepEqual([preprintFirst.doi, accessStatusForPaper(preprintFirst)], ['10.26434/chemrxiv.15010999/v1', 'open']);
+  // A journal record without a DOI of its own takes the preprint's, whose page
+  // the card then opens (paper-open-targets.ts).
+  const withoutDoi = PaperBuilder.merge({ ...article, doi: null, landingPageUrl: 'https://pubmed.ncbi.nlm.nih.gov/40000001/' }, preprint, preprint.provider);
+  assert.deepEqual([withoutDoi.doi, accessStatusForPaper(withoutDoi)], ['10.26434/chemrxiv.15010999/v1', 'open']);
 });
 
 test('only an explicit false is a paywall', () => {

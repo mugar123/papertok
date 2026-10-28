@@ -16,6 +16,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** A failed load waits for its one automatic retry. */
+  autoRetryPending: boolean;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -87,6 +89,7 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
+import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
@@ -193,6 +196,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The request whose automatic retry is due. A retry's timer clears only its
+  // own: an older timer that fires after a newer failure must not end its wait.
+  const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
+  const autoRetryPending = autoRetryFor !== null;
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1158,6 +1165,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
+    setAutoRetryFor(null);
     pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
 
     // A fresh load starts on the corpus's first page, the follows' included:
@@ -1488,7 +1496,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
-        // reader sees the error.
+        // failed feed is on screen. A load whose automatic retry is due sends
+        // it too, although the feed's wait covers its error.
         const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
           kind: 'load_failed',
           failure,
@@ -1498,10 +1507,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
-        // error state with its manual "Reintentar" so there is no cascade.
+        // error state with its manual "Try again" so there is no cascade.
+        // While the retry is due, the feed shows its wait, not the error.
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
+          setAutoRetryFor(requestId);
           setTimeout(() => {
+            setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
               void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
@@ -1718,9 +1730,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
+  // A due automatic retry is the next load. The scroll sentinel stays mounted
+  // under the first wait's veil, and must not start pages in front of it.
   const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current) void loadPapers(false);
-  }, [hasMore, loadPapers]);
+    if (hasMore && !feedLoadInFlight.current && !autoRetryPending) void loadPapers(false);
+  }, [autoRetryPending, hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
   useLayoutEffect(() => {
@@ -1800,7 +1814,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
           // kicker from. Written on like only; an unlike changes the flag.
-          paper: isCurrentlyLiked ? undefined : serializeLibraryPaper(paper),
+          paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
@@ -1927,7 +1941,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         paperCategory: paper.primaryCategory,
         timestamp: readAt,
         readAt,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         deviceType: getDeviceInfo().type,
       }), { merge: true });
     } catch (err) {
@@ -2139,9 +2153,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        if (paper) interactionData.paper = serializeLibraryPaper(paper);
-
-        await setDoc(ref, interactionData, { merge: true });
+        await setDoc(ref, paper
+          ? { ...interactionData, paper: copyForMergeWrite(serializeLibraryPaper(paper)) }
+          : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
         if (options?.throwOnError) throw err;
@@ -2257,7 +2271,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
       await setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
@@ -2314,7 +2328,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       await setDoc(interactionDocRef(userId, paper.id), definedFields({
         note: note.trim(),
         tags: normalizedTags,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
@@ -2370,7 +2384,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2383,7 +2397,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,

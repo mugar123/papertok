@@ -275,6 +275,8 @@ test('what Crossref has no abstract for is asked of Semantic Scholar in one batc
   assert.ok(works['openalex:W4410000002'].paper.sources.enrichedBy.includes('semanticscholar'));
   assert.equal(works['openalex:W4410000001'].paper.abstract, NO_ABSTRACT, "another paper's record is not this paper's abstract");
   assert.ok(!works['openalex:W4410000001'].paper.sources.enrichedBy.includes('semanticscholar'));
+  // The stored row names the source its card credits for the text (ENG-109).
+  assert.deepEqual(['openalex:W4410000003', 'openalex:W4410000002', 'openalex:W4410000001'].map(id => works[id].paper.abstractSource), ['crossref', 'semanticscholar', undefined]);
 });
 
 test('a recovery that fails leaves the paper admitted, enriched and asked again at the refresh', async t => {
@@ -350,6 +352,7 @@ test('a recovered text too long to be an abstract is not stored', async t => {
   const { paper } = stored(db)['openalex:W4410000001'];
   assert.equal(paper.abstract, NO_ABSTRACT);
   assert.ok(!paper.sources.enrichedBy.includes('semanticscholar'));
+  assert.equal(paper.abstractSource, undefined, 'no source is credited for text the card does not show');
 });
 
 test('an editorial has no abstract: it is not asked for one, and none it is offered is stored', async t => {

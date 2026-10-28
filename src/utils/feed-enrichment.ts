@@ -50,26 +50,31 @@ export function abstractsInFlight(papers: Paper[], running: { openAlex: boolean;
 
 const arxivKey = (paper: Partial<Paper>) => normalizeArxivId(paper.arxivId).replace(/v\d+$/, '');
 const doiKey = (paper: Partial<Paper>) => normalizeDoi(paper.doi);
-// The sources that recover an abstract, in order of preference, and what each
-// record is matched by.
-const ABSTRACT_SOURCES = [
+// The sources that recover an abstract, in order of preference, what each
+// record is matched by, and the source a card credits for the text it gives
+// (`abstractSource`). ENG-109 reviewed the terms of these two only: Semantic
+// Scholar's licence asks for a visible credit, and Crossref's text is a
+// publisher's deposit rather than the paper's own listing.
+const ABSTRACT_SOURCES: Array<{ source: string; key: (paper: Partial<Paper>) => string; credit?: Paper['abstractSource'] }> = [
   { source: 'arxiv', key: arxivKey },
   { source: 'inspire', key: doiKey },
-  { source: 'crossref', key: doiKey },
-  { source: 'semanticscholar', key: doiKey },
+  { source: 'crossref', key: doiKey, credit: 'crossref' },
+  { source: 'semanticscholar', key: doiKey, credit: 'semanticscholar' },
 ];
 
 /**
  * Recovered abstracts for papers awaiting one: arXiv's by arXiv ID, then
  * INSPIRE's, Crossref's and Semantic Scholar's by DOI. The first source with
- * a usable abstract for a paper gives it, and is recorded in `enrichedBy`.
- * Text that is a placeholder, or too short or too long to be an abstract
+ * a usable abstract for a paper gives it, and is recorded in `enrichedBy`;
+ * Crossref and Semantic Scholar also in `abstractSource`. Text that is a
+ * placeholder, or too short or too long to be an abstract
  * (`isPlausibleAbstract`), is not one.
  */
 export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
-  const sources = ABSTRACT_SOURCES.map(({ source, key }) => ({
+  const sources = ABSTRACT_SOURCES.map(({ source, key, credit }) => ({
     source,
     key,
+    credit,
     abstracts: new Map(records
       .filter(record => record.sources?.primary === source
         && hasUsableAIAbstract(record.abstract) && isPlausibleAbstract(record.abstract))
@@ -79,12 +84,12 @@ export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
   const merged = papers.map(paper => {
     if (!awaitsAbstract(paper)) return paper;
     const recovered = sources
-      .map(({ source, key, abstracts }) => ({ source, abstract: key(paper) ? abstracts.get(key(paper)) : undefined }))
+      .map(({ source, key, credit, abstracts }) => ({ source, credit, abstract: key(paper) ? abstracts.get(key(paper)) : undefined }))
       .find(({ abstract }) => abstract);
     if (!recovered) return paper;
     changed = true;
     // Recovery supplies only text; it must not replace publication or access metadata.
-    return PaperBuilder.merge(paper, { abstract: recovered.abstract }, recovered.source);
+    return PaperBuilder.merge(paper, { abstract: recovered.abstract, abstractSource: recovered.credit }, recovered.source);
   });
   return changed ? merged : papers;
 }
@@ -92,7 +97,7 @@ export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
 export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | null | undefined) {
   const candidates = typeof paperOrId === 'string'
     ? [paperOrId]
-    : [paperOrId?.id, paperOrId?.arxivId];
+    : [paperOrId?.openAlexId, paperOrId?.id, paperOrId?.arxivId];
 
   for (const value of candidates) {
     if (!value) continue;
@@ -289,7 +294,10 @@ export function preserveFeedAbstracts(current: Paper[], enriched: Paper[], loadi
     const previous = current[index];
     if (paper.abstract === previous.abstract && paper.summary === previous.summary) return paper;
     if (loading.has(previous.id) && !hasUsableAIAbstract(previous.abstract) && hasUsableAIAbstract(paper.abstract)) return paper;
-    const stable = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    // The credit for the text (`abstractSource`) stays with it.
+    const stable: Paper = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    if (previous.abstractSource) stable.abstractSource = previous.abstractSource;
+    else delete stable.abstractSource;
     return paperFieldsEqual(stable, previous) ? previous : stable;
   });
 }

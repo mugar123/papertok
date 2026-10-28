@@ -22,6 +22,15 @@ test('normalizes arXiv versions for OpenAlex enrichment', () => {
   assert.equal(getOpenAlexEnrichmentId({ id: '10.1000/example', arxivId: '2607.54321v3' }), '2607.54321');
 });
 
+// A card that names its OpenAlex work is enriched by that work: a citation
+// graph card filed under its DOI, or a corpus row that became its journal
+// article and keeps the working paper's id (ENG-133).
+test("a paper's own OpenAlex work comes before its id, arXiv id and DOI", () => {
+  assert.equal(getOpenAlexEnrichmentId({ id: '10.1000/example', doi: '10.1000/example', openAlexId: 'W123' }), 'openalex:W123');
+  assert.equal(getOpenAlexEnrichmentId({ id: 'openalex:W7220000104', openAlexId: 'W7221756071' }), 'openalex:W7221756071');
+  assert.equal(getOpenAlexEnrichmentId({ id: '2610.01234', arxivId: '2610.01234', openAlexId: 'W7221756071' }), 'openalex:W7221756071');
+});
+
 test('does not request duplicate enrichment for native OpenAlex papers', () => {
   assert.equal(needsOpenAlexEnrichment({
     id: 'openalex:W123',
@@ -220,6 +229,19 @@ test('late metadata keeps displayed abstract and summary stable without losing c
   assert.equal(preserveFeedAbstracts(current, [{ ...current[0], abstract: 'Late text' }])[0], current[0]);
 });
 
+// ENG-109: the card credits the source of the text it keeps showing, not the
+// source of a late text it does not show.
+test('late metadata keeps the credit of the abstract the card shows', () => {
+  const base = { id: 'openalex:W1', title: 'Synthetic paper W1', authors: [], sources: { primary: 'openalex', enrichedBy: ['semanticscholar'] } };
+  const card = { ...base, abstract: 'The text Semantic Scholar supplied.', summary: 'The text Semantic Scholar supplied.', abstractSource: 'semanticscholar' } as Paper;
+  const kept = preserveFeedAbstracts([card], [{ ...base, abstract: 'Late text', summary: 'Late text', citationCount: 4 }])[0];
+  assert.deepEqual([kept.abstract, kept.abstractSource, kept.citationCount], [card.abstract, 'semanticscholar', 4]);
+  // A card that credits no one keeps crediting no one, and stays the same object.
+  const own = { ...base, abstract: 'The text OpenAlex lists.', summary: 'The text OpenAlex lists.' } as Paper;
+  const late = preserveFeedAbstracts([own], [{ ...own, abstract: 'Late text', summary: 'Late text', abstractSource: 'crossref' }])[0];
+  assert.equal(late, own);
+});
+
 test('late text fills only a card that says its abstract is loading', () => {
   const card = (id: string, abstract: string) => ({ id, title: `Synthetic paper ${id}`, authors: [], abstract, summary: abstract, sources: { primary: 'openalex', enrichedBy: [] } }) as Paper;
   const current = [card('loading', ''), card('settled', ''), card('shown', 'Publisher text.')];
@@ -274,4 +296,23 @@ test('recovered abstracts apply in the order arXiv, INSPIRE, Crossref, Semantic 
   assert.equal(merged([record('crossref', 'No abstract available.'), record('semanticscholar', from('Semantic Scholar'))]).abstract, from('Semantic Scholar'));
   const unrelated = [{ doi: '10.1000/other', abstract: from('another paper'), sources: { primary: 'crossref', enrichedBy: [] } }];
   assert.equal(mergeFeedAbstracts([{ ...paper, arxivId: undefined }], unrelated)[0].abstract, 'No abstract available.');
+});
+
+// ENG-109: a card credits Crossref or Semantic Scholar for an abstract it
+// shows from them, so the paper names that source beside the text.
+test('an abstract recovered from Crossref or Semantic Scholar names its source; one from arXiv or INSPIRE, a refused one and a kept one do not', () => {
+  const paper = { id: 'W8', arxivId: '2601.00002', doi: '10.1000/credited', title: 'Synthetic paper W8', authors: [], abstract: 'No abstract available.', sources: { primary: 'openalex', enrichedBy: [] } } as Paper;
+  const record = (primary: string, abstract: string) => ({ arxivId: '2601.00002', doi: '10.1000/credited', abstract, sources: { primary, enrichedBy: [] } });
+  const text = 'The abstract this source holds for the paper, in full.';
+  const recovered = (records: Partial<Paper>[], base = paper) => mergeFeedAbstracts([base], records)[0];
+  assert.equal(recovered([record('semanticscholar', text)]).abstractSource, 'semanticscholar');
+  assert.equal(recovered([record('crossref', text)]).abstractSource, 'crossref');
+  assert.equal(recovered([record('arxiv', text)]).abstractSource, undefined);
+  assert.equal(recovered([record('inspire', text)]).abstractSource, undefined);
+  // Semantic Scholar's text past 6,000 characters is no abstract: the paper keeps none, and credits no one.
+  const refused = recovered([record('semanticscholar', 'x'.repeat(6001))]);
+  assert.deepEqual([refused.abstract, refused.abstractSource], ['No abstract available.', undefined]);
+  // A paper with its own abstract keeps it, uncredited.
+  const own = recovered([record('semanticscholar', text)], { ...paper, abstract: 'The text OpenAlex lists for this paper itself.' });
+  assert.deepEqual([own.abstract, own.abstractSource], ['The text OpenAlex lists for this paper itself.', undefined]);
 });

@@ -552,6 +552,48 @@ test('a purge that KV refuses just after the Auth delete is retried once the sec
   }
 });
 
+test('an unsubscribe index KV refuses after the Auth delete is still removed by the retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const store = kvStore();
+  let authDeleted = false;
+  let refusals = 0;
+  const remove = store.delete;
+  store.delete = async (key: string) => {
+    if (authDeleted && refusals === 0 && key === 'notification:unsubscribe:tok-2') {
+      refusals += 1;
+      throw new Error('KV DELETE failed: 429 Too Many Requests');
+    }
+    return remove(key);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+  const restore = stubIdentityLookup();
+
+  try {
+    let settled = false;
+    const deletion = handleAccountDeletionRequest(deletionRequest(), env, {
+      admin: memoryAdmin(),
+      fetchImpl: async () => {
+        store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+        store.data.set('notification:unsubscribe:tok-2', UID);
+        authDeleted = true;
+        return new Response('{}', { status: 200 });
+      },
+    }).finally(() => { settled = true; });
+    while (refusals === 0 && !settled) await new Promise(resolve => { setImmediate(resolve); });
+    await new Promise(resolve => { setImmediate(resolve); });
+    t.mock.timers.tick(1000);
+
+    assert.deepEqual(await deletion, { complete: true, stage: 'auth' });
+    assert.equal(refusals, 1);
+    assert.equal(store.data.size, 0);
+    assert.deepEqual(errors.lines, []);
+  } finally {
+    restore();
+    errors.restore();
+  }
+});
+
 test('a final sweep that fails after the Auth delete still purges the subscription, and the deletion completes', async () => {
   const admin = memoryAdmin();
   let authDeleted = false;

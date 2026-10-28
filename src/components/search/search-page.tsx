@@ -1021,6 +1021,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
+            analyticsSurface="search"
           />
         )}
       </PaperOverlay>

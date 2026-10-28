@@ -87,12 +87,20 @@ export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydr
     && getArxivArchiveArea(hydrated.primaryCategory)
     ? hydrated
     : present(seed.categories) || present(seed.primaryCategory) ? seed : hydrated;
+  const abstract = hydratedAbstract(seed.abstract, hydrated.abstract);
+  // The source a card credits for the text comes with it: the copy's, or the
+  // provider's for the same text when the copy names none, as a copy stored
+  // without the field does.
+  const abstractSource = abstract === seed.abstract && seed.abstractSource
+    ? seed.abstractSource
+    : abstract === hydrated.abstract ? hydrated.abstractSource : undefined;
   return {
     ...hydrated,
     id: keep('id'),
     title: keep('title'),
     authors: hydratedAuthors(seed.authors, hydrated.authors),
-    abstract: hydratedAbstract(seed.abstract, hydrated.abstract),
+    abstract,
+    abstractSource,
     primaryCategory: classification.primaryCategory,
     categories: classification.categories,
     allCategories: classification.allCategories ?? classification.categories,

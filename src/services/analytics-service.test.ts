@@ -532,7 +532,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; }) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -896,6 +896,41 @@ test('drops unapproved events, parameter values, and arbitrary identity fields',
     name: 'Reader Name',
   }), {});
   assert.deepEqual(sanitizeProductEventParams('custom_event', { surface: 'feed' }), {});
+});
+
+test('opening connections or similar papers records where and whether a graph can exist, never which paper', () => {
+  assert.deepEqual(sanitizeProductEventParams('connections_open', {
+    surface: 'feed', graph_available: false, paper_id: 'W2741809807', paper_title: 'A private title', doi: '10.1234/private',
+  }, ANALYTICS_CONSENT.ENABLED), { surface: 'feed', graph_available: false });
+  assert.deepEqual(sanitizeProductEventParams('connections_open', { surface: 'connections', graph_available: true }), { surface: 'connections', graph_available: true });
+  assert.deepEqual(sanitizeProductEventParams('similar_open', { surface: 'similar', paper_id: 'W2741809807' }, ANALYTICS_CONSENT.ENABLED), { surface: 'similar' });
+  assert.deepEqual(sanitizeProductEventParams('similar_open', { surface: 'paper-W2741809807' }), {});
+});
+
+test('what a reader does in the connections map is one of six actions in the map or the list', () => {
+  for (const action of ['select_node', 'centre', 'back', 'switch_view', 'export', 'open_paper']) {
+    assert.deepEqual(sanitizeProductEventParams('connections_interact', { action, view: 'list' }), { action, view: 'list' });
+  }
+  assert.deepEqual(sanitizeProductEventParams('connections_interact', {
+    action: 'drag', view: 'grid', paper_id: 'W2741809807', node: 'Smith 2019',
+  }, ANALYTICS_CONSENT.ENABLED), {});
+
+  const capture = postHogCapture('connections_interact', { action: 'open_paper', view: 'map', paper_id: 'W2741809807' });
+  const sent = sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED);
+  assert.equal(sent?.event, 'connections_interact');
+  assert.equal(sent?.properties.action, 'open_paper');
+  assert.equal(sent?.properties.view, 'map');
+  assert.ok(!JSON.stringify(sent).includes('W2741809807'));
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+});
+
+test('connections and similar are allowed surfaces for paper events', () => {
+  for (const surface of ['connections', 'similar']) {
+    assert.deepEqual(sanitizeProductEventParams('paper_open', { surface, destination: 'pdf', position: 2 }), { surface, destination: 'pdf', position: 2 });
+    assert.deepEqual(sanitizeProductEventParams('paper_view', { surface, position: 0 }), { surface, position: 0 });
+    assert.deepEqual(sanitizeProductEventParams('paper_dwell', { surface, seconds: 9 }), { surface, seconds: 9 });
+    assert.deepEqual(sanitizeProductEventParams('save_change', { action: 'add', surface }), { action: 'add', surface });
+  }
 });
 
 test('an app error leaves with its kind and nothing from the error, and not at all once analytics is off', () => {
