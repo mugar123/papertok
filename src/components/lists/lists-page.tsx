@@ -56,6 +56,7 @@ import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
 import ScientificText from '../scientific-text.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
+import { listPaperFromCopies } from './list-paper-copies.ts';
 import {
   ArrowLeft,
   DotsThree,
@@ -428,19 +429,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const savedPaper = savedPapers[paperId] ?? libraryPapers[paperId];
     if (!libraryPaper) return savedPaper;
     if (!savedPaper) return libraryPaper;
-    const mergedPaper = {
-      ...libraryPaper,
-      ...savedPaper,
-      doi: libraryPaper.doi || savedPaper.doi,
-      arxivId: libraryPaper.arxivId || savedPaper.arxivId,
-      openUrl: libraryPaper.openUrl || savedPaper.openUrl,
-      landingPageUrl: libraryPaper.landingPageUrl || savedPaper.landingPageUrl,
-      pdfUrl: libraryPaper.pdfUrl || savedPaper.pdfUrl,
-      abstract: libraryPaper.abstract || savedPaper.abstract,
-      summary: libraryPaper.summary || savedPaper.summary,
-      concepts: libraryPaper.concepts?.length ? libraryPaper.concepts : savedPaper.concepts,
-    };
-    return mergedPaper.sources ? mergedPaper : paperLegacyAdapter(mergedPaper);
+    return listPaperFromCopies(libraryPaper, savedPaper);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
   useEffect(() => subscribeToPublicListSync((key, state) => {

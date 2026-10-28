@@ -131,7 +131,7 @@ import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-s
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
-import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
+import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
 import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
@@ -914,7 +914,7 @@ const PaperCard = memo(function PaperCard({
    * are the same words as before.
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
-  const abstractAttribution = semanticScholarAttribution(paper);
+  const abstractAttribution = sourceAttribution(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -2109,6 +2109,7 @@ const PaperCard = memo(function PaperCard({
                     as="span"
                     className="pc-abstract-source"
                     lead={abstractAttribution.label}
+                    name={abstractAttribution.name}
                     href={abstractAttribution.href}
                     inert={!expanded && abstractClipped !== false}
                     onLinkClick={swallowClick}
