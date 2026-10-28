@@ -92,6 +92,41 @@ enrichment phase at its longest within half of the configured value.
 Subrequests are not billed themselves; each provider's calls stay bounded by
 their budgets.
 
+The paper store's placement. D1 keeps `papertok-paper-store` in Western Europe
+(WEUR) with read replication off, so every D1 call is a round trip from the
+location the fetch handler runs in. A first `/store/papers` page makes several
+of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
+invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline,
+while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
+that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
+sets `[placement] mode = "smart"`, so Cloudflare may run the fetch handler near
+the I/O it waits on rather than at the reader's location. It does so per Worker,
+not per route: the provider relays, share pages and preflights move with the
+feed, and a reader outside Europe then pays one more hop to reach them. It does
+not move the crons, the harvest Workflow or the Durable Objects. Cloudflare
+analyses the Worker for up to 15 minutes after a deploy, needs steady traffic
+from several locations (status `INSUFFICIENT_INVOCATIONS` until then), keeps
+about 1% of requests at their own location as a baseline and reverts placement
+that makes the Worker slower (`UNSUPPORTED_APPLICATION`). The Cache API is per
+location, so after the first placed deploy the readers' kept rankings are not
+found once (`Feed walk has no kept order to go on with`), and the baseline
+requests miss the placed location's entries. To see whether it acted, look for
+`cf-placement: remote-XXX` (forwarded) or `local-XXX` on any response, for
+example `curl -s -D - -o /dev/null https://api.papertok.app/health`, and for the
+status under the Worker's Settings, General, Placement in the dashboard. If the
+status is not `SUCCESS` a day after the deploy, an explicit
+`region = "aws:eu-central-1"` in place of `mode` is the alternative: it always
+runs in Europe, with no baseline and no revert. Choosing it is Pablo's call.
+The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
+`worker/request-quota-ledger.ts`). The feed reserves its minute beside its first
+D1 read, and the feed's ledger is a new object every UTC minute, created near
+the first request of that minute and never moved, so without the hint a minute
+opened by a reader on another continent sent every reservation of that minute
+there. Cloudflare reads the hint only when it creates an object, as a best
+effort: objects created before the deploy, such as the providers' pace objects,
+stay where they are, and minute, hour and day objects are created in WEUR as
+their periods start. Reservations stay one transaction in one object per period.
+
 
 The For You feed reads one paper corpus instead of each source per reader and page. `worker/paper-store.ts` keeps it in D1 (`PAPER_STORE`, database `papertok-paper-store`): one row per paper in the app's `Paper` contract, the identifiers it is known by (`PaperBuilder.identityKeys`), the lanes it can be asked for under, and an int8 vector from Workers AI (`@cf/qwen/qwen3-embedding-0.6b`): the leading 256 of the model's 1,024 dimensions, which it is trained to make an embedding of their own (migration 0004 cut the vectors stored before). A row carries neither `openAlex`, the enrichment's copy of OpenAlex's answer, whose fields the app reads are already merged into the paper, nor `summary`, which repeats `abstract` (`storedPaper`). Enrichment's `rewriteWorks` compares rows in that stored form, so an enrichment that changes nothing leaves the stored paper unwritten. A row an earlier Worker stored keeps both until its next ingest or enrichment rewrites it. The app's library copies, interaction excerpts and RIS export read `abstract` when a paper has no `summary`; an older bundle reads only `summary`, so publish the frontend before deploying the Worker that stops storing `summary`.
 
@@ -172,6 +207,9 @@ npx wrangler secret put POSTHOG_PROJECT_TOKEN # PostHog's public project token; 
 npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
+
+Placement is set in `wrangler.toml` (`[placement]`, see the paper store's
+placement above); a change made in the dashboard is undone by the next deploy.
 
 The deployment script bundles into `.wrangler/posthog-worker`, injects and uploads
 PostHog source maps, then uploads that bundle with `--no-bundle`. The `Data`
