@@ -316,8 +316,8 @@ function formulaSpans(text: string) {
 }
 
 /** The formulas the delimiter walk reads in `text`. Normalized text holds no newline. */
-function formulaWalk(text: string) {
-  return formulaSpans(text).map(([start, end]) => text.slice(start, end)).join('\n');
+function formulaWalk(text: string, spans = formulaSpans(text)) {
+  return spans.map(([start, end]) => text.slice(start, end)).join('\n');
 }
 
 const DELIMITER_STRINGS = [...new Set(LATEX_DELIMITERS.flatMap(delimiter => [delimiter.left, delimiter.right]))];
@@ -359,13 +359,14 @@ function joinsDelimiter(before: string, argument: string, after: string) {
  * `value`, which is what `savedHighlightSpace` aligns highlights with.
  */
 function unwrapTextFormatting(value: string) {
-  const formulas = formulaWalk(value);
+  let formulas: string | undefined;
   let text = value;
   let source = Array.from(value, (character, index) => index);
   let checks = 0;
   for (let changed = true; changed;) {
     changed = false;
-    const spans = formulaSpans(text);
+    // The walk is the costly part, so a text with no wrapper left skips it.
+    let spans: [number, number][] | undefined;
     const output: string[] = [];
     const outputSource: number[] = [];
     // The last characters of what is already written, enough to read a
@@ -385,6 +386,11 @@ function unwrapTextFormatting(value: string) {
       const start = match.index;
       const end = start + match[0].length;
       const argument = match[1];
+      if (!spans) {
+        spans = formulaSpans(text);
+        // Unwrapping keeps the walk, so the first one stands for every pass.
+        formulas ??= formulaWalk(text, spans);
+      }
       while (span < spans.length && spans[span][1] <= start) span += 1;
       const before = (start - cursor < 2 * LONGEST_DELIMITER ? tail : '')
         + text.slice(Math.max(cursor, start - 2 * LONGEST_DELIMITER), start);
