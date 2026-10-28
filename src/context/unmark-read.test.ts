@@ -225,6 +225,8 @@ function readingHistory() {
   const changes = markChanges();
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
   const profile: string[] = [];
+  // The unmarks whose caller was told of a refusal, which the Lists page toasts.
+  const reported: string[] = [];
   const unmark = (afterWrite: boolean) => unmarkRead('p2', {
     setReadIds,
     setLibrary,
@@ -239,14 +241,14 @@ function readingHistory() {
     changes,
     markKey: 'u1:read:p2',
     isRead: () => state.readIds.has('p2'),
-  }).catch(() => {});
+  }).catch(() => { reported.push(afterWrite ? 'removal' : 'card'); });
   const markAsRead = (readAt: string) => {
     changes.stand('u1:read:p2', true);
     setReadIds((ids) => new Set(ids).add('p2'));
     setLibrary((library) => ({ ...library, p2: { ...library.p2, readAt } }));
     profile.push('read');
   };
-  return { state, answers, profile, unmark, markAsRead };
+  return { state, answers, profile, reported, unmark, markAsRead };
 }
 
 test('a Reading history removal answered after the card unmarked and marked the paper read leaves it read', async () => {
@@ -285,6 +287,7 @@ test('an accepted Reading history removal stays when the card\'s unmark sent mea
   assert.deepEqual([...history.state.readIds], ['p1'], 'Firestore holds the removal');
   assert.equal(history.state.library.p2.readAt, null);
   assert.deepEqual(history.profile, ['unread'], 'the profile hears the card\'s unmark only');
+  assert.deepEqual(history.reported, [], 'the paper is unread, so the card reports no failure');
 });
 
 test('a card unmark refused before the Reading history removal is accepted ends with the paper unread', async () => {
@@ -311,4 +314,5 @@ test('a refused Reading history removal leaves the newer accepted unmark on scre
   await cardUnmark;
   assert.deepEqual([...history.state.readIds], ['p1']);
   assert.deepEqual(history.profile, ['unread']);
+  assert.deepEqual(history.reported, [], 'the row left with the card\'s unmark, so the removal reports nothing');
 });

@@ -38,9 +38,9 @@ interface MarkChange {
  * started from when an earlier removal has since been accepted.
  *
  * `start(key, change)` returns `answer(accepted)`, which records the write's
- * answer and returns the value the mark should now show, or null when the
- * answer leaves what stands as it was: an accepted change the screen already
- * shows, or a refused one that showed nothing or keeps what it showed.
+ * answer and returns the value the mark should now show, and whether the
+ * answer changed what stands. It does not for an accepted change the screen
+ * already shows, or a refused one that showed nothing or keeps what it showed.
  * `stand(key, to)` records a change that stands whatever its write's answer,
  * such as marking a paper read, which keeps its mark when refused.
  */
@@ -73,7 +73,7 @@ export function markChanges() {
         change.stands = accepted || (stood && keptIfRefused);
         const value = shouldShow(followed);
         if (!followed.changes.some((other) => other.pending)) marks.delete(key);
-        return change.stands === stood ? null : value;
+        return { value, changed: change.stands !== stood };
       };
     },
     stand(key: string, to: boolean) {
@@ -103,7 +103,10 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * standing allow. Each actual move runs `show` or `undo` once, so the reading
  * profile hears of each change on screen once. Without `undo`, a refused
  * change keeps what it showed, as the feed's toggles always have.
- * `throwOnError` rejects with the error instead of only logging it.
+ * `throwOnError` rejects with the error instead of only logging it, unless
+ * the mark ends where the change was going all the same, because another
+ * change to the same value has been accepted or still stands, or the screen
+ * already shows that value: the caller has nothing to report.
  *
  * Nothing is shown or put back once another account is signed in: a late
  * answer must not paint the previous account's mark over the new one.
@@ -143,14 +146,19 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
     console.error(failure, error);
     refusal = { error };
   }
-  // Null when this answer changes nothing that stands. A mark moved since by
-  // something else, such as a profile reload, then stays where it went, and
-  // an accepted change the screen already shows is not shown twice before
-  // React has drawn it.
-  const value = answer(!refusal);
-  if (value !== null && stillSignedIn() && isOn() !== value) {
+  // Nothing moves when this answer changes nothing that stands. A mark moved
+  // since by something else, such as a profile reload, then stays where it
+  // went, and an accepted change the screen already shows is not shown twice
+  // before React has drawn it.
+  const { value, changed } = answer(!refusal);
+  if (changed && stillSignedIn() && isOn() !== value) {
     if (value === to) show();
     else if (value === from && undo) undo();
   }
-  if (refusal && throwOnError) throw refusal.error;
+  // A screen this answer leaves alone may already show `to` for a reason no
+  // change records, such as a profile reload. A change asked for from the
+  // value it goes to moved nothing, so its refusal is still news: the card's
+  // unmark under an alias id the screen holds no mark for, say.
+  const endsAtTo = from !== to && (value === to || (!changed && isOn() === to));
+  if (refusal && throwOnError && !endsAtTo) throw refusal.error;
 }

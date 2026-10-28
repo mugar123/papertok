@@ -63,6 +63,8 @@ function likedPaper() {
   const screen = { liked: true };
   const profile: string[] = [];
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
+  // The presses whose caller was told of a refusal, which the Lists page toasts.
+  const reported: string[] = [];
   const press = (options: { afterWrite?: boolean; throwOnError?: boolean } = {}) => {
     const wasLiked = markStartsOn(options, screen.liked);
     const showLiked = (liked: boolean) => {
@@ -83,10 +85,10 @@ function likedPaper() {
       from: wasLiked,
       to: !wasLiked,
       isOn: () => screen.liked,
-    }).catch(() => {});
+    }).catch(() => { reported.push(options.afterWrite ? 'removal' : 'heart'); });
   };
   const acceptAll = () => answers.splice(0).forEach(({ accept }) => accept());
-  return { changes, screen, profile, answers, press, acceptAll };
+  return { changes, screen, profile, answers, reported, press, acceptAll };
 }
 
 // From the Lists page: Remove from Favorites waits for its write; the card,
@@ -185,6 +187,31 @@ test('an accepted Favorites removal stays when the card\'s unlike sent meanwhile
   await silenced(() => unliked);
   assert.equal(paper.screen.liked, false, 'Firestore holds the removal');
   assert.deepEqual(paper.profile, ['unlike'], 'the profile hears the card\'s unlike only');
+  assert.deepEqual(paper.reported, [], 'the like is gone, so the card reports no failure to remove it');
+});
+
+test('a refused Favorites removal is not reported while the card\'s pending unlike keeps the paper unliked', async () => {
+  const paper = likedPaper();
+  const removed = paper.press(removal);
+  const unliked = paper.press(cardHeart);
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  assert.equal(paper.screen.liked, false, 'the row has left with the card\'s unlike');
+  assert.deepEqual(paper.reported, []);
+  paper.answers[1].accept();
+  await unliked;
+  assert.equal(paper.screen.liked, false);
+});
+
+test('a refused Favorites removal is not reported once something else took the like off', async () => {
+  const paper = likedPaper();
+  const removed = paper.press(removal);
+  // A profile reload, which starts no change, already shows the paper unliked.
+  paper.screen.liked = false;
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.reported, []);
 });
 
 test('a card unlike refused before the Favorites removal is accepted ends with the paper unliked', async () => {
@@ -198,6 +225,7 @@ test('a card unlike refused before the Favorites removal is accepted ends with t
   await removed;
   assert.equal(paper.screen.liked, false);
   assert.deepEqual(paper.profile, ['unlike', 'like', 'unlike'], 'one event for each change on screen');
+  assert.deepEqual(paper.reported, ['heart'], 'the like was back on screen when the heart\'s refusal landed');
 });
 
 test('an accepted Favorites removal stays when the heart pressed twice meanwhile has its second press refused', async () => {
@@ -212,6 +240,7 @@ test('an accepted Favorites removal stays when the heart pressed twice meanwhile
   await silenced(() => liked);
   assert.equal(paper.screen.liked, false);
   assert.deepEqual(paper.profile, ['unlike', 'like', 'unlike']);
+  assert.deepEqual(paper.reported, ['heart'], 'the second press, a like, did not stand');
 });
 
 test('a refused Favorites removal leaves the newer accepted press on screen', async () => {
@@ -226,6 +255,7 @@ test('a refused Favorites removal leaves the newer accepted press on screen', as
   await Promise.all([unliked, liked]);
   assert.equal(paper.screen.liked, true, 'the last press stands');
   assert.deepEqual(paper.profile, ['unlike', 'like']);
+  assert.deepEqual(paper.reported, ['removal'], 'the paper stays liked, so the removal is reported');
 });
 
 // A paper in Read later, changed the way FeedContext's toggleReadLater changes
@@ -236,6 +266,7 @@ function readLaterPaper() {
   type Entry = { paperId: string; paper: { title: string; primaryTopic?: string }; readLater?: boolean; note?: string; updatedAt?: string };
   const state = { library: { p1: { paperId: 'p1', paper: { title: 'One' }, readLater: true, updatedAt: 'T0' } } as Record<string, Entry> };
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
+  const reported: string[] = [];
   let clock = 0;
   const toggle = (value: boolean | undefined, options: { afterWrite?: boolean; throwOnError: boolean }) => {
     const previous = state.library.p1;
@@ -262,9 +293,9 @@ function readLaterPaper() {
       from: markStartsOn(options, Boolean(previous?.readLater)),
       to: nextValue,
       isOn: () => Boolean(state.library.p1?.readLater),
-    }).catch(() => {});
+    }).catch(() => { reported.push(options.afterWrite ? 'removal' : 'save'); });
   };
-  return { state, answers, toggle };
+  return { state, answers, reported, toggle };
 }
 
 const readLaterRemoval = { afterWrite: true, throwOnError: true };
@@ -279,6 +310,7 @@ test('an accepted Read later removal stays when a Save tap sent meanwhile is ref
   paper.answers[1].refuse();
   await silenced(() => tapped);
   assert.equal(paper.state.library.p1.readLater, false, 'Firestore holds the removal');
+  assert.deepEqual(paper.reported, [], 'the paper is out of Read later, as the tap asked');
 });
 
 test('an accepted Read later removal keeps the topic and the note\'s edit time written while it waited', async () => {
