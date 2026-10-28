@@ -25,3 +25,25 @@ export function restoreReadLater<Entry extends { readLater?: boolean; updatedAt?
     },
   };
 }
+
+/**
+ * The paper copy and edit time a Read later change puts on a paper's library
+ * entry. A removal from the Lists page shows only once its write is accepted
+ * (`late`), so the entry may have changed while it waited: a paper copy
+ * completed with its topic, or the edit time of a note saved meanwhile. Each
+ * of those stays, as restoreReadLater keeps them on a refusal; the change
+ * stamps a field only while it still holds what it held when the change was
+ * asked for (`previous`).
+ */
+export function readLaterStamp<Entry extends { updatedAt?: string | number | null; paper: unknown }>(
+  current: Entry | undefined,
+  previous: Entry | undefined,
+  stamped: { paper: Entry['paper']; updatedAt: Entry['updatedAt'] },
+  { late }: { late: boolean },
+): { paper: Entry['paper']; updatedAt: Entry['updatedAt'] } {
+  if (!late || !current) return stamped;
+  return {
+    paper: current.paper === previous?.paper ? stamped.paper : current.paper,
+    updatedAt: current.updatedAt === previous?.updatedAt ? stamped.updatedAt : current.updatedAt,
+  };
+}

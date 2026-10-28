@@ -91,7 +91,7 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
-import { restoreReadLater } from './read-later-rollback.ts';
+import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -2275,9 +2275,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           [paper.id]: {
             ...current[paper.id],
             paperId: paper.id,
-            paper: storedPaper,
+            ...readLaterStamp(current[paper.id], previous, { paper: storedPaper, updatedAt }, { late: Boolean(options?.afterWrite) }),
             readLater: nextValue,
-            updatedAt,
           },
         }));
         recordProfileEvent({

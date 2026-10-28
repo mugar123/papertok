@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
-import { restoreReadLater } from './read-later-rollback.ts';
+import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
 const silenced = async (run: () => Promise<unknown>) => {
   const original = console.error;
@@ -233,7 +233,7 @@ test('a refused Favorites removal leaves the newer accepted press on screen', as
 // caller asked about restores the entry with restoreReadLater.
 function readLaterPaper() {
   const changes = markChanges();
-  type Entry = { paperId: string; paper: { title: string }; readLater?: boolean; updatedAt?: string };
+  type Entry = { paperId: string; paper: { title: string; primaryTopic?: string }; readLater?: boolean; note?: string; updatedAt?: string };
   const state = { library: { p1: { paperId: 'p1', paper: { title: 'One' }, readLater: true, updatedAt: 'T0' } } as Record<string, Entry> };
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
   let clock = 0;
@@ -245,7 +245,8 @@ function readLaterPaper() {
     const storedPaper = { title: 'One' };
     return writeMark({
       show: () => {
-        state.library = { ...state.library, p1: { ...state.library.p1, paper: storedPaper, readLater: nextValue, updatedAt } };
+        const stamp = readLaterStamp(state.library.p1, previous, { paper: storedPaper, updatedAt }, { late: Boolean(options.afterWrite) });
+        state.library = { ...state.library, p1: { ...state.library.p1, ...stamp, readLater: nextValue } };
       },
       undo: () => {
         state.library = restoreReadLater(state.library, 'p1', previous, { paper: storedPaper, updatedAt });
@@ -278,6 +279,32 @@ test('an accepted Read later removal stays when a Save tap sent meanwhile is ref
   paper.answers[1].refuse();
   await silenced(() => tapped);
   assert.equal(paper.state.library.p1.readLater, false, 'Firestore holds the removal');
+});
+
+test('an accepted Read later removal keeps the topic and the note\'s edit time written while it waited', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, readLaterRemoval);
+  // keepLateTopics completes the copy, then a note is saved from the row's Edit.
+  const { p1 } = paper.state.library;
+  paper.state.library = { p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } };
+  paper.state.library = { p1: { ...paper.state.library.p1, note: 'read the appendix', updatedAt: 'T9' } };
+  paper.answers[0].accept();
+  await removed;
+  assert.equal(paper.state.library.p1.readLater, false);
+  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.updatedAt, 'T9');
+  assert.equal(paper.state.library.p1.note, 'read the appendix');
+});
+
+test('an accepted Read later removal stamps its edit time when only the paper copy changed while it waited', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, readLaterRemoval);
+  const { p1 } = paper.state.library;
+  paper.state.library = { p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } };
+  paper.answers[0].accept();
+  await removed;
+  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.updatedAt, 'T1');
 });
 
 test('a Save tap refused before the Read later removal is accepted ends with the paper out of Read later', async () => {
