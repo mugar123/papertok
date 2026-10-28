@@ -5,7 +5,7 @@ type TextSegment = { type: 'text'; value: string; start: number; end: number; ki
 export type HighlightMath = Omit<HighlightRange, 'kind' | 'source'> & { type: 'math'; value: string; raw: string; display: boolean; kind: string | null; source: string | null; under: string[] };
 export type HighlightChunk = TextSegment | HighlightMath;
 
-import { normalizeLatexText, splitLatexText } from './latex.ts';
+import { normalizeLatexText, normalizeSavedLatexText, savedHighlightSpace, splitLatexText } from './latex.ts';
 
 /**
  * Resolving highlights onto rendered scientific text.
@@ -66,6 +66,7 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
   if (!normalized) return [];
 
   const ranges: HighlightRange[] = [];
+  let saved: ReturnType<typeof savedHighlightSpace> | undefined;
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
     if (quote.length < MIN_QUOTE_LENGTH) continue;
@@ -80,24 +81,27 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
     // away the moment the reader's selection touched it (2026-09-17). A
     // pending selection sits on anything, its own saved mark included.
     const claimed = (range: HighlightRange) => !pending && !range.pending && range.source === source;
-    let searchFrom = 0;
-    let start = -1;
-    for (;;) {
-      const candidate = normalized.indexOf(quote, searchFrom);
-      if (candidate === -1) break;
-      const end = candidate + quote.length;
-      const overlaps = ranges.some(range => claimed(range) && candidate < range.end && end > range.start);
-      if (!overlaps) {
-        start = candidate;
-        break;
+    const findFree = (haystack: string, needle: string, toCurrent = (offset: number) => offset) => {
+      for (let candidate = haystack.indexOf(needle); candidate !== -1; candidate = haystack.indexOf(needle, candidate + 1)) {
+        const start = toCurrent(candidate);
+        const end = toCurrent(candidate + needle.length);
+        if (end > start && !ranges.some(range => claimed(range) && start < range.end && end > range.start)) return { start, end };
       }
-      searchFrom = candidate + 1;
+      return null;
+    };
+    let found = findFree(normalized, quote);
+    // A quote saved before font commands were unwrapped may start or end
+    // inside one; it is found in the text it was cut from.
+    if (!found) {
+      saved ??= savedHighlightSpace(text);
+      if (saved.text !== normalized) found = findFree(saved.text, normalizeSavedLatexText(highlight?.quote), saved.toCurrent);
     }
-    if (start === -1) continue;
+    if (!found) continue;
+    const { start, end } = found;
 
     ranges.push({
       start,
-      end: start + quote.length,
+      end,
       kind: highlight?.kind || 'finding',
       source,
       id: highlight?.id || null,

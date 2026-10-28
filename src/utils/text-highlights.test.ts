@@ -7,6 +7,7 @@ import {
   resolveHighlightRanges,
   segmentTextChunk,
 } from './text-highlights.ts';
+import { normalizeLatexText } from './latex.ts';
 
 test('resolves a quote to a range in normalized space', () => {
   const text = 'The model reduced error by 12%.';
@@ -118,6 +119,25 @@ test('builds an anchor from offsets when the selected string cannot be trusted',
   const ranges = resolveHighlightRanges(text, [anchor!]);
   assert.equal(ranges.length, 1);
   assert.equal(ranges[0].start, start);
+});
+
+// Quotes saved while font commands still showed in the normalized text keep
+// their wrapper fragments; they mark the same words in the unwrapped text.
+test('a quote saved before font commands were unwrapped still marks its words', () => {
+  const text = 'a \\textbf{HERMES} harness and \\emph{nested \\textbf{x}} prose with $y$ after';
+  assert.equal(normalizeLatexText(text), 'a HERMES harness and nested x prose with $y$ after');
+  const cases: [string, string][] = [
+    ['HERMES} harness and', 'HERMES harness and'],
+    ['a \\textbf{HERMES', 'a HERMES'],
+    ['harness and \\emph{nested \\textbf{x', 'harness and nested x'],
+    ['x}} prose with $y$', 'x prose with $y$'],
+  ];
+  const normalized = normalizeLatexText(text);
+  for (const [quote, words] of cases) {
+    const ranges = resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+    assert.equal(ranges.length, 1, quote);
+    assert.equal(normalized.slice(ranges[0].start, ranges[0].end), words);
+  }
 });
 
 test('a range too short to anchor is refused like any other', () => {

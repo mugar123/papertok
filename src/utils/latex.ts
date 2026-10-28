@@ -298,22 +298,37 @@ const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![
 // it, so every character has a single reading and an unclosed wrapper fails in
 // linear time; reading `\ab` as a macro or as `\a` and `b` backtracked
 // exponentially.
-const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[\s\S]|[^{}\\]|\{(?:\\[\s\S]|[^{}\\])*\})*)\}/g;
+const FONT_COMMANDS = 'textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph';
+const TEXT_FORMATTING = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{((?:\\\\[\\s\\S]|[^{}\\\\]|\\{(?:\\\\[\\s\\S]|[^{}\\\\])*\\})*)\\}`, 'g');
+const TEXT_FORMATTING_OPENER = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{`, 'y');
 
-// Removing the braces must not hand the formula walk a delimiter it did not see
-// with them: an unpaired `$`, `\(` or `\)` in the argument keeps the wrapper.
-// The `\( \)` pairs the prose pass has already written are not unpaired.
-function opensFormula(argument: string) {
-  const unpaired = argument.replace(/\\\([\s\S]*?\\\)/g, '');
-  return (unpaired.match(/\\[\s\S]|\$/g) ?? []).some(token => token === '$' || token === '\\(' || token === '\\)');
+/** The formulas the delimiter walk reads in `text`, delimiters included, in order. */
+function formulaWalk(text: string) {
+  return transformByMode(text, () => '', math => math);
 }
 
+/**
+ * Removing a wrapper must leave the formula walk reading what it read with
+ * the wrapper: its braces hide a closer from `findDelimiterEnd`, and its
+ * argument can hold any delimiter (`intro \[ \textbf{x \] rest} tail` is
+ * prose). A wrapper whose removal changes the walk stays as written. One
+ * wrapper at a time, from the start again after each pass, so nested
+ * wrappers unwrap and each check sees the text the previous ones left.
+ */
 function unwrapTextFormatting(value: string) {
+  const formulas = formulaWalk(value);
   let text = value;
   let previous;
   do {
     previous = text;
-    text = text.replace(TEXT_FORMATTING, (match, argument) => (opensFormula(argument) ? match : argument));
+    let match;
+    TEXT_FORMATTING.lastIndex = 0;
+    while ((match = TEXT_FORMATTING.exec(text)) !== null) {
+      const unwrapped = text.slice(0, match.index) + match[1] + text.slice(match.index + match[0].length);
+      const keeps = formulaWalk(unwrapped) === formulas;
+      if (keeps) text = unwrapped;
+      TEXT_FORMATTING.lastIndex = keeps ? match.index : match.index + 1;
+    }
   } while (text !== previous);
   return text;
 }
@@ -366,19 +381,60 @@ function normalizeMathRun(value: string) {
  * around them: the macro IS the formula. Each becomes its own inline formula,
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
-function normalizeProseRun(value: string) {
-  return unwrapTextFormatting(value
+function normalizeProseMacros(value: string) {
+  return value
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
     .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
-    .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]));
+    .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
+}
+
+function normalizeWith(text: unknown, transformProse: (text: string) => string) {
+  if (!text) return '';
+
+  return transformByMode(normalizeScientificMarkup(text), transformProse, normalizeMathRun)
+    .replace(/(^|[^\\])%/g, '$1\\%');
 }
 
 export function normalizeLatexText(text: unknown) {
-  if (!text) return '';
+  return normalizeWith(text, value => unwrapTextFormatting(normalizeProseMacros(value)));
+}
 
-  return transformByMode(normalizeScientificMarkup(text), normalizeProseRun, normalizeMathRun)
-    .replace(/(^|[^\\])%/g, '$1\\%');
+/** `normalizeLatexText` as it was before font commands were unwrapped. */
+export function normalizeSavedLatexText(text: unknown) {
+  return normalizeWith(text, normalizeProseMacros);
+}
+
+/**
+ * Highlight quotes saved before font commands were unwrapped were cut from the
+ * text with its wrappers, so one that starts or ends inside a wrapper
+ * (`HERMES}, a harness`) no longer occurs in `normalizeLatexText`. This is that
+ * earlier text, with `toCurrent` mapping an offset in it onto the current one.
+ *
+ * The current text is the saved one with some wrapper openers and their closing
+ * braces removed, so one walk aligns them: an opener the current text does not
+ * repeat at that point was removed, a character it does repeat was kept, and
+ * any other character is a removed closing brace.
+ */
+export function savedHighlightSpace(text: unknown) {
+  const saved = normalizeSavedLatexText(text);
+  const current = normalizeLatexText(text);
+  const offsets = new Array<number>(saved.length + 1);
+  let kept = 0;
+  for (let index = 0; index < saved.length;) {
+    offsets[index] = kept;
+    TEXT_FORMATTING_OPENER.lastIndex = index;
+    const opener = TEXT_FORMATTING_OPENER.exec(saved)?.[0];
+    if (opener && !current.startsWith(opener, kept)) {
+      offsets.fill(kept, index, index + opener.length);
+      index += opener.length;
+    } else {
+      if (saved[index] === current[kept]) kept += 1;
+      index += 1;
+    }
+  }
+  offsets[saved.length] = current.length;
+  return { text: saved, toCurrent: (offset: number) => offsets[offset] };
 }
 
 /**

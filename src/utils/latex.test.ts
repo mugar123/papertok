@@ -165,6 +165,20 @@ test('a font command around an unpaired formula delimiter stays as written', () 
   assert.ok(splitLatexText(normalizeLatexText('cost $ \\textbf{b $ c} end')).every(chunk => chunk.type === 'text'));
 });
 
+// The braces hide the closer from the delimiter walk, so the opener before
+// them is prose; without them the walk would read a formula.
+test('a font command shielding a display or environment closer stays as written', () => {
+  for (const text of [
+    'intro \\[ \\textbf{x \\] rest} tail',
+    'intro \\begin{equation} \\emph{x \\end{equation} rest} tail',
+    'intro $$ \\textbf{x $$ rest} tail',
+  ]) {
+    assert.equal(normalizeLatexText(text), text);
+    assert.ok(splitLatexText(text).every(chunk => chunk.type === 'text'));
+  }
+  assert.equal(normalizeLatexText('\\textbf{bold} then \\[ x \\] and \\emph{more}'), 'bold then \\[ x \\] and more');
+});
+
 test('a font command inside a formula is left to KaTeX', () => {
   assert.equal(normalizeLatexText('$x_{\\textbf{b}}$ and \\textbf{bold}'), '$x_{\\textbf{b}}$ and bold');
 });
