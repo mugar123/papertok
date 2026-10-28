@@ -722,8 +722,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       {
         root,
         // Two viewports of runway, not five: loadPapers' per-source fetch is
-        // capped at FEED_SOURCE_RENDER_BUDGET_MS (4 s worst case, see
-        // feed-context.tsx) and a typical reader spends far longer than that on
+        // capped at FEED_SOURCE_RENDER_BUDGET_MS (4 s, see feed-context.tsx),
+        // except the store request, whose 3.5 s deadline starts once the ID
+        // token is in hand, so a slow token refresh adds its own time. A
+        // typical reader spends far longer than that on
         // two cards, so this still starts the next page well before the
         // sentinel's own card is reached. If it ever isn't enough, the
         // `loading && <SkeletonCard />` snap item below is the fallback, not a
