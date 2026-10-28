@@ -2284,7 +2284,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         });
       },
       undo: options?.throwOnError ? () => {
-        setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous));
+        setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous, { paper: storedPaper, updatedAt }));
         recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
       } : undefined,
       write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
