@@ -166,6 +166,13 @@ test('a record typed `Retracted Publication` is retracted in the enrichment patc
     assert.equal(mapEuropePmcResult(unmarked)!.publicationStatus, undefined, pubType.join(', '));
     assert.equal(mapEuropePmcSearchResult(unmarked, ['med.peds'])!.publicationStatus, 'published', pubType.join(', '));
   }
+
+  // The same type padded or in another case.
+  for (const pubType of [[' Retracted Publication '], ['retracted publication\n', 'Journal Article']]) {
+    const padded = { ...raw, pubTypeList: { pubType } };
+    assert.equal(mapEuropePmcResult(padded)!.publicationStatus, 'retracted', JSON.stringify(pubType));
+    assert.equal(mapEuropePmcSearchResult(padded, ['med.peds'])!.publicationStatus, 'retracted', JSON.stringify(pubType));
+  }
 });
 
 test('the record keeps each author\'s ORCID and first affiliation', () => {

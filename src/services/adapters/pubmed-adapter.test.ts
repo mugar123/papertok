@@ -89,6 +89,12 @@ test('an article PubMed types `Retracted Publication` is retracted, which the fe
   const article = PaperBuilder.create(adapter.mapToStandard(ARTICLE_SUMMARY));
   assert.deepEqual([article.publicationType, article.publicationStatus], ['article', 'published']);
   assert.equal(isFeedPublication(article), true);
+
+  // The type padded or in another case is the same type.
+  for (const type of ['Retracted Publication ', ' retracted publication']) {
+    const padded = PaperBuilder.create(adapter.mapToStandard({ ...WAKEFIELD_SUMMARY, pubtype: ['Journal Article', type] }));
+    assert.equal(padded.publicationStatus, 'retracted', JSON.stringify(type));
+  }
 });
 
 // Captured from OpenAlex on 2026-10-26 (W2117847125) and trimmed, with
