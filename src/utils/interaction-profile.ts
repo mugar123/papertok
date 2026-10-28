@@ -1062,9 +1062,9 @@ function serializeAffinities(profile: InteractionProfile) {
     temporal: serializeTemporal(profile.temporal),
   };
   let serialized = JSON.stringify(payload);
-  // The oldest engaged papers go first: losing one only means an unlike of it
-  // no longer takes its count back, as for a paper past MAX_ENGAGED_PAPERS,
-  // while concepts and authors move scores.
+  // The oldest engaged papers go first, since concepts and authors move scores.
+  // Losing one costs what a paper past MAX_ENGAGED_PAPERS costs: an unlike no
+  // longer takes its count back, and a like after that counts again.
   while (serialized.length > MAX_AFFINITY_JSON_BYTES && payload.temporal.p.length > 0) {
     payload.temporal.p = payload.temporal.p.slice(Math.ceil(payload.temporal.p.length / 2));
     serialized = JSON.stringify(payload);
