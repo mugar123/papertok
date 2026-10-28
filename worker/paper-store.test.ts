@@ -2070,6 +2070,18 @@ test("a journal's own listing does not keep in its lane a row another record of 
   assert.deepEqual(lanes(), ['area:econ']);
 });
 
+// The journal's row folds into the arXiv one, which then holds its lanes:
+// the lane of the journal goes with the fold, the others stay.
+test("a record that folds a journal's article into another row as an editorial takes it out of the journal's lane only", async () => {
+  const { env, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'cs.CL', 'cs.LG', 'source:S23254222']);
+
+  await ingestPapers(env, [{ paper: { ...aerWork('editorial'), arxivId: arxivRecord.arxivId }, lanes: [] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'cs.CL', 'cs.LG']);
+  assert.deepEqual(await journalPage(), []);
+});
+
 test("an article the enrichment reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
   const { env, db, lanes, journalPage } = followedJournalCorpus();
   await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
