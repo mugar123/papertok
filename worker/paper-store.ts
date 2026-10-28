@@ -1677,24 +1677,24 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
  * lanes in turns within each year, each lane's rows in their order. A reader
  * without likes has nothing to rank them by and gets them in this order: one
  * paper of each year in turn, rather than every paper of the newest year first
- * (ENG-166). The lanes take their turns in name order, not in the order the
- * request asks them in: the app reorders the categories as the reader's
- * interests move, and a walk ranked again goes on past the papers the reader
- * has seen only while they keep their places. The years start their turns
- * from successive lanes, so consecutive papers often come from different
- * lanes too. Not with one lane;
+ * (ENG-166). The lanes take their turns in the order the request asks them
+ * in, which is the app's ranking of the reader's interests, so the strongest
+ * interest leads the first year's turns. The years start their turns from
+ * successive lanes, so consecutive papers often come from different lanes
+ * too. Not with one lane;
  * not from the last year of a round to the first of the next when the lane
  * count divides the years' count less two (2, 4 or 8 lanes over ten years);
- * and not where a year lacks papers of a lane, which shifts its turns.
+ * and not where a year lacks papers of a lane, which shifts its turns. A
+ * request that reorders the lanes, as the reader's interests move, can start
+ * the turns again or shift them.
  */
 function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidate[] {
   const byYear = new Map<string, Candidate[][]>();
-  const named = [...lanes].sort();
   for (const candidate of candidates) {
     const year = candidate.published.slice(0, 4);
     if (!byYear.has(year)) byYear.set(year, lanes.map(() => []));
-    // A paper listed by several lanes belongs to the first of them by name.
-    byYear.get(year)![named.indexOf([...candidate.lanes].sort()[0])].push(candidate);
+    // A paper listed by several lanes belongs to the first of them the request asks.
+    byYear.get(year)![lanes.findIndex(lane => candidate.lanes.includes(lane))].push(candidate);
   }
   const years = [...byYear.keys()].sort().reverse().map((year, index) => {
     const perLane = byYear.get(year)!;
