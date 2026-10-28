@@ -82,6 +82,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
 import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -1589,10 +1590,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const signature = feedPreferenceSignature(userPreferences);
     const restoreKey = user?.uid && signature ? `${user.uid}:${signature}` : '';
     if (restoredSnapshotKeyRef.current === restoreKey) return;
-    restoredSnapshotKeyRef.current = restoreKey;
 
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    const restoreTimer = setTimeout(() => {
+    return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
@@ -1601,8 +1601,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-    }, 0);
-    return () => clearTimeout(restoreTimer);
+    });
   }, [feedMode, isKnownPaper, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
@@ -1614,36 +1613,30 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // end — fresh content arrives below the current card instead of on top of it.
   useEffect(() => {
     const signature = feedPreferenceSignature(userPreferences);
+    const plan = planPreferencesRefresh({
+      applied: preferencesSignatureRef.current,
+      signature,
+      ready: recommendationProfileReady,
+      onFeedRoute: feedRouteActive,
+      restored: restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`,
+    });
+    if (plan.action === 'forget') preferencesSignatureRef.current = null;
+    if (plan.action === 'keep-restored') preferencesSignatureRef.current = signature;
+    if (plan.action !== 'load') return;
 
-    if (!signature || !recommendationProfileReady) {
-      preferencesSignatureRef.current = null;
-      return;
-    }
-
-    // Off the feed route nothing is recorded, so preference edits made from
-    // settings or onboarding are picked up as a change on the next visit to
-    // the feed — and no source cascade fires for a feed nobody is looking at.
-    if (!feedRouteActive) return;
-
-    if (preferencesSignatureRef.current === signature) return;
-
-    const isColdMount = preferencesSignatureRef.current === null;
-    preferencesSignatureRef.current = signature;
-    if (isColdMount && restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`) return;
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    const refreshTimer = setTimeout(() => {
+    return scheduleRefresh(preferencesSignatureRef, signature, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
-        if (isColdMount) return;
+        if (plan.coldMount) return;
       } else {
         setPapers([]);
         setPage(0);
         setHasMore(true);
       }
       void loadPapers(true, null);
-    }, 0);
-    return () => clearTimeout(refreshTimer);
+    });
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // The last following signature the FEED applied, or null while there is no
@@ -1653,6 +1646,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // account's real follows landing read as a follow CHANGE — a re-rank and,
   // with the profile ready, a replacing reload — on every signed-in cold load.
   const followingSignatureRef = useRef<string | null>(null);
+  // The following signature whose replacing reload ran or was not due.
+  const followingReloadRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Warm the topic table as soon as a topic follow is known, off the feed's
@@ -1671,28 +1666,33 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!feedRouteActive) return;
     if (!user?.uid) {
       followingSignatureRef.current = null;
+      followingReloadRef.current = null;
       return;
     }
-    if (followingSignatureRef.current === signature) return;
     if (followingSignatureRef.current === null) {
       followingSignatureRef.current = signature;
+      followingReloadRef.current = signature;
       return;
     }
-    followingSignatureRef.current = signature;
-    reRankFeed();
-    if (recommendationProfileReady) {
-      feedCache.current = {};
-      // mergeFreshFeedPage keeps the cards through the visible one and lands
-      // the fresh ranking below them. reRankFeed() above changes papers
-      // whenever it reorders anything, changing loadPapers' identity — so this
-      // effect's cleanup can clear the timer before it fires. keepThroughVisible
-      // preserves the visible cards if the refresh does run.
-      const refreshTimer = setTimeout(
-        () => loadPapers(true, null, undefined, { keepThroughVisible: true }),
-        0,
-      );
-      return () => clearTimeout(refreshTimer);
+    if (followingSignatureRef.current !== signature) {
+      followingSignatureRef.current = signature;
+      reRankFeed();
     }
+    if (followingReloadRef.current === signature) return;
+    if (!recommendationProfileReady) {
+      followingReloadRef.current = signature;
+      return;
+    }
+    feedCache.current = {};
+    // mergeFreshFeedPage keeps the cards through the visible one and lands
+    // the fresh ranking below them. reRankFeed() above changes papers
+    // whenever it reorders anything, changing loadPapers' identity, so this
+    // effect's cleanup can clear the timer before it fires. The reload is
+    // recorded only when the timer runs, so the next run schedules it again
+    // without re-ranking twice.
+    return scheduleRefresh(followingReloadRef, signature, () => {
+      void loadPapers(true, null, undefined, { keepThroughVisible: true });
+    });
   }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady, user?.uid]);
 
   // Save current papers to cache before switching, then restore or fetch
