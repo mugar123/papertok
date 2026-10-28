@@ -172,11 +172,31 @@ test('a font command shielding a display or environment closer stays as written'
     'intro \\[ \\textbf{x \\] rest} tail',
     'intro \\begin{equation} \\emph{x \\end{equation} rest} tail',
     'intro $$ \\textbf{x $$ rest} tail',
+    'intro \\begin{align} \\emph{x \\end{align} rest} tail',
+    'intro \\begin{eqnarray} \\emph{x \\end{eqnarray} rest} tail',
+    'intro \\begin{math} \\emph{x \\end{math} rest} tail',
   ]) {
     assert.equal(normalizeLatexText(text), text);
     assert.ok(splitLatexText(text).every(chunk => chunk.type === 'text'));
   }
   assert.equal(normalizeLatexText('\\textbf{bold} then \\[ x \\] and \\emph{more}'), 'bold then \\[ x \\] and more');
+});
+
+// Without the wrapper the text would open a formula that closes after `$y$`,
+// so the walk is compared across the whole text, not one prose run.
+test('a font command whose removal opens a formula closing past a later one stays as written', () => {
+  for (const text of [
+    'a \\begin{\\textbf{equation}} b $y$ c \\end{equation} d',
+    'a \\textbf{\\begin}{equation} b $y$ c \\end{equation} d',
+    'a \\\\textbf{(} b $y$ c \\) d',
+  ]) {
+    assert.equal(normalizeLatexText(text), text);
+    assert.deepEqual(splitLatexText(text).filter(chunk => chunk.type === 'math').map(chunk => chunk.raw), ['$y$']);
+  }
+});
+
+test('a font command around a formula paints its words and the formula', () => {
+  assert.equal(normalizeLatexText('\\textbf{the $x$ value} rises'), 'the $x$ value rises');
 });
 
 test('a font command inside a formula is left to KaTeX', () => {

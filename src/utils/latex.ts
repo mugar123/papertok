@@ -314,6 +314,11 @@ function formulaWalk(text: string) {
  * prose). A wrapper whose removal changes the walk stays as written. One
  * wrapper at a time, from the start again after each pass, so nested
  * wrappers unwrap and each check sees the text the previous ones left.
+ *
+ * It walks the whole normalized text, not one prose run: removing a wrapper
+ * can assemble an opener (`\begin{\textbf{equation}}`) whose closer sits past
+ * a later formula. A wrapper inside a formula changes that formula, so it
+ * stays for KaTeX.
  */
 function unwrapTextFormatting(value: string) {
   const formulas = formulaWalk(value);
@@ -389,20 +394,16 @@ function normalizeProseMacros(value: string) {
     .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
 }
 
-function normalizeWith(text: unknown, transformProse: (text: string) => string) {
-  if (!text) return '';
-
-  return transformByMode(normalizeScientificMarkup(text), transformProse, normalizeMathRun)
-    .replace(/(^|[^\\])%/g, '$1\\%');
-}
-
 export function normalizeLatexText(text: unknown) {
-  return normalizeWith(text, value => unwrapTextFormatting(normalizeProseMacros(value)));
+  return unwrapTextFormatting(normalizeSavedLatexText(text));
 }
 
 /** `normalizeLatexText` as it was before font commands were unwrapped. */
 export function normalizeSavedLatexText(text: unknown) {
-  return normalizeWith(text, normalizeProseMacros);
+  if (!text) return '';
+
+  return transformByMode(normalizeScientificMarkup(text), normalizeProseMacros, normalizeMathRun)
+    .replace(/(^|[^\\])%/g, '$1\\%');
 }
 
 /**
