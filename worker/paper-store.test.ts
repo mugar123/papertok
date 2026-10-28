@@ -1623,7 +1623,8 @@ test("with twelve categories asked, a notable lane holding more than its listing
 
 // Two papers of each year of the window in each of two leaves' notable lanes,
 // the second one newer; the id is the year, the leaf (1 or 2) and the rank.
-const LEAVES = ['cs.LG', 'cs.CV'];
+// The leaves are in name order, the order their turns take.
+const LEAVES = ['cs.CV', 'cs.LG'];
 const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
 async function notableLeavesCorpus() {
   const store = corpus();
@@ -1673,6 +1674,20 @@ test('a fresh load that excludes the notable cards shown before continues the ye
     years.push(cards.map(paper => paper.year));
     shown.push(...answer.map(paper => paper.id));
     excludedIds.push(...negativeIds, ...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
+// The app orders the categories by the reader's interests, which move as they
+// read: a ranking that only reorders them keeps the turns a walk passed.
+test('a ranking that asks for the same leaves in another order goes on with the years in turns', async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (const categories of [LEAVES, [...LEAVES].reverse(), LEAVES]) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories, pageSize: 15, seen: feedSeenFilter(shown), notable: 2 }), { now: NOW });
+    years.push(answer.filter(paper => paper._notable).map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
   }
   assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
 });
