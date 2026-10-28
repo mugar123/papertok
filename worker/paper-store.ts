@@ -1047,12 +1047,20 @@ export async function readNotableCandidates(db: D1Database, lanes: string[], now
   // PMC's what PubMed types as retracted; ADS's cannot, so a paper ADS listed
   // is offered once the enrichment has looked it up in OpenAlex (`enriched_at`),
   // which is what learns a retraction (README step 5). Asked only for the day's
-  // slice.
-  const lookups = slices.filter(slice => slice.length > 0).map(slice => db.prepare(`SELECT w.id FROM json_each(?) j JOIN works w ON w.id = j.value
-    WHERE w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL`).bind(JSON.stringify(slice.map(row => row.work_id))));
-  const offered = new Set((lookups.length ? await db.batch<{ id: number }>(lookups) : []).flatMap(({ results }) => results.map(row => row.id)));
+  // slice. The enrichment can rewrite a paper between the two round trips, and
+  // a retracted paper or an erratum leaves every lane: a slice row is offered
+  // only if its lane still holds it.
+  const offered = lanes.map(() => new Set<number>());
+  const asked = slices.flatMap((slice, index) => (slice.length === 0 ? [] : [index]));
+  if (asked.length) {
+    const answers = await db.batch<{ id: number }>(asked.map(index => db.prepare(`SELECT w.id FROM json_each(?) j JOIN works w ON w.id = j.value
+      WHERE (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)
+        AND EXISTS (SELECT 1 FROM work_lanes l WHERE l.lane = ? AND l.work_id = w.id)`)
+      .bind(JSON.stringify(slices[index].map(row => row.work_id)), lanes[index])));
+    answers.forEach(({ results }, answer) => results.forEach(row => offered[asked[answer]].add(row.id)));
+  }
   return {
-    candidates: mergeLaneRows(lanes, slices.map(slice => ({ results: slice.filter(row => offered.has(row.work_id)) }))),
+    candidates: mergeLaneRows(lanes, slices.map((slice, index) => ({ results: slice.filter(row => offered[index].has(row.work_id)) }))),
     inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
   };
 }
