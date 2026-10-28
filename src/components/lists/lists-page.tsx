@@ -33,6 +33,7 @@ import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
 import { writeNewList } from './write-new-list.ts';
+import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
 import { ListRowAuthors, PaperListRow } from './list-row.tsx';
@@ -972,6 +973,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // Coming back from a paper restores the list that was open. Once per id: the
   // state survives in the history entry, so coming back after closing the list
   // must not snap it open again.
+  const [indexReturn] = useState(() => createIndexReturn(window));
   const autoOpenedListId = useRef<string | null>(null);
   useEffect(() => {
     const targetId = location.state?.openListId;
@@ -986,10 +988,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // effect and cancels the pending open. Marking it early meant the
       // retry was refused and the list never opened at all.
       autoOpenedListId.current = targetId;
+      indexReturn.resume(targetId, location.state?.indexTop);
       void openList(target);
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [displayLists, location.state, openList]);
+  }, [displayLists, location.state, openList, indexReturn]);
 
   /**
    * A paper in a list opens its card, not the PDF: the card is the whole
@@ -1017,7 +1020,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList) {
       void navigate(location.pathname, {
         replace: true,
-        state: { openListId: expandedList, pageMotion: 'still' },
+        state: { openListId: expandedList, indexTop: indexReturn.top(), pageMotion: 'still' },
       });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
@@ -1054,8 +1057,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   };
 
   const enterList = (list: OwnList) => {
+    indexReturn.leave(list.id);
     void openList(list);
   };
+
+  // A ref callback rather than `onExitComplete`: it runs when the index is committed.
+  // It sits on the block held back until the folders are released, so a return
+  // during that hold waits for the list names instead of spending the position.
+  const returnToIndex = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    indexReturn.arrive((listId) => node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(listId)}"]`));
+  }, [indexReturn]);
 
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
@@ -1851,7 +1863,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <ListRowAuthors
                               paper={paper}
                               onNavigate={() => {
-                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
+                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
                               }}
                             />
                           )}
@@ -1900,7 +1912,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       ) : (
         <motion.div key="index" {...listViewMotion}>
           {foldersReleased && (
-          <div className={startedHeld && !foldersArrived ? `lists-index-arrive${indexResumed ? ' is-resumed' : ''}` : undefined}>
+          <div ref={returnToIndex} className={startedHeld && !foldersArrived ? `lists-index-arrive${indexResumed ? ' is-resumed' : ''}` : undefined}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -1947,6 +1959,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <button
                         type="button"
                         className="list-card-name-btn"
+                        data-list-id={list.id}
                         onClick={(e) => { e.stopPropagation(); enterList(list); }}
                       >
                         {list.name}
