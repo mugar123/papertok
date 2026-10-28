@@ -757,8 +757,16 @@ test('a heavily used profile keeps its learned maps inside the stored budget', (
   assert.ok(Object.keys(readProfileSignals(deserializeInteractionProfile(stored), NOW).conceptAffinities).length > 0);
 });
 
-test('a profile whose categories fill the stored budget gives up its oldest engaged papers, not the write', () => {
+test('a profile whose categories fill the stored budget gives up its oldest engaged papers, not its concepts, authors or the write', () => {
   const profile = createEmptyInteractionProfile();
+  // 400 concepts and 300 authors, learned from likes of papers off the For You feed.
+  for (let index = 0; index < 400; index += 1) {
+    recordInteractionEvent(profile, {
+      paperId: `library-${index}`, kind: 'like', category: 'cs.LG',
+      concepts: [{ id: `https://openalex.org/C${1_000_000 + index}`, score: 0.9 }],
+      authorIds: index < 300 ? [`https://openalex.org/A${5_000_000_000 + index}`] : [],
+    }, NOW);
+  }
   // Categories liked on each of 46 days, until the affinities are 6 kB short of the budget.
   for (let category = 0; serializeInteractionProfile(profile).affinities.length < MAX_AFFINITY_JSON_BYTES - 6000; category += 1) {
     for (let day = 0; day < 46; day += 1) {
@@ -776,6 +784,7 @@ test('a profile whose categories fill the stored budget gives up its oldest enga
   assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES);
   const reloaded = deserializeInteractionProfile(stored)!;
   assert.deepEqual(temporalOf(reloaded), temporalOf(profile));
+  assert.deepEqual([reloaded.concepts.size, reloaded.authors.size], [400, 300], 'no concept or author was given up for the engaged papers');
   // The newest paper's save is still taken back after the reload; an old one's is not.
   recordInteractionEvent(reloaded, { paperId: `10.1000/${String(199).padStart(40, '0')}`, kind: 'unsave', category: 'cs.LG' }, NOW);
   recordInteractionEvent(reloaded, { paperId: `10.1000/${String(0).padStart(40, '0')}`, kind: 'unsave', category: 'cs.LG' }, NOW);

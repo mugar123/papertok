@@ -1062,18 +1062,19 @@ function serializeAffinities(profile: InteractionProfile) {
     temporal: serializeTemporal(profile.temporal),
   };
   let serialized = JSON.stringify(payload);
-  // Concepts and authors are the part that can grow with use; the weakest go
+  // The oldest engaged papers go first: losing one only means an unlike of it
+  // no longer takes its count back, as for a paper past MAX_ENGAGED_PAPERS,
+  // while concepts and authors move scores.
+  while (serialized.length > MAX_AFFINITY_JSON_BYTES && payload.temporal.p.length > 0) {
+    payload.temporal.p = payload.temporal.p.slice(Math.ceil(payload.temporal.p.length / 2));
+    serialized = JSON.stringify(payload);
+  }
+  // Then concepts and authors, the part that can grow with use; the weakest go
   // first. The categories are left to the check below, as they always were.
   while (serialized.length > MAX_AFFINITY_JSON_BYTES
     && Object.keys(payload.concepts).length + Object.keys(payload.authors).length > 0) {
     payload.concepts = weakestHalfRemoved(payload.concepts);
     payload.authors = weakestHalfRemoved(payload.authors);
-    serialized = JSON.stringify(payload);
-  }
-  // Then the oldest engaged papers: an unlike of one no longer takes its
-  // count back, which only the papers past MAX_ENGAGED_PAPERS risk otherwise.
-  while (serialized.length > MAX_AFFINITY_JSON_BYTES && payload.temporal.p.length > 0) {
-    payload.temporal.p = payload.temporal.p.slice(Math.ceil(payload.temporal.p.length / 2));
     serialized = JSON.stringify(payload);
   }
   return serialized;
