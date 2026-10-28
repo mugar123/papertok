@@ -7,8 +7,8 @@ import { nameInitials } from '../src/utils/name-initials.ts';
  * else gets what the Explorer's header shows, an author's initials or the
  * type's icon. No author has a photo anywhere in PaperTok.
  *
- * A shared paper gets a card of its own: its title, authors and venue on
- * grained paper inside the same frame and stars.
+ * A shared paper gets a card of its own: its title, authors and venue inside
+ * the same frame and stars.
  *
  * This module is pure: `shareCardFor` and `paperShareCardFor` decide what a
  * card says, and `shareCardTree` and `paperCardTree` lay it out for satori. share-card-render.ts draws it, so
@@ -334,17 +334,6 @@ export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNod
   }, 'papertok.app')));
 }
 
-// Print grain under a paper's card: faint warm noise, one tile repeated so the
-// PNG stays near 200 KB (noise does not compress; a repeat within a row does).
-const GRAIN_TILE = 48;
-const GRAIN = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CARD_WIDTH}" height="${SHARE_CARD_HEIGHT}">`
-  + '<filter id="g" x="0" y="0" width="100%" height="100%">'
-  + '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>'
-  + '<feColorMatrix values="0 0 0 0 0.42 0 0 0 0 0.34 0 0 0 0 0.2 0 0 0 0.42 -0.18"/></filter>'
-  + `<pattern id="p" width="${GRAIN_TILE}" height="${GRAIN_TILE}" patternUnits="userSpaceOnUse">`
-  + `<rect width="${GRAIN_TILE}" height="${GRAIN_TILE}" filter="url(#g)"/></pattern>`
-  + '<rect width="100%" height="100%" fill="url(#p)"/></svg>')}`;
-
 function titleSize(title: string) {
   if (title.length <= 60) return 68;
   if (title.length <= 100) return 58;
@@ -361,7 +350,6 @@ export function paperCardTree(card: PaperShareCard): CardNode {
       background: PAPER, color: INK, fontFamily: 'Newsreader Text',
     },
   },
-  h('img', { src: GRAIN, width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT, style: { position: 'absolute', left: 0, top: 0 } }),
   h('div', { style: { position: 'absolute', left: 22, top: 22, right: 22, bottom: 22, border: `2px solid ${INK}`, borderRadius: 6 } }),
   star(1104, 64, 28, true),
   star(1062, 52, 12, false),

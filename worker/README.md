@@ -500,8 +500,8 @@ an image that `robots.txt` disallows.
 
 A found paper previews with its own card too: `/share/image/paper/:key`, the same 1200x630
 renderer with the title, the venue and year, and the first three authors with "et al.", fewer
-when three do not fit on one line. It is drawn on paper grain (about 200 KB, since noise does
-not compress), read from the page's record the same way and kept a day. A title outside the
+when three do not fit on one line. It is read from the page's record the same way and kept a
+day. A title outside the
 Latin ranges, Greek letters included, a paper not found or a renderer error redirects to the
 default static image; an author line or a journal name the fonts cannot draw is left off.
 Crawlers fetch the card from `api.papertok.app` and the page through Vercel, often in different
