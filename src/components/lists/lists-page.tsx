@@ -56,8 +56,8 @@ import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
 import ScientificText from '../scientific-text.ts';
-import { paperLegacyAdapter } from '../../models/paper.ts';
-import { listPaperFromCopies } from './list-paper-copies.ts';
+import { paperLegacyAdapter, withRetractionOf } from '../../models/paper.ts';
+import { listPaperFromCopies, mergeListPaperCopies } from './list-paper-copies.ts';
 import {
   ArrowLeft,
   DotsThree,
@@ -428,7 +428,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // fetch, and either of the other two is a deliberate fetch of this paper.
     const libraryPaper = personalLibrary[paperId]?.paper;
     const savedPaper = savedPapers[paperId] ?? libraryPapers[paperId];
-    if (!libraryPaper) return savedPaper;
+    if (!libraryPaper) return savedPaper && withRetractionOf(savedPaper, libraryPapers[paperId]);
     if (!savedPaper) return libraryPaper;
     return listPaperFromCopies(libraryPaper, savedPaper);
   }, [libraryPapers, personalLibrary, savedPapers]);
@@ -729,17 +729,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         // Kept for the rest of the session, so leaving this list to read a
         // paper and coming back costs nothing.
         rememberListPapers(user.uid, loadedPapers);
-        setSavedPapers((current) => {
-          const next = { ...current };
-          Object.entries(loadedPapers).forEach(([paperId, paper]) => {
-            // savedPapers contains the canonical document and must win even if
-            // the lighter interaction record finishes later.
-            if (source === 'saved' || !next[paperId]) {
-              next[paperId] = paper;
-            }
-          });
-          return next;
-        });
+        // savedPapers contains the canonical document and must win even if
+        // the lighter interaction record finishes later; the record's
+        // retraction stands either way.
+        setSavedPapers((current) => mergeListPaperCopies(current, loadedPapers, source));
       };
 
       const runRequest = async (requestDefinition: MetadataRequest): Promise<{ status: string; value?: QuerySnapshot; reason?: { code?: string; message?: string } }> => {
@@ -955,13 +948,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           });
           if (signal.aborted || Object.keys(loaded).length === 0) return;
           rememberListPapers(userId, loaded);
-          setSavedPapers((current) => {
-            const next = { ...current };
-            Object.entries(loaded).forEach(([paperId, paper]) => {
-              if (request.source === 'saved' || !next[paperId]) next[paperId] = paper;
-            });
-            return next;
-          });
+          setSavedPapers((current) => mergeListPaperCopies(current, loaded, request.source));
         }, (error) => {
           if (signal.aborted) return;
           request.paperIds.forEach((paperId) => previewAsked.current.delete(`${userId}:${paperId}`));

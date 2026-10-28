@@ -4,8 +4,9 @@ import type { Paper } from '../../models/paper.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
 import { serializeLibraryPaper } from '../../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { reviewTagForPaper } from '../../utils/paper-status.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
-import { listPaperFromCopies } from './list-paper-copies.ts';
+import { listPaperFromCopies, mergeListPaperCopies } from './list-paper-copies.ts';
 
 const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
 const own = 'The abstract OpenAlex now lists for this journal article itself.';
@@ -49,4 +50,29 @@ test('a list paper credits the source of the text it shows, not the other copy\'
   ]) {
     assert.deepEqual(shown(listPaperFromCopies(library, other)), [recovered, 'Abstract:', 'Semantic Scholar']);
   }
+});
+
+// ENG-84. A retracted paper liked or saved from search came back in a list as
+// a preprint: neither copy kept the retraction, and the savedPapers document,
+// which keeps no status, replaced the interaction's copy.
+test('a list paper liked or saved while retracted reads Retracted, whichever copy arrives first', () => {
+  const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const, publicationStatus: 'retracted' as const };
+  const liked = paperLegacyAdapter(interactionCopy(wakefield));
+  const saved = savedDocument(wakefield);
+  const tag = (paper: Partial<Paper> | undefined) => reviewTagForPaper(paper)?.key;
+
+  assert.equal(tag(liked), 'retracted', 'the interaction copy');
+  assert.equal(tag(listPaperFromCopies(interactionCopy(wakefield), saved)), 'retracted', 'both copies');
+  for (const [first, second] of [['saved', 'interaction'], ['interaction', 'saved']] as const) {
+    const copies = { saved, interaction: liked };
+    const once = mergeListPaperCopies({}, { [wakefield.id]: copies[first] }, first);
+    const twice = mergeListPaperCopies(once, { [wakefield.id]: copies[second] }, second);
+    assert.equal(tag(twice[wakefield.id]), 'retracted', `${first} then ${second}`);
+  }
+
+  // Only a retraction is kept: a paper no provider called retracted stores no
+  // status, so its copy reads as it always did.
+  const published = interactionCopy({ ...wakefield, publicationStatus: 'published' });
+  assert.equal('publicationStatus' in published, false);
+  assert.notEqual(tag(paperLegacyAdapter(published)), 'retracted');
 });
