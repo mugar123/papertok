@@ -267,7 +267,7 @@ test('a refused Reading history removal sent again is reported once', async () =
   const history = readingHistory();
   const first = history.unmark(true);
   const second = history.unmark(true);
-  history.answers[0].refuse();
+  history.answers.forEach(({ refuse }) => refuse());
   await silenced(() => Promise.all([first, second]));
   assert.deepEqual([...history.state.readIds].sort(), ['p1', 'p2']);
   assert.deepEqual(history.reported, ['removal']);
