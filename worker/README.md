@@ -92,6 +92,41 @@ enrichment phase at its longest within half of the configured value.
 Subrequests are not billed themselves; each provider's calls stay bounded by
 their budgets.
 
+The paper store's placement. D1 keeps `papertok-paper-store` in Western Europe
+(WEUR) with read replication off, so every D1 call is a round trip from the
+location the fetch handler runs in. A first `/store/papers` page makes several
+of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
+invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline,
+while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
+that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
+sets `[placement] mode = "smart"`, so Cloudflare may run the fetch handler near
+the I/O it waits on rather than at the reader's location. It does so per Worker,
+not per route: the provider relays, share pages and preflights move with the
+feed, and a reader outside Europe then pays one more hop to reach them. It does
+not move the crons, the harvest Workflow or the Durable Objects. Cloudflare
+analyses the Worker for up to 15 minutes after a deploy, needs steady traffic
+from several locations (status `INSUFFICIENT_INVOCATIONS` until then), keeps
+about 1% of requests at their own location as a baseline and reverts placement
+that makes the Worker slower (`UNSUPPORTED_APPLICATION`). The Cache API is per
+location, so after the first placed deploy the readers' kept rankings are not
+found once (`Feed walk has no kept order to go on with`), and the baseline
+requests miss the placed location's entries. To see whether it acted, look for
+`cf-placement: remote-XXX` (forwarded) or `local-XXX` on any response, for
+example `curl -s -D - -o /dev/null https://api.papertok.app/health`, and for the
+status under the Worker's Settings, General, Placement in the dashboard. If the
+status is not `SUCCESS` a day after the deploy, an explicit
+`region = "aws:eu-central-1"` in place of `mode` is the alternative: it always
+runs in Europe, with no baseline and no revert. Choosing it is Pablo's call.
+The quota ledger's objects are asked for in WEUR too (`locationHint: 'weur'` in
+`worker/request-quota-ledger.ts`). The feed reserves its minute beside its first
+D1 read, and the feed's ledger is a new object every UTC minute, created near
+the first request of that minute and never moved, so without the hint a minute
+opened by a reader on another continent sent every reservation of that minute
+there. Cloudflare reads the hint only when it creates an object, as a best
+effort: objects created before the deploy, such as the providers' pace objects,
+stay where they are, and minute, hour and day objects are created in WEUR as
+their periods start. Reservations stay one transaction in one object per period.
+
 
 The For You feed reads one paper corpus instead of each source per reader and page. `worker/paper-store.ts` keeps it in D1 (`PAPER_STORE`, database `papertok-paper-store`): one row per paper in the app's `Paper` contract, the identifiers it is known by (`PaperBuilder.identityKeys`), the lanes it can be asked for under, and an int8 vector from Workers AI (`@cf/qwen/qwen3-embedding-0.6b`): the leading 256 of the model's 1,024 dimensions, which it is trained to make an embedding of their own (migration 0004 cut the vectors stored before). A row carries neither `openAlex`, the enrichment's copy of OpenAlex's answer, whose fields the app reads are already merged into the paper, nor `summary`, which repeats `abstract` (`storedPaper`). Enrichment's `rewriteWorks` compares rows in that stored form, so an enrichment that changes nothing leaves the stored paper unwritten. A row an earlier Worker stored keeps both until its next ingest or enrichment rewrites it. The app's library copies, interaction excerpts and RIS export read `abstract` when a paper has no `summary`; an older bundle reads only `summary`, so publish the frontend before deploying the Worker that stops storing `summary`.
 
@@ -133,7 +168,7 @@ The notable lane of each medicine and biology leaf whose Europe PMC sample passe
 
 A new or emptied database needs a harvest before a frontend that reads it is published: apply the migrations (0011, which cleared the marks of the weekly notable listing once, finds none to clear), deploy the Worker, start a run with `npx wrangler workflows trigger papertok-paper-harvest`, and wait for its lanes to fill. Until then the feed answers an empty first page with an empty state that asks the reader to add topics or check again, and retries only a failed request on its own; the `app_error` it sends keeps `reason: empty`.
 
-Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The stored row is the base of every later harvest's and enrichment's merge, so it keeps what `merge` records in `sources` about the records it merged (`arxivDoiOnly`, `deniedElsewhere`, `peerReviewedByDoi`, `peerReviewedByDoiComplete`). A row merged before `peerReviewedByDoi` existed lacks its earlier records' entries and has no `peerReviewedByDoiComplete`; nothing is backfilled. Later harvests add their records' entries to such a row. A `false` among them counts, but no `true` among them confirms review, and a merge with such a row does not keep a `true` the way a merge of complete rows does (`repeatsTrue`, `keepsConfirmed`), whether the store merges the row or a browser merges the served copy. Only a row built again from all its records holds every answer; the store never rebuilds a row in place, so such a row stays incomplete until eviction removes it. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
+Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The stored row is the base of every later harvest's and enrichment's merge. Once a batch is saved, a separate step (`upgradeWorkingPapers`, ENG-133) makes each working-paper row OpenAlex started the journal's reviewed row when the batch holds OpenAlex's own journal-article record filed under it (by work id or DOI), with a publisher's DOI: the row keeps its id, takes the article's DOI, landing page, text and date (in each of its lanes too), is filed under the lanes the article's record names (`recordLanes`, so a reader who follows a coauthor only the article names finds the row on its first listing), and follows the article's own listing for title and abstract (`openAlexId`), never the working paper's. The evidence is that one record, never a merged row. Records from other sources (PubMed, Europe PMC, an arXiv eprint naming its journal, CORE, OSTI) and rows other sources started merge as before; upgrading them is ENG-145. The row keeps what `merge` records in `sources` about the records it merged (`arxivDoiOnly`, `deniedElsewhere`, `peerReviewedByDoi`, `peerReviewedByDoiComplete`). A row merged before `peerReviewedByDoi` existed lacks its earlier records' entries and has no `peerReviewedByDoiComplete`; nothing is backfilled. Later harvests add their records' entries to such a row. A `false` among them counts, but no `true` among them confirms review, and a merge with such a row does not keep a `true` the way a merge of complete rows does (`repeatsTrue`, `keepsConfirmed`), whether the store merges the row or a browser merges the served copy. Only a row built again from all its records holds every answer; the store never rebuilds a row in place, so such a row stays incomplete until eviction removes it. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
 When the source a row was built from lists the paper again, as arXiv does with a new version, its title and abstract replace the stored ones; other sources only fill a missing abstract. A listing without an abstract keeps the stored one, unless that opens as a funding note, thanks or a disclaimer (`opensAsFrontMatter`): a row filed with one before `isPlausibleAbstract` refused it loses it when its source lists the paper again, which also drops its vector; the paper then awaits an abstract, which the 14-day refresh looks for in the other sources (steps 3 and 5). Hugging Face copies arXiv's title and abstract, so a row it started takes arXiv's new versions and not its own copy. That change drops the vector too. After the arXiv sets, each run copies the vectors of the arXiv-only store (migration 0001) to rows that have none, but only while a row keeps the title and abstract that vector was computed from.
 
@@ -172,6 +207,9 @@ npx wrangler secret put POSTHOG_PROJECT_TOKEN # PostHog's public project token; 
 npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
+
+Placement is set in `wrangler.toml` (`[placement]`, see the paper store's
+placement above); a change made in the dashboard is undone by the next deploy.
 
 The deployment script bundles into `.wrangler/posthog-worker`, injects and uploads
 PostHog source maps, then uploads that bundle with `--no-bundle`. The `Data`
