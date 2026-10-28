@@ -15,7 +15,8 @@ import { normalizeLatexText, normalizeSavedLatexText, savedHighlightSpace, split
  * 1. `splitLatexText` runs its input through `normalizeLatexText` first, which
  *    strips markup, collapses whitespace and escapes `%`. Offsets in the raw
  *    string therefore do not survive. Everything here works in *normalized*
- *    space, and quotes are normalized the same way before being searched.
+ *    space, and quotes are normalized too before being searched, keeping
+ *    their font commands (`normalizeHighlightQuote`).
  *
  * 2. A highlight must never cross *into* a maths chunk. Wrapping part of a
  *    `$...$` expression in a `<mark>` would hand KaTeX a broken fragment, so
@@ -32,8 +33,14 @@ import { normalizeLatexText, normalizeSavedLatexText, savedHighlightSpace, split
 /** Shorter than this and a quote matches the wrong place too easily. */
 const MIN_QUOTE_LENGTH = 8;
 
+/**
+ * A quote keeps its font commands. Whether one unwraps depends on the formulas
+ * around it in the paragraph, which a quote on its own does not have, so a
+ * quote cut from the normalized text stays verbatim, and one saved with
+ * wrappers is found in `savedHighlightSpace`.
+ */
 export function normalizeHighlightQuote(quote: unknown) {
-  return normalizeLatexText(quote);
+  return normalizeSavedLatexText(quote);
 }
 
 /**
@@ -88,14 +95,13 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
       }
       return null;
     };
-    let found = quote.length >= MIN_QUOTE_LENGTH ? findFree(normalized, quote) : null;
-    // A quote saved before font commands were unwrapped may start or end
-    // inside one, or shrink below the minimum once unwrapped
-    // (`\textbf{HERMES}`); it is found in the text it was cut from.
-    const savedQuote = found ? '' : normalizeSavedLatexText(highlight?.quote);
-    if (savedQuote.length >= MIN_QUOTE_LENGTH) {
+    if (quote.length < MIN_QUOTE_LENGTH) continue;
+    let found = findFree(normalized, quote);
+    // A quote saved before font commands were unwrapped may hold one, or start
+    // or end inside one; it is found in the text it was cut from.
+    if (!found) {
       saved ??= savedHighlightSpace(text);
-      if (saved.text !== normalized) found = findFree(saved.text, savedQuote, saved.toCurrent);
+      if (saved.text !== normalized) found = findFree(saved.text, quote, saved.toCurrent);
     }
     if (!found) continue;
     const { start, end } = found;

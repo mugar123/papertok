@@ -149,6 +149,16 @@ test('a saved quote of one wrapper whose words fall under the minimum still mark
   assert.deepEqual(resolveHighlightRanges('the HERMES system', [{ quote: 'HERMES', source: 'user' }]), []);
 });
 
+// The saved quote carries the wrapper, so it belongs to the wrapped mention,
+// not to an earlier plain one with the same words.
+test('a saved quote with a whole font command marks the wrapped mention', () => {
+  const text = 'the HERMES harness runs first; then \\textbf{HERMES} harness runs again';
+  const normalized = normalizeLatexText(text);
+  const start = normalized.lastIndexOf('HERMES harness runs');
+  const [range] = resolveHighlightRanges(text, [{ quote: '\\textbf{HERMES} harness runs', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [start, start + 'HERMES harness runs'.length]);
+});
+
 // A closing brace glued to the wrapper's own closer belongs to the text.
 test('a saved quote ending on a font command closer maps onto the wrapped words alone', () => {
   const text = 'x\\emph{ab}} and the rest of it';
