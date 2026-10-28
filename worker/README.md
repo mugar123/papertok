@@ -680,6 +680,13 @@ that address verified, whether the account owns it, the sign-in time and the dis
 collapsed, at most 160 characters). Routes documented as having no identity cache ask Identity
 Toolkit on every request.
 
+A token Identity Toolkit refuses (a 400 such as `INVALID_ID_TOKEN` or `USER_NOT_FOUND`), or an
+answer without a user, is `401 AUTH_REQUIRED`. When Identity Toolkit cannot be reached, stalls past
+4 s, or answers 5xx or 429, the verifier answers `503 AUTH_UNAVAILABLE` and caches nothing, so the
+next request asks again: an outage says nothing about the session, and a 401 would read as a
+sign-out. The AI routes answer it as `503 AI_UNAVAILABLE`, the notification routes as
+`503 EMAIL_UNAVAILABLE`, and the other protected routes pass `503 AUTH_UNAVAILABLE` through.
+
 Notification routes use this same verifier, and digests greet the reader with
 its verified display name. Only the settings read (`GET /notifications/preferences`)
 uses the 60-second identity cache. `PUT /notifications/preferences` and
@@ -694,8 +701,8 @@ costs one more lookup than the cache would.
 They still require
 an email address whose ownership Firebase proves. Invalid credentials remain
 `401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
-and an unreachable verifier is `503 EMAIL_UNAVAILABLE`. Recipient addresses use
-the shared verifier’s trimmed, lowercase form.
+and a verifier that is unreachable or answers 5xx or 429 is `503 EMAIL_UNAVAILABLE`.
+Recipient addresses use the shared verifier’s trimmed, lowercase form.
 
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
