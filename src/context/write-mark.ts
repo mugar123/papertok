@@ -21,6 +21,8 @@ interface MarkChange {
   /** Whether the screen should show this change's value now. */
   stands: boolean;
   pending: boolean;
+  /** For a change not shown before its answer: settles once it is answered. */
+  answered: Promise<void> | null;
 }
 
 /**
@@ -43,6 +45,9 @@ interface MarkChange {
  * already shows, or a refused one that showed nothing or keeps what it showed.
  * `stand(key, to)` records a change that stands whatever its write's answer,
  * such as marking a paper read, which keeps its mark when refused.
+ * `unshownChange(key, to)` returns, while the newest change to the mark is
+ * one to `to` not shown before its answer, a promise that settles once it is
+ * answered: the same removal asked for again need not be sent again.
  */
 export function markChanges() {
   const marks = new Map<string, { startedFrom: boolean; changes: MarkChange[] }>();
@@ -65,7 +70,9 @@ export function markChanges() {
         marks.set(key, mark);
       }
       const followed = mark;
-      const change: MarkChange = { to, stands: shown, pending: true };
+      let settle = () => {};
+      const answered = shown ? null : new Promise<void>((resolve) => { settle = resolve; });
+      const change: MarkChange = { to, stands: shown, pending: true, answered };
       followed.changes.push(change);
       return (accepted: boolean) => {
         change.pending = false;
@@ -73,11 +80,16 @@ export function markChanges() {
         change.stands = accepted || (stood && keptIfRefused);
         const value = shouldShow(followed);
         if (!followed.changes.some((other) => other.pending)) marks.delete(key);
+        settle();
         return { value, changed: change.stands !== stood };
       };
     },
     stand(key: string, to: boolean) {
-      marks.get(key)?.changes.push({ to, stands: true, pending: false });
+      marks.get(key)?.changes.push({ to, stands: true, pending: false, answered: null });
+    },
+    unshownChange(key: string, to: boolean) {
+      const newest = marks.get(key)?.changes.at(-1);
+      return newest?.pending && newest.to === to ? newest.answered : null;
     },
   };
 }
@@ -108,6 +120,13 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * change to the same value has been accepted or still stands, or the screen
  * already shows that value: the caller has nothing to report.
  *
+ * An `afterWrite` removal asked for again while the same removal still waits,
+ * and no other change to the mark has started since, sends nothing and
+ * returns once the first is answered; the first caller reports a refusal.
+ * The Lists page, left and opened again, offers Remove on a row whose removal
+ * is pending, and two answers landing before React has drawn the first would
+ * both find the mark on and tell the reading profile twice.
+ *
  * Nothing is shown or put back once another account is signed in: a late
  * answer must not paint the previous account's mark over the new one.
  *
@@ -137,6 +156,8 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // Remove from a sheet left open over a row that has since left its list,
   // has nothing to take off: it sends nothing and shows nothing.
   if (afterWrite && isOn() !== from) return;
+  const sent = afterWrite ? changes.unshownChange(markKey, to) : null;
+  if (sent) return sent;
   const answer = changes.start(markKey, { isOn: isOn(), to, shown: !afterWrite, keptIfRefused: !undo });
   if (!afterWrite) show();
   let refusal: { error: unknown } | null = null;

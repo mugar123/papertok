@@ -251,6 +251,28 @@ function readingHistory() {
   return { state, answers, profile, reported, unmark, markAsRead };
 }
 
+test('a Reading history removal asked for again while the first waits is sent once', async () => {
+  const history = readingHistory();
+  // The Lists page, left and opened again, offers the row's Remove again.
+  const first = history.unmark(true);
+  const second = history.unmark(true);
+  assert.equal(history.answers.length, 1);
+  history.answers[0].accept();
+  await Promise.all([first, second]);
+  assert.deepEqual([...history.state.readIds], ['p1']);
+  assert.deepEqual(history.profile, ['unread']);
+});
+
+test('a refused Reading history removal sent again is reported once', async () => {
+  const history = readingHistory();
+  const first = history.unmark(true);
+  const second = history.unmark(true);
+  history.answers[0].refuse();
+  await silenced(() => Promise.all([first, second]));
+  assert.deepEqual([...history.state.readIds].sort(), ['p1', 'p2']);
+  assert.deepEqual(history.reported, ['removal']);
+});
+
 test('a Reading history removal answered after the card unmarked and marked the paper read leaves it read', async () => {
   const history = readingHistory();
   const removal = history.unmark(true);

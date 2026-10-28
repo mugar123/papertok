@@ -258,6 +258,63 @@ test('a refused Favorites removal leaves the newer accepted press on screen', as
   assert.deepEqual(paper.reported, ['removal'], 'the paper stays liked, so the removal is reported');
 });
 
+// Like FeedContext: `isOn` reads a ref React updates only after it has drawn
+// the state, so two answers in one tick both find the old value.
+function likedPaperBehindRender() {
+  const changes = markChanges();
+  const drawn = { liked: true };
+  const ref = { liked: true };
+  const profile: string[] = [];
+  const answers: Array<() => void> = [];
+  const press = (options: { afterWrite?: boolean; throwOnError?: boolean } = {}) => {
+    const wasLiked = markStartsOn(options, ref.liked);
+    const showLiked = (liked: boolean) => {
+      drawn.liked = liked;
+      profile.push(liked ? 'like' : 'unlike');
+    };
+    return writeMark({
+      show: () => showLiked(!wasLiked),
+      undo: () => showLiked(wasLiked),
+      write: () => new Promise<void>((accept) => { answers.push(accept); }),
+      failure: 'refused',
+      ...options,
+      stillSignedIn: () => true,
+      changes,
+      markKey: 'u1:like:p1',
+      from: wasLiked,
+      to: !wasLiked,
+      isOn: () => ref.liked,
+    });
+  };
+  return { drawn, profile, answers, press };
+}
+
+test('a Favorites removal asked for again from a reopened Lists page is sent and counted once', async () => {
+  const paper = likedPaperBehindRender();
+  const first = paper.press(removal);
+  // Lists, left and opened again, shows the row with its Remove.
+  const second = paper.press(removal);
+  assert.equal(paper.answers.length, 1, 'one write, so one like_change event');
+  paper.answers.forEach((accept) => accept());
+  await Promise.all([first, second]);
+  assert.equal(paper.drawn.liked, false);
+  assert.deepEqual(paper.profile, ['unlike']);
+});
+
+test('a Remove pressed again after the card changed the like meanwhile is still sent', async () => {
+  const paper = likedPaper();
+  const first = paper.press(removal);
+  // The card's heart takes the like off and puts it back.
+  const unliked = paper.press(cardHeart);
+  const liked = paper.press(cardHeart);
+  const second = paper.press(removal);
+  assert.equal(paper.answers.length, 4, 'the like on screen came after the first removal was sent');
+  paper.acceptAll();
+  await Promise.all([first, unliked, liked, second]);
+  assert.equal(paper.screen.liked, false);
+  assert.deepEqual(paper.profile, ['unlike', 'like', 'unlike']);
+});
+
 // A paper in Read later, changed the way FeedContext's toggleReadLater changes
 // it: each change stamps the entry with its own edit time, and a refusal the
 // caller asked about restores the entry with restoreReadLater.
