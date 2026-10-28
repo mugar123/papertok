@@ -81,8 +81,9 @@ test('the page says what the server keeps of the feed order ranked for a reader,
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/paper-feed.ts `rankingCache`: a walk's order lasts WALK_KEPT_MS from its last page.
   assert.match(html, /keeps the order it ranked for you, and how far down it you got, for up to 2 hours after your last page/);
-  // wrangler.toml `[placement] region` runs the fetch handler, and so this cache write, in Frankfurt.
-  assert.match(html, /kept in the Cloudflare cache in Frankfurt, where that server runs/);
+  // wrangler.toml `[placement] region` places the fetch handler, and so this cache write, near
+  // Frankfurt; Cloudflare picks the data center and may change it, so the page names no fixed city.
+  assert.match(html, /kept in the cache of the Cloudflare data center where that server runs \(placed near Frankfurt; Cloudflare may move it to a nearby data center\)/);
   assert.match(html, /Deleting your account does not remove it sooner/);
   const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
   assert.match(summary, /delete your account, and everything in it, [^<]*The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page/);

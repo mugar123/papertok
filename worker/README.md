@@ -99,8 +99,10 @@ of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
 invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline,
 while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
 that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
-sets `[placement] region = "aws:eu-central-1"`, so the fetch handler runs in
+sets `[placement] region = "aws:eu-central-1"`, so the fetch handler runs near
 Frankfurt, next to the I/O it waits on, rather than at the reader's location.
+Cloudflare picks the data center with the lowest latency to that region and may
+change it for maintenance or network changes, so the city is not fixed.
 Smart Placement (`mode = "smart"`, deployed on 2026-10-27) never moved it: eight
 hours later every response still read `cf-placement: local-LAX`. Its status in
 the dashboard was not read; it probably lacked the steady traffic from several
@@ -122,9 +124,12 @@ for newly followed lanes are created from Frankfurt; where Cloudflare then runs
 their steps was not checked. The Cache API is per location, so after the first placed deploy the
 readers' kept rankings are not found once (`Feed walk has no kept order to go on
 with`). To check it, look at `cf-placement` on any response, for example
-`curl -s -D - -o /dev/null https://api.papertok.app/health`: `remote-FRA`
-(forwarded), or `local-FRA` when the request already enters at Frankfurt,
-confirms it; any other `local-XXX` means it is not applied. Per-address limits
+`curl -s -D - -o /dev/null https://api.papertok.app/health`. `remote-XXX` means
+the request was forwarded to the placed data center, `FRA` on 2026-10-28; Cloudflare
+may choose another one near the region. `local-XXX` means the request ran where it
+entered: expected for a request entering near Frankfurt, but repeated for readers far
+away it suggests placement is not applied. A code other than `FRA` alone proves
+neither. Per-address limits
 (`worker/caller-quota.ts`) read `CF-Connecting-IP`. After a placement change,
 check that the routes they protect still answer: with a missing or invalid
 header the provider relays, `/openalex` and `/pdf` answer 503, and share pages
