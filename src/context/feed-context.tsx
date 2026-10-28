@@ -82,6 +82,7 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { planPreferencesRefresh } from './feed-preferences-refresh.ts';
 import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -1613,28 +1614,26 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // end — fresh content arrives below the current card instead of on top of it.
   useEffect(() => {
     const signature = feedPreferenceSignature(userPreferences);
+    const plan = planPreferencesRefresh({
+      applied: preferencesSignatureRef.current,
+      signature,
+      ready: recommendationProfileReady,
+      onFeedRoute: feedRouteActive,
+      restored: restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`,
+    });
+    if (plan.action === 'forget') preferencesSignatureRef.current = null;
+    if (plan.action === 'keep-restored') preferencesSignatureRef.current = signature;
+    if (plan.action !== 'load') return;
 
-    if (!signature || !recommendationProfileReady) {
-      preferencesSignatureRef.current = null;
-      return;
-    }
-
-    // Off the feed route nothing is recorded, so preference edits made from
-    // settings or onboarding are picked up as a change on the next visit to
-    // the feed — and no source cascade fires for a feed nobody is looking at.
-    if (!feedRouteActive) return;
-
-    if (preferencesSignatureRef.current === signature) return;
-
-    const isColdMount = preferencesSignatureRef.current === null;
-    preferencesSignatureRef.current = signature;
-    if (isColdMount && restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`) return;
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
+    // The signature is applied when this timer runs, not when it is set: a
+    // cleanup that clears it first leaves the load to the next run.
     const refreshTimer = setTimeout(() => {
+      preferencesSignatureRef.current = signature;
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
-        if (isColdMount) return;
+        if (plan.coldMount) return;
       } else {
         setPapers([]);
         setPage(0);
