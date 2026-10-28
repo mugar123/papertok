@@ -1363,6 +1363,47 @@ test('a notable of the current year is not read until that year is over', async 
   assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2026999'], 'the last completed year');
 });
 
+// A notable lane is read in two round trips: its rows, then the stored row of
+// each of the day's slice. An enrichment batch rewrites its papers, which takes
+// a retracted one or an erratum out of every lane, and only then marks them
+// enriched (`enrichPending`); a page that reads in between must not offer them.
+test('a notable paper the enrichment takes out of its lane between the two reads of the lane is not offered', async t => {
+  const { env, db } = corpus();
+  const adsListed = mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    abstract: 'A synthetic abstract about Majorana zero modes in hybrid nanowires.', year: '2018', pubdate: '2018-04-00',
+    identifier: ['arXiv:1710.10701'], arxiv_class: ['cond-mat.mes-hall'], citation_count: 1500, doctype: 'article',
+  }, ['cs.LG'])!;
+  const listed = [...NOTABLE, adsListed];
+  await ingestPapers(env, listed.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: LISTED_UNTIL });
+  const stored = (paper: Paper) => {
+    const row = db.prepare("SELECT id, paper FROM works WHERE paper ->> '$.id' = ?").get(paper.id) as { id: number; paper: string };
+    return { id: row.id, before: JSON.parse(row.paper) as Paper };
+  };
+  const binding = env.PAPER_STORE!;
+  const batch = binding.batch.bind(binding);
+  let reads = 0;
+  t.mock.method(binding, 'batch', async <T>(statements: D1PreparedStatement[]) => {
+    const answered = await batch<T>(statements);
+    reads += 1;
+    if (reads === 1) {
+      // The lane's rows are read. The enrichment finds the ADS paper retracted
+      // and the paper OpenAlex listed last an erratum, then marks the batch done.
+      const retracted = stored(adsListed);
+      const erratum = stored(NOTABLE[2]);
+      await rewriteWorks(env, [
+        { ...retracted, after: { ...retracted.before, publicationStatus: 'retracted' } },
+        { ...erratum, after: { ...erratum.before, publicationType: 'erratum' } },
+      ], NOW);
+      db.prepare('UPDATE works SET enriched_at = ?').run(new Date(NOW).toISOString());
+    }
+    return answered;
+  });
+  const read = await notableRead({ env, db }, ['notable:cs.LG'], NOW);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'notable:cs.LG'").length, 2, 'the enrichment ran between the reads and took two papers out of the lane');
+  assert.deepEqual(read.map(candidate => candidate.id), [NOTABLE[0].id, NOTABLE[1].id]);
+});
+
 // The statement each notable lane was read with before ENG-150, which numbered
 // the years in SQL with window functions: kept here only as the oracle that the
 // read in index order must match.

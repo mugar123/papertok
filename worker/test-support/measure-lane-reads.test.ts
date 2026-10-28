@@ -75,10 +75,11 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
   // ENG-150. A page that ranks reads each of a notable lane's 30 rows once, in
   // its index's order, and at most the one index entry past them that ends the
   // range, then looks up the stored row of each of the day's slice, here all
-  // 30, at two rows read an id: its JSON value and the row. Numbering the years
-  // in SQL read about eight rows a row.
+  // 30, at three rows read an id: its JSON value, the row and the lane's entry
+  // for it, which keeps a paper that left the lane since the first read from
+  // being offered. Numbering the years in SQL read about eight rows a row.
   for (const row of rows.filter(ranked => ranked.returned.lanes > 0)) {
-    const perLane = 30 + 2 * 30;
+    const perLane = 30 + 3 * 30;
     assert.ok(
       row.rowsReadBy.notable >= row.categories * perLane && row.rowsReadBy.notable <= row.categories * (perLane + 1),
       `${row.rowsReadBy.notable} notable rows read for ${row.categories} categories, ${row.likes} likes, page ${row.page + 1} ${row.after}`,

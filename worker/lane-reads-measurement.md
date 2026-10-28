@@ -2,7 +2,10 @@
 
 Status: measured on 2026-10-26 (ENG-128, phase 0), and again after ENG-150
 changed how the page request reads notable lanes and looks up ids
-([After ENG-150](#after-eng-150)). The feed serves the same papers.
+([After ENG-150](#after-eng-150)). The feed serves the same papers. The
+notable lookup then gained one row read an id
+([After the lane re-check](#after-the-lane-re-check)); the tables of After
+ENG-150 are the run before it.
 
 ## Context
 
@@ -356,6 +359,40 @@ tables again.
   most 37 MB, as before. Workers observability is the check for `/store/papers`
   in production (see Decisions).
 
+## After the lane re-check
+
+The outside review of #407 found that a paper the enrichment takes out of its
+lane (a retracted paper or an erratum, which `rewriteWorks` withdraws from
+every lane before `enrichPending` marks it enriched) between the two round
+trips of `readNotableCandidates` was still offered: the lookup of the slice
+asked `works` only. The lookup now also asks whether the lane still holds each id
+(`EXISTS` on the primary key of `work_lanes`), so a slice row is offered
+only if the lane holds it and, for a paper ADS listed, it is enriched, as the
+single statement before ENG-150 asked. That is a third row read an id: the
+JSON value, the stored row and the lane's entry. The candidates and their order
+are unchanged, and so are the number of D1 calls and every other statement.
+
+One first page measured on the same production-sized corpus before the re-check
+(main at `353bbb41`) and after it, with the probe under Reproduce for cs.LG (10
+excluded papers and a seen filter of 190, so its key and works rows are not
+those of the tables above):
+
+| Version | Notable scan | Rows read, first page | D1 calls |
+| --- | ---: | ---: | ---: |
+| Before, `353bbb41` | 2,500 | 8,180 | 7 |
+| After | 2,750 | 8,430 | 7 |
+
+The lane read is 2,000 rows (cs.LG's notable lane is the last in its index, so
+no entry past the range is read) and the lookup reads 500 rows for 250 ids
+before, 750 after. Each lane of 2,000 therefore reads 250 more rows: 12
+categories read 3,000 more, about 7% of a first page without likes (42,059 in
+the tables above) and 6% of one with 24 likes (51,867). Those two are
+computed from the per-lane change, not run. A lane of 1,000 rows (a leaf with
+one listing) has the same 250 ids in its slice and reads 250 more too. A paper
+ADS listed and not yet enriched is not probed, so the figures are an upper
+bound. `measure-lane-reads.test.ts` checks three rows an id on its small
+corpus.
+
 ## Method
 
 - **Store.** `getPlatformProxy` from wrangler, with
@@ -413,8 +450,9 @@ tables again.
   Production has notable lanes only for the leaves its listings cover
   ([worker/README.md](README.md#paper-store), step 3), and quieter leaves hold
   fewer papers. A leaf with one listing holds about 1,000 rows and costs about
-  1,500 scan rows a lane since ENG-150 (1,000 for its index range and 500 for
-  the works lookups of its slice), against 2,501 for a lane of 2,000 here;
+  1,750 scan rows a lane since the lane re-check (1,000 for its index range and
+  750 for the lookups of its slice; 1,500 from ENG-150 until then), against
+  2,751 for a lane of 2,000 here (2,501 until then);
   before, it cost about 8,270 (8,020 for the window functions and 250 for the
   lookups), about half of 16,273. A leaf with two (the arXiv categories, and
   the medicine and biology leaves Europe PMC lists) can hold 2,000. A
