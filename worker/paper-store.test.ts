@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
+  notableSince, readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
@@ -1361,6 +1361,99 @@ test('a notable of the current year is not read until that year is over', async 
   await ingestPapers(store.env, [{ paper: notableWork('W2026999', 'A highly cited study of March 2026', '2026-03-01', 8000, true), lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: LISTED_UNTIL });
   assert.deepEqual(await notableRead(store, ['notable:cs.LG'], NOW), []);
   assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2026999'], 'the last completed year');
+});
+
+// The statement each notable lane was read with before ENG-150, which numbered
+// the years in SQL with window functions: kept here only as the oracle that the
+// read in index order must match.
+const WINDOW_FUNCTION_NOTABLE_READ = `SELECT work_id, published,
+      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
+        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
+      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+      SELECT work_id, published,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
+             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
+      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
+    )) s ORDER BY published DESC, work_id`;
+
+test('a notable lane read in index order offers the same candidates, in the same order, as the window functions did on every day', async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until, enriched_at) VALUES (?, ?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  // Rows per year: a year before the window, an empty one, one shorter than
+  // the slice, one of the slice, one past it, a listing, a listing with its
+  // drop-outs, two listings, and the current year's. Most of a year shares a
+  // few dates, as OpenAlex's 1 January does, so the work id breaks the ties;
+  // ids are out of date order.
+  const perYear: Array<[number, number]> = [[2015, 7], [2016, 0], [2017, 1], [2018, 24], [2019, 25], [2020, 26], [2021, 100], [2022, 110], [2023, 200], [2024, 3], [2025, 57], [2026, 4]];
+  let number = 0;
+  const lanes = { lg: 'notable:cs.LG', cv: 'notable:cs.CV' };
+  db.exec('BEGIN');
+  for (const [year, count] of perYear) {
+    for (let rank = 0; rank < count; rank += 1) {
+      number += 1;
+      const id = 1 + ((number * 7_919) % 100_003);
+      const day = [0, 0, 0, 31, 59, 180, 364][rank % 7];
+      const published = new Date(Date.UTC(year, 0, 1 + day, rank % 5 === 0 ? 0 : 12)).toISOString();
+      // Every fourth is a paper ADS listed: half of those enriched since.
+      const fromAds = number % 4 === 0;
+      const paper = { id: `openalex:W${id}`, title: `Highly cited study ${id}`, ...(fromAds ? { adsBibcode: `${year}Natur.${id}` } : {}) };
+      // A lane row whose stored row is gone is not offered.
+      if (number % 37 !== 0) insertWork.run(id, JSON.stringify(paper), published, '2027-03-01T00:00:00.000Z', fromAds && number % 8 === 0 ? '2026-10-01T00:00:00.000Z' : null);
+      insertLane.run(lanes.lg, id, published);
+      // A third of them are listed in cs.CV too, and cs.CV has its own.
+      if (number % 3 === 0) insertLane.run(lanes.cv, id, published);
+    }
+  }
+  for (let rank = 0; rank < 40; rank += 1) {
+    const id = 200_000 + ((rank * 13) % 40);
+    const published = new Date(Date.UTC(2019 + (rank % 3), 5, 1)).toISOString();
+    insertWork.run(id, JSON.stringify({ id: `openalex:W${id}`, title: `Vision study ${id}` }), published, '2027-03-01T00:00:00.000Z', null);
+    insertLane.run(lanes.cv, id, published);
+  }
+  db.exec('COMMIT');
+
+  // The window functions' rows of each lane, and the candidates the lanes
+  // give: their offered rows in turns, a work listed by two lanes once, at its
+  // first turn, with both lanes and its newest date.
+  const oracle = (lane: string, now: number) => db.prepare(WINDOW_FUNCTION_NOTABLE_READ)
+    .all(Math.floor(now / DAY) * 25, 25, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`) as Array<{ work_id: number; published: string; offered: number }>;
+  const inTurns = (asked: string[], perLane: Array<Array<{ work_id: number; published: string }>>) => {
+    const byWork = new Map<number, { workId: number; published: string; lanes: string[] }>();
+    for (let position = 0; position < Math.max(...perLane.map(rows => rows.length)); position += 1) {
+      perLane.forEach((rows, index) => {
+        const row = rows[position];
+        if (!row) return;
+        const candidate = byWork.get(row.work_id);
+        if (!candidate) byWork.set(row.work_id, { workId: row.work_id, published: row.published, lanes: [asked[index]] });
+        else {
+          candidate.lanes.push(asked[index]);
+          if (row.published > candidate.published) candidate.published = row.published;
+        }
+      });
+    }
+    return [...byWork.values()];
+  };
+  // Ten days in a row, the slices of a year of 200 wrapping around, and a day
+  // in January, when the window moves on by a year.
+  const days = [...Array.from({ length: 10 }, (_, day) => NOW + day * DAY), Date.parse('2027-01-02T12:00:00Z')];
+  for (const now of days) {
+    for (const asked of [[lanes.lg], [lanes.cv], [lanes.lg, lanes.cv], [lanes.cv, lanes.lg, 'notable:cs.AI']]) {
+      const expected = asked.map(lane => oracle(lane, now));
+      const read = await readNotableCandidates(env.PAPER_STORE!, asked, now);
+      const label = `${asked.join(', ')} on ${new Date(now).toISOString().slice(0, 10)}`;
+      assert.deepEqual(read.candidates, inTurns(asked, expected.map(rows => rows.filter(row => row.offered))), label);
+      assert.deepEqual([...read.inLanes].sort((a, b) => a - b), [...new Set(expected.flat().map(row => row.work_id))].sort((a, b) => a - b), label);
+    }
+  }
+  // The data reaches every case: of cs.LG's 546 rows in the window on the
+  // first day, the day's slice holds 178 (25 of a year, or a shorter year
+  // whole), and some of those are not offered: a paper ADS listed and not yet
+  // enriched, or a row whose stored row is gone.
+  const today = oracle(lanes.lg, NOW);
+  const offered = today.filter(row => row.offered).length;
+  assert.equal(today.length, 546);
+  assert.ok(offered > 0 && offered < 178, `${offered} of the slice's 178 offered`);
 });
 
 test("a notable paper one of the reader's own lanes also holds comes as a notable card on the day of its slice, and as no rank on the other days", async () => {
