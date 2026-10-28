@@ -1589,10 +1589,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const signature = feedPreferenceSignature(userPreferences);
     const restoreKey = user?.uid && signature ? `${user.uid}:${signature}` : '';
     if (restoredSnapshotKeyRef.current === restoreKey) return;
-    restoredSnapshotKeyRef.current = restoreKey;
 
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    const restoreTimer = setTimeout(() => {
+    return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
@@ -1601,8 +1600,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-    }, 0);
-    return () => clearTimeout(restoreTimer);
+    });
   }, [feedMode, isKnownPaper, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
@@ -1647,6 +1645,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // account's real follows landing read as a follow CHANGE — a re-rank and,
   // with the profile ready, a replacing reload — on every signed-in cold load.
   const followingSignatureRef = useRef<string | null>(null);
+  // The following signature whose replacing reload ran or was not due.
+  const followingReloadRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Warm the topic table as soon as a topic follow is known, off the feed's
@@ -1665,28 +1665,33 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!feedRouteActive) return;
     if (!user?.uid) {
       followingSignatureRef.current = null;
+      followingReloadRef.current = null;
       return;
     }
-    if (followingSignatureRef.current === signature) return;
     if (followingSignatureRef.current === null) {
       followingSignatureRef.current = signature;
+      followingReloadRef.current = signature;
       return;
     }
-    followingSignatureRef.current = signature;
-    reRankFeed();
-    if (recommendationProfileReady) {
-      feedCache.current = {};
-      // mergeFreshFeedPage keeps the cards through the visible one and lands
-      // the fresh ranking below them. reRankFeed() above changes papers
-      // whenever it reorders anything, changing loadPapers' identity — so this
-      // effect's cleanup can clear the timer before it fires. keepThroughVisible
-      // preserves the visible cards if the refresh does run.
-      const refreshTimer = setTimeout(
-        () => loadPapers(true, null, undefined, { keepThroughVisible: true }),
-        0,
-      );
-      return () => clearTimeout(refreshTimer);
+    if (followingSignatureRef.current !== signature) {
+      followingSignatureRef.current = signature;
+      reRankFeed();
     }
+    if (followingReloadRef.current === signature) return;
+    if (!recommendationProfileReady) {
+      followingReloadRef.current = signature;
+      return;
+    }
+    feedCache.current = {};
+    // mergeFreshFeedPage keeps the cards through the visible one and lands
+    // the fresh ranking below them. reRankFeed() above changes papers
+    // whenever it reorders anything, changing loadPapers' identity, so this
+    // effect's cleanup can clear the timer before it fires. The reload is
+    // recorded only when the timer runs, so the next run schedules it again
+    // without re-ranking twice.
+    return scheduleRefresh(followingReloadRef, signature, () => {
+      void loadPapers(true, null, undefined, { keepThroughVisible: true });
+    });
   }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady, user?.uid]);
 
   // Save current papers to cache before switching, then restore or fetch
