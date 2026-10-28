@@ -16,6 +16,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** A failed load waits for its one automatic retry. */
+  autoRetryPending: boolean;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -194,6 +196,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The request whose automatic retry is due. A retry's timer clears only its
+  // own: an older timer that fires after a newer failure must not end its wait.
+  const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
+  const autoRetryPending = autoRetryFor !== null;
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1166,6 +1172,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
+    setAutoRetryFor(null);
     pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
 
     // A fresh load starts on the corpus's first page, the follows' included:
@@ -1500,7 +1507,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
-        // reader sees the error.
+        // failed feed is on screen. A load whose automatic retry is due sends
+        // it too, although the feed's wait covers its error.
         const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
           kind: 'load_failed',
           failure,
@@ -1510,10 +1518,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
-        // error state with its manual "Reintentar" so there is no cascade.
+        // error state with its manual "Try again" so there is no cascade.
+        // While the retry is due, the feed shows its wait, not the error.
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
+          setAutoRetryFor(requestId);
           setTimeout(() => {
+            setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
               void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
@@ -1730,9 +1741,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
+  // A due automatic retry is the next load. The scroll sentinel stays mounted
+  // under the first wait's veil, and must not start pages in front of it.
   const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current) void loadPapers(false);
-  }, [hasMore, loadPapers]);
+    if (hasMore && !feedLoadInFlight.current && !autoRetryPending) void loadPapers(false);
+  }, [autoRetryPending, hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
   useLayoutEffect(() => {
@@ -2375,7 +2388,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2388,7 +2401,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,

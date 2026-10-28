@@ -28,13 +28,19 @@ subrequests = 100_000
 
 # The paper store's D1 primary runs in Western Europe (WEUR) without read
 # replicas, and a first /store/papers page makes several D1 calls in sequence,
-# each a round trip from wherever the fetch handler runs. Smart Placement runs
-# the fetch handler near that I/O rather than at the reader's location, for every
-# route. It does not move the crons, the harvest Workflow or the Durable Objects.
-# Keep it here: a dashboard setting is undone by the next deploy from the repo
+# each a round trip from wherever the fetch handler runs. The fetch handler runs
+# in the Cloudflare data center Cloudflare picks near aws:eu-central-1 (Frankfurt
+# on 2026-10-28; it may change), next to that I/O, for every route, instead of
+# at the reader's location. Smart Placement (mode = "smart") never moved it at
+# PaperTok's traffic. This does not move the crons, the nightly harvest they
+# start or Durable Objects that already exist; objects the fetch handler creates
+# from now on, such as each /ai/rewrite session, and the harvest Workflow runs
+# that /store/papers starts for newly followed lanes are created from Frankfurt.
+# Keep it here:
+# a dashboard setting is undone by the next deploy from the repo
 # (worker/README.md, the paper store's placement).
 [placement]
-mode = "smart"
+region = "aws:eu-central-1"
 
 # The share card's renderer (worker/share-card-render.ts): its two
 # WebAssembly engines travel compiled, the only way a Worker may run them, and
