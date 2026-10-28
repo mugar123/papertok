@@ -2,7 +2,7 @@ import type { InteractionEvent, InteractionProfile } from '../utils/interaction-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmptyInteractionProfile, leanAfterEvent, readProfileSignals, recordInteractionEvent } from '../utils/interaction-profile.ts';
-import { corpusOrder, forYouCardNotable, sampleNotableEvery } from './feed-temporal-lean.ts';
+import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 
 const NOW = Date.parse('2026-10-24T00:00:00.000Z');
 
@@ -60,20 +60,45 @@ test('a card counts as notable or recent only while it is a For You card, and a 
 // The verifier's case on PR #419: For You holds an old notable paper the
 // reader has not reached, and they read and like a copy of it from Search.
 test('reading and liking from Search a paper For You holds as notable counts no notable card and moves the lean as any old paper does', () => {
-  const forYou = [{ id: 'recent-card', _notable: false }, { id: 'old-classic', _notable: true }];
-  const readAndLike = (surface: string) => {
+  const card = { id: 'old-classic', _notable: true, published: '2012-05-01T00:00:00.000Z' };
+  const forYou = [{ id: 'recent-card', _notable: false }, card];
+  // Search's copy of the paper is not the feed's card.
+  const searchCopy = { id: 'old-classic', published: '2012-05-01T00:00:00.000Z' };
+  const readAndLike = (surface: string, paper: { id: string; _notable?: boolean; published: string }) => {
     const profile = createEmptyInteractionProfile();
     for (const event of [{ kind: 'viewTime', viewTime: 12 }, { kind: 'like' }]) {
-      recordInteractionEvent(profile, {
-        paperId: 'old-classic', ...event, category: 'cs.LG', published: '2012-05-01T00:00:00.000Z',
-        notable: forYouCardNotable(forYou, { id: 'old-classic' }, surface),
-      }, NOW);
+      recordInteractionEvent(profile, profileEvent({
+        paperId: 'old-classic', ...event, category: 'cs.LG', notable: forYouCardNotable(forYou, paper, surface),
+      }, paper), NOW);
     }
     const { notable, recent, lean } = readProfileSignals(profile, NOW).temporal;
     return { notable, recent, lean: Math.round(lean * 100) / 100 };
   };
-  assert.deepEqual(readAndLike('search'), { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: -0.15 });
-  assert.deepEqual(readAndLike('feed'), { notable: { shown: 1, engaged: 1 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
+  assert.deepEqual(readAndLike('search', searchCopy), { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: -0.15 });
+  assert.deepEqual(readAndLike('feed', card), { notable: { shown: 1, engaged: 1 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
+});
+
+// The verifier's case on PR #419: the list picker saved a For You card
+// without its surface, so the save of a notable card counted toward neither
+// kind and moved the lean as an old paper's does, for good on the account.
+test('saving notable For You cards keeps the next page newest first even from a caller that loses the card\'s surface, and counts toward the notable cards from For You', () => {
+  const forYou = [2015, 2016, 2017].map(year => ({ id: `classic-${year}`, _notable: true, published: `${year}-03-01T00:00:00.000Z` }));
+  const viewThenSave = (saveSurface: string | undefined) => {
+    const profile = createEmptyInteractionProfile();
+    let guestLean = 0;
+    for (const card of forYou) {
+      for (const [event, surface] of [[{ kind: 'viewTime', viewTime: 4 }, 'feed'], [{ kind: 'save' }, saveSurface]] as const) {
+        const recorded = profileEvent({ paperId: card.id, category: 'cs.LG', ...event, notable: forYouCardNotable(forYou, card, surface) }, card);
+        recordInteractionEvent(profile, recorded, NOW);
+        guestLean = leanAfterEvent(guestLean, recorded, NOW);
+      }
+    }
+    const { notable, lean } = readProfileSignals(profile, NOW).temporal;
+    return { notable, order: corpusOrder(lean), lean, guestLean };
+  };
+  // Save and the list picker report the card's own surface.
+  assert.deepEqual(viewThenSave('feed'), { notable: { shown: 3, engaged: 3 }, order: 'recent', lean: 0, guestLean: 0 });
+  assert.deepEqual(viewThenSave(undefined), { notable: { shown: 3, engaged: 0 }, order: 'recent', lean: 0, guestLean: 0 });
 });
 
 // A seeded source, so the samples below are the same on every run.

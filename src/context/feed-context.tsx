@@ -65,7 +65,6 @@ import { useFollowing } from './following-context.tsx';
 import { fetchPapers, clearCache } from '../services/arxiv-service.ts';
 import { getDeviceInfo } from '../utils/device.ts';
 import { getAllLeafCategories } from '../data/categories.ts';
-import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { enrichPapersBatch } from '../services/open-alex-service.ts';
 import {
   applyRecommendationScore,
@@ -90,7 +89,7 @@ import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './fe
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
-import { corpusOrder, forYouCardNotable, sampleNotableEvery } from './feed-temporal-lean.ts';
+import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -377,15 +376,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const feedCardNotable = useCallback((paper: Pick<Paper, 'id' | '_notable'>, surface: string | undefined) => forYouCardNotable(papersRef.current, paper, surface), []);
 
   // The paper, when there is one, lends the event its OpenAlex concepts and
-  // authors, its area and its date. Called before the re-rank it feeds, so
-  // that re-rank sees it. A guest's events only move the guest's lean.
+  // authors, its area and its date (profileEvent). Called before the re-rank
+  // it feeds, so that re-rank sees it. A guest's events only move the guest's
+  // lean.
   const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
     if (!userId) {
-      guestLean.current = leanAfterEvent(guestLean.current, paper ? { published: paper.published, ...event } : event);
+      guestLean.current = leanAfterEvent(guestLean.current, profileEvent(event, paper));
       return;
     }
-    recordInteractionEvent(interactionProfile.current, paper ? { published: paper.published, ...event, ...paperAffinitySignals(paper), area: areaKeyForPaper(paper) } : event);
+    recordInteractionEvent(interactionProfile.current, profileEvent(event, paper));
     profileSignals.current = readProfileSignals(interactionProfile.current);
     if (!interactionProfileHydrated.current) return;
     scheduleInteractionProfileFlush(userId, interactionProfile.current);

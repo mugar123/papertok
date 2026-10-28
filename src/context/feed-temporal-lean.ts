@@ -1,7 +1,8 @@
 import type { Paper } from '../models/paper.ts';
-import type { TemporalSignal } from '../utils/interaction-profile.ts';
+import type { InteractionEvent, TemporalSignal } from '../utils/interaction-profile.ts';
+import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { NOTABLE_EVERY } from '../utils/feed-enrichment.ts';
-import { sampleGamma } from '../utils/recommendation-engine.ts';
+import { paperAffinitySignals, sampleGamma } from '../utils/recommendation-engine.ts';
 
 /**
  * The order a page asks the corpus for. Relevance order is for a reader whose
@@ -29,6 +30,21 @@ export function forYouCardNotable(cards: ReadonlyArray<Pick<Paper, 'id' | '_nota
   const card = cards.find(listed => listed.id === paper.id);
   if (card) return card._notable === true;
   return paper._notable === true ? true : undefined;
+}
+
+/**
+ * `event` as the feed records it for `paper`: with the paper's OpenAlex
+ * concepts and authors, its area and the date a like, a save or a long read
+ * moves the lean by (leanAfterEngaging). A notable card lends no date, so it
+ * leaves the lean as it was wherever the reader engages with it, the list
+ * picker included, even when the event does not count it as a For You card:
+ * it is years old because the feed chose it. A copy of the same paper from
+ * elsewhere, such as a search result, carries no `_notable`, and its date
+ * moves the lean as any paper's does.
+ */
+export function profileEvent(event: InteractionEvent, paper: Partial<Paper> | null | undefined): InteractionEvent {
+  if (!paper) return event;
+  return { published: paper._notable === true ? null : paper.published, ...event, ...paperAffinitySignals(paper), area: areaKeyForPaper(paper) };
 }
 
 // The fewest cards a notable place may follow (ENG-166, Pablo, 2026-10-27):

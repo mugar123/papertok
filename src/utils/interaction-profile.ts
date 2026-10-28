@@ -62,7 +62,7 @@ export interface InteractionEvent {
   // skip, a like, a save or an opened PDF. Left out for a paper off that feed.
   notable?: boolean;
   // The paper's publication date, which a like, a save or a long read moves
-  // the lean by.
+  // the lean by. The feed leaves it out for a notable card (profileEvent).
   published?: string | null;
   // The card's area (areaKeyForPaper), for a card whose category is no leaf.
   area?: string | null;
