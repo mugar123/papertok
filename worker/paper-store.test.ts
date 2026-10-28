@@ -1646,6 +1646,38 @@ test('with a like, the notable papers it cannot tell apart stay newest first rat
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.year), [2018, 2025, 2025, 2025, 2025]);
 });
 
+test('with a like, the diversity pass orders near copies of the notable papers as it does the page, ties newest first', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // A 2025 paper and a 2019 one are one vector, as close to the like as each
+  // other: the 2025 one comes first, though without likes the years' turns
+  // offer the 2019 one first. 2024's is closer to the like than 2016's but
+  // also closer to them, so the diversity pass puts 2016's next and 2019's last.
+  const copy = [0.9, 0.436, 0, 0, 0, 0];
+  insert.run(idOf('openalex:W202510'), vector(copy));
+  insert.run(idOf('openalex:W201911'), vector(copy));
+  insert.run(idOf('openalex:W202420'), vector([0.88, 0.2, 0.43, 0, 0, 0]));
+  insert.run(idOf('openalex:W201610'), vector([0.85, 0, 0, 0.527, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
+});
+
+test('with only a rejection, the notable papers stay newest first, the near copy of the rejected paper last, rather than taking the years in turns', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202521'), vector([1, 0, 0, 0, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  const notable = answer.filter(paper => paper._notable);
+  assert.deepEqual(notable.map(paper => paper.year), [2025, 2025, 2025, 2024, 2024]);
+  assert.ok(!notable.some(paper => paper.id === 'openalex:W202521'), 'the near copy of the rejected paper comes after the others');
+});
+
 // ─── A reload in one request ───
 
 // The filter holds the papers earlier sessions showed the reader. A page that
