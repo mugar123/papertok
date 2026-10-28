@@ -77,6 +77,12 @@ test('the page says papers you liked, saved or opened reach the catalogue and Wo
   assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
 });
 
+test('the page says analytics records opening a paper\'s connections or similar papers and what is done in the connections map', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // connections_open, similar_open and connections_interact in analytics-service.ts.
+  assert.match(html, /also record when you open a paper's connections or its similar papers, and what you do in the connections map, such as switching to the list or centring the graph on another paper/);
+});
+
 test('the page says what the server keeps of the feed order ranked for a reader, where, for how long, and, up top too, that deleting the account leaves it to expire', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/paper-feed.ts `rankingCache`: a walk's order lasts WALK_KEPT_MS from its last page.

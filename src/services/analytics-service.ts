@@ -139,12 +139,16 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   ai_feature: new Set(['rewrite', 'annotation']),
   ai_quota_scope: new Set(['user', 'provider']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
+  connections_action: new Set(['select_node', 'centre', 'back', 'switch_view', 'export', 'open_paper']),
+  connections_view: new Set(['map', 'list']),
   // `reader` and `auth_prompt` are the two surfaces the light redesign added.
   // A surface that is emitted but not listed here is not an error anywhere: the
   // sanitizer drops the parameter and the event still ships, so the event
   // arrives stripped of the one field that says where it happened. Adding a
-  // screen means adding it here in the same commit.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
+  // screen means adding it here in the same commit. `connections` is a paper
+  // opened from another paper's citation graph, and `similar` a card in the
+  // Similar papers layer.
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
 });
 
 const PAPER_DETAIL = { paper_id: 'identifier' };
@@ -208,6 +212,12 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
+  // A card's Connections (the citation graph) and Similar papers, counted
+  // apart: opening one, then what the reader does in the graph. Which paper is
+  // not sent; `graph_available` says whether it has a DOI to draw a graph from.
+  connections_open: { surface: 'surface', graph_available: 'boolean' },
+  connections_interact: { action: 'connections_action', view: 'connections_view' },
+  similar_open: { surface: 'surface' },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;

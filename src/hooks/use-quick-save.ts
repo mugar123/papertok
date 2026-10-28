@@ -46,7 +46,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
     [],
   );
 
-  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean) => {
+  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean, saveSurface: string) => {
     if (auth.currentUser?.uid !== user?.uid) return;
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
@@ -74,18 +74,20 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
         });
       },
       onSaved: () => {
-        if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'add', surface, paper_id: paper.id });
+        if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'add', surface: saveSurface, paper_id: paper.id });
       },
     });
-  }, [interactionIdFor, language, surface, trackEvent, user]);
+  }, [interactionIdFor, language, trackEvent, user]);
 
-  const handleSaveToList = useCallback((paper: Paper) => {
+  // A card may report a surface of its own: the paper opened from another
+  // card's Connections reports `connections`, not the host's surface.
+  const handleSaveToList = useCallback((paper: Paper, saveSurface: string = surface) => {
     const id = interactionIdFor(paper)!;
     toast.dismiss(pickerUndoToastId(paper.id));
     return oneAtATime(id, async () => {
       if (!savedPaperIds.has(id)) {
         try {
-          await restoreSave(paper, [], true);
+          await restoreSave(paper, [], true, saveSurface);
           void markActivation();
           toast.success('Saved to Read later', {
             action: { label: 'Add to list', onClick: () => onSaveToList(paper) },
@@ -118,7 +120,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
             await markSaved(paper);
           },
           onRemoved: () => {
-            if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface, paper_id: paper.id });
+            if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface: saveSurface, paper_id: paper.id });
           },
         });
         if (!held) {
@@ -134,7 +136,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
       toast('Removed from your saved papers', {
         action: {
           label: 'Undo',
-          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater)).catch(() => toast.error('Could not save this paper')); },
+          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater, saveSurface)).catch(() => toast.error('Could not save this paper')); },
         },
       });
     });
