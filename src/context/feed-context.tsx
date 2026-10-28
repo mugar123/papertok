@@ -33,20 +33,23 @@ export interface FeedContextValue {
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
-  toggleLike: (paper: Paper) => Promise<void>;
+  // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
+  // own (PaperCard's `analyticsSurface`). Only a For You card's ('feed') counts
+  // toward the share of notable cards (forYouCardNotable).
+  toggleLike: (paper: Paper, surface?: string) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
-  markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
   toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
-  trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
-  trackPdfOpened: (paper: Paper) => Promise<void>;
-  trackSkip: (paper: Paper) => Promise<void>;
-  trackSkips: (papers: Paper[]) => Promise<void>;
+  trackViewTime: (paper: Paper, seconds: number, surface?: string) => Promise<void>;
+  trackPdfOpened: (paper: Paper, surface?: string) => Promise<void>;
+  trackSkip: (paper: Paper, surface?: string) => Promise<void>;
+  trackSkips: (papers: Paper[], surface?: string) => Promise<void>;
   trackPdfBounce: (paper: Paper) => Promise<void>;
 }
 
@@ -370,7 +373,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     });
   }, [trackEvent]);
 
-  const feedCardNotable = useCallback((paper: Pick<Paper, 'id' | '_notable'>) => forYouCardNotable(papersRef.current, paper), []);
+  const feedCardNotable = useCallback((paper: Pick<Paper, 'id' | '_notable'>, surface: string | undefined) => forYouCardNotable(papersRef.current, paper, surface), []);
 
   // The paper, when there is one, lends the event its OpenAlex concepts and
   // authors, its area and its date. Called before the re-rank it feeds, so
@@ -1786,7 +1789,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, []);
 
-  const toggleLike = useCallback(async (paperInput: Paper) => {
+  const toggleLike = useCallback(async (paperInput: Paper, surface?: string) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
@@ -1808,7 +1811,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       paperId: paper.id,
       kind: isCurrentlyLiked ? 'unlike' : 'like',
       category: paper.primaryCategory,
-      notable: feedCardNotable(paperInput),
+      notable: feedCardNotable(paperInput, surface),
     }, paper);
     setLikedPaperIds(newLiked);
     reRankFeed(paper.id);
@@ -1960,7 +1963,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, recordProfileEvent, user?.uid]);
 
-  const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
+  const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number, surface?: string) => {
     const userId = user?.uid;
     if (timeInSeconds < 1) return;
     markPaperViewed(paper.id, userId);
@@ -1980,7 +1983,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       kind: 'viewTime',
       category: paper.primaryCategory,
       viewTime: timeInSeconds,
-      notable: feedCardNotable(paper),
+      notable: feedCardNotable(paper, surface),
     }, paper);
     // A long read moves the account's lean (interaction-profile.ts). It no
     // longer walks the citation network: that was an OpenAlex call for a
@@ -2007,7 +2010,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, feedCardNotable, user?.uid]);
 
-  const trackPdfOpened = useCallback(async (paper: Paper) => {
+  const trackPdfOpened = useCallback(async (paper: Paper, surface?: string) => {
     const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
@@ -2017,7 +2020,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       paperId: paper.id,
       kind: 'openedPdf',
       category: paper.primaryCategory,
-      notable: feedCardNotable(paper),
+      notable: feedCardNotable(paper, surface),
     }, paper);
     reRankFeed(paper.id);
 
@@ -2037,7 +2040,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
 
-  const trackSkips = useCallback(async (papersToSkip: Paper[]) => {
+  const trackSkips = useCallback(async (papersToSkip: Paper[], surface?: string) => {
     const userId = user?.uid;
     const skippedPapers = dedupeInteractionPapers(papersToSkip);
     if (skippedPapers.length === 0) return;
@@ -2054,7 +2057,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         kind: 'skip',
         category: paper.primaryCategory,
         timestamp,
-        notable: feedCardNotable(paper),
+        notable: feedCardNotable(paper, surface),
       }, paper);
     });
     // Off the snap path, same as trackViewTime: a fling across several cards
@@ -2084,7 +2087,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, feedCardNotable, user?.uid]);
 
-  const trackSkip = useCallback((paper: Paper) => trackSkips([paper]), [trackSkips]);
+  const trackSkip = useCallback((paper: Paper, surface?: string) => trackSkips([paper], surface), [trackSkips]);
 
   const trackPdfBounce = useCallback(async (paper: Paper) => {
     const userId = user?.uid;
@@ -2112,7 +2115,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
+  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
@@ -2137,7 +2140,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       paperId,
       kind: 'save',
       category: paper?.primaryCategory,
-      notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput),
+      notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput, options?.surface),
     }, paper);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);

@@ -17,11 +17,15 @@ export function corpusOrder(lean: number) {
 /**
  * Whether `paper` is a notable or another card of the For You list `cards`,
  * for a view, a skip, a like, a save or an opened PDF to count toward its kind
- * (sampleNotableEvery). A notable card the list no longer holds, such as one
- * the reader dismissed, is still notable. Undefined for another paper off that
- * list, such as a Following card or a library row, which counts toward neither.
+ * (sampleNotableEvery). `surface` is the card's own (PaperCard's
+ * `analyticsSurface`): only For You's cards report 'feed'. A notable card the
+ * list no longer holds, such as one the reader dismissed, is still notable.
+ * Undefined for any other event, such as a Following card, a library row, a
+ * search result or a paper opened from a card's Connections, even when the For
+ * You list holds the same paper: it counts toward neither kind.
  */
-export function forYouCardNotable(cards: ReadonlyArray<Pick<Paper, 'id' | '_notable'>>, paper: Pick<Paper, 'id' | '_notable'>) {
+export function forYouCardNotable(cards: ReadonlyArray<Pick<Paper, 'id' | '_notable'>>, paper: Pick<Paper, 'id' | '_notable'>, surface: string | undefined) {
+  if (surface !== 'feed') return undefined;
   const card = cards.find(listed => listed.id === paper.id);
   if (card) return card._notable === true;
   return paper._notable === true ? true : undefined;

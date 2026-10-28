@@ -58,7 +58,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
       issued: user
         ? setDoc(savedPaperDocRef(user.uid, paper.id), copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())), { merge: true })
         : null,
-      mark: () => latest.markSaved(paper, { throwOnError: true }),
+      mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface }),
       unmark: async () => {
         if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper);
       },
@@ -81,7 +81,9 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
   }, [interactionIdFor, language, trackEvent, user]);
 
   // A card may report a surface of its own: the paper opened from another
-  // card's Connections reports `connections`, not the host's surface.
+  // card's Connections reports `connections`, not the host's surface. The save
+  // carries it too, so that only a For You card's counts toward the share of
+  // notable cards (forYouCardNotable).
   const handleSaveToList = useCallback((paper: Paper, saveSurface: string = surface) => {
     const id = interactionIdFor(paper)!;
     toast.dismiss(pickerUndoToastId(paper.id));
@@ -118,7 +120,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
           },
           restore: async () => {
             if (auth.currentUser?.uid !== user?.uid) return;
-            await markSaved(paper);
+            await markSaved(paper, { surface: saveSurface });
           },
           onRemoved: () => {
             if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface: saveSurface, paper_id: paper.id });

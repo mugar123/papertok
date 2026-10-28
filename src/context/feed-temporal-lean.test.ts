@@ -45,13 +45,35 @@ test('a guest\'s likes, saves and long reads of other old papers move their lean
 
 test('a card counts as notable or recent only while it is a For You card, and a dismissed notable card stays notable', () => {
   const forYou = [{ id: 'regular', _notable: false }, { id: 'notable', _notable: true }, { id: 'plain' }];
-  assert.equal(forYouCardNotable(forYou, { id: 'notable' }), true);
-  assert.equal(forYouCardNotable(forYou, { id: 'regular' }), false);
-  assert.equal(forYouCardNotable(forYou, { id: 'plain' }), false);
-  // A Following card, a library row or a search result.
-  assert.equal(forYouCardNotable(forYou, { id: 'elsewhere' }), undefined);
+  assert.equal(forYouCardNotable(forYou, { id: 'notable' }, 'feed'), true);
+  assert.equal(forYouCardNotable(forYou, { id: 'regular' }, 'feed'), false);
+  assert.equal(forYouCardNotable(forYou, { id: 'plain' }, 'feed'), false);
   // A notable card the reader dismissed has left the list.
-  assert.equal(forYouCardNotable(forYou, { id: 'dismissed', _notable: true }), true);
+  assert.equal(forYouCardNotable(forYou, { id: 'dismissed', _notable: true }, 'feed'), true);
+  // The same papers on a Following card, a library row, a search result or a
+  // card's Connections, or with no surface at all.
+  for (const surface of ['following', 'lists', 'search', 'connections', 'similar', undefined]) {
+    assert.deepEqual(['notable', 'regular', 'elsewhere'].map(id => forYouCardNotable(forYou, { id }, surface)), [undefined, undefined, undefined], String(surface));
+  }
+});
+
+// The verifier's case on PR #419: For You holds an old notable paper the
+// reader has not reached, and they read and like a copy of it from Search.
+test('reading and liking from Search a paper For You holds as notable counts no notable card and moves the lean as any old paper does', () => {
+  const forYou = [{ id: 'recent-card', _notable: false }, { id: 'old-classic', _notable: true }];
+  const readAndLike = (surface: string) => {
+    const profile = createEmptyInteractionProfile();
+    for (const event of [{ kind: 'viewTime', viewTime: 12 }, { kind: 'like' }]) {
+      recordInteractionEvent(profile, {
+        paperId: 'old-classic', ...event, category: 'cs.LG', published: '2012-05-01T00:00:00.000Z',
+        notable: forYouCardNotable(forYou, { id: 'old-classic' }, surface),
+      }, NOW);
+    }
+    const { notable, recent, lean } = readProfileSignals(profile, NOW).temporal;
+    return { notable, recent, lean: Math.round(lean * 100) / 100 };
+  };
+  assert.deepEqual(readAndLike('search'), { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: -0.15 });
+  assert.deepEqual(readAndLike('feed'), { notable: { shown: 1, engaged: 1 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
 });
 
 // A seeded source, so the samples below are the same on every run.

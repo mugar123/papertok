@@ -7,13 +7,18 @@ export interface PaperCardProps {
   isLiked?: boolean;
   isSaved?: boolean;
   isRead?: boolean;
-  onLike?: (paper: Paper) => void | Promise<void>;
+  /**
+   * `surface` on a like, a view, a skip and an opened PDF is the card's own
+   * (`analyticsSurface`), for the feed to tell a For You card from the same
+   * paper elsewhere (forYouCardNotable).
+   */
+  onLike?: (paper: Paper, surface?: string) => void | Promise<void>;
   onNotInterested?: (paper: Paper) => void | Promise<void>;
   onMarkAsRead?: (paper: Paper) => void | Promise<void>;
   onUnmarkAsRead?: (paperId: string) => void | Promise<void>;
-  trackViewTime?: (paper: Paper, seconds: number) => void | Promise<void>;
-  trackSkip?: (paper: Paper) => void | Promise<void>;
-  onOpenPdf?: (paper: Paper) => void | Promise<void>;
+  trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
+  trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper, surface?: string) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
@@ -614,8 +619,8 @@ const PaperCard = memo(function PaperCard({
     // Every stretch on screen is reported, skips included, so the time per
     // paper averages over what was seen and not only over what was read.
     const reportViewTime = (seconds: number) => {
-      if (seconds >= 1.0) void trackViewTime(paper, seconds);
-      else if (seconds > 0.1) void trackSkip(paper);
+      if (seconds >= 1.0) void trackViewTime(paper, seconds, analyticsSurface);
+      else if (seconds > 0.1) void trackSkip(paper, analyticsSurface);
       if (seconds > 0.1) {
         void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
       }
@@ -1344,7 +1349,7 @@ const PaperCard = memo(function PaperCard({
           lastTap.current = now;
           return;
         }
-        void onLike(paper);
+        void onLike(paper, analyticsSurface);
         // One timer per card: a second double tap restarts it instead of
         // letting the first one cut the new heart short.
         clearTimeout(heartTimer.current!);
@@ -1353,7 +1358,7 @@ const PaperCard = memo(function PaperCard({
       }
     }
     lastTap.current = now;
-  }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
+  }, [analyticsSurface, isLiked, onLike, paper, publicMode, requireAuthentication]);
 
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
@@ -1367,7 +1372,7 @@ const PaperCard = memo(function PaperCard({
     }
     // The button is its own feedback (the icon fills); the big heart is the
     // double tap's, not a second celebration on every like (2026-10-15).
-    void onLike(paper);
+    void onLike(paper, analyticsSurface);
     pulse(likeIconRef.current, liking);
   };
 
@@ -1535,7 +1540,7 @@ const PaperCard = memo(function PaperCard({
     // este botón ofrece -- el clic terminaba ahí, en silencio.
     const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, libraryAccess), {
       inline: (target) => {
-        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
+        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true }, analyticsSurface);
         return true;
       },
       external: (url) => openExternalUrl(url),

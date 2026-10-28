@@ -281,9 +281,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const showEndCard = Boolean(endCard) && papers.length > 0 && !loading && !hasMore;
   const prefersReducedMotion = useReducedMotion();
 
-  const handleViewTime = useCallback((paper: Paper, seconds: number) => {
+  const handleViewTime = useCallback((paper: Paper, seconds: number, surface?: string) => {
     source?.onPaperViewed?.(paper);
-    void trackViewTime(paper, seconds);
+    void trackViewTime(paper, seconds, surface);
   }, [source, trackViewTime]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   // El scroller, además de en el ref: el oyente del hover (más abajo) tiene
@@ -442,7 +442,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const initialLoadStartedRef = useRef(false);
   const scrollIdleTimerRef = useRef<number | null>(null);
   const skipFlushTimerRef = useRef<number | null>(null);
-  const pendingSkippedPapersRef = useRef(new Map<string, Paper>());
+  // Each skipped paper with the surface of the card it was skipped on: a For
+  // You card's or a paper opened from its Connections.
+  const pendingSkippedPapersRef = useRef(new Map<string, { paper: Paper; surface?: string }>());
   // The card on its way out of the feed, and the removal waiting for it to
   // get there. Only ever one: a second skip lands the first one first.
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
@@ -462,15 +464,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
 
   const flushPendingSkips = useCallback(() => {
-    const skippedPapers = Array.from(pendingSkippedPapersRef.current.values());
+    const skipped = Array.from(pendingSkippedPapersRef.current.values());
     pendingSkippedPapersRef.current.clear();
-    if (skippedPapers.length === 0) return;
+    if (skipped.length === 0) return;
 
     if (trackSkippedPapers) {
-      void trackSkippedPapers(skippedPapers);
+      for (const surface of new Set(skipped.map(entry => entry.surface))) {
+        void trackSkippedPapers(skipped.filter(entry => entry.surface === surface).map(entry => entry.paper), surface);
+      }
       return;
     }
-    skippedPapers.forEach((paper) => void trackSkip(paper));
+    skipped.forEach(({ paper, surface }) => void trackSkip(paper, surface));
   }, [trackSkip, trackSkippedPapers]);
 
   const schedulePendingSkipFlush = useCallback(() => {
@@ -599,10 +603,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     });
   }, [beginSkipExit, handleUndoNotInterested, markNotInterested]);
 
-  const handleSkip = useCallback((paper: Paper) => {
+  const handleSkip = useCallback((paper: Paper, surface?: string) => {
     source?.onPaperViewed?.(paper);
     if (!paper?.id) return;
-    pendingSkippedPapersRef.current.set(paper.id, paper);
+    pendingSkippedPapersRef.current.set(paper.id, { paper, surface });
     schedulePendingSkipFlush();
   }, [schedulePendingSkipFlush, source]);
 
@@ -939,8 +943,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => clearTimeout(t);
   }, [doneHold, pillOnScreen]);
 
-  const handleOpenPdf = useCallback((paper: Paper) => {
-    void trackPdfOpened(paper);
+  const handleOpenPdf = useCallback((paper: Paper, surface?: string) => {
+    void trackPdfOpened(paper, surface);
     onOpenPdf!(paper);
   }, [onOpenPdf, trackPdfOpened]);
 
