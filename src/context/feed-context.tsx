@@ -127,7 +127,7 @@ import {
   preserveFeedAbstracts,
 } from '../utils/feed-enrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
-import { classifyFeedPublications, dropUnreachedPublications, dropUnreachedRetractions } from '../services/feed-publication-service.ts';
+import { classifyFeedPublications, dropUnreachedPublications, withLateAnswer } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
@@ -725,12 +725,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
-      const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
-      update(current => dropUnreachedRetractions(enrich(current), visiblePaperIdRef.current));
+      update(current => withLateAnswer(current, mergeOpenAlexEnrichment(current, records), loading, visiblePaperIdRef.current));
       // Out here, not in the update: React may run a state updater twice.
       if (feedSessionId.current !== sessionId) return;
       const shown = papersRef.current;
-      keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
+      keepLateTopicsRef.current(cardsGivenTopic(shown, mergeOpenAlexEnrichment(shown, records)));
     });
     void iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;
@@ -739,7 +738,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
-      update(current => dropUnreachedRetractions(preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading), visiblePaperIdRef.current));
+      update(current => withLateAnswer(current, mergeEuropePmcEnrichment(current, records), loading, visiblePaperIdRef.current));
     });
     void recovery?.then((records) => {
       if (records.length === 0) return;

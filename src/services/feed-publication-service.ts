@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { keepNotablePlaces } from '../utils/feed-enrichment.ts';
+import { keepNotablePlaces, preserveFeedAbstracts } from '../utils/feed-enrichment.ts';
 import { normalizeDoi } from '../utils/public-navigation.ts';
 import { isFeedPublication, withCrossrefType } from './feed-publication-rules.ts';
 
@@ -42,12 +42,16 @@ export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[],
 }
 
 /**
- * Removes the cards a late OpenAlex or Europe PMC record has called retracted
- * (`PaperBuilder.merge` keeps a retraction whichever record states it), by
- * the rule a confirmed book leaves by: only cards the reader has not reached.
+ * A restored feed's cards after a late OpenAlex or Europe PMC answer, given
+ * `merged`, the cards with that answer merged in. Only a card in `loading`
+ * takes a text (`preserveFeedAbstracts`), and the cards the answer calls
+ * retracted (`PaperBuilder.merge` keeps a retraction whichever record states
+ * it) leave by the rule a confirmed book leaves by: only those the reader has
+ * not reached.
  */
-export function dropUnreachedRetractions<T extends Partial<Paper>>(papers: T[], visiblePaperId: string | null) {
-  return dropUnreachedPublications(papers, papers.filter(paper => paper.publicationStatus === 'retracted'), visiblePaperId);
+export function withLateAnswer(current: Paper[], merged: Paper[], loading: ReadonlySet<string>, visiblePaperId: string | null) {
+  const cards = preserveFeedAbstracts(current, merged, loading);
+  return dropUnreachedPublications(cards, cards.filter(paper => paper.publicationStatus === 'retracted'), visiblePaperId);
 }
 
 // Results outlive the tab, so a reopened app does not ask Crossref again for

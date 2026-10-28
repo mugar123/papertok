@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
-import { classifyFeedPublications, dropUnreachedPublications, dropUnreachedRetractions } from './feed-publication-service.ts';
+import { classifyFeedPublications, dropUnreachedPublications, withLateAnswer } from './feed-publication-service.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europe-pmc-records.ts';
 import { mergeOpenAlexEnrichment, placeNotableCards } from '../utils/feed-enrichment.ts';
 import { isFeedPublication } from './feed-publication-rules.ts';
@@ -378,22 +378,29 @@ test('a card marked retracted is not shown, whatever its type, and the same card
   }
 });
 
-// A queued card can learn it is retracted after it was listed: Europe PMC's
-// record carries a `Retracted Publication` type PubMed added since the
-// Worker's last refresh, or OpenAlex's says `is_retracted`. The card leaves
-// if the reader has not reached it, as a confirmed book does.
-test('a late Europe PMC or OpenAlex record that calls a queued card retracted takes it out, and the reached cards stay', () => {
+// A card of a restored feed can learn it is retracted after it was listed:
+// Europe PMC's record carries a `Retracted Publication` type PubMed added
+// since the Worker's last refresh, or OpenAlex's says `is_retracted`. The card
+// leaves if the reader has not reached it, as a confirmed book does, and the
+// answer gives a text only to a card that waits for one.
+test('a late Europe PMC or OpenAlex answer that calls a restored card retracted takes it out, and the reached cards stay', () => {
   const pubmed = (index: number): Paper => ({ ...paper(`10.5555/pubmed-${index}`), id: `pmid:${4280000 + index}`, pmid: String(4280000 + index), sources: { primary: 'pubmed', enrichedBy: [] } });
   const shown = [...Array.from({ length: 6 }, (_, index) => pubmed(index)), { ...paper('10.5555/openalex'), id: 'openalex:W4280000099' }];
-  const retracted = (index: number) => [shown[index].pmid!, mapEuropePmcResult({ id: shown[index].pmid, pmid: shown[index].pmid, pubTypeList: { pubType: ['Retracted Publication', 'Journal Article'] } })!] as const;
+  const record = (index: number, fields: Record<string, unknown>) => [shown[index].pmid!, mapEuropePmcResult({ id: shown[index].pmid, pmid: shown[index].pmid, ...fields })!] as const;
+  const retracted = (index: number) => record(index, { pubTypeList: { pubType: ['Retracted Publication', 'Journal Article'] } });
+  const abstractText = 'Background: a cohort of 1,200 adults was followed for ten years to measure how sleep changes blood pressure.';
   const visible = shown[1].id;
-  // Europe PMC answers for the reader's card, the one after it and one further on.
-  const records = new Map([retracted(1), retracted(2), retracted(4)]);
-  const merged = mergeEuropePmcEnrichment(shown, records);
-  assert.deepEqual(dropUnreachedRetractions(merged, visible).map(work => work.id), shown.filter((_, index) => index !== 4).map(work => work.id));
+  // Europe PMC answers for the reader's card, the one after it and one further
+  // on, and brings an abstract for two cards, one of which waits for it.
+  const records = new Map([retracted(1), retracted(2), retracted(4), record(3, { abstractText }), record(5, { abstractText })]);
+  const loading = new Set([shown[3].id]);
+  const kept = withLateAnswer(shown, mergeEuropePmcEnrichment(shown, records), loading, visible);
+  assert.deepEqual(kept.map(work => work.id), shown.filter((_, index) => index !== 4).map(work => work.id));
+  assert.deepEqual(kept.map(work => work.publicationStatus === 'retracted'), [false, true, true, false, false, false]);
+  assert.deepEqual(kept.map(work => work.abstract === abstractText), [false, false, false, true, false, false]);
   // OpenAlex answers for the last card.
   const fromOpenAlex = mergeOpenAlexEnrichment(shown, { 'openalex:W4280000099': { publicationStatus: 'retracted' } });
-  assert.deepEqual(dropUnreachedRetractions(fromOpenAlex, visible).map(work => work.id), shown.slice(0, 6).map(work => work.id));
-  // An answer that marks nothing leaves the list as it was.
-  assert.equal(dropUnreachedRetractions(shown, visible), shown);
+  assert.deepEqual(withLateAnswer(shown, fromOpenAlex, new Set(), visible).map(work => work.id), shown.slice(0, 6).map(work => work.id));
+  // An answer that changes nothing leaves the list as it was.
+  assert.equal(withLateAnswer(shown, shown, new Set(), visible), shown);
 });
