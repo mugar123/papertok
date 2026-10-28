@@ -1,4 +1,4 @@
-import type { PaperShareCard, ShareCard } from './share-card.ts';
+import type { CardNode, PaperShareCard, ShareCard } from './share-card.ts';
 
 // Each import below is a module wrangler bundles (`[[rules]]` in wrangler.toml):
 // a Worker may not compile WebAssembly from bytes at run time, so the two
@@ -51,7 +51,7 @@ export function renderPaperCard(card: PaperShareCard) {
   return draw(paperCardTree(card));
 }
 
-async function draw(cardTree: ReturnType<typeof shareCardTree>) {
+async function draw(cardTree: CardNode) {
   // Once per isolate. Neither engine can be started a second time (resvg
   // refuses, satori keeps its first answer), so an isolate whose start failed
   // draws no card until it is replaced; each card it is asked for falls back

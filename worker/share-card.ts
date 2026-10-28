@@ -219,7 +219,7 @@ export function paperShareCardFor(paper: ShareCardPaper): PaperShareCard | null 
 // ------------------------------------------------------------------ layout
 
 type Style = Record<string, string | number>;
-interface CardNode { type: string; props: Record<string, unknown> & { style?: Style; children?: unknown } }
+export interface CardNode { type: string; props: Record<string, unknown> & { style?: Style; children?: unknown } }
 
 function h(type: string, props: Record<string, unknown>, ...children: unknown[]): CardNode {
   const kids = children.filter(child => child !== null && child !== undefined && child !== false);
@@ -234,6 +234,33 @@ function svgPath(path: string, viewBox: string, style: Style, fill = INK, extra:
 function star(left: number, top: number, size: number, spot: boolean) {
   return svgPath(STAR_PATH, '-1 -1 26 26', { position: 'absolute', left, top, width: size, height: size },
     spot ? YELLOW : INK, spot ? { stroke: INK, strokeWidth: 1, strokeLinejoin: 'round' } : {});
+}
+
+// The sheet every card is drawn on: paper inside an ink frame.
+function sheet(...children: unknown[]) {
+  return h('div', {
+    style: {
+      display: 'flex', position: 'relative', width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT,
+      background: PAPER, color: INK, fontFamily: 'Newsreader Text',
+    },
+  },
+  h('div', { style: { position: 'absolute', left: 22, top: 22, right: 22, bottom: 22, border: `2px solid ${INK}`, borderRadius: 6 } }),
+  ...children);
+}
+
+function kicker(text: string, style: Style = {}) {
+  return h('div', {
+    style: {
+      display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono', fontSize: 18,
+      letterSpacing: 3, textTransform: 'uppercase', color: INK_SECONDARY, ...style,
+    },
+  }, h('div', { style: { width: 34, height: 2, background: INK, marginRight: 12 } }), text);
+}
+
+function siteLine(style: Style = {}) {
+  return h('div', {
+    style: { display: 'flex', fontFamily: 'IBM Plex Mono', fontSize: 15, letterSpacing: 2.5, textTransform: 'uppercase', color: INK_SECONDARY, ...style },
+  }, 'papertok.app');
 }
 
 // The type's etching sits behind the disc and spills out of it.
@@ -265,13 +292,7 @@ function avatar(card: ShareCard, photo: string | null | undefined) {
 /** The card as a satori tree, with its etching and picture already as data URLs. */
 export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNode {
   const art = ART_LAYOUT[card.art];
-  return h('div', {
-    style: {
-      display: 'flex', position: 'relative', width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT,
-      background: PAPER, color: INK, fontFamily: 'Newsreader Text',
-    },
-  },
-  h('div', { style: { position: 'absolute', left: 22, top: 22, right: 22, bottom: 22, border: `2px solid ${INK}`, borderRadius: 6 } }),
+  return sheet(
   // Inside the frame, whatever the etching's rotation.
   h('div', { style: { position: 'absolute', left: 24, top: 24, right: 24, bottom: 24, display: 'flex', overflow: 'hidden' } },
     h('img', {
@@ -306,12 +327,7 @@ export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNod
       'Paper',
       h('span', { style: { borderBottom: `9px solid ${YELLOW}`, paddingBottom: 0, marginBottom: -6 } }, 'Tok'))),
   h('div', { style: { display: 'flex', flexDirection: 'column' } },
-    h('div', {
-      style: {
-        display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono', fontSize: 18,
-        letterSpacing: 3, textTransform: 'uppercase', color: INK_SECONDARY, marginBottom: 16,
-      },
-    }, h('div', { style: { width: 34, height: 2, background: INK, marginRight: 12 } }), card.kicker),
+    kicker(card.kicker, { marginBottom: 16 }),
     h('div', {
       style: {
         display: 'flex', fontFamily: 'Newsreader Display', fontSize: nameSize(card.name),
@@ -329,9 +345,7 @@ export function shareCardTree(card: ShareCard, assets: ShareCardAssets): CardNod
         },
       }, card.facts.join('  ·  '))
       : null),
-  h('div', {
-    style: { display: 'flex', fontFamily: 'IBM Plex Mono', fontSize: 15, letterSpacing: 2.5, textTransform: 'uppercase', color: INK_SECONDARY },
-  }, 'papertok.app')));
+  siteLine()));
 }
 
 function titleSize(title: string) {
@@ -343,14 +357,7 @@ function titleSize(title: string) {
 
 /** A paper's card as a satori tree. The stars keep to the right margin, clear of the text. */
 export function paperCardTree(card: PaperShareCard): CardNode {
-  const mono = { fontFamily: 'IBM Plex Mono', letterSpacing: 2.5, textTransform: 'uppercase', color: INK_SECONDARY };
-  return h('div', {
-    style: {
-      display: 'flex', position: 'relative', width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT,
-      background: PAPER, color: INK, fontFamily: 'Newsreader Text',
-    },
-  },
-  h('div', { style: { position: 'absolute', left: 22, top: 22, right: 22, bottom: 22, border: `2px solid ${INK}`, borderRadius: 6 } }),
+  return sheet(
   star(1104, 64, 28, true),
   star(1062, 52, 12, false),
   star(1134, 224, 12, false),
@@ -363,8 +370,7 @@ export function paperCardTree(card: PaperShareCard): CardNode {
     },
   },
   h('div', { style: { display: 'flex', flexDirection: 'column' } },
-    h('div', { style: { ...mono, display: 'flex', alignItems: 'center', fontSize: 18, letterSpacing: 3 } },
-      h('div', { style: { width: 34, height: 2, background: INK, marginRight: 12 } }), card.venue || 'Paper'),
+    kicker(card.venue || 'Paper'),
     h('div', {
       style: {
         display: 'block', marginTop: 22, fontFamily: 'Newsreader Display', fontSize: titleSize(card.title),
@@ -375,8 +381,6 @@ export function paperCardTree(card: PaperShareCard): CardNode {
     card.authors
       ? h('div', { style: { display: 'block', fontSize: 28, color: INK_SECONDARY, lineClamp: 1 } }, card.authors)
       : null,
-    h('div', {
-      style: { ...mono, display: 'flex', fontSize: 15, marginTop: 24, paddingTop: 20, borderTop: `1.5px solid ${INK_SECONDARY}` },
-    }, 'papertok.app')),
+    siteLine({ marginTop: 24, paddingTop: 20, borderTop: `1.5px solid ${INK_SECONDARY}` })),
   ));
 }

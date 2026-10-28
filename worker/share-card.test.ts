@@ -111,7 +111,6 @@ test('a first author too long for the line is clipped before "et al.", not with 
   const consortium = 'The International Consortium for Long-Term Observational Studies of Coastal Ecosystems';
   const shared = paperShareCardFor({ title: 'A title', authors: [consortium, 'Jane Doe'] })!;
   assert.equal(shared.authors, 'The International Consortium for Long-Term Observational S… et al.');
-  assert.ok(shared.authors.length <= 66, 'the line still fits the card');
   const alone = paperShareCardFor({ title: 'A title', authors: [consortium] })!;
   assert.equal(alone.authors, 'The International Consortium for Long-Term Observational Studies…', 'a sole author claims no "et al."');
 });
