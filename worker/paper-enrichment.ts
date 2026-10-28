@@ -265,12 +265,6 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
       ...papers.filter((_, index) => asksOpenAlex[index]).map(getOpenAlexEnrichmentId),
       ...journalDois.filter(Boolean).map(doi => `doi:${doi}`),
     ])]);
-    papers.forEach((paper, index) => {
-      const id = getOpenAlexEnrichmentId(paper);
-      if (journalDois[index] && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' && openAlex[id]?.publicationStatus !== 'retracted') {
-        openAlex[id] = { ...openAlex[id], publicationStatus: 'retracted' };
-      }
-    });
   } catch (error) {
     if (!(error instanceof OpenAlexUnavailable)) throw error;
     console.warn('OpenAlex enrichment stopped for this run', error.message);
@@ -282,6 +276,11 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     pmids.length ? europePmcRecords(pmids).catch(() => new Map()) : new Map(),
   ]);
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
+  // Set after the merge rather than merged as OpenAlex's record: a paper
+  // OpenAlex does not know by its arXiv id has had no OpenAlex enrichment, so
+  // it does not list OpenAlex in `sources.enrichedBy`, and it counts a miss.
+  enriched = enriched.map((paper, index): Paper => (journalDois[index] && paper.publicationStatus !== 'retracted'
+    && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' ? { ...paper, publicationStatus: 'retracted' } : paper));
   enriched = mergeICiteEnrichment(enriched, iCite);
   enriched = mergeEuropePmcEnrichment(enriched, europePmc);
   // The abstract of an OpenAlex or PubMed paper listed without one, from the
