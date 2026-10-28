@@ -238,6 +238,39 @@ test('a font command with a space at the edge of its argument leaves one space',
   }
 });
 
+// The walk searched every delimiter the text lacks to its end once per formula,
+// and each level of nesting took one more pass over the text, so four times
+// the text took sixteen times as long.
+test('normalizing a text four times as long takes about four times as long', () => {
+  const fastest = (text: string) => {
+    let best = Infinity;
+    for (let run = 0; run < 3; run += 1) {
+      const started = performance.now();
+      normalizeLatexText(text);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  const nested = (depth: number, inner: string) => `${`\\textbf{a ${inner}`.repeat(depth)}x${'}'.repeat(depth)}`;
+  for (const [name, build, size] of [
+    ['wrapped formulas', (count: number) => 'a \\textbf{the $x$ value} b '.repeat(count), 1000],
+    ['macro formulas', (count: number) => 'the \\ensuremath{\\sigma} rises while \\textit{the $g$ term} grows '.repeat(count), 300],
+    ['nested wrappers', (count: number) => nested(count, ''), 2000],
+    ['nested wrappers with formulas', (count: number) => nested(count, '$x$ '), 1000],
+  ] as const) {
+    const once = fastest(build(size));
+    const fourfold = fastest(build(4 * size));
+    assert.ok(fourfold < 10 * once, `${name}: ${once.toFixed(1)} ms, four times as long ${fourfold.toFixed(1)} ms`);
+  }
+});
+
+// Each wrapper around a formula is checked against the whole text; the checks
+// share a budget a long abstract does not exhaust.
+test('an abstract with dozens of font commands around formulas unwraps every one', () => {
+  const text = 'while \\textit{the $g$ term} grows, \\textbf{term $x_i$ here} falls. '.repeat(25);
+  assert.equal(normalizeLatexText(text), 'while the $g$ term grows, term $x_i$ here falls. '.repeat(25).trim());
+});
+
 test('a font command around a formula paints its words and the formula', () => {
   assert.equal(normalizeLatexText('\\textbf{the $x$ value} rises'), 'the $x$ value rises');
 });

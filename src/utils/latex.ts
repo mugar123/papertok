@@ -200,13 +200,23 @@ function isEscaped(text: string, index: number) {
   return backslashCount % 2 === 1;
 }
 
-function findNextDelimiter(text: string, startIndex: number) {
+/**
+ * `next` keeps each delimiter's next opener for one walk, whose `startIndex`
+ * only moves forward, so a delimiter is searched for again only once the walk
+ * has passed it. Searched afresh for every formula, a delimiter the text lacks
+ * was looked for to the end of the text each time.
+ */
+function findNextDelimiter(text: string, startIndex: number, next: number[]) {
   let nextMatch: { index: number; delimiter: typeof LATEX_DELIMITERS[number] } | null = null;
 
-  for (const delimiter of LATEX_DELIMITERS) {
-    let index = text.indexOf(delimiter.left, startIndex);
-    while (index !== -1 && isEscaped(text, index)) {
-      index = text.indexOf(delimiter.left, index + delimiter.left.length);
+  for (const [position, delimiter] of LATEX_DELIMITERS.entries()) {
+    let index: number | undefined = next[position];
+    if (index === undefined || (index !== -1 && index < startIndex)) {
+      index = text.indexOf(delimiter.left, startIndex);
+      while (index !== -1 && isEscaped(text, index)) {
+        index = text.indexOf(delimiter.left, index + delimiter.left.length);
+      }
+      next[position] = index;
     }
 
     if (
@@ -304,8 +314,9 @@ const TEXT_FORMATTING = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{((?:\\\\[\\s\\S]|
 /** Where the delimiter walk reads a formula in `text`, delimiters included, in order. */
 function formulaSpans(text: string) {
   const spans: [number, number][] = [];
+  const next: number[] = [];
   for (let cursor = 0; cursor < text.length;) {
-    const match = findNextDelimiter(text, cursor);
+    const match = findNextDelimiter(text, cursor, next);
     if (!match) break;
     const contentEnd = findDelimiterEnd(text, match.delimiter, match.index + match.delimiter.left.length);
     if (contentEnd === -1) break;
@@ -324,8 +335,11 @@ const DELIMITER_STRINGS = [...new Set(LATEX_DELIMITERS.flatMap(delimiter => [del
 const LONGEST_DELIMITER = Math.max(...DELIMITER_STRINGS.map(delimiter => delimiter.length));
 // Anything an argument could hold that is, or starts, a delimiter.
 const DELIMITER_PART = /\$|\\[()[\]]|\\(?:begin|end)(?![a-zA-Z])/;
-// Wrappers that need the whole-text walk, per text; past this they stay.
-const WALK_CHECKS = 16;
+// Characters the whole-text checks may walk, per text: hundreds of checks in
+// an abstract, a few in a text a hundred times longer. Past it wrappers stay.
+const WALK_BUDGET = 500_000;
+// One pass per level of nesting; deeper wrappers stay as written.
+const NESTING_PASSES = 8;
 
 /** Whether a delimiter reads across where `before` meets `argument` or `argument` meets `after`. */
 function joinsDelimiter(before: string, argument: string, after: string) {
@@ -352,18 +366,22 @@ function joinsDelimiter(before: string, argument: string, after: string) {
  * closer sits between them. The rest are checked against the walk of the whole
  * text, not one prose run, because removing one can assemble an opener
  * (`\begin{\textbf{equation}}`) whose closer sits past a later formula. Those
- * checks are capped so a long text cannot take seconds.
+ * checks share `WALK_BUDGET` so a long text cannot take seconds, and a wrapper
+ * refused once is not checked again while its argument is unchanged.
  *
  * Each pass unwraps the outermost wrappers it can, so nested ones take a pass
- * per level. `source` maps every character of the result to its index in
- * `value`, which is what `savedHighlightSpace` aligns highlights with.
+ * per level, up to `NESTING_PASSES`. `source` maps every character of the
+ * result to its index in `value`, which is what `savedHighlightSpace` aligns
+ * highlights with.
  */
 function unwrapTextFormatting(value: string) {
   let formulas: string | undefined;
   let text = value;
   let source = Array.from(value, (character, index) => index);
-  let checks = 0;
-  for (let changed = true; changed;) {
+  let walked = 0;
+  // The argument each refused wrapper had, by where its backslash came from.
+  const refused = new Map<number, string>();
+  for (let pass = 0, changed = true; changed && pass < NESTING_PASSES; pass += 1) {
     changed = false;
     // The walk is the costly part, so a text with no wrapper left skips it.
     let spans: [number, number][] | undefined;
@@ -402,9 +420,14 @@ function unwrapTextFormatting(value: string) {
       if (unwraps && (DELIMITER_PART.test(argument) || joinsDelimiter(
         before.slice(-LONGEST_DELIMITER), argument, text.slice(end, end + LONGEST_DELIMITER),
       ))) {
-        checks += 1;
-        unwraps = checks <= WALK_CHECKS
-          && formulaWalk(output.join('') + text.slice(cursor, start) + argument + text.slice(end)) === formulas;
+        if (refused.get(source[start]) === argument) {
+          unwraps = false;
+        } else {
+          walked += outputSource.length + start - cursor + argument.length + text.length - end;
+          unwraps = walked <= WALK_BUDGET
+            && formulaWalk(output.join('') + text.slice(cursor, start) + argument + text.slice(end)) === formulas;
+          if (!unwraps) refused.set(source[start], argument);
+        }
       }
       if (!unwraps) {
         TEXT_FORMATTING.lastIndex = start + 1;
@@ -440,9 +463,10 @@ function unwrapTextFormatting(value: string) {
 function transformByMode(text: string, transformProse: (text: string) => string, transformMath: (text: string) => string) {
   let output = '';
   let cursor = 0;
+  const next: number[] = [];
 
   while (cursor < text.length) {
-    const match = findNextDelimiter(text, cursor);
+    const match = findNextDelimiter(text, cursor, next);
     if (!match) {
       output += transformProse(text.slice(cursor));
       break;
@@ -549,9 +573,10 @@ export function splitLatexText(text: unknown) {
   const normalized = normalizeLatexText(text);
   const chunks: LatexChunk[] = [];
   let cursor = 0;
+  const next: number[] = [];
 
   while (cursor < normalized.length) {
-    const match = findNextDelimiter(normalized, cursor);
+    const match = findNextDelimiter(normalized, cursor, next);
     if (!match) {
       chunks.push({ type: 'text', value: normalized.slice(cursor) });
       break;
