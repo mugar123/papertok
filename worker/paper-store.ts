@@ -1678,15 +1678,18 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
  * without likes has nothing to rank them by and gets them in this order: one
  * paper of each year in turn, rather than every paper of the newest year first
  * (ENG-166). The lanes take their turns in the order the request asks them
- * in, which is the app's ranking of the reader's interests, so the strongest
- * interest leads the first year's turns. The years start their turns from
+ * in: the app sends the reader's established interests in its ranking of
+ * them, then the areas they added since and the app has not learned yet,
+ * whatever their weight. The years start their turns from
  * successive lanes, so consecutive papers often come from different lanes
  * too. Not with one lane;
  * not from the last year of a round to the first of the next when the lane
  * count divides the years' count less two (2, 4 or 8 lanes over ten years);
  * and not where a year lacks papers of a lane, which shifts its turns. A
- * request that reorders the lanes, as the reader's interests move, can start
- * the turns again or shift them.
+ * request that asks the lanes in another order, or a different set of lanes,
+ * changes each year's first paper, so the turns can start again from the
+ * newest year: a reader whose order swaps on every load moves through the
+ * years at half the pace. The app's order moves with skips and view times.
  */
 function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidate[] {
   const byYear = new Map<string, Candidate[][]>();

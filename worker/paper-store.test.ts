@@ -1678,8 +1678,8 @@ test('a fresh load that excludes the notable cards shown before continues the ye
   assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
 });
 
-// The app asks for the categories in its ranking of the reader's interests
-// (selected ones and the affinities it learned): the strongest leads the turns.
+// The app asks for the reader's established interests in its ranking of them
+// (selected ones and the affinities it learned), then the ones added since.
 test('the notable leaves take their turns in the order the request asks them in', async () => {
   const { env } = await notableLeavesCorpus();
   for (const categories of [LEAVES, [...LEAVES].reverse()]) {
