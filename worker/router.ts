@@ -50,6 +50,7 @@ import {
   handleOpenReview,
   handleOsti,
   handlePaperFigures,
+  handleFullText,
   handlePubmed,
 } from './source-api.ts';
 
@@ -157,6 +158,7 @@ const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/enrich/icite': handleICite,
   '/resources/huggingface': handleHuggingFaceResources,
   '/resources/figures': handlePaperFigures,
+  '/resources/full-text': handleFullText,
 };
 
 export async function handleRequest(request: Request, env: WorkerEnv, context?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {

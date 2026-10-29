@@ -1,0 +1,177 @@
+/* The viewer's text view: a paper's full text in the reader's type. */
+.ft-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-primary);
+}
+.ft-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.ft-article {
+  max-width: 680px;
+  margin-inline: auto;
+  padding: var(--space-8) var(--space-4) var(--space-16);
+  color: var(--text-primary);
+}
+
+.ft-kicker {
+  margin: 0 0 var(--space-3);
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.ft-kicker a { color: inherit; }
+
+.ft-warning {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.ft-abstract { margin-bottom: var(--space-8); padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+
+.ft-section {
+  margin: var(--space-10) 0 var(--space-4);
+  font: 600 1.35rem/1.25 var(--font-serif);
+}
+.ft-subsection {
+  margin: var(--space-6) 0 var(--space-3);
+  font: 600 1.1rem/1.3 var(--font-serif);
+}
+.ft-label {
+  margin-right: var(--space-2);
+  font: 500 0.8em/1 var(--font-mono);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ft-p, .ft-list {
+  margin: 0 0 var(--space-4);
+  font: 1.0625rem/1.72 var(--font-serif);
+  overflow-wrap: anywhere;
+}
+.ft-list { padding-left: var(--space-6); }
+
+.ft-article a { color: var(--text-primary); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+.ft-article a:focus-visible,
+.ft-article [tabindex]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ft-article code { font: 0.9em var(--font-mono); }
+
+.ft-equation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+  overflow-x: auto;
+}
+.ft-equation .ft-math, .ft-equation .ft-formula-image, .ft-equation .ft-tex { flex: 1; text-align: center; }
+.ft-formula-image { display: inline-block; max-height: 2.4em; vertical-align: middle; }
+.ft-equation .ft-formula-image { max-height: none; max-width: 100%; }
+.ft-tex { font: 0.85em var(--font-mono); color: var(--text-secondary); overflow-wrap: anywhere; }
+
+.ft-figure, .ft-table { margin: var(--space-6) 0; }
+.ft-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-figure-plate);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.ft-figure figcaption, .ft-table figcaption {
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* A wide table takes the width it needs beyond the 680px text column, up to
+   1040px, centred on it; a long one scrolls inside with its header row kept. */
+.ft-table figcaption { margin-bottom: var(--space-3); }
+.ft-table-scroll {
+  position: relative;
+  left: 50%;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(1040px, calc(100vw - 2 * var(--space-4)));
+  max-height: 70vh;
+  overflow: auto;
+  translate: -50% 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.ft-table-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ft-table table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-sm); }
+.ft-table th, .ft-table td { padding: var(--space-2) var(--space-3); text-align: left; vertical-align: top; }
+.ft-table tr:first-child > * { position: sticky; top: 0; z-index: 1; background: var(--bg-secondary); font-weight: 600; }
+.ft-table tbody tr:nth-child(even) > td { background: var(--bg-sunken); }
+.ft-table [data-numeric] { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Sources beside the paragraph that cites them, once the screen has room for a
+   margin: the row grows with its notes rather than running them into the next. */
+.ft-margin-notes { display: none; }
+@media (min-width: 1280px) {
+  .ft-margin-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 240px;
+    column-gap: var(--space-8);
+    width: calc(100% + var(--space-8) + 240px);
+  }
+  .ft-margin-notes { display: grid; align-content: start; gap: var(--space-2); padding-top: 4px; }
+}
+.ft-article .ft-margin-note {
+  display: grid;
+  gap: 2px;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-default);
+  color: inherit;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ft-article .ft-margin-note:hover { border-left-color: var(--border-ink); }
+}
+.ft-margin-note-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: 500 0.82rem/1.35 var(--font-serif);
+  color: var(--text-primary);
+}
+
+.ft-count { margin-left: var(--space-2); font: 500 0.7em/1 var(--font-mono); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.ft-ref-meta { font: 500 11px/1.4 var(--font-mono); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.ft-ref-authors { font-size: var(--fs-xs); color: var(--text-secondary); }
+.ft-ref-venue { font-size: var(--fs-xs); font-style: italic; color: var(--text-tertiary); }
+.ft-ref-title { font: 600 0.95rem/1.35 var(--font-serif); color: var(--text-primary); overflow-wrap: anywhere; }
+.ft-ref-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.ft-ref-links a { font: 500 11px/1.6 var(--font-mono); overflow-wrap: anywhere; }
+
+/* The list at the end reads as an index of titles. */
+.ft-references ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4) var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ft-references li { display: grid; align-content: start; gap: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+
+.ft-notes ol { margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-secondary); }
+.ft-notes li { display: grid; grid-template-columns: 3ch 1fr; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+
+/* Where a citation or note mark lands: `jumpTo` focuses it without a fragment. */
+.ft-references li:focus, .ft-notes li:focus { background: var(--bg-sunken); }
+
+/* A citation's reference on a screen with no margin, above the viewer (pdf-viewer.css). */
+.ft-ref-sheet-backdrop { z-index: 12110; }
+.ft-ref-sheet-viewport { z-index: 12111; }
+.ft-ref-sheet-body { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-6) var(--space-6); overflow-y: auto; }
+.ft-ref-sheet .ft-ref-title { font-size: 1.15rem; }
+.ft-ref-sheet .ft-ref-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: var(--fs-xs); }

@@ -147,6 +147,10 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 # revisit after a week of the { route: "/resources/figures", status: 429 } lines
 # in Workers Logs.
 FIGURES_GLOBAL_MINUTE_LIMIT = "60"
+# /resources/full-text misses a minute, app-wide; each one fetches at most
+# arxiv.org/html, ar5iv and two Europe PMC calls. Hits are free. Each address may
+# send 20 of them (worker/source-api.ts).
+FULL_TEXT_GLOBAL_MINUTE_LIMIT = "60"
 
 # Estimated input tokens the paper store may embed per UTC day (worker/paper-store.ts;
 # its history is in worker/README.md, harvest step 6). 7.5M estimated is at most
