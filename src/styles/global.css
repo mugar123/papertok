@@ -334,8 +334,12 @@
 }
 
 
+/* Sonner removes the outline of a toast and of its action, cancel and close
+   buttons, leaving a translucent shadow that all but vanishes on the dark
+   toast. Its button rule weighs three attributes, so this one weighs four. */
 [data-sonner-toast]:focus-visible,
-[data-sonner-toaster]:focus-visible {
+[data-sonner-toaster]:focus-visible,
+[data-sonner-toaster] [data-sonner-toast] :is([data-button], [data-cancel], [data-close-button]):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
