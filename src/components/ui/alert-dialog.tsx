@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react';
 import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog';
 import { cn } from '../../lib/utils.ts';
 import { Button } from './button.tsx';
-import { dismissPersistentToastsOnOpen } from './toast.ts';
+import { trackModalOverlay } from './toast.ts';
 
 /**
  * A dialog that interrupts: `role="alertdialog"`, no outside-press dismissal,
@@ -16,7 +16,7 @@ function AlertDialog(props: ComponentProps<typeof AlertDialogPrimitive.Root>) {
 }
 
 function AlertDialogPortal(props: Omit<ComponentProps<typeof AlertDialogPrimitive.Portal>, 'ref'>) {
-  return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} ref={dismissPersistentToastsOnOpen} />;
+  return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} ref={trackModalOverlay} />;
 }
 
 function AlertDialogOverlay({ className, ...props }: StyledProps<typeof AlertDialogPrimitive.Backdrop>) {

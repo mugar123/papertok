@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react';
 import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
-import { dismissPersistentToastsOnOpen } from './toast.ts';
+import { trackModalOverlay } from './toast.ts';
 
 /**
  * A panel that slides in from an edge and does not need a swipe gesture —
@@ -25,7 +25,7 @@ function SheetClose(props: ComponentProps<typeof SheetPrimitive.Close>) {
 }
 
 function SheetPortal(props: Omit<ComponentProps<typeof SheetPrimitive.Portal>, 'ref'>) {
-  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} ref={dismissPersistentToastsOnOpen} />;
+  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} ref={trackModalOverlay} />;
 }
 
 function SheetOverlay({ className, ...props }: StyledProps<typeof SheetPrimitive.Backdrop>) {

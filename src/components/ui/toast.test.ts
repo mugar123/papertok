@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { dismissPersistentToastsOnOpen, listenForToastEscape, toastError } from './toast.ts';
+import { trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -68,22 +68,40 @@ test('Escape keeps the toasts that leave on their own, such as an Undo or a load
  * A dialog, alert dialog, drawer or sheet fills a phone's screen and traps
  * focus; an error toast raised before it opened sat over it, outside the trap,
  * and Escape there closes the overlay, not the toast. Each overlay's portal
- * takes this ref, which React calls with the portal's element as the overlay
- * opens and with null as it leaves.
+ * takes this ref, which Base UI calls with the portal's element as the overlay
+ * opens, and whose returned cleanup it calls once the overlay has left.
  */
+const openOverlay = () => trackModalOverlay({} as HTMLElement)!;
+
 test('opening an overlay puts away the toasts that stay until closed, keeping the ones that leave on their own', () => {
   const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
   const errors = [toastError('Could not follow Nature. Try again.'), toastError('The list could not be deleted')];
-  dismissPersistentToastsOnOpen({} as HTMLElement);
+  const close = openOverlay();
   assert.ok(onScreen(undo), 'the Undo toast is still on screen');
   assert.deepEqual(errors.map(onScreen), [false, false], 'both error toasts were put away');
+  close();
+  assert.deepEqual(errors.map(onScreen), [false, false], 'closing the overlay does not bring them back');
   toast.dismiss();
 });
 
-test('an overlay leaving keeps an error raised while it was open', () => {
+// A Follow pressed on a page settles after the palette, or any other modal
+// overlay, opened: its refusal waits for the overlay to leave, then appears.
+test('an error raised while overlays are open appears once the last one has left', () => {
+  const closePalette = openOverlay();
+  const closeConfirmation = openOverlay();
+  const error = toastError('Could not follow Nature. Try again.');
+  assert.ok(!onScreen(error), 'nothing sits over the open overlays');
+  closeConfirmation();
+  assert.ok(!onScreen(error), 'the palette is still open');
+  closePalette();
+  assert.ok(onScreen(error), 'the error is on screen once both have left');
+  toast.dismiss();
+});
+
+test('an error raised with no overlay open appears at once', () => {
+  openOverlay()();
   const error = toastError('The list could not be deleted');
-  dismissPersistentToastsOnOpen(null);
-  assert.ok(onScreen(error), 'the error toast is still on screen');
+  assert.ok(onScreen(error), 'the error toast is on screen');
   toast.dismiss();
 });
 

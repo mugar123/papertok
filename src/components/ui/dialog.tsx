@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
-import { dismissPersistentToastsOnOpen } from './toast.ts';
+import { trackModalOverlay } from './toast.ts';
 
 /**
  * The modal dialog — shadcn's Base UI dialog, drawn in this project's
@@ -33,7 +33,7 @@ function Dialog(props: ComponentProps<typeof DialogPrimitive.Root>) {
 }
 
 function DialogPortal(props: Omit<ComponentProps<typeof DialogPrimitive.Portal>, 'ref'>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} ref={dismissPersistentToastsOnOpen} />;
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} ref={trackModalOverlay} />;
 }
 
 function DialogClose(props: ComponentProps<typeof DialogPrimitive.Close>) {

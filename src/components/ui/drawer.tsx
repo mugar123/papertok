@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react';
 import { useEffect, useState } from 'react';
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
 import { cn } from '../../lib/utils.ts';
-import { dismissPersistentToastsOnOpen } from './toast.ts';
+import { trackModalOverlay } from './toast.ts';
 import './drawer.css';
 
 /**
@@ -44,7 +44,7 @@ function DrawerTrigger(props: ComponentProps<typeof DrawerPrimitive.Trigger>) {
 }
 
 function DrawerPortal(props: Omit<ComponentProps<typeof DrawerPrimitive.Portal>, 'ref'>) {
-  return <DrawerPrimitive.Portal data-slot="drawer-portal" {...props} ref={dismissPersistentToastsOnOpen} />;
+  return <DrawerPrimitive.Portal data-slot="drawer-portal" {...props} ref={trackModalOverlay} />;
 }
 
 function DrawerClose(props: ComponentProps<typeof DrawerPrimitive.Close>) {

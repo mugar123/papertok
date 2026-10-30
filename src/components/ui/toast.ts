@@ -1,8 +1,25 @@
 import { toast } from 'sonner';
 
+/** How many modal overlays are on screen (`trackModalOverlay`). */
+let openModalOverlays = 0;
+/** The error toasts raised while one was, shown once the last one leaves. */
+let heldErrors: Array<() => void> = [];
+let heldCount = 0;
 
+/**
+ * An error toast that stays until it is closed. Raised while a modal overlay
+ * is open, it waits for the last one to leave: on a phone it would sit over
+ * the overlay, outside its focus trap, where Escape closes the overlay and
+ * leaves the toast. It is announced when it appears. The id is returned
+ * either way.
+ */
 export function toastError(title: Parameters<typeof toast.error>[0], options?: Parameters<typeof toast.error>[1]) {
-  return toast.error(title, { duration: Infinity, closeButton: true, ...options });
+  const errorOptions = { duration: Infinity, closeButton: true, ...options };
+  if (openModalOverlays === 0) return toast.error(title, errorOptions);
+  heldCount += 1;
+  const id = options?.id ?? `held-error-${heldCount}`;
+  heldErrors.push(() => { toast.error(title, { ...errorOptions, id }); });
+  return id;
 }
 
 /**
@@ -38,13 +55,24 @@ function dismissPersistentToasts() {
  * The ref of every modal overlay's portal: the dialog, alert dialog, drawer
  * and sheet in this folder, and so the search palette, the reader, save to
  * list, related papers and every confirmation built on them. The portal
- * attaches as the overlay opens, before that frame is painted. On a phone, or
- * at 400% zoom, these overlays cover the screen and trap focus; an error toast
- * raised before one opened sat over it, outside the trap, where Escape closes
- * the overlay and leaves the toast. An error raised while the overlay is open
- * stays. Popovers, menus and tooltips are anchored to their control and never
- * cover the screen, so they leave the toast.
+ * attaches as the overlay opens, before that frame is painted, and detaches
+ * once its leave has played. On a phone, or at 400% zoom, these overlays cover
+ * the screen and trap focus, and an error toast over one sits outside the
+ * trap, where Escape closes the overlay and leaves the toast. So opening one
+ * puts away the errors raised before it, and `toastError` holds those raised
+ * while one is open until the last one leaves. Popovers, menus and tooltips
+ * are anchored to their control and never cover the screen, so they do
+ * neither.
  */
-export function dismissPersistentToastsOnOpen(portal: HTMLElement | null) {
-  if (portal) dismissPersistentToasts();
+export function trackModalOverlay(portal: HTMLElement | null) {
+  if (!portal) return undefined;
+  openModalOverlays += 1;
+  dismissPersistentToasts();
+  return () => {
+    openModalOverlays -= 1;
+    if (openModalOverlays > 0) return;
+    const held = heldErrors;
+    heldErrors = [];
+    for (const show of held) show();
+  };
 }
