@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  notableSince, readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
+  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
@@ -2015,6 +2015,69 @@ test("runs for new follows embed within their own share of the day, and the dail
   }
   assert.ok(followRuns > 0 && followRuns < 3_000, `follow runs embedded ${followRuns} of 3,000`);
   assert.equal(await embedPending(env, 256), 256, 'the daily run still embeds');
+});
+
+// The feed's request ceiling, counted by the real ledger. `ask` answers
+// `accepted` or the error the page would answer with.
+function feedCeiling(t: TestContext, limits: { user: string; global: string }) {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-30T12:00:00Z') });
+  const ledger = inMemoryQuotaLedger();
+  const env = {
+    REQUEST_QUOTA_LEDGER: ledger.binding, PROVIDER_USER_MINUTE_LIMIT: limits.user, PROVIDER_GLOBAL_MINUTE_LIMIT: limits.global,
+  } as Parameters<typeof reserveFeedRequest>[0];
+  const ask = (uid: string, at: string) => {
+    t.mock.timers.setTime(Date.parse(at));
+    return reserveFeedRequest(env, uid).then(() => 'accepted', (error: { status: number; code: string }) => `${error.status} ${error.code}`);
+  };
+  const askTimes = async (count: number, uid: (index: number) => string, at: string) => {
+    const answers: string[] = [];
+    for (let index = 0; index < count; index += 1) answers.push(await ask(uid(index), at));
+    return answers;
+  };
+  return { ask, askTimes, objects: () => new Set(ledger.calls).size };
+}
+
+const accepted = (count: number) => Array.from({ length: count }, () => 'accepted');
+
+// A new ledger object takes about 0.5 s to answer its first call (`reserveFeedRequest`).
+test("the feed's request ceiling opens one ledger object an hour, whatever minute a request comes in", async t => {
+  const ceiling = feedCeiling(t, { user: '60', global: '2000' });
+  for (const at of ['2026-10-30T12:00:05Z', '2026-10-30T12:01:30Z', '2026-10-30T12:37:00Z', '2026-10-30T12:59:59.999Z']) {
+    assert.equal(await ceiling.ask('reader-1', at), 'accepted');
+  }
+  assert.equal(ceiling.objects(), 1);
+  assert.equal(await ceiling.ask('reader-1', '2026-10-30T13:00:00Z'), 'accepted');
+  assert.equal(ceiling.objects(), 2);
+});
+
+test("a reader's 61st feed request in a UTC minute is a 429, another reader's is not, and the next minute accepts the reader again", async t => {
+  const ceiling = feedCeiling(t, { user: '60', global: '2000' });
+  assert.deepEqual(await ceiling.askTimes(61, () => 'reader-1', '2026-10-30T12:05:00Z'), [...accepted(60), '429 RATE_LIMITED']);
+  assert.equal(await ceiling.ask('reader-1', '2026-10-30T12:05:59.999Z'), '429 RATE_LIMITED');
+  assert.equal(await ceiling.ask('reader-2', '2026-10-30T12:05:59.999Z'), 'accepted');
+  assert.deepEqual(await ceiling.askTimes(60, () => 'reader-1', '2026-10-30T12:06:00Z'), accepted(60));
+});
+
+test("the app's 2,001st feed request in a UTC minute is a 429 whoever sends it, and the next minute accepts again", async t => {
+  const ceiling = feedCeiling(t, { user: '60', global: '2000' });
+  assert.deepEqual(await ceiling.askTimes(2_001, index => `reader-${index}`, '2026-10-30T12:05:30Z'), [...accepted(2_000), '429 RATE_LIMITED']);
+  assert.equal(await ceiling.ask('reader-0', '2026-10-30T12:05:59Z'), '429 RATE_LIMITED');
+  assert.equal(await ceiling.ask('reader-new', '2026-10-30T12:06:00Z'), 'accepted');
+});
+
+test("every minute of an hour gets the whole app-wide feed ceiling, however full the minutes before it were", async t => {
+  const ceiling = feedCeiling(t, { user: '60', global: '2' });
+  for (let minute = 0; minute < 60; minute += 1) {
+    const at = `2026-10-30T12:${String(minute).padStart(2, '0')}:30Z`;
+    assert.deepEqual(await ceiling.askTimes(3, index => `reader-${index}`, at), ['accepted', 'accepted', '429 RATE_LIMITED'], at);
+  }
+});
+
+// An hour of 20,000 a minute is more than the 1,000,000 the ledger counts at
+// most, and a ledger that refuses to count lets every page through.
+test("an app-wide feed ceiling of 20,000 a minute still counts each reader's requests", async t => {
+  const ceiling = feedCeiling(t, { user: '1', global: '20000' });
+  assert.deepEqual(await ceiling.askTimes(2, () => 'reader-1', '2026-10-30T12:05:00Z'), ['accepted', '429 RATE_LIMITED']);
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {
