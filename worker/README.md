@@ -826,7 +826,7 @@ Each step is in milliseconds and appears only if the request ran it:
 | --- | --- |
 | `auth` | `verifyFirebaseIdentity`: the 60 s identity cache, and on a miss Identity Toolkit and the cache write |
 | `body` | reading the request body, at most 20 KB |
-| `quota` | `reserveFeedRequest` in `REQUEST_QUOTA_LEDGER`, which runs beside `follows`; about 0.5 s for the app's first feed request of a UTC hour, which creates that hour's ledger object |
+| `quota` | `reserveFeedRequest` in `REQUEST_QUOTA_LEDGER`, which runs beside `follows` |
 | `follows` | for a page with follows, the followed lanes' harvest state from D1, read beside `quota` |
 | `ids` | an `{ ids }` lookup: the works, any ingest of missing papers, and the rows |
 | `likesWait` | More like this waiting for the liked paper's lookup, at most 1.5 s |
