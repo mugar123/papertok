@@ -57,15 +57,17 @@ interface MarkChange {
  * move it again and tell the reading profile again. So each mark keeps the
  * value its changes last sent to the screen, with what `isOn` read then;
  * while `isOn` still reads that, the sent value is what the screen shows
- * (`shows(key, isOn)`). Once all its changes are answered, a mark stays
- * followed for the value last sent to the screen until `isOn` reads something
- * else, so a tap before React draws that value still counts it. A tap that
- * starts from that value without showing anything spends it: once that tap is
- * answered, the mark is no longer followed unless the answer moved it. A
- * boolean cannot tell a drawn move from one undone since: if a profile reload
- * puts the old value back before anything reads the mark, the next tap writes
- * without moving the screen, and the tap after it is normal. The cost is that
- * a second tap from the same undrawn value, answered before React draws, is
+ * (`shows(key, isOn)`). When its last change is answered before React draws
+ * the value last sent to the screen, a mark stays followed for that value
+ * until `isOn` reads something else, so a tap before React draws it still
+ * counts it; a value already drawn by then is not followed any further. A tap
+ * that starts from that value without showing anything spends it: once that
+ * tap is answered, the mark is no longer followed unless the answer moved it.
+ * A boolean cannot tell a drawn move from one undone since, so whatever puts
+ * every mark back at once, such as a profile load, calls `screenReplaced()`:
+ * otherwise, after the old value came back before anything read the mark,
+ * the next tap would write without moving the screen. The cost is that a
+ * second tap from the same undrawn value, answered before React draws, is
  * counted from the old screen again.
  *
  * Firestore answers one document's writes in the order they were sent.
@@ -137,8 +139,12 @@ export function markChanges() {
         const shown = onScreen(followed, isOnNow);
         // The last answer ends these changes. The mark stays followed for the
         // value last sent to the screen, for one tap that starts from it.
+        // Once `isOn` reads something other than what it read when that value
+        // was sent, React has drawn it, and a later reset that puts the old
+        // value back must not make the value count as shown again.
         if (!followed.changes.some((other) => other.pending)) {
-          if (followed.sent && !followed.sent.spent) marks.set(key, { startedFrom: shown, changes: [], sent: followed.sent });
+          const undrawn = followed.sent && !followed.sent.spent && followed.sent.read === isOnNow;
+          if (undrawn) marks.set(key, { startedFrom: shown, changes: [], sent: followed.sent });
           else marks.delete(key);
         }
         settle();
@@ -164,6 +170,17 @@ export function markChanges() {
       if (!mark) return;
       mark.changes.push({ to, stands: true, pending: false, answered: null });
       mark.sent = { value: to, read: isOn };
+    },
+    /**
+     * Every mark on screen was set anew, as a profile load sets them: what
+     * earlier changes sent to the screen no longer describes it. Changes
+     * still waiting stay followed, as their answers have yet to land.
+     */
+    screenReplaced() {
+      for (const [key, mark] of marks) {
+        if (mark.changes.some((change) => change.pending)) delete mark.sent;
+        else marks.delete(key);
+      }
     },
     unshownChange(key: string, to: boolean) {
       const newest = marks.get(key)?.changes.at(-1);

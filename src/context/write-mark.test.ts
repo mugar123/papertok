@@ -344,7 +344,7 @@ function markAnsweredBeforeRender(markKey: string) {
     screen.ref = screen.drawn;
     return pressed;
   };
-  return { screen, profile, answers, press };
+  return { screen, profile, answers, press, changes };
 }
 
 // Off, on again, then the Lists page's removal, every write answered in one
@@ -427,11 +427,13 @@ for (const markKey of ['u1:like:p1', 'u1:read:p1', 'u1:readLater:p1']) {
     });
   }
 
-  // A profile reload puts the mark back before React draws the change. The
-  // next tap finds nothing to show, but the one after it moves the mark.
+  // Something other than a profile load puts the mark back before React draws
+  // the change. The next tap finds nothing to show, but the one after it
+  // moves the mark.
   test(`a ${mark} put back before its change is drawn moves again on the second tap`, async () => {
     const paper = markAnsweredBeforeRender(markKey);
     const first = paper.press();
+    paper.screen.ref = true;
     paper.answers[0].accept();
     await first;
     paper.screen.drawn = true;
@@ -444,6 +446,56 @@ for (const markKey of ['u1:like:p1', 'u1:read:p1', 'u1:readLater:p1']) {
     paper.answers[2].accept();
     await third;
     assert.equal(paper.screen.drawn, false);
+  });
+
+  // A late profile puts the mark back after React drew the accepted change.
+  test(`a ${mark} put back after its accepted change was drawn moves on the next tap`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const first = paper.press();
+    paper.answers[0].accept();
+    await first;
+    paper.screen.drawn = true;
+    paper.screen.ref = true;
+    const second = paper.press();
+    paper.answers[1].accept();
+    await second;
+    assert.equal(paper.screen.drawn, false);
+    assert.deepEqual(paper.profile, [false, false]);
+  });
+
+  // A profile load puts the mark back before React draws the change.
+  test(`a ${mark} that a profile load puts back before its change is drawn moves on the next tap`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const first = paper.press();
+    paper.screen.ref = true;
+    paper.answers[0].accept();
+    await first;
+    paper.changes.screenReplaced();
+    paper.screen.drawn = true;
+    paper.screen.ref = true;
+    const second = paper.press();
+    paper.answers[1].accept();
+    await second;
+    assert.equal(paper.screen.drawn, false);
+    assert.deepEqual(paper.profile, [false, false]);
+  });
+
+  // An accepted Lists removal moves the mark after its answer; React draws
+  // it, then a profile load read before the removal puts the mark back.
+  test(`a ${mark} that a profile load puts back after its removal was drawn moves on the next tap`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const removed = paper.press({ afterWrite: true });
+    paper.answers[0].accept();
+    await removed;
+    paper.screen.ref = paper.screen.drawn;
+    paper.changes.screenReplaced();
+    paper.screen.drawn = true;
+    paper.screen.ref = true;
+    const pressed = paper.press();
+    paper.answers[1].accept();
+    await pressed;
+    assert.equal(paper.screen.drawn, false);
+    assert.deepEqual(paper.profile, [false, false]);
   });
 
   test(`a ${mark} removal asked for again before its accepted move is drawn sends nothing`, async () => {

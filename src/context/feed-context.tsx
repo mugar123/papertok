@@ -1008,6 +1008,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const saved = orderedSet('saved');
         const read = orderedSet('read');
 
+        // These sets and the library put every mark back where the profile
+        // has it, so a move an answer sent before is no longer on screen.
+        markChangeLog.screenReplaced();
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1141,7 +1144,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [carryViewedPapers, isKnownPaper, user?.uid]);
+  }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
