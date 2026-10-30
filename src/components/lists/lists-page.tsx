@@ -1857,11 +1857,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                                 pending: the dialog hands focus back here, and
                                 the new name tells a screen reader the removal is
                                 under way. A disabled button lets the click
-                                through to the row, which would open the card. */}
+                                through to the row, which would open the card.
+                                Only the icon is dimmed: dimming the button
+                                would dim the focus ring the dialog hands back. */}
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className={removalPending ? 'opacity-50' : undefined}
                               aria-disabled={removalPending || undefined}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1872,7 +1873,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               aria-label={removalPending ? 'Removing from list...' : 'Remove from list'}
                               title={removalPending ? 'Removing from list...' : 'Remove from list'}
                             >
-                              <Trash size={16} aria-hidden="true" />
+                              <Trash size={16} aria-hidden="true" className={removalPending ? 'opacity-50' : undefined} />
                             </Button>
                             </>
                           )}
@@ -2130,13 +2131,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       </button>
                     </li>
                     <li>
+                      {/* Only the icon is dimmed, so the focus ring and the
+                          label that says the removal is under way keep their
+                          contrast. */}
                       <button
                         type="button"
-                        className={`pc-share-row${rowSheetRemovalPending ? ' opacity-50' : ''}`}
+                        className="pc-share-row"
                         aria-disabled={rowSheetRemovalPending || undefined}
                         onClick={() => { if (!rowSheetRemovalPending) switchRowSheetStep('remove'); }}
                       >
-                        <Trash size={20} aria-hidden="true" />
+                        <Trash size={20} aria-hidden="true" className={rowSheetRemovalPending ? 'opacity-50' : undefined} />
                         {rowSheetRemovalPending ? 'Removing from list...' : 'Remove from list'}
                       </button>
                     </li>
