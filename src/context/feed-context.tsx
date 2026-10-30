@@ -1938,8 +1938,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid;
     if (!userId) return;
     // A Reading history removal answered after this must leave the mark on,
-    // and this mark stays even if its own write is refused.
-    markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
+    // and this mark stays even if its own write is refused. A tap before React
+    // draws a refused unmark's undo finds the read already told.
+    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
     // Built from the queued state, not the ref: an answered Reading history
     // removal may have queued its move before React drew it.
     setReadPaperIds((ids) => new Set(ids).add(paper.id));
@@ -1959,12 +1960,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
 
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: 'read',
-        category: paper.primaryCategory,
-        timestamp: readAt,
-      });
+      if (moves) {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'read',
+          category: paper.primaryCategory,
+          timestamp: readAt,
+        });
+      }
       const ref = interactionDocRef(userId, paper.id);
       await setDoc(ref, definedFields({
         read: true,

@@ -47,6 +47,9 @@ interface MarkChange {
  * then moves the mark calls `moved()`.
  * `stand(key, to, isOn)` records a change that stands whatever its write's
  * answer, such as marking a paper read, which keeps its mark when refused.
+ * It returns false when the change, tapped from `isOn` before React drew an
+ * answer's move to `to`, moves nothing: the move was already told, so the
+ * caller does not tell the reading profile again.
  * `unshownChange(key, to)` returns, while the newest change to the mark is
  * one to `to` not shown before its answer, a promise that settles once it is
  * answered: the same removal asked for again need not be sent again.
@@ -69,7 +72,9 @@ interface MarkChange {
  * otherwise, after the old value came back before anything read the mark,
  * the next tap would write without moving the screen. The cost is that a
  * second tap from the same undrawn value, answered before React draws, is
- * counted from the old screen again.
+ * counted from the old screen again, and so is a tap made in the same frame as
+ * the reset, before React draws the new marks: it moves and tells the profile
+ * from the screen as it was before the reset.
  *
  * Firestore answers one document's writes in the order they were sent.
  * Answered out of that order, the screen still ends on the right value, but
@@ -168,9 +173,13 @@ export function markChanges() {
     },
     stand(key: string, to: boolean, isOn: boolean) {
       const mark = followedMark(key, isOn);
-      if (!mark) return;
+      if (!mark) return true;
+      // As in writeMark's `spends`: a tap drawn from `isOn` asks for the value
+      // an answer has since sent to the screen, so the screen does not move.
+      const moves = isOn === to || onScreen(mark, isOn) !== to;
       mark.changes.push({ to, stands: true, pending: false, answered: null });
       mark.sent = { value: to, read: isOn };
+      return moves;
     },
     /**
      * Every mark on screen was set anew, as a profile load sets them: what

@@ -243,10 +243,10 @@ function readingHistory() {
     isRead: () => state.readIds.has('p2'),
   }).catch(() => { reported.push(afterWrite ? 'removal' : 'card'); });
   const markAsRead = (readAt: string) => {
-    changes.stand('u1:read:p2', true, state.readIds.has('p2'));
+    const moves = changes.stand('u1:read:p2', true, state.readIds.has('p2'));
     setReadIds((ids) => new Set(ids).add('p2'));
     setLibrary((library) => ({ ...library, p2: { ...library.p2, readAt } }));
-    profile.push('read');
+    if (moves) profile.push('read');
   };
   return { state, answers, profile, reported, unmark, markAsRead };
 }
@@ -363,9 +363,9 @@ function readingHistoryBehindRender() {
     isRead: () => drawn.readIds.has('p2'),
   }).catch(() => {});
   const markAsRead = () => {
-    changes.stand('u1:read:p2', true, drawn.readIds.has('p2'));
+    const moves = changes.stand('u1:read:p2', true, drawn.readIds.has('p2'));
     setReadIds((ids) => new Set(ids).add('p2'));
-    profile.push('read');
+    if (moves) profile.push('read');
   };
   const render = () => { drawn.readIds = new Set(state.readIds); };
   return { state, answers, profile, unmark, markAsRead, render };
@@ -381,6 +381,26 @@ test('a Reading history removal accepted after the card\'s refusal, both before 
   await silenced(() => Promise.all([removal, cardUnmark]));
   assert.deepEqual([...history.state.readIds], ['p1'], 'Firestore holds the removal');
   assert.deepEqual(history.profile, ['unread', 'read', 'unread']);
+});
+
+test('markAsRead tapped before React draws a refused card unmark\'s undo adds no second read', async () => {
+  const history = readingHistoryBehindRender();
+  const cardUnmark = history.unmark(false);
+  history.render();
+  history.answers[0].refuse();
+  await silenced(() => cardUnmark);
+  // The undo has put the mark back, but the card still shows the paper unread.
+  history.markAsRead();
+  assert.deepEqual([...history.state.readIds].sort(), ['p1', 'p2']);
+  assert.deepEqual(history.profile, ['unread', 'read'], 'the undo told the read once');
+});
+
+test('markAsRead on a paper the screen shows unread tells the profile', () => {
+  const history = readingHistoryBehindRender();
+  history.state.readIds.delete('p2');
+  history.render();
+  history.markAsRead();
+  assert.deepEqual(history.profile, ['read']);
 });
 
 test('a card unmark refused after markAsRead, before a render, adds no second read', async () => {
