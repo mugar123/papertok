@@ -31,6 +31,11 @@ export function toastError(title: Parameters<typeof toast.error>[0], { overlaysA
   return id;
 }
 
+/** Forgets the errors still waiting: they belong to the account that raised them. */
+export function dropHeldErrors() {
+  heldErrors = [];
+}
+
 /**
  * Escape puts away the toasts that stay until they are closed. Such a toast
  * (an error) on a phone sits at the top, over the page's back, Follow and

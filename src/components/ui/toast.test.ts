@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { openOverlayCount, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
+import { dropHeldErrors, openOverlayCount, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -118,6 +118,16 @@ test('an error of an action whose overlay has closed since appears at once', () 
   const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
   assert.ok(onScreen(error), 'the error is on screen');
   toast.dismiss();
+});
+
+// Signed out from the account menu while a Follow's refusal waited behind it.
+test('an error still waiting when the account changes is never shown', () => {
+  const overlaysAtStart = openOverlayCount();
+  const closeAccountMenu = openOverlay();
+  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
+  dropHeldErrors();
+  closeAccountMenu();
+  assert.ok(!onScreen(error), 'the reader signed in next does not see it');
 });
 
 test('an error raised with no overlay open appears at once', () => {
