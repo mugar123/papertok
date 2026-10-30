@@ -697,7 +697,11 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape' && query) clearSearch();
+              // Taken, so the same Escape does not also put away an error toast.
+              if (event.key === 'Escape' && query) {
+                event.preventDefault();
+                clearSearch();
+              }
             }}
             autoComplete="off"
             autoFocus

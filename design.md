@@ -450,7 +450,10 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   `textarea`).
 - **Toasts:** Sonner (`ui/sonner.tsx`) on paper with a hairline; a success
   carries the check icon. On a phone, a toast confirming a sheet's action comes
-  in at the top, clear of the thumb.
+  in at the top, clear of the thumb. An error toast (`toastError` in
+  `ui/toast.ts`) stays until it is closed, with a close button; Escape anywhere
+  puts it away unless a dialog, menu or field already used the key. Toasts that
+  leave on their own, such as an Undo, are not affected by Escape.
 
 ### The Action Rail (signature)
 The card's right-hand column: Like, Save, Connections, Similar papers and More
