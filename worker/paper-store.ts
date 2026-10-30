@@ -124,7 +124,20 @@ export function quantize(values: number[]) {
   return Int8Array.from(kept, value => Math.round((value / norm) * 127));
 }
 
+// A hex digit's value: `0`-`9` keep their low four bits, and `A`-`F` and
+// `a`-`f` (bit 6 set) add nine to theirs.
+const hexDigit = (code: number) => (code & 15) + (code >> 6) * 9;
+
 export function readVector(value: unknown) {
+  // `hex(embedding)` (`readVectors`): two characters a byte, wrapped to int8
+  // by the array as the unsigned bytes below are.
+  if (typeof value === 'string') {
+    const vector = new Int8Array(value.length >> 1);
+    for (let index = 0; index < vector.length; index += 1) {
+      vector[index] = (hexDigit(value.charCodeAt(2 * index)) << 4) | hexDigit(value.charCodeAt(2 * index + 1));
+    }
+    return vector;
+  }
   if (value instanceof ArrayBuffer) return new Int8Array(value);
   if (ArrayBuffer.isView(value)) return new Int8Array(value.buffer, value.byteOffset, value.byteLength);
   // D1 answers a BLOB as its unsigned bytes. The constructor wraps 128-255 to
@@ -133,10 +146,14 @@ export function readVector(value: unknown) {
 }
 
 // Normalize once per ranking: MMR compares each candidate many times, and a
-// vector cut by migration 0004 is no longer a unit vector.
+// vector cut by migration 0004 is no longer a unit vector. A loop gives the
+// same quotients as `Float64Array.from` with a callback for about half the
+// CPU, the largest part of ranking 4,000 candidates.
 export function unitVector(vector: Int8Array) {
   const norm = Math.hypot(...vector) || 1;
-  return Float64Array.from(vector, value => value / norm);
+  const unit = new Float64Array(vector.length);
+  for (let index = 0; index < vector.length; index += 1) unit[index] = vector[index] / norm;
+  return unit;
 }
 
 export function cosine(a: Float64Array, b: Float64Array) {
@@ -941,16 +958,25 @@ function rejection(embedding: Float64Array | null, rejectedVectors: Float64Array
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
  * Rows it cannot tell apart keep their order (`readCandidates`).
+ * A request ranks through `rankByUnitVectors`; this entry, which normalizes
+ * every vector it is given, is the one the ranking tests call.
  */
 export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
+  return rankByUnitVectors(rows, row => (row.embedding ? unitVector(row.embedding) : null), positives.map(unitVector), negatives.map(unitVector), { now, order });
+}
+
+/**
+ * `rankBySimilarity` over vectors already normalized (`unitVector`), so a
+ * request normalizes each candidate and like once, however many interest
+ * groups rank it.
+ */
+function rankByUnitVectors<T extends { published: string }>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
-  const likedVectors = positives.map(unitVector);
-  const rejectedVectors = negatives.map(unitVector);
   const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
   const ranked = rows
     .map(row => {
-      const embedding = row.embedding ? unitVector(row.embedding) : null;
-      const similarity = positives.length && embedding
+      const embedding = unitOf(row);
+      const similarity = likedVectors.length && embedding
         ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
       const negative = rejection(embedding, rejectedVectors);
       // A fixed scale keeps an uninformative page from stretching its best
@@ -959,11 +985,85 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
       return { row, embedding, score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(row.published), semanticScore };
     })
     .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
-  if (!positives.length && !negatives.length) return ranked;
+  if (!likedVectors.length && !rejectedVectors.length) return ranked;
   // Limit both the pool and selected prefix: a full 4,000 x 4,000 MMR pass
   // would dominate Worker CPU. The untouched tail remains available.
-  const pool = ranked.slice(0, DIVERSITY_POOL).map(candidate => ({ candidate, redundancy: 0 }));
-  const selected: typeof ranked = [];
+  const pool = ranked.slice(0, DIVERSITY_POOL);
+  const selected = pool.every(candidate => Number.isFinite(candidate.score)) ? selectDiverse(pool) : selectDiverseEagerly(pool);
+  const chosen = new Set(selected);
+  return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
+}
+
+interface DiversityCandidate { embedding: Float64Array | null; score: number }
+
+// How much a selected paper lowers a candidate's score: none below a cosine of
+// 0.75, DIVERSITY_WEIGHT at a copy, of the closest one selected.
+const redundancyTo = (selected: Float64Array, candidate: Float64Array) => Math.max(0, (cosine(selected, candidate) - 0.75) / 0.25);
+
+/**
+ * The first DIVERSITY_RANKS of `pool` (in score order), one at a time: the
+ * candidate whose score less DIVERSITY_WEIGHT times its redundancy is highest,
+ * the earliest in `pool` on a tie. A candidate's redundancy only grows as
+ * papers are selected, so the value it had when last compared is an upper
+ * bound: candidates wait in a heap by that bound, and only the one on top is
+ * compared with the papers selected since. When it still leads, it is the one
+ * comparing every candidate with every selected paper would pick. Typically a
+ * fraction of the 150 x 500 comparisons.
+ */
+function selectDiverse<C extends DiversityCandidate>(pool: C[]): C[] {
+  interface Entry { candidate: C; position: number; redundancy: number; adjusted: number; compared: number }
+  const leads = (a: Entry, b: Entry) => a.adjusted > b.adjusted || (a.adjusted === b.adjusted && a.position < b.position);
+  // Sorted by score, the pool is already a heap: no redundancy yet, and a tie
+  // keeps the earlier position on top.
+  const heap: Entry[] = pool.map((candidate, position) => ({ candidate, position, redundancy: 0, adjusted: candidate.score, compared: 0 }));
+  const siftDown = (from: number) => {
+    let index = from;
+    for (;;) {
+      const left = 2 * index + 1;
+      let top = index;
+      if (left < heap.length && leads(heap[left], heap[top])) top = left;
+      if (left + 1 < heap.length && leads(heap[left + 1], heap[top])) top = left + 1;
+      if (top === index) return;
+      [heap[index], heap[top]] = [heap[top], heap[index]];
+      index = top;
+    }
+  };
+  const take = () => {
+    const first = heap[0];
+    const last = heap.pop()!;
+    if (heap.length) {
+      heap[0] = last;
+      siftDown(0);
+    }
+    return first;
+  };
+  const selected: C[] = [];
+  // The selected papers' vectors, in the order they were selected.
+  const selectedVectors: Float64Array[] = [];
+  while (heap.length && selected.length < DIVERSITY_RANKS) {
+    const top = heap[0];
+    const embedding = top.candidate.embedding;
+    if (embedding && top.compared < selectedVectors.length) {
+      for (; top.compared < selectedVectors.length; top.compared += 1) {
+        top.redundancy = Math.max(top.redundancy, redundancyTo(selectedVectors[top.compared], embedding));
+      }
+      top.adjusted = top.candidate.score - DIVERSITY_WEIGHT * top.redundancy;
+      siftDown(0);
+      continue;
+    }
+    const { candidate } = take();
+    selected.push(candidate);
+    if (candidate.embedding) selectedVectors.push(candidate.embedding);
+  }
+  return selected;
+}
+
+// What `selectDiverse` does, comparing every candidate on every turn: for a
+// pool with a score that is not a number (a date that does not parse), which
+// no order ranks consistently.
+function selectDiverseEagerly<C extends DiversityCandidate>(candidates: C[]): C[] {
+  const pool = candidates.map(candidate => ({ candidate, redundancy: 0 }));
+  const selected: C[] = [];
   while (pool.length && selected.length < DIVERSITY_RANKS) {
     let best = 0;
     for (let index = 1; index < pool.length; index += 1) {
@@ -974,12 +1074,11 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
     const embedding = candidate.embedding;
     if (embedding) {
       for (const entry of pool) {
-        if (entry.candidate.embedding) entry.redundancy = Math.max(entry.redundancy, Math.max(0, (cosine(embedding, entry.candidate.embedding) - 0.75) / 0.25));
+        if (entry.candidate.embedding) entry.redundancy = Math.max(entry.redundancy, redundancyTo(embedding, entry.candidate.embedding));
       }
     }
   }
-  const chosen = new Set(selected);
-  return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
+  return selected;
 }
 
 export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
@@ -1114,15 +1213,18 @@ function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_i
 }
 
 // The works' vectors, a statement for each 2,000 of them, in one round trip.
+// As hex text: D1 answers a BLOB as a JSON array of its bytes, about 840
+// bytes and 256 numbers to parse for a vector of 256, where its hex is one
+// string of 512 characters.
 async function readVectors(db: D1Database, workIds: number[]) {
   const vectors = new Map<number, Int8Array>();
   const chunks: D1PreparedStatement[] = [];
   for (let start = 0; start < workIds.length; start += 2_000) {
-    chunks.push(db.prepare('SELECT v.work_id, v.embedding FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value')
+    chunks.push(db.prepare('SELECT v.work_id, hex(v.embedding) AS embedding FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value')
       .bind(JSON.stringify(workIds.slice(start, start + 2_000))));
   }
   if (chunks.length === 0) return vectors;
-  for (const { results } of await db.batch<{ work_id: number; embedding: unknown }>(chunks)) {
+  for (const { results } of await db.batch<{ work_id: number; embedding: string }>(chunks)) {
     results.forEach(row => vectors.set(row.work_id, readVector(row.embedding)));
   }
   return vectors;
@@ -1648,7 +1750,11 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   timings?.since('wave1', step);
   timings?.count('candidates', candidates.length);
   if (notableLanes.length) timings?.count('notable', notableRead.candidates.length);
-  const vectorsOf = (ids: number[]) => ids.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  const signalUnit = unitVectors(signals);
+  const vectorsOf = (ids: number[]) => ids.flatMap(id => {
+    const unit = signalUnit(id);
+    return unit ? [unit] : [];
+  });
   const likes = vectorsOf(positiveIds);
   const negatives = vectorsOf(negativeIds);
   const groupedLikes = query.groups.map(group => workIdsOf(group.positiveIds));
@@ -1669,18 +1775,22 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   step = Date.now();
   const [vectors] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
+    // With rejections alone, every offered vector still: the kept order holds
+    // every rank, scored, and a later page serves it, so a rejection must
+    // reach ranks past the diversity pool too.
     likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
     keepLiked(db, positiveIds, now),
   ]);
   timings?.since('vectors', step);
   timings?.count('vectors', vectors.size);
   step = Date.now();
-  const withVector = (candidate: Candidate) => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null });
+  const candidateUnit = unitVectors(vectors);
+  const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
   // Each group ranked by its own likes, then the page shared by weight.
-  const ranks = interleaveByWeight(members.map((rows, index) => rankBySimilarity(rows.map(withVector), groupLikes[index], { now, order: query.order, negatives })
+  const ranks = interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
     .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight));
   // The closest notable papers first, without recency: they are years old by
   // design. A reader without likes gets them with the years in turns; a
@@ -1690,21 +1800,31 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // on every fresh load the app excludes the latest cards it showed, notable
   // ones included, which would otherwise start the turns again from the first
   // year; the seen filter holds the ones before (ENG-166).
-  const rejectedVectors = negatives.map(unitVector);
   const notable = likes.length
-    ? rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
+    ? rankByUnitVectors(offeredNotable, unitOf, likes, negatives, { now, order: 'relevance' })
     : notableYearsInTurns(notableRead.candidates, notableLanes)
       .filter(candidate => !excluded.has(candidate.workId))
-      .map(row => {
-        const embedding = vectors.get(row.workId);
-        return { row, semanticScore: -rejection(embedding ? unitVector(embedding) : null, rejectedVectors) };
-      })
+      .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
       .sort((a, b) => b.semanticScore - a.semanticScore);
   timings?.since('rankCpu', step);
   return {
     ranks,
     notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
+  };
+}
+
+// Each work's vector normalized the first time a ranking asks for it: a
+// candidate several interest groups rank, or a like several groups rank by,
+// is normalized once a request.
+function unitVectors(vectors: Map<number, Int8Array>) {
+  const units = new Map<number, Float64Array>();
+  return (workId: number) => {
+    const vector = vectors.get(workId);
+    if (!vector) return null;
+    let unit = units.get(workId);
+    if (!unit) units.set(workId, (unit = unitVector(vector)));
+    return unit;
   };
 }
 
