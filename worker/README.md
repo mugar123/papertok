@@ -98,7 +98,7 @@ location the fetch handler runs in. A first `/store/papers` page makes several
 of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
 invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline
 (since ENG-116 the feed's requests of a load that replaces the list wait 10 s,
-and every other `/store/papers` request 3.5 s, the automatic retry of such a
+except a follow change over cards already shown, and every other `/store/papers` request 3.5 s, the automatic retry of such a
 load that timed out included: `src/services/paper-store-service.ts`),
 while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
 that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
