@@ -5,11 +5,8 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Interac
 import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendation-engine.ts';
 import type { FeedSnapshot } from './feed-snapshot.ts';
+import type { LibraryEntry } from './library-entry.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
-export interface LibraryEntry {
-  paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
-  note?: string; tags?: string[]; updatedAt?: string | number | null;
-}
 export interface RecommendationProfileSnapshot extends RecommendationContext {
   userId: string | null; ready: boolean; userPreferences: string[]; followedAuthors: string[];
   followedEntities: FollowEntity[]; notInterestedIds: string[]; readPaperIds: string[];
@@ -88,6 +85,7 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
+import { withLibraryCopy } from './library-entry.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -546,7 +544,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         };
       });
 
-      setPersonalLibrary(current => ({ ...library, ...current }));
+      // Existing entries win: a mark made in this session wrote them. A
+      // retraction the stored copy records stands (ENG-84).
+      setPersonalLibrary(current => Object.entries(current).reduce(
+        (next, [id, entry]) => withLibraryCopy(next, id, entry.paper, {}, library[id]?.paper),
+        { ...library, ...current },
+      ));
       // Existing entries win, exactly as above: a paper already in hand came
       // from a screen that fetched it deliberately and may be richer.
       setLibraryPapers(current => ({ ...papers, ...current }));
@@ -1913,14 +1916,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setReadPaperIds(newRead);
     const readAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
-      };
-
-      return next;
-    });
+    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { readAt }, libraryPapers[paper.id]));
 
     // The card stays where it is: the reader marked it read, they did not ask
     // for it to vanish. `readPaperIdsRef` keeps it out of the next load.
@@ -1946,7 +1942,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving read status:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid]);
 
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
@@ -2245,20 +2241,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
 
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: {
-          ...current[paper.id],
-          paperId: paper.id,
-          paper: storedPaper,
-          readLater: nextValue,
-          updatedAt,
-        },
-      };
-
-      return next;
-    });
+    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { readLater: nextValue, updatedAt }, libraryPapers[paper.id]));
 
     try {
       recordProfileEvent({
@@ -2291,7 +2274,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     }
     return nextValue;
-  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, user?.uid]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
@@ -2301,21 +2284,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
 
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: {
-          ...current[paper.id],
-          paperId: paper.id,
-          paper: storedPaper,
-          note: note.trim(),
-          tags: normalizedTags,
-          updatedAt,
-        },
-      };
-
-      return next;
-    });
+    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { note: note.trim(), tags: normalizedTags, updatedAt }, libraryPapers[paper.id]));
 
     try {
       recordProfileEvent({
@@ -2336,7 +2305,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving reading metadata:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid]);
 
   const getRecommendationProfileSnapshot = useCallback(() => ({
     userId: user?.uid || null,
