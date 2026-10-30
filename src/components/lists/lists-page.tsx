@@ -1184,10 +1184,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
   }, [rowSheetStep, prefersReducedMotion]);
 
-  const rowSheetRemovalPending = rowSheet !== null && pendingRemovals.has(rowRemovalKey(rowSheet.listId, rowSheet.paperId));
+  const rowKey = (listId: string, paperId: string) => rowRemovalKey(user?.uid ?? '', listId, paperId);
+  const rowSheetRemovalPending = rowSheet !== null && pendingRemovals.has(rowKey(rowSheet.listId, rowSheet.paperId));
 
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
-    removeRowOnce(pendingRemovals, setPendingRemovals, rowRemovalKey(listId, paperId), () => (
+    removeRowOnce(pendingRemovals, setPendingRemovals, rowKey(listId, paperId), () => (
       removePaperFromMarkList(listId, paperId, paper as Paper, {
         unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportRemovalFailed,
       }) ?? handleRemoveFromCustomList(listId, paperId)
@@ -1802,7 +1803,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                         )}
                       </motion.div>
                     );
-                    const removalPending = pendingRemovals.has(rowRemovalKey(list.id, paperId));
+                    const removalPending = pendingRemovals.has(rowKey(list.id, paperId));
                     return (
                       <PaperListRow {...rowMotion} key={paperId}
                         aria-busy={removalPending || undefined}

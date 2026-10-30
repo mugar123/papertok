@@ -1,5 +1,9 @@
-/** The pending-removal key of a paper's row in one list. */
-export const rowRemovalKey = (listId: string, paperId: string) => `${listId}:${paperId}`;
+/**
+ * The pending-removal key of a paper's row in one list of one account: a
+ * removal still waiting when another account signs in must not hold back the
+ * same row of the new account.
+ */
+export const rowRemovalKey = (uid: string, listId: string, paperId: string) => `${uid}:${listId}:${paperId}`;
 
 /**
  * One removal per row at a time. A row now stays on screen until its removal

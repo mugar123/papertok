@@ -50,7 +50,7 @@ const settle = () => new Promise((resolve) => { setImmediate(resolve); });
 test('a second Remove on a Favorites row whose removal is pending sends no second unlike', async () => {
   const pending = pendingRemovals();
   const { writes, unlikes, remove } = favorites();
-  const key = rowRemovalKey('__favorites__', 'p1');
+  const key = rowRemovalKey('u1', '__favorites__', 'p1');
 
   removeRowOnce(pending.current(), pending.set, key, remove);
   assert.ok(pending.current().has(key), 'the row shows its removal is pending');
@@ -65,7 +65,7 @@ test('a second Remove on a Favorites row whose removal is pending sends no secon
 
 test('once a removal has answered (a refusal included), the row can be removed again', async () => {
   const pending = pendingRemovals();
-  const key = rowRemovalKey('__favorites__', 'p1');
+  const key = rowRemovalKey('u1', '__favorites__', 'p1');
   let tries = 0;
   removeRowOnce(pending.current(), pending.set, key, async () => { tries += 1; });
   await settle();
@@ -78,7 +78,17 @@ test('the same paper can be removed from two lists at once', () => {
   const pending = pendingRemovals();
   let started = 0;
   const never = () => { started += 1; return new Promise<void>(() => {}); };
-  removeRowOnce(pending.current(), pending.set, rowRemovalKey('__favorites__', 'p1'), never);
-  removeRowOnce(pending.current(), pending.set, rowRemovalKey('list-1', 'p1'), never);
+  removeRowOnce(pending.current(), pending.set, rowRemovalKey('u1', '__favorites__', 'p1'), never);
+  removeRowOnce(pending.current(), pending.set, rowRemovalKey('u1', 'list-1', 'p1'), never);
+  assert.equal(started, 2);
+});
+
+test('a removal still waiting for the previous account holds back nothing for the next one', () => {
+  const pending = pendingRemovals();
+  let started = 0;
+  const never = () => { started += 1; return new Promise<void>(() => {}); };
+  removeRowOnce(pending.current(), pending.set, rowRemovalKey('u1', '__favorites__', 'p1'), never);
+  assert.equal(pending.current().has(rowRemovalKey('u2', '__favorites__', 'p1')), false, 'the new account\'s row is not pending');
+  removeRowOnce(pending.current(), pending.set, rowRemovalKey('u2', '__favorites__', 'p1'), never);
   assert.equal(started, 2);
 });

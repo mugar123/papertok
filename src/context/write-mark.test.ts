@@ -46,6 +46,16 @@ test('a refusal that lands after the account changed puts nothing back on the ne
   assert.equal(like.screen.liked, false);
 });
 
+for (const afterWrite of [false, true]) {
+  test(`a refusal that lands after the account changed is not reported to the new account (afterWrite: ${afterWrite})`, async () => {
+    const like = likeOnScreen(true);
+    await silenced(() => writeMark({
+      ...like, failure: 'refused', throwOnError: true, afterWrite, stillSignedIn: () => false,
+      write: () => Promise.reject(new Error('permission-denied')),
+    }));
+  });
+}
+
 test('with afterWrite an accepted change shows once the write is in, and only for the same account', async () => {
   const like = likeOnScreen(true);
   await writeMark({ ...like, failure: 'refused', afterWrite: true, stillSignedIn: () => false, write: async () => {} });

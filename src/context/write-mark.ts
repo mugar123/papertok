@@ -154,8 +154,9 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * is pending, and two answers landing before React has drawn the first would
  * both find the mark on and tell the reading profile twice.
  *
- * Nothing is shown or put back once another account is signed in: a late
- * answer must not paint the previous account's mark over the new one.
+ * Nothing is shown, put back or rethrown once another account is signed in: a
+ * late answer must not paint the previous account's mark over the new one, or
+ * report the previous account's refusal in the new one's session.
  *
  * `writeOptimistically` (optimistic-write.ts) puts back a whole previous
  * value and always rethrows. A mark cannot use it: its undo moves only this
@@ -213,6 +214,7 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // change records, such as a profile reload. A change asked for from the
   // value it goes to moved nothing, so its refusal is still news: the card's
   // unmark under an alias id the screen holds no mark for, say.
+  // Once another account is signed in, the refusal is no news to it either.
   const endsAtTo = from !== to && (value === to || (!changed && onScreen === to));
-  if (refusal && throwOnError && !endsAtTo) throw refusal.error;
+  if (refusal && throwOnError && !endsAtTo && stillSignedIn()) throw refusal.error;
 }

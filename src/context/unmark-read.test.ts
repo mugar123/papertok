@@ -93,9 +93,9 @@ test('the mark is gone while the write is in flight, and stays gone once it is a
   assert.equal(state.library.p1.readAt, '2026-10-20T09:00:00.000Z');
 });
 
-test('a refusal that lands after the account changed leaves the new account alone', async () => {
+test('a refusal that lands after the account changed leaves the new account alone, and is not reported to it', async () => {
   const { state, setReadIds, setLibrary } = feedState();
-  await silenced(() => assert.rejects(unmarkRead('p2', {
+  await silenced(() => unmarkRead('p2', {
     setReadIds,
     setLibrary,
     write: () => Promise.reject(new Error('permission-denied')),
@@ -106,7 +106,7 @@ test('a refusal that lands after the account changed leaves the new account alon
     changes: markChanges(),
     markKey: 'u1:read:p2',
     isRead: () => state.readIds.has('p2'),
-  }), /permission-denied/));
+  }));
   assert.deepEqual([...state.readIds], ['p1']);
 });
 
