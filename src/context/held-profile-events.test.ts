@@ -76,6 +76,17 @@ test('an account change before the load drops the held events', () => {
   assert.equal(readProfileSignals(other, NOW).temporal.lean, 0);
 });
 
+test('a load that never ends holds only the latest events', () => {
+  let held: HeldProfileEvents | null = null;
+  for (let index = 0; index < 10_000; index += 1) {
+    held = holdProfileEvent(held, 'reader', { paperId: `card-${index}`, kind: 'skip', notable: false }, NOW + index);
+  }
+  const ids = held!.events.map(({ event }) => event.paperId);
+  assert.ok(ids.length < 10_000, `${ids.length} events held`);
+  assert.equal(ids.at(-1), 'card-9999');
+  assert.ok(!ids.includes('card-0'));
+});
+
 test('a profile that arrives before any event is left as stored', () => {
   const profile = storedProfile();
   const before = JSON.stringify(serializeInteractionProfile(profile));
