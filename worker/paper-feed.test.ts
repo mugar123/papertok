@@ -998,9 +998,20 @@ const notablePaper = (rank: number) => `1901.${String(rank).padStart(5, '0')}`;
 const FOLLOWED_TOPIC = 'cs.PL';
 const topicPaper = (rank: number) => `2612.${String(rank).padStart(5, '0')}`;
 const isTopicPaper = (paperId: string) => paperId.startsWith('2612.');
+// A session runs at this instant, the day its clock was pinned. The notable
+// cards a day's read offers (`daySlice`) and the year they end at move with
+// the date, and so do the ids the filter holds and its false positives over
+// the ranking: on the real clock the pass-over rate changed from one day to
+// the next (1.30% on 2026-10-30, 0.99% the day before). The rate follows the
+// ids the filter hashes, not the walk: at this instant, with the 14 other
+// cards of each load spelled 40 other ways, the 90-load session's worst rate
+// ranged from 0.59% to 1.64% (mean 1.03%) with main's newest-first notable
+// order, and from 0.33% to 1.64% (mean 0.96%) with the years in turns, above
+// 1.2% for 8 of the 40 spellings with either (ENG-166).
+const SESSION_START = Date.parse('2026-10-29T12:00:00Z');
 // The last year a notable lane reads (readNotableCandidates): the session's
 // notable papers are older, and the ones the harvest files are of this year.
-const lastNotableYear = new Date().getUTCFullYear() - 1;
+const lastNotableYear = new Date(SESSION_START).getUTCFullYear() - 1;
 // On another device: 1,200 notable cards, then 500 papers, every other one at
 // the top of each order.
 const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) => 2 * index);
@@ -1016,7 +1027,9 @@ const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) 
  * follows and exploration. `request` changes a load's request, and
  * `minutesPerLoad` moves the clock after each load, `pause` before one. With
  * `filing`, the harvest files two recent papers and a notable one after each
- * load, newer than any before: a ranking made after that puts them first.
+ * load, newer than any before: a ranking made after that puts the recent ones
+ * first, and the notable one in its year's turns, one notable card in ten
+ * without likes (ENG-166).
  * The corpus also holds 300 papers of FOLLOWED_TOPIC, which the reader does
  * not ask for: they are ten minutes apart, so the newest 150 are newer than
  * the papers a walk reaches after 100 loads.
@@ -1025,7 +1038,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
   minutesPerLoad?: number; pause?: { load: number; minutes: number }; filing?: boolean; request?: (load: number) => object;
 } = {}) {
   rankingCaches(t);
-  if (minutesPerLoad || pause) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  t.mock.timers.enable({ apis: ['Date'], now: SESSION_START });
   const { env, db, ask } = store();
   // The loads come seconds apart, past the ceiling of a reader's pages a minute.
   Object.assign(env, { PROVIDER_USER_MINUTE_LIMIT: '1000' });
@@ -1088,7 +1101,10 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
 // What a session got: 15 papers of the ranking each load and two notable
 // cards, no paper of the ranking twice, so none the walks passed over came
 // back, and the papers filed before its last 20 loads, which a ranking after
-// their filing puts right after the ones passed over. A false positive of the
+// their filing puts right after the ones passed over. A notable one comes in
+// its year's turns, its lane's newest first (ENG-166): it may still wait
+// behind a newer one its lane filed later, which came, up to a fifth of them.
+// A false positive of the
 // filter passes over one of those too (2611.00052 here, from the first load).
 function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   const short = session.flatMap(({ shown, placed }, load) => (shown.length < 15 || placed.length < 2 ? [`load ${load}: ${shown.length} papers, ${placed.length} notable`] : []));
@@ -1098,8 +1114,19 @@ function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   assert.deepEqual(returned.filter((id, index) => viewedBefore.has(id) || returned.indexOf(id) !== index), [], 'no paper the reader had seen comes back');
   const got = new Set(session.flatMap(load => [...load.shown, ...load.placed]));
   const filed = session.slice(0, -20).flatMap(load => load.filed);
-  const missed = filed.filter(id => !got.has(id));
+  const newerOfLaneCame = (id: string) => {
+    const load = session.findIndex(({ filed: ids }) => ids.includes(id));
+    return id.startsWith('1902.') && session.some(({ filed: ids }, later) => later > load
+      && later % SESSION_CATEGORIES.length === load % SESSION_CATEGORIES.length && ids.some(other => other.startsWith('1902.') && got.has(other)));
+  };
+  const missed = filed.filter(id => !got.has(id) && !newerOfLaneCame(id));
   assert.ok(missed.length <= 0.02 * filed.length, `${missed.length} of ${filed.length} papers filed during the session never came: ${missed.slice(0, 5)}`);
+  // The session files a notable paper of the newest year each load, more than
+  // that year's turns place, so some wait; a lane whose older papers of a year
+  // never get a turn would leave many more.
+  const notableFiled = filed.filter(id => id.startsWith('1902.'));
+  const waiting = notableFiled.filter(id => !got.has(id) && newerOfLaneCame(id));
+  assert.ok(waiting.length <= 0.2 * notableFiled.length, `${waiting.length} of ${notableFiled.length} notable papers filed during the session waited behind a newer one of their lane`);
 }
 
 // Every paper of the ranking before the last one the session got so far, and
@@ -1184,6 +1211,7 @@ test('a like, a new order or set of the reader\'s categories, or a lean toward o
 // ranking, and a ranking again after it keeps what the walk passed.
 test('a filter that holds every paper, with another category on each page, does not grow the order kept for the reader', async t => {
   const entries = rankingCaches(t);
+  t.mock.timers.enable({ apis: ['Date'], now: SESSION_START });
   const { db, ask } = store();
   const categories = Array.from({ length: 15 }, (_, index) => `zz.c${index}`);
   const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');

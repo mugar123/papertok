@@ -1646,6 +1646,181 @@ test("with twelve categories asked, a notable lane holding more than its listing
   assert.ok(offered.every(id => unseenListing.includes(id)), `${offered} are papers of the listing the reader has not seen`);
 });
 
+// Two papers of each year of the window in each of two leaves' notable lanes,
+// the second one newer; the id is the year, the leaf (1 or 2) and the rank.
+// The leaves are asked in this order, not in name order.
+const LEAVES = ['cs.LG', 'cs.CV'];
+const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
+async function notableLeavesCorpus() {
+  const store = corpus();
+  await ingestPapers(store.env, recentPapers(60), { now: NOW });
+  const listed = LEAVES.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
+    paper: notableWork(`W${year}${leafIndex + 1}${rank}`, `Highly cited study ${rank} of ${year} in ${leaf}`, `${year}-0${3 + rank}-01`, 5000, true),
+    lanes: [`notable:${leaf}`],
+  }))));
+  await ingestPapers(store.env, listed, { now: NOW, keepUntil: LISTED_UNTIL });
+  return store;
+}
+
+test("a reader without likes gets the notable years in turns, newest first, and the asked leaves in turns, while their own papers stay newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const notable: Array<{ id: string; year: number | null | undefined; leaves: string[] | undefined }> = [];
+  for (let page = 0; page < 4; page += 1) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, page, pageSize: 15, seen: feedSeenFilter(shown), notable: 5 }), { now: NOW });
+    assert.deepEqual(answer.filter(paper => !paper._notable).map(paper => paper.id), recentIds(15 * page, 15 * (page + 1)), `page ${page}: the ranks stay newest first`);
+    for (const paper of answer.filter(card => card._notable)) notable.push({ id: paper.id, year: paper.year, leaves: paper._fetchedFor });
+    shown.push(...answer.map(paper => paper.id));
+  }
+  // One paper of each year, newest first, then each year again; a year's
+  // leaves take turns, and so do consecutive cards. Each comes with its
+  // lane's newest paper of the year first.
+  const expected = Array.from({ length: 20 }, (_, card) => {
+    const year = WINDOW_YEARS[card % 10];
+    const leaf = (card % 10 + Math.floor(card / 10)) % 2;
+    return { id: `openalex:W${year}${leaf + 1}1`, year, leaves: [LEAVES[leaf]] };
+  });
+  assert.deepEqual(notable, expected);
+});
+
+// On every fresh load (a reload, a refresh, the next session) the app excludes
+// the latest cards it showed, notable ones included: they count as turns already passed, so the
+// years' turns go on rather than starting again from the first (ENG-166 review).
+test('a fresh load that excludes the notable cards shown before continues the years in turns', async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const excludedIds: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (let load = 0; load < 3; load += 1) {
+    // The third load rejects the cards of the second instead.
+    const negativeIds = load === 2 ? excludedIds.splice(2) : [];
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter(shown), excludedIds, negativeIds, notable: 2 }), { now: NOW });
+    const cards = answer.filter(paper => paper._notable);
+    years.push(cards.map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
+    excludedIds.push(...negativeIds, ...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
+// The app asks for the reader's established interests in its ranking of them
+// (selected ones and the affinities it learned), then the ones added since.
+test('the notable leaves take their turns in the order the request asks them in', async () => {
+  const { env } = await notableLeavesCorpus();
+  for (const categories of [LEAVES, [...LEAVES].reverse()]) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories, pageSize: 15, seen: feedSeenFilter([]), notable: 3 }), { now: NOW });
+    assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper._fetchedFor), [[categories[0]], [categories[1]], [categories[0]]], `asked ${categories}`);
+  }
+});
+
+test('a notable paper several asked leaves list takes its turn with the first of them the request asks', async () => {
+  const { env } = await notableLeavesCorpus();
+  // cs.LG holds one more 2025 paper, so cs.CV's lane reaches the shared one first.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025901', 'Highly cited study of 2025 in cs.LG only', '2025-06-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025902', 'Highly cited study of 2025 in both leaves', '2025-03-15', 5000, true), lanes: ['notable:cs.LG', 'notable:cs.CV'] },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.slice(1).flatMap(year => [0, 1].map(rank => `openalex:W${year}${leaf + 1}${rank}`)));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  // 2025's turns: cs.LG's papers newest first, then cs.CV's, the shared one with cs.LG's.
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025901', 'W202521', 'W202511', 'W202520', 'W2025902'].map(id => `openalex:${id}`));
+});
+
+test("a notable paper another asked leaf reaches first still waits for its turn among the first leaf's papers of its year, newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  // cs.CV's lane reaches the shared paper first, cs.LG's after two newer ones.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025903', 'Highly cited study A of 2025 in cs.LG only', '2025-09-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025904', 'Highly cited study B of 2025 in cs.LG only', '2025-08-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025905', 'Highly cited study of 2025 in both leaves', '2025-07-01', 5000, true), lanes: ['notable:cs.LG', 'notable:cs.CV'] },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.slice(1).flatMap(year => [0, 1].map(rank => `openalex:W${year}${leaf + 1}${rank}`)));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025903', 'W202521', 'W2025904', 'W202520', 'W2025905'].map(id => `openalex:${id}`));
+});
+
+test('with a like, the notable cards follow the closest papers, whatever their year or leaf', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Closest first, in an order neither the years nor the leaves give; their
+  // likeness to each other stays under the diversity pass's threshold.
+  const closest = ['W201811', 'W202420', 'W201610', 'W202511', 'W202120'];
+  closest.forEach((id, index) => {
+    const values = [0.8 - index * 0.15, 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - values[0] ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
+});
+
+test('with a like, the notable papers it cannot tell apart stay newest first rather than taking the years in turns', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Only one notable paper has a vector; the others tie.
+  insert.run(idOf('openalex:W201811'), vector([0.8, 0.6, 0, 0, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.year), [2018, 2025, 2025, 2025, 2025]);
+});
+
+test('with a like, the diversity pass orders near copies of the notable papers as it does the page, ties newest first', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // A 2025 paper and a 2019 one are one vector, as close to the like as each
+  // other: the 2025 one comes first, though without likes the years' turns
+  // offer the 2019 one first. 2024's is closer to the like than 2016's but
+  // also closer to them, so the diversity pass puts 2016's next and 2019's last.
+  const copy = [0.9, 0.436, 0, 0, 0, 0];
+  insert.run(idOf('openalex:W202510'), vector(copy));
+  insert.run(idOf('openalex:W201911'), vector(copy));
+  insert.run(idOf('openalex:W202420'), vector([0.88, 0.2, 0.43, 0, 0, 0]));
+  insert.run(idOf('openalex:W201610'), vector([0.85, 0, 0, 0.527, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
+});
+
+// A rejection says nothing about the years the reader wants: "Not interested"
+// on a card with a vector left every notable card of the newest year (ENG-166 review).
+test('with only rejections, the notable papers take the years in turns, the near copies of the rejected papers last, the nearest last of all', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('2610.00058'), vector([0, 1, 0, 0, 0, 0]));
+  // Five papers are offered, in the years' turns: one of 2025, 2024, 2023 and
+  // 2022, then 2025's other one. The first is a copy of the first rejection,
+  // the third a near copy of the second, the fourth far from both.
+  const offered = ['W202511', 'W202421', 'W202311', 'W202221', 'W202510'];
+  insert.run(idOf('openalex:W202511'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202311'), vector([0, 0.9, 0.436, 0, 0, 0]));
+  insert.run(idOf('openalex:W202221'), vector([0, 0, 1, 0, 0, 0]));
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => `W${year}${leaf + 1}${rank}`)))
+    .filter(id => !offered.includes(id)).map(id => `openalex:${id}`);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W202421', 'W202221', 'W202510', 'W202311', 'W202511'].map(id => `openalex:${id}`));
+  // With every notable paper offered, the near copies wait behind all others.
+  const all = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(all.filter(paper => paper._notable).map(paper => paper.year), [2024, 2022, 2021, 2020, 2019]);
+});
+
+test('a reader without likes or rejections reads no vectors for the notable papers', async t => {
+  const { env } = await notableLeavesCorpus();
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.equal(answer.filter(paper => paper._notable).length, 5);
+  assert.deepEqual(trips.flat().filter(sql => sql.includes('work_vectors')), [], 'the years in turns need no vector');
+});
+
 // ─── A reload in one request ───
 
 // The filter holds the papers earlier sessions showed the reader. A page that

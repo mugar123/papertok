@@ -955,6 +955,16 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string |
 // ─── Reading ───
 
 /**
+ * How near a copy of the closest rejected paper a unit vector is: 0 up to
+ * NEGATIVE_SIMILARITY_THRESHOLD, rising linearly to 1 at an identical vector.
+ */
+function rejection(embedding: Float64Array | null, rejectedVectors: Float64Array[]) {
+  const rejectedSimilarity = embedding
+    ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
+  return Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
+}
+
+/**
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
  * Rows it cannot tell apart keep their order (`readCandidates`).
@@ -969,9 +979,7 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
       const embedding = row.embedding ? unitVector(row.embedding) : null;
       const similarity = positives.length && embedding
         ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
-      const rejectedSimilarity = embedding
-        ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
-      const negative = Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
+      const negative = rejection(embedding, rejectedVectors);
       // A fixed scale keeps an uninformative page from stretching its best
       // match to 100%. The client's contribution is bounded independently.
       const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
@@ -1210,8 +1218,10 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * it, or the corpus had dropped the work. A filter holds only the reader's
  * 2,000 most recent papers, so a walk from the top would send again the ones
  * seen before those; one that a page sent and the app never got is sent again.
- * `notable` is the asked categories' notable papers, closest first, which no
- * rank holds, walked the same way from `notableWalked`.
+ * `notable` is the asked categories' notable papers, which no rank holds,
+ * walked the same way from `notableWalked`: closest first with a liked
+ * vector, otherwise the years in turns (`notableYearsInTurns`), near copies of
+ * rejected papers last.
  *
  * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
  * lanes in the same order, `order`, likes, rejections and interest groups
@@ -1666,15 +1676,81 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
+  // The closest notable papers first, without recency: they are years old by
+  // design. A reader without likes gets them with the years in turns; a
+  // rejection says nothing about the years they want, so it only moves near
+  // copies of the rejected papers after the others, the nearest last. The
+  // turns are taken before the excluded papers leave, as turns already passed:
+  // on every fresh load the app excludes the latest cards it showed, notable
+  // ones included, which would otherwise start the turns again from the first
+  // year; the seen filter holds the ones before (ENG-166).
+  const rejectedVectors = negatives.map(unitVector);
+  const notable = likes.length
+    ? rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
+    : notableYearsInTurns(notableRead.candidates, notableLanes)
+      .filter(candidate => !excluded.has(candidate.workId))
+      .map(row => {
+        const embedding = vectors.get(row.workId);
+        return { row, semanticScore: -rejection(embedding ? unitVector(embedding) : null, rejectedVectors) };
+      })
+      .sort((a, b) => b.semanticScore - a.semanticScore);
   return {
     // Each group ranked by its own likes, then the page shared by weight.
     ranks: interleaveByWeight(members.map((rows, index) => rankBySimilarity(rows.map(withVector), groupLikes[index], { now, order: query.order, negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight)),
-    // The closest notable papers first, without recency: they are years old by design.
-    notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
-      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+    notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
   };
+}
+
+/**
+ * The notable candidates with the years in turns, newest first, and the asked
+ * lanes in turns within each year, each lane's rows newest first. A reader
+ * without likes has nothing to rank them by and gets them in this order: one
+ * paper of each year in turn, rather than every paper of the newest year first
+ * (ENG-166). The lanes take their turns in the order the request asks them
+ * in: the app sends the reader's established interests in its ranking of
+ * them, then the areas they added since and the app has not learned yet,
+ * whatever their weight. The years start their turns from
+ * successive lanes, so consecutive papers often come from different lanes
+ * too. Not with one lane;
+ * not from the last year of a round to the first of the next when the lane
+ * count divides the years' count less two (2, 4 or 8 lanes over ten years);
+ * and not where a year lacks papers of a lane, which shifts its turns. A
+ * request that asks the lanes in another order, or a different set of lanes,
+ * changes each year's first paper, so the turns can start again from the
+ * newest year: a reader whose order swaps on every load moves through the
+ * years at half the pace. The app's order moves with skips and view times.
+ */
+function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidate[] {
+  const byYear = new Map<string, Candidate[][]>();
+  for (const candidate of candidates) {
+    const year = candidate.published.slice(0, 4);
+    if (!byYear.has(year)) byYear.set(year, lanes.map(() => []));
+    // A paper listed by several lanes belongs to the first of them, in the
+    // order the request asks, among the lanes whose day's slice offers it
+    // (`candidate.lanes`, `readNotableCandidates`).
+    byYear.get(year)![lanes.findIndex(lane => candidate.lanes.includes(lane))].push(candidate);
+  }
+  // A lane's rows newest first, as its read gives them (`readNotableCandidates`):
+  // a paper several lanes list takes its place among its lane's rows by date,
+  // not at the turn the merge of the lanes reached it.
+  const newestFirst = (a: Candidate, b: Candidate) => (a.published === b.published ? a.workId - b.workId : a.published < b.published ? 1 : -1);
+  const years = [...byYear.keys()].sort().reverse().map((year, index) => {
+    const perLane = byYear.get(year)!.map(rows => rows.sort(newestFirst));
+    return inTurns(perLane.map((_, lane) => perLane[(lane + index) % perLane.length]));
+  });
+  return inTurns(years);
+}
+
+// The lists' items in turns: the first of each list, then the second of each.
+function inTurns<T>(lists: T[][]): T[] {
+  const turns: T[] = [];
+  const longest = Math.max(0, ...lists.map(list => list.length));
+  for (let position = 0; position < longest; position += 1) {
+    for (const list of lists) if (position < list.length) turns.push(list[position]);
+  }
+  return turns;
 }
 
 // ─── Requests ───
