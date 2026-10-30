@@ -81,7 +81,11 @@ const AUTO_RETRY_PAUSE_MS = 2_500;
  * isolate, the token's verification, the store's reads): the retry goes at
  * once, with the store's usual deadline, so a Worker that does not answer
  * shows the error 13.5 s after the first token instead of 22.5 s (ENG-116).
- * Any other failure keeps the pause, and its retry the load's own deadline.
+ * Any other failure keeps the pause, and its retry the load's own deadline:
+ * a first screen refused or cut off just before 10 s still shows the error
+ * about 22.5 s after the token. A first page of only seen papers whose next
+ * page then times out reaches about 23.5 s: that page goes on as the same
+ * load, with its own 10 s, before the 3.5 s retry.
  */
 export function automaticRetry(error: unknown, waitedFirstScreen: boolean) {
   return waitedFirstScreen && feedLoadFailure(error).reason === 'timeout'
