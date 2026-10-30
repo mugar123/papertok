@@ -2442,6 +2442,55 @@ test('a page without likes reads the vectors of its newest candidates only, and 
   assert.equal(kept[0].final, false);
 });
 
+// Candidates on a few dates, so the newest 600 end inside a run of ties, many
+// of them near a rejection, so the rounds go on: the ranks a page decides are
+// those a page that skips seen papers ranks, which reads every vector.
+test('the ranks a page without likes decides are the ones a read of every vector gives, ties at the edge of a round included', async () => {
+  for (const seed of [1, 2, 3]) {
+    const { env, db } = corpus();
+    const random = seeded(seed);
+    const vector = clusteredVectors(random, 6);
+    const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+    const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+    const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+    const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+    const add = (workId: number, lanes: string[], published: string, embedding: Int8Array | null) => {
+      const id = `2610.${String(workId).padStart(5, '0')}`;
+      insertWork.run(workId, JSON.stringify({ id, arxivId: id, title: `Paper ${workId}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+      insertKey.run(`arxiv:${id}`, workId);
+      lanes.forEach(lane => insertLane.run(lane, workId, published));
+      if (embedding) insertVector.run(workId, Buffer.from(embedding.buffer));
+      return id;
+    };
+    db.exec('BEGIN');
+    for (let workId = 1; workId <= 1_600; workId += 1) {
+      const lanes = [['cs.LG'], ['cs.CL'], ['cs.LG', 'cs.CL'], ['econ.GN']][Math.floor(random() * 4)];
+      // A cluster of the rejections' for one in three.
+      const embedding = random() < 0.1 ? null : vector(random() < 0.35 ? 0 : 1 + Math.floor(random() * 5), random() * 0.8);
+      add(workId, lanes, new Date(NOW - Math.floor(random() * 12) * 86_400_000).toISOString(), embedding);
+    }
+    const old = new Date(NOW - 60 * 86_400_000).toISOString();
+    const rejections = [add(1_601, [], old, vector(0, 0.2)), add(1_602, [], old, vector(0, 0.4))];
+    db.exec('COMMIT');
+    const groups = [
+      { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: [], weight: 1 },
+      { categories: ['cs.CL', 'econ.GN'], exampleCategories: ['cs.CL', 'econ.GN'], positiveIds: [], weight: 3 },
+    ];
+    for (const order of ['recent', 'relevance'] as const) {
+      const keptBy = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+        const kept: KeptRanking[] = [];
+        await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache: { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } } });
+        return kept[0].ranks.map(rank => rank && [rank.workId, rank.semanticScore]);
+      };
+      const everyVector = await keptBy({ groups, negativeIds: rejections, order, seen: feedSeenFilter([]), skipsSeen: true, pageSize: 30 });
+      for (const page of [0, 3, 20]) {
+        const decided = Math.max(500, (page + 1) * 30);
+        assert.deepEqual((await keptBy({ groups, negativeIds: rejections, order, page, pageSize: 30 })).slice(0, decided), everyVector.slice(0, decided), `seed ${seed}, ${order}, page ${page}`);
+      }
+    }
+  }
+});
+
 // A like ranks every candidate by its closeness, and a page that skips seen
 // papers can walk past any rank: both read every candidate's vector, as before.
 test('a page with likes, or one that skips seen papers, reads every candidate vector as before', async t => {

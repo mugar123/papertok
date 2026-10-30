@@ -943,6 +943,10 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string |
 
 // ─── Reading ───
 
+// The ranking's order: the higher score first, then the newer date. A sort
+// keeps the candidates' order where both are equal.
+const scoreOrder = (score: number, published: string, otherScore: number, otherPublished: string) => otherScore - score || otherPublished.localeCompare(published);
+
 /**
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
@@ -960,22 +964,14 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
  * groups rank it.
  */
 function rankByUnitVectors<T extends { published: string }>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
-  const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
-  const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
+  const scoreOf = scorer(likedVectors, rejectedVectors, { now, order });
   const ranked = rows
     .map(row => {
       const embedding = unitOf(row);
-      const similarity = likedVectors.length && embedding
-        ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
-      const rejectedSimilarity = embedding
-        ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
-      const negative = Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
-      // A fixed scale keeps an uninformative page from stretching its best
-      // match to 100%. The client's contribution is bounded independently.
-      const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
-      return { row, embedding, score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(row.published), semanticScore };
+      const { score, semanticScore } = scoreOf(embedding, row.published);
+      return { row, embedding, score, semanticScore };
     })
-    .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
+    .sort((a, b) => scoreOrder(a.score, a.row.published, b.score, b.row.published));
   if (!likedVectors.length && !rejectedVectors.length) return ranked;
   // Limit both the pool and selected prefix: a full 4,000 x 4,000 MMR pass
   // would dominate Worker CPU. The untouched tail remains available.
@@ -983,6 +979,28 @@ function rankByUnitVectors<T extends { published: string }>(rows: T[], unitOf: (
   const selected = pool.every(candidate => Number.isFinite(candidate.score)) ? selectDiverse(pool) : selectDiverseEagerly(pool);
   const chosen = new Set(selected);
   return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
+}
+
+/**
+ * A candidate's score by these likes and rejections, from its unit vector
+ * (null when it has none) and its date. Without a vector, or near no
+ * rejection, a candidate without likes scores its recency alone, the most it
+ * can score (`readDecidingVectors`).
+ */
+function scorer(likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
+  const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
+  const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
+  return (embedding: Float64Array | null, published: string) => {
+    const similarity = likedVectors.length && embedding
+      ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
+    const rejectedSimilarity = embedding
+      ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
+    const negative = Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
+    // A fixed scale keeps an uninformative page from stretching its best
+    // match to 100%. The client's contribution is bounded independently.
+    const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
+    return { score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(published), semanticScore };
+  };
 }
 
 interface DiversityCandidate { embedding: Float64Array | null; score: number }
@@ -1205,8 +1223,7 @@ function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_i
 // As hex text: D1 answers a BLOB as a JSON array of its bytes, about 840
 // bytes and 256 numbers to parse for a vector of 256, where its hex is one
 // string of 512 characters.
-async function readVectors(db: D1Database, workIds: number[]) {
-  const vectors = new Map<number, Int8Array>();
+async function readVectors(db: D1Database, workIds: number[], vectors = new Map<number, Int8Array>()) {
   const chunks: D1PreparedStatement[] = [];
   for (let start = 0; start < workIds.length; start += 2_000) {
     chunks.push(db.prepare('SELECT v.work_id, hex(v.embedding) AS embedding FROM json_each(?) j JOIN work_vectors v ON v.work_id = j.value')
@@ -1357,7 +1374,9 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * order. Otherwise it ranks again, after the ranks already served or walked
  * past (KeptRanking): a paper that arrived since starts on this page, and
  * none served comes back. An order with nothing left to serve is not final:
- * the lanes may be about to fill.
+ * the lanes may be about to fill. Nor is one ranked without likes from the
+ * vectors that decide its page alone (`readDecidingVectors`): the next page
+ * ranks again, from the vectors that decide it.
  *
  * With `skipsSeen`, the page is the first papers of the order the filter does
  * not hold, whatever `page` says, so a reload needs one request however many
@@ -1413,8 +1432,10 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   let notable = kept?.notable ?? [];
   let walked = kept?.walked ?? 0;
   let notableWalked = kept?.notableWalked ?? 0;
+  let everyRank = true;
   if (rankedAgain) {
     const ranked = await rankCandidates(db, lanes, query, now);
+    everyRank = ranked.everyRank;
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
     // A page asked by number needs every rank served, empty ones included, at
     // its place. A paper liked or rejected since leaves its rank empty: a page
@@ -1471,7 +1492,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   };
   const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
+    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: everyRank && ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
   } else if (kept) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
@@ -1691,7 +1712,9 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
   return areas;
 }
 
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number> }> {
+// `everyRank`: whether every rank is the one a read of every vector gives
+// (`readDecidingVectors`).
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number>; everyRank: boolean }> {
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
   const workIdsOf = (ids: string[]) => [...new Set(ids.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const positiveIds = workIdsOf(query.positiveIds);
@@ -1735,19 +1758,22 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // A paper of the reader's notable lanes comes only as a notable card.
   const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
   const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
-  const [vectors] = await Promise.all([
-    // Without a positive or negative vector, recency needs no candidate vectors.
-    // With rejections alone, every offered vector still: the kept order holds
-    // every rank, scored, and a later page serves it, so a rejection must
-    // reach ranks past the diversity pool too.
-    likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
-    keepLiked(db, positiveIds, now),
-  ]);
-  const candidateUnit = unitVectors(vectors);
-  const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
+  const vectors = new Map<number, Int8Array>();
+  const candidateUnit = unitVectors(vectors);
+  const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
+  const [everyRank] = await Promise.all([
+    // Without a positive or negative vector, recency needs no candidate vectors.
+    // With rejections alone, a page asked by number needs only the vectors
+    // that decide its ranks; a walk past seen papers can reach any rank.
+    !likes.length && !negatives.length ? true
+      : !likes.length && !query.skipsSeen && !offeredNotable.length
+        ? readDecidingVectors(db, offered, members, vectors, unitOf, scorer([], negatives, { now, order: query.order }), Math.max(DIVERSITY_POOL, (query.page + 1) * query.pageSize))
+        : readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId), vectors).then(() => true),
+    keepLiked(db, positiveIds, now),
+  ]);
   return {
     // Each group ranked by its own likes, then the page shared by weight.
     ranks: interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
@@ -1756,7 +1782,74 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     notable: rankByUnitVectors(offeredNotable, unitOf, likes, negatives, { now, order: 'relevance' })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
+    everyRank,
   };
+}
+
+// How many candidates past the ranks it decides a page without likes reads
+// first, for the ones a rejection moves down.
+const DECIDING_MARGIN = 100;
+
+/**
+ * Reads into `vectors` the vectors of a ranking without likes, `offered`
+ * newest first, until the first `ranks` of each group's ranking are decided,
+ * and returns whether it read every candidate's. Without likes a candidate
+ * scores at most its recency, what it scores without a vector (`scorer`): once
+ * `ranks` candidates read come before the first unread one of their group
+ * even at that one's most, no unread candidate can reach those ranks, which
+ * hold the diversity pool. The ranks past them place the unread candidates
+ * as if no rejection were near them.
+ */
+async function readDecidingVectors(
+  db: D1Database,
+  offered: Candidate[],
+  members: Candidate[][],
+  vectors: Map<number, Int8Array>,
+  unitOf: (candidate: Candidate) => Float64Array | null,
+  scoreOf: ReturnType<typeof scorer>,
+  ranks: number,
+) {
+  const position = new Map(offered.map((candidate, index) => [candidate.workId, index]));
+  const most = new Map(offered.map(candidate => [candidate.workId, scoreOf(null, candidate.published).score]));
+  // A date that does not parse has no score to order by.
+  if (![...most.values()].every(Number.isFinite)) {
+    await readVectors(db, offered.map(candidate => candidate.workId), vectors);
+    return true;
+  }
+  // The ranking's order, and where it ties the candidates' own (a stable sort).
+  const compare = (score: number, candidate: Candidate, otherScore: number, other: Candidate) => scoreOrder(score, candidate.published, otherScore, other.published)
+    || position.get(candidate.workId)! - position.get(other.workId)!;
+  const newest = [...offered].sort((a, b) => compare(most.get(a.workId)!, a, most.get(b.workId)!, b));
+  const readAt = new Map(newest.map((candidate, index) => [candidate.workId, index]));
+  const scores = new Map<number, number>();
+  const scoreRead = (candidate: Candidate) => {
+    let score = scores.get(candidate.workId);
+    if (score === undefined) scores.set(candidate.workId, (score = scoreOf(unitOf(candidate), candidate.published).score));
+    return score;
+  };
+  const decided = (group: Candidate[], read: number) => {
+    // The group's first candidate not read: the others not read come after it.
+    let edge: Candidate | undefined;
+    for (const candidate of group) {
+      if (readAt.get(candidate.workId)! >= read && (!edge || readAt.get(candidate.workId)! < readAt.get(edge.workId)!)) edge = candidate;
+    }
+    if (!edge) return true;
+    const edgeMost = most.get(edge.workId)!;
+    let before = 0;
+    for (const candidate of group) {
+      if (readAt.get(candidate.workId)! < read && compare(scoreRead(candidate), candidate, edgeMost, edge) < 0) before += 1;
+    }
+    return before >= ranks;
+  };
+  // Each round reads on to twice as far as the last, so a page deep in the
+  // order, or a group few of the newest candidates are in, costs a few round
+  // trips, not one per candidate it needs.
+  for (let read = 0, upTo = ranks + DECIDING_MARGIN; ; upTo *= 2) {
+    await readVectors(db, newest.slice(read, upTo).map(candidate => candidate.workId), vectors);
+    read = Math.min(upTo, newest.length);
+    if (read === newest.length) return true;
+    if (members.every(group => decided(group, read))) return false;
+  }
 }
 
 // Each work's vector normalized the first time a ranking asks for it: a
