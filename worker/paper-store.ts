@@ -56,7 +56,8 @@ const DIVERSITY_WEIGHT = 0.3;
 const NEGATIVE_SIMILARITY_THRESHOLD = 0.75;
 const NEGATIVE_WEIGHT = 0.5;
 const FEED_MAX_PAGE_SIZE = 30;
-// Notable papers a page adds: the app's largest page asks for its three places and two spares.
+// Notable papers a page adds: the app asks for one place per sampled spacing
+// (sampleNotableEvery) plus two spares, and this is the most the Worker adds.
 const FEED_MAX_NOTABLE = 5;
 const FEED_MAX_PAGE = 100;
 const DEFAULT_FEED_USER_MINUTE_LIMIT = 60;
@@ -200,8 +201,9 @@ const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
 // The most-cited papers of a category published in each of the NOTABLE_YEARS
 // years before the current UTC year (paper-sources.ts), filed under
 // `notable:<category>`. A page that says what the reader has seen adds the
-// ones the reader has not, for the app to give one card in every
-// NOTABLE_EVERY (src/utils/feed-enrichment.ts) (Pablo, 2026-10-23).
+// ones the reader has not, for the app to place among the others
+// (placeNotableCards, src/utils/feed-enrichment.ts) at the spacing
+// sampleNotableEvery picks (Pablo, 2026-10-23).
 export const NOTABLE_LANE_PREFIX = 'notable:';
 export const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */

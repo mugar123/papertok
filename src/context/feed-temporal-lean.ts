@@ -22,9 +22,10 @@ export function corpusOrder(lean: number) {
  * `analyticsSurface`): only For You's cards report 'feed'. A card the list no
  * longer holds, such as one the reader dismissed or a report that lands after
  * a refresh, keeps its own mark: only the Worker sets `_notable`, so a card
- * without it is recent. Undefined for any other event, such as a Following card, a library row, a
- * search result or a paper opened from a card's Connections, even when the For
- * You list holds the same paper: it counts toward neither kind.
+ * without it is recent. Undefined for any other event, such as a Following
+ * card, a library row, a search result or a paper opened from a card's
+ * Connections, even when the For You list holds the same paper: it counts
+ * toward neither kind.
  */
 export function forYouCardNotable(cards: ReadonlyArray<Pick<Paper, 'id' | '_notable'>>, paper: Pick<Paper, 'id' | '_notable'>, surface: string | undefined) {
   if (surface !== 'feed') return undefined;

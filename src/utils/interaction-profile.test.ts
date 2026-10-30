@@ -12,6 +12,7 @@ import {
   AFFINITY_MAX,
   AFFINITY_MIN,
   CURATED_ID_CAPS,
+  carryViewedOffForYou,
   INTERACTION_PROFILE_SCHEMA_VERSION,
   MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
@@ -1084,6 +1085,17 @@ test('what the session viewed off For You is not stored, so after a reload that 
   // The tab that viewed it still counts it.
   recordInteractionEvent(profile, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG', notable: false }, NOW);
   assert.equal(temporalOf(profile).recent.shown, 1);
+});
+
+test('a paper viewed off For You before the stored profile loaded still counts one recent card when For You shows it', () => {
+  const beforeLoad = createEmptyInteractionProfile();
+  recordInteractionEvent(beforeLoad, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG' }, NOW);
+  // The stored aggregate replaces the profile; it lists the view but not where it happened.
+  const loaded = deserializeInteractionProfile(serializeInteractionProfile(beforeLoad))!;
+  carryViewedOffForYou(beforeLoad, loaded);
+  recordInteractionEvent(loaded, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG', notable: false }, NOW);
+  recordInteractionEvent(loaded, { paperId: 'fresh', kind: 'skip', category: 'cs.LG', notable: false }, NOW);
+  assert.equal(temporalOf(loaded).recent.shown, 1);
 });
 
 // ENG-166, decision 4.

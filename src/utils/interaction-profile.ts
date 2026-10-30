@@ -538,6 +538,15 @@ function countShown(profile: InteractionProfile, event: InteractionEvent) {
 }
 
 /**
+ * Hands the papers `from` first viewed off For You to `to`, a profile that
+ * replaces it, such as the stored aggregate on load: they are in memory only,
+ * so the replacement would otherwise count their first For You card as shown.
+ */
+export function carryViewedOffForYou(from: InteractionProfile, to: InteractionProfile) {
+  from.viewedOffForYou.forEach(paperId => to.viewedOffForYou.add(paperId));
+}
+
+/**
  * A like, a save or an opened PDF of a paper: once per paper and signal, it
  * counts toward its kind when it is a For You card, and moves the lean by
  * `step`. What it added is kept, for an unlike or unsave to take back.
