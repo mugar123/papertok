@@ -4,6 +4,7 @@ import type { ComponentProps } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
+import { dismissPersistentToastsOnOpen } from './toast.ts';
 
 /**
  * The modal dialog — shadcn's Base UI dialog, drawn in this project's
@@ -31,8 +32,8 @@ function Dialog(props: ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogPortal(props: ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
+function DialogPortal(props: Omit<ComponentProps<typeof DialogPrimitive.Portal>, 'ref'>) {
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} ref={dismissPersistentToastsOnOpen} />;
 }
 
 function DialogClose(props: ComponentProps<typeof DialogPrimitive.Close>) {

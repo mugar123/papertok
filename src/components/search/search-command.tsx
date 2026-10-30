@@ -49,7 +49,6 @@ import { readRecentSearches, updateRecentSearches } from './recent-searches.ts';
 import type { RecentOwner } from './recent-search-owner.ts';
 import { recentsShownTo, shouldRememberQuery } from './recent-search-owner.ts';
 import { Toggle } from '../ui/toggle.ts';
-import { dismissPersistentToasts } from '../ui/toast.ts';
 
 const COPY = {
   en: {
@@ -161,7 +160,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     if (open) {
       reset();
       setRefusal(null);
-      dismissPersistentToasts();
       setLeavingBySelect(false);
       setActiveSection('all');
       setSelectedValue('');

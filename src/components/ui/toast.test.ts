@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { dismissPersistentToasts, listenForToastEscape, toastError } from './toast.ts';
+import { dismissPersistentToastsOnOpen, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -64,15 +64,26 @@ test('Escape keeps the toasts that leave on their own, such as an Undo or a load
   toast.dismiss();
 });
 
-// The search palette fills a phone's screen and traps focus; an error toast
-// raised before it opened sat over its rows' Follow, and Escape there closes
-// the palette, not the toast. Opening it puts such a toast away.
-test('the toasts that stay until closed can be put away without Escape, keeping the ones that leave on their own', () => {
+/**
+ * A dialog, alert dialog, drawer or sheet fills a phone's screen and traps
+ * focus; an error toast raised before it opened sat over it, outside the trap,
+ * and Escape there closes the overlay, not the toast. Each overlay's portal
+ * takes this ref, which React calls with the portal's element as the overlay
+ * opens and with null as it leaves.
+ */
+test('opening an overlay puts away the toasts that stay until closed, keeping the ones that leave on their own', () => {
   const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
   const errors = [toastError('Could not follow Nature. Try again.'), toastError('The list could not be deleted')];
-  dismissPersistentToasts();
+  dismissPersistentToastsOnOpen({} as HTMLElement);
   assert.ok(onScreen(undo), 'the Undo toast is still on screen');
   assert.deepEqual(errors.map(onScreen), [false, false], 'both error toasts were put away');
+  toast.dismiss();
+});
+
+test('an overlay leaving keeps an error raised while it was open', () => {
+  const error = toastError('The list could not be deleted');
+  dismissPersistentToastsOnOpen(null);
+  assert.ok(onScreen(error), 'the error toast is still on screen');
   toast.dismiss();
 });
 

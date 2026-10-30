@@ -27,15 +27,24 @@ export function listenForToastEscape(target: Pick<Window, 'addEventListener' | '
   return () => target.removeEventListener('keydown', dismissToastsOnEscape);
 }
 
-/**
- * Puts away the toasts that stay until they are closed, and keeps those that
- * leave on their own. Also called as the search palette opens: on a phone, or
- * at 400% zoom, the palette fills the screen and a toast raised before it sits
- * over its rows' Follow, outside its focus trap, where Escape closes the
- * palette and leaves the toast.
- */
-export function dismissPersistentToasts() {
+/** Puts away the toasts that stay until they are closed, and keeps those that leave on their own. */
+function dismissPersistentToasts() {
   for (const shown of toast.getToasts()) {
     if ('duration' in shown && shown.duration === Infinity) toast.dismiss(shown.id);
   }
+}
+
+/**
+ * The ref of every modal overlay's portal: the dialog, alert dialog, drawer
+ * and sheet in this folder, and so the search palette, the reader, save to
+ * list, related papers and every confirmation built on them. The portal
+ * attaches as the overlay opens, before that frame is painted. On a phone, or
+ * at 400% zoom, these overlays cover the screen and trap focus; an error toast
+ * raised before one opened sat over it, outside the trap, where Escape closes
+ * the overlay and leaves the toast. An error raised while the overlay is open
+ * stays. Popovers, menus and tooltips are anchored to their control and never
+ * cover the screen, so they leave the toast.
+ */
+export function dismissPersistentToastsOnOpen(portal: HTMLElement | null) {
+  if (portal) dismissPersistentToasts();
 }
