@@ -257,7 +257,8 @@ export async function handleCorpusFeed(
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
 ): Promise<{ papers: Paper[]; skipsSeen?: true }> {
-  const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
+  const bodyRead = Date.now();
+  const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
   const reserve = () => {
     const started = Date.now();
@@ -289,7 +290,11 @@ export async function handleCorpusFeed(
   // read its candidates. Read after the page only, a harvest that ended while
   // it ranked would look finished, though the page was ranked without its
   // papers. Read beside the reservation, so it adds no round trip.
-  const [, followed] = await Promise.all([reserve(), readFollowedLanes(env, lanes)]);
+  const followsRead = Date.now();
+  const [, followed] = await Promise.all([
+    reserve(),
+    lanes.length ? readFollowedLanes(env, lanes).finally(() => timings?.since('follows', followsRead)) : [],
+  ]);
   const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   // Only a first page of categories looks up liked papers: the follows asked

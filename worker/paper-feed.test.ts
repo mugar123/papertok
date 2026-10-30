@@ -9,7 +9,7 @@ import type { FollowEntity } from '../src/utils/following.ts';
 import type { FeedPlan } from '../src/context/feed-corpus-requests.ts';
 import type { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
-import { ingestPapers, quantize } from './paper-store.ts';
+import { database, ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
@@ -1409,15 +1409,54 @@ test("a reader's first page with a single like answers without waiting for the l
   assert.equal(embedded.length, 1, 'the lookup embeds the like after it');
 });
 
-// A signed-in first page through the router, whose identity check takes
+// The test D1, where a statement whose SQL matches one of `slow` takes that
+// many milliseconds on the mocked clock once it answers. A batch takes the
+// longest of its statements' times, as its statements run in one call.
+function slowD1(t: TestContext, d1: D1Database, slow: Array<[RegExp, number]>) {
+  const sqlOf = new WeakMap<D1PreparedStatement, string>();
+  const delay = (sql = '') => Math.max(0, ...slow.filter(([pattern]) => pattern.test(sql)).map(([, ms]) => ms));
+  const tick = (ms: number) => { if (ms > 0) t.mock.timers.tick(ms); };
+  const slowed = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const wrapped: D1PreparedStatement = Object.assign(Object.create(statement) as D1PreparedStatement, {
+      bind: (...params: unknown[]) => slowed(statement.bind(...params), sql),
+      all: async () => {
+        const answer = await statement.all();
+        tick(delay(sql));
+        return answer;
+      },
+    });
+    sqlOf.set(wrapped, sql);
+    return wrapped;
+  };
+  return {
+    prepare: (sql: string) => slowed(d1.prepare(sql), sql),
+    batch: async (statements: D1PreparedStatement[]) => {
+      const answers = await d1.batch(statements);
+      tick(Math.max(0, ...statements.map(statement => delay(sqlOf.get(statement)))));
+      return answers;
+    },
+  } as D1Database;
+}
+
+// A signed-in page through the router, whose identity check takes
 // `identityMs` on the clock, and the console lines it wrote once the work it
-// handed to waitUntil (`waited`) settled. Identity Toolkit knows the reader
-// unless `unknownReader`, and the answer must have `status`.
-async function timedFirstPage(t: TestContext, identityMs: number, {
-  body = { categories: ['cs.CL'], negativeIds: ['2610.40001'] } as object | string,
+// handed to waitUntil (`waited`) settled. The pages of `earlier` are asked
+// first, by the same reader, and write no line. Identity Toolkit knows the
+// reader unless `unknownReader`, and the answer must have `status`.
+async function timedPage(t: TestContext, identityMs: number, {
+  body = { categories: ['cs.CL'], negativeIds: ['2610.40001'] },
+  earlier = [],
+  slow = [],
   unknownReader = false,
   status = 200,
-  waited = [] as Array<Promise<unknown>>,
+  waited = [],
+}: {
+  body?: object | string;
+  earlier?: object[];
+  slow?: Array<[RegExp, number]>;
+  unknownReader?: boolean;
+  status?: number;
+  waited?: Array<Promise<unknown>>;
 } = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   rankingCaches(t);
@@ -1439,19 +1478,26 @@ async function timedFirstPage(t: TestContext, identityMs: number, {
   embed(db, '2610.40001', [1, 0]);
   embed(db, '2610.40002', [1, 0]);
   embed(db, '2610.40003', [0, 1]);
+  Object.assign(env, { PAPER_STORE: slowD1(t, database(env), slow) });
+  const token = fakeIdToken();
+  const ask = async (asked: object | string, work: Array<Promise<unknown>>) => {
+    const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: typeof asked === 'string' ? asked : JSON.stringify(asked),
+    }), env, { waitUntil: promise => { work.push(promise); } });
+    await Promise.all(work);
+    return response;
+  };
   const logged = t.mock.method(console, 'log', () => undefined);
-  const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  }), env, { waitUntil: work => { waited.push(work); } });
-  assert.equal(response.status, status);
-  await Promise.all(waited);
+  for (const page of earlier) assert.equal((await ask(page, [])).status, 200);
+  logged.mock.resetCalls();
+  assert.equal((await ask(body, waited)).status, status);
   return logged.mock.calls.map(call => String(call.arguments[0]));
 }
 
 test('a page slower than 1.5 s on the Worker leaves one line of its steps and counts, without the reader, a paper or a lane', async t => {
-  const lines = await timedFirstPage(t, 1_600);
+  const lines = await timedPage(t, 1_600);
   assert.equal(lines.length, 1);
   // The clock moves only while Identity Toolkit answers.
   assert.deepEqual(JSON.parse(lines[0]), {
@@ -1459,7 +1505,7 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
     route: '/store/papers',
     status: 200,
     totalMs: 1_600,
-    steps: { auth: 1_600, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
+    steps: { auth: 1_600, body: 0, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
     // cs.CL and the cs area's journal lane; three papers, of which the
     // rejected one is not offered and the other two have vectors.
     counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2 },
@@ -1472,7 +1518,7 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
 // the line is for.
 test('a slow page hands its answer and its line to waitUntil, so a reader who gives up does not cancel the line', async t => {
   const waited: Array<Promise<unknown>> = [];
-  const lines = await timedFirstPage(t, 3_800, { waited });
+  const lines = await timedPage(t, 3_800, { waited });
   const settled = await Promise.all(waited);
   assert.equal(settled.filter(work => work instanceof Response).length, 1, 'the answer is handed to waitUntil');
   assert.equal(JSON.parse(lines[0]).totalMs, 3_800);
@@ -1482,21 +1528,36 @@ test('a slow page hands its answer and its line to waitUntil, so a reader who gi
 // check, read apart from a slow page by their status and code.
 test('a slow request the identity check refuses says its status and code, and so does one the feed refuses after it', async t => {
   await t.test('identity refused', async t => {
-    const [line] = await timedFirstPage(t, 1_600, { unknownReader: true, status: 401 });
+    const [line] = await timedPage(t, 1_600, { unknownReader: true, status: 401 });
     const { status, code, steps } = JSON.parse(line);
     assert.deepEqual({ status, code, steps }, { status: 401, code: 'AUTH_REQUIRED', steps: { auth: 1_600 } });
   });
   await t.test('no lanes asked', async t => {
-    const [line] = await timedFirstPage(t, 1_600, { body: { categories: [] }, status: 400 });
+    const [line] = await timedPage(t, 1_600, { body: { categories: [] }, status: 400 });
     const { status, code } = JSON.parse(line);
     assert.deepEqual({ status, code }, { status: 400, code: 'LANES_REQUIRED' });
   });
   await t.test('a body that is not JSON', async t => {
-    const [line] = await timedFirstPage(t, 1_600, { body: 'not json', status: 400 });
+    const [line] = await timedPage(t, 1_600, { body: 'not json', status: 400 });
     assert.equal(JSON.parse(line).code, 'INVALID_JSON');
   });
 });
 
+// The followed lanes are read beside the reservation: a slow read is its own
+// step, not time that no step names.
+test("a follows page's slow read of its followed lanes is the follows step", async t => {
+  const author = { type: 'author', canonicalId: 'name-0', displayName: 'Author 0' };
+  const [line] = await timedPage(t, 0, {
+    // Asked once before, so the lane is registered and the read returns it.
+    earlier: [{ follows: [author] }],
+    body: { follows: [author] },
+    slow: [[/JOIN followed_lanes f/, 1_600]],
+  });
+  // Only the follows step is asserted: the in-memory ledger answers after the
+  // read here, so `quota` too reads the read's time, which on Workers it would not.
+  assert.equal(JSON.parse(line).steps.follows, 1_600);
+});
+
 test('a page within 1.5 s on the Worker writes no line', async t => {
-  assert.deepEqual(await timedFirstPage(t, 1_500), []);
+  assert.deepEqual(await timedPage(t, 1_500), []);
 });
