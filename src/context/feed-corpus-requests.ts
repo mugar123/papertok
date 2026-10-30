@@ -76,18 +76,23 @@ export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): Corpus
  * The answers of one screen's requests, started together just before this
  * call. The main page is awaited until its own deadline; each optional source
  * (the follows, exploration) holds the screen for its budget at most, counted
- * from this call, but an answer that arrived while the main page was awaited
- * is kept, since the reader waited for it anyway (ENG-116). An optional source
- * that fails or runs out gives no papers. Its failure is handled from this
- * call, so one that fails while the main page is awaited is not reported as an
- * unhandled rejection.
+ * from this call, and gives no papers when it fails or runs out. On a first
+ * screen (`firstScreen`, waitsAsFirstScreen) an answer that arrived after its
+ * budget but while the main page was awaited is kept, since the reader waited
+ * for it anyway (ENG-116); a refresh over shown cards and a next page leave it
+ * out. An optional source's failure is handled from this call, so one that
+ * fails while the main page is awaited is not reported as an unhandled
+ * rejection.
  */
-export async function awaitScreenSources<T, O>(main: PromiseLike<T>, optional: Array<{ answer: PromiseLike<O[]>; budgetMs: number }>) {
+export async function awaitScreenSources<T, O>(main: PromiseLike<T>, optional: Array<{ answer: PromiseLike<O[]>; budgetMs: number }>, firstScreen: boolean) {
   const startedAt = Date.now();
-  const optionalAnswers = optional.map(({ answer, budgetMs }) => ({ papers: Promise.resolve(answer).then(papers => papers, () => [] as O[]), budgetMs }));
+  const optionalAnswers = optional.map(({ answer, budgetMs }) => {
+    const papers = Promise.resolve(answer).then(answered => answered, () => [] as O[]);
+    return { papers, onTime: firstScreen ? null : resolveWithin(papers, budgetMs, [] as O[]), budgetMs };
+  });
   const mainAnswer = await Promise.resolve(main).then(value => ({ value }), (error: unknown) => ({ error }));
   const waited = Date.now() - startedAt;
-  const optionalPapers = await Promise.all(optionalAnswers.map(({ papers, budgetMs }) => resolveWithin(papers, budgetMs - waited, [] as O[])));
+  const optionalPapers = await Promise.all(optionalAnswers.map(({ papers, onTime, budgetMs }) => onTime ?? resolveWithin(papers, budgetMs - waited, [] as O[])));
   return { main: mainAnswer, optional: optionalPapers };
 }
 

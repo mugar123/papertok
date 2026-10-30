@@ -144,8 +144,9 @@ type Answer = number | { refusesMs: number };
 // (never, without one; a list gives each of the source's requests in turn its
 // own), and cuts it at the deadline the request was given. A request with no
 // deadline, or one past the 10 s the feed relies on, fails. `sent` counts the
-// requests of each source.
-function slowStore(answerMs: Partial<Record<Source, Answer | Array<Answer | undefined>>>) {
+// requests of each source. With `tokenMs`, every request first waits that long
+// for the ID token, and its delay and deadline count from then.
+function slowStore(answerMs: Partial<Record<Source, Answer | Array<Answer | undefined>>>, tokenMs = 0) {
   const sent: Record<Source, number> = { main: 0, follows: 0, exploration: 0 };
   const fetchWorker = (_url: string, init: RequestInit, timeoutMs: number) => new Promise<Response>((resolve, reject) => {
     if (!Number.isFinite(timeoutMs) || timeoutMs > 10_000) {
@@ -165,7 +166,9 @@ function slowStore(answerMs: Partial<Record<Source, Answer | Array<Answer | unde
       reject(new DOMException('The operation timed out.', 'TimeoutError'));
     }, timeoutMs);
   });
-  return { apiBase: 'https://papertok-report-api.example', fetchWorker, sent };
+  const withToken = (url: string, init: RequestInit, timeoutMs: number) => new Promise<void>(resolve => { setTimeout(resolve, tokenMs); })
+    .then(() => fetchWorker(url, init, timeoutMs));
+  return { apiBase: 'https://papertok-report-api.example', fetchWorker: tokenMs ? withToken : fetchWorker, sent };
 }
 
 // Runs `work` on mocked timers, and says when it settled.
@@ -185,12 +188,13 @@ async function onTheClock<T>(t: TestContext, work: () => Promise<T>) {
 function screen(load: Parameters<typeof waitsAsFirstScreen>[0], store: ReturnType<typeof slowStore>) {
   const plan = feedPlanFor(null, 0, memory({ selected: ['cs.LG'], examples: examples('cs.LG', 2) }));
   const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' } as FollowEntity;
-  const loadShared = { ...shared, firstScreen: waitsAsFirstScreen(load) };
+  const firstScreen = waitsAsFirstScreen(load);
+  const loadShared = { ...shared, firstScreen };
   const ids = (answer: Promise<{ papers: Array<{ id: string }> }>) => answer.then(({ papers }) => papers.map(paper => paper.id));
   return awaitScreenSources(ids(fetchCorpusPage(mainCorpusRequest(plan, loadShared), store)), [
     { answer: ids(fetchCorpusPage(followedCorpusRequest(plan, [author], () => [], loadShared).request, store)), budgetMs: 3_500 },
-    { answer: ids(fetchCorpusPage({ categories: ['cs.AI'], page: 0, pageSize: 2, firstScreen: loadShared.firstScreen }, store)), budgetMs: 4_000 },
-  ]);
+    { answer: ids(fetchCorpusPage({ categories: ['cs.AI'], page: 0, pageSize: 2, firstScreen }, store)), budgetMs: 4_000 },
+  ], firstScreen);
 }
 
 const coldEntry = { reset: true, hasPapers: false };
@@ -223,22 +227,44 @@ test("follows that answered fill a first screen whose main page hangs, which sti
   assert.ok(at >= 10_000 && at < 10_100, `failed at ${at} ms`);
 });
 
-test('a source that fails before the main page answers gives no papers and no unhandled rejection', async (t) => {
-  const unhandled: unknown[] = [];
-  const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
-  process.on('unhandledRejection', onUnhandled);
-  t.after(() => { process.off('unhandledRejection', onUnhandled); });
-  const after = <T>(ms: number, settle: (resolve: (value: T) => void, reject: (error: Error) => void) => void) =>
-    new Promise<T>((resolve, reject) => { setTimeout(() => { settle(resolve, reject); }, ms); });
-  const { value } = await onTheClock(t, () => awaitScreenSources(after<string[]>(5_000, resolve => { resolve(['main']); }), [
-    // The follows' request answers 503 at 1 s.
-    { answer: after<string[]>(1_000, (_, reject) => { reject(new Error('follows 503')); }), budgetMs: 3_500 },
-    // The topic retrieval chunk failed to load before the screen was awaited.
-    { answer: Promise.reject(new Error('chunk 404')), budgetMs: 4_000 },
-  ]));
-  assert.deepEqual(value, { main: { value: ['main'] }, optional: [[], []] });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(unhandled, []);
+for (const firstScreen of [true, false]) {
+  test(`a source that fails before the main page answers gives no papers and no unhandled rejection${firstScreen ? ', on a first screen' : ', over shown cards'}`, async (t) => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    t.after(() => { process.off('unhandledRejection', onUnhandled); });
+    const after = <T>(ms: number, settle: (resolve: (value: T) => void, reject: (error: Error) => void) => void) =>
+      new Promise<T>((resolve, reject) => { setTimeout(() => { settle(resolve, reject); }, ms); });
+    const { value } = await onTheClock(t, () => awaitScreenSources(after<string[]>(5_000, resolve => { resolve(['main']); }), [
+      // The follows' request answers 503 at 1 s.
+      { answer: after<string[]>(1_000, (_, reject) => { reject(new Error('follows 503')); }), budgetMs: 3_500 },
+      // The topic retrieval chunk failed to load before the screen was awaited.
+      { answer: Promise.reject(new Error('chunk 404')), budgetMs: 4_000 },
+    ], firstScreen));
+    assert.deepEqual(value, { main: { value: ['main'] }, optional: [[], []] });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+  });
+}
+
+// Pablo, 2026-10-30: late follows and exploration are kept for first screens
+// only. A 1 s token, the main page at 4.4 s, the follows at 3.6 s (past their
+// 3.5 s) and exploration at 4.2 s (past its 4 s).
+const lateSources = () => slowStore({ main: 3_400, follows: 2_600, exploration: 3_200 }, 1_000);
+
+test('a first screen keeps the follows and exploration that answered past their budgets while its main page was awaited', async (t) => {
+  const { value, at } = await onTheClock(t, () => screen(coldEntry, lateSources()));
+  assert.deepEqual(value, { main: { value: ['main'] }, optional: [['follows'], ['exploration']] });
+  assert.ok(at >= 4_400 && at < 4_500, `shown at ${at} ms`);
+});
+
+test('a refresh over shown cards and a next page leave out the follows and exploration that answered past their budgets', async (t) => {
+  for (const [load, name] of [[overShownCards, 'a refresh or a follow change over shown cards'], [{ reset: false, hasPapers: true }, 'More']] as const) {
+    const { value, at } = await onTheClock(t, () => screen(load, lateSources()));
+    assert.deepEqual(value, { main: { value: ['main'] }, optional: [[], []] }, name);
+    assert.ok(at >= 4_400 && at < 4_500, `${name}: shown at ${at} ms`);
+    t.mock.timers.reset();
+  }
 });
 
 // Pablo, 2026-10-30: a refresh over shown cards keeps main's 3.5 s.

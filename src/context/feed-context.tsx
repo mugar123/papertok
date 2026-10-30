@@ -154,8 +154,8 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 const loadTopicRetrieval = () => import('../services/topic-retrieval-service.ts');
 
 // How long exploration and the follows may hold a page, counted from the start
-// of the load: past it, the page is shown without them, unless they answered
-// while the main page was still awaited (awaitScreenSources).
+// of the load: past it, the page is shown without them, unless a first screen
+// was still awaiting its main page when they answered (awaitScreenSources).
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
@@ -1336,6 +1336,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             { answer: followedCandidates, budgetMs: OPTIONAL_SOURCE_RENDER_BUDGET_MS },
             ...explorationRequests.map(answer => ({ answer, budgetMs: FEED_SOURCE_RENDER_BUDGET_MS })),
           ],
+          firstScreen,
         );
         const mainFailure = 'error' in main ? main : null;
         if (mainFailure) console.error('Error fetching main papers:', mainFailure.error);
