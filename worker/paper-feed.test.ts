@@ -1558,6 +1558,40 @@ test("a follows page's slow read of its followed lanes is the follows step", asy
   assert.equal(JSON.parse(line).steps.follows, 1_600);
 });
 
+test('each D1 read of a slow first page is counted in its own step', async t => {
+  const [line] = await timedPage(t, 0, {
+    slow: [
+      [/JOIN work_keys k/, 300],
+      [/FROM work_lanes WHERE lane = \?/, 400],
+      [/w\.paper, w\.kept_until/, 900],
+    ],
+  });
+  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 400, vectors: 0, rankCpu: 0, works: 900, cacheWrite: 0 });
+});
+
+// The first page keeps its order; the second reads it from the cache.
+const firstPage = { categories: ['cs.CL'], negativeIds: ['2610.40001'], page: 0, pageSize: 1 };
+const secondPage = { ...firstPage, page: 1 };
+
+test('a slow later page that finds its kept order says so, reads no D1 for a ranking, and writes the order it served', async t => {
+  const [line] = await timedPage(t, 0, { earlier: [firstPage], body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.deepEqual({ steps, cache }, { steps: { auth: 0, body: 0, quota: 0, cacheRead: 0, works: 1_600, cacheWrite: 0 }, cache: 'hit' });
+});
+
+test('a later page whose kept order is unchanged writes nothing to the cache, and its line has no cacheWrite step', async t => {
+  const [line] = await timedPage(t, 0, { earlier: [firstPage, secondPage], body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.deepEqual({ steps, cache }, { steps: { auth: 0, body: 0, quota: 0, cacheRead: 0, works: 1_600 }, cache: 'hit' });
+});
+
+test('a later page whose order this location does not hold says miss and ranks again', async t => {
+  const [line] = await timedPage(t, 0, { body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.equal(cache, 'miss');
+  assert.deepEqual(Object.keys(steps).filter(step => ['cacheRead', 'keys', 'wave1', 'vectors', 'cacheWrite'].includes(step)).sort(), ['cacheRead', 'cacheWrite', 'keys', 'vectors', 'wave1']);
+});
+
 test('a page within 1.5 s on the Worker writes no line', async t => {
   assert.deepEqual(await timedPage(t, 1_500), []);
 });

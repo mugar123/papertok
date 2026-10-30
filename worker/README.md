@@ -826,7 +826,7 @@ Each step is in milliseconds and appears only if the request ran it:
 | `rankCpu` | similarity and the diversity pass |
 | `walk` | `unseenRanks` for the page and the notable cards, and walks past dropped works |
 | `works` | `readWorks` for the page's rows |
-| `cacheWrite` | writing the ranking to this location's cache |
+| `cacheWrite` | writing the ranking to this location's cache, when the page changed or ranked it |
 
 The counts are `lanes`, `groups`, `candidates` (lane rows after merging), `notable` (offered
 notable rows, when notable lanes were read) and `vectors` (candidate vectors returned). Rows read

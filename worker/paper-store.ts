@@ -1386,17 +1386,18 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   };
   const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
   step = Date.now();
-  if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
+  if (rankedAgain && cache) {
+    await cache.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
-  } else if (kept) {
+    timings?.since('cacheWrite', step);
+  } else if (kept && cache?.update) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
     if (own?.read || fallback?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
-      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
+      await cache.update(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
         .catch(error => console.warn('Feed ranking not cached', error));
+      timings?.since('cacheWrite', step);
     }
   }
-  if (cache) timings?.since('cacheWrite', step);
   if (ranked.length === 0) return [];
   const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
   const candidates = [...ranked, ...(unseen?.unseen ?? [])];
