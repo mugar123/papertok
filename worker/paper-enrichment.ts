@@ -76,7 +76,10 @@ class OpenAlexUnavailable extends Error {}
 async function openAlexChunk(env: EnrichEnv, filter: string) {
   const url = new URL('https://papertok.internal/openalex/works');
   url.searchParams.set('filter', filter);
-  url.searchParams.set('per_page', '50');
+  // Twice the values a filter holds: OpenAlex can answer one value with two
+  // works (an eprint beside the journal's article, a duplicate DOI record), and
+  // a full page would leave the last papers' works, retractions included, out.
+  url.searchParams.set('per_page', '100');
   url.searchParams.set('select', OPENALEX_ENRICHMENT_SELECT);
   for (let attempt = 0; ; attempt += 1) {
     // A timeout or a refused connection is OpenAlex failing, like a 5xx.

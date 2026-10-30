@@ -597,8 +597,9 @@ test('a DOI holding a comma is never put in an OpenAlex filter: the paper is ask
 // filter is dropped and the request goes out unfiltered. OpenAlex here answers
 // a DOI filter with a journal work for each DOI in it, in the filter's order and
 // one page of `per_page` at most, retracted for `retractedDois`, and anything
-// else with nothing, as an unfiltered page would hold none of these papers.
-function openAlexByFilter(t: import('node:test').TestContext, retractedDois: string[]) {
+// else with nothing, as an unfiltered page would hold none of these papers. A
+// DOI in `twoWorksFor` is answered by an unretracted duplicate record first.
+function openAlexByFilter(t: import('node:test').TestContext, retractedDois: string[], { twoWorksFor = [] as string[] } = {}) {
   const filters: Array<string | null> = [];
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
@@ -610,10 +611,10 @@ function openAlexByFilter(t: import('node:test').TestContext, retractedDois: str
     filters.push(filter);
     const asked = filter?.startsWith('doi:') ? filter.slice('doi:'.length).split('|') : [];
     const selected = url.searchParams.get('select')?.split(',') ?? [];
-    const works = asked.slice(0, Number(url.searchParams.get('per_page'))).map(doi => {
+    const works = asked.flatMap(doi => (twoWorksFor.includes(doi) ? [false, retractedDois.includes(doi)] : [retractedDois.includes(doi)]).map(retracted => {
       const id = `https://openalex.org/W44${String((answered += 1)).padStart(8, '0')}`;
-      return { ...JOURNAL_ONLY_WORK, id, doi: `https://doi.org/${doi}`, ids: { openalex: id, doi: `https://doi.org/${doi}` }, is_retracted: retractedDois.includes(doi) };
-    });
+      return { ...JOURNAL_ONLY_WORK, id, doi: `https://doi.org/${doi}`, ids: { openalex: id, doi: `https://doi.org/${doi}` }, is_retracted: retracted };
+    })).slice(0, Number(url.searchParams.get('per_page')));
     return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
@@ -650,8 +651,8 @@ test('fifty long journal DOIs and arXiv ids are asked in filters the relay forwa
   assert.notEqual(stored(db)[papers[0].id].paper.publicationStatus, 'retracted');
 });
 
-// Short ids fit many more values in 2,000 characters than OpenAlex answers on a
-// page of 50, so the count, not the length, has to close these filters.
+// Short ids fit many more values in 2,000 characters than the 50 a filter is
+// given, so the count, not the length, has to close these filters.
 test('fifty-one short journal DOIs and arXiv ids are asked at most 50 values a filter, each once, and a retraction in the 51st is found', async t => {
   // The newest is asked first, so the 51st paper, the oldest, is asked last.
   const papers = Array.from({ length: 51 }, (_, index) => {
@@ -689,6 +690,47 @@ test('a DOI too long for any filter the relay forwards is not asked, and the pap
   assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
   assert.deepEqual(askedValues(filters, 'doi'), [beside.doi]);
   assert.equal(stored(db)[beside.id].paper.publicationStatus, 'retracted');
+});
+
+// The relay forwards a filter of exactly 2,000 characters and drops one of 2,001.
+for (const [length, filtersAsked] of [[2_000, 1], [2_001, 2]] as const) {
+  test(`two journal DOIs that make a filter of ${length} characters are asked in ${filtersAsked} filter${filtersAsked > 1 ? 's' : ''}, and both retractions are found`, async t => {
+    // `doi:` (4) + first + `|` (1) + second; DOIs are stored in lowercase.
+    const first = `10.5555/${'c'.repeat(997 - '10.5555/'.length)}`;
+    const second = `10.5555/${'d'.repeat(length - 4 - 1 - 997 - '10.5555/'.length)}`;
+    const papers = [first, second].map((doi, index) => ({ ...preprint, id: `2610.6666${index}`, arxivId: `2610.6666${index}`, doi, title: `A paper with a DOI at the filter's edge (${index})` }));
+    const filters = openAlexByFilter(t, [first, second]);
+    const { binding, db } = testD1();
+    const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+    await ingestPapers(env, papers.map(paper => ({ paper, lanes: [] })), { now: NOW });
+
+    await enrichPending(env, 50, NOW);
+    assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+    const doiFilters = filters.filter(filter => filter?.startsWith('doi:'));
+    assert.equal(doiFilters.length, filtersAsked);
+    if (filtersAsked === 1) assert.equal(doiFilters[0]?.length, 2_000);
+    assert.deepEqual(askedValues(filters, 'doi').sort(), [first, second].sort());
+    for (const paper of papers) assert.equal(stored(db)[paper.id].paper.publicationStatus, 'retracted');
+  });
+}
+
+// OpenAlex can answer one value of a filter with two works. A full filter of
+// 50 DOIs whose first answers twice still finds the retraction of the last.
+test('a filter of fifty journal DOIs, one answered by two works, still finds the retraction in the last', async t => {
+  const papers = Array.from({ length: 50 }, (_, index) => {
+    const id = `2610.${String(70_000 + index)}`;
+    const published = new Date(Date.parse(preprint.published!) - index * 60_000).toISOString();
+    return { ...preprint, id, arxivId: id, published, doi: `10.5555/t${index}`, title: `A paper whose DOI OpenAlex may answer twice (${index})` };
+  });
+  const last = papers[49];
+  const filters = openAlexByFilter(t, [last.doi], { twoWorksFor: [papers[0].doi] });
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.equal(filters.filter(filter => filter?.startsWith('doi:')).length, 1, 'the fifty DOIs share one filter');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
 });
 
 // A search, a reader's lookup of a liked paper by DOI and the lanes of
