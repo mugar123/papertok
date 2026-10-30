@@ -1,7 +1,7 @@
 import type { ComponentProps, MouseEvent } from 'react';
 import type { FollowInput } from '../../utils/following.ts';
 
-import { useCallback, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -32,6 +32,7 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import type { FollowRefusal } from '../following/follow-refused-toast.ts';
 import { toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
+import { toastError } from '../ui/toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
@@ -135,6 +136,12 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   // toast at the top covers its first row's Follow, outside the focus trap,
   // where Escape closes the palette and leaves the toast (followRefusal).
   const [refusal, setRefusal] = useState<FollowRefusal | null>(null);
+  // A Follow can settle after the palette has closed, where its line is gone;
+  // that refusal goes to a toast instead.
+  const openNow = useRef(open);
+  useEffect(() => {
+    openNow.current = open;
+  });
 
   const rememberQuery = useEffectEvent(() => {
     if (!shouldRememberQuery({
@@ -201,7 +208,9 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.stopPropagation();
     setPendingEntity(entity.id);
     setRefusal(null);
-    setRefusal(await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow }));
+    const refused = await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow });
+    if (openNow.current) setRefusal(refused);
+    else if (refused) toastError(refused.message, { action: refused.action });
     setPendingEntity(null);
   }, [isFollowing, toggleFollow]);
 
