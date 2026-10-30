@@ -1651,8 +1651,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // rejection says nothing about the years they want, so it only moves near
   // copies of the rejected papers after the others, the nearest last. The
   // turns are taken before the excluded papers leave, as turns already passed:
-  // the app excludes the cards it showed on every fresh load, which would
-  // otherwise start the turns again from the first year (ENG-166).
+  // on every fresh load the app excludes the latest cards it showed, notable
+  // ones included, which would otherwise start the turns again from the first
+  // year; the seen filter holds the ones before (ENG-166).
   const rejectedVectors = negatives.map(unitVector);
   const notable = likes.length
     ? rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })

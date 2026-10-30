@@ -1658,8 +1658,8 @@ test("a reader without likes gets the notable years in turns, newest first, and 
   assert.deepEqual(notable, expected);
 });
 
-// The app excludes the cards it showed on every fresh load (a reload, a
-// refresh, the next session): they count as turns already passed, so the
+// On every fresh load (a reload, a refresh, the next session) the app excludes
+// the latest cards it showed, notable ones included: they count as turns already passed, so the
 // years' turns go on rather than starting again from the first (ENG-166 review).
 test('a fresh load that excludes the notable cards shown before continues the years in turns', async () => {
   const { env } = await notableLeavesCorpus();
