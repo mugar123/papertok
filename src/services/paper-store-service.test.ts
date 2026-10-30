@@ -311,6 +311,32 @@ test('a slow ID token does not spend the deadline of the store request, and the 
   assert.equal((tooSlow.reason as Error).name, 'TimeoutError');
 });
 
+// ENG-116: once the deadline started after the token, every feed failure was a
+// list's first page timing out at 3.5 s, mostly on a session's first load, and
+// the automatic retry usually brought the papers. That page waits longer; a
+// later page does not.
+test("a store that answers in 5 s fills a list's first screen, and a later page still times out", async () => {
+  const sent: unknown[] = [];
+  const answersIn5s = async (_url: string, init: RequestInit, timeoutMs?: number) => {
+    sent.push(JSON.parse(String(init.body)));
+    const { signal } = withRequestDeadline(init, timeoutMs);
+    return new Promise<Response>((resolve, reject) => {
+      const answer = setTimeout(() => resolve(new Response(JSON.stringify({ papers: [STORED] }), { status: 200 })), 5_000);
+      signal.addEventListener('abort', () => { clearTimeout(answer); reject(signal.reason); }, { once: true });
+    });
+  };
+  const options = { apiBase: WORKER, fetchWorker: answersIn5s };
+  const [firstScreen, laterPage] = await Promise.allSettled([
+    fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, firstScreen: true }, options),
+    fetchCorpusPage({ categories: ['med.cardio'], page: 1, pageSize: 15 }, options),
+  ]);
+  assert.ok(firstScreen.status === 'fulfilled');
+  assert.deepEqual(firstScreen.value.papers, [STORED]);
+  assert.ok(laterPage.status === 'rejected');
+  assert.equal((laterPage.reason as Error).name, 'TimeoutError');
+  assert.ok(sent.every(body => !Object.hasOwn(body as object, 'firstScreen')), 'the wait is the app\'s; the Worker is not told');
+});
+
 test('a connection lost while the answer arrives is marked unreachable too', async () => {
   const cut = new ReadableStream({ start(controller) { controller.error(new TypeError('network error')); } });
   const { options } = harness(async () => new Response(cut, { status: 200 }));
