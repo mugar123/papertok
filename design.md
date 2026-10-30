@@ -456,12 +456,15 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   leave on their own, such as an Undo, are not affected by Escape. The search
   palette says a refused Follow in its own warning line instead: on a phone it
   fills the screen, and a toast would cover its first row outside its focus
-  trap, where Escape closes the palette. For the same reason, no error toast
-  is shown over an open dialog, alert dialog, drawer or sheet (the palette
-  among them): opening one puts away the error toasts raised before it, and one
-  raised while it is open, such as a Follow pressed on a page that settles
-  later, waits and appears once the last one has closed. Popovers, menus and
-  tooltips sit beside their control, so they do neither.
+  trap, where Escape closes the palette. For the same reason, opening a
+  dialog, alert dialog, drawer or sheet (the palette among them) puts away the
+  error toasts raised before it, and the error of an action started before it
+  opened, such as a Follow pressed on a page that settles later, waits and
+  appears once it has closed. An error of an action taken inside the open
+  overlay appears at once: it is the reader's only answer. Popovers,
+  tooltips, selects and dropdown menus sit beside their control, so they do
+  neither; a menu drawn as a dialog or drawer (the paper's More menu, the rail
+  menu, and the account menu on a phone) counts as an overlay.
 
 ### The Action Rail (signature)
 The card's right-hand column: Like, Save, Connections, Similar papers and More

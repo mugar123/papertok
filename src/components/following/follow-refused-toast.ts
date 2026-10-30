@@ -83,7 +83,7 @@ export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, 
  * 25-word message with it before a keyboard or screen-reader user could get
  * there (WCAG 2.2.1).
  */
-export function toastFollowRefused(error: unknown, context: RefusalContext) {
+export function toastFollowRefused(error: unknown, context: RefusalContext & { overlaysAtStart?: number }) {
   const { message, action } = followRefusal(error, context);
-  return toastError(message, { action });
+  return toastError(message, { action, overlaysAtStart: context.overlaysAtStart });
 }

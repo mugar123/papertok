@@ -100,6 +100,7 @@ import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import PaperCard from '../feed/paper-card.tsx';
@@ -1520,10 +1521,13 @@ export default function EntityExplorer({
       requestAccount();
       return;
     }
-    // Said aloud too: the toast region is a live region.
+    // Said aloud too: the toast region is a live region. It waits for an
+    // overlay opened before the write settles, such as the search palette.
+    const overlaysAtStart = openOverlayCount();
     toggleFollow(followEntity).catch((error: unknown) => toastFollowRefused(error, {
       name: entityDisplayName,
       following: entityIsFollowing,
+      overlaysAtStart,
       openSettings: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); },
     }));
   };

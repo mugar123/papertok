@@ -31,6 +31,7 @@ import { searchPapersAcrossSources } from '../../services/paper-search-service.t
 import { searchEntities } from '../../services/entity-search-service.ts';
 import { useFollowing } from '../../context/following-context.tsx';
 import { followName, toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { useLanguage } from '../../context/language-context.tsx';
@@ -431,10 +432,11 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const handleToggleFollow = async (e: MouseEvent, entity: FollowInput) => {
     e.stopPropagation();
     const following = isFollowing(entity);
+    const overlaysAtStart = openOverlayCount();
     try {
       await toggleFollow(entity);
     } catch (error) {
-      toastFollowRefused(error, { name: followName(entity), following });
+      toastFollowRefused(error, { name: followName(entity), following, overlaysAtStart });
     }
   };
 

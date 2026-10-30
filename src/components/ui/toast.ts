@@ -1,24 +1,33 @@
-import { toast } from 'sonner';
+import { toast, type ExternalToast } from 'sonner';
 
 /** How many modal overlays are on screen (`trackModalOverlay`). */
 let openModalOverlays = 0;
-/** The error toasts raised while one was, shown once the last one leaves. */
-let heldErrors: Array<() => void> = [];
+/** Errors waiting for the overlays opened after their action started to leave. */
+let heldErrors: Array<{ overlaysAtStart: number; show: () => void }> = [];
 let heldCount = 0;
 
+/** How many modal overlays are open: a page notes it as an action starts, for `toastError`. */
+export function openOverlayCount() {
+  return openModalOverlays;
+}
+
 /**
- * An error toast that stays until it is closed. Raised while a modal overlay
- * is open, it waits for the last one to leave: on a phone it would sit over
- * the overlay, outside its focus trap, where Escape closes the overlay and
- * leaves the toast. It is announced when it appears. The id is returned
- * either way.
+ * An error toast that stays until it is closed. `overlaysAtStart` is
+ * `openOverlayCount()` when the action that failed started. When an overlay
+ * has opened over that action since, such as the search palette over a page
+ * whose Follow settles late, the error waits for it to leave: on a phone it
+ * would sit over the overlay, outside its focus trap, where Escape closes the
+ * overlay and leaves the toast. Left out, the error belongs to what is on top
+ * now, such as an action inside the open dialog, and appears at once, since it
+ * is the reader's only answer to that action. It is announced when it
+ * appears. The id is returned either way.
  */
-export function toastError(title: Parameters<typeof toast.error>[0], options?: Parameters<typeof toast.error>[1]) {
+export function toastError(title: Parameters<typeof toast.error>[0], { overlaysAtStart = openModalOverlays, ...options }: ExternalToast & { overlaysAtStart?: number } = {}) {
   const errorOptions = { duration: Infinity, closeButton: true, ...options };
-  if (openModalOverlays === 0) return toast.error(title, errorOptions);
+  if (openModalOverlays <= overlaysAtStart) return toast.error(title, errorOptions);
   heldCount += 1;
-  const id = options?.id ?? `held-error-${heldCount}`;
-  heldErrors.push(() => { toast.error(title, { ...errorOptions, id }); });
+  const id = options.id ?? `held-error-${heldCount}`;
+  heldErrors.push({ overlaysAtStart, show: () => { toast.error(title, { ...errorOptions, id }); } });
   return id;
 }
 
@@ -59,10 +68,11 @@ function dismissPersistentToasts() {
  * once its leave has played. On a phone, or at 400% zoom, these overlays cover
  * the screen and trap focus, and an error toast over one sits outside the
  * trap, where Escape closes the overlay and leaves the toast. So opening one
- * puts away the errors raised before it, and `toastError` holds those raised
- * while one is open until the last one leaves. Popovers, menus and tooltips
- * are anchored to their control and never cover the screen, so they do
- * neither.
+ * puts away the errors raised before it, and `toastError` holds an error of
+ * an action started before it until it leaves. Popovers, tooltips, selects
+ * and dropdown menus are anchored to their control and never cover the
+ * screen, so they do neither; a menu drawn as a dialog or drawer, such as the
+ * paper's More menu or a menu on a phone, counts as an overlay.
  */
 export function trackModalOverlay(portal: HTMLElement | null) {
   if (!portal) return undefined;
@@ -70,9 +80,8 @@ export function trackModalOverlay(portal: HTMLElement | null) {
   dismissPersistentToasts();
   return () => {
     openModalOverlays -= 1;
-    if (openModalOverlays > 0) return;
-    const held = heldErrors;
-    heldErrors = [];
-    for (const show of held) show();
+    const due = heldErrors.filter(held => held.overlaysAtStart >= openModalOverlays);
+    heldErrors = heldErrors.filter(held => held.overlaysAtStart < openModalOverlays);
+    for (const held of due) held.show();
   };
 }

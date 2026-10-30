@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
+import { openOverlayCount, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -85,16 +85,38 @@ test('opening an overlay puts away the toasts that stay until closed, keeping th
 });
 
 // A Follow pressed on a page settles after the palette, or any other modal
-// overlay, opened: its refusal waits for the overlay to leave, then appears.
-test('an error raised while overlays are open appears once the last one has left', () => {
+// overlay, opened: its refusal waits for the overlays opened since to leave.
+test('an error of an action started behind overlays opened since appears once they have left', () => {
+  const closeSheet = openOverlay();
+  const overlaysAtStart = openOverlayCount();
   const closePalette = openOverlay();
   const closeConfirmation = openOverlay();
-  const error = toastError('Could not follow Nature. Try again.');
-  assert.ok(!onScreen(error), 'nothing sits over the open overlays');
+  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
+  assert.ok(!onScreen(error), 'nothing sits over the overlays opened after the press');
   closeConfirmation();
   assert.ok(!onScreen(error), 'the palette is still open');
   closePalette();
-  assert.ok(onScreen(error), 'the error is on screen once both have left');
+  assert.ok(onScreen(error), 'the error is on screen once both have left, over the sheet it was pressed in');
+  closeSheet();
+  toast.dismiss();
+});
+
+// Creating a public list in the save dialog whose publishing fails: the toast
+// is the only answer to that action, so it must not wait for the dialog.
+test('an error of an action taken in the open overlay appears at once', () => {
+  const closeSaveDialog = openOverlay();
+  const error = toastError('List created, but still private');
+  assert.ok(onScreen(error), 'the error is on screen over its own dialog');
+  closeSaveDialog();
+  toast.dismiss();
+});
+
+test('an error of an action whose overlay has closed since appears at once', () => {
+  const closePalette = openOverlay();
+  const overlaysAtStart = openOverlayCount();
+  closePalette();
+  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
+  assert.ok(onScreen(error), 'the error is on screen');
   toast.dismiss();
 });
 
