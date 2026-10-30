@@ -11,6 +11,7 @@ import {
   notableSince, readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { FeedTimings } from './feed-timings.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { mapAdsPaper } from '../src/services/domain-source-records.ts';
@@ -2616,6 +2617,39 @@ test('a page without likes reads the vectors of its newest candidates only, and 
   assert.equal(kept.length, 1);
   assert.equal(kept[0].final, false);
   assert.equal(kept[0].decided, 500);
+});
+
+// The slow-request line (`FeedTimings`) of a page without likes: each round
+// trip for candidate vectors takes 400 ms here, and every round is in the
+// `vectors` step and counted, so a line shows a page that needed more than one.
+test('a slow page without likes times every round of its vector reads as vectors, and counts the rounds', async t => {
+  const { env, rejections } = coldPageCorpus();
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  const binding = env.PAPER_STORE!;
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+    const results = await batch(statements);
+    if (statements.some(sent => /\bwork_vectors\b/.test((sent as unknown as { sql: string }).sql))) t.mock.timers.tick(400);
+    return results;
+  });
+  const line = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+    const timings = new FeedTimings();
+    await readFeedPage(env, parseFeedRequest(body), { now: NOW, timings });
+    const logged = t.mock.method(console, 'log', () => undefined);
+    timings.logIfSlow('/store/papers', 2_000, { status: 200 });
+    logged.mock.restore();
+    const { steps, counts } = JSON.parse(String(logged.mock.calls[0].arguments[0]));
+    return { vectors: steps.vectors, wave1: steps.wave1, rounds: counts.vectorRounds, read: counts.vectors };
+  };
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections };
+  // The newest 600 decide the page and the diversity pool.
+  assert.deepEqual(await line({ ...body, page: 3, pageSize: 5 }), { vectors: 400, wave1: 400, rounds: 1, read: 546 });
+  // Ranks 930 to 960: the newest 1,030 do not decide them, and a second round reads the rest.
+  assert.deepEqual(await line({ ...body, page: 31, pageSize: 30 }), { vectors: 800, wave1: 400, rounds: 2, read: 1_273 });
+  // A like reads every candidate's vector in one round.
+  assert.deepEqual(await line({ ...body, positiveIds: rejections.slice(0, 1), negativeIds: rejections.slice(1), page: 31, pageSize: 30 }), { vectors: 400, wave1: 400, rounds: 1, read: 1_273 });
+  // Without a like or a rejection, no candidate vector is read.
+  assert.deepEqual(await line({ categories: ['cs.LG', 'cs.CL'], page: 3, pageSize: 5 }), { vectors: 0, wave1: 0, rounds: undefined, read: 0 });
 });
 
 // Exploration asks a random page of 5 within its first 30 ranks, under one

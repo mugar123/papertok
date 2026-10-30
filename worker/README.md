@@ -834,20 +834,23 @@ Each step is in milliseconds and appears only if the request ran it:
 | `keys` | `findWorks` for the likes, rejections and exclusions |
 | `wave1` | candidates, the notable window and check, the likes' vectors and the ungrouped likes' rows, read together |
 | `notableCheck` | the notable "still offered" batch. It is also counted inside `wave1` |
-| `vectors` | the candidates' vectors, read beside `keepLiked` |
+| `vectors` | the candidates' vectors, read beside `keepLiked`: every round, for a page without likes |
 | `rankCpu` | similarity and the diversity pass |
 | `walk` | `unseenRanks` for the page and the notable cards, and walks past dropped works |
 | `works` | `readWorks` for the page's rows |
 | `cacheWrite` | writing the ranking to this location's cache, when the page changed or ranked it |
 
 The counts are `lanes`, `groups`, `candidates` (lane rows after merging), `notable` (offered
-notable rows, when notable lanes were read) and `vectors` (candidate vectors returned). Rows read
+notable rows, when notable lanes were read), `vectors` (candidate vectors returned) and
+`vectorRounds` (D1 round trips for them, when the page read any: more than one only for a page
+without likes, which reads them in rounds). Rows read
 are not in the line: D1 analytics has them per statement.
 
 On Workers, `Date.now()` moves only when I/O completes, so code that runs without I/O takes no
 time on the clock. `rankCpu` therefore reads about 0 in production. The CPU spent parsing vectors
 and ranking is counted in the next step that waits for I/O: `walk` when the page looks for unseen
-papers, otherwise `works`. `totalMs` includes it. The Node tests run on a real clock and
+papers, otherwise `works`. A page without likes scores the vectors of each round before it decides
+whether to read another, so that CPU is in `vectors` whenever a round follows. `totalMs` includes it. The Node tests run on a real clock and
 time each step as written. These lines are kept for 3 days like the others. Only slow requests write
 one, so they stay far below the daily limit.
 

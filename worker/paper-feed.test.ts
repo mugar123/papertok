@@ -1583,7 +1583,7 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
     steps: { auth: 1_600, body: 0, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
     // cs.CL and the cs area's journal lane; three papers, of which the
     // rejected one is not offered and the other two have vectors.
-    counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2 },
+    counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2, vectorRounds: 1 },
   });
   assert.doesNotMatch(lines[0], /reader-1|2610|cs\.CL|area:|rejected/i);
 });

@@ -1823,6 +1823,13 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
   // The ranks a page without likes decides: the diversity pool, and the page.
   const decidedRanks = Math.max(DIVERSITY_POOL, (query.page + 1) * query.pageSize);
+  // Each D1 round trip for candidate vectors: a page without likes may need
+  // several, one after the other.
+  let vectorRounds = 0;
+  const readRound = (workIds: number[]) => {
+    if (workIds.length) vectorRounds += 1;
+    return readVectors(db, workIds, vectors);
+  };
   step = Date.now();
   const [everyRank] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
@@ -1830,12 +1837,15 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // that decide its ranks; a walk past seen papers can reach any rank.
     !likes.length && !negatives.length ? true
       : !likes.length && !query.skipsSeen && !offeredNotable.length
-        ? readDecidingVectors(db, offered, members, vectors, unitOf, scorer([], negatives, { now, order: query.order }), decidedRanks)
-        : readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId), vectors).then(() => true),
+        ? readDecidingVectors(readRound, offered, members, unitOf, scorer([], negatives, { now, order: query.order }), decidedRanks)
+        : readRound([...offered, ...offeredNotable].map(candidate => candidate.workId)).then(() => true),
     keepLiked(db, positiveIds, now),
   ]);
+  // A page without likes scores the candidates it read between its rounds,
+  // so on Workers that CPU is in this step, not in `rankCpu`.
   timings?.since('vectors', step);
   timings?.count('vectors', vectors.size);
+  if (vectorRounds) timings?.count('vectorRounds', vectorRounds);
   step = Date.now();
   // Each group ranked by its own likes, then the page shared by weight.
   const ranks = interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
@@ -1868,8 +1878,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 const DECIDING_MARGIN = 100;
 
 /**
- * Reads into `vectors` the vectors of a ranking without likes, `offered`
- * newest first, until the first `ranks` of each group's ranking are decided,
+ * Reads, a round trip each `readRound`, the vectors of a ranking without likes,
+ * `offered` newest first, until the first `ranks` of each group's ranking are decided,
  * and returns whether it read every candidate's. Without likes a candidate
  * scores at most its recency, what it scores without a vector (`scorer`): once
  * `ranks` candidates read come before the first unread one of their group
@@ -1878,10 +1888,9 @@ const DECIDING_MARGIN = 100;
  * as if no rejection were near them.
  */
 async function readDecidingVectors(
-  db: D1Database,
+  readRound: (workIds: number[]) => Promise<unknown>,
   offered: Candidate[],
   members: Candidate[][],
-  vectors: Map<number, Int8Array>,
   unitOf: (candidate: Candidate) => Float64Array | null,
   scoreOf: ReturnType<typeof scorer>,
   ranks: number,
@@ -1890,7 +1899,7 @@ async function readDecidingVectors(
   const most = new Map(offered.map(candidate => [candidate.workId, scoreOf(null, candidate.published).score]));
   // A date that does not parse has no score to order by.
   if (![...most.values()].every(Number.isFinite)) {
-    await readVectors(db, offered.map(candidate => candidate.workId), vectors);
+    await readRound(offered.map(candidate => candidate.workId));
     return true;
   }
   // The ranking's order, and where it ties the candidates' own (a stable sort).
@@ -1922,7 +1931,7 @@ async function readDecidingVectors(
   // order, or a group few of the newest candidates are in, costs a few round
   // trips, not one per candidate it needs.
   for (let read = 0, upTo = ranks + DECIDING_MARGIN; ; upTo *= 2) {
-    await readVectors(db, newest.slice(read, upTo).map(candidate => candidate.workId), vectors);
+    await readRound(newest.slice(read, upTo).map(candidate => candidate.workId));
     read = Math.min(upTo, newest.length);
     if (read === newest.length) return true;
     if (members.every(group => decided(group, read))) return false;
