@@ -1934,9 +1934,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A Reading history removal answered after this must leave the mark on,
     // and this mark stays even if its own write is refused.
     markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.add(paper.id);
-    setReadPaperIds(newRead);
+    // Built from the queued state, not the ref: an answered Reading history
+    // removal may have queued its move before React drew it.
+    setReadPaperIds((ids) => new Set(ids).add(paper.id));
     const readAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
     setPersonalLibrary((current) => {
