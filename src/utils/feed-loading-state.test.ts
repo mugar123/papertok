@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedLoads, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedLoads, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshStart, regionStatusText, type RefreshStart } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -260,6 +260,41 @@ test('a refresh of a source over shown papers is spoken as a refresh', () => {
   assert.deepEqual(steps, ['Refreshing papers…', 'Papers updated']);
   // For You's refresh runs as its own reset load.
   assert.equal(feedLoads({ fromSource: false, loading: true, isRefreshing: true, hasMore: true, feedLoadingNextPage: false }).replacingList, true);
+});
+
+// PR #425 review: Following's refresh from an empty list (Try again, Check for
+// updates) shows each follow's papers while it still runs. The region said
+// "Loading papers…" under the veil, then "Refreshing papers…" over the first
+// follow's cards, then "Papers updated".
+test('a refresh of a source that began under the veil is one wait while its papers arrive', () => {
+  const speak = () => {
+    let start: RefreshStart = { refreshing: false, overCards: false };
+    return (step: { hasPapers: boolean; isRefreshing: boolean; refreshDone: boolean }) => {
+      start = refreshStart(start, step);
+      const { replacingList } = feedLoads({ fromSource: true, loading: false, isRefreshing: step.isRefreshing, hasMore: false, feedLoadingNextPage: false });
+      const displayState = getFeedDisplayState({ ...baseState, ...step, hasSourceEmptyState: true });
+      return feedStatusText({
+        isRefreshing: step.isRefreshing && start.overCards,
+        loading: replacingList,
+        refreshDone: step.refreshDone,
+        veil: feedAtomVeilCopy({ displayState, isRefreshing: step.isRefreshing }) !== null,
+        hasPapers: step.hasPapers,
+        failed: false,
+      });
+    };
+  };
+  const delivered = [
+    // The first follow has answered; the others have not.
+    { hasPapers: true, isRefreshing: true, refreshDone: false },
+    { hasPapers: true, isRefreshing: true, refreshDone: false },
+    // The last one answers.
+    { hasPapers: true, isRefreshing: false, refreshDone: true },
+  ];
+  const fromEmpty = [{ hasPapers: false, isRefreshing: true, refreshDone: false }, ...delivered];
+  assert.deepEqual(fromEmpty.map(speak()),['Loading papers…', '', '', 'Papers updated']);
+  // Over shown cards it stays a refresh until it ends.
+  const overCards = [{ hasPapers: true, isRefreshing: true, refreshDone: false }, ...delivered];
+  assert.deepEqual(overCards.map(speak()),['Refreshing papers…', 'Refreshing papers…', 'Refreshing papers…', 'Papers updated']);
 });
 
 // Following's silent refresh on a stale cache sets `loading` alone; with no

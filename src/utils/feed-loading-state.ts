@@ -67,6 +67,22 @@ export function feedStatusText({ isRefreshing, loading, refreshDone, veil, hasPa
   return refreshDone && hasPapers && !failed && !loading ? 'Papers updated' : '';
 }
 
+export type RefreshStart = { refreshing: boolean; overCards: boolean };
+
+/**
+ * Whether the running refresh began over shown cards (`overCards`), carried
+ * from render to render: it changes only when a refresh starts or ends.
+ * Following's refresh shows each follow's papers as it answers and is still
+ * running until the last one does. A refresh that began under the veil is
+ * then one "Loading papers…" wait until "Papers updated", not a second wait,
+ * "Refreshing papers…", spoken over the first follow's cards. So
+ * feedStatusText is told of a refresh only when it began over cards.
+ */
+export function refreshStart(previous: RefreshStart, { isRefreshing, hasPapers }: { isRefreshing: boolean; hasPapers: boolean }): RefreshStart {
+  if (previous.refreshing === isRefreshing) return previous;
+  return { refreshing: isRefreshing, overCards: isRefreshing && hasPapers };
+}
+
 /**
  * What the feed's status region is given now, or null to leave it as it is.
  * Nothing until the region has been in the page a moment (`regionReady`):
