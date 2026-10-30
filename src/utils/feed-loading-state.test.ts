@@ -155,6 +155,7 @@ test('the first wait is announced as loading papers, once, through its automatic
     refreshDone: false,
     veil: feedAtomVeilCopy({ displayState: getFeedDisplayState(state), ...state }) !== null,
     hasPapers: Boolean(state.hasPapers),
+    failed: Boolean(state.error),
   });
   const loadingFirst = { ...baseState, loading: true, initialLoadPending: true };
   const retryDue = { ...baseState, error: 'FEED_LOAD_FAILED', initialLoadPending: true, autoRetryPending: true };
@@ -167,7 +168,7 @@ test('the first wait is announced as loading papers, once, through its automatic
 });
 
 test('a refresh over shown papers is spoken as a refresh, and as updated once it lands', () => {
-  const shown = { isRefreshing: false, refreshDone: false, veil: false, hasPapers: true };
+  const shown = { isRefreshing: false, refreshDone: false, veil: false, hasPapers: true, failed: false };
   assert.equal(feedStatusText({ ...shown, isRefreshing: true }), 'Refreshing papers…');
   assert.equal(feedStatusText({ ...shown, refreshDone: true }), 'Papers updated');
   assert.equal(feedStatusText(shown), '');
@@ -176,7 +177,7 @@ test('a refresh over shown papers is spoken as a refresh, and as updated once it
 // Try again, Check again or Explore again from an empty feed: the wait they
 // start, its automatic retry included, is one wait under the veil.
 test('a refresh under the veil is the same wait as the retry that follows it', () => {
-  const underVeil = { isRefreshing: true, refreshDone: false, veil: true, hasPapers: false };
+  const underVeil = { isRefreshing: true, refreshDone: false, veil: true, hasPapers: false, failed: false };
   const retrying = { ...underVeil, isRefreshing: false, refreshDone: true };
   assert.equal(feedStatusText(underVeil), 'Loading papers…');
   assert.equal(feedStatusText(retrying), feedStatusText(underVeil));
@@ -187,11 +188,26 @@ test('a refresh under the veil is the same wait as the retry that follows it', (
 test('a refresh that ends without papers updated nothing', () => {
   const failed = getFeedDisplayState({ ...baseState, error: 'FEED_LOAD_FAILED' });
   assert.equal(failed, FEED_DISPLAY_STATES.ERROR);
-  assert.equal(feedStatusText({ isRefreshing: false, refreshDone: true, veil: feedAtomVeilCopy({ displayState: failed }) !== null, hasPapers: false }), '');
+  assert.equal(feedStatusText({ isRefreshing: false, refreshDone: true, veil: feedAtomVeilCopy({ displayState: failed }) !== null, hasPapers: false, failed: true }), '');
+});
+
+// A refresh over shown papers that failed kept them, and still said "Papers updated".
+test('a refresh over shown papers that fails updated nothing', () => {
+  const shown = { isRefreshing: false, refreshDone: true, veil: false, hasPapers: true };
+  assert.equal(feedStatusText({ ...shown, failed: true }), '');
+  assert.equal(feedStatusText({ ...shown, failed: false }), 'Papers updated');
 });
 
 test('the tail speaks of more papers only under papers already shown', () => {
-  assert.equal(nextPageStatusText({ loading: true, hasPapers: false }), '');
-  assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');
-  assert.equal(nextPageStatusText({ loading: false, hasPapers: true }), '');
+  assert.equal(nextPageStatusText({ loadingNextPage: true, hasPapers: false }), '');
+  assert.equal(nextPageStatusText({ loadingNextPage: true, hasPapers: true }), 'Loading more papers…');
+  assert.equal(nextPageStatusText({ loadingNextPage: false, hasPapers: true }), '');
+});
+
+// A refresh over shown papers, its automatic retry and a follow change replace
+// the list: the tail said "Loading more papers…" beside "Refreshing papers…".
+test('a load that replaces shown papers is not spoken as more papers', () => {
+  const refreshing = { loadingNextPage: false, hasPapers: true };
+  assert.equal(nextPageStatusText(refreshing), '');
+  assert.equal(feedStatusText({ isRefreshing: true, refreshDone: false, veil: false, hasPapers: true, failed: false }), 'Refreshing papers…');
 });

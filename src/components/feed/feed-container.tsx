@@ -280,6 +280,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
+  // A source's only load under shown papers, besides its refresh, is More.
+  const loadingNextPage = source ? source.loading && !isRefreshing : feed.loadingNextPage;
   // Only the For You feed owns the context's list; Following and the Similar
   // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
@@ -1069,7 +1071,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ isRefreshing, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0 });
+  const feedStatus = feedStatusText({ isRefreshing, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0, failed: Boolean(error) || autoRetryPending });
   // Try again, Check again, Explore again and a source empty state's own
   // retry leave as the reload they start begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
@@ -1429,7 +1431,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   would speak for waits that are not happening. Under the
                   veil there is no page to add to: the landmark's status
                   speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0 })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loadingNextPage, hasPapers: papers.length > 0 })}</span>
             </div>
           </div>
         )}

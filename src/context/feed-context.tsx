@@ -16,6 +16,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** The running load is a next page under the list, not one that replaces it. */
+  loadingNextPage: boolean;
   /** A failed load waits for its one automatic retry. */
   autoRetryPending: boolean;
   /** Shown cards whose abstract a running request may still supply. */
@@ -200,7 +202,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
-  const [loading, setLoading] = useState(false);
+  // The load running: one that replaces the list ('reset') or a next page
+  // under it ('next'), whose wait the feed's tail speaks.
+  const [runningLoad, setRunningLoad] = useState<'reset' | 'next' | null>(null);
+  const loading = runningLoad !== null;
+  const loadingNextPage = runningLoad === 'next';
   const [error, setError] = useState<string | null>(null);
   // The request whose automatic retry is due. A retry's timer clears only its
   // own: an older timer that fires after a newer failure must not end its wait.
@@ -244,7 +250,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const notInterestedIdsRef = useRef(notInterestedIds);
   const isTraversingNetwork = useRef(false);
   const feedRequestId = useRef(0);
-  // Whether a feed load is running. Set and cleared with `setLoading`, and
+  // Whether a feed load is running. Set and cleared with `setRunningLoad`, and
   // visible at once: `loading` reaches a callback only after React commits it.
   const feedLoadInFlight = useRef(false);
   // A non-reset load asked of a closure rendered before the last load ended,
@@ -1169,7 +1175,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     feedLoadInFlight.current = true;
     const activeSessionId = feedSessionId.current;
 
-    setLoading(true);
+    setRunningLoad(reset ? 'reset' : 'next');
     setError(null);
     setAutoRetryFor(null);
     pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
@@ -1407,7 +1413,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           if (reset) return loadNextPage();
           // This load ends here, so the next page's load is not refused as a second one.
           feedLoadInFlight.current = false;
-          setLoading(false);
+          setRunningLoad(null);
           setPage(nextPageToFetch);
           setTimeout(loadNextPage, 0);
           return;
@@ -1530,7 +1536,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } finally {
       if (requestId === feedRequestId.current) {
         feedLoadInFlight.current = false;
-        setLoading(false);
+        setRunningLoad(null);
       }
     }
   }, [
@@ -2390,7 +2396,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, loadingNextPage, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2403,7 +2409,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, loadingNextPage, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,

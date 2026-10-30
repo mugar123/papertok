@@ -51,16 +51,21 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
  * feed and the automatic retry after it are one wait, so it is spoken once.
  * The veil's visible copy is in the page from its first frame, so it cannot
  * be the announcement. A refresh over shown papers has its own words, and
- * "Papers updated" only when it ended with papers: a refresh that ends in the
- * error has updated nothing.
+ * "Papers updated" only when it ended with papers and without a failure
+ * (`failed`: the load's error, or its automatic retry still due): a refresh
+ * that fails keeps the old papers and has updated nothing.
  */
-export function feedStatusText({ isRefreshing, refreshDone, veil, hasPapers }: { isRefreshing: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean }) {
+export function feedStatusText({ isRefreshing, refreshDone, veil, hasPapers, failed }: { isRefreshing: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean; failed: boolean }) {
   if (veil) return 'Loading papers…';
   if (isRefreshing) return 'Refreshing papers…';
-  return refreshDone && hasPapers ? 'Papers updated' : '';
+  return refreshDone && hasPapers && !failed ? 'Papers updated' : '';
 }
 
-/** The feed tail's status: only for a next page, under papers already shown. */
-export function nextPageStatusText({ loading, hasPapers }: { loading: boolean; hasPapers: boolean }) {
-  return loading && hasPapers ? 'Loading more papers…' : '';
+/**
+ * The feed tail's status: only for a next page (`loadingNextPage`), under
+ * papers already shown. A load that replaces the list (a refresh, its
+ * automatic retry, a follow change) is not more papers.
+ */
+export function nextPageStatusText({ loadingNextPage, hasPapers }: { loadingNextPage: boolean; hasPapers: boolean }) {
+  return loadingNextPage && hasPapers ? 'Loading more papers…' : '';
 }
