@@ -420,9 +420,11 @@ corpus.
   Their lanes add area:ai and area:cs. The app asks for at most 10 categories
   (`MAIN_CATEGORIES`), so the 12-category rows are the Worker's upper bound
   (`FEED_MAX_CATEGORIES`), not a request the app sends. Likewise 5 notable papers
-  is the most a request can ask for (`FEED_MAX_NOTABLE`); the app asks for 3 on a first page and 4 or 5 on later
-  pages (`notableRequest`: the places of the largest page the load can show,
-  31 cards on a later page, plus `NOTABLE_SPARE`), so 5 is within what it sends.
+  is the most a request can ask for (`FEED_MAX_NOTABLE`). The app asks for one
+  paper per notable place of the largest page the load can show, at the spacing
+  the account's engagement sets, plus `NOTABLE_SPARE` (`notableRequest`). At a
+  close spacing that is often more than 5, and the Worker clamps it to 5, so 5
+  is what such a request reads.
 - **Request.** The app's main page request (`fetchCorpusPage`), not the whole
   load, has the categories as one group and no follows, and asks with `skipsSeen`. It excludes 200 papers and
   its seen filter holds 2,000: the newest papers of every lane it asks for, leaf
