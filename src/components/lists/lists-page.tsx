@@ -1205,9 +1205,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       toastError('The like could not be removed');
     });
   };
-  const unmarkReadInCard = (paperId: string) => unmarkAsRead(paperId, { throwOnError: true }).catch(() => {
-    toastError('The read mark could not be removed');
-  });
+  // The card names its paper by the stored copy's id; the read mark lives
+  // under the id `isRead` checks, as the like does in `toggleLike`.
+  const unmarkReadInCard = (paperId: string) => (
+    unmarkAsRead((shownPaper && interactionIdFor(shownPaper)) ?? paperId, { throwOnError: true }).catch(() => {
+      toastError('The read mark could not be removed');
+    })
+  );
 
   const setListShareId = (listId: string, publicShareId: string | null | undefined) => {
     setPublicSnapshots((current) => {
