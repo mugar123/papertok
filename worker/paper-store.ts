@@ -3,6 +3,7 @@ import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
+import type { FeedTimings } from './feed-timings.ts';
 
 import { PaperBuilder, isPublisherDoi } from '../src/services/paper-builder.ts';
 import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
@@ -1141,7 +1142,7 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
  * current year (a listing before the by-year one, a merge dated this year) is
  * not read until that year is over.
  */
-export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
+export async function readNotableCandidates(db: D1Database, lanes: string[], now: number, timings?: FeedTimings): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
   // Each lane's window in the order of `work_lanes_recent`, whose entries end
   // with the primary key's work id, so D1 reads each row once: numbering the
   // years in SQL with window functions sorted the rows into temporary tables,
@@ -1160,10 +1161,12 @@ export async function readNotableCandidates(db: D1Database, lanes: string[], now
   const offered = lanes.map(() => new Set<number>());
   const asked = slices.flatMap((slice, index) => (slice.length === 0 ? [] : [index]));
   if (asked.length) {
+    const started = Date.now();
     const answers = await db.batch<{ id: number }>(asked.map(index => db.prepare(`SELECT w.id FROM json_each(?) j JOIN works w ON w.id = j.value
       WHERE (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)
         AND EXISTS (SELECT 1 FROM work_lanes l WHERE l.lane = ? AND l.work_id = w.id)`)
       .bind(JSON.stringify(slices[index].map(row => row.work_id)), lanes[index])));
+    timings?.since('notableCheck', started);
     answers.forEach(({ results }, answer) => results.forEach(row => offered[asked[answer]].add(row.id)));
   }
   return {
@@ -1383,7 +1386,7 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * there. The paper ids the walk reads stay in the kept order, so a later page
  * reads only the ones no page has read.
  */
-export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
+export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache, timings }: { now?: number; cache?: RankingCache; timings?: FeedTimings } = {}) {
   const db = database(env);
   const areas = new Set(LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
   const readsEconomics = [...areas].some(area => WORKING_PAPER_AREAS.has(area));
@@ -1394,6 +1397,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
+  timings?.count('lanes', lanes.length);
+  timings?.count('groups', query.groups.length);
   // A page that skips seen papers goes on with its session's walk whatever
   // categories, interest groups and `order` it asks for: the app asks for the
   // reader's first ten categories by their interests, plans the groups again
@@ -1410,7 +1415,12 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   });
   const rankedBy = await rankingInputs(lanes, query);
   const goesOn = query.page > 0 || query.continues;
+  let step = Date.now();
   const kept = goesOn && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  if (goesOn && cache) {
+    timings?.since('cacheRead', step);
+    timings?.keptOrder(kept !== null);
+  }
   // Counted in Workers Logs, without the reader or a paper: a page that goes
   // on with a walk (one past the first, or a first one that continues) whose
   // order this location does not hold, so the walk starts again from the top.
@@ -1424,7 +1434,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   let walked = kept?.walked ?? 0;
   let notableWalked = kept?.notableWalked ?? 0;
   if (rankedAgain) {
-    const ranked = await rankCandidates(db, lanes, query, now);
+    const ranked = await rankCandidates(db, lanes, query, now, timings);
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
     // A page asked by number needs every rank served, empty ones included, at
     // its place. A paper liked or rejected since leaves its rank empty: a page
@@ -1445,6 +1455,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notable = [...notablePassed.ranks, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
   const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
+  step = Date.now();
   const [own, unseen] = await Promise.all([
     query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize, { from: walked }) : null,
     // After the page's own papers, for the app to place: one it leaves out is
@@ -1459,7 +1470,11 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   // too goes on past the works the corpus dropped.
   const walkNamed = () => unseenRanks(db, ranking, null, query.pageSize, { from: query.page * query.pageSize });
   let fallback = own && !own.unseen.length && !query.pastLastPage ? await walkNamed() : null;
+  if (own || unseen) timings?.since('walk', step);
+  step = Date.now();
   const works = await readWorks(db, [...(own ? (fallback ?? own).unseen : named), ...(unseen?.unseen ?? [])].map(candidate => candidate.workId));
+  timings?.since('works', step);
+  step = Date.now();
   // A walk trusts the ids pages left on the kept order, and a work the corpus
   // has dropped since (merged into another, evicted) has no row: the walk
   // goes on past it, and the order loses its id.
@@ -1473,6 +1488,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   }
   if (fallback?.unseen.length) await walkPastDropped(db, fallback, ranking, null, query.pageSize, works);
   if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
+  // The walks past works the corpus dropped, which a page rarely needs.
+  if (own || unseen) timings?.since('walk', step);
   const sent = fallback ?? own;
   const ranked = sent ? sent.unseen : named;
   const walks = {
@@ -1480,14 +1497,17 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notableWalked: unseen ? passedFirst(notable, notableWalked, unseen) : notableWalked,
   };
   const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
-  if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
+  step = Date.now();
+  if (rankedAgain && cache) {
+    await cache.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
-  } else if (kept) {
+    timings?.since('cacheWrite', step);
+  } else if (kept && cache?.update) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
     if (own?.read || fallback?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
-      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
+      await cache.update(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
         .catch(error => console.warn('Feed ranking not cached', error));
+      timings?.since('cacheWrite', step);
     }
   }
   if (ranked.length === 0) return [];
@@ -1701,8 +1721,11 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
   return areas;
 }
 
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number> }> {
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number, timings?: FeedTimings): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number> }> {
+  let step = Date.now();
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
+  timings?.since('keys', step);
+  step = Date.now();
   const workIdsOf = (ids: string[]) => [...new Set(ids.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const positiveIds = workIdsOf(query.positiveIds);
   const negativeIds = workIdsOf(query.negativeIds);
@@ -1718,11 +1741,15 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
     // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
-    notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
+    notableLanes.length ? readNotableCandidates(db, notableLanes, now, timings) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
     readWorks(db, ungrouped),
     readAreaLanes(db, ungrouped),
   ]);
+  // The notable check runs inside this wave, and is counted in both.
+  timings?.since('wave1', step);
+  timings?.count('candidates', candidates.length);
+  if (notableLanes.length) timings?.count('notable', notableRead.candidates.length);
   const signalUnit = unitVectors(signals);
   const vectorsOf = (ids: number[]) => ids.flatMap(id => {
     const unit = signalUnit(id);
@@ -1745,6 +1772,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // A paper of the reader's notable lanes comes only as a notable card.
   const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
   const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
+  step = Date.now();
   const [vectors] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
     // With rejections alone, every offered vector still: the kept order holds
@@ -1753,11 +1781,17 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
     keepLiked(db, positiveIds, now),
   ]);
+  timings?.since('vectors', step);
+  timings?.count('vectors', vectors.size);
+  step = Date.now();
   const candidateUnit = unitVectors(vectors);
   const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
+  // Each group ranked by its own likes, then the page shared by weight.
+  const ranks = interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
+    .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight));
   // The closest notable papers first, without recency: they are years old by
   // design. A reader without likes gets them with the years in turns; a
   // rejection says nothing about the years they want, so it only moves near
@@ -1772,10 +1806,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
       .filter(candidate => !excluded.has(candidate.workId))
       .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
       .sort((a, b) => b.semanticScore - a.semanticScore);
+  timings?.since('rankCpu', step);
   return {
-    // Each group ranked by its own likes, then the page shared by weight.
-    ranks: interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
-      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight)),
+    ranks,
     notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
   };

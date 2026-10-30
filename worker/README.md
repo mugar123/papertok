@@ -783,7 +783,8 @@ failures and its thin-leaves line (step 8 of [Paper store](#paper-store)), a fix
 (one past the first, or a first one that sends `continues`) and finds no order kept for its reader
 (`readFeedPage`; it names no reader and no paper, and counts the walks that started again from the
 top because another location answered, the cache evicted the entry early or the reader was away
-more than 2 hours; a load's main page and follows' page each log one), and one `{ route, status }`
+more than 2 hours; a load's main page and follows' page each log one), one `slow_feed_request`
+line for each `POST /store/papers` slower than 1.5 s (see Slow feed requests below), and one `{ route, status }`
 line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
 500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
 `/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan
@@ -794,6 +795,61 @@ Workers Logs moves to Cloudflare Observability pricing. Read the lines in the Cl
 under Workers & Pages → `papertok-report-api` → Observability, or live with `npx wrangler tail`.
 Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: without it, every
 `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
+
+**Slow feed requests.** A `POST /store/papers` request that takes more than 1.5 s on the Worker,
+from the router's first step to its answer or to its client leaving, writes one `slow_feed_request`
+line (`worker/feed-timings.ts`). It exists to time a cold first page step by step (ENG-116). It
+holds `route`, the answer's `status` or `aborted`, `totalMs`, `steps` and `counts`. It holds `code` only for an error
+answer: the identity error (such as `AUTH_REQUIRED`), the feed's `PaperStoreError` code (such as
+`RATE_LIMITED`) or `PAPER_STORE_FAILED`. It holds `cache` (`hit` or `miss`) only for a page that
+looked for a kept order. It holds no reader, uid or hash of one, paper or work id, lane, category,
+interest, follow, query text or URL. `status` is the answer the Worker produced, not proof that
+the app received it. A line still shows `status` when the client left while the answer was on its
+way, or when the runtime did not learn that the client left; the app's 3.5 s deadline also counts
+its token and network time, which `totalMs` does not. A `status` line with `totalMs` near or above
+3,500 is therefore most likely an answer the app had already given up on.
+
+The runtime cancels a request whose client went away, such as the app giving up at 3.5 s or a
+closed tab, except for work handed to `waitUntil`. `enable_request_signal` in `wrangler.toml` makes
+`request.signal` abort at that moment, and the router then writes the line with `aborted: true` in
+place of `status` and `code`, provided the request has run for more than 1.5 s. Its `steps` are
+the steps that finished; the one under way when the client left is missing, and `totalMs` includes
+it. The router does not hand the answer to `waitUntil`, so an abandoned page stops as it did
+before this line existed: it reads no more D1, starts no lookup of liked or asked papers at a
+provider, and writes no ranking cache, which a retry's page 0 under the same key would otherwise
+have lost to an older order. Work the page had already handed to `waitUntil` (registering its
+follows, a like lookup) still finishes.
+
+Each step is in milliseconds and appears only if the request ran it:
+
+| Step | What it times |
+| --- | --- |
+| `auth` | `verifyFirebaseIdentity`: the 60 s identity cache, and on a miss Identity Toolkit and the cache write |
+| `body` | reading the request body, at most 20 KB |
+| `quota` | `reserveFeedRequest` in `REQUEST_QUOTA_LEDGER`, which runs beside `follows` |
+| `follows` | for a page with follows, the followed lanes' harvest state from D1, read beside `quota` |
+| `ids` | an `{ ids }` lookup: the works, any ingest of missing papers, and the rows |
+| `likesWait` | More like this waiting for the liked paper's lookup, at most 1.5 s |
+| `cacheRead` | a later page reading its kept order |
+| `keys` | `findWorks` for the likes, rejections and exclusions |
+| `wave1` | candidates, the notable window and check, the likes' vectors and the ungrouped likes' rows, read together |
+| `notableCheck` | the notable "still offered" batch. It is also counted inside `wave1` |
+| `vectors` | the candidates' vectors, read beside `keepLiked` |
+| `rankCpu` | similarity and the diversity pass |
+| `walk` | `unseenRanks` for the page and the notable cards, and walks past dropped works |
+| `works` | `readWorks` for the page's rows |
+| `cacheWrite` | writing the ranking to this location's cache, when the page changed or ranked it |
+
+The counts are `lanes`, `groups`, `candidates` (lane rows after merging), `notable` (offered
+notable rows, when notable lanes were read) and `vectors` (candidate vectors returned). Rows read
+are not in the line: D1 analytics has them per statement.
+
+On Workers, `Date.now()` moves only when I/O completes, so code that runs without I/O takes no
+time on the clock. `rankCpu` therefore reads about 0 in production. The CPU spent parsing vectors
+and ranking is counted in the next step that waits for I/O: `walk` when the page looks for unseen
+papers, otherwise `works`. `totalMs` includes it. The Node tests run on a real clock and
+time each step as written. These lines are kept for 3 days like the others. Only slow requests write
+one, so they stay far below the daily limit.
 
 
 ## PDF relay limits

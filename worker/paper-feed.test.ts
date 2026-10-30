@@ -9,7 +9,7 @@ import type { FollowEntity } from '../src/utils/following.ts';
 import type { FeedPlan } from '../src/context/feed-corpus-requests.ts';
 import type { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
-import { ingestPapers, quantize } from './paper-store.ts';
+import { database, ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
@@ -1435,4 +1435,230 @@ test("a reader's first page with a single like answers without waiting for the l
   assert.deepEqual(embedded, [], 'nothing embedded before the answer');
   await Promise.all(after);
   assert.equal(embedded.length, 1, 'the lookup embeds the like after it');
+});
+
+// The test D1, where a statement whose SQL matches one of `slow` takes that
+// many milliseconds on the mocked clock once it answers. A batch takes the
+// longest of its statements' times, as its statements run in one call.
+// `answered` is told the SQL of each statement once its time has passed.
+function slowD1(t: TestContext, d1: D1Database, slow: Array<[RegExp, number]>, answered: (sql: string) => void = () => undefined) {
+  const sqlOf = new WeakMap<D1PreparedStatement, string>();
+  const delay = (sql = '') => Math.max(0, ...slow.filter(([pattern]) => pattern.test(sql)).map(([, ms]) => ms));
+  const tick = (ms: number) => { if (ms > 0) t.mock.timers.tick(ms); };
+  const slowed = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const wrapped: D1PreparedStatement = Object.assign(Object.create(statement) as D1PreparedStatement, {
+      bind: (...params: unknown[]) => slowed(statement.bind(...params), sql),
+      all: async () => {
+        const answer = await statement.all();
+        tick(delay(sql));
+        answered(sql);
+        return answer;
+      },
+    });
+    sqlOf.set(wrapped, sql);
+    return wrapped;
+  };
+  return {
+    prepare: (sql: string) => slowed(d1.prepare(sql), sql),
+    batch: async (statements: D1PreparedStatement[]) => {
+      const answers = await d1.batch(statements);
+      tick(Math.max(0, ...statements.map(statement => delay(sqlOf.get(statement)))));
+      statements.forEach(statement => answered(sqlOf.get(statement) ?? ''));
+      return answers;
+    },
+  } as D1Database;
+}
+
+// A signed-in page through the router, whose identity check takes
+// `identityMs` on the clock, and the console lines it wrote once the work it
+// handed to waitUntil (`waited`) settled. The pages of `earlier` are asked
+// first, by the same reader, and write no line. Identity Toolkit knows the
+// reader unless `unknownReader`, and the answer must have `status`. With
+// `abortAfter`, the client goes away once a D1 statement whose SQL matches it,
+// or the identity check when it matches 'identitytoolkit', has answered.
+async function timedPage(t: TestContext, identityMs: number, {
+  body = { categories: ['cs.CL'], negativeIds: ['2610.40001'] },
+  earlier = [],
+  slow = [],
+  unknownReader = false,
+  status = 200,
+  waited = [],
+  abortAfter,
+}: {
+  body?: object | string;
+  earlier?: object[];
+  slow?: Array<[RegExp, number]>;
+  unknownReader?: boolean;
+  status?: number;
+  waited?: Array<Promise<unknown>>;
+  abortAfter?: RegExp;
+} = {}) {
+  let client: AbortController | null = null;
+  const answered = (step: string) => { if (abortAfter?.test(step)) client?.abort(); };
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  rankingCaches(t);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'identitytoolkit.googleapis.com') throw new Error(`unexpected request to ${url.hostname}`);
+    t.mock.timers.tick(identityMs);
+    answered(url.hostname);
+    return Response.json({ users: unknownReader ? [] : [{ localId: 'reader-1' }] });
+  });
+  t.after(() => { globalThis.fetch = realFetch; });
+  const { env, db } = store();
+  Object.assign(env, { FIREBASE_WEB_API_KEY: 'firebase-test-key' });
+  await ingestPapers(env, [
+    { paper: paper('2610.40001', 'Rejected paper', 3), lanes: [] },
+    { paper: paper('2610.40002', 'Near copy of rejected paper', 2), lanes: [] },
+    { paper: paper('2610.40003', 'Distant topic', 1), lanes: [] },
+  ]);
+  embed(db, '2610.40001', [1, 0]);
+  embed(db, '2610.40002', [1, 0]);
+  embed(db, '2610.40003', [0, 1]);
+  Object.assign(env, { PAPER_STORE: slowD1(t, database(env), slow, answered) });
+  const token = fakeIdToken();
+  const ask = async (asked: object | string, work: Array<Promise<unknown>>, signal?: AbortSignal) => {
+    const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: typeof asked === 'string' ? asked : JSON.stringify(asked),
+      signal,
+    }), env, { waitUntil: promise => { work.push(promise); } });
+    await Promise.all(work);
+    return response;
+  };
+  const logged = t.mock.method(console, 'log', () => undefined);
+  for (const page of earlier) assert.equal((await ask(page, [])).status, 200);
+  logged.mock.resetCalls();
+  client = new AbortController();
+  // Node goes on after the client leaves, where the Workers runtime cancels
+  // the request; the answer is still read here.
+  assert.equal((await ask(body, waited, client.signal)).status, status);
+  return logged.mock.calls.map(call => String(call.arguments[0]));
+}
+
+test('a page slower than 1.5 s on the Worker leaves one line of its steps and counts, without the reader, a paper or a lane', async t => {
+  const lines = await timedPage(t, 1_600);
+  assert.equal(lines.length, 1);
+  // The clock moves only while Identity Toolkit answers.
+  assert.deepEqual(JSON.parse(lines[0]), {
+    event: 'slow_feed_request',
+    route: '/store/papers',
+    status: 200,
+    totalMs: 1_600,
+    steps: { auth: 1_600, body: 0, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
+    // cs.CL and the cs area's journal lane; three papers, of which the
+    // rejected one is not offered and the other two have vectors.
+    counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2 },
+  });
+  assert.doesNotMatch(lines[0], /reader-1|2610|cs\.CL|area:|rejected/i);
+});
+
+// The runtime cancels a request whose client went away (the app gives up at
+// 3.5 s), and those are the requests the line is for. The request writes its
+// line when it learns so, and hands nothing to waitUntil to finish a page no
+// one receives.
+test('a slow page the client gives up on writes one aborted line with the steps it finished, and its answer is not kept running', async t => {
+  const waited: Array<Promise<unknown>> = [];
+  const lines = await timedPage(t, 0, {
+    waited,
+    slow: [[/JOIN work_keys k/, 1_000], [/FROM work_lanes WHERE lane = \?/, 2_600]],
+    abortAfter: /FROM work_lanes WHERE lane = \?/,
+  });
+  // Only the page's follow-up (follows to register, a like to look up) is handed over, as on main.
+  assert.equal((await Promise.all(waited)).filter(work => work instanceof Response).length, 0, 'the answer is not handed to waitUntil');
+  assert.equal(lines.length, 1, 'the answer the Node test still reads writes no second line');
+  // Left while the first wave was still reading: that step is not finished.
+  assert.deepEqual(JSON.parse(lines[0]), {
+    event: 'slow_feed_request',
+    route: '/store/papers',
+    aborted: true,
+    totalMs: 3_600,
+    steps: { auth: 0, body: 0, quota: 0, keys: 1_000 },
+    counts: { lanes: 2, groups: 1 },
+  });
+});
+
+test('a client that gives up during a slow identity check leaves an aborted line with no step, and one that gives up within 1.5 s leaves none', async t => {
+  await t.test('slow', async t => {
+    const lines = await timedPage(t, 3_600, { abortAfter: /identitytoolkit/ });
+    assert.deepEqual(lines.map(line => JSON.parse(line)), [{ event: 'slow_feed_request', route: '/store/papers', aborted: true, totalMs: 3_600, steps: {}, counts: {} }]);
+  });
+  await t.test('fast', async t => {
+    // The page then answers at 1.6 s, which the client no longer waits for.
+    assert.deepEqual(await timedPage(t, 1_000, { abortAfter: /identitytoolkit/, slow: [[/w\.paper, w\.kept_until/, 600]] }), []);
+  });
+});
+
+// A refusal after a slow identity check, and one after a slow but accepted
+// check, read apart from a slow page by their status and code.
+test('a slow request the identity check refuses says its status and code, and so does one the feed refuses after it', async t => {
+  await t.test('identity refused', async t => {
+    const [line] = await timedPage(t, 1_600, { unknownReader: true, status: 401 });
+    const { status, code, steps } = JSON.parse(line);
+    assert.deepEqual({ status, code, steps }, { status: 401, code: 'AUTH_REQUIRED', steps: { auth: 1_600 } });
+  });
+  await t.test('no lanes asked', async t => {
+    const [line] = await timedPage(t, 1_600, { body: { categories: [] }, status: 400 });
+    const { status, code } = JSON.parse(line);
+    assert.deepEqual({ status, code }, { status: 400, code: 'LANES_REQUIRED' });
+  });
+  await t.test('a body that is not JSON', async t => {
+    const [line] = await timedPage(t, 1_600, { body: 'not json', status: 400 });
+    assert.equal(JSON.parse(line).code, 'INVALID_JSON');
+  });
+});
+
+// The followed lanes are read beside the reservation: a slow read is its own
+// step, not time that no step names.
+test("a follows page's slow read of its followed lanes is the follows step", async t => {
+  const author = { type: 'author', canonicalId: 'name-0', displayName: 'Author 0' };
+  const [line] = await timedPage(t, 0, {
+    // Asked once before, so the lane is registered and the read returns it.
+    earlier: [{ follows: [author] }],
+    body: { follows: [author] },
+    slow: [[/JOIN followed_lanes f/, 1_600]],
+  });
+  // Only the follows step is asserted: the in-memory ledger answers after the
+  // read here, so `quota` too reads the read's time, which on Workers it would not.
+  assert.equal(JSON.parse(line).steps.follows, 1_600);
+});
+
+test('each D1 read of a slow first page is counted in its own step', async t => {
+  const [line] = await timedPage(t, 0, {
+    slow: [
+      [/JOIN work_keys k/, 300],
+      [/FROM work_lanes WHERE lane = \?/, 400],
+      [/w\.paper, w\.kept_until/, 900],
+    ],
+  });
+  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 400, vectors: 0, rankCpu: 0, works: 900, cacheWrite: 0 });
+});
+
+// The first page keeps its order; the second reads it from the cache.
+const firstPage = { categories: ['cs.CL'], negativeIds: ['2610.40001'], page: 0, pageSize: 1 };
+const secondPage = { ...firstPage, page: 1 };
+
+test('a slow later page that finds its kept order says so, reads no D1 for a ranking, and writes the order it served', async t => {
+  const [line] = await timedPage(t, 0, { earlier: [firstPage], body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.deepEqual({ steps, cache }, { steps: { auth: 0, body: 0, quota: 0, cacheRead: 0, works: 1_600, cacheWrite: 0 }, cache: 'hit' });
+});
+
+test('a later page whose kept order is unchanged writes nothing to the cache, and its line has no cacheWrite step', async t => {
+  const [line] = await timedPage(t, 0, { earlier: [firstPage, secondPage], body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.deepEqual({ steps, cache }, { steps: { auth: 0, body: 0, quota: 0, cacheRead: 0, works: 1_600 }, cache: 'hit' });
+});
+
+test('a later page whose order this location does not hold says miss and ranks again', async t => {
+  const [line] = await timedPage(t, 0, { body: secondPage, slow: [[/w\.paper, w\.kept_until/, 1_600]] });
+  const { steps, cache } = JSON.parse(line);
+  assert.equal(cache, 'miss');
+  assert.deepEqual(Object.keys(steps).filter(step => ['cacheRead', 'keys', 'wave1', 'vectors', 'cacheWrite'].includes(step)).sort(), ['cacheRead', 'cacheWrite', 'keys', 'vectors', 'wave1']);
+});
+
+test('a page within 1.5 s on the Worker writes no line', async t => {
+  assert.deepEqual(await timedPage(t, 1_500), []);
 });
