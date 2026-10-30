@@ -31,10 +31,11 @@ export interface FeedContextValue {
   /**
    * `seenFallback`: a page of papers shown before, carried by a load that
    * skipped past it. `retriesTimeout`: the automatic retry of a first screen
-   * that timed out (automaticRetry). `emptiedList`: the caller emptied the
-   * list just before, which this render's `papers` does not show yet.
+   * that timed out (automaticRetry). `listShown`: whether cards are on
+   * screen, from a caller that emptied or filled the list just before, which
+   * this render's `papers` does not show yet (waitsAsFirstScreen).
    */
-  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; emptiedList?: boolean }) => Promise<void>;
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -1144,7 +1145,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false, emptiedList = false }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false, listShown }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1236,7 +1237,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        firstScreen = waitsAsFirstScreen({ reset, hasPapers: papers.length > 0 && !emptiedList, retriesTimeout });
+        firstScreen = waitsAsFirstScreen({ reset, hasPapers: papers.length > 0, listShown, retriesTimeout });
         const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
@@ -1389,7 +1390,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           excludedCount: activeMode === 'top' || activeMode === null ? excludedIds.length : 0,
         });
         if (plan.kind === 'relax-exclusions') {
-          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true, retriesTimeout, emptiedList });
+          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true, retriesTimeout, listShown });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw emptyFirstPageError();
@@ -1399,7 +1400,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout, emptiedList });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout, listShown });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1642,7 +1643,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-      void loadPapers(true, null, undefined, { emptiedList: !snapshot?.papers?.length });
+      void loadPapers(true, null, undefined, { listShown: Boolean(snapshot?.papers?.length) });
     });
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 
@@ -1733,7 +1734,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setPage(0);
       setHasMore(true);
       setFeedMode(newMode);
-      setTimeout(() => loadPapers(true, newMode, undefined, { emptiedList: true }), 0);
+      setTimeout(() => loadPapers(true, newMode, undefined, { listShown: false }), 0);
     }
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 

@@ -262,6 +262,14 @@ test('a follow change over a feed with no cards waits as the first screen it is'
   assert.ok(at >= 6_000 && at < 6_100, `shown at ${at} ms`);
 });
 
+test('a load follows what its caller put on screen, not the list of the render that started it', () => {
+  // For You ended in the error, and the reader changed interests to a set
+  // with a saved page: the cards are back before the replacing load.
+  assert.equal(waitsAsFirstScreen({ ...coldEntry, listShown: true }), false, 'an interests edit that restored a saved page');
+  // A mode switch, or an interests edit with no saved page, emptied the list.
+  assert.equal(waitsAsFirstScreen({ ...overShownCards, listShown: false }), true, 'a list emptied just before');
+});
+
 // A load and its one automatic retry, as the feed runs them (loadPapers in
 // feed-context.tsx): the load fails when its main page failed and no other
 // source gave a paper, and the retry follows automaticRetry's pause and wait.

@@ -54,13 +54,17 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
  * an interests edit or a mode switch that emptied the list, Try again, or a
  * follow change after the error. That includes the later pages it fetches
  * while every card of its first page was seen. A load over shown cards (a
- * refresh, a follow change, their automatic retry) keeps the store's usual
- * deadline, as do next pages. The automatic retry of a first screen that
- * timed out has had its wait (`retriesTimeout`, automaticRetry in
- * feed-load-failure.ts).
+ * refresh, a follow change, an interests edit that restored a saved page,
+ * their automatic retry) keeps the store's usual deadline, as do next pages.
+ * The automatic retry of a first screen that timed out has had its wait
+ * (`retriesTimeout`, automaticRetry in feed-load-failure.ts).
+ *
+ * `hasPapers` is the list of the render that started the load. A caller that
+ * emptied or filled the list just before, which that render does not show
+ * yet, says what is on screen with `listShown`.
  */
-export function waitsAsFirstScreen({ reset, hasPapers, retriesTimeout = false }: { reset: boolean; hasPapers: boolean; retriesTimeout?: boolean }) {
-  return reset && !hasPapers && !retriesTimeout;
+export function waitsAsFirstScreen({ reset, hasPapers, listShown = hasPapers, retriesTimeout = false }: { reset: boolean; hasPapers: boolean; listShown?: boolean; retriesTimeout?: boolean }) {
+  return reset && !listShown && !retriesTimeout;
 }
 
 /** The reader's interests, asked by group. */
