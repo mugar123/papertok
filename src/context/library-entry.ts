@@ -51,3 +51,41 @@ export function loadedWithRetractionOf(papers: Record<string, Partial<Paper>>, p
   if (copy.publicationStatus !== 'retracted' || known?.publicationStatus === 'retracted') return papers;
   return { ...papers, [paperId]: known ? withRetractionOf(known, copy) : copy };
 }
+
+/*
+ * A load reads the interaction records: `papers` holds every copy with a real
+ * title, records only liked or saved included, and `entries` the records with
+ * a mark. What is already in memory wins, but a retraction a stored copy
+ * records stands on it (ENG-84).
+ */
+
+/** The library entries after a load. */
+export function libraryAfterLoad(
+  current: Record<string, LibraryEntry>,
+  entries: Record<string, LibraryEntry>,
+  papers: Record<string, Partial<Paper>>,
+) {
+  return Object.entries(current).reduce(
+    (next, [id, entry]) => withLibraryCopy(next, id, entry.paper, {}, papers[id] ?? entries[id]?.paper),
+    { ...entries, ...current },
+  );
+}
+
+/** The loaded interaction copies after a load. */
+export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers: Record<string, Partial<Paper>>) {
+  return Object.entries(papers).reduce(
+    (next, [id, copy]) => loadedWithRetractionOf(next, id, copy),
+    { ...papers, ...current },
+  );
+}
+
+/**
+ * The copy the library holds of a paper: the interaction's copy as loaded,
+ * else the entry's. A mark rewrites only the entry, from the card it was made
+ * on, so a retraction either copy records stands (ENG-84).
+ */
+export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Record<string, Partial<Paper>>, paperId: string) {
+  const entryCopy = library[paperId]?.paper;
+  const loaded = papers[paperId];
+  return loaded ? withRetractionOf(loaded, entryCopy) : entryCopy;
+}

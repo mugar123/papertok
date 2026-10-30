@@ -6,8 +6,9 @@ import { paperLegacyAdapter } from '../models/paper.ts';
 import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
+import { hydrateSeededPaper } from '../utils/paper-seed.ts';
 import { listPaperFromCopies } from '../components/lists/list-paper-copies.ts';
-import { libraryWithRetractionOf, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -44,9 +45,59 @@ test('a library entry keeps the retraction of the copy the library loaded', () =
   // Marked read before the library loaded: the load keeps the entry this
   // session wrote and the stored copy's retraction.
   const current = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' });
-  const afterLoad = withLibraryCopy(current, wakefield.id, current[wakefield.id].paper, {}, loaded);
+  const afterLoad = libraryAfterLoad(current, { [wakefield.id]: { paperId: wakefield.id, paper: loaded } }, { [wakefield.id]: loaded });
   assert.deepEqual(listTags(afterLoad), ['retracted', 'retracted'], 'read, then the library loaded');
   assert.equal(afterLoad[wakefield.id].readAt, '2026-10-29T11:00:00.000Z');
+});
+
+// The load read the record before the read mark's write landed, when it was
+// only liked: it gave the record no entry, and the retraction was lost.
+test('a load keeps the retraction of a record only liked or saved on an entry this session wrote', () => {
+  const current = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' });
+  const afterLoad = libraryAfterLoad(current, {}, { [wakefield.id]: loadedCopy(retracted) });
+  assert.deepEqual(listTags(afterLoad), ['retracted', 'retracted']);
+  assert.equal(afterLoad[wakefield.id].readAt, '2026-10-29T11:00:00.000Z');
+  // A record whose copy has no real title is left out of the loaded copies,
+  // but not out of the entries.
+  const untitled = loadedCopy({ ...retracted, title: '' });
+  const fromEntry = libraryAfterLoad(current, { [wakefield.id]: { paperId: wakefield.id, paper: untitled } }, {});
+  assert.deepEqual(listTags(fromEntry), ['retracted', 'retracted'], 'an untitled record');
+  // A paper only the load read keeps its record's entry as it was.
+  const other = { paperId: 'pmid:1', paper: loadedCopy({ ...unmarked, id: 'pmid:1' }), readLater: true };
+  assert.equal(libraryAfterLoad(current, { 'pmid:1': other }, {})['pmid:1'], other);
+});
+
+test('a load keeps a retraction either the copy in memory or the stored copy records', () => {
+  const tag = (copy: Partial<Paper>) => reviewTagForPaper(paperLegacyAdapter(copy))?.key;
+  const before = { [wakefield.id]: loadedCopy(unmarked) };
+  // Retracted on another device since this session first loaded the library.
+  assert.equal(tag(loadedAfterLoad(before, { [wakefield.id]: loadedCopy(retracted) })[wakefield.id]), 'retracted', 'stored copy');
+  assert.equal(tag(loadedAfterLoad({ [wakefield.id]: loadedCopy(retracted) }, { [wakefield.id]: loadedCopy(unmarked) })[wakefield.id]), 'retracted', 'copy in memory');
+  // Otherwise the copy in memory wins, and a copy only the load read is added.
+  const afterLoad = loadedAfterLoad(before, { [wakefield.id]: loadedCopy(unmarked), 'pmid:1': loadedCopy({ ...unmarked, id: 'pmid:1' }) });
+  assert.equal(afterLoad[wakefield.id], before[wakefield.id]);
+  assert.equal(afterLoad['pmid:1'].id, 'pmid:1');
+});
+
+// ENG-84. The paper page, reached by a link without a copy of its own (a
+// public list's row), lays the library's copy over the provider's answer. It
+// took the loaded copy over the entry's, so after Read later from a PubMed
+// card the list read Retracted and the paper page did not.
+test('the library copy the paper page uses keeps a retraction either copy records', () => {
+  const answer = paperLegacyAdapter(unmarked);
+  const pageTag = (library: Record<string, LibraryEntry>, papers: Record<string, Partial<Paper>>) => {
+    const copy = libraryCopyOf(library, papers, wakefield.id);
+    return copy && reviewTagForPaper(hydrateSeededPaper(paperLegacyAdapter({ ...copy, id: wakefield.id }), answer))?.key;
+  };
+  // The library as loaded, with a copy stored before the retraction.
+  const papers = { [wakefield.id]: loadedCopy(unmarked) };
+  const library = { [wakefield.id]: { paperId: wakefield.id, paper: papers[wakefield.id] } };
+  const readLater = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(retracted), { readLater: true }, papers[wakefield.id]);
+  assert.equal(pageTag(readLater, papers), 'retracted', 'Read later from a retracted card');
+  assert.equal(pageTag(library, { [wakefield.id]: loadedCopy(retracted) }), 'retracted', 'a retracted loaded copy');
+  assert.equal(pageTag(readLater, {}), 'retracted', 'no loaded copy');
+  assert.notEqual(pageTag(library, papers), 'retracted', 'no copy retracted');
+  assert.equal(libraryCopyOf({}, {}, wakefield.id), undefined);
 });
 
 // A like or a save in this session wrote the retracted copy to the stored

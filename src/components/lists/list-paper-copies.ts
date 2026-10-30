@@ -36,6 +36,24 @@ export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Part
 }
 
 /**
+ * A list's paper from the copies the lists screen can hold of it: the library
+ * entry's (`entryCopy`), the screen's own fetch (`fetchedCopy`), and the
+ * interaction's copy as the library loaded it (`loadedCopy`), the broadest and
+ * least specific. A retraction any of them records stands (ENG-84): a mark
+ * writes the entry from the card it was made on, and a like or save of this
+ * session gives the loaded copy a retraction the fetch can predate.
+ */
+export function listPaper(
+  entryCopy: Partial<Paper> | undefined,
+  fetchedCopy: Partial<Paper> | undefined,
+  loadedCopy: Partial<Paper> | undefined,
+) {
+  const otherCopy = fetchedCopy ?? loadedCopy;
+  if (!entryCopy) return otherCopy && withRetractionOf(otherCopy, loadedCopy);
+  return otherCopy ? listPaperFromCopies(withRetractionOf(entryCopy, loadedCopy), otherCopy) : entryCopy;
+}
+
+/**
  * The lists screen's papers after one metadata answer. A `savedPapers`
  * document replaces an interaction copy already in hand, and an interaction
  * copy only fills a gap, but a retraction either copy records stands in

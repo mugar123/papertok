@@ -85,7 +85,7 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
-import { libraryWithRetractionOf, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -454,7 +454,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const libraryCopyFor = useCallback((paper: Partial<Paper>) => {
     const id = interactionIdFor(paper);
     if (!id) return null;
-    const copy = libraryPapers[id] || personalLibrary[id]?.paper;
+    const copy = libraryCopyOf(personalLibrary, libraryPapers, id);
     return copy ? { id, paper: copy } : null;
   }, [interactionIdFor, libraryPapers, personalLibrary]);
 
@@ -546,16 +546,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       // Existing entries win: a mark made in this session wrote them. A
       // retraction the stored copy records stands (ENG-84).
-      setPersonalLibrary(current => Object.entries(current).reduce(
-        (next, [id, entry]) => withLibraryCopy(next, id, entry.paper, {}, library[id]?.paper),
-        { ...library, ...current },
-      ));
+      setPersonalLibrary(current => libraryAfterLoad(current, library, papers));
       // Existing entries win, exactly as above: a paper already in hand came
       // from a screen that fetched it deliberately and may be richer.
-      setLibraryPapers(current => ({ ...papers, ...current }));
-      // Existing entries win, exactly as above: a paper already in hand came
-      // from a screen that fetched it deliberately.
-      setLibraryPapers(current => ({ ...papers, ...current }));
+      setLibraryPapers(current => loadedAfterLoad(current, papers));
       // A cache-served answer is worth showing but not worth latching: with
       // the backend unreachable, getDocs resolves against the in-memory cache
       // (empty on a fresh page) instead of rejecting. Marking that 'ready'

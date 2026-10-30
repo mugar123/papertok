@@ -6,7 +6,7 @@ import { serializeLibraryPaper } from '../../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../../utils/paper-status.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
-import { listPaperFromCopies, mergeListPaperCopies } from './list-paper-copies.ts';
+import { listPaper, listPaperFromCopies, mergeListPaperCopies } from './list-paper-copies.ts';
 
 const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
 const own = 'The abstract OpenAlex now lists for this journal article itself.';
@@ -75,4 +75,30 @@ test('a list paper liked or saved while retracted reads Retracted, whichever cop
   const published = interactionCopy({ ...wakefield, publicationStatus: 'published' });
   assert.equal('publicationStatus' in published, false);
   assert.notEqual(tag(paperLegacyAdapter(published)), 'retracted');
+});
+
+// ENG-84. With a library entry and a fetched copy, a list paper ignored the
+// copy the library loaded: a like of a retracted card while the library was
+// loading put the retraction there only, and the row read Preprint.
+test('a list paper reads Retracted when any copy the screen holds records it', () => {
+  const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
+  const retracted = interactionCopy({ ...wakefield, publicationStatus: 'retracted' });
+  const unmarked = interactionCopy(wakefield);
+  const saved = savedDocument(wakefield);
+  const tag = (paper: Partial<Paper> | undefined) => paper && reviewTagForPaper(paperLegacyAdapter(paper))?.key;
+  const cases: [string, Partial<Paper> | undefined, Partial<Paper> | undefined, Partial<Paper> | undefined][] = [
+    ['entry, fetched copy, loaded copy retracted', unmarked, saved, retracted],
+    ['entry retracted, fetched copy, loaded copy', retracted, saved, unmarked],
+    ['entry retracted, fetched copy', retracted, saved, undefined],
+    ['entry retracted, loaded copy', retracted, undefined, unmarked],
+    ['entry, loaded copy retracted', unmarked, undefined, retracted],
+    ['fetched copy, loaded copy retracted', undefined, saved, retracted],
+    ['loaded copy retracted', undefined, undefined, retracted],
+    ['entry retracted', retracted, undefined, undefined],
+  ];
+  for (const [label, entry, fetched, loaded] of cases) {
+    assert.equal(tag(listPaper(entry, fetched, loaded)), 'retracted', label);
+  }
+  assert.notEqual(tag(listPaper(unmarked, saved, unmarked)), 'retracted', 'no copy retracted');
+  assert.equal(listPaper(undefined, undefined, undefined), undefined, 'no copy');
 });

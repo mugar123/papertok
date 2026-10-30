@@ -56,8 +56,8 @@ import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
 import ScientificText from '../scientific-text.ts';
-import { paperLegacyAdapter, withRetractionOf } from '../../models/paper.ts';
-import { listPaperFromCopies, mergeListPaperCopies } from './list-paper-copies.ts';
+import { paperLegacyAdapter } from '../../models/paper.ts';
+import { listPaper, mergeListPaperCopies } from './list-paper-copies.ts';
 import {
   ArrowLeft,
   DotsThree,
@@ -426,11 +426,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // `libraryPapers` last of the three, because it is the broadest and the
     // least specific: it is whatever the mount's bounded read happened to
     // fetch, and either of the other two is a deliberate fetch of this paper.
-    const libraryPaper = personalLibrary[paperId]?.paper;
-    const savedPaper = savedPapers[paperId] ?? libraryPapers[paperId];
-    if (!libraryPaper) return savedPaper && withRetractionOf(savedPaper, libraryPapers[paperId]);
-    if (!savedPaper) return libraryPaper;
-    return listPaperFromCopies(libraryPaper, savedPaper);
+    return listPaper(personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
   useEffect(() => subscribeToPublicListSync((key, state) => {
@@ -1566,7 +1562,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </Button>
             );
             if (!list) return <div className="lists-expanded-bar">{backButton}</div>;
-            const exportPapers = (list.paperIds || []).map(getPaper).filter(Boolean);
+            const exportPapers = (list.paperIds || []).map(getPaper).filter(paper => paper !== undefined);
             // `listPaperId` from the first publish onwards: it becomes
             // `sourceId` on the public paper, and it is what lets every later
             // sync recognise this paper as one it already published.
