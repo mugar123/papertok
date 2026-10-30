@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedLoads, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -245,6 +245,33 @@ test('a load that replaces shown papers is not spoken as more papers', () => {
   const refreshing = { loadingNextPage: false, hasPapers: true };
   assert.equal(nextPageStatusText(refreshing), '');
   assert.equal(feedStatusText({ isRefreshing: true, loading: true, refreshDone: false, veil: false, hasPapers: true, failed: false }), 'Refreshing papers…');
+});
+
+// PR #425 review: Following's refresh sets `isRefreshing` without `loading`,
+// so a refresh over its shown papers was silent until "Papers updated".
+test('a refresh of a source over shown papers is spoken as a refresh', () => {
+  const following = { fromSource: true, hasMore: false, feedLoadingNextPage: false };
+  const steps = [
+    // Refresh pill or pull: the refresh runs.
+    { ...feedLoads({ ...following, loading: false, isRefreshing: true }), isRefreshing: true, refreshDone: false },
+    // It lands.
+    { ...feedLoads({ ...following, loading: false, isRefreshing: false }), isRefreshing: false, refreshDone: true },
+  ].map(({ replacingList, isRefreshing, refreshDone }) => feedStatusText({ isRefreshing, loading: replacingList, refreshDone, veil: false, hasPapers: true, failed: false }));
+  assert.deepEqual(steps, ['Refreshing papers…', 'Papers updated']);
+  // For You's refresh runs as its own reset load.
+  assert.equal(feedLoads({ fromSource: false, loading: true, isRefreshing: true, hasMore: true, feedLoadingNextPage: false }).replacingList, true);
+});
+
+// Following's silent refresh on a stale cache sets `loading` alone; with no
+// next page to fetch, the tail said "Loading more papers…".
+test('a source with no next page never loads more papers', () => {
+  const silent = feedLoads({ fromSource: true, loading: true, isRefreshing: false, hasMore: false, feedLoadingNextPage: false });
+  assert.equal(nextPageStatusText({ loadingNextPage: silent.loadingNextPage, hasPapers: true }), '');
+  assert.equal(silent.replacingList, true);
+  const more = feedLoads({ fromSource: true, loading: true, isRefreshing: false, hasMore: true, feedLoadingNextPage: false });
+  assert.equal(nextPageStatusText({ loadingNextPage: more.loadingNextPage, hasPapers: true }), 'Loading more papers…');
+  // For You's next page is its own flag.
+  assert.equal(feedLoads({ fromSource: false, loading: true, isRefreshing: false, hasMore: true, feedLoadingNextPage: true }).loadingNextPage, true);
 });
 
 // The region was inserted empty and given "Loading papers…" one frame later,

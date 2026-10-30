@@ -80,6 +80,19 @@ export function regionStatusText({ status, regionReady, focusSpeaks }: { status:
 }
 
 /**
+ * Which load is running: a next page, or a load that replaces the list. For
+ * You's feed says it for itself (`feedLoadingNextPage`). A `source` does not:
+ * Following's refresh sets `isRefreshing` without `loading`, and its silent
+ * refresh sets `loading` alone, so a source's `loading` is a next page only
+ * when it has one to fetch.
+ */
+export function feedLoads({ fromSource, loading, isRefreshing, hasMore, feedLoadingNextPage }: { fromSource: boolean; loading: boolean; isRefreshing: boolean; hasMore: boolean; feedLoadingNextPage: boolean }) {
+  if (!fromSource) return { loadingNextPage: feedLoadingNextPage, replacingList: loading && !feedLoadingNextPage };
+  const loadingNextPage = hasMore && loading && !isRefreshing;
+  return { loadingNextPage, replacingList: (loading || isRefreshing) && !loadingNextPage };
+}
+
+/**
  * The feed tail's status: only for a next page (`loadingNextPage`), under
  * papers already shown. A load that replaces the list (a refresh, its
  * automatic retry, a follow change) is not more papers.

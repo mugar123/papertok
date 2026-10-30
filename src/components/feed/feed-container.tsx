@@ -58,7 +58,7 @@ import {
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { emptyStateDescription, emptyStateTextIds } from '../ui/empty-state-text.ts';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedLoads, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -299,8 +299,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
-  // A source's only load under shown papers, besides its refresh, is More.
-  const loadingNextPage = source ? source.loading && !isRefreshing : feed.loadingNextPage;
+  const { loadingNextPage, replacingList } = feedLoads({ fromSource: Boolean(source), loading, isRefreshing, hasMore, feedLoadingNextPage: feed.loadingNextPage });
   // Only the For You feed owns the context's list; Following and the Similar
   // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
@@ -1090,7 +1089,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ isRefreshing, loading: loading && !loadingNextPage, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0, failed: Boolean(error) || autoRetryPending });
+  const feedStatus = feedStatusText({ isRefreshing, loading: replacingList, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0, failed: Boolean(error) || autoRetryPending });
   // Try again, Check again, Explore again and a source empty state's own
   // retry leave as the reload they start begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
