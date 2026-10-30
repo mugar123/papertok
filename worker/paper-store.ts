@@ -947,6 +947,8 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string |
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
  * Rows it cannot tell apart keep their order (`readCandidates`).
+ * A request ranks through `rankByUnitVectors`; this entry, which normalizes
+ * every vector it is given, is the one the ranking tests call.
  */
 export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
   return rankByUnitVectors(rows, row => (row.embedding ? unitVector(row.embedding) : null), positives.map(unitVector), negatives.map(unitVector), { now, order });
@@ -1735,6 +1737,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
   const [vectors] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
+    // With rejections alone, every offered vector still: the kept order holds
+    // every rank, scored, and a later page serves it, so a rejection must
+    // reach ranks past the diversity pool too.
     likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
     keepLiked(db, positiveIds, now),
   ]);
