@@ -18,7 +18,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
 import { openingFollowType } from './opening-follow-type.ts';
-import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { followRefusal } from '../following/follow-refused-toast.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -119,8 +119,13 @@ function useFollowedView() {
         onClick: () => {
           if (latest.current.isFollowing(entity)) return;
           // A journal's Undo can meet the journal limit, which another
-          // device's follow may have reached in the meantime.
-          latest.current.toggleFollow(entity).catch((error: unknown) => toastFollowRefused(error, { name: displayName, following: false }));
+          // device's follow may have reached in the meantime. Said in the
+          // list's status line, as the palette does: on a phone the list is
+          // a sheet, and a toast would sit over it outside its focus trap.
+          setActionError('');
+          latest.current.toggleFollow(entity).catch((error: unknown) => {
+            setActionError(followRefusal(error, { name: displayName, following: false }).message);
+          });
         },
       },
     });

@@ -25,9 +25,10 @@ export type FollowRefusal = {
 /**
  * Says why a press of Follow or Unfollow changed nothing, when `toggleFollow`
  * rejects: the words, and the one thing the reader can do about it. A page
- * shows it in a toast (`toastFollowRefused`); the search palette shows it in
- * its own warning line, because on a phone a toast sits over the palette's
- * first rows, outside its focus trap, where Escape closes the palette instead.
+ * shows it in a toast (`toastFollowRefused`); the search palette and the
+ * Follows list show it in a line of their own, because on a phone they are
+ * sheets, and a toast sits over their first rows, outside their focus trap,
+ * where Escape closes the sheet instead.
  */
 export function followRefusal(error: unknown, { name, following, openSettings }: RefusalContext): FollowRefusal {
   if (error instanceof JournalFollowLimitError) {
