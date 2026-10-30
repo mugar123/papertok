@@ -9,10 +9,11 @@ import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
 // Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
 // so a token refresh does not spend it. The exploration and follows requests
-// keep their own budgets, counted from before the token (feed-context.tsx),
-// and fall back to no papers when those run out.
+// also have render budgets, counted from the start of the load
+// (awaitScreenSources in src/context/feed-corpus-requests.ts), and give no
+// papers when those run out.
 const STORE_TIMEOUT_MS = 3_500;
-// The main page of a list's first screen (`firstScreen`). After the 2026-10-28
+// The requests of a list's first screen (`firstScreen`). After the 2026-10-28
 // fixes every feed failure was that page timing out at 3.5 s, mostly on a
 // session's first load; in most sessions the automatic retry, 2.5 s later,
 // showed papers 7-9 s after the feed opened. A token the Worker has not
@@ -53,8 +54,9 @@ export interface CorpusPageRequest {
    */
   waitForLikes?: boolean;
   /**
-   * The main page of a load that replaces the list, which the reader waits
-   * for: it may take FIRST_SCREEN_TIMEOUT_MS instead of STORE_TIMEOUT_MS. Not sent.
+   * A request of a load that replaces the list, which the reader waits for
+   * (waitsAsFirstScreen in src/context/feed-corpus-requests.ts): it may take
+   * FIRST_SCREEN_TIMEOUT_MS instead of STORE_TIMEOUT_MS. Not sent.
    */
   firstScreen?: boolean;
 }

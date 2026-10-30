@@ -3,6 +3,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup, InterestMemoryInput } from '../utils/interest-memory.ts';
 
 import { corpusPositiveIds } from '../services/paper-store-service.ts';
+import { resolveWithin } from '../utils/async-timing.ts';
 import { coldAddedInterests, dormantCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
 
@@ -25,7 +26,7 @@ export interface FeedPlan {
   coldAdded: string[];
 }
 
-type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds' | 'seen'>;
+type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds' | 'seen' | 'firstScreen'>;
 
 /**
  * The plan for a page: a new one on a list's first page, and the list's own
@@ -47,12 +48,36 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
 }
 
 /**
- * The reader's interests, asked by group. On a load that replaces the list
- * (`firstScreen`), the page waits longer for a Worker that answers slowly on
- * a session's first request; the follows' request keeps its deadline.
+ * Whether a load's requests may wait the first screen's longer deadline
+ * (`firstScreen`): every load that replaces the list (a cold entry, a refresh,
+ * an interests edit, the automatic retry, a mode switch), including the later
+ * pages it fetches while every card of its first page was seen. A reload that
+ * keeps the cards through the visible one (a follow change) replaces nothing
+ * the reader waits for, and holds More for as long as it runs.
  */
-export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest, { firstScreen = false } = {}): CorpusPageRequest {
-  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE, firstScreen };
+export function waitsAsFirstScreen({ reset, keepThroughVisible }: { reset: boolean; keepThroughVisible: boolean }) {
+  return reset && !keepThroughVisible;
+}
+
+/** The reader's interests, asked by group. */
+export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): CorpusPageRequest {
+  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE };
+}
+
+/**
+ * The answers of one screen's requests, started together just before this
+ * call. The main page is awaited until its own deadline; each optional source
+ * (the follows, exploration) holds the screen for its budget at most, counted
+ * from this call, but an answer that arrived while the main page was awaited
+ * is kept, since the reader waited for it anyway (ENG-116). An optional source
+ * that fails or runs out gives no papers.
+ */
+export async function awaitScreenSources<T, O>(main: PromiseLike<T>, optional: Array<{ answer: PromiseLike<O[]>; budgetMs: number }>) {
+  const startedAt = Date.now();
+  const mainAnswer = await Promise.resolve(main).then(value => ({ value }), (error: unknown) => ({ error }));
+  const waited = Date.now() - startedAt;
+  const optionalPapers = await Promise.all(optional.map(({ answer, budgetMs }) => resolveWithin(answer, budgetMs - waited, [] as O[])));
+  return { main: mainAnswer, optional: optionalPapers };
 }
 
 /**
