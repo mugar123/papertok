@@ -595,12 +595,14 @@ test('a DOI holding a comma is never put in an OpenAlex filter: the paper is ask
 
 // The relay forwards no parameter longer than 2,000 characters: a longer
 // filter is dropped and the request goes out unfiltered. OpenAlex here answers
-// a DOI filter with the retracted work of each DOI in it, and anything else
-// with nothing, as an unfiltered page would hold none of these papers.
+// a DOI filter with a journal work for each DOI in it, in the filter's order and
+// one page of `per_page` at most, retracted for `retractedDois`, and anything
+// else with nothing, as an unfiltered page would hold none of these papers.
 function openAlexByFilter(t: import('node:test').TestContext, retractedDois: string[]) {
   const filters: Array<string | null> = [];
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
+  let answered = 0;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     if (url.hostname !== 'api.openalex.org') return Response.json({});
@@ -608,9 +610,10 @@ function openAlexByFilter(t: import('node:test').TestContext, retractedDois: str
     filters.push(filter);
     const asked = filter?.startsWith('doi:') ? filter.slice('doi:'.length).split('|') : [];
     const selected = url.searchParams.get('select')?.split(',') ?? [];
-    const works = retractedDois.filter(doi => asked.includes(doi)).map((doi, index) => ({
-      ...JOURNAL_ONLY_WORK, id: `https://openalex.org/W44000009${index}`, doi: `https://doi.org/${doi}`, ids: { openalex: `https://openalex.org/W44000009${index}`, doi: `https://doi.org/${doi}` },
-    }));
+    const works = asked.slice(0, Number(url.searchParams.get('per_page'))).map(doi => {
+      const id = `https://openalex.org/W44${String((answered += 1)).padStart(8, '0')}`;
+      return { ...JOURNAL_ONLY_WORK, id, doi: `https://doi.org/${doi}`, ids: { openalex: id, doi: `https://doi.org/${doi}` }, is_retracted: retractedDois.includes(doi) };
+    });
     return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
@@ -640,6 +643,33 @@ test('fifty long journal DOIs and arXiv ids are asked in filters the relay forwa
 
   await enrichPending(env, 50, NOW);
   assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+  assert.deepEqual(askedValues(filters, 'doi').sort(), papers.map(paper => paper.doi).sort(), 'every DOI asked once');
+  assert.deepEqual(askedValues(filters, 'locations.landing_page_url').filter(value => value.startsWith('https:')).sort(),
+    papers.map(paper => `https://arxiv.org/abs/${paper.id}`).sort(), 'every arXiv id asked once');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
+  assert.notEqual(stored(db)[papers[0].id].paper.publicationStatus, 'retracted');
+});
+
+// Short ids fit many more values in 2,000 characters than OpenAlex answers on a
+// page of 50, so the count, not the length, has to close these filters.
+test('fifty-one short journal DOIs and arXiv ids are asked at most 50 values a filter, each once, and a retraction in the 51st is found', async t => {
+  // The newest is asked first, so the 51st paper, the oldest, is asked last.
+  const papers = Array.from({ length: 51 }, (_, index) => {
+    const id = `2610.${String(index).padStart(5, '0')}`;
+    const published = new Date(Date.parse(preprint.published!) - index * 60_000).toISOString();
+    return { ...preprint, id, arxivId: id, published, doi: `10.5555/s${index}`, title: `A paper with a short journal DOI (${index})` };
+  });
+  const last = papers[50];
+  const filters = openAlexByFilter(t, [last.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 51, NOW);
+  for (const key of ['doi', 'locations.landing_page_url']) {
+    const sizes = filters.filter(filter => filter?.startsWith(`${key}:`)).map(filter => filter!.split('|').length);
+    assert.ok(sizes.length > 0 && sizes.every(size => size <= 50), `${key} filters of ${sizes.join(', ')} values`);
+  }
   assert.deepEqual(askedValues(filters, 'doi').sort(), papers.map(paper => paper.doi).sort(), 'every DOI asked once');
   assert.deepEqual(askedValues(filters, 'locations.landing_page_url').filter(value => value.startsWith('https:')).sort(),
     papers.map(paper => `https://arxiv.org/abs/${paper.id}`).sort(), 'every arXiv id asked once');
