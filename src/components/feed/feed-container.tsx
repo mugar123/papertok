@@ -345,7 +345,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
-  const refreshStatus = isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : '';
   // La píldora se va SIEMPRE diciendo «Actualizado».
   //
   // Al terminar el beat, la cara volvía al verbo. Ese cruce no informa de
@@ -1068,7 +1067,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  const feedStatus = feedStatusText({ isRefreshing, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0 });
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.

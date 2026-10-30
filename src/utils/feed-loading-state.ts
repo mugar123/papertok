@@ -46,14 +46,18 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
 }
 
 /**
- * What a screen reader hears from the feed's status region: a refresh's own
- * words, and "Loading papers…" under the veil otherwise. The veil's visible
- * copy is in the page from its first frame, so it cannot be the announcement.
- * One text through the veil's whole wait, its automatic retry included, so
- * the wait is spoken once.
+ * What a screen reader hears from the feed's status region. Under the veil it
+ * is "Loading papers…", whatever started the wait: a refresh that empties the
+ * feed and the automatic retry after it are one wait, so it is spoken once.
+ * The veil's visible copy is in the page from its first frame, so it cannot
+ * be the announcement. A refresh over shown papers has its own words, and
+ * "Papers updated" only when it ended with papers: a refresh that ends in the
+ * error has updated nothing.
  */
-export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string; veil: boolean }) {
-  return refreshStatus || (veil ? 'Loading papers…' : '');
+export function feedStatusText({ isRefreshing, refreshDone, veil, hasPapers }: { isRefreshing: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean }) {
+  if (veil) return 'Loading papers…';
+  if (isRefreshing) return 'Refreshing papers…';
+  return refreshDone && hasPapers ? 'Papers updated' : '';
 }
 
 /** The feed tail's status: only for a next page, under papers already shown. */
