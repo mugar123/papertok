@@ -2040,10 +2040,15 @@ const aerWork = (type: string) => mapOpenAlexWork({
   primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
 })!;
 const aerFollow = { type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' };
+// A notable listing of the paper, which the journal's lane must not take along.
+const aerNotable = { lanes: ['area:econ', 'notable:econ.GN'], keepUntil: '2026-11-05T03:00:00.000Z' };
 
+// The paper's author is followed too: leaving the journal's lane keeps the author's.
 function followedJournalCorpus() {
   const store = corpus();
-  store.db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  for (const lane of ['source:S23254222', 'author:A10']) {
+    store.db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)').run(lane, new Date(NOW).toISOString());
+  }
   const lanes = () => rows(store.db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane);
   const journalPage = async () => (await readFeedPage(store.env, parseFeedRequest({ categories: [], follows: [aerFollow], page: 0, pageSize: 15 }), { now: NOW }))
     .map(entry => [entry.id, entry._followedEntityMatches]);
@@ -2052,46 +2057,46 @@ function followedJournalCorpus() {
 
 test("an article a listing reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
   const { env, lanes, journalPage } = followedJournalCorpus();
-  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
   assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
 
   await ingestPapers(env, [{ paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ'], 'the area lane keeps it');
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN'], 'its other lanes keep it');
   assert.deepEqual(await journalPage(), []);
 
   await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
 });
 
 test("a journal's own listing does not keep in its lane a row another record of the batch calls an editorial", async () => {
   const { env, lanes } = followedJournalCorpus();
   await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['source:S23254222'] }, { paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ']);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10']);
 });
 
 // The journal's row folds into the arXiv one, which then holds its lanes:
 // the lane of the journal goes with the fold, the others stay.
 test("a record that folds a journal's article into another row as an editorial takes it out of the journal's lane only", async () => {
   const { env, lanes, journalPage } = followedJournalCorpus();
-  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ', 'cs.CL', 'cs.LG', 'source:S23254222']);
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'cs.CL', 'cs.LG', 'notable:econ.GN', 'source:S23254222']);
 
   await ingestPapers(env, [{ paper: { ...aerWork('editorial'), arxivId: arxivRecord.arxivId }, lanes: [] }], { now: NOW });
-  assert.deepEqual(lanes(), ['area:econ', 'cs.CL', 'cs.LG']);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'cs.CL', 'cs.LG', 'notable:econ.GN']);
   assert.deepEqual(await journalPage(), []);
 });
 
 test("an article the enrichment reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
   const { env, db, lanes, journalPage } = followedJournalCorpus();
-  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
   const stored = () => rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
   await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'editorial' } })), NOW);
-  assert.deepEqual(lanes(), ['area:econ']);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN']);
   assert.deepEqual(await journalPage(), []);
 
   await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'article' } })), NOW);
-  assert.deepEqual(lanes(), ['area:econ', 'source:S23254222']);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
   assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
 });
 
