@@ -2605,8 +2605,8 @@ test('pages without likes serve what a read of every vector did, across lanes, i
 // eleven is not embedded). The page's 5 papers and the diversity pool's 500
 // ranks are decided by the 600 newest, 546 of them embedded, and the 3
 // rejections' own vectors. Ranks past them are not, so the order kept is not
-// final: the next page ranks again.
-test('a page without likes reads the vectors of its newest candidates only, and keeps its order for the next page to rank again', async t => {
+// final: it says it decided 500 ranks, and a page past them ranks again.
+test('a page without likes reads the vectors of its newest candidates only, and keeps its order as decided through the diversity pool', async t => {
   const { env, rejections } = coldPageCorpus();
   const rows = vectorRowsRead(t, env.PAPER_STORE!);
   const kept: KeptRanking[] = [];
@@ -2615,6 +2615,32 @@ test('a page without likes reads the vectors of its newest candidates only, and 
   assert.equal(rows(), 546 + 3);
   assert.equal(kept.length, 1);
   assert.equal(kept[0].final, false);
+  assert.equal(kept[0].decided, 500);
+});
+
+// Exploration asks a random page of 5 within its first 30 ranks, under one
+// key through a session: a later page within the ranks the first decided is
+// served from the order it kept, reading no lane or vector, as main served it
+// from a final order. A page past them ranks again.
+test('a later page without likes, within the ranks the first decided, is served from the kept order without reading lanes or vectors', async t => {
+  const { env, rejections } = coldPageCorpus();
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const corpusReads = () => trips.flat().filter(sql => /\bwork_(lanes|vectors)\b/.test(sql)).length;
+  const cache = jsonRankingCache();
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, pageSize: 5 };
+  const page = async (number: number, from = cache) => (await readFeedPage(env, parseFeedRequest({ ...body, page: number }), { now: NOW, cache: from })).map(paper => paper.id);
+  const alone = async (number: number) => page(number, jsonRankingCache());
+  const expected = { 2: await alone(2), 4: await alone(4), 1: await alone(1), 100: await alone(100) };
+  assert.deepEqual(await page(3), await alone(3));
+  for (const number of [2, 4, 1] as const) {
+    const before = corpusReads();
+    assert.deepEqual(await page(number), expected[number], `page ${number}`);
+    assert.equal(corpusReads(), before, `page ${number} reads no lane or vector`);
+  }
+  // Ranks 500 to 505: past the 500 the first page decided.
+  const before = corpusReads();
+  assert.deepEqual(await page(100), expected[100]);
+  assert.ok(corpusReads() > before, 'a page past the decided ranks ranks again');
 });
 
 // Candidates on a few dates, so the newest 600 end inside a run of ties, many

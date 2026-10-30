@@ -459,6 +459,39 @@ test("this Worker and earlier versions never read each other's kept orders, so a
 // `count` cs.CL papers, an hour apart, newest first.
 const recent = (count: number) => Array.from({ length: count }, (_, index) => paper(`2610.6${String(index).padStart(4, '0')}`, `Recent paper ${index}`, (index + 1) / 24));
 
+// Exploration's request: rejections, no like, a random page of 5 within its
+// first 30 ranks, under one key through a session. Its first page reads the
+// vectors of the 600 newest of 700 candidates and decides 500 ranks.
+test("a later exploration page within the ranks the first decided is served from the order the work after the answer kept, reading no lane or vector", async t => {
+  const entries = rankingCaches(t);
+  const { env, db, ask } = store();
+  const papers = recent(700);
+  await ingestPapers(env, [...papers, paper('2610.40001', 'Rejected paper', 30)].map(item => ({ paper: item, lanes: [] })));
+  papers.forEach(item => embed(db, item.id, [0, 1]));
+  embed(db, '2610.40001', [1, 0]);
+  const statements: string[] = [];
+  const binding = env.PAPER_STORE!;
+  const prepare = binding.prepare.bind(binding);
+  t.mock.method(binding, 'prepare', (sql: string) => {
+    statements.push(sql);
+    return prepare(sql);
+  });
+  const corpusReads = () => statements.filter(sql => /\bwork_(lanes|vectors)\b/.test(sql)).length;
+  const request = (page: number) => ({ categories: ['cs.CL'], negativeIds: ['2610.40001'], page, pageSize: 5 });
+  // What the next page finds if it is asked before the work after the answer
+  // ends: the ranks served, which serve no page as they are.
+  let early: Response | undefined;
+  const after: Array<Promise<unknown>> = [];
+  assert.deepEqual(ids((await ask(request(3), 'reader-1', work => { early = [...entries.values()][0]; after.push(work); })).papers), ids(papers.slice(15, 20)));
+  assert.deepEqual(await early!.clone().json<{ final: boolean; decided?: number; ranks: unknown[] }>().then(({ final, decided, ranks }) => ({ final, decided, ranks: ranks.length })), { final: false, decided: undefined, ranks: 20 });
+  await Promise.all(after);
+  for (const page of [1, 5, 2]) {
+    const before = corpusReads();
+    assert.deepEqual(ids((await ask(request(page))).papers), ids(papers.slice(page * 5, page * 5 + 5)), `page ${page}`);
+    assert.equal(corpusReads(), before, `page ${page} reads no lane or vector`);
+  }
+});
+
 test("a reload is one request for the reader's next unseen papers, and the next page goes on past the ones it showed, from the order the reload kept", async t => {
   const entries = rankingCaches(t);
   const { env, db, ask } = store();

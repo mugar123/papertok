@@ -302,7 +302,7 @@ export async function handleCorpusFeed(
       get: key => cache.get(key),
       // The ranks served and walked past, and the notable papers walked past,
       // at once, so that a next page asked before the work below ends goes on
-      // after them.
+      // after them. Those ranks serve no page as they are (`final`, `decided`).
       put: async (key, ranking, keptMs) => {
         kept = [key, ranking, keptMs];
         await cache.put(key, {
@@ -310,6 +310,7 @@ export async function handleCorpusFeed(
           ranks: ranking.ranks.slice(0, Math.max(ranking.served, ranking.walked)),
           notable: ranking.notable.slice(0, ranking.notableWalked),
           final: false,
+          decided: undefined,
         }, keptMs);
       },
       update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
@@ -326,7 +327,7 @@ export async function handleCorpusFeed(
     registerFollowedLanes(env, identity.uid, lanes, harvestedBefore),
     lookup ?? false,
   ]).then(async ([waiting, added]) => {
-    if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
+    if ((kept?.[1].final || kept?.[1].decided !== undefined) && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
 }

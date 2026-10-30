@@ -1323,11 +1323,18 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * keeps of those the ones `keptPassed` keeps. With the ids the walks read
  * (`paperId`), the entry tells which ranks at the top of the reader's
  * ranking their filter held.
+ *
+ * An order ranked without likes from the vectors that decide its first ranks
+ * alone (`readDecidingVectors`) is not final, and says how many ranks it
+ * decided (`decided`): within 15 minutes, by the same inputs, it serves the
+ * pages that end within those ranks as they are. Worker versions before
+ * `decided` see an order that is not final, and rank again.
  */
 export interface KeptRanking {
   ranks: Array<RankedCandidate | null>;
   served: number;
   final: boolean;
+  decided?: number;
   notable: RankedCandidate[];
   walked: number;
   notableWalked: number;
@@ -1385,8 +1392,9 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * past (KeptRanking): a paper that arrived since starts on this page, and
  * none served comes back. An order with nothing left to serve is not final:
  * the lanes may be about to fill. Nor is one ranked without likes from the
- * vectors that decide its page alone (`readDecidingVectors`): the next page
- * ranks again, from the vectors that decide it.
+ * vectors that decide its first ranks alone (`readDecidingVectors`): it
+ * serves the next pages that end within those ranks (`decided`), and a page
+ * past them ranks again, from the vectors that decide it.
  *
  * With `skipsSeen`, the page is the first papers of the order the filter does
  * not hold, whatever `page` says, so a reload needs one request however many
@@ -1437,15 +1445,17 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   // reader was away longer than WALK_KEPT_MS.
   if (!kept && goesOn && cache && query.skipsSeen) console.log('Feed walk has no kept order to go on with');
   const keptMs = query.skipsSeen ? WALK_KEPT_MS : RANKING_KEPT_MS;
-  const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
+  // A final order serves any page; one that decided its first ranks only, the pages within them.
+  const rankedAgain = !kept || !(kept.final || (kept.decided !== undefined && (query.page + 1) * query.pageSize <= kept.decided))
+    || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
   let ranking = kept?.ranks ?? [];
   let notable = kept?.notable ?? [];
   let walked = kept?.walked ?? 0;
   let notableWalked = kept?.notableWalked ?? 0;
-  let everyRank = true;
+  let decided: number | undefined;
   if (rankedAgain) {
     const ranked = await rankCandidates(db, lanes, query, now);
-    everyRank = ranked.everyRank;
+    ({ decided } = ranked);
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
     // A page asked by number needs every rank served, empty ones included, at
     // its place. A paper liked or rejected since leaves its rank empty: a page
@@ -1502,7 +1512,17 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   };
   const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: everyRank && ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
+    const left = ranking.length > through;
+    await cache?.put(cacheKey, {
+      ranks: ranking,
+      served: (query.page + 1) * query.pageSize,
+      final: decided === undefined && left,
+      ...(decided !== undefined && left ? { decided } : {}),
+      notable,
+      ...walks,
+      rankedAt: now,
+      rankedBy,
+    }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
   } else if (kept) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
@@ -1722,9 +1742,9 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
   return areas;
 }
 
-// `everyRank`: whether every rank is the one a read of every vector gives
-// (`readDecidingVectors`).
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number>; everyRank: boolean }> {
+// `decided`: how many first ranks are the ones a read of every vector gives,
+// when the others may not be (`readDecidingVectors`).
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number>; decided?: number }> {
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
   const workIdsOf = (ids: string[]) => [...new Set(ids.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const positiveIds = workIdsOf(query.positiveIds);
@@ -1774,13 +1794,15 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const vectors = new Map<number, Int8Array>();
   const candidateUnit = unitVectors(vectors);
   const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
+  // The ranks a page without likes decides: the diversity pool, and the page.
+  const decidedRanks = Math.max(DIVERSITY_POOL, (query.page + 1) * query.pageSize);
   const [everyRank] = await Promise.all([
     // Without a positive or negative vector, recency needs no candidate vectors.
     // With rejections alone, a page asked by number needs only the vectors
     // that decide its ranks; a walk past seen papers can reach any rank.
     !likes.length && !negatives.length ? true
       : !likes.length && !query.skipsSeen && !offeredNotable.length
-        ? readDecidingVectors(db, offered, members, vectors, unitOf, scorer([], negatives, { now, order: query.order }), Math.max(DIVERSITY_POOL, (query.page + 1) * query.pageSize))
+        ? readDecidingVectors(db, offered, members, vectors, unitOf, scorer([], negatives, { now, order: query.order }), decidedRanks)
         : readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId), vectors).then(() => true),
     keepLiked(db, positiveIds, now),
   ]);
@@ -1804,7 +1826,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight)),
     notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
     excluded,
-    everyRank,
+    ...(everyRank ? {} : { decided: decidedRanks }),
   };
 }
 
