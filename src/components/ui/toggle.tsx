@@ -3,7 +3,7 @@ import type { VariantProps } from 'class-variance-authority';
 
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
 import { cn } from '../../lib/utils.ts';
-import { togglePressHandler } from './toggle-press.ts';
+import { pendingToggleProps } from './toggle-press.ts';
 import { toggleVariants } from './toggle-variants.ts';
 
 type ToggleProps = StyledProps<typeof TogglePrimitive> & VariantProps<typeof toggleVariants> & {
@@ -26,8 +26,7 @@ export function Toggle({ className, variant, size, pending = false, onClick, ...
     <TogglePrimitive
       data-slot="toggle"
       className={cn(toggleVariants({ variant, size }), className)}
-      aria-disabled={pending || undefined}
-      onClick={togglePressHandler(pending, onClick)}
+      {...pendingToggleProps(pending, onClick)}
       {...props}
     />
   );

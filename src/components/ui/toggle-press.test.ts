@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { togglePressHandler } from './toggle-press.ts';
+import { pendingToggleProps } from './toggle-press.ts';
 
 function press() {
   const calls: string[] = [];
@@ -22,7 +22,7 @@ function press() {
 test('a press on a pending toggle does not flip it, run its handler or reach the row around it', () => {
   let handled = 0;
   const { calls, event } = press();
-  togglePressHandler(true, () => { handled += 1; })(event);
+  pendingToggleProps(true, () => { handled += 1; }).onClick(event);
   assert.equal(handled, 0, 'the caller does not hear the press');
   assert.ok(calls.includes('stopPropagation'), 'the click stops at the toggle');
   assert.ok(calls.includes('preventBaseUIHandler'), 'Base UI does not flip the toggle');
@@ -31,7 +31,7 @@ test('a press on a pending toggle does not flip it, run its handler or reach the
 test('a press on a toggle that is not pending reaches its handler', () => {
   let handled = 0;
   const { calls, event } = press();
-  togglePressHandler(false, () => { handled += 1; })(event);
+  pendingToggleProps(false, () => { handled += 1; }).onClick(event);
   assert.equal(handled, 1);
   assert.deepEqual(calls, [], 'the press is left to the handler');
 });
