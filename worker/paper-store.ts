@@ -1675,7 +1675,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 
 /**
  * The notable candidates with the years in turns, newest first, and the asked
- * lanes in turns within each year, each lane's rows in their order. A reader
+ * lanes in turns within each year, each lane's rows newest first. A reader
  * without likes has nothing to rank them by and gets them in this order: one
  * paper of each year in turn, rather than every paper of the newest year first
  * (ENG-166). The lanes take their turns in the order the request asks them
@@ -1700,8 +1700,11 @@ function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidat
     // A paper listed by several lanes belongs to the first of them the request asks.
     byYear.get(year)![lanes.findIndex(lane => candidate.lanes.includes(lane))].push(candidate);
   }
+  // A lane's rows newest first, as its read gives them (`readNotableCandidates`):
+  // the merge puts a shared paper at the first turn any lane reached it.
+  const newestFirst = (a: Candidate, b: Candidate) => (a.published === b.published ? a.workId - b.workId : a.published < b.published ? 1 : -1);
   const years = [...byYear.keys()].sort().reverse().map((year, index) => {
-    const perLane = byYear.get(year)!;
+    const perLane = byYear.get(year)!.map(rows => rows.sort(newestFirst));
     return inTurns(perLane.map((_, lane) => perLane[(lane + index) % perLane.length]));
   });
   return inTurns(years);

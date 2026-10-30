@@ -1701,6 +1701,19 @@ test('a notable paper several asked leaves list takes its turn with the first of
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025901', 'W202521', 'W202511', 'W202520', 'W2025902'].map(id => `openalex:${id}`));
 });
 
+test("a notable paper another asked leaf reaches first still waits for its turn among the first leaf's papers of its year, newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  // cs.CV's lane reaches the shared paper first, cs.LG's after two newer ones.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025903', 'Highly cited study A of 2025 in cs.LG only', '2025-09-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025904', 'Highly cited study B of 2025 in cs.LG only', '2025-08-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025905', 'Highly cited study of 2025 in both leaves', '2025-07-01', 5000, true), lanes: ['notable:cs.LG', 'notable:cs.CV'] },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.slice(1).flatMap(year => [0, 1].map(rank => `openalex:W${year}${leaf + 1}${rank}`)));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025903', 'W202521', 'W2025904', 'W202520', 'W2025905'].map(id => `openalex:${id}`));
+});
+
 test('with a like, the notable cards follow the closest papers, whatever their year or leaf', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
