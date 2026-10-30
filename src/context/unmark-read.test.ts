@@ -243,7 +243,7 @@ function readingHistory() {
     isRead: () => state.readIds.has('p2'),
   }).catch(() => { reported.push(afterWrite ? 'removal' : 'card'); });
   const markAsRead = (readAt: string) => {
-    changes.stand('u1:read:p2', true);
+    changes.stand('u1:read:p2', true, state.readIds.has('p2'));
     setReadIds((ids) => new Set(ids).add('p2'));
     setLibrary((library) => ({ ...library, p2: { ...library.p2, readAt } }));
     profile.push('read');
@@ -337,4 +337,59 @@ test('a refused Reading history removal leaves the newer accepted unmark on scre
   assert.deepEqual([...history.state.readIds], ['p1']);
   assert.deepEqual(history.profile, ['unread']);
   assert.deepEqual(history.reported, [], 'the row left with the card\'s unmark, so the removal reports nothing');
+});
+
+// Like FeedContext, `isRead` reads a ref React updates only once it has drawn
+// the state: `render()` copies the state into it.
+function readingHistoryBehindRender() {
+  const { state, setReadIds, setLibrary } = feedState();
+  const drawn = { readIds: new Set(state.readIds) };
+  const changes = markChanges();
+  const answers: Array<{ accept: () => void; refuse: () => void }> = [];
+  const profile: string[] = [];
+  const unmark = (afterWrite: boolean) => unmarkRead('p2', {
+    setReadIds,
+    setLibrary,
+    write: () => new Promise<void>((accept, refuse) => {
+      answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
+    }),
+    onUnmarked: () => { profile.push('unread'); },
+    onRestored: () => { profile.push('read'); },
+    throwOnError: true,
+    afterWrite,
+    stillSignedIn: () => true,
+    changes,
+    markKey: 'u1:read:p2',
+    isRead: () => drawn.readIds.has('p2'),
+  }).catch(() => {});
+  const markAsRead = () => {
+    changes.stand('u1:read:p2', true, drawn.readIds.has('p2'));
+    setReadIds((ids) => new Set(ids).add('p2'));
+    profile.push('read');
+  };
+  const render = () => { drawn.readIds = new Set(state.readIds); };
+  return { state, answers, profile, unmark, markAsRead, render };
+}
+
+test('a Reading history removal accepted after the card\'s refusal, both before a render, takes the paper out', async () => {
+  const history = readingHistoryBehindRender();
+  const removal = history.unmark(true);
+  const cardUnmark = history.unmark(false);
+  history.render();
+  history.answers[1].refuse();
+  history.answers[0].accept();
+  await silenced(() => Promise.all([removal, cardUnmark]));
+  assert.deepEqual([...history.state.readIds], ['p1'], 'Firestore holds the removal');
+  assert.deepEqual(history.profile, ['unread', 'read', 'unread']);
+});
+
+test('a card unmark refused after markAsRead, before a render, adds no second read', async () => {
+  const history = readingHistoryBehindRender();
+  const cardUnmark = history.unmark(false);
+  history.render();
+  history.markAsRead();
+  history.answers[0].refuse();
+  await silenced(() => cardUnmark);
+  assert.deepEqual([...history.state.readIds].sort(), ['p1', 'p2']);
+  assert.deepEqual(history.profile, ['unread', 'read']);
 });

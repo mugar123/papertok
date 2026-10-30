@@ -39,20 +39,37 @@ interface MarkChange {
  * started. A refusal therefore does not put back the value its own change
  * started from when an earlier removal has since been accepted.
  *
- * `start(key, change)` returns `answer(accepted)`, which records the write's
- * answer and returns the value the mark should now show, and whether the
- * answer changed what stands. It does not for an accepted change the screen
- * already shows, or a refused one that showed nothing or keeps what it showed.
- * `stand(key, to)` records a change that stands whatever its write's answer,
- * such as marking a paper read, which keeps its mark when refused.
+ * `start(key, change)` returns `answer(accepted, isOn)`, which records the
+ * write's answer and returns the value the mark should now show, whether the
+ * answer changed what stands, and what the screen shows (`onScreen`). It does
+ * not change what stands for an accepted change the screen already shows, or
+ * a refused one that showed nothing or keeps what it showed. The caller that
+ * then moves the mark calls `moved()`.
+ * `stand(key, to, isOn)` records a change that stands whatever its write's
+ * answer, such as marking a paper read, which keeps its mark when refused.
  * `unshownChange(key, to)` returns, while the newest change to the mark is
  * one to `to` not shown before its answer, a promise that settles once it is
  * answered: the same removal asked for again need not be sent again.
+ *
+ * The screen a caller reads (`isOn`) lags: FeedContext reads a ref React
+ * updates only once it has drawn the state. Several answers can land before
+ * that, and each would find the value from before the others moved the mark,
+ * move it again and tell the reading profile again. So each mark keeps the
+ * value its changes last sent to the screen, with what `isOn` read then;
+ * while `isOn` still reads that, the sent value is what the screen shows.
  */
 export function markChanges() {
-  const marks = new Map<string, { startedFrom: boolean; changes: MarkChange[] }>();
-  const shouldShow = (mark: { startedFrom: boolean; changes: MarkChange[] }) => (
+  interface Mark {
+    startedFrom: boolean;
+    changes: MarkChange[];
+    sent?: { value: boolean; read: boolean };
+  }
+  const marks = new Map<string, Mark>();
+  const shouldShow = (mark: Mark) => (
     mark.changes.findLast((change) => change.stands)?.to ?? mark.startedFrom
+  );
+  const onScreen = (mark: Mark, isOn: boolean) => (
+    mark.sent && mark.sent.read === isOn ? mark.sent.value : isOn
   );
   return {
     start(key: string, { isOn, to, shown, keptIfRefused }: {
@@ -70,22 +87,31 @@ export function markChanges() {
         marks.set(key, mark);
       }
       const followed = mark;
+      if (shown) followed.sent = { value: to, read: isOn };
       let settle = () => {};
       const answered = shown ? null : new Promise<void>((resolve) => { settle = resolve; });
       const change: MarkChange = { to, stands: shown, pending: true, answered };
       followed.changes.push(change);
-      return (accepted: boolean) => {
+      return (accepted: boolean, isOnNow: boolean) => {
         change.pending = false;
         const stood = change.stands;
         change.stands = accepted || (stood && keptIfRefused);
         const value = shouldShow(followed);
         if (!followed.changes.some((other) => other.pending)) marks.delete(key);
         settle();
-        return { value, changed: change.stands !== stood };
+        return {
+          value,
+          changed: change.stands !== stood,
+          onScreen: onScreen(followed, isOnNow),
+          moved: () => { followed.sent = { value, read: isOnNow }; },
+        };
       };
     },
-    stand(key: string, to: boolean) {
-      marks.get(key)?.changes.push({ to, stands: true, pending: false, answered: null });
+    stand(key: string, to: boolean, isOn: boolean) {
+      const mark = marks.get(key);
+      if (!mark) return;
+      mark.changes.push({ to, stands: true, pending: false, answered: null });
+      mark.sent = { value: to, read: isOn };
     },
     unshownChange(key: string, to: boolean) {
       const newest = marks.get(key)?.changes.at(-1);
@@ -108,7 +134,8 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * change is asked for, nothing is written.
  *
  * Once the write is answered, the mark moves to the value `markChanges` says
- * it should show, if the screen (`isOn`) differs: by `show` when that is this
+ * it should show, if the screen differs (`isOn`, counting the moves earlier
+ * answers made before React drew them): by `show` when that is this
  * change's value, by `undo` when it is the value this change started from.
  * So an accepted removal shows unless a newer change has already moved the
  * mark, and a refused change is taken back only as far as the changes still
@@ -170,16 +197,22 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // Nothing moves when this answer changes nothing that stands. A mark moved
   // since by something else, such as a profile reload, then stays where it
   // went, and an accepted change the screen already shows is not shown twice
-  // before React has drawn it.
-  const { value, changed } = answer(!refusal);
-  if (changed && stillSignedIn() && isOn() !== value) {
-    if (value === to) show();
-    else if (value === from && undo) undo();
+  // before React has drawn it. `onScreen` counts the moves earlier answers
+  // sent before React drew them, so a move is made and told once.
+  const { value, changed, onScreen, moved } = answer(!refusal, isOn());
+  if (changed && stillSignedIn() && onScreen !== value) {
+    if (value === to) {
+      show();
+      moved();
+    } else if (value === from && undo) {
+      undo();
+      moved();
+    }
   }
   // A screen this answer leaves alone may already show `to` for a reason no
   // change records, such as a profile reload. A change asked for from the
   // value it goes to moved nothing, so its refusal is still news: the card's
   // unmark under an alias id the screen holds no mark for, say.
-  const endsAtTo = from !== to && (value === to || (!changed && isOn() === to));
+  const endsAtTo = from !== to && (value === to || (!changed && onScreen === to));
   if (refusal && throwOnError && !endsAtTo) throw refusal.error;
 }

@@ -301,6 +301,86 @@ test('a Favorites removal asked for again from a reopened Lists page is sent and
   assert.deepEqual(paper.profile, ['unlike']);
 });
 
+// A mark FeedContext changes, on a screen drawn after each press, whose writes
+// are all answered before React draws again: `isOn` reads the ref, which keeps
+// the value from before the answers. Each move the profile hears is recorded.
+function markAnsweredBeforeRender(markKey: string) {
+  const changes = markChanges();
+  const screen = { drawn: true, ref: true };
+  const profile: boolean[] = [];
+  const answers: Array<{ accept: () => void; refuse: () => void }> = [];
+  const press = (options: { afterWrite?: boolean } = {}) => {
+    const from = markStartsOn(options, screen.ref);
+    const move = (value: boolean) => {
+      screen.drawn = value;
+      profile.push(value);
+    };
+    const pressed = writeMark({
+      show: () => move(!from),
+      undo: () => move(from),
+      write: () => new Promise<void>((accept, refuse) => {
+        answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
+      }),
+      failure: 'refused',
+      throwOnError: true,
+      ...options,
+      stillSignedIn: () => true,
+      changes,
+      markKey,
+      from,
+      to: !from,
+      isOn: () => screen.ref,
+    }).catch(() => {});
+    screen.ref = screen.drawn;
+    return pressed;
+  };
+  return { screen, profile, answers, press };
+}
+
+// Off, on again, then the Lists page's removal, every write answered in one
+// batch. Firestore applies them in order, so it holds the last accepted
+// change, or the mark as it began when none was.
+for (const markKey of ['u1:like:p1', 'u1:readLater:p1']) {
+  for (const pattern of ['aaa', 'ara', 'raa', 'rra', 'arr', 'aar', 'rar', 'rrr']) {
+    test(`${markKey.split(':')[1]} off, on and removed, answered ${pattern} before a render, tells the profile once per move`, async () => {
+      const paper = markAnsweredBeforeRender(markKey);
+      const presses = [paper.press(), paper.press(), paper.press({ afterWrite: true })];
+      const sent = [false, true, false];
+      paper.answers.forEach((answer, index) => {
+        if (pattern[index] === 'a') answer.accept();
+        else answer.refuse();
+      });
+      await silenced(() => Promise.all(presses));
+      const held = sent.findLast((_, index) => pattern[index] === 'a') ?? true;
+      assert.equal(paper.screen.drawn, held);
+      const moves = [true, ...paper.profile];
+      assert.ok(moves.every((value, index) => index === 0 || value !== moves[index - 1]), `each event is a move: ${paper.profile.join()}`);
+    });
+  }
+}
+
+test('the like unliked, liked again and removed from Favorites, answered before a render, records unlike, like, unlike', async () => {
+  const paper = markAnsweredBeforeRender('u1:like:p1');
+  const presses = [paper.press(), paper.press(), paper.press({ afterWrite: true })];
+  paper.answers[0].accept();
+  paper.answers[1].refuse();
+  paper.answers[2].accept();
+  await silenced(() => Promise.all(presses));
+  assert.equal(paper.screen.drawn, false);
+  assert.deepEqual(paper.profile, [false, true, false]);
+});
+
+test('a Favorites removal accepted after the card\'s refusal, both before a render, takes the like off', async () => {
+  const paper = markAnsweredBeforeRender('u1:like:p1');
+  const removed = paper.press({ afterWrite: true });
+  const unliked = paper.press();
+  paper.answers[1].refuse();
+  paper.answers[0].accept();
+  await silenced(() => Promise.all([removed, unliked]));
+  assert.equal(paper.screen.drawn, false, 'Firestore holds the removal');
+  assert.deepEqual(paper.profile, [false, true, false]);
+});
+
 test('a Remove pressed again after the card changed the like meanwhile is still sent', async () => {
   const paper = likedPaper();
   const first = paper.press(removal);

@@ -1933,7 +1933,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!userId) return;
     // A Reading history removal answered after this must leave the mark on,
     // and this mark stays even if its own write is refused.
-    markChangeLog.stand(`${userId}:read:${paper.id}`, true);
+    markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
     const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
