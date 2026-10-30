@@ -208,6 +208,24 @@ test('a refresh that ends without papers updated nothing', () => {
   assert.equal(feedStatusText({ isRefreshing: false, loading: false, refreshDone: true, veil: feedAtomVeilCopy({ displayState: failed }) !== null, hasPapers: false, failed: true }), '');
 });
 
+// PR #425 review: a refresh over shown papers that timed out is retried with
+// no pause, inside the refresh's done hold, and "Papers updated" was spoken
+// over the old cards while the retry ran.
+test('a refresh retried at once says updated only once the retry has landed', () => {
+  const shown = { veil: false, hasPapers: true };
+  const steps = [
+    // Pull to refresh: the load that replaces the list runs.
+    { ...shown, isRefreshing: true, loading: true, refreshDone: false, failed: false },
+    // It timed out: the refresh ends, its retry is due.
+    { ...shown, isRefreshing: false, loading: false, refreshDone: true, failed: true },
+    // The retry runs, the error cleared, still inside the done hold.
+    { ...shown, isRefreshing: false, loading: true, refreshDone: true, failed: false },
+    // It fails again before the hold ends.
+    { ...shown, isRefreshing: false, loading: false, refreshDone: true, failed: true },
+  ];
+  assert.deepEqual(steps.map(feedStatusText), ['Refreshing papers…', '', '', '']);
+});
+
 // A refresh over shown papers that failed kept them, and still said "Papers updated".
 test('a refresh over shown papers that fails updated nothing', () => {
   const shown = { isRefreshing: false, loading: false, refreshDone: true, veil: false, hasPapers: true };

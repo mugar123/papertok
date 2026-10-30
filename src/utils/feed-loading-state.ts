@@ -58,11 +58,13 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
  * over cards already shown. "Papers updated" only when it ended with papers
  * and without a failure (`failed`: the load's error, or its automatic retry
  * still due): a refresh that fails keeps the old papers and has updated nothing.
+ * Nor while a load that replaces the list runs: a refresh that timed out is
+ * retried at once, inside the refresh's done hold, and nothing is updated yet.
  */
 export function feedStatusText({ isRefreshing, loading, refreshDone, veil, hasPapers, failed }: { isRefreshing: boolean; loading: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean; failed: boolean }) {
   if (veil) return 'Loading papers…';
   if (isRefreshing && loading) return 'Refreshing papers…';
-  return refreshDone && hasPapers && !failed ? 'Papers updated' : '';
+  return refreshDone && hasPapers && !failed && !loading ? 'Papers updated' : '';
 }
 
 /**
