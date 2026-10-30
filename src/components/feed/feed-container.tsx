@@ -1086,6 +1086,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     () => feedRef.current?.querySelector<HTMLElement>(
       '.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) :is(a[href], button:not(:disabled)):not([inert], [hidden], [inert] *, [hidden] *)',
     ) ?? null,
+    loading || isRefreshing || autoRetryPending,
   );
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
