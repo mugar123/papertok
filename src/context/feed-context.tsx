@@ -135,6 +135,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
+import { holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -269,6 +270,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // recommendations, which is worse than skipping a session's deltas: the
   // interaction documents are still the source of truth either way.
   const interactionProfileHydrated = useRef(false);
+  // What the account recorded before its profile loaded, for the profile that
+  // arrives to record again (replayHeldEvents).
+  const heldProfileEvents = useRef<HeldProfileEvents | null>(null);
   // The account whose profile is currently reflected in the state above.
   const loadedProfileUserId = useRef<string | null>(null);
   // Bumped every time a profile is applied. Consumers of the reading library
@@ -385,9 +389,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       guestLean.current = leanAfterEvent(guestLean.current, profileEvent(event, paper));
       return;
     }
-    recordInteractionEvent(interactionProfile.current, profileEvent(event, paper));
+    const recorded = profileEvent(event, paper);
+    recordInteractionEvent(interactionProfile.current, recorded);
     profileSignals.current = readProfileSignals(interactionProfile.current);
-    if (!interactionProfileHydrated.current) return;
+    if (!interactionProfileHydrated.current) {
+      heldProfileEvents.current = holdProfileEvent(heldProfileEvents.current, userId, recorded);
+      return;
+    }
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
 
@@ -940,6 +948,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     sessionSeenPapers.current = seenPapersForAccount(userId);
     notableAfterRef.current = null;
     guestLean.current = 0;
+    if (heldProfileEvents.current?.userId !== userId) heldProfileEvents.current = null;
     feedExcludedIds.current = [];
     feedPlan.current = null;
 
@@ -995,12 +1004,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
           );
         }
+        // Decided now, before the events recorded while it loaded add entries
+        // of their own.
+        const needsLearnedSeed = lacksLearnedAffinities(profile);
+        const positiveIds = needsLearnedSeed
+          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
+          : [];
+        // The reader may have liked, viewed or saved papers while it loaded:
+        // they moved the provisional profile this one replaces.
+        const replayed = replayHeldEvents(heldProfileEvents.current, userId, profile);
+        heldProfileEvents.current = null;
         interactionProfile.current = profile;
         carryViewedPapers(profile);
         // A profile that genuinely came back — including a legitimately empty one
         // for a new account — is safe to write back.
         interactionProfileHydrated.current = true;
         loadedProfileUserId.current = userId;
+        if (replayed) scheduleInteractionProfileFlush(userId, profile);
 
         // getDocs returned these ids ordered by document id, and the lists that
         // render them still expect exactly that order.
@@ -1033,12 +1053,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // cards. The sample comes from the aggregate's own order (newest first):
         // `liked`/`saved` above are Sets sorted by id for the lists, and cutting
         // those to 24 kept the alphabetically-first likes forever (audit
-        // 2026-09-02, A3).
-        // Decided now, before the reader's first event adds entries of its own.
-        const needsLearnedSeed = lacksLearnedAffinities(profile);
-        const positiveIds = needsLearnedSeed
-          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
-          : [];
+        // 2026-09-02, A3). The seed and its sample are decided above.
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn: () => void) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn: () => void) => setTimeout(fn, 0);
