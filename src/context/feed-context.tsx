@@ -1301,7 +1301,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
-            ...mainCorpusRequest(corpusPlan, shared),
+            ...mainCorpusRequest(corpusPlan, shared, { firstScreen: reset }),
             continues,
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and the

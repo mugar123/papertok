@@ -132,6 +132,25 @@ test('what the reader deselected sleeps, and the rest of its area does not', () 
   assert.equal(scoreWithPlan('physics', keptQuantum).corpusSimilarity, 50, 'the area key, with a Physics subarea selected');
 });
 
+// ENG-116: a cold Worker answered a session's first page after the 3.5 s
+// deadline. The main page of a load that replaces the list waits longer; the
+// next page and the follows' request of the same screen do not.
+test("only the main page of a list's first screen waits for a store that answers in 5 s", async () => {
+  // A store that answers in 5 s, under the deadline each request is given.
+  const answersIn5s = async (_url: string, _init: RequestInit, timeoutMs: number) => {
+    if (timeoutMs <= 5_000) throw new DOMException('The operation timed out.', 'TimeoutError');
+    return new Response(JSON.stringify({ papers: [] }), { status: 200 });
+  };
+  const ask = (request: Parameters<typeof fetchCorpusPage>[0]) => fetchCorpusPage(request, { apiBase: 'https://papertok-report-api.example', fetchWorker: answersIn5s })
+    .then(() => 'answered', (error: Error) => error.name);
+  const plan = feedPlanFor(null, 0, memory({ selected: ['cs.LG'], examples: examples('cs.LG', 2) }));
+  const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' } as FollowEntity;
+
+  assert.equal(await ask(mainCorpusRequest(plan, shared, { firstScreen: true })), 'answered');
+  assert.equal(await ask(mainCorpusRequest(plan, { ...shared, page: 1 })), 'TimeoutError');
+  assert.equal(await ask(followedCorpusRequest(plan, [author], () => [], shared).request), 'TimeoutError');
+});
+
 test('a full plan leaves room for every rejection and exclusion a request carries', async () => {
   const id = (prefix: string, index: number) => `10.1000/${prefix}.${index}.`.padEnd(40, 'x');
   const selected = ['cs.LG', 'cs.AI', 'cs.CV', 'cs.RO', 'quant-ph', 'hep-th', 'math.PR', 'stat.ML', 'econ.EM', 'econ.GN'];

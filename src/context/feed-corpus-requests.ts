@@ -46,9 +46,13 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
   };
 }
 
-/** The reader's interests, asked by group. */
-export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): CorpusPageRequest {
-  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE };
+/**
+ * The reader's interests, asked by group. On a load that replaces the list
+ * (`firstScreen`), the page waits longer for a Worker that answers slowly on
+ * a session's first request; the follows' request keeps its deadline.
+ */
+export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest, { firstScreen = false } = {}): CorpusPageRequest {
+  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE, firstScreen };
 }
 
 /**
