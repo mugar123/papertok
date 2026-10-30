@@ -60,7 +60,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { plainScientificText } from '../src/utils/plain-scientific-text.ts';
 import { openAireProjectParams, readOpenAirePage } from '../src/services/open-aire-records.ts';
-import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH, shareCardFor } from './share-card.ts';
+import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH, paperShareCardFor, shareCardFor } from './share-card.ts';
 import {
   DEFAULT_PUBLIC_ORIGIN,
   DEFAULT_SHARE_IMAGE,
@@ -672,8 +672,22 @@ function unavailablePage(route: ShareRoute, maxAge = FAILURE_MAX_AGE_SECONDS) {
   });
 }
 
-function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNullable<ShareRecord['paper']>) {
+/** What a paper's card says, or null when its title cannot be drawn (worker/share-card.ts). */
+export function paperShareCard(paper: NonNullable<ShareRecord['paper']>) {
+  return paperShareCardFor({
+    title: plainScientificText(paper.title),
+    authors: asArray(paper.authors),
+    journal: paper.journal,
+    year: paper.year,
+  });
+}
+
+function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNullable<ShareRecord['paper']>, cardOrigin: string) {
   const pageUrl = absoluteUrl(route.canonicalPath);
+  const card = paperShareCard(paper);
+  const image: PreviewImage = card
+    ? { url: `${cardOrigin}${shareCardPath(route)}`, alt: card.alt, width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT }
+    : staticImage(DEFAULT_SHARE_IMAGE);
   const title = plainScientificText(paper.title) || COPY.siteTitle;
   const abstract = plainScientificText(paper.abstract);
   const authors = asArray(paper.authors);
@@ -696,7 +710,7 @@ function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNull
     name: title,
     description,
     url: pageUrl,
-    image: absoluteUrl(DEFAULT_SHARE_IMAGE.path),
+    image: image.url,
     datePublished: paper.published || (paper.year ? String(paper.year) : ''),
     author: authors.slice(0, 20).map(name => ({ '@type': 'Person', name })),
     isPartOf: paper.journal ? { '@type': 'Periodical', name: paper.journal } : null,
@@ -718,6 +732,7 @@ function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNull
   return basePage({
     title,
     description,
+    image,
     ogType: 'article',
     canonicalUrl: pageUrl,
     pageUrl,
@@ -813,8 +828,8 @@ export function entityShareCard(route: Extract<ShareRoute, { kind: 'entity' }>, 
   return entity.nameOnly ? null : shareCardFor(route.type, COPY.entityTypes[route.type], entity);
 }
 
-/** Where an entity's card is drawn: the page's own record, under /share/image/. */
-export function shareCardPath(route: Extract<ShareRoute, { kind: 'entity' }>) {
+/** Where a paper's or an entity's card is drawn: the page's own record, under /share/image/. */
+export function shareCardPath(route: Extract<ShareRoute, { kind: 'entity' | 'paper' }>) {
   return `/share/image/${route.cacheId}`;
 }
 
@@ -872,7 +887,7 @@ export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome:
   // as for an outage, and no index directive either way.
   if (outcome.unknown) return unavailablePage(route, PAGE_MAX_AGE_SECONDS);
   const record = outcome.record || {};
-  if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper);
+  if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper, cardOrigin);
   if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list);
   if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity, cardOrigin);
   return unavailablePage(route);

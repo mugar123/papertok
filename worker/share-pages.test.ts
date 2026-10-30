@@ -228,8 +228,19 @@ test('a paper page carries its own title, description, canonical, og and twitter
   assert.doesNotMatch(headOf(html), /papertok\.app\/feed/, 'nothing in the head still points at /feed');
   assert.match(html, /<html lang="en">/);
 
+  const card = `https://api.papertok.app/share/image/paper/${DOI_KEY}`;
+  assert.equal(metaContent(html, 'property', 'og:image'), card);
+  assert.equal(metaContent(html, 'name', 'twitter:image'), card);
+  assert.equal(metaContent(html, 'property', 'og:image:width'), '1200');
+  assert.equal(metaContent(html, 'property', 'og:image:height'), '630');
+  assert.equal(
+    metaContent(html, 'property', 'og:image:alt'),
+    'Characterizing Alternative Monetization Strategies on YouTube, by Yiqing Hua, Manoel Horta Ribeiro: a paper on PaperTok.',
+  );
+
   const jsonLd = jsonLdOf(html);
   assert.equal(jsonLd['@type'], 'ScholarlyArticle');
+  assert.equal(jsonLd.image, card);
   assert.equal(jsonLd.name, 'Characterizing Alternative Monetization Strategies on YouTube');
   assert.deepEqual(jsonLd.author.map((author: { name: string }) => author.name), ['Yiqing Hua', 'Manoel Horta Ribeiro']);
   assert.equal(jsonLd.datePublished, '2022-11-07');
