@@ -8,7 +8,7 @@ import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { hydrateSeededPaper } from '../utils/paper-seed.ts';
 import { listPaperFromCopies } from '../components/lists/list-paper-copies.ts';
-import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -135,4 +135,55 @@ test('a library entry no copy called retracted reads as before', () => {
   const read = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' }, loadedCopy(unmarked));
   assert.equal('publicationStatus' in read[wakefield.id].paper, false);
   assert.notEqual(listTags(read)[0], 'retracted');
+});
+
+// A Read later change stamps its copy through readLaterStamp (ENG-156), which
+// knows nothing of retractions. The card's copy alone replaced a retracted
+// one, so the lists read Preprint, and so did a later read mark from a card
+// without the retraction.
+test('Read later from a card without the retraction keeps it, through a later read mark', () => {
+  const library = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(retracted), { readAt: '2026-10-29T11:00:00.000Z' });
+  const change = readLaterChange(wakefield.id, library[wakefield.id], {
+    copy: serializeLibraryPaper(unmarked), readLater: true, updatedAt: '2026-10-30T09:00:00.000Z', late: false,
+  });
+  const readLater = change.show(library);
+  assert.deepEqual(listTags(readLater), ['retracted', 'retracted'], 'read, then Read later');
+  assert.equal(readLater[wakefield.id].readLater, true);
+  const read = withLibraryCopy(readLater, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-30T10:00:00.000Z' });
+  assert.deepEqual(listTags(read), ['retracted', 'retracted'], 'then read again');
+});
+
+test('a removal from Read later, shown once accepted, keeps the retraction', () => {
+  const library = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(retracted), { readLater: true, updatedAt: '2026-10-29T10:00:00.000Z' });
+  const removed = readLaterChange(wakefield.id, library[wakefield.id], {
+    copy: serializeLibraryPaper(unmarked), readLater: false, updatedAt: '2026-10-30T09:00:00.000Z', late: true,
+  }).show(library);
+  assert.deepEqual(listTags(removed), ['retracted', 'retracted']);
+  assert.equal(removed[wakefield.id].readLater, false);
+});
+
+test('Read later keeps the retraction a like in this session stored, with no entry yet', () => {
+  const loaded = loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(retracted))[wakefield.id];
+  const readLater = readLaterChange(wakefield.id, undefined, {
+    copy: serializeLibraryPaper(unmarked), readLater: true, updatedAt: '2026-10-30T09:00:00.000Z', late: false, loaded,
+  }).show({});
+  assert.deepEqual(listTags(readLater), ['retracted', 'retracted']);
+});
+
+// The undo of a refused change puts the earlier copy back only while the entry
+// holds the copy its change put there, so the retraction must not make that
+// copy a different object.
+test('a refused Read later change puts back the entry as it was, retraction and all', () => {
+  const library = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(retracted), { readAt: '2026-10-29T11:00:00.000Z' });
+  const previous = library[wakefield.id];
+  const change = readLaterChange(wakefield.id, previous, {
+    copy: serializeLibraryPaper({ ...unmarked, journal: 'The Lancet' }), readLater: true, updatedAt: '2026-10-30T09:00:00.000Z', late: false,
+  });
+  const shown = change.show(library);
+  assert.equal(shown[wakefield.id].paper.journal, 'The Lancet');
+  const restored = change.undo(shown)[wakefield.id];
+  assert.equal(restored.paper, previous.paper);
+  assert.equal(restored.readLater, false);
+  assert.equal(restored.updatedAt, undefined);
+  assert.equal(restored.readAt, '2026-10-29T11:00:00.000Z');
 });

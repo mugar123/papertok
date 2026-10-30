@@ -1,11 +1,17 @@
 import type { Paper } from '../models/paper.ts';
 
 import { withRetractionOf } from '../models/paper.ts';
+import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
 export interface LibraryEntry {
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
   note?: string; tags?: string[]; updatedAt?: string | number | null;
 }
+
+/** `copy` with a retraction the entry's copy or `loaded` records; `copy` itself when neither adds one. */
+const keepingRetraction = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
+  withRetractionOf(withRetractionOf(copy, entry?.paper), loaded)
+);
 
 /**
  * The library with a paper's entry given `copy` and `fields`: a read mark,
@@ -24,8 +30,35 @@ export function withLibraryCopy(
   loaded?: Partial<Paper>,
 ) {
   const entry = library[paperId];
-  const paper = withRetractionOf(withRetractionOf(copy, entry?.paper), loaded);
-  return { ...library, [paperId]: { ...entry, ...fields, paperId, paper } };
+  return { ...library, [paperId]: { ...entry, ...fields, paperId, paper: keepingRetraction(copy, entry, loaded) } };
+}
+
+/**
+ * A Read later change to a paper's entry, made from `previous`, the entry as
+ * the change was asked for. `show` sets the mark with the copy and edit time
+ * readLaterStamp gives, and `undo` takes a refused change back through
+ * restoreReadLater. The copy keeps a retraction, as withLibraryCopy keeps one
+ * (ENG-84), and is made once, so `undo` can tell the copy `show` put on the
+ * entry from one put there since.
+ */
+export function readLaterChange(
+  paperId: string,
+  previous: LibraryEntry | undefined,
+  { copy, readLater, updatedAt, late, loaded }: {
+    copy: Partial<Paper>; readLater: boolean; updatedAt: string;
+    /** A removal shown only once its write is accepted, see readLaterStamp. */
+    late: boolean;
+    loaded?: Partial<Paper>;
+  },
+) {
+  const stamped = { paper: keepingRetraction(copy, previous, loaded), updatedAt };
+  return {
+    show: (library: Record<string, LibraryEntry>) => {
+      const stamp = readLaterStamp(library[paperId], previous, stamped, { late });
+      return withLibraryCopy(library, paperId, stamp.paper, { readLater, updatedAt: stamp.updatedAt }, loaded);
+    },
+    undo: (library: Record<string, LibraryEntry>) => restoreReadLater(library, paperId, previous, stamped),
+  };
 }
 
 /*

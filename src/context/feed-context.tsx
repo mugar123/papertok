@@ -6,6 +6,7 @@ import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendation-engine.ts';
 import type { FeedSnapshot } from './feed-snapshot.ts';
 import type { LibraryEntry } from './library-entry.ts';
+import type { MarkWriteOptions } from './write-mark.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface RecommendationProfileSnapshot extends RecommendationContext {
   userId: string | null; ready: boolean; userPreferences: string[]; followedAuthors: string[];
@@ -30,15 +31,15 @@ export interface FeedContextValue {
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
-  toggleLike: (paper: Paper) => Promise<void>;
+  toggleLike: (paper: Paper, options?: MarkWriteOptions) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
-  unmarkAsRead: (id: string) => Promise<void>;
+  unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
-  toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
+  toggleReadLater: (paper: Paper, value?: boolean, options?: MarkWriteOptions) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
   trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
   trackPdfOpened: (paper: Paper) => Promise<void>;
@@ -85,7 +86,9 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
-import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
+import { unmarkRead } from './unmark-read.ts';
+import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -231,6 +234,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const likedPaperIdsRef = useRef(likedPaperIds);
   const savedPaperIdsRef = useRef(savedPaperIds);
   const readPaperIdsRef = useRef(readPaperIds);
+  const personalLibraryRef = useRef(personalLibrary);
   const loadPapersRef = useRef<FeedContextValue['loadPapers'] | null>(null);
   const autoRetryUsedRef = useRef(false);
   const notInterestedIdsRef = useRef(notInterestedIds);
@@ -258,6 +262,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // write is coalesced behind it.
   const [initialInteractionProfile] = useState(createEmptyInteractionProfile);
   const interactionProfile = useRef(initialInteractionProfile);
+  // Follows each pending change to a paper's like, read or Read later mark, so
+  // every write's answer leaves the mark as Firestore will hold it (see writeMark).
+  const [markChangeLog] = useState(markChanges);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -276,6 +283,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
   useEffect(() => { readPaperIdsRef.current = readPaperIds; }, [readPaperIds]);
+  useEffect(() => { personalLibraryRef.current = personalLibrary; }, [personalLibrary]);
   useEffect(() => { notInterestedIdsRef.current = notInterestedIds; }, [notInterestedIds]);
   // Read by handlers that must keep one identity across re-ranks: a handler
   // that lists `papers` in its deps is handed anew to every mounted card on
@@ -932,6 +940,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // papers immediately. This is the only place allowed to blank the sets: a
     // profile that merely failed to load leaves them alone.
     if (leavesLoadedAccount(loadedProfileUserId.current, userId)) {
+      // A write still waiting may answer after the same account signs back
+      // in: what it sent to the screen is gone with these sets.
+      markChangeLog.screenReplaced();
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -995,6 +1006,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const saved = orderedSet('saved');
         const read = orderedSet('read');
 
+        // These sets and the library put every mark back where the profile
+        // has it, so a move an answer sent before is no longer on screen.
+        markChangeLog.screenReplaced();
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1128,7 +1142,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [carryViewedPapers, isKnownPaper, user?.uid]);
+  }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -1770,41 +1784,57 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, []);
 
-  const toggleLike = useCallback(async (paperInput: Paper) => {
+  const toggleLike = useCallback(async (paperInput: Paper, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
-    const isCurrentlyLiked = likedPaperIds.has(paper.id);
-    const newLiked = new Set(likedPaperIds);
+    const isCurrentlyLiked = markStartsOn(options, likedPaperIds.has(paper.id));
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
       boredomLevel.current = 0;
       void traverseAndExpandNetwork(paper);
-    }
-    
-    if (isCurrentlyLiked) {
-      newLiked.delete(paper.id);
-    } else {
-      newLiked.add(paper.id);
       countEngagement(paperInput.id, { likes: 1 });
 
       temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.1);
     }
-    recordProfileEvent({
-      paperId: paper.id,
-      kind: isCurrentlyLiked ? 'unlike' : 'like',
-      category: paper.primaryCategory,
-    }, paper);
-    setLikedPaperIds(newLiked);
-    reRankFeed(paper.id);
+    // By updater: a refusal that lands after another like changed must move
+    // only this paper back, not restore the set as it was when this call began.
+    const showLiked = (liked: boolean) => {
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: liked ? 'like' : 'unlike',
+        category: paper.primaryCategory,
+      }, paper);
+      setLikedPaperIds((ids) => {
+        const next = new Set(ids);
+        if (liked) next.add(paper.id);
+        else next.delete(paper.id);
+        return next;
+      });
+    };
 
-    if (userId) {
-      const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
-      if (storedPaper) {
-        setPersonalLibrary(current => libraryWithRetractionOf(current, paper.id, storedPaper));
-        setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
-      }
-      try {
+    const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
+    if (userId && storedPaper) {
+      setPersonalLibrary(current => libraryWithRetractionOf(current, paper.id, storedPaper));
+      setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
+    }
+    await writeMark({
+      show: () => {
+        showLiked(!isCurrentlyLiked);
+        reRankFeed(paper.id);
+      },
+      undo: () => showLiked(isCurrentlyLiked),
+      failure: 'Error saving like:',
+      afterWrite: options?.afterWrite,
+      throwOnError: options?.throwOnError,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:like:${paper.id}`,
+      from: isCurrentlyLiked,
+      to: !isCurrentlyLiked,
+      isOn: () => likedPaperIdsRef.current.has(paper.id),
+      write: async () => {
+        if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
@@ -1822,12 +1852,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         void trackEvent('like_change', {
           action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
         });
-      } catch (err) {
-        console.error('Error saving like:', err);
-        setLikedPaperIds(likedPaperIds);
-      }
-    }
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
+      },
+    });
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1910,9 +1937,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId) return;
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.add(paper.id);
-    setReadPaperIds(newRead);
+    // A Reading history removal answered after this must leave the mark on,
+    // and this mark stays even if its own write is refused. A tap before React
+    // draws a refused unmark's undo finds the read already told.
+    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
+    // Built from the queued state, not the ref: an answered Reading history
+    // removal may have queued its move before React drew it.
+    setReadPaperIds((ids) => new Set(ids).add(paper.id));
     const readAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
     setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { readAt }, libraryPapers[paper.id]));
@@ -1922,12 +1953,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
 
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: 'read',
-        category: paper.primaryCategory,
-        timestamp: readAt,
-      });
+      if (moves) {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'read',
+          category: paper.primaryCategory,
+          timestamp: readAt,
+        });
+      }
       const ref = interactionDocRef(userId, paper.id);
       await setDoc(ref, definedFields({
         read: true,
@@ -1941,7 +1974,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving read status:', err);
     }
-  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid, markChangeLog]);
 
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
@@ -2211,74 +2244,77 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
 
-  const unmarkAsRead = useCallback(async (paperId: string) => {
+  const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;
     if (!userId) return;
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.delete(paperId);
-    setReadPaperIds(newRead);
-    setPersonalLibrary((current) => {
-      if (!current[paperId]) return current;
-      const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-
-      return next;
-    });
-
-    try {
-      recordProfileEvent({ paperId, kind: 'unread' });
-      const ref = interactionDocRef(userId, paperId);
-      await updateDoc(ref, {
+    await unmarkRead(paperId, {
+      setReadIds: setReadPaperIds,
+      setLibrary: setPersonalLibrary,
+      write: () => updateDoc(interactionDocRef(userId, paperId), {
         read: deleteField(),
         readAt: deleteField(),
-      });
-    } catch (err) {
-      console.error('Error unmarking read status:', err);
-    }
-  }, [recordProfileEvent, user?.uid]);
+      }),
+      onUnmarked: () => recordProfileEvent({ paperId, kind: 'unread' }),
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
+      throwOnError: options?.throwOnError,
+      afterWrite: options?.afterWrite,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:read:${paperId}`,
+      isRead: () => readPaperIdsRef.current.has(paperId),
+    });
+  }, [recordProfileEvent, user?.uid, markChangeLog]);
 
-  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: { throwOnError: boolean }) => {
+  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return false;
     if (!userId || !paper?.id) return false;
-    const nextValue = value ?? !personalLibrary[paper.id]?.readLater;
+    const previous = personalLibrary[paper.id];
+    const nextValue = value ?? !previous?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
+    const change = readLaterChange(paper.id, previous, {
+      copy: storedPaper, readLater: nextValue, updatedAt, late: Boolean(options?.afterWrite), loaded: libraryPapers[paper.id],
+    });
 
-    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { readLater: nextValue, updatedAt }, libraryPapers[paper.id]));
-
-    try {
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: 'readLater',
-        value: nextValue,
-        category: paper.primaryCategory,
-        timestamp: updatedAt,
-      });
-      await setDoc(interactionDocRef(userId, paper.id), definedFields({
+    await writeMark({
+      show: () => {
+        setPersonalLibrary(change.show);
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'readLater',
+          value: nextValue,
+          category: paper.primaryCategory,
+          timestamp: updatedAt,
+        });
+      },
+      undo: options?.throwOnError ? () => {
+        setPersonalLibrary(change.undo);
+        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
+      } : undefined,
+      write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
         paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
         libraryUpdatedAt: updatedAt,
-      }), { merge: true });
-    } catch (err) {
-      console.error('Error updating read later:', err);
-      if (options?.throwOnError) {
-        if (auth.currentUser?.uid === userId) {
-          const previousValue = Boolean(personalLibrary[paper.id]?.readLater);
-          setPersonalLibrary(current => ({
-            ...current,
-            [paper.id]: { ...current[paper.id], readLater: previousValue },
-          }));
-          recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: previousValue });
-        }
-        throw err;
-      }
-    }
+      }), { merge: true }),
+      failure: 'Error updating read later:',
+      afterWrite: options?.afterWrite,
+      throwOnError: options?.throwOnError,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:readLater:${paper.id}`,
+      // A removal from Read later (`afterWrite`) starts from a saved paper,
+      // not from whatever the screen showed when it was asked for.
+      from: markStartsOn(options, Boolean(previous?.readLater)),
+      to: nextValue,
+      isOn: () => Boolean(personalLibraryRef.current[paper.id]?.readLater),
+    });
     return nextValue;
-  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, user?.uid, markChangeLog]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
