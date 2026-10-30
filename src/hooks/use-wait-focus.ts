@@ -40,9 +40,11 @@ export function createWaitFocus(activeElement: () => unknown) {
       // Nothing to land on yet (a commit between two states): stay owed,
       // and still only for a focus that is lost or parked.
       if (!heir) return;
+      heir.focus();
+      // A control that refused the focus leaves it owed for the next commit.
+      if (activeElement() !== heir) return;
       owed = false;
       parked = null;
-      heir.focus();
     },
   };
 }

@@ -91,6 +91,21 @@ test('a commit with neither a wait nor a place to land keeps the focus owed', ()
   assert.equal(view.active(), firstControl);
 });
 
+// A card control under an inert container ignores focus(): the focus was
+// then never owed again, and fell to the page as the veil left.
+test('a place that refuses the focus leaves it owed for the next commit', () => {
+  const { view, memory, heading } = pressedTryAgain();
+  memory.settle(heading, noCard);
+  const inertLink = { focus() {} };
+  memory.settle(null, () => inertLink);
+
+  view.blur();
+  const firstControl = view.element();
+  memory.settle(null, () => firstControl);
+
+  assert.equal(view.active(), firstControl);
+});
+
 test('a retry button that leaves without the focus moves nothing', () => {
   const view = page();
   const memory = createWaitFocus(view.active);
