@@ -260,7 +260,8 @@
 
   /* The row wraps rather than scrolling under a hidden scrollbar: with five
      tabs, or at 200% text, the last (Journals) would sit off-screen with
-     nothing to show it is there (ENG-123). */
+     nothing to show it is there (ENG-123). Below 600px the tabs become a
+     grid (further down). */
   .following-settings-tabs {
     position: static;
     flex-direction: row;
@@ -285,11 +286,24 @@
   }
 }
 
+/* Two columns while a label fits half the row, one at large text sizes
+   (9rem grows with the reader's text). A label that still does not fit wraps
+   instead of being cut to "Jo…" (WCAG 1.4.4, ENG-123). */
 @media (max-width: 600px) {
   .following-settings-tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, max(9rem, calc((100% - var(--space-1)) / 2))), 1fr));
     gap: var(--space-1);
+  }
+
+  .following-settings-tabs button {
+    padding-block: var(--space-1);
+  }
+
+  .following-settings-tabs button span {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 }
 
