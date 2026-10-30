@@ -48,6 +48,40 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
   assert.deepEqual(notableAt(next), [[14, 'notable-0']]);
 });
 
+// ENG-166: each page samples its own share, one notable place in `every` cards.
+test('a page sampled at one in five asks for and places a notable card every fifth card, and the next page counts on from the last one', () => {
+  // Twenty-one cards hold five places at one in five, and two spares.
+  assert.equal(notableRequest([], FIRST_SCREEN, null, null, 5), 7);
+  const offered = ['notable-0', 'notable-1', 'notable-2', 'notable-3'].map(notable);
+  const shown = joinFeedPage([], records('corpus'), offered, { ...firstScreen, every: 5 });
+  assert.deepEqual(notableAt(shown), [[4, 'notable-0'], [9, 'notable-1'], [14, 'notable-2']]);
+  // A next page sampled at today's one in fifteen: fifteen cards after the last notable one.
+  const next = joinFeedPage(shown, records('page'), [notable('page-notable-0')], { ...later, every: 15 });
+  assert.deepEqual(notableAt(next).slice(3), [[29, 'page-notable-0']]);
+});
+
+// ENG-166, decision 6: the corpus sends five notable papers at most
+// (FEED_MAX_NOTABLE in worker/paper-store.ts), so a page sampled at one in three
+// spreads the five over its length instead of using them up at its top.
+test('a page with fewer notable cards than its places spreads them evenly over its cards, and the next page does not start with one', () => {
+  const five = (prefix: string) => [0, 1, 2, 3, 4].map(index => notable(`${prefix}-notable-${index}`));
+  const firstPage = joinFeedPage([], records('corpus', 23), five('first'), { ...firstScreen, every: 3 });
+  assert.deepEqual(notableAt(firstPage).map(([index]) => index), [4, 9, 14, 19, 24]);
+  assert.equal(firstPage.length, 28);
+  const laterPage = joinFeedPage(firstPage, records('page', 31), five('later'), { ...later, every: 3 });
+  // Thirty-one other cards and five notable ones, one in seven, the first seven
+  // cards after the last notable card of the first page.
+  assert.deepEqual(notableAt(laterPage).slice(5).map(([index]) => Number(index) - 24), [7, 14, 21, 28, 35]);
+  // Two notable cards on a later page: one in twelve, never past one in fifteen.
+  const two = joinFeedPage([], records('corpus', 31), five('two').slice(0, 2), { ...firstScreen, every: 4 });
+  assert.deepEqual(notableAt(two).map(([index]) => index), [11, 23]);
+  const one = joinFeedPage([], records('corpus', 31), five('one').slice(0, 1), { ...firstScreen, every: 3 });
+  assert.deepEqual(notableAt(one).map(([index]) => index), [14]);
+  // Enough notable cards for every place: one in three, as sampled.
+  const enough = joinFeedPage([], records('corpus', 12), five('enough').concat(five('more')), { ...firstScreen, every: 3 });
+  assert.deepEqual(notableAt(enough).map(([index]) => index), [2, 5, 8, 11, 14, 17]);
+});
+
 // A follow change refreshes the ranking but the reader keeps their place.
 test('a refresh that keeps the reader\'s place keeps the cards through the visible one, and counts the next notable card from theirs', () => {
   const onScreen = records('shown', 20).map((paper, index) => ({ ...paper, _notable: index === 14 }));

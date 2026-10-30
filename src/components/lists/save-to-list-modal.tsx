@@ -93,11 +93,14 @@ const LISTS_STOPPED = ['stalled', 'unavailable'];
 
 export default function SaveToListModal({
   paper,
+  surface,
   onClose,
   embedded = false,
   closeGuardRef,
 }: {
   paper: Paper;
+  /** The surface of the card that opened the picker, which its save reports (forYouCardNotable). */
+  surface?: string;
   onClose: () => void;
   embedded?: boolean;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
@@ -550,7 +553,7 @@ export default function SaveToListModal({
         // The other order left an orphan whenever this write was refused:
         // "saved" everywhere, a paper in no list, and a Save that could
         // never succeed again because markSaved saw it as already saved.
-        void markSaved(paper);
+        void markSaved(paper, { surface });
       }
 
       // `updatedAt` rides along on every list write. It is what tells a
@@ -578,7 +581,7 @@ export default function SaveToListModal({
         if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
         if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
         if (savesPaper && !alreadySaved) await unmarkSaved(paper);
-        if (unsavesPaper) await markSaved(paper);
+        if (unsavesPaper) await markSaved(paper, { surface });
         return true;
       };
       const destinations = [

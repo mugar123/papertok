@@ -5,6 +5,31 @@ export interface DecayedAffinity { value: number; at: number; }
 export interface CategoryExposure { shown: number; engaged: number; }
 export interface PositiveExample { id: string; category: string; }
 export interface WeightedConcept { id: string; score?: number; }
+/**
+ * One kind of For You card: how many of them the reader was shown, and how
+ * many likes, saves and opened PDFs they got. Halving (TEMPORAL_HALVE_AT)
+ * makes both fractional.
+ */
+export interface KindCounts { shown: number; engaged: number; }
+/**
+ * The notable and the other (recent) For You cards' counts, and the lean, from
+ * -1 (classic) to +1 (recent), that likes, saves and long reads move. The feed
+ * samples each page's share of notable places from the two kinds' rates
+ * (sampleNotableEvery).
+ */
+export interface TemporalSignal { notable: KindCounts; recent: KindCounts; lean: number; }
+// What one like, save or opened PDF of a paper added: to which kind, if any
+// (`notable`), at which halving (`epoch`), and the lean step it moved.
+interface CountedEngagement { notable?: boolean; epoch: number; lean: number; }
+type EngagementSignal = 'like' | 'save' | 'openedPdf';
+type EngagedPaper = Partial<Record<EngagementSignal, CountedEngagement>>;
+interface TemporalState extends TemporalSignal {
+  // How many times the counts were halved.
+  halvings: number;
+  // The papers whose like, save or opened PDF counted, oldest first, so that
+  // each counts once and an unlike or unsave takes back what it added.
+  papers: Map<string, EngagedPaper>;
+}
 export interface InteractionProfile {
   version: number; updatedAt: string | null;
   categories: Map<string, { cohorts: Map<number, { weighted: number; raw: number }>; aged: number }>;
@@ -23,15 +48,25 @@ export interface InteractionProfile {
   // The interaction documents do not say which views those were, so a
   // rebuild starts it empty.
   viewedNotable: string[];
+  // The interaction documents do not say which cards were notable either, so
+  // a rebuild starts this empty too.
+  temporal: TemporalState;
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
+  // In memory only: the papers this session first viewed off For You, which
+  // the viewed list holds without a For You card counted (countShown).
+  viewedOffForYou: Set<string>;
   sourceDocCount: number; truncated: boolean;
 }
 export interface InteractionEvent {
   paperId: string; kind: string; category?: string; timestamp?: number | string; viewTime?: number; value?: boolean;
   concepts?: WeightedConcept[]; authorIds?: string[];
-  // A view or a skip of a notable card.
+  // Whether the For You card was notable (forYouCardNotable), on a view, a
+  // skip, a like, a save or an opened PDF. Left out for a paper off that feed.
   notable?: boolean;
+  // The paper's publication date, which a like, a save or a long read moves
+  // the lean by. The feed leaves it out for a notable card (profileEvent).
+  published?: string | null;
   // The card's area (areaKeyForPaper), for a card whose category is no leaf.
   area?: string | null;
 }
@@ -46,6 +81,7 @@ export interface ProfileSignals {
   // The likes, saves and long reads the reader keeps, newest first, up to
   // MAX_POSITIVE_EXAMPLES_PER_AREA for each area.
   positiveExamples: PositiveExample[];
+  temporal: TemporalSignal;
 }
 export interface StoredInteractionProfile {
   schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
@@ -210,6 +246,10 @@ function toTimestampMs(value: unknown) {
   return null;
 }
 
+function emptyTemporal(): TemporalState {
+  return { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0, halvings: 0, papers: new Map() };
+}
+
 export function createEmptyInteractionProfile(): InteractionProfile {
   return {
     version: INTERACTION_PROFILE_SCHEMA_VERSION,
@@ -224,11 +264,13 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     curated: new Map(CURATED_SETS.map(name => [name, { order: [], members: new Set() }])),
     viewed: [],
     viewedNotable: [],
+    temporal: emptyTemporal(),
     seenFilter: null,
     counters: { interactions: 0, evicted: 0 },
     // Papers already counted towards sourceDocCount in this session. In memory
     // only: it exists to stop one session counting the same paper twice.
     countedPapers: new Set(),
+    viewedOffForYou: new Set(),
     sourceDocCount: 0,
     truncated: false,
   };
@@ -421,6 +463,119 @@ function removeUnkeptPositive(profile: InteractionProfile, paperId: string) {
   removePositive(profile, paperId);
 }
 
+// How far a like, a save and a read of LEAN_READ_SECONDS or more move the lean.
+const LEAN_STEP = { like: 0.1, save: 0.15, read: 0.05 };
+const LEAN_READ_SECONDS = 10;
+
+/**
+ * The lean moved by `step`: toward recent for a paper a week old or less,
+ * toward classic for one a year old or more. A notable card leaves it as it
+ * is: the feed chose that card for its citations, and it is years old by that
+ * choice. A paper without a date says nothing about age. A guest's feed keeps
+ * its own lean for the session with it (FeedContext).
+ */
+export function leanAfterEngaging(lean: number, event: Pick<InteractionEvent, 'notable' | 'published'>, step: number, now = Date.now()) {
+  const published = toTimestampMs(event.published);
+  if (event.notable === true || published === null) return lean;
+  const daysOld = (now - published) / DAY_MS;
+  if (daysOld <= 7) return Math.min(1, lean + step);
+  if (daysOld >= 365) return Math.max(-1, lean - step);
+  return lean;
+}
+
+/**
+ * A guest's lean after `event`: a like, a save or a read of LEAN_READ_SECONDS
+ * or more moves it, as on a profile, and nothing takes it back (a guest's
+ * lean lasts the session only).
+ */
+export function leanAfterEvent(lean: number, event: InteractionEvent, now = Date.now()) {
+  if (event.kind === 'like') return leanAfterEngaging(lean, event, LEAN_STEP.like, now);
+  if (event.kind === 'save') return leanAfterEngaging(lean, event, LEAN_STEP.save, now);
+  if (event.kind === 'viewTime' && Number(event.viewTime) >= LEAN_READ_SECONDS) return leanAfterEngaging(lean, event, LEAN_STEP.read, now);
+  return lean;
+}
+
+// Once the cards shown of both kinds reach this many, every count is halved:
+// the account's last two thousand or so cards weigh as much as all before
+// them, so what the reader engages with now can overturn years of history.
+const TEMPORAL_HALVE_AT = 2000;
+// The papers whose engagement the account remembers, to count each once and
+// undo it exactly. An unlike of a paper older than these takes nothing back.
+const MAX_ENGAGED_PAPERS = 200;
+
+function halveWhenFull(temporal: TemporalState) {
+  while (temporal.notable.shown + temporal.recent.shown >= TEMPORAL_HALVE_AT) {
+    for (const kind of [temporal.notable, temporal.recent]) {
+      kind.shown /= 2;
+      kind.engaged /= 2;
+    }
+    temporal.halvings += 1;
+  }
+}
+
+const countsOf = (temporal: TemporalState, notable: boolean) => (notable ? temporal.notable : temporal.recent);
+
+// A view or a skip of a For You card counts it shown, once while the viewed
+// lists remember it. The viewed list also holds views off For You, such as in
+// Search, which counted no card. A notable card counts once while its own list
+// remembers it. A recent card counts once, even when its paper was first viewed
+// off For You in this session; one viewed off For You in an earlier session
+// counts no card. Runs before addViewed records the view.
+function countShown(profile: InteractionProfile, event: InteractionEvent) {
+  const { paperId } = event;
+  const remembered = profile.viewed.includes(paperId) || profile.viewedNotable.includes(paperId);
+  if (typeof event.notable !== 'boolean') {
+    if (!remembered) profile.viewedOffForYou.add(paperId);
+    return;
+  }
+  const counted = event.notable
+    ? profile.viewedNotable.includes(paperId)
+    : remembered && !profile.viewedOffForYou.has(paperId);
+  profile.viewedOffForYou.delete(paperId);
+  if (counted) return;
+  countsOf(profile.temporal, event.notable).shown += 1;
+  halveWhenFull(profile.temporal);
+}
+
+/**
+ * A like, a save or an opened PDF of a paper: once per paper and signal, it
+ * counts toward its kind when it is a For You card, and moves the lean by
+ * `step`. What it added is kept, for an unlike or unsave to take back.
+ */
+function countEngagement(profile: InteractionProfile, event: InteractionEvent, signal: EngagementSignal, step: number, now: number) {
+  const { temporal } = profile;
+  const paper = temporal.papers.get(event.paperId) ?? {};
+  if (paper[signal]) return;
+  const lean = leanAfterEngaging(temporal.lean, event, step, now);
+  const counted: CountedEngagement = { epoch: temporal.halvings, lean: lean - temporal.lean };
+  temporal.lean = lean;
+  if (typeof event.notable === 'boolean') {
+    counted.notable = event.notable;
+    countsOf(temporal, event.notable).engaged += 1;
+  }
+  if (counted.notable === undefined && counted.lean === 0) return;
+  paper[signal] = counted;
+  temporal.papers.delete(event.paperId);
+  temporal.papers.set(event.paperId, paper);
+  while (temporal.papers.size > MAX_ENGAGED_PAPERS) temporal.papers.delete(temporal.papers.keys().next().value!);
+}
+
+// An unlike or unsave: takes back what the like or save added, halved as the
+// counts were since.
+function undoEngagement(profile: InteractionProfile, paperId: string, signal: EngagementSignal) {
+  const { temporal } = profile;
+  const paper = temporal.papers.get(paperId);
+  const counted = paper?.[signal];
+  if (!paper || !counted) return;
+  if (typeof counted.notable === 'boolean') {
+    const kind = countsOf(temporal, counted.notable);
+    kind.engaged = Math.max(0, kind.engaged - 0.5 ** (temporal.halvings - counted.epoch));
+  }
+  temporal.lean = clamp(temporal.lean - counted.lean, -1, 1);
+  delete paper[signal];
+  if (Object.keys(paper).length === 0) temporal.papers.delete(paperId);
+}
+
 function recordSessionImpact(
   profile: InteractionProfile,
   category: string,
@@ -455,6 +610,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     interactionCount: 0,
     dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
     positiveExamples: [],
+    temporal: { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0 },
   };
   if (!profile) return signals;
 
@@ -481,6 +637,8 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
   signals.positiveExamples = profile.positives.map(example => ({ ...example }));
+  const { notable, recent, lean } = profile.temporal;
+  signals.temporal = { notable: { ...notable }, recent: { ...recent }, lean };
   return signals;
 }
 
@@ -644,21 +802,25 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'like':
       addCurated(profile, 'liked', event.paperId);
       addPositive(profile, event.paperId, learned);
+      countEngagement(profile, event, 'like', LEAN_STEP.like, now);
       impact = IMPACT_LIKED;
       break;
     case 'unlike':
       removeCurated(profile, 'liked', event.paperId);
       removeUnkeptPositive(profile, event.paperId);
+      undoEngagement(profile, event.paperId, 'like');
       impact = -IMPACT_LIKED;
       break;
     case 'save':
       addCurated(profile, 'saved', event.paperId);
       addPositive(profile, event.paperId, learned);
+      countEngagement(profile, event, 'save', LEAN_STEP.save, now);
       impact = IMPACT_SAVED;
       break;
     case 'unsave':
       removeCurated(profile, 'saved', event.paperId);
       removeUnkeptPositive(profile, event.paperId);
+      undoEngagement(profile, event.paperId, 'save');
       impact = -IMPACT_SAVED;
       break;
     case 'read':
@@ -689,12 +851,14 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
       break;
     case 'openedPdf':
+      countEngagement(profile, event, 'openedPdf', 0, now);
       impact = IMPACT_OPENED_PDF;
       break;
     case 'pdfBounce':
       impact = IMPACT_PDF_BOUNCE;
       break;
     case 'skip':
+      countShown(profile, event);
       addViewed(profile, event.paperId, event.notable === true);
       recordExposure(profile, learned, false);
       impact = IMPACT_SKIP;
@@ -702,6 +866,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'viewTime': {
       const seconds = Number(event.viewTime);
       if (!Number.isFinite(seconds) || seconds <= 0) return profile;
+      countShown(profile, event);
       addViewed(profile, event.paperId, event.notable === true);
       // Judged against the median as it stood before this view moved it.
       const median = profile.dwell.median;
@@ -711,6 +876,7 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
         addPositive(profile, event.paperId, learned);
       }
       observeDwell(profile.dwell, seconds);
+      if (seconds >= LEAN_READ_SECONDS) profile.temporal.lean = leanAfterEngaging(profile.temporal.lean, event, LEAN_STEP.read, now);
       break;
     }
     case 'metadata':
@@ -865,6 +1031,29 @@ function weakestHalfRemoved(serialized: SerializedDecayed) {
   return Object.fromEntries(kept);
 }
 
+// Each kind as [shown, engaged]; each paper as [id, like, save, openedPdf],
+// a signal that did not count as 0 and one that did as [kind, epoch, lean],
+// kind being 1 (notable), 0 (recent) or null (off the For You feed).
+type SerializedEngagement = 0 | [number | null, number, number];
+interface SerializedTemporal { n: [number, number]; r: [number, number]; lean: number; h: number; p: Array<[string, ...SerializedEngagement[]]>; }
+const ENGAGEMENT_SIGNALS: EngagementSignal[] = ['like', 'save', 'openedPdf'];
+const precise = (value: number) => Number(value.toPrecision(6));
+
+function serializeTemporal(temporal: TemporalState): SerializedTemporal {
+  const kind = ({ shown, engaged }: KindCounts): [number, number] => [precise(shown), precise(engaged)];
+  return {
+    n: kind(temporal.notable),
+    r: kind(temporal.recent),
+    lean: precise(temporal.lean),
+    h: temporal.halvings,
+    p: [...temporal.papers].map(([id, paper]) => [id, ...ENGAGEMENT_SIGNALS.map((signal): SerializedEngagement => {
+      const counted = paper[signal];
+      if (!counted) return 0;
+      return [counted.notable === undefined ? null : Number(counted.notable), counted.epoch, precise(counted.lean)];
+    })]),
+  };
+}
+
 function serializeAffinities(profile: InteractionProfile) {
   const categories: Record<string, { c: Record<number, [number, number]>; a: number }> = {};
   profile.categories.forEach((bucket, category) => {
@@ -887,9 +1076,17 @@ function serializeAffinities(profile: InteractionProfile) {
     exposure,
     dwell: Number(profile.dwell.median.toPrecision(6)),
     positives: profile.positives.map(example => [example.id, example.category]),
+    temporal: serializeTemporal(profile.temporal),
   };
   let serialized = JSON.stringify(payload);
-  // Concepts and authors are the part that can grow with use; the weakest go
+  // The oldest engaged papers go first, since concepts and authors move scores.
+  // Losing one costs what a paper past MAX_ENGAGED_PAPERS costs: an unlike no
+  // longer takes its count back, and a like after that counts again.
+  while (serialized.length > MAX_AFFINITY_JSON_BYTES && payload.temporal.p.length > 0) {
+    payload.temporal.p = payload.temporal.p.slice(Math.ceil(payload.temporal.p.length / 2));
+    serialized = JSON.stringify(payload);
+  }
+  // Then concepts and authors, the part that can grow with use; the weakest go
   // first. The categories are left to the check below, as they always were.
   while (serialized.length > MAX_AFFINITY_JSON_BYTES
     && Object.keys(payload.concepts).length + Object.keys(payload.authors).length > 0) {
@@ -989,7 +1186,51 @@ function deserializeDecayed(serialized: unknown, map: Map<string, DecayedAffinit
 interface SerializedAffinities {
   categories?: Record<string, { c?: Record<string, unknown>; a?: number }>;
   concepts?: unknown; authors?: unknown; exposure?: Record<string, unknown>;
-  dwell?: unknown; positives?: unknown;
+  dwell?: unknown; positives?: unknown; temporal?: unknown;
+}
+
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function storedKind(stored: unknown): KindCounts {
+  return Array.isArray(stored) && isCount(stored[0]) && isCount(stored[1])
+    ? { shown: stored[0], engaged: stored[1] }
+    : { shown: 0, engaged: 0 };
+}
+
+function storedEngagement(stored: unknown, halvings: number): CountedEngagement | null {
+  if (!Array.isArray(stored)) return null;
+  const [kind, epoch, lean] = stored as unknown[];
+  if (!(kind === null || kind === 0 || kind === 1) || !Number.isSafeInteger(epoch) || !isCount(epoch) || epoch > halvings) return null;
+  if (typeof lean !== 'number' || !Number.isFinite(lean)) return null;
+  const counted: CountedEngagement = { epoch, lean: clamp(lean, -1, 1) };
+  if (kind !== null) counted.notable = kind === 1;
+  return counted;
+}
+
+// The stored counts, lean and papers, or none for an aggregate written before
+// them; a value out of range is dropped. Counts past TEMPORAL_HALVE_AT are
+// halved here as well.
+function storedTemporal(stored: unknown): TemporalState {
+  const temporal = emptyTemporal();
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return temporal;
+  const { n, r, lean, h, p } = stored as Partial<Record<keyof SerializedTemporal, unknown>>;
+  temporal.notable = storedKind(n);
+  temporal.recent = storedKind(r);
+  if (typeof lean === 'number' && Number.isFinite(lean)) temporal.lean = clamp(lean, -1, 1);
+  if (Number.isSafeInteger(h) && isCount(h)) temporal.halvings = h;
+  if (Array.isArray(p)) {
+    p.slice(-MAX_ENGAGED_PAPERS).forEach((entry) => {
+      if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !entry[0]) return;
+      const paper: EngagedPaper = {};
+      ENGAGEMENT_SIGNALS.forEach((signal, index) => {
+        const counted = storedEngagement(entry[index + 1], temporal.halvings);
+        if (counted) paper[signal] = counted;
+      });
+      if (Object.keys(paper).length > 0) temporal.papers.set(entry[0], paper);
+    });
+  }
+  halveWhenFull(temporal);
+  return temporal;
 }
 
 /**
@@ -1023,6 +1264,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
     if (affinities.dwell !== undefined && Number.isFinite(median)) {
       profile.dwell.median = clamp(median, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
     }
+    profile.temporal = storedTemporal(affinities.temporal);
 
     const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed' | 'viewedNotable', unknown[]>>;
     CURATED_SETS.forEach((name) => {

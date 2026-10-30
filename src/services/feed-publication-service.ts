@@ -28,7 +28,7 @@ let nextRequestAt = 0;
  * any page (FeedContext), and a refresh starts at the top. A reported card
  * that is no longer listed leaves their place unknown: nothing is removed.
  * The notable cards keep their places and the next card takes a removed
- * one's (keepNotablePlaces), so the reader still meets one in NOTABLE_EVERY.
+ * one's (keepNotablePlaces), so the reader still meets them where they were placed.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
   const visible = papers.findIndex(paper => paper.id === visiblePaperId);

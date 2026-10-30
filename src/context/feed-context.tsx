@@ -34,20 +34,23 @@ export interface FeedContextValue {
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
-  toggleLike: (paper: Paper, options?: MarkWriteOptions) => Promise<void>;
+  // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
+  // own (PaperCard's `analyticsSurface`). Only a For You card's ('feed') counts
+  // toward the share of notable cards (forYouCardNotable).
+  toggleLike: (paper: Paper, surface?: string, options?: MarkWriteOptions) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
-  markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
   toggleReadLater: (paper: Paper, value?: boolean, options?: MarkWriteOptions) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
-  trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
-  trackPdfOpened: (paper: Paper) => Promise<void>;
-  trackSkip: (paper: Paper) => Promise<void>;
-  trackSkips: (papers: Paper[]) => Promise<void>;
+  trackViewTime: (paper: Paper, seconds: number, surface?: string) => Promise<void>;
+  trackPdfOpened: (paper: Paper, surface?: string) => Promise<void>;
+  trackSkip: (paper: Paper, surface?: string) => Promise<void>;
+  trackSkips: (papers: Paper[], surface?: string) => Promise<void>;
   trackPdfBounce: (paper: Paper) => Promise<void>;
 }
 
@@ -63,7 +66,6 @@ import { useFollowing } from './following-context.tsx';
 import { fetchPapers, clearCache } from '../services/arxiv-service.ts';
 import { getDeviceInfo } from '../utils/device.ts';
 import { getAllLeafCategories } from '../data/categories.ts';
-import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { enrichPapersBatch } from '../services/open-alex-service.ts';
 import {
   applyRecommendationScore,
@@ -88,7 +90,7 @@ import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './fe
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
-import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
+import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
@@ -103,6 +105,7 @@ import {
   curatedIds,
   isPaperKnown,
   lacksLearnedAffinities,
+  leanAfterEvent,
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
@@ -136,6 +139,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
+import { holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -274,6 +278,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // recommendations, which is worse than skipping a session's deltas: the
   // interaction documents are still the source of truth either way.
   const interactionProfileHydrated = useRef(false);
+  // What the account recorded before its profile loaded, for the profile that
+  // arrives to record again (replayHeldEvents).
+  const heldProfileEvents = useRef<HeldProfileEvents | null>(null);
   // The account whose profile is currently reflected in the state above.
   const loadedProfileUserId = useRef<string | null>(null);
   // Bumped every time a profile is applied. Consumers of the reading library
@@ -304,9 +311,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  // -1 (classic) to +1 (recent): likes, saves and long reads move it
-  // (leanAfterEngaging).
-  const temporalPreference = useRef(0);
+  // A guest's lean, for this session only (ENG-166, decision 8). A signed-in
+  // reader's is their profile's (`temporal`).
+  const guestLean = useRef(0);
+  const readerLean = useCallback(() => (activeUserId.current ? profileSignals.current.temporal.lean : guestLean.current), []);
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
@@ -378,15 +386,25 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     });
   }, [trackEvent]);
 
+  const feedCardNotable = useCallback((paper: Pick<Paper, 'id' | '_notable'>, surface: string | undefined) => forYouCardNotable(papersRef.current, paper, surface), []);
+
   // The paper, when there is one, lends the event its OpenAlex concepts and
-  // authors, and its area. Called before the re-rank it feeds, so that
-  // re-rank sees it.
+  // authors, its area and its date (profileEvent). Called before the re-rank
+  // it feeds, so that re-rank sees it. A guest's events only move the guest's
+  // lean.
   const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
-    if (!userId) return;
-    recordInteractionEvent(interactionProfile.current, paper ? { ...event, ...paperAffinitySignals(paper), area: areaKeyForPaper(paper) } : event);
+    if (!userId) {
+      guestLean.current = leanAfterEvent(guestLean.current, profileEvent(event, paper));
+      return;
+    }
+    const recorded = profileEvent(event, paper);
+    recordInteractionEvent(interactionProfile.current, recorded);
     profileSignals.current = readProfileSignals(interactionProfile.current);
-    if (!interactionProfileHydrated.current) return;
+    if (!interactionProfileHydrated.current) {
+      heldProfileEvents.current = holdProfileEvent(heldProfileEvents.current, userId, recorded);
+      return;
+    }
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
 
@@ -620,11 +638,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       interestProgress: memory.interestProgress,
       coldAdded: memory.coldAdded,
       dormantCategories: memory.dormantCategories,
-      temporalPreference: temporalPreference.current,
+      temporalPreference: readerLean(),
       weights: recommendationWeights.current,
       recentPropsCount
     });
-  }, [userPreferences, deselectedPreferences, addedPreferences, followedEntities]);
+  }, [userPreferences, deselectedPreferences, addedPreferences, followedEntities, readerLean]);
 
   // The card the reader is on: as FeedContainer reports it (on the restore
   // after a reload and on every scroll), the successor markNotInterested
@@ -938,6 +956,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     activeUserId.current = userId;
     sessionSeenPapers.current = seenPapersForAccount(userId);
     notableAfterRef.current = null;
+    guestLean.current = 0;
+    if (heldProfileEvents.current?.userId !== userId) heldProfileEvents.current = null;
     feedExcludedIds.current = [];
     feedPlan.current = null;
 
@@ -996,12 +1016,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
           );
         }
+        // Decided now, before the events recorded while it loaded add entries
+        // of their own.
+        const needsLearnedSeed = lacksLearnedAffinities(profile);
+        const positiveIds = needsLearnedSeed
+          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
+          : [];
+        // The reader may have liked, viewed or saved papers while it loaded:
+        // they moved the provisional profile this one replaces.
+        const replayed = replayHeldEvents(heldProfileEvents.current, userId, profile);
+        heldProfileEvents.current = null;
         interactionProfile.current = profile;
         carryViewedPapers(profile);
         // A profile that genuinely came back — including a legitimately empty one
         // for a new account — is safe to write back.
         interactionProfileHydrated.current = true;
         loadedProfileUserId.current = userId;
+        if (replayed) scheduleInteractionProfileFlush(userId, profile);
 
         // getDocs returned these ids ordered by document id, and the lists that
         // render them still expect exactly that order.
@@ -1037,12 +1068,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // cards. The sample comes from the aggregate's own order (newest first):
         // `liked`/`saved` above are Sets sorted by id for the lists, and cutting
         // those to 24 kept the alphabetically-first likes forever (audit
-        // 2026-09-02, A3).
-        // Decided now, before the reader's first event adds entries of its own.
-        const needsLearnedSeed = lacksLearnedAffinities(profile);
-        const positiveIds = needsLearnedSeed
-          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
-          : [];
+        // 2026-09-02, A3). The seed and its sample are decided above.
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn: () => void) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn: () => void) => setTimeout(fn, 0);
@@ -1187,8 +1213,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
     const currentPage = pageOverride ?? (reset ? 0 : page);
+    // This page's one notable place in so many cards, drawn from the account's
+    // engagement with notable and recent cards (ENG-166). A guest has none,
+    // and draws from the prior.
+    const notableEvery = sampleNotableEvery(profileSignals.current.temporal);
     // How the page joins the list, with the card the reader is on when it does.
-    const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current, notableAfter: notableAfterRef.current });
+    const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current, notableAfter: notableAfterRef.current, every: notableEvery });
     const cardsBefore = cardsBeforePage(papers, pageJoin());
     // A follow change's first page goes on with the session's walk, under its snapshot.
     const continues = continuesWalk({ reset, keepThroughVisible, currentPage, relaxExclusions, workerSkipsSeen: workerSkipsSeen.current });
@@ -1236,7 +1266,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // (audit 2026-09-02, A4).
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
-        const queryMode = corpusOrder(temporalPreference.current || 0);
+        const queryMode = corpusOrder(readerLean());
         const negativeIds = curatedIds(interactionProfile.current, 'notInterested').slice(0, 24);
         // The seen papers the main page and the follows' page send. A profile
         // that arrives late (applyInteractionProfile) or More like this adds
@@ -1322,7 +1352,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);
             // and the spares. A page has one place at least.
-            notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
+            notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current, notableEvery),
           }));
           rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, seenSent);
           workerSkipsSeen.current = skipsSeen;
@@ -1544,7 +1574,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
-    profileSignals, isKnownPaper, markPaperViewed,
+    profileSignals, isKnownPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent,
   ]);
 
@@ -1789,18 +1819,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, []);
 
-  const toggleLike = useCallback(async (paperInput: Paper, options?: MarkWriteOptions) => {
+  const toggleLike = useCallback(async (paperInput: Paper, surface?: string, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     const isCurrentlyLiked = markStartsOn(options, likedPaperIds.has(paper.id));
+    // Read at the tap: a refusal's reverse event names the same kind of card.
+    const notable = feedCardNotable(paperInput, surface);
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
       boredomLevel.current = 0;
       void traverseAndExpandNetwork(paper);
       countEngagement(paperInput.id, { likes: 1 });
-
-      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.1);
     }
     // By updater: a refusal that lands after another like changed must move
     // only this paper back, not restore the set as it was when this call began.
@@ -1809,6 +1839,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         paperId: paper.id,
         kind: liked ? 'like' : 'unlike',
         category: paper.primaryCategory,
+        notable,
       }, paper);
       setLikedPaperIds((ids) => {
         const next = new Set(ids);
@@ -1854,7 +1885,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         });
       },
     });
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, feedCardNotable, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1983,7 +2014,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, recordProfileEvent, user?.uid, markChangeLog]);
 
-  const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
+  const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number, surface?: string) => {
     const userId = user?.uid;
     if (timeInSeconds < 1) return;
     markPaperViewed(paper.id, userId);
@@ -2003,16 +2034,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       kind: 'viewTime',
       category: paper.primaryCategory,
       viewTime: timeInSeconds,
-      notable: paper._notable,
+      notable: feedCardNotable(paper, surface),
     }, paper);
-    // A long read moves the temporal preference. It no longer walks the
-    // citation network: that was an OpenAlex call for a reader who did nothing,
-    // and in the PAP-86 audit's model of a signed-in session those walks were
-    // about a tenth of its OpenAlex units (modelled, not measured). A like, a
-    // save or an opened PDF still expands the graph.
-    if (timeInSeconds >= 10) {
-      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.05);
-    }
+    // A long read moves the account's lean (interaction-profile.ts). It no
+    // longer walks the citation network: that was an OpenAlex call for a
+    // reader who did nothing, and in the PAP-86 audit's model of a signed-in
+    // session those walks were about a tenth of its OpenAlex units (modelled,
+    // not measured). A like, a save or an opened PDF still expands the graph.
     if (timeInSeconds >= 3.0) {
       // Off the snap path: the reader is settled on this card, not watching
       // the rest of the queue reorder underneath it.
@@ -2031,9 +2059,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking view time:', err);
       }
     }
-  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
+  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, feedCardNotable, user?.uid]);
 
-  const trackPdfOpened = useCallback(async (paper: Paper) => {
+  const trackPdfOpened = useCallback(async (paper: Paper, surface?: string) => {
     const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
@@ -2043,6 +2071,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       paperId: paper.id,
       kind: 'openedPdf',
       category: paper.primaryCategory,
+      notable: feedCardNotable(paper, surface),
     }, paper);
     reRankFeed(paper.id);
 
@@ -2060,9 +2089,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking PDF open:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
+  }, [reRankFeed, recordProfileEvent, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
 
-  const trackSkips = useCallback(async (papersToSkip: Paper[]) => {
+  const trackSkips = useCallback(async (papersToSkip: Paper[], surface?: string) => {
     const userId = user?.uid;
     const skippedPapers = dedupeInteractionPapers(papersToSkip);
     if (skippedPapers.length === 0) return;
@@ -2079,7 +2108,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         kind: 'skip',
         category: paper.primaryCategory,
         timestamp,
-        notable: paper._notable,
+        notable: feedCardNotable(paper, surface),
       }, paper);
     });
     // Off the snap path, same as trackViewTime: a fling across several cards
@@ -2107,9 +2136,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking skips:', err);
       }
     }
-  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
+  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, feedCardNotable, user?.uid]);
 
-  const trackSkip = useCallback((paper: Paper) => trackSkips([paper]), [trackSkips]);
+  const trackSkip = useCallback((paper: Paper, surface?: string) => trackSkips([paper], surface), [trackSkips]);
 
   const trackPdfBounce = useCallback(async (paper: Paper) => {
     const userId = user?.uid;
@@ -2137,7 +2166,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
+  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
@@ -2150,13 +2179,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     // ─── BOREDOM RESET: saving = highly engaged ───
     boredomLevel.current = 0;
-    // Attempt to update temporal preference
-    if (paper) {
-      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.15);
-
-      // Expand network via OpenAlex
-      void traverseAndExpandNetwork(paper);
-    }
+    // Expand network via OpenAlex
+    if (paper) void traverseAndExpandNetwork(paper);
 
     const nextSaved = new Set(savedPaperIdsRef.current);
     nextSaved.add(paperId);
@@ -2167,6 +2191,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       paperId,
       kind: 'save',
       category: paper?.primaryCategory,
+      notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput, options?.surface),
     }, paper);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);
@@ -2202,7 +2227,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = written && papersRef.current.find(card => card.id === written.id);
       if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
 
   /**
    * The way back from markSaved: the paper has left every list and Read later,
@@ -2379,11 +2404,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     authorAffinities: { ...profileSignals.current.authorAffinities },
     sessionAffinities: { ...profileSignals.current.sessionAffinities },
     interactionCount: profileSignals.current.interactionCount,
-    temporalPreference: temporalPreference.current,
+    temporalPreference: readerLean(),
     weights: { ...recommendationWeights.current },
     notInterestedIds: Array.from(notInterestedIdsRef.current),
     readPaperIds: Array.from(readPaperIdsRef.current),
-  }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences]);
+  }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences, readerLean]);
 
   // Every function key below is already `useCallback`-wrapped (or, for
   // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own

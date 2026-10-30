@@ -176,8 +176,13 @@ has seen their whole ranking.
 [FeedContext](src/context/feed-context.tsx) combines their semantic signal
 with the [recommendation engine](src/utils/recommendation-engine.ts), manages
 interactions and preserves the unread queue.
-[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives one card in
-fifteen to an unseen notable paper the corpus adds after a page; the
+[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives an unseen
+notable paper the corpus adds after a page one card in so many: each page
+draws that share, between one in fifteen and one in three, from how the
+account engages with For You's notable and other cards
+([feed-temporal-lean.ts](src/context/feed-temporal-lean.ts)). The corpus
+sends five notable papers at most, so a full page of about 30 cards holds
+about one in six at most. The
 [paper-store contract](worker/README.md#paper-store) says how they are chosen
 and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.

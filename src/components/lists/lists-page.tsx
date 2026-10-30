@@ -1196,7 +1196,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
     removeRowOnce(pendingRemovals, setPendingRemovals, rowKey(listId, paperId), () => (
       removePaperFromMarkList(listId, paperId, paper as Paper, {
-        unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportMarkRemovalFailed,
+        unmarkAsRead, toggleLike: (row, options) => toggleLike(row, undefined, options), toggleReadLater, onFailed: reportMarkRemovalFailed,
       }) ?? handleRemoveFromCustomList(listId, paperId)
     ));
   };
@@ -1207,7 +1207,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // from any list, so the message names the mark, not a removal.
   const toggleLikeInCard = (paper: Paper) => {
     if (!likedPaperIds.has(interactionIdFor(paper)!)) return toggleLike(paper);
-    return toggleLike(paper, { throwOnError: true }).catch(() => {
+    return toggleLike(paper, undefined, { throwOnError: true }).catch(() => {
       toastError('The like could not be removed');
     });
   };
