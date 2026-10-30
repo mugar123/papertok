@@ -3,6 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FeedRequestBody, KeptRanking, RankingCache, StoreEnv } from './paper-store.ts';
 import type { QuotaRequest } from './request-quota-ledger.ts';
+import type { FeedTimings } from './feed-timings.ts';
 
 import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
@@ -254,18 +255,28 @@ export async function handleCorpusFeed(
   identity: Pick<VerifiedIdentity, 'uid'>,
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
+  timings?: FeedTimings,
 ): Promise<{ papers: Paper[]; skipsSeen?: true }> {
-  const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
+  const bodyRead = Date.now();
+  const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
+  // The reservation, timed on its own while the follows are read beside it.
+  const reserve = () => {
+    const started = Date.now();
+    return reserveFeedRequest(env, identity.uid).finally(() => timings?.since('quota', started));
+  };
   if (Array.isArray(body?.ids)) {
     const ids = [...new Set(body.ids.map(id => String(id ?? '').trim().slice(0, 300)).filter(Boolean))].slice(0, LOOKUP_MAX_IDS);
     if (ids.length === 0) throw new PaperStoreError('IDS_REQUIRED', 400);
-    await reserveFeedRequest(env, identity.uid);
+    await reserve();
+    const started = Date.now();
     const found = await findWorks(database(env), ids);
     const absent = ids.filter(id => !found.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
     if (absent.length) {
       await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) }).catch(error => console.warn('Paper store could not add asked papers', error));
     }
-    return { papers: await readPapersByIds(env, ids) };
+    const papers = await readPapersByIds(env, ids);
+    timings?.since('ids', started);
+    return { papers };
   }
   const query = parseFeedRequest(body);
   if (query.categories.length === 0 && query.follows.length === 0) {
@@ -279,7 +290,11 @@ export async function handleCorpusFeed(
   // read its candidates. Read after the page only, a harvest that ended while
   // it ranked would look finished, though the page was ranked without its
   // papers. Read beside the reservation, so it adds no round trip.
-  const [, followed] = await Promise.all([reserveFeedRequest(env, identity.uid), readFollowedLanes(env, lanes)]);
+  const followsRead = Date.now();
+  const [, followed] = await Promise.all([
+    reserve(),
+    lanes.length ? readFollowedLanes(env, lanes).finally(() => timings?.since('follows', followsRead)) : [],
+  ]);
   const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   // Only a first page of categories looks up liked papers: the follows asked
@@ -294,7 +309,9 @@ export async function handleCorpusFeed(
   const waitsForLikes = looksUp && body?.waitForLikes === true;
   let lookup = waitsForLikes ? addMissingPositives(env, identity.uid, query.positiveIds) : null;
   // Finished in time: the ranking below reads what it stored.
+  const waited = Date.now();
   if (lookup && await settlesWithin(lookup, LIKES_WAIT_MS)) lookup = null;
+  if (waitsForLikes) timings?.since('likesWait', waited);
   const cache = rankingCache(identity.uid);
   let kept: [string, KeptRanking, number] | null = null;
   const papers = await readFeedPage(env, query, {
@@ -315,6 +332,7 @@ export async function handleCorpusFeed(
       },
       update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
     },
+    timings,
   });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
