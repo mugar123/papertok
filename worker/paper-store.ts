@@ -988,10 +988,17 @@ export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVID
     subject: `uid:${uid}`,
     subjectLimit: Math.floor(Number(env.PROVIDER_USER_MINUTE_LIMIT)) || DEFAULT_FEED_USER_MINUTE_LIMIT,
     globalLimit: Math.floor(Number(env.PROVIDER_GLOBAL_MINUTE_LIMIT)) || DEFAULT_FEED_GLOBAL_MINUTE_LIMIT,
+  }).catch((error: unknown) => {
+    // The call throws, rather than answering with a code, when the object is
+    // overloaded or reset during a deploy. The error is the object's own and
+    // names no reader.
+    console.warn('Feed quota ledger did not answer; request let through', error);
+    return null;
   });
   // The ceiling guards a D1 read, not a paid provider: a ledger that cannot
-  // answer lets the page through rather than taking the feed down with it.
-  if (!reservation.accepted && !reservation.code) throw new PaperStoreError('RATE_LIMITED', 429);
+  // answer, by a code or by throwing, lets the page through rather than taking
+  // the feed down with it. A paid provider's reservation lets the throw out.
+  if (reservation && !reservation.accepted && !reservation.code) throw new PaperStoreError('RATE_LIMITED', 429);
 }
 
 /** Work ids of the papers these app ids name, with whether each has a vector. */
