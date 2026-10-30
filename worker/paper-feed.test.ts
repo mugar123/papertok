@@ -993,9 +993,15 @@ const notablePaper = (rank: number) => `1901.${String(rank).padStart(5, '0')}`;
 const FOLLOWED_TOPIC = 'cs.PL';
 const topicPaper = (rank: number) => `2612.${String(rank).padStart(5, '0')}`;
 const isTopicPaper = (paperId: string) => paperId.startsWith('2612.');
+// A session runs at this instant, the day its clock was pinned. The notable
+// cards a day's read offers (`daySlice`) and the year they end at move with
+// the date, and so do the ids the filter holds and its false positives over
+// the ranking: on the real clock the pass-over rate changed from one day to
+// the next (1.30% on 2026-10-30, 0.99% the day before).
+const SESSION_START = Date.parse('2026-10-29T12:00:00Z');
 // The last year a notable lane reads (readNotableCandidates): the session's
 // notable papers are older, and the ones the harvest files are of this year.
-const lastNotableYear = new Date().getUTCFullYear() - 1;
+const lastNotableYear = new Date(SESSION_START).getUTCFullYear() - 1;
 // On another device: 1,200 notable cards, then 500 papers, every other one at
 // the top of each order.
 const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) => 2 * index);
@@ -1022,7 +1028,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
   minutesPerLoad?: number; pause?: { load: number; minutes: number }; filing?: boolean; request?: (load: number) => object;
 } = {}) {
   rankingCaches(t);
-  if (minutesPerLoad || pause) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  t.mock.timers.enable({ apis: ['Date'], now: SESSION_START });
   const { env, db, ask } = store();
   // The loads come seconds apart, past the ceiling of a reader's pages a minute.
   Object.assign(env, { PROVIDER_USER_MINUTE_LIMIT: '1000' });
@@ -1195,6 +1201,7 @@ test('a like, a new order or set of the reader\'s categories, or a lean toward o
 // ranking, and a ranking again after it keeps what the walk passed.
 test('a filter that holds every paper, with another category on each page, does not grow the order kept for the reader', async t => {
   const entries = rankingCaches(t);
+  t.mock.timers.enable({ apis: ['Date'], now: SESSION_START });
   const { db, ask } = store();
   const categories = Array.from({ length: 15 }, (_, index) => `zz.c${index}`);
   const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
