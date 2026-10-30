@@ -210,8 +210,9 @@ test('a refresh that ends without papers updated nothing', () => {
 
 // PR #425 review: a refresh over shown papers that timed out is retried with
 // no pause, inside the refresh's done hold, and "Papers updated" was spoken
-// over the old cards while the retry ran.
-test('a refresh retried at once says updated only once the retry has landed', () => {
+// over the old cards while the retry ran. A retry that lands after the hold
+// is not announced at all (open in PR #425).
+test('a refresh retried at once does not say updated while its retry runs or after it fails', () => {
   const shown = { veil: false, hasPapers: true };
   const steps = [
     // Pull to refresh: the load that replaces the list runs.
