@@ -454,14 +454,15 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   `ui/toast.ts`) stays until it is closed, with a close button; Escape anywhere
   puts it away unless a dialog, menu or field already used the key. Toasts that
   leave on their own, such as an Undo, are not affected by Escape. The search
-  palette says a refused Follow in its own warning line instead: on a phone it
-  fills the screen, and a toast would cover its first row outside its focus
-  trap, where Escape closes the palette. For the same reason, opening a
-  dialog, alert dialog, drawer or sheet (the palette among them) puts away the
-  error toasts raised before it, and the error of an action started before it
-  opened, such as a Follow pressed on a page that settles later, waits and
-  appears once it has closed. An error of an action taken inside the open
-  overlay appears at once: it is the reader's only answer. Popovers,
+  palette and the Follows list say a refused Follow or Undo in their own line
+  instead: on a phone they fill the screen, and a toast would cover their
+  first row outside their focus trap, where Escape closes them. A refusal
+  that settles after the reader closed them comes as an error toast. For the
+  same reason, opening a dialog, alert dialog, drawer or sheet (the palette
+  among them) puts away the error toasts raised before it, and the refusal of
+  a Follow, Unfollow or Undo pressed before it opened that settles later
+  waits and appears once it has closed. Other errors, and those of an action
+  taken inside the open overlay, appear at once. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do
   neither; a menu drawn as a dialog or drawer (the paper's More menu, the rail
   menu, and the account menu on a phone) counts as an overlay.

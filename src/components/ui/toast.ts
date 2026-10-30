@@ -73,8 +73,9 @@ function dismissPersistentToasts() {
  * once its leave has played. On a phone, or at 400% zoom, these overlays cover
  * the screen and trap focus, and an error toast over one sits outside the
  * trap, where Escape closes the overlay and leaves the toast. So opening one
- * puts away the errors raised before it, and `toastError` holds an error of
- * an action started before it until it leaves. Popovers, tooltips, selects
+ * puts away the errors raised before it, and `toastError` holds an error
+ * whose caller noted `overlaysAtStart` before it opened (the Follow presses)
+ * until it leaves. Popovers, tooltips, selects
  * and dropdown menus are anchored to their control and never cover the
  * screen, so they do neither; a menu drawn as a dialog or drawer, such as the
  * paper's More menu or a menu on a phone, counts as an overlay.
