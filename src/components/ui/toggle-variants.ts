@@ -5,7 +5,9 @@ export const toggleVariants = cva(
   [
     'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors',
     'text-muted-foreground hover:text-foreground',
-    'disabled:pointer-events-none disabled:opacity-50',
+    // A pending toggle (toggle.tsx) keeps focus, so it is `aria-disabled`
+    // rather than `:disabled`, and looks the same.
+    'disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50',
     '[&_svg]:pointer-events-none [&_svg]:shrink-0',
   ].join(' '),
   {

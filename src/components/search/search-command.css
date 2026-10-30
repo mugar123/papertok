@@ -61,13 +61,14 @@
   color: var(--tint-green-fg);
 }
 
-.sc-follow:disabled {
+.sc-follow:disabled,
+.sc-follow[aria-disabled='true'] {
   opacity: 0.6;
   cursor: default;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .sc-follow:not(:disabled):hover {
+  .sc-follow:not(:disabled, [aria-disabled='true']):hover {
     border-color: var(--border-ink);
     color: var(--text-primary);
   }

@@ -239,7 +239,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       <Toggle
         className={`sc-follow ${following ? 'is-following' : ''}`}
         onClick={(event) => { void follow(event, entity); }}
-        disabled={pending}
+        pending={pending}
         pressed={following}
         aria-label={following ? copy.following : copy.follow}
         onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}

@@ -1534,7 +1534,7 @@ export default function EntityExplorer({
         <FollowToggle
           pressed={entityIsFollowing}
           onClick={handleFollow}
-          disabled={entityFollowPending}
+          pending={entityFollowPending}
           followLabel={'Follow'}
           followingLabel={'Following'}
         />

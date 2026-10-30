@@ -238,7 +238,7 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: Fo
     <FollowToggle
       pressed={following}
       onClick={(event) => onToggle(event, entity)}
-      disabled={pending}
+      pending={pending}
       followLabel={'Follow'}
       followingLabel={'Following'}
     />
