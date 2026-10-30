@@ -182,7 +182,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   }, [selectedValue]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const go = useCallback((path: string, state: object | null = null) => {
+  // The refusal line takes room above the list, which can push the Follow just
+  // pressed, still focused, below the list's visible part. Bring it back
+  // before that frame is painted.
+  useLayoutEffect(() => {
+    if (refusal && document.activeElement instanceof HTMLElement) document.activeElement.scrollIntoView({ block: 'nearest' });
+  }, [refusal]);
+
+  const go =useCallback((path: string, state: object | null = null) => {
     setLeavingBySelect(true);
     onOpenChange(false);
     // Router state, when there is any: the public paper page paints a paper
