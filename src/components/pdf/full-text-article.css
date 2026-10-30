@@ -8,7 +8,8 @@
 .ft-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
 .ft-article {
-  max-width: 680px;
+  /* Wider on a large screen, with the type growing alongside so lines stay readable. */
+  max-width: clamp(680px, 38vw, 820px);
   margin-inline: auto;
   padding: var(--space-8) var(--space-4) var(--space-16);
   color: var(--text-primary);
@@ -51,7 +52,7 @@
 
 .ft-p, .ft-list {
   margin: 0 0 var(--space-4);
-  font: 1.0625rem/1.72 var(--font-serif);
+  font: clamp(1.0625rem, 0.3rem + 0.8vw, 1.3125rem)/1.72 var(--font-serif);
   overflow-wrap: anywhere;
 }
 .ft-list { padding-left: var(--space-6); }
