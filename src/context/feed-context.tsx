@@ -97,7 +97,6 @@ import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
 import {
-  carryViewedOffForYou,
   createEmptyInteractionProfile,
   curatedIds,
   isPaperKnown,
@@ -996,7 +995,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
           );
         }
-        carryViewedOffForYou(interactionProfile.current, profile);
         interactionProfile.current = profile;
         carryViewedPapers(profile);
         // A profile that genuinely came back — including a legitimately empty one
