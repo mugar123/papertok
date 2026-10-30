@@ -30,7 +30,8 @@ import { Button } from '../ui/button.tsx';
 import { useEntitySearch } from '../../hooks/use-entity-search.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
-import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import type { FollowRefusal } from '../following/follow-refused-toast.ts';
+import { followRefusal } from '../following/follow-refused-toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
@@ -129,6 +130,11 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   } = useEntitySearch(open, knownPapers, activeSection);
   const visibleIssues = searchIssues.filter(issue => activeSection === 'all' || issue.section === activeSection);
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
+  // Why the last Follow or Unfollow pressed here changed nothing. Shown in the
+  // palette, not in a toast: on a phone the palette is the whole screen and a
+  // toast at the top covers its first row's Follow, outside the focus trap,
+  // where Escape closes the palette and leaves the toast (followRefusal).
+  const [refusal, setRefusal] = useState<FollowRefusal | null>(null);
 
   const rememberQuery = useEffectEvent(() => {
     if (!shouldRememberQuery({
@@ -153,6 +159,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   useLayoutEffect(() => {
     if (open) {
       reset();
+      setRefusal(null);
       setLeavingBySelect(false);
       setActiveSection('all');
       setSelectedValue('');
@@ -186,11 +193,12 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.preventDefault();
     event.stopPropagation();
     setPendingEntity(entity.id);
+    setRefusal(null);
     const following = isFollowing(entity);
     try {
       await toggleFollow(entity);
     } catch (error) {
-      toastFollowRefused(error, { name: entity.displayName || 'this', following });
+      setRefusal(followRefusal(error, { name: entity.displayName || 'this', following }));
     } finally {
       setPendingEntity(null);
     }
@@ -226,6 +234,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
   const changeQuery = (value: string, typed = false) => {
     typedQuery.current = typed;
+    setRefusal(null);
     setSelectedValue('');
     setManualSelection(false);
     selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
@@ -445,6 +454,15 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         </div>
 
         <TabsContent value={activeSection} className="sc-panel">
+          {/* Above the list, so it stays in view however far the list is
+              scrolled. The status span is always there, so the message put
+              into it is announced; the action sits beside it, a Tab away. */}
+          <div className={refusal ? 'sc-status sc-status--warn sc-refusal' : undefined}>
+            {refusal && <WarningCircle size={14} aria-hidden="true" />}
+            <span role="status">{refusal?.message}</span>
+            {refusal?.action && <Button variant="ghost" size="sm" onClick={refusal.action.onClick}
+              onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>{refusal.action.label}</Button>}
+          </div>
           <CommandList className="sc-list">
             {!hasQuery && <>
               {activeSection === 'all' && recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>

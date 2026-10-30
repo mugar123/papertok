@@ -100,6 +100,17 @@
   color: var(--tint-amber-fg);
 }
 
+/* A refused Follow (search-command.tsx), above the list rather than inside
+   its padding, so it needs none of the warning's negative margin. */
+.sc-refusal {
+  margin: 0;
+}
+
+.sc-refusal > [role='status'] {
+  flex: 1;
+  min-width: 0;
+}
+
 /* The way out on a phone (search-command.tsx). Off everywhere else: on a wide
    viewport the scrim and Escape close the palette, and the field's row is the
    field's alone. */

@@ -2,7 +2,7 @@ import type { Action, ToastT } from 'sonner';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { toastFollowRefused } from './follow-refused-toast.ts';
+import { followRefusal, toastFollowRefused } from './follow-refused-toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
 /** The toast `id` put on screen, as the Toaster would render it. */
@@ -62,4 +62,21 @@ test('any other refusal says what was not done, for a follow and for an unfollow
   assert.deepEqual([follow.title, follow.type, follow.duration, follow.closeButton], ['Could not follow Econometrica. Try again.', 'error', Infinity, true]);
   const unfollow = shown(toastFollowRefused(new Error('unavailable'), { name: 'Ada Lovelace', following: true }));
   assert.equal(unfollow.title, 'Could not unfollow Ada Lovelace. Try again.');
+});
+
+// The search palette fills a phone's screen, and a toast at the top covered its
+// first row's Follow outside the dialog's focus trap. It says the refusal in
+// its own warning line instead: the same words and action, and no toast.
+test('a refusal for the search palette raises no toast and keeps the words and the action', (t) => {
+  t.mock.method(console, 'error', () => {});
+  const before = toast.getToasts().filter(entry => !('dismiss' in entry && entry.dismiss)).length;
+  const failed = followRefusal(new FollowsUnavailableError({ retryable: false }), { name: 'Ada Lovelace', following: false });
+  const waiting = followRefusal(new FollowsUnavailableError(), { name: 'Ada Lovelace', following: false });
+  const refused = followRefusal(new Error('PERMISSION_DENIED'), { name: 'Ada Lovelace', following: true });
+  assert.deepEqual([failed.message, failed.action?.label], [
+    'Your follows could not be loaded, so Ada Lovelace was not followed. Reload the page to try again.', 'Reload',
+  ]);
+  assert.deepEqual([waiting.message, waiting.action], ['Your follows have not loaded yet, so Ada Lovelace was not followed. Try again in a moment.', undefined]);
+  assert.deepEqual([refused.message, refused.action], ['Could not unfollow Ada Lovelace. Try again.', undefined]);
+  assert.equal(toast.getToasts().filter(entry => !('dismiss' in entry && entry.dismiss)).length, before, 'no toast was raised');
 });
