@@ -1,4 +1,3 @@
-import type { FollowingContextValue } from '../../context/following-context.tsx';
 import type { FollowInput } from '../../utils/following.ts';
 import { toastError } from '../ui/toast.ts';
 import { createFollowEntity, FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
@@ -9,6 +8,13 @@ type RefusalContext = {
   following: boolean;
   // Where a reader at the journal limit unfollows one; left out on the follows settings themselves.
   openSettings?: () => void;
+};
+
+// Not taken from following-context.tsx: importing it type-checks the feed
+// components in the test project, whose Node types make setTimeout return a Timeout.
+type FollowCalls = {
+  isFollowing: (entity: FollowInput) => boolean;
+  toggleFollow: (entity: FollowInput) => Promise<boolean>;
 };
 
 export type FollowRefusal = {
@@ -60,7 +66,7 @@ export function followName(entity: FollowInput) {
  * Presses Follow or Unfollow on `entity` and resolves to why nothing changed,
  * or to null once it changed.
  */
-export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, toggleFollow }: Pick<FollowingContextValue, 'isFollowing' | 'toggleFollow'>) {
+export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, toggleFollow }: FollowCalls) {
   const following = isFollowing(entity);
   try {
     await toggleFollow(entity);
