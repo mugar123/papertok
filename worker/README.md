@@ -795,6 +795,41 @@ under Workers & Pages → `papertok-report-api` → Observability, or live with 
 Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: without it, every
 `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
 
+**Slow feed requests.** A `POST /store/papers` request that takes more than 1.5 s on the Worker,
+from the router's first step to its answer, writes one `slow_feed_request` line
+(`worker/feed-timings.ts`). It exists to time a cold first page step by step (ENG-116). It holds
+`route`, `totalMs`, `steps` and `counts`. It holds `cache` (`hit` or `miss`) only for a page that
+looked for a kept order. It holds no reader, uid or hash of one, paper or work id, lane, category,
+interest, follow, query text or URL. Each step is in milliseconds and appears only if the request ran
+it:
+
+| Step | What it times |
+| --- | --- |
+| `auth` | `verifyFirebaseIdentity`: the 60 s identity cache, and on a miss Identity Toolkit and the cache write |
+| `quota` | `reserveFeedRequest` in `REQUEST_QUOTA_LEDGER`, which runs beside the followed-lanes read |
+| `ids` | an `{ ids }` lookup: the works, any ingest of missing papers, and the rows |
+| `likesWait` | More like this waiting for the liked paper's lookup, at most 1.5 s |
+| `cacheRead` | a later page reading its kept order |
+| `keys` | `findWorks` for the likes, rejections and exclusions |
+| `wave1` | candidates, the notable window and check, the likes' vectors and the ungrouped likes' rows, read together |
+| `notableCheck` | the notable "still offered" batch. It is also counted inside `wave1` |
+| `vectors` | the candidates' vectors, read beside `keepLiked` |
+| `rankCpu` | similarity and the diversity pass |
+| `walk` | `unseenRanks` for the page and the notable cards, and walks past dropped works |
+| `works` | `readWorks` for the page's rows |
+| `cacheWrite` | writing the ranking to this location's cache |
+
+The counts are `lanes`, `groups`, `candidates` (lane rows after merging), `notable` (offered
+notable rows, when notable lanes were read) and `vectors` (candidate vectors returned). Rows read
+are not in the line: D1 analytics has them per statement.
+
+On Workers, `Date.now()` moves only when I/O completes, so code that runs without I/O takes no
+time on the clock. `rankCpu` therefore reads about 0 in production. The CPU spent parsing vectors
+and ranking is counted in the next step that waits for I/O: `walk` when the page looks for unseen
+papers, otherwise `works`. `totalMs` includes it. The Node tests run on a real clock and
+time each step as written. These lines are kept for 3 days like the others. Only slow requests write
+one, so they stay far below the daily limit.
+
 
 ## PDF relay limits
 

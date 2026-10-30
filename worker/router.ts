@@ -33,6 +33,7 @@ import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
+import { FeedTimings } from './feed-timings.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
@@ -373,24 +374,33 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname === '/store/papers') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    let identity: VerifiedIdentity;
+    // A request slower than the feed's budget leaves one line of its steps (feed-timings.ts).
+    const started = Date.now();
+    const timings = new FeedTimings();
     try {
-      identity = await verifyFirebaseIdentity(request, env);
-    } catch (error) {
-      captureWorkerException(error);
-      return providerAuthFailure(error, origin, env);
-    }
-    const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
-    try {
-      const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined);
-      return json(answer, 200, headers);
-    } catch (error) {
-      if (error instanceof PaperStoreError) {
-        return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+      let identity: VerifiedIdentity;
+      try {
+        identity = await verifyFirebaseIdentity(request, env);
+      } catch (error) {
+        captureWorkerException(error);
+        return providerAuthFailure(error, origin, env);
+      } finally {
+        timings.since('auth', started);
       }
-      captureWorkerException(error);
-      console.error('Paper store failed', error);
-      return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
+      const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
+      try {
+        const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined, timings);
+        return json(answer, 200, headers);
+      } catch (error) {
+        if (error instanceof PaperStoreError) {
+          return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+        }
+        captureWorkerException(error);
+        console.error('Paper store failed', error);
+        return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
+      }
+    } finally {
+      timings.logIfSlow(routeForLog(url.pathname), Date.now() - started);
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));

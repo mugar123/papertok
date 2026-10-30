@@ -1408,3 +1408,56 @@ test("a reader's first page with a single like answers without waiting for the l
   await Promise.all(after);
   assert.equal(embedded.length, 1, 'the lookup embeds the like after it');
 });
+
+// A signed-in first page through the router, whose identity check takes
+// `identityMs` on the clock, and the console lines it wrote.
+async function timedFirstPage(t: TestContext, identityMs: number) {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  rankingCaches(t);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'identitytoolkit.googleapis.com') throw new Error(`unexpected request to ${url.hostname}`);
+    t.mock.timers.tick(identityMs);
+    return Response.json({ users: [{ localId: 'reader-1' }] });
+  });
+  t.after(() => { globalThis.fetch = realFetch; });
+  const { env, db } = store();
+  Object.assign(env, { FIREBASE_WEB_API_KEY: 'firebase-test-key' });
+  await ingestPapers(env, [
+    { paper: paper('2610.40001', 'Rejected paper', 3), lanes: [] },
+    { paper: paper('2610.40002', 'Near copy of rejected paper', 2), lanes: [] },
+    { paper: paper('2610.40003', 'Distant topic', 1), lanes: [] },
+  ]);
+  embed(db, '2610.40001', [1, 0]);
+  embed(db, '2610.40002', [1, 0]);
+  embed(db, '2610.40003', [0, 1]);
+  const logged = t.mock.method(console, 'log', () => undefined);
+  const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ categories: ['cs.CL'], negativeIds: ['2610.40001'] }),
+  }), env, { waitUntil: () => undefined });
+  assert.equal(response.status, 200);
+  return logged.mock.calls.map(call => String(call.arguments[0]));
+}
+
+test('a page slower than 1.5 s on the Worker leaves one line of its steps and counts, without the reader, a paper or a lane', async t => {
+  const lines = await timedFirstPage(t, 1_600);
+  assert.equal(lines.length, 1);
+  // The clock moves only while Identity Toolkit answers.
+  assert.deepEqual(JSON.parse(lines[0]), {
+    event: 'slow_feed_request',
+    route: '/store/papers',
+    totalMs: 1_600,
+    steps: { auth: 1_600, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
+    // cs.CL and the cs area's journal lane; three papers, of which the
+    // rejected one is not offered and the other two have vectors.
+    counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2 },
+  });
+  assert.doesNotMatch(lines[0], /reader-1|2610|cs\.CL|area:|rejected/i);
+});
+
+test('a page within 1.5 s on the Worker writes no line', async t => {
+  assert.deepEqual(await timedFirstPage(t, 1_500), []);
+});
