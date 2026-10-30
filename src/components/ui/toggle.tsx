@@ -3,11 +3,13 @@ import type { VariantProps } from 'class-variance-authority';
 
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
 import { cn } from '../../lib/utils.ts';
+import { togglePressHandler } from './toggle-press.ts';
 import { toggleVariants } from './toggle-variants.ts';
 
 type ToggleProps = StyledProps<typeof TogglePrimitive> & VariantProps<typeof toggleVariants> & {
   /**
-   * The press is being saved. The toggle ignores presses but stays focusable:
+   * The press is being saved. The toggle ignores presses, does not activate
+   * the row around it, and stays focusable:
    * a native `disabled` would blur it, dropping a keyboard reader's focus to
    * the page, and Base UI's Toggle cannot be disabled and focusable at once.
    */
@@ -25,13 +27,7 @@ export function Toggle({ className, variant, size, pending = false, onClick, ...
       data-slot="toggle"
       className={cn(toggleVariants({ variant, size }), className)}
       aria-disabled={pending || undefined}
-      onClick={(event) => {
-        if (pending) {
-          event.preventBaseUIHandler();
-          return;
-        }
-        onClick?.(event);
-      }}
+      onClick={togglePressHandler(pending, onClick)}
       {...props}
     />
   );
