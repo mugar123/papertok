@@ -100,6 +100,15 @@ for (const listId of ['__read__', '__favorites__', '__read_later__']) {
     await again;
     assert.deepEqual([...rows[listId]], ['p1'], 'the paper stays out of the list');
   });
+
+  test(`${listId}: a row whose stored copy carries another id takes off the row's own mark`, async () => {
+    const { rows, writes, answer, marks } = markedLists();
+    const removal = removePaperFromMarkList(listId, 'p2', { id: 'arxiv-p2' }, { ...marks, onFailed: () => assert.fail('accepted') });
+    assert.deepEqual(writes, [`${listId}:p2=false`]);
+    answer().accept();
+    await removal;
+    assert.deepEqual([...rows[listId]], ['p1']);
+  });
 }
 
 test('a custom list is left to its own removal', () => {
