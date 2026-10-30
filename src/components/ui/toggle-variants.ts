@@ -6,8 +6,9 @@ export const toggleVariants = cva(
     'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors',
     'text-muted-foreground hover:text-foreground',
     // A pending toggle (toggle.tsx) keeps focus, so it is `aria-disabled`
-    // rather than `:disabled`, and looks the same.
-    'disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50',
+    // rather than `:disabled`. Its contents dim, not the button: dimming the
+    // button would also dim the focus ring it keeps (2.93:1 in light).
+    'disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-default aria-disabled:*:opacity-50',
     '[&_svg]:pointer-events-none [&_svg]:shrink-0',
   ].join(' '),
   {

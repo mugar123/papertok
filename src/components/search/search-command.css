@@ -61,10 +61,19 @@
   color: var(--tint-green-fg);
 }
 
-.sc-follow:disabled,
-.sc-follow[aria-disabled='true'] {
+.sc-follow:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* A pending Follow keeps focus (toggle.tsx): its contents dim, not the
+   button, so the focus ring keeps its full contrast. */
+.sc-follow[aria-disabled='true'] {
+  cursor: default;
+}
+
+.sc-follow[aria-disabled='true'] > * {
+  opacity: 0.6;
 }
 
 @media (hover: hover) and (pointer: fine) {
