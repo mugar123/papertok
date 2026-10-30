@@ -798,13 +798,17 @@ Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: wit
 **Slow feed requests.** A `POST /store/papers` request that takes more than 1.5 s on the Worker,
 from the router's first step to its answer, writes one `slow_feed_request` line
 (`worker/feed-timings.ts`). It exists to time a cold first page step by step (ENG-116). It holds
-`route`, `totalMs`, `steps` and `counts`. The runtime cancels a request whose client went away,
-such as the app giving up at 3.5 s or a closed tab, except for work handed to `waitUntil`. The
-router hands the answer to `waitUntil`, so such a request still runs to its end and writes its
-line, for at most 30 s after the client left. The line holds `cache` (`hit` or `miss`) only for a page that
+`route`, the answer's `status`, `totalMs`, `steps` and `counts`. It holds `code` only for an error
+answer: the identity error (such as `AUTH_REQUIRED`), the feed's `PaperStoreError` code (such as
+`RATE_LIMITED`) or `PAPER_STORE_FAILED`. It holds `cache` (`hit` or `miss`) only for a page that
 looked for a kept order. It holds no reader, uid or hash of one, paper or work id, lane, category,
-interest, follow, query text or URL. Each step is in milliseconds and appears only if the request ran
-it:
+interest, follow, query text or URL.
+
+The runtime cancels a request whose client went away, such as the app giving up at 3.5 s or a
+closed tab, except for work handed to `waitUntil`. The router hands the answer to `waitUntil`, so
+such a request still runs to its end and writes its line, for at most 30 s after the client left.
+
+Each step is in milliseconds and appears only if the request ran it:
 
 | Step | What it times |
 | --- | --- |

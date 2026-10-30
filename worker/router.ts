@@ -110,38 +110,44 @@ function upstreamFailureResponse(pathname: string, error: ProviderError, origin:
 
 // A credential that could not be checked is a refusal, not an outage to route
 // around: the protected provider routes answer it the same way.
+function authFailureCode(error: unknown) {
+  return error instanceof WorkerAuthError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE';
+}
+
 function providerAuthFailure(error: unknown, origin: string, env: WorkerEnv) {
-  const knownError = error instanceof WorkerAuthError;
-  const status = knownError ? error.status : 503;
-  return json({ code: knownError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE' }, status, {
+  const status = error instanceof WorkerAuthError ? error.status : 503;
+  return json({ code: authFailureCode(error) }, status, {
     ...corsHeaders(origin, env),
     'cache-control': 'no-store',
     ...(status === 429 ? { 'retry-after': '60' } : {}),
   });
 }
 
-async function answerCorpusFeed(request: Request, env: WorkerEnv, origin: string, context: Pick<ExecutionContext, 'waitUntil'> | undefined, timings: FeedTimings) {
+// The answer to `POST /store/papers`, with the error code it carries, if any.
+async function answerCorpusFeed(
+  request: Request, env: WorkerEnv, origin: string, context: Pick<ExecutionContext, 'waitUntil'> | undefined, timings: FeedTimings,
+): Promise<{ response: Response; code?: string }> {
   let identity: VerifiedIdentity;
   const started = Date.now();
   try {
     identity = await verifyFirebaseIdentity(request, env);
   } catch (error) {
     captureWorkerException(error);
-    return providerAuthFailure(error, origin, env);
+    return { response: providerAuthFailure(error, origin, env), code: authFailureCode(error) };
   } finally {
     timings.since('auth', started);
   }
   const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
   try {
     const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined, timings);
-    return json(answer, 200, headers);
+    return { response: json(answer, 200, headers) };
   } catch (error) {
     if (error instanceof PaperStoreError) {
-      return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+      return { response: json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers), code: error.code };
     }
     captureWorkerException(error);
     console.error('Paper store failed', error);
-    return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
+    return { response: json({ code: 'PAPER_STORE_FAILED' }, 502, headers), code: 'PAPER_STORE_FAILED' };
   }
 }
 
@@ -405,8 +411,9 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     // answer is handed to it, so the slowest requests still write their line.
     const started = Date.now();
     const timings = new FeedTimings();
-    const answered = answerCorpusFeed(request, env, origin, context, timings).finally(() => {
-      timings.logIfSlow(routeForLog(url.pathname), Date.now() - started);
+    const answered = answerCorpusFeed(request, env, origin, context, timings).then(({ response, code }) => {
+      timings.logIfSlow(routeForLog(url.pathname), Date.now() - started, response.status, code);
+      return response;
     });
     context?.waitUntil(answered);
     return answered;

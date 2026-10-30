@@ -1411,8 +1411,14 @@ test("a reader's first page with a single like answers without waiting for the l
 
 // A signed-in first page through the router, whose identity check takes
 // `identityMs` on the clock, and the console lines it wrote once the work it
-// handed to waitUntil (`waited`) settled.
-async function timedFirstPage(t: TestContext, identityMs: number, waited: Array<Promise<unknown>> = []) {
+// handed to waitUntil (`waited`) settled. Identity Toolkit knows the reader
+// unless `unknownReader`, and the answer must have `status`.
+async function timedFirstPage(t: TestContext, identityMs: number, {
+  body = { categories: ['cs.CL'], negativeIds: ['2610.40001'] } as object | string,
+  unknownReader = false,
+  status = 200,
+  waited = [] as Array<Promise<unknown>>,
+} = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   rankingCaches(t);
   const realFetch = globalThis.fetch;
@@ -1420,7 +1426,7 @@ async function timedFirstPage(t: TestContext, identityMs: number, waited: Array<
     const url = new URL(String(input instanceof Request ? input.url : input));
     if (url.hostname !== 'identitytoolkit.googleapis.com') throw new Error(`unexpected request to ${url.hostname}`);
     t.mock.timers.tick(identityMs);
-    return Response.json({ users: [{ localId: 'reader-1' }] });
+    return Response.json({ users: unknownReader ? [] : [{ localId: 'reader-1' }] });
   });
   t.after(() => { globalThis.fetch = realFetch; });
   const { env, db } = store();
@@ -1437,9 +1443,9 @@ async function timedFirstPage(t: TestContext, identityMs: number, waited: Array<
   const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
     method: 'POST',
     headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ categories: ['cs.CL'], negativeIds: ['2610.40001'] }),
+    body: typeof body === 'string' ? body : JSON.stringify(body),
   }), env, { waitUntil: work => { waited.push(work); } });
-  assert.equal(response.status, 200);
+  assert.equal(response.status, status);
   await Promise.all(waited);
   return logged.mock.calls.map(call => String(call.arguments[0]));
 }
@@ -1451,6 +1457,7 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
   assert.deepEqual(JSON.parse(lines[0]), {
     event: 'slow_feed_request',
     route: '/store/papers',
+    status: 200,
     totalMs: 1_600,
     steps: { auth: 1_600, quota: 0, keys: 0, wave1: 0, vectors: 0, rankCpu: 0, cacheWrite: 0, works: 0 },
     // cs.CL and the cs area's journal lane; three papers, of which the
@@ -1465,10 +1472,29 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
 // the line is for.
 test('a slow page hands its answer and its line to waitUntil, so a reader who gives up does not cancel the line', async t => {
   const waited: Array<Promise<unknown>> = [];
-  const lines = await timedFirstPage(t, 3_800, waited);
+  const lines = await timedFirstPage(t, 3_800, { waited });
   const settled = await Promise.all(waited);
   assert.equal(settled.filter(work => work instanceof Response).length, 1, 'the answer is handed to waitUntil');
   assert.equal(JSON.parse(lines[0]).totalMs, 3_800);
+});
+
+// A refusal after a slow identity check, and one after a slow but accepted
+// check, read apart from a slow page by their status and code.
+test('a slow request the identity check refuses says its status and code, and so does one the feed refuses after it', async t => {
+  await t.test('identity refused', async t => {
+    const [line] = await timedFirstPage(t, 1_600, { unknownReader: true, status: 401 });
+    const { status, code, steps } = JSON.parse(line);
+    assert.deepEqual({ status, code, steps }, { status: 401, code: 'AUTH_REQUIRED', steps: { auth: 1_600 } });
+  });
+  await t.test('no lanes asked', async t => {
+    const [line] = await timedFirstPage(t, 1_600, { body: { categories: [] }, status: 400 });
+    const { status, code } = JSON.parse(line);
+    assert.deepEqual({ status, code }, { status: 400, code: 'LANES_REQUIRED' });
+  });
+  await t.test('a body that is not JSON', async t => {
+    const [line] = await timedFirstPage(t, 1_600, { body: 'not json', status: 400 });
+    assert.equal(JSON.parse(line).code, 'INVALID_JSON');
+  });
 });
 
 test('a page within 1.5 s on the Worker writes no line', async t => {

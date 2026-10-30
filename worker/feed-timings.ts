@@ -34,11 +34,14 @@ export class FeedTimings {
     this.kept = found ? 'hit' : 'miss';
   }
 
-  logIfSlow(route: string, totalMs: number) {
+  /** `status` and `code` are the answer's: a fixed number and error code, never the reader's data. */
+  logIfSlow(route: string, totalMs: number, status: number, code?: string) {
     if (totalMs <= SLOW_FEED_MS) return;
     console.log(JSON.stringify({
       event: 'slow_feed_request',
       route,
+      status,
+      ...(code ? { code } : {}),
       totalMs,
       steps: this.steps,
       counts: this.counts,
