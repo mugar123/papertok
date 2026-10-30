@@ -27,8 +27,14 @@ export function listenForToastEscape(target: Pick<Window, 'addEventListener' | '
   return () => target.removeEventListener('keydown', dismissToastsOnEscape);
 }
 
-/** Puts away the toasts that stay until they are closed, and keeps those that leave on their own. */
-function dismissPersistentToasts() {
+/**
+ * Puts away the toasts that stay until they are closed, and keeps those that
+ * leave on their own. Also called as the search palette opens: on a phone, or
+ * at 400% zoom, the palette fills the screen and a toast raised before it sits
+ * over its rows' Follow, outside its focus trap, where Escape closes the
+ * palette and leaves the toast.
+ */
+export function dismissPersistentToasts() {
   for (const shown of toast.getToasts()) {
     if ('duration' in shown && shown.duration === Infinity) toast.dismiss(shown.id);
   }

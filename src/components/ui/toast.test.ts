@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { listenForToastEscape, toastError } from './toast.ts';
+import { dismissPersistentToasts, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -61,6 +61,18 @@ test('Escape keeps the toasts that leave on their own, such as an Undo or a load
   assert.ok(onScreen(loading), 'the loading toast is still on screen');
   assert.ok(!onScreen(error), 'the error toast was put away');
   stop();
+  toast.dismiss();
+});
+
+// The search palette fills a phone's screen and traps focus; an error toast
+// raised before it opened sat over its rows' Follow, and Escape there closes
+// the palette, not the toast. Opening it puts such a toast away.
+test('the toasts that stay until closed can be put away without Escape, keeping the ones that leave on their own', () => {
+  const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
+  const errors = [toastError('Could not follow Nature. Try again.'), toastError('The list could not be deleted')];
+  dismissPersistentToasts();
+  assert.ok(onScreen(undo), 'the Undo toast is still on screen');
+  assert.deepEqual(errors.map(onScreen), [false, false], 'both error toasts were put away');
   toast.dismiss();
 });
 
