@@ -27,3 +27,27 @@ export function withLibraryCopy(
   const paper = withRetractionOf(withRetractionOf(copy, entry?.paper), loaded);
   return { ...library, [paperId]: { ...entry, ...fields, paperId, paper } };
 }
+
+/*
+ * A like or a save writes `copy` as the paper's interaction copy and rewrites
+ * no library entry. A retraction `copy` records is now stored, so the two
+ * helpers below add it to what the library holds in memory, as its next load
+ * would hold it (ENG-84): a later mark from a card without the retraction
+ * keeps it through `withLibraryCopy`, and the lists show it. Each returns its
+ * input itself when `copy` adds nothing.
+ */
+
+/** The library with the retraction `copy` records on the paper's entry, if it has one. */
+export function libraryWithRetractionOf(library: Record<string, LibraryEntry>, paperId: string, copy: Partial<Paper>) {
+  const entry = library[paperId];
+  return entry && copy.publicationStatus === 'retracted' && entry.paper.publicationStatus !== 'retracted'
+    ? { ...library, [paperId]: { ...entry, paper: withRetractionOf(entry.paper, copy) } }
+    : library;
+}
+
+/** The loaded interaction copies with `copy`'s retraction, or with `copy` when none was loaded. */
+export function loadedWithRetractionOf(papers: Record<string, Partial<Paper>>, paperId: string, copy: Partial<Paper>) {
+  const known = papers[paperId];
+  if (copy.publicationStatus !== 'retracted' || known?.publicationStatus === 'retracted') return papers;
+  return { ...papers, [paperId]: known ? withRetractionOf(known, copy) : copy };
+}

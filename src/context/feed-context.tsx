@@ -85,7 +85,7 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
-import { withLibraryCopy } from './library-entry.ts';
+import { libraryWithRetractionOf, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -1805,6 +1805,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     reRankFeed(paper.id);
 
     if (userId) {
+      const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
+      if (storedPaper) {
+        setPersonalLibrary(current => libraryWithRetractionOf(current, paper.id, storedPaper));
+        setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
+      }
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -1816,7 +1821,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
           // kicker from. Written on like only; an unlike changes the flag.
-          paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
+          paper: storedPaper && copyForMergeWrite(storedPaper),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
@@ -2133,6 +2138,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     reRankFeed(paperId);
 
     if (userId) {
+      const storedPaper = paper && serializeLibraryPaper(paper);
+      if (storedPaper) {
+        setPersonalLibrary(current => libraryWithRetractionOf(current, paperId, storedPaper));
+        setLibraryPapers(current => loadedWithRetractionOf(current, paperId, storedPaper));
+      }
       try {
         const ref = interactionDocRef(userId, paperId);
         const interactionData: InteractionDocumentData & { deviceType: string } = {
@@ -2148,8 +2158,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        await setDoc(ref, paper
-          ? { ...interactionData, paper: copyForMergeWrite(serializeLibraryPaper(paper)) }
+        await setDoc(ref, storedPaper
+          ? { ...interactionData, paper: copyForMergeWrite(storedPaper) }
           : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);

@@ -7,7 +7,7 @@ import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { listPaperFromCopies } from '../components/lists/list-paper-copies.ts';
-import { withLibraryCopy } from './library-entry.ts';
+import { libraryWithRetractionOf, loadedWithRetractionOf, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -47,6 +47,37 @@ test('a library entry keeps the retraction of the copy the library loaded', () =
   const afterLoad = withLibraryCopy(current, wakefield.id, current[wakefield.id].paper, {}, loaded);
   assert.deepEqual(listTags(afterLoad), ['retracted', 'retracted'], 'read, then the library loaded');
   assert.equal(afterLoad[wakefield.id].readAt, '2026-10-29T11:00:00.000Z');
+});
+
+// A like or a save in this session wrote the retracted copy to the stored
+// interaction only, so a later mark from an unmarked card found no retraction
+// in memory and the lists read Preprint until a reload.
+test('a like or a save in this session keeps its retraction through a later mark', () => {
+  const liked = serializeLibraryPaper(retracted);
+  // Nothing loaded for the paper yet, or the copy stored before the refresh.
+  for (const [label, before] of [['nothing loaded', {}], ['an unmarked copy loaded', { [wakefield.id]: loadedCopy(unmarked) }]] as const) {
+    const papers = loadedWithRetractionOf(before, wakefield.id, liked);
+    const library = libraryWithRetractionOf({}, wakefield.id, liked);
+    const readLater = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true }, papers[wakefield.id]);
+    assert.deepEqual(listTags(readLater), ['retracted', 'retracted'], `liked, then Read later: ${label}`);
+    const read = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' }, papers[wakefield.id]);
+    assert.deepEqual(listTags(read), ['retracted', 'retracted'], `liked, then read: ${label}`);
+  }
+});
+
+test('a like or a save in this session adds its retraction to an entry an earlier mark wrote', () => {
+  const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
+  const liked = libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(retracted));
+  assert.deepEqual(listTags(liked), ['retracted', 'retracted']);
+  assert.equal(liked[wakefield.id].readLater, true);
+});
+
+test('a like or a save of a copy no provider called retracted changes nothing in memory', () => {
+  const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
+  const papers = { [wakefield.id]: loadedCopy(unmarked) };
+  assert.equal(libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(unmarked)), marked);
+  assert.equal(loadedWithRetractionOf(papers, wakefield.id, serializeLibraryPaper(unmarked)), papers);
+  assert.deepEqual(loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(unmarked)), {});
 });
 
 test('a library entry no copy called retracted reads as before', () => {
