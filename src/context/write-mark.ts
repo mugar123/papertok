@@ -64,7 +64,8 @@ interface MarkChange {
  * that starts from that value without showing anything spends it: once that
  * tap is answered, the mark is no longer followed unless the answer moved it.
  * A boolean cannot tell a drawn move from one undone since, so whatever puts
- * every mark back at once, such as a profile load, calls `screenReplaced()`:
+ * every mark back at once, such as a profile load or signing out, calls
+ * `screenReplaced()`:
  * otherwise, after the old value came back before anything read the mark,
  * the next tap would write without moving the screen. The cost is that a
  * second tap from the same undrawn value, answered before React draws, is

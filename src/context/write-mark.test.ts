@@ -480,6 +480,40 @@ for (const markKey of ['u1:like:p1', 'u1:read:p1', 'u1:readLater:p1']) {
     assert.deepEqual(paper.profile, [false, false]);
   });
 
+  // A profile load puts the mark back while the card's change still waits;
+  // its refusal then finds the screen already where the undo would go.
+  test(`a ${mark} change refused after a profile load put the mark back moves nothing`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const pressed = paper.press();
+    paper.screen.drawn = true;
+    paper.screen.ref = true;
+    paper.changes.screenReplaced();
+    paper.answers[0].refuse();
+    await silenced(() => pressed);
+    assert.equal(paper.screen.drawn, true);
+    assert.deepEqual(paper.profile, [false]);
+  });
+
+  // Signing out clears every mark while a change to turn one on still waits;
+  // the change is accepted, and the same account signs back in before its
+  // profile arrives. The next tap is a new change.
+  test(`a ${mark} turned on, then signed out and back in before the answer, moves on the next tap`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    paper.screen.drawn = false;
+    paper.screen.ref = false;
+    const first = paper.press();
+    paper.changes.screenReplaced();
+    paper.screen.drawn = false;
+    paper.screen.ref = false;
+    paper.answers[0].accept();
+    await first;
+    const again = paper.press();
+    paper.answers[1].accept();
+    await again;
+    assert.equal(paper.screen.drawn, true);
+    assert.deepEqual(paper.profile, [true, true]);
+  });
+
   // An accepted Lists removal moves the mark after its answer; React draws
   // it, then a profile load read before the removal puts the mark back.
   test(`a ${mark} that a profile load puts back after its removal was drawn moves on the next tap`, async () => {

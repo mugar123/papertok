@@ -945,6 +945,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // papers immediately. This is the only place allowed to blank the sets: a
     // profile that merely failed to load leaves them alone.
     if (leavesLoadedAccount(loadedProfileUserId.current, userId)) {
+      // A write still waiting may answer after the same account signs back
+      // in: what it sent to the screen is gone with these sets.
+      markChangeLog.screenReplaced();
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
