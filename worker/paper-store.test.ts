@@ -2230,14 +2230,16 @@ function coldPageCorpus() {
 }
 
 // What a request serves and what it keeps for the pages after it, as one
-// digest of every rank and score: the kept order holds every candidate.
-async function servedAndKept(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0]) {
+// digest of every rank and score: the kept order holds every candidate. With
+// `decided`, of the kept order only its first `decided` ranks, without whether
+// it is final: an exploration page without likes decides no more of it.
+async function servedAndKept(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0], { decided }: { decided?: number } = {}) {
   const kept: KeptRanking[] = [];
   const cache: RankingCache = { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } };
   const page = await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache });
   const ranking = kept.map(({ ranks, notable, final }) => ({
-    final,
-    ranks: ranks.map(rank => rank && [rank.workId, rank.semanticScore ?? null]),
+    ...(decided === undefined ? { final } : {}),
+    ranks: ranks.slice(0, decided).map(rank => rank && [rank.workId, rank.semanticScore ?? null]),
     notable: notable.map(rank => [rank.workId, rank.semanticScore ?? null]),
   }));
   return {
@@ -2289,12 +2291,14 @@ test('a first page that skips seen papers serves what it did before the hex vect
   });
 });
 
+// Of the kept order, the diversity pool's 500 ranks: the ranks past it are
+// what the page did not read (below).
 test('an exploration page, with rejections and no likes, serves what it did before the hex vectors and lazy diversity pass', async () => {
   const { env, rejections } = coldPageCorpus();
-  const served = await servedAndKept(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 });
+  const served = await servedAndKept(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 }, { decided: 500 });
   assert.deepEqual(served, {
     ids: ['2610.00027', '2610.00031', '2610.00032', '2610.00033', '2610.00034'],
-    digest: '91ad11f4ae823fee724031306be1c516e50c2e5622b7f75bc8a0d23317f4084b',
+    digest: '4198875ee8401c7a897410b303d75982b44b15a8b5f428e844c948ba49a1517b',
   });
 });
 
@@ -2346,4 +2350,105 @@ test('a page that ranks by vectors asks D1 for them as hex text', async t => {
   await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], positiveIds: likes.slice(0, 1) }), { now: NOW });
   assert.ok(answers.length > 500, `${answers.length} vectors read`);
   for (const answer of answers) assert.match(String(answer), /^[0-9A-F]{64}$/, 'each vector is its 32 bytes as hex');
+});
+
+// ─── Pages without likes (ENG-116): the vectors their ranks need, newest first ───
+
+// A ranking cache that keeps each order as JSON, as the Worker's does.
+function jsonRankingCache(): RankingCache {
+  const kept = new Map<string, string>();
+  const put: RankingCache['put'] = async (key, ranking) => { kept.set(key, JSON.stringify(ranking)); };
+  return {
+    get: async key => {
+      const json = kept.get(key);
+      return json === undefined ? null : JSON.parse(json) as KeptRanking;
+    },
+    put,
+    update: put,
+  };
+}
+
+// The ids each page serves, asked by number in turn with one cache, as the
+// app pages, and asked again alone from an empty cache, which must serve the same.
+async function pagesByNumber(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0], pages: number[]) {
+  const cache = jsonRankingCache();
+  const served: string[][] = [];
+  for (const page of pages) {
+    const ids = (await readFeedPage(env, parseFeedRequest({ ...body, page }), { now: NOW, cache })).map(paper => paper.id);
+    const alone = (await readFeedPage(env, parseFeedRequest({ ...body, page }), { now: NOW, cache: jsonRankingCache() })).map(paper => paper.id);
+    assert.deepEqual(alone, ids, `page ${page}, asked alone`);
+    served.push(ids);
+  }
+  return served;
+}
+
+// The rows of `work_vectors` D1 answers a request with.
+function vectorRowsRead(t: TestContext, binding: D1Database) {
+  let rows = 0;
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+    const results = await batch(statements);
+    statements.forEach((sent, index) => {
+      if (/\bwork_vectors\b/.test((sent as unknown as { sql: string }).sql)) rows += results[index].results.length;
+    });
+    return results;
+  });
+  return () => rows;
+}
+
+const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+// Pages of 30 through the diversity pool's 500 ranks and two far past it,
+// and exploration's own: pages of 2 within its first 30 ranks. The digests are
+// what 65a9b5c5 served, reading every candidate's vector.
+test('pages without likes serve what a read of every vector did, across lanes, interest groups, orders and pages', async () => {
+  const { env, rejections } = coldPageCorpus();
+  const groups = [
+    { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: [], weight: 1 },
+    { categories: ['cs.LG', 'econ.GN'], exampleCategories: ['cs.LG', 'econ.GN'], positiveIds: [], weight: 2 },
+  ];
+  const deep = [...Array.from({ length: 18 }, (_, page) => page), 30, 46];
+  const served = {
+    rejections: await pagesByNumber(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, pageSize: 30 }, deep),
+    byRelevance: await pagesByNumber(env, { categories: ['cs.LG', 'econ.GN'], negativeIds: rejections.slice(1), order: 'relevance', pageSize: 30 }, deep),
+    groups: await pagesByNumber(env, { groups, negativeIds: rejections, pageSize: 30 }, deep),
+    noSignal: await pagesByNumber(env, { groups, pageSize: 30 }, deep),
+    exploration: await pagesByNumber(env, { categories: ['cs.CL', 'econ.GN'], negativeIds: rejections, pageSize: 2 }, Array.from({ length: 15 }, (_, page) => page)),
+  };
+  assert.equal(served.rejections[0].length, 30);
+  assert.equal(served.exploration[14].length, 2);
+  assert.deepEqual(Object.fromEntries(Object.entries(served).map(([name, pages]) => [name, sha(pages)])), {
+    rejections: '3d86ed5c8b122616d27fdc80e15f136f5e3bca7c7842805e6d7f1904140b15c3',
+    byRelevance: 'a12ef1b863a294127f79295311f2df64c2c0b29dc6a4e23fb6c527e013b1c0f8',
+    groups: '4ccc59148db408ad5a5e2c3592c3cbab441e630ffa35b92d2fd7e04a4331cc2e',
+    noSignal: '2fc3b6bde0726b46d0a6c38e1f544993cd079582037b89d66ebbc57461c73f22',
+    exploration: '7eced58ca13cfc196f5570b9b9c2274980a925d40acb32deb197ebc0998302fe',
+  });
+});
+
+// cs.LG and cs.CL hold 1,400 candidates, of which 1,273 have a vector (one in
+// eleven is not embedded). The page's 5 papers and the diversity pool's 500
+// ranks are decided by the 600 newest, 546 of them embedded, and the 3
+// rejections' own vectors. Ranks past them are not, so the order kept is not
+// final: the next page ranks again.
+test('a page without likes reads the vectors of its newest candidates only, and keeps its order for the next page to rank again', async t => {
+  const { env, rejections } = coldPageCorpus();
+  const rows = vectorRowsRead(t, env.PAPER_STORE!);
+  const kept: KeptRanking[] = [];
+  const cache: RankingCache = { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } };
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 }), { now: NOW, cache });
+  assert.equal(rows(), 546 + 3);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].final, false);
+});
+
+// A like ranks every candidate by its closeness, and a page that skips seen
+// papers can walk past any rank: both read every candidate's vector, as before.
+test('a page with likes, or one that skips seen papers, reads every candidate vector as before', async t => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const rows = vectorRowsRead(t, env.PAPER_STORE!);
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], positiveIds: likes.slice(0, 1), negativeIds: rejections, pageSize: 5 }), { now: NOW });
+  assert.equal(rows(), 1_273 + 1 + 3);
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, seen: feedSeenFilter([]), skipsSeen: true, pageSize: 5 }), { now: NOW });
+  assert.equal(rows(), 2 * (1_273 + 3) + 1);
 });
