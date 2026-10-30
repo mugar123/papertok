@@ -193,7 +193,8 @@ function screen(load: Parameters<typeof waitsAsFirstScreen>[0], store: ReturnTyp
   ]);
 }
 
-const coldEntry = { reset: true, keepThroughVisible: false };
+const coldEntry = { reset: true, keepThroughVisible: false, hasPapers: false };
+const followChange = { reset: true, keepThroughVisible: true, hasPapers: true };
 
 test("a list's first screen keeps the follows and exploration that answered while its main page was awaited", async (t) => {
   const { value, at } = await onTheClock(t, () => screen(coldEntry, slowStore({ main: 5_000, follows: 4_000, exploration: 4_500 })));
@@ -241,19 +242,29 @@ test('a source that fails before the main page answers gives no papers and no un
 
 test('only a load that replaces the list waits the first screen deadline', async (t) => {
   assert.equal(waitsAsFirstScreen(coldEntry), true, 'a cold entry, a refresh, an interests edit or the retry');
-  assert.equal(waitsAsFirstScreen({ reset: false, keepThroughVisible: false }), false, 'More');
+  assert.equal(waitsAsFirstScreen({ reset: false, keepThroughVisible: false, hasPapers: true }), false, 'More');
   // A follow change reloads below the visible card, and More waits for it.
-  assert.equal(waitsAsFirstScreen({ reset: true, keepThroughVisible: true }), false, 'a follow change');
-  const { value, at } = await onTheClock(t, () => screen({ reset: true, keepThroughVisible: true }, slowStore({ main: 5_000, follows: 5_000 })));
+  assert.equal(waitsAsFirstScreen(followChange), false, 'a follow change');
+  const { value, at } = await onTheClock(t, () => screen(followChange, slowStore({ main: 5_000, follows: 5_000 })));
   assert.ok('error' in value.main);
   assert.equal((value.main.error as Error).name, 'TimeoutError');
   assert.ok(at >= 3_500 && at < 3_600, `gave up at ${at} ms`);
 });
 
+test('a follow change over a feed with no cards waits as the first screen it is', async (t) => {
+  // For You ended in the error, the reader followed an author and came back:
+  // the reload is the screen they wait on.
+  const overNothing = { ...followChange, hasPapers: false };
+  assert.equal(waitsAsFirstScreen(overNothing), true);
+  const { value, at } = await onTheClock(t, () => screen(overNothing, slowStore({ main: 6_000 })));
+  assert.deepEqual(value.main, { value: ['main'] });
+  assert.ok(at >= 6_000 && at < 6_100, `shown at ${at} ms`);
+});
+
 // A load and its one automatic retry, as the feed runs them (loadPapers in
 // feed-context.tsx): the load fails when its main page failed and no other
 // source gave a paper, and the retry follows automaticRetry's pause and wait.
-async function loadWithRetry(load: { reset: boolean; keepThroughVisible: boolean }, store: ReturnType<typeof slowStore>) {
+async function loadWithRetry(load: Parameters<typeof waitsAsFirstScreen>[0], store: ReturnType<typeof slowStore>) {
   const first = await screen(load, store);
   if (!('error' in first.main) || first.optional.some(papers => papers.length > 0)) return first;
   const retry = automaticRetry(first.main.error, waitsAsFirstScreen(load));
@@ -298,7 +309,7 @@ test('the retry of a first screen the store refused keeps the pause and the 10 s
 
 test('the retry of a follow change that timed out keeps the pause and its 3.5 s wait', async (t) => {
   const store = slowStore({ main: [undefined, 3_000], follows: [undefined, 1_000], exploration: [undefined, 1_000] });
-  const { value, at } = await onTheClock(t, () => loadWithRetry({ reset: true, keepThroughVisible: true }, store));
+  const { value, at } = await onTheClock(t, () => loadWithRetry(followChange, store));
   assert.deepEqual(value.main, { value: ['main'] });
   // The 3.5 s deadline, the 2.5 s pause, and a retry answered in 3 s.
   assert.ok(at >= 9_000 && at < 9_100, `shown at ${at} ms`);

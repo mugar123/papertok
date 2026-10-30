@@ -1235,7 +1235,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        firstScreen = waitsAsFirstScreen({ reset, keepThroughVisible, retriesTimeout });
+        firstScreen = waitsAsFirstScreen({ reset, keepThroughVisible, hasPapers: papers.length > 0, retriesTimeout });
         const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
