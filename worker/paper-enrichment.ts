@@ -276,7 +276,8 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   // A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
   // can hold the journal's article as a work of its own, without the arXiv
   // location, and only that work then says it is retracted. Only the
-  // retraction is taken from it. Up to 50 such papers a call, in the same budget.
+  // retraction is taken from it. Up to 50 such papers a call, fewer when their
+  // DOIs are long (`openAlexFilters`), in the same budget.
   const journalDois = papers.map((paper, index) => (asksOpenAlex[index] && !getOpenAlexEnrichmentId(paper).includes(':')
     ? normalizeEnrichmentDoi(paper.doi) : ''));
 

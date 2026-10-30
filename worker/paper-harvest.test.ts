@@ -187,11 +187,12 @@ test("the longest enrichment phase fits in half of an invocation's subrequests",
     OPENALEX_API_KEY: 'test-key',
     AI: { run: async (_model: string, { text }: { text: string[] }) => { calls.ai += 1; return { data: text.map(() => Array.from({ length: 1024 }, (_, dimension) => Math.cos(dimension))) }; } },
   } as unknown as WorkerEnv;
-  // The longest batch, which asks every source: arXiv papers with a journal
-  // DOI, which OpenAlex is asked about by arXiv id, 25 a call, and by that
-  // DOI, 50 a call, the most calls a paper makes; and OpenAlex's own records
-  // without an abstract, with a DOI and a PubMed id, for which Crossref,
-  // iCite, Europe PMC and Semantic Scholar are asked.
+  // A batch that asks every source, with typical short journal DOIs: arXiv
+  // papers with a journal DOI, which OpenAlex is asked about by arXiv id, 25 a
+  // call, and by that DOI, 50 a call; and OpenAlex's own records without an
+  // abstract, with a DOI and a PubMed id, for which Crossref, iCite, Europe PMC
+  // and Semantic Scholar are asked. Longer DOIs split into more OpenAlex calls,
+  // which the harvest's OpenAlex share bounds for the whole run (worker/README.md).
   await ingestPapers(env, [
     ...Array.from({ length: 499 }, (_, index) => ({ paper: paper(`2610.${50_000 + index}`, `Preprint ${index}`, `10.1103/PhysRevD.${index}`), lanes: ['cs.CL'] })),
     ...Array.from({ length: 2 }, (_, index) => ({
