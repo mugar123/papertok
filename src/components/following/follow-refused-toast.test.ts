@@ -2,7 +2,7 @@ import type { Action, ToastT } from 'sonner';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { followRefusal, toastFollowRefused } from './follow-refused-toast.ts';
+import { followName, followRefusal, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
 /** The toast `id` put on screen, as the Toaster would render it. */
@@ -79,4 +79,36 @@ test('a refusal for the search palette raises no toast and keeps the words and t
   assert.deepEqual([waiting.message, waiting.action], ['Your follows have not loaded yet, so Ada Lovelace was not followed. Try again in a moment.', undefined]);
   assert.deepEqual([refused.message, refused.action], ['Could not unfollow Ada Lovelace. Try again.', undefined]);
   assert.equal(toast.getToasts().filter(entry => !('dismiss' in entry && entry.dismiss)).length, before, 'no toast was raised');
+});
+
+// The palette's rows hand over `name`, the Search page's `displayName`; a
+// refusal named "this" left a screen-reader user guessing which row it meant.
+test('a refused press names the row, whichever field its surface filled', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const refuse = (following: boolean) => ({
+    isFollowing: () => following,
+    toggleFollow: () => Promise.reject(new Error('PERMISSION_DENIED')),
+  });
+  const said = async (entity: Parameters<typeof toggleFollowOrRefusal>[0], following = false) => (await toggleFollowOrRefusal(entity, refuse(following)))?.message;
+  assert.deepEqual(await Promise.all([
+    said({ type: 'author', id: 'https://openalex.org/A1', name: 'Ada Lovelace' }),
+    said({ type: 'institution', id: 'https://openalex.org/I1', name: 'University of Salamanca' }, true),
+    said({ type: 'concept', id: 'https://openalex.org/C1', name: 'Cosmology' }),
+    said({ type: 'author', id: 'https://openalex.org/A2', displayName: 'Grace Hopper' }),
+    said({ type: 'topic', id: 'T1', display_name: 'Econometrics' }),
+  ]), [
+    'Could not follow Ada Lovelace. Try again.',
+    'Could not unfollow University of Salamanca. Try again.',
+    'Could not follow Cosmology. Try again.',
+    'Could not follow Grace Hopper. Try again.',
+    'Could not follow Econometrics. Try again.',
+  ]);
+  assert.equal(followName({ type: 'author', id: 'A3', displayName: 'Rosalind Franklin' }), 'Rosalind Franklin');
+});
+
+test('a press that went through says nothing', async () => {
+  assert.equal(await toggleFollowOrRefusal({ type: 'author', id: 'A1', name: 'Ada Lovelace' }, {
+    isFollowing: () => false,
+    toggleFollow: () => Promise.resolve(true),
+  }), null);
 });

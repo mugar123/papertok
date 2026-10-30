@@ -30,7 +30,7 @@ import { searchProjects } from '../../services/open-aire-service.ts';
 import { searchPapersAcrossSources } from '../../services/paper-search-service.ts';
 import { searchEntities } from '../../services/entity-search-service.ts';
 import { useFollowing } from '../../context/following-context.tsx';
-import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { followName, toastFollowRefused } from '../following/follow-refused-toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { useLanguage } from '../../context/language-context.tsx';
@@ -434,7 +434,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     try {
       await toggleFollow(entity);
     } catch (error) {
-      toastFollowRefused(error, { name: entity.displayName || 'this', following });
+      toastFollowRefused(error, { name: followName(entity), following });
     }
   };
 

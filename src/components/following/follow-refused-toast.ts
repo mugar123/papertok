@@ -1,5 +1,7 @@
+import type { FollowingContextValue } from '../../context/following-context.tsx';
+import type { FollowInput } from '../../utils/following.ts';
 import { toastError } from '../ui/toast.ts';
-import { FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
+import { createFollowEntity, FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 
 type RefusalContext = {
   name: string;
@@ -43,6 +45,29 @@ export function followRefusal(error: unknown, { name, following, openSettings }:
   // accept journals are deployed, or a dropped connection.
   console.error(error);
   return { message: `Could not ${following ? 'unfollow' : 'follow'} ${name}. Try again.` };
+}
+
+/**
+ * The name a refusal gives what was pressed. Each surface fills a different
+ * field (`displayName`, `display_name` or `name`); the follow saved reads them
+ * in that order, so the refusal does too.
+ */
+export function followName(entity: FollowInput) {
+  return createFollowEntity(entity)?.displayName || 'this';
+}
+
+/**
+ * Presses Follow or Unfollow on `entity` and resolves to why nothing changed,
+ * or to null once it changed.
+ */
+export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, toggleFollow }: Pick<FollowingContextValue, 'isFollowing' | 'toggleFollow'>) {
+  const following = isFollowing(entity);
+  try {
+    await toggleFollow(entity);
+    return null;
+  } catch (error) {
+    return followRefusal(error, { name: followName(entity), following });
+  }
 }
 
 /**
