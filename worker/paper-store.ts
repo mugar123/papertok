@@ -1190,8 +1190,10 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * it, or the corpus had dropped the work. A filter holds only the reader's
  * 2,000 most recent papers, so a walk from the top would send again the ones
  * seen before those; one that a page sent and the app never got is sent again.
- * `notable` is the asked categories' notable papers, closest first, which no
- * rank holds, walked the same way from `notableWalked`.
+ * `notable` is the asked categories' notable papers, which no rank holds,
+ * walked the same way from `notableWalked`: closest first with a liked
+ * vector, otherwise the years in turns (`notableYearsInTurns`), near copies of
+ * rejected papers last.
  *
  * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
  * lanes in the same order, `order`, likes, rejections and interest groups
@@ -1697,11 +1699,14 @@ function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidat
   for (const candidate of candidates) {
     const year = candidate.published.slice(0, 4);
     if (!byYear.has(year)) byYear.set(year, lanes.map(() => []));
-    // A paper listed by several lanes belongs to the first of them the request asks.
+    // A paper listed by several lanes belongs to the first of them, in the
+    // order the request asks, among the lanes whose day's slice offers it
+    // (`candidate.lanes`, `readNotableCandidates`).
     byYear.get(year)![lanes.findIndex(lane => candidate.lanes.includes(lane))].push(candidate);
   }
   // A lane's rows newest first, as its read gives them (`readNotableCandidates`):
-  // the merge puts a shared paper at the first turn any lane reached it.
+  // a paper several lanes list takes its place among its lane's rows by date,
+  // not at the turn the merge of the lanes reached it.
   const newestFirst = (a: Candidate, b: Candidate) => (a.published === b.published ? a.workId - b.workId : a.published < b.published ? 1 : -1);
   const years = [...byYear.keys()].sort().reverse().map((year, index) => {
     const perLane = byYear.get(year)!.map(rows => rows.sort(newestFirst));
