@@ -16,8 +16,19 @@ export function toastError(title: Parameters<typeof toast.error>[0], options?: P
  * dialog, menu or sheet, which Base UI cancels; the search field clearing its
  * query) is left alone, so it does that and keeps the toast.
  */
-export function dismissToastsOnEscape(event: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'isComposing'>) {
+function dismissToastsOnEscape(event: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'isComposing'>) {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+  dismissPersistentToasts();
+}
+
+/** Mounted once, by the Toaster; returns the way to stop listening. */
+export function listenForToastEscape(target: Pick<Window, 'addEventListener' | 'removeEventListener'>) {
+  target.addEventListener('keydown', dismissToastsOnEscape);
+  return () => target.removeEventListener('keydown', dismissToastsOnEscape);
+}
+
+/** Puts away the toasts that stay until they are closed, and keeps those that leave on their own. */
+function dismissPersistentToasts() {
   for (const shown of toast.getToasts()) {
     if ('duration' in shown && shown.duration === Infinity) toast.dismiss(shown.id);
   }

@@ -1,14 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { dismissToastsOnEscape, toastError } from './toast.ts';
+import { listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
 globalThis.cancelAnimationFrame ??= (handle) => clearTimeout(handle);
 
-const escape = { key: 'Escape', defaultPrevented: false, isComposing: false };
 const onScreen = (id: string | number) => toast.getToasts().some(shown => shown.id === id);
+
+/**
+ * The window as the Toaster listens to it: `taken` is a listener that handles
+ * the key first, as a dialog, a menu or the search field clearing its query
+ * does (`preventDefault`).
+ */
+function page({ taken = false } = {}) {
+  const target = new EventTarget();
+  if (taken) target.addEventListener('keydown', (event) => { event.preventDefault(); });
+  const stop = listenForToastEscape(target);
+  const press = (key: string, { isComposing = false } = {}) => {
+    target.dispatchEvent(Object.assign(new Event('keydown', { cancelable: true }), { key, isComposing }));
+  };
+  return { press, stop };
+}
 
 /**
  * An error toast stays until it is closed, and on a phone it can cover the
@@ -16,28 +30,45 @@ const onScreen = (id: string | number) => toast.getToasts().some(shown => shown.
  * focus (WCAG 2.4.11), unless a dialog or menu already took the key.
  */
 test('Escape puts away an error toast that stays until it is closed', () => {
+  const { press, stop } = page();
   const id = toastError('Could not follow Nature. Try again.');
   assert.ok(onScreen(id), 'the toast is on screen');
-  dismissToastsOnEscape(escape);
+  press('Escape');
   assert.ok(!onScreen(id), 'Escape dismissed it');
+  stop();
 });
 
 test('an Escape a dialog or menu already took, another key, or one that ends a composition leaves the toast', () => {
   const id = toastError('Could not follow Nature. Try again.');
-  dismissToastsOnEscape({ ...escape, defaultPrevented: true });
-  dismissToastsOnEscape({ ...escape, key: 'Enter' });
-  dismissToastsOnEscape({ ...escape, isComposing: true });
+  const taken = page({ taken: true });
+  taken.press('Escape');
+  taken.stop();
+  const plain = page();
+  plain.press('Enter');
+  plain.press('Escape', { isComposing: true });
+  plain.stop();
   assert.ok(onScreen(id), 'the toast is still on screen');
   toast.dismiss();
 });
 
 test('Escape keeps the toasts that leave on their own, such as an Undo or a loading message', () => {
+  const { press, stop } = page();
   const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
   const loading = toast.loading('Saving');
   const error = toastError('Could not follow Nature. Try again.');
-  dismissToastsOnEscape(escape);
+  press('Escape');
   assert.ok(onScreen(undo), 'the Undo toast is still on screen');
   assert.ok(onScreen(loading), 'the loading toast is still on screen');
   assert.ok(!onScreen(error), 'the error toast was put away');
+  stop();
+  toast.dismiss();
+});
+
+test('once the Toaster stops listening, Escape leaves the toast', () => {
+  const { press, stop } = page();
+  stop();
+  const id = toastError('Could not follow Nature. Try again.');
+  press('Escape');
+  assert.ok(onScreen(id), 'the toast is still on screen');
   toast.dismiss();
 });
