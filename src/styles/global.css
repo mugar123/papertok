@@ -344,6 +344,19 @@
   outline-offset: 2px;
 }
 
+/* A toast's close button, the only way to put an error toast away on a phone
+   (ui/toast.ts), at the 24 px WCAG 2.5.8 asks for. Sonner draws it 20 px
+   across at the toast's top-left corner, so a 24 px circle centred on it
+   overlaps the toast, which takes drags, and whatever control lies under the
+   corner: the spacing exception does not hold. Sonner shifts it 35% of its
+   size up and left, so at 24 px it reaches 15.6 px into the toast, short of
+   the 16 px padding before the icon and the text. Four attributes to beat
+   Sonner's three. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button] {
+  width: 24px;
+  height: 24px;
+}
+
 /* Text fields are the one place `:focus-visible` fires even for a mouse click
    — the browser assumes typing follows — so the ring boxed every search field
    the moment it was clicked. A field signals focus in the app's own marking
