@@ -152,6 +152,7 @@ test('a first load the store answered with no papers is over: it is not retried'
 test('the first wait is announced as loading papers, once, through its automatic retry', () => {
   const firstWait = (state: Parameters<typeof getFeedDisplayState>[0]) => feedStatusText({
     isRefreshing: false,
+    loading: Boolean(state.loading),
     refreshDone: false,
     veil: feedAtomVeilCopy({ displayState: getFeedDisplayState(state), ...state }) !== null,
     hasPapers: Boolean(state.hasPapers),
@@ -168,17 +169,33 @@ test('the first wait is announced as loading papers, once, through its automatic
 });
 
 test('a refresh over shown papers is spoken as a refresh, and as updated once it lands', () => {
-  const shown = { isRefreshing: false, refreshDone: false, veil: false, hasPapers: true, failed: false };
-  assert.equal(feedStatusText({ ...shown, isRefreshing: true }), 'Refreshing papers…');
+  const shown = { isRefreshing: false, loading: false, refreshDone: false, veil: false, hasPapers: true, failed: false };
+  assert.equal(feedStatusText({ ...shown, isRefreshing: true, loading: true }), 'Refreshing papers…');
   assert.equal(feedStatusText({ ...shown, refreshDone: true }), 'Papers updated');
   assert.equal(feedStatusText(shown), '');
+});
+
+// PR #425 review: a retry that answered before the refresh's minimum 800 ms
+// said "Refreshing papers…" over the cards it had already shown.
+test('a refresh whose papers arrived does not speak a wait while it is held', () => {
+  const steps = [
+    // Try again from the error: the reload runs under the veil.
+    { isRefreshing: true, loading: true, refreshDone: false, veil: true, hasPapers: false, failed: false },
+    // Its papers are shown; the refresh is still held for its minimum time.
+    { isRefreshing: true, loading: false, refreshDone: false, veil: false, hasPapers: true, failed: false },
+    // The hold ends.
+    { isRefreshing: false, loading: false, refreshDone: true, veil: false, hasPapers: true, failed: false },
+  ];
+  assert.deepEqual(steps.map(feedStatusText), ['Loading papers…', '', 'Papers updated']);
+  // The same hold after a refresh over shown papers, and after one that failed.
+  assert.equal(feedStatusText({ isRefreshing: true, loading: false, refreshDone: false, veil: false, hasPapers: true, failed: true }), '');
 });
 
 // Try again, Check again or Explore again from an empty feed: the wait they
 // start, its automatic retry included, is one wait under the veil.
 test('a refresh under the veil is the same wait as the retry that follows it', () => {
-  const underVeil = { isRefreshing: true, refreshDone: false, veil: true, hasPapers: false, failed: false };
-  const retrying = { ...underVeil, isRefreshing: false, refreshDone: true };
+  const underVeil = { isRefreshing: true, loading: true, refreshDone: false, veil: true, hasPapers: false, failed: false };
+  const retrying = { ...underVeil, isRefreshing: false, loading: false, refreshDone: true };
   assert.equal(feedStatusText(underVeil), 'Loading papers…');
   assert.equal(feedStatusText(retrying), feedStatusText(underVeil));
 });
@@ -188,12 +205,12 @@ test('a refresh under the veil is the same wait as the retry that follows it', (
 test('a refresh that ends without papers updated nothing', () => {
   const failed = getFeedDisplayState({ ...baseState, error: 'FEED_LOAD_FAILED' });
   assert.equal(failed, FEED_DISPLAY_STATES.ERROR);
-  assert.equal(feedStatusText({ isRefreshing: false, refreshDone: true, veil: feedAtomVeilCopy({ displayState: failed }) !== null, hasPapers: false, failed: true }), '');
+  assert.equal(feedStatusText({ isRefreshing: false, loading: false, refreshDone: true, veil: feedAtomVeilCopy({ displayState: failed }) !== null, hasPapers: false, failed: true }), '');
 });
 
 // A refresh over shown papers that failed kept them, and still said "Papers updated".
 test('a refresh over shown papers that fails updated nothing', () => {
-  const shown = { isRefreshing: false, refreshDone: true, veil: false, hasPapers: true };
+  const shown = { isRefreshing: false, loading: false, refreshDone: true, veil: false, hasPapers: true };
   assert.equal(feedStatusText({ ...shown, failed: true }), '');
   assert.equal(feedStatusText({ ...shown, failed: false }), 'Papers updated');
 });
@@ -209,7 +226,7 @@ test('the tail speaks of more papers only under papers already shown', () => {
 test('a load that replaces shown papers is not spoken as more papers', () => {
   const refreshing = { loadingNextPage: false, hasPapers: true };
   assert.equal(nextPageStatusText(refreshing), '');
-  assert.equal(feedStatusText({ isRefreshing: true, refreshDone: false, veil: false, hasPapers: true, failed: false }), 'Refreshing papers…');
+  assert.equal(feedStatusText({ isRefreshing: true, loading: true, refreshDone: false, veil: false, hasPapers: true, failed: false }), 'Refreshing papers…');
 });
 
 // The region was inserted empty and given "Loading papers…" one frame later,

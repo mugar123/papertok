@@ -51,14 +51,17 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
  * feed and the automatic retry after it are one wait, so it is spoken once
  * (and not at all while the focus is on the veil's heading: regionStatusText).
  * The veil's visible copy is in the page from its first frame, so it cannot
- * be the announcement. A refresh over shown papers has its own words, and
- * "Papers updated" only when it ended with papers and without a failure
- * (`failed`: the load's error, or its automatic retry still due): a refresh
- * that fails keeps the old papers and has updated nothing.
+ * be the announcement. A refresh over shown papers has its own words while
+ * its load runs (`loading`: the load that replaces the list, not a next
+ * page). The refresh is held for a minimum time after its papers arrive
+ * (refreshFeed), and saying it is still refreshing then would announce a wait
+ * over cards already shown. "Papers updated" only when it ended with papers
+ * and without a failure (`failed`: the load's error, or its automatic retry
+ * still due): a refresh that fails keeps the old papers and has updated nothing.
  */
-export function feedStatusText({ isRefreshing, refreshDone, veil, hasPapers, failed }: { isRefreshing: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean; failed: boolean }) {
+export function feedStatusText({ isRefreshing, loading, refreshDone, veil, hasPapers, failed }: { isRefreshing: boolean; loading: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean; failed: boolean }) {
   if (veil) return 'Loading papers…';
-  if (isRefreshing) return 'Refreshing papers…';
+  if (isRefreshing && loading) return 'Refreshing papers…';
   return refreshDone && hasPapers && !failed ? 'Papers updated' : '';
 }
 
