@@ -70,6 +70,25 @@ export function feedLoadOutcome(error: unknown) {
     : { error: 'FEED_LOAD_FAILED', autoRetry: true };
 }
 
+// The pause before the automatic retry, which gives a transient failure (a
+// dropped connection, a Worker or source that failed for a moment) time to clear.
+const AUTO_RETRY_PAUSE_MS = 2_500;
+
+/**
+ * When the automatic retry of a failed load runs, and whether its requests
+ * wait the first screen's deadline again. A first screen that timed out
+ * already gave the Worker its 10 s, and the request it sent warms it (the
+ * isolate, the token's verification, the store's reads): the retry goes at
+ * once, with the store's usual deadline, so a Worker that does not answer
+ * shows the error 13.5 s after the first token instead of 22.5 s (ENG-116).
+ * Any other failure keeps the pause, and its retry the load's own deadline.
+ */
+export function automaticRetry(error: unknown, waitedFirstScreen: boolean) {
+  return waitedFirstScreen && feedLoadFailure(error).reason === 'timeout'
+    ? { pauseMs: 0, retriesTimeout: true }
+    : { pauseMs: AUTO_RETRY_PAUSE_MS, retriesTimeout: false };
+}
+
 /** The `app_error` a failed load owes. */
 function feedLoadFailedEvent(error: unknown) {
   const { reason, status, code } = feedLoadFailure(error);

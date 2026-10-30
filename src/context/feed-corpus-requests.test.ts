@@ -4,6 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { CategoryExposure, PositiveExample } from '../utils/interaction-profile.ts';
 import type { InterestMemoryInput } from '../utils/interest-memory.ts';
 import { awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen } from './feed-corpus-requests.ts';
+import { automaticRetry } from './feed-load-failure.ts';
 import { fetchCorpusPage } from '../services/paper-store-service.ts';
 import { getFollowedTopicCategoryIds } from '../services/topic-retrieval-service.ts';
 import { scorePaperForRecommendation } from '../utils/recommendation-engine.ts';
@@ -136,10 +137,16 @@ test('what the reader deselected sleeps, and the rest of its area does not', () 
 // deadline, so the feed failed and the automatic retry brought the papers.
 type Source = 'main' | 'follows' | 'exploration';
 
+// How a source answers one request: papers after a delay, or a 503.
+type Answer = number | { refusesMs: number };
+
 // A store that answers each of the feed's requests after its source's delay
-// (never, without one), and cuts it at the deadline the request was given. A
-// request with no deadline, or one past the 10 s the feed relies on, fails.
-function slowStore(answerMs: Partial<Record<Source, number>>) {
+// (never, without one; a list gives each of the source's requests in turn its
+// own), and cuts it at the deadline the request was given. A request with no
+// deadline, or one past the 10 s the feed relies on, fails. `sent` counts the
+// requests of each source.
+function slowStore(answerMs: Partial<Record<Source, Answer | Array<Answer | undefined>>>) {
+  const sent: Record<Source, number> = { main: 0, follows: 0, exploration: 0 };
   const fetchWorker = (_url: string, init: RequestInit, timeoutMs: number) => new Promise<Response>((resolve, reject) => {
     if (!Number.isFinite(timeoutMs) || timeoutMs > 10_000) {
       reject(new Error(`no bounded deadline: ${timeoutMs}`));
@@ -147,14 +154,18 @@ function slowStore(answerMs: Partial<Record<Source, number>>) {
     }
     const body = JSON.parse(String(init.body)) as { follows?: unknown[]; groups?: unknown[] };
     const source: Source = body.follows?.length ? 'follows' : body.groups ? 'main' : 'exploration';
-    const delay = answerMs[source];
-    const answer = delay === undefined ? undefined : setTimeout(() => resolve(new Response(JSON.stringify({ papers: [{ id: source }] }), { status: 200 })), delay);
+    const answers = answerMs[source];
+    const delay = Array.isArray(answers) ? answers[sent[source]] : answers;
+    sent[source] += 1;
+    const answer = delay === undefined ? undefined : typeof delay === 'number'
+      ? setTimeout(() => resolve(new Response(JSON.stringify({ papers: [{ id: source }] }), { status: 200 })), delay)
+      : setTimeout(() => resolve(new Response(JSON.stringify({ code: 'PAPER_STORE_UNAVAILABLE' }), { status: 503 })), delay.refusesMs);
     setTimeout(() => {
       clearTimeout(answer);
       reject(new DOMException('The operation timed out.', 'TimeoutError'));
     }, timeoutMs);
   });
-  return { apiBase: 'https://papertok-report-api.example', fetchWorker };
+  return { apiBase: 'https://papertok-report-api.example', fetchWorker, sent };
 }
 
 // Runs `work` on mocked timers, and says when it settled.
@@ -171,7 +182,7 @@ async function onTheClock<T>(t: TestContext, work: () => Promise<T>) {
 
 // The requests of one load, as the feed sends them, awaited as it awaits them
 // (budgets: follows 3.5 s, exploration 4 s, feed-context.tsx).
-function screen(load: { reset: boolean; keepThroughVisible: boolean }, store: ReturnType<typeof slowStore>) {
+function screen(load: Parameters<typeof waitsAsFirstScreen>[0], store: ReturnType<typeof slowStore>) {
   const plan = feedPlanFor(null, 0, memory({ selected: ['cs.LG'], examples: examples('cs.LG', 2) }));
   const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' } as FollowEntity;
   const loadShared = { ...shared, firstScreen: waitsAsFirstScreen(load) };
@@ -237,6 +248,60 @@ test('only a load that replaces the list waits the first screen deadline', async
   assert.ok('error' in value.main);
   assert.equal((value.main.error as Error).name, 'TimeoutError');
   assert.ok(at >= 3_500 && at < 3_600, `gave up at ${at} ms`);
+});
+
+// A load and its one automatic retry, as the feed runs them (loadPapers in
+// feed-context.tsx): the load fails when its main page failed and no other
+// source gave a paper, and the retry follows automaticRetry's pause and wait.
+async function loadWithRetry(load: { reset: boolean; keepThroughVisible: boolean }, store: ReturnType<typeof slowStore>) {
+  const first = await screen(load, store);
+  if (!('error' in first.main) || first.optional.some(papers => papers.length > 0)) return first;
+  const retry = automaticRetry(first.main.error, waitsAsFirstScreen(load));
+  await new Promise(resolve => setTimeout(resolve, retry.pauseMs));
+  return screen({ ...load, retriesTimeout: retry.retriesTimeout }, store);
+}
+
+// Pablo, 2026-10-29: the 10 s first screen and its retry, waiting 10 s again
+// after a 2.5 s pause, showed the error 22.5 s after the token.
+test('a store that never answers shows the error 13.5 s after the token, after one retry', async (t) => {
+  const store = slowStore({});
+  const { value, at } = await onTheClock(t, () => loadWithRetry(coldEntry, store));
+  assert.ok('error' in value.main);
+  assert.equal((value.main.error as Error).name, 'TimeoutError');
+  assert.ok(at >= 13_500 && at < 13_600, `the error at ${at} ms`);
+  assert.deepEqual(store.sent, { main: 2, follows: 2, exploration: 2 }, 'the load and its one retry');
+});
+
+test('a cold store that answers the first screen in 6 s shows papers, with no retry', async (t) => {
+  const store = slowStore({ main: 6_000 });
+  const { value, at } = await onTheClock(t, () => loadWithRetry(coldEntry, store));
+  assert.deepEqual(value.main, { value: ['main'] });
+  assert.ok(at >= 6_000 && at < 6_100, `shown at ${at} ms`);
+  assert.equal(store.sent.main, 1);
+});
+
+test('the retry of a first screen that timed out goes at once, and a store that answers it in 2 s shows papers', async (t) => {
+  const store = slowStore({ main: [undefined, 2_000], follows: [undefined, 1_000], exploration: [undefined, 1_000] });
+  const { value, at } = await onTheClock(t, () => loadWithRetry(coldEntry, store));
+  assert.deepEqual(value.main, { value: ['main'] });
+  assert.ok(at >= 12_000 && at < 12_100, `shown at ${at} ms`);
+});
+
+test('the retry of a first screen the store refused keeps the pause and the 10 s wait', async (t) => {
+  // The 503 at 1 s, the screen held for exploration's 4 s budget, the 2.5 s
+  // pause, and a retry answered in 6 s.
+  const store = slowStore({ main: [{ refusesMs: 1_000 }, 6_000] });
+  const { value, at } = await onTheClock(t, () => loadWithRetry(coldEntry, store));
+  assert.deepEqual(value.main, { value: ['main'] });
+  assert.ok(at >= 12_500 && at < 12_600, `shown at ${at} ms`);
+});
+
+test('the retry of a follow change that timed out keeps the pause and its 3.5 s wait', async (t) => {
+  const store = slowStore({ main: [undefined, 3_000], follows: [undefined, 1_000], exploration: [undefined, 1_000] });
+  const { value, at } = await onTheClock(t, () => loadWithRetry({ reset: true, keepThroughVisible: true }, store));
+  assert.deepEqual(value.main, { value: ['main'] });
+  // The 3.5 s deadline, the 2.5 s pause, and a retry answered in 3 s.
+  assert.ok(at >= 9_000 && at < 9_100, `shown at ${at} ms`);
 });
 
 test('a full plan leaves room for every rejection and exclusion a request carries', async () => {

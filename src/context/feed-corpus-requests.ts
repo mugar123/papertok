@@ -53,10 +53,12 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
  * an interests edit, the automatic retry, a mode switch), including the later
  * pages it fetches while every card of its first page was seen. A reload that
  * keeps the cards through the visible one (a follow change) replaces nothing
- * the reader waits for, and holds More for as long as it runs.
+ * the reader waits for, and holds More for as long as it runs. The automatic
+ * retry of a first screen that timed out has had its wait
+ * (`retriesTimeout`, automaticRetry in feed-load-failure.ts).
  */
-export function waitsAsFirstScreen({ reset, keepThroughVisible }: { reset: boolean; keepThroughVisible: boolean }) {
-  return reset && !keepThroughVisible;
+export function waitsAsFirstScreen({ reset, keepThroughVisible, retriesTimeout = false }: { reset: boolean; keepThroughVisible: boolean; retriesTimeout?: boolean }) {
+  return reset && !keepThroughVisible && !retriesTimeout;
 }
 
 /** The reader's interests, asked by group. */

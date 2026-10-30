@@ -28,8 +28,12 @@ export interface FeedContextValue {
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
-  /** `seenFallback`: a page of papers shown before, carried by a load that skipped past it. */
-  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean }) => Promise<void>;
+  /**
+   * `seenFallback`: a page of papers shown before, carried by a load that
+   * skipped past it. `retriesTimeout`: the automatic retry of a first screen
+   * that timed out (automaticRetry).
+   */
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -83,7 +87,7 @@ import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
-import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
+import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -1139,7 +1143,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1153,7 +1157,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions }],
+        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions, retriesTimeout }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1200,6 +1204,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       && !isKnownPaper(paper.id)
     );
 
+    // Whether this load's store requests wait the first screen's deadline.
+    let firstScreen = false;
     try {
       // Inside the try, so a throw still releases feedLoadInFlight.
       const corpusPlan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
@@ -1229,7 +1235,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen: waitsAsFirstScreen({ reset, keepThroughVisible }) };
+        firstScreen = waitsAsFirstScreen({ reset, keepThroughVisible, retriesTimeout });
+        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
@@ -1381,7 +1388,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           excludedCount: activeMode === 'top' || activeMode === null ? excludedIds.length : 0,
         });
         if (plan.kind === 'relax-exclusions') {
-          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true });
+          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true, retriesTimeout });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw emptyFirstPageError();
@@ -1391,7 +1398,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1511,12 +1518,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
           setAutoRetryFor(requestId);
+          const retry = automaticRetry(failure, firstScreen);
           setTimeout(() => {
             setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
+              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible, retriesTimeout: retry.retriesTimeout });
             }
-          }, 2500);
+          }, retry.pauseMs);
         }
       }
     } finally {
