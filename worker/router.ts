@@ -406,17 +406,21 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     // A request slower than the feed's budget leaves one line of its steps
-    // (feed-timings.ts). The runtime cancels a request whose reader went away
-    // (the app gives up at 3.5 s), except for work handed to waitUntil: the
-    // answer is handed to it, so the slowest requests still write their line.
+    // (feed-timings.ts). The runtime cancels a request whose client went away
+    // (the app gives up at 3.5 s, a tab closes), so such a request writes its
+    // line when its signal aborts, with the steps it finished
+    // (`enable_request_signal` in wrangler.toml). Its answer is not handed to
+    // waitUntil: an abandoned page reads no more D1, starts no provider
+    // lookup and writes no ranking cache that a retry's page would then lose.
     const started = Date.now();
+    const route = routeForLog(url.pathname);
     const timings = new FeedTimings();
-    const answered = answerCorpusFeed(request, env, origin, context, timings).then(({ response, code }) => {
-      timings.logIfSlow(routeForLog(url.pathname), Date.now() - started, response.status, code);
-      return response;
-    });
-    context?.waitUntil(answered);
-    return answered;
+    const abandoned = () => timings.logIfSlow(route, Date.now() - started, { aborted: true });
+    request.signal.addEventListener('abort', abandoned, { once: true });
+    const { response, code } = await answerCorpusFeed(request, env, origin, context, timings);
+    request.signal.removeEventListener('abort', abandoned);
+    timings.logIfSlow(route, Date.now() - started, { status: response.status, code });
+    return response;
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {

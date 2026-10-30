@@ -19,6 +19,7 @@ export class FeedTimings {
   private readonly steps: Partial<Record<FeedStep, number>> = {};
   private readonly counts: Partial<Record<FeedCount, number>> = {};
   private kept?: 'hit' | 'miss';
+  private ended = false;
 
   /** Adds the time since `started` to `step`. */
   since(step: FeedStep, started: number) {
@@ -34,14 +35,19 @@ export class FeedTimings {
     this.kept = found ? 'hit' : 'miss';
   }
 
-  /** `status` and `code` are the answer's: a fixed number and error code, never the reader's data. */
-  logIfSlow(route: string, totalMs: number, status: number, code?: string) {
+  /**
+   * Ends the request: answered with the Worker's `status` and error `code` (a
+   * fixed number and code, never the reader's data), or `aborted` by a client
+   * that went away first. Only the first call can write a line.
+   */
+  logIfSlow(route: string, totalMs: number, outcome: { status: number; code?: string } | { aborted: true }) {
+    if (this.ended) return;
+    this.ended = true;
     if (totalMs <= SLOW_FEED_MS) return;
     console.log(JSON.stringify({
       event: 'slow_feed_request',
       route,
-      status,
-      ...(code ? { code } : {}),
+      ...('aborted' in outcome ? { aborted: true } : { status: outcome.status, ...(outcome.code ? { code: outcome.code } : {}) }),
       totalMs,
       steps: this.steps,
       counts: this.counts,
