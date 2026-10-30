@@ -1156,6 +1156,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     console.error('Error removing paper from list:', removeError);
     toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
   };
+  // Favorites, Read later and Reading history move a row only once the server
+  // accepts, so after a refusal the list on screen is already the saved one.
+  const reportMarkRemovalFailed = (removeError: unknown) => {
+    console.error('Error removing paper from list:', removeError);
+    toastError('The paper could not be removed');
+  };
 
   const handleRemoveFromCustomList = (listId: string, paperId: string) => removePaperFromList(listId, paperId, {
     write: () => updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
@@ -1190,7 +1196,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
     removeRowOnce(pendingRemovals, setPendingRemovals, rowKey(listId, paperId), () => (
       removePaperFromMarkList(listId, paperId, paper as Paper, {
-        unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportRemovalFailed,
+        unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportMarkRemovalFailed,
       }) ?? handleRemoveFromCustomList(listId, paperId)
     ));
   };
