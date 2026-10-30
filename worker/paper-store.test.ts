@@ -2189,7 +2189,9 @@ test('the ranking orders, scores and diversifies every candidate as main did, ti
 
 // A corpus of 1,700 candidates in three categories, 60 notable papers, likes
 // and rejections, each work's vector from its cluster: the pages, scores and
-// kept orders below are what origin/main f8bbd22d served from it.
+// kept orders below are what origin/main f8bbd22d served from it, before
+// vectors came as hex and the diversity pass ran lazily. That change had to
+// keep them; a change meant to rank differently computes them again.
 function coldPageCorpus() {
   const { env, db } = corpus();
   const random = seeded(116);
@@ -2244,7 +2246,7 @@ async function servedAndKept(env: Parameters<typeof readFeedPage>[0], body: Para
   };
 }
 
-test('a first page serves the papers, scores and kept order main did: likes in groups with rejections and notable papers', async () => {
+test('a first page serves the papers, scores and kept order it did before the hex vectors and lazy diversity pass: likes in groups with rejections and notable papers', async () => {
   const { env, likes, rejections } = coldPageCorpus();
   const served = await servedAndKept(env, {
     groups: [
@@ -2267,7 +2269,7 @@ test('a first page serves the papers, scores and kept order main did: likes in g
   });
 });
 
-test('a first page that skips seen papers serves what main did, ranked by relevance with one like', async () => {
+test('a first page that skips seen papers serves what it did before the hex vectors and lazy diversity pass, ranked by relevance with one like', async () => {
   const { env, likes } = coldPageCorpus();
   const served = await servedAndKept(env, {
     categories: ['cs.LG', 'cs.CL', 'econ.GN'],
@@ -2287,7 +2289,7 @@ test('a first page that skips seen papers serves what main did, ranked by releva
   });
 });
 
-test('an exploration page, with rejections and no likes, serves what main did', async () => {
+test('an exploration page, with rejections and no likes, serves what it did before the hex vectors and lazy diversity pass', async () => {
   const { env, rejections } = coldPageCorpus();
   const served = await servedAndKept(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 });
   assert.deepEqual(served, {
@@ -2296,7 +2298,28 @@ test('an exploration page, with rejections and no likes, serves what main did', 
   });
 });
 
-test('a page without likes or rejections serves what main did, newest first', async () => {
+// A paper of cs.LG is ranked by both groups, and the second like by both: the
+// request normalizes each once and both groups read the same vector.
+test('groups that share a lane and a like serve what they did before the hex vectors and lazy diversity pass', async () => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const served = await servedAndKept(env, {
+    groups: [
+      { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: likes.slice(0, 2), weight: 1 },
+      { categories: ['cs.LG', 'econ.GN'], exampleCategories: ['cs.LG', 'econ.GN'], positiveIds: likes.slice(1), weight: 1 },
+    ],
+    negativeIds: rejections.slice(0, 1),
+    pageSize: 15,
+  });
+  assert.deepEqual(served, {
+    ids: [
+      '2610.00013', '2610.01454', '2610.00004', '2610.00208', '2610.00073', '2610.01462', '2610.00037', '2610.01478',
+      '2610.00025', '2610.00127', '2610.00229', '2610.01482', '2610.00289', '2610.00268', '2610.00001',
+    ],
+    digest: '4b92422998b2e6c427fc8a593ee76cc5b5462af168b5afedbf423b4a304f6410',
+  });
+});
+
+test('a page without likes or rejections serves what it did before the hex vectors and lazy diversity pass, newest first', async () => {
   const { env } = coldPageCorpus();
   const served = await servedAndKept(env, { categories: ['cs.LG', 'econ.GN'], pageSize: 15 });
   assert.deepEqual(served, {
