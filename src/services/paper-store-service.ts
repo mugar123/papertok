@@ -56,8 +56,8 @@ export interface CorpusPageRequest {
    */
   waitForLikes?: boolean;
   /**
-   * A request of a load that replaces the list, which the reader waits for
-   * (waitsAsFirstScreen in src/context/feed-corpus-requests.ts): it may take
+   * A request of a load that fills a list with no cards shown, which the
+   * reader waits for (waitsAsFirstScreen in src/context/feed-corpus-requests.ts): it may take
    * FIRST_SCREEN_TIMEOUT_MS instead of STORE_TIMEOUT_MS. Not sent.
    */
   firstScreen?: boolean;

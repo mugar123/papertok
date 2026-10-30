@@ -49,17 +49,18 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
 
 /**
  * Whether a load's requests may wait the first screen's longer deadline
- * (`firstScreen`): every load that replaces the list (a cold entry, a refresh,
- * an interests edit, the automatic retry, a mode switch), including the later
- * pages it fetches while every card of its first page was seen. A reload that
- * keeps the cards through the visible one (a follow change) replaces nothing
- * the reader waits for, and holds More for as long as it runs; over a list
- * with no cards (`hasPapers` false) it is the screen the reader waits on, so
- * it waits as one. The automatic retry of a first screen that timed out has
- * had its wait (`retriesTimeout`, automaticRetry in feed-load-failure.ts).
+ * (`firstScreen`): a load that replaces a list with no cards shown
+ * (`hasPapers` false), which is the screen the reader waits on: a cold entry,
+ * an interests edit or a mode switch that emptied the list, Try again, or a
+ * follow change after the error. That includes the later pages it fetches
+ * while every card of its first page was seen. A load over shown cards (a
+ * refresh, a follow change, their automatic retry) keeps the store's usual
+ * deadline, as do next pages. The automatic retry of a first screen that
+ * timed out has had its wait (`retriesTimeout`, automaticRetry in
+ * feed-load-failure.ts).
  */
-export function waitsAsFirstScreen({ reset, keepThroughVisible, hasPapers, retriesTimeout = false }: { reset: boolean; keepThroughVisible: boolean; hasPapers: boolean; retriesTimeout?: boolean }) {
-  return reset && !(keepThroughVisible && hasPapers) && !retriesTimeout;
+export function waitsAsFirstScreen({ reset, hasPapers, retriesTimeout = false }: { reset: boolean; hasPapers: boolean; retriesTimeout?: boolean }) {
+  return reset && !hasPapers && !retriesTimeout;
 }
 
 /** The reader's interests, asked by group. */

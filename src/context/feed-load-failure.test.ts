@@ -34,7 +34,7 @@ test('only a first screen that timed out retries at once, without its long wait;
   const paused = { pauseMs: 2_500, retriesTimeout: false };
   assert.deepEqual(automaticRetry(timedOut, true), atOnce);
   assert.deepEqual(automaticRetry(new DOMException('The operation was aborted.', 'AbortError'), true), atOnce);
-  assert.deepEqual(automaticRetry(timedOut, false), paused, 'a follow change, or a load past its first screen');
+  assert.deepEqual(automaticRetry(timedOut, false), paused, 'a refresh or a follow change over shown cards');
   assert.deepEqual(automaticRetry(refused(503, 'PAPER_STORE_UNAVAILABLE'), true), paused);
   assert.deepEqual(automaticRetry(Object.assign(new Error('unreachable'), { code: 'STORE_UNREACHABLE' }), true), paused);
   assert.deepEqual(automaticRetry(Object.assign(new Error('offline'), { code: 'auth/network-request-failed' }), true), paused);
