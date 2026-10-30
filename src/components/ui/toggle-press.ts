@@ -5,7 +5,7 @@ type TogglePress = {
 };
 
 /**
- * The props a Toggle (toggle.tsx) takes from its `pending` state. While its
+ * The props a Toggle (toggle.ts) takes from its `pending` state. While its
  * press is saved the toggle is `aria-disabled` rather than natively disabled,
  * so it keeps focus, and it swallows the press: Base UI does not flip it, the
  * caller's handler does not run, and the click does not reach a clickable row

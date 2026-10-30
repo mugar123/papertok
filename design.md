@@ -402,7 +402,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the
   field (`color-mix` of `--area-accent`) or from a status tint.
-- **State:** toggles are `aria-pressed` chips (`toggle.tsx`); a toggle group's
+- **State:** toggles are `aria-pressed` chips (`toggle.ts`); a toggle group's
   `value` is always an array.
 
 ### Cards / Containers

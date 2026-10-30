@@ -48,7 +48,7 @@ import { authorDisplayName } from '../../utils/explorer-paths.ts';
 import { readRecentSearches, updateRecentSearches } from './recent-searches.ts';
 import type { RecentOwner } from './recent-search-owner.ts';
 import { recentsShownTo, shouldRememberQuery } from './recent-search-owner.ts';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 
 const COPY = {
   en: {

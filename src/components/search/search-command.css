@@ -66,7 +66,7 @@
   cursor: default;
 }
 
-/* A pending Follow keeps focus (toggle.tsx): its contents dim, not the
+/* A pending Follow keeps focus (toggle.ts): its contents dim, not the
    button, so the focus ring keeps its full contrast. */
 .sc-follow[aria-disabled='true'] {
   cursor: default;

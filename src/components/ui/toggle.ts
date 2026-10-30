@@ -1,6 +1,7 @@
 import type { StyledProps } from './props.ts';
 import type { VariantProps } from 'class-variance-authority';
 
+import { createElement } from 'react';
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
 import { cn } from '../../lib/utils.ts';
 import { pendingToggleProps } from './toggle-press.ts';
@@ -20,14 +21,17 @@ type ToggleProps = StyledProps<typeof TogglePrimitive> & VariantProps<typeof tog
  * A button with an on/off state (`aria-pressed`): a filter chip, a like, a
  * "show map" switch. Base UI sets `data-pressed`, which is what the
  * variants style. Inside a ToggleGroup use ToggleGroupItem instead.
+ * Written without JSX so its tests can render it under Node.
  */
+// Stylesheets select the toggle by this attribute. Only JSX types `data-*`
+// props, so it is spread in rather than written into createElement's props.
+const SLOT = { 'data-slot': 'toggle' };
+
 export function Toggle({ className, variant, size, pending = false, onClick, ...props }: ToggleProps) {
-  return (
-    <TogglePrimitive
-      data-slot="toggle"
-      className={cn(toggleVariants({ variant, size }), className)}
-      {...pendingToggleProps(pending, onClick)}
-      {...props}
-    />
-  );
+  return createElement(TogglePrimitive, {
+    ...SLOT,
+    className: cn(toggleVariants({ variant, size }), className),
+    ...pendingToggleProps(pending, onClick),
+    ...props,
+  });
 }
