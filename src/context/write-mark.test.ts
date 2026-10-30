@@ -380,16 +380,98 @@ test('the like unliked, liked again and removed from Favorites, answered before 
   assert.deepEqual(paper.profile, [false, true, false]);
 });
 
-test('a Favorites removal accepted after the card\'s refusal, both before a render, takes the like off', async () => {
+test('a Favorites removal accepted before the card\'s refusal, both before a render, takes the like off', async () => {
   const paper = markAnsweredBeforeRender('u1:like:p1');
   const removed = paper.press({ afterWrite: true });
   const unliked = paper.press();
-  paper.answers[1].refuse();
+  // Answered in the order they were sent, as Firestore answers one document.
   paper.answers[0].accept();
+  paper.answers[1].refuse();
   await silenced(() => Promise.all([removed, unliked]));
   assert.equal(paper.screen.drawn, false, 'Firestore holds the removal');
-  assert.deepEqual(paper.profile, [false, true, false]);
+  assert.deepEqual(paper.profile, [false], 'one change was drawn: the card\'s unlike');
 });
+
+// A removal from the Lists page is accepted and moves the mark; the open card
+// is pressed before React draws that move, so it still reads the mark on.
+for (const markKey of ['u1:like:p1', 'u1:read:p1', 'u1:readLater:p1']) {
+  const mark = markKey.split(':')[1];
+  for (const answer of ['accept', 'refuse'] as const) {
+    test(`a ${mark} removal accepted, then the card pressed before a render and ${answer === 'accept' ? 'accepted' : 'refused'}, moves the mark once`, async () => {
+      const paper = markAnsweredBeforeRender(markKey);
+      const removed = paper.press({ afterWrite: true });
+      paper.answers[0].accept();
+      await removed;
+      const pressed = paper.press();
+      paper.answers[1][answer]();
+      await silenced(() => pressed);
+      assert.equal(paper.screen.drawn, false, 'Firestore holds the removal');
+      assert.deepEqual(paper.profile, [false]);
+    });
+  }
+
+  // The card's own change, shown and accepted, then the card pressed again
+  // before React draws it: the second tap asks for the value already shown.
+  for (const answer of ['accept', 'refuse'] as const) {
+    test(`a ${mark} card change accepted, then pressed again before a render and ${answer === 'accept' ? 'accepted' : 'refused'}, moves the mark once`, async () => {
+      const paper = markAnsweredBeforeRender(markKey);
+      const first = paper.press();
+      paper.screen.ref = true;
+      paper.answers[0].accept();
+      await first;
+      const again = paper.press();
+      paper.answers[1][answer]();
+      await silenced(() => again);
+      assert.equal(paper.screen.drawn, false, 'Firestore holds the first change');
+      assert.deepEqual(paper.profile, [false]);
+    });
+  }
+
+  // A profile reload puts the mark back before React draws the change. The
+  // next tap finds nothing to show, but the one after it moves the mark.
+  test(`a ${mark} put back before its change is drawn moves again on the second tap`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const first = paper.press();
+    paper.answers[0].accept();
+    await first;
+    paper.screen.drawn = true;
+    paper.screen.ref = true;
+    const second = paper.press();
+    paper.answers[1].accept();
+    await second;
+    paper.screen.ref = true;
+    const third = paper.press();
+    paper.answers[2].accept();
+    await third;
+    assert.equal(paper.screen.drawn, false);
+  });
+
+  test(`a ${mark} removal asked for again before its accepted move is drawn sends nothing`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const first = paper.press({ afterWrite: true });
+    paper.answers[0].accept();
+    await first;
+    const again = paper.press({ afterWrite: true });
+    assert.equal(paper.answers.length, 1);
+    await again;
+    assert.deepEqual(paper.profile, [false]);
+  });
+
+  // Marking a paper read does not go through writeMark (see unmark-read tests).
+  if (mark === 'read') continue;
+  test(`a ${mark} pressed after the removal's move is drawn moves the mark again`, async () => {
+    const paper = markAnsweredBeforeRender(markKey);
+    const removed = paper.press({ afterWrite: true });
+    paper.answers[0].accept();
+    await removed;
+    paper.screen.ref = paper.screen.drawn;
+    const pressed = paper.press();
+    paper.answers[1].accept();
+    await pressed;
+    assert.equal(paper.screen.drawn, true);
+    assert.deepEqual(paper.profile, [false, true]);
+  });
+}
 
 test('a Remove pressed again after the card changed the like meanwhile is still sent', async () => {
   const paper = likedPaper();

@@ -56,13 +56,32 @@ interface MarkChange {
  * that, and each would find the value from before the others moved the mark,
  * move it again and tell the reading profile again. So each mark keeps the
  * value its changes last sent to the screen, with what `isOn` read then;
- * while `isOn` still reads that, the sent value is what the screen shows.
+ * while `isOn` still reads that, the sent value is what the screen shows
+ * (`shows(key, isOn)`). Once all its changes are answered, a mark stays
+ * followed for the value last sent to the screen until `isOn` reads something
+ * else, so a tap before React draws that value still counts it. A tap that
+ * starts from that value without showing anything spends it: once that tap is
+ * answered, the mark is no longer followed unless the answer moved it. A
+ * boolean cannot tell a drawn move from one undone since: if a profile reload
+ * puts the old value back before anything reads the mark, the next tap writes
+ * without moving the screen, and the tap after it is normal. The cost is that
+ * a second tap from the same undrawn value, answered before React draws, is
+ * counted from the old screen again.
+ *
+ * Firestore answers one document's writes in the order they were sent.
+ * Answered out of that order, the screen still ends on the right value, but
+ * the profile may hear a like and unlike pair (or read and unread) that was
+ * never drawn; the two carry equal and opposite weight.
  */
 export function markChanges() {
   interface Mark {
     startedFrom: boolean;
     changes: MarkChange[];
-    sent?: { value: boolean; read: boolean };
+    /**
+     * `spent`: a change has since started, without showing anything, from the
+     * screen this value is on.
+     */
+    sent?: { value: boolean; read: boolean; spent?: boolean };
   }
   const marks = new Map<string, Mark>();
   const shouldShow = (mark: Mark) => (
@@ -71,23 +90,41 @@ export function markChanges() {
   const onScreen = (mark: Mark, isOn: boolean) => (
     mark.sent && mark.sent.read === isOn ? mark.sent.value : isOn
   );
+  // A mark whose changes have all been answered is kept only for the value
+  // last sent to the screen, and only until `isOn` reads something else.
+  const followedMark = (key: string, isOn: boolean) => {
+    const mark = marks.get(key);
+    if (mark && !mark.changes.some((change) => change.pending) && mark.sent?.read !== isOn) {
+      marks.delete(key);
+      return undefined;
+    }
+    return mark;
+  };
   return {
-    start(key: string, { isOn, to, shown, keptIfRefused }: {
+    /** What the screen shows of the mark, counting moves React has not drawn. */
+    shows(key: string, isOn: boolean) {
+      const mark = followedMark(key, isOn);
+      return mark ? onScreen(mark, isOn) : isOn;
+    },
+    start(key: string, { isOn, to, shown, spends = false, keptIfRefused }: {
       /** The mark as the screen shows it before this change. */
       isOn: boolean;
       to: boolean;
       /** Whether the screen shows the change before the write is answered. */
       shown: boolean;
+      /** Whether the change asks for the value the screen was last sent. */
+      spends?: boolean;
       /** Whether a refusal leaves on screen what the change showed. */
       keptIfRefused: boolean;
     }) {
-      let mark = marks.get(key);
+      let mark = followedMark(key, isOn);
       if (!mark) {
         mark = { startedFrom: isOn, changes: [] };
         marks.set(key, mark);
       }
       const followed = mark;
       if (shown) followed.sent = { value: to, read: isOn };
+      else if (spends && followed.sent) followed.sent.spent = true;
       let settle = () => {};
       const answered = shown ? null : new Promise<void>((resolve) => { settle = resolve; });
       const change: MarkChange = { to, stands: shown, pending: true, answered };
@@ -97,18 +134,33 @@ export function markChanges() {
         const stood = change.stands;
         change.stands = accepted || (stood && keptIfRefused);
         const value = shouldShow(followed);
-        if (!followed.changes.some((other) => other.pending)) marks.delete(key);
+        const shown = onScreen(followed, isOnNow);
+        // The last answer ends these changes. The mark stays followed for the
+        // value last sent to the screen, for one tap that starts from it.
+        if (!followed.changes.some((other) => other.pending)) {
+          if (followed.sent && !followed.sent.spent) marks.set(key, { startedFrom: shown, changes: [], sent: followed.sent });
+          else marks.delete(key);
+        }
         settle();
         return {
           value,
           changed: change.stands !== stood,
-          onScreen: onScreen(followed, isOnNow),
-          moved: () => { followed.sent = { value, read: isOnNow }; },
+          onScreen: shown,
+          moved: () => {
+            const sent = { value, read: isOnNow };
+            const mark = marks.get(key);
+            if (mark) {
+              mark.sent = sent;
+              if (!mark.changes.some((other) => other.pending)) mark.startedFrom = value;
+            } else {
+              marks.set(key, { startedFrom: value, changes: [], sent });
+            }
+          },
         };
       };
     },
     stand(key: string, to: boolean, isOn: boolean) {
-      const mark = marks.get(key);
+      const mark = followedMark(key, isOn);
       if (!mark) return;
       mark.changes.push({ to, stands: true, pending: false, answered: null });
       mark.sent = { value: to, read: isOn };
@@ -183,11 +235,18 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // A removal asked for once its mark has already gone, such as a second
   // Remove from a sheet left open over a row that has since left its list,
   // has nothing to take off: it sends nothing and shows nothing.
-  if (afterWrite && isOn() !== from) return;
+  const showsNow = changes.shows(markKey, isOn());
+  if (afterWrite && showsNow !== from) return;
   const sent = afterWrite ? changes.unshownChange(markKey, to) : null;
   if (sent) return sent;
-  const answer = changes.start(markKey, { isOn: isOn(), to, shown: !afterWrite, keptIfRefused: !undo });
-  if (!afterWrite) show();
+  // A tap drawn from a screen an answer has moved since, before React drew
+  // the move, asks for the value the mark already shows: its write is still
+  // sent, but it shows nothing, so the profile is not told the move twice and
+  // a refusal cannot put back a value the screen no longer holds.
+  const spends = !afterWrite && from !== to && showsNow === to;
+  const shown = !afterWrite && !spends;
+  const answer = changes.start(markKey, { isOn: isOn(), to, shown, spends, keptIfRefused: !undo });
+  if (shown) show();
   let refusal: { error: unknown } | null = null;
   try {
     await write();
