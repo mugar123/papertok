@@ -53,6 +53,9 @@ export interface InteractionProfile {
   temporal: TemporalState;
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
+  // In memory only: the papers this session first viewed off For You, which
+  // the viewed list holds without a For You card counted (countShown).
+  viewedOffForYou: Set<string>;
   sourceDocCount: number; truncated: boolean;
 }
 export interface InteractionEvent {
@@ -267,6 +270,7 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     // Papers already counted towards sourceDocCount in this session. In memory
     // only: it exists to stop one session counting the same paper twice.
     countedPapers: new Set(),
+    viewedOffForYou: new Set(),
     sourceDocCount: 0,
     truncated: false,
   };
@@ -512,14 +516,22 @@ function halveWhenFull(temporal: TemporalState) {
 const countsOf = (temporal: TemporalState, notable: boolean) => (notable ? temporal.notable : temporal.recent);
 
 // A view or a skip of a For You card counts it shown, once while the viewed
-// lists remember it. A notable card counts once while its own list does: the
-// ring also holds the paper's views off For You, such as in Search, which
-// counted no card.
+// lists remember it. The viewed list also holds views off For You, such as in
+// Search, which counted no card. A notable card counts once while its own list
+// remembers it. A recent card counts once, even when its paper was first viewed
+// off For You in this session; one viewed off For You in an earlier session
+// counts no card. Runs before addViewed records the view.
 function countShown(profile: InteractionProfile, event: InteractionEvent) {
-  if (typeof event.notable !== 'boolean') return;
+  const { paperId } = event;
+  const remembered = profile.viewed.includes(paperId) || profile.viewedNotable.includes(paperId);
+  if (typeof event.notable !== 'boolean') {
+    if (!remembered) profile.viewedOffForYou.add(paperId);
+    return;
+  }
   const counted = event.notable
-    ? profile.viewedNotable.includes(event.paperId)
-    : profile.viewed.includes(event.paperId) || profile.viewedNotable.includes(event.paperId);
+    ? profile.viewedNotable.includes(paperId)
+    : remembered && !profile.viewedOffForYou.has(paperId);
+  profile.viewedOffForYou.delete(paperId);
   if (counted) return;
   countsOf(profile.temporal, event.notable).shown += 1;
   halveWhenFull(profile.temporal);

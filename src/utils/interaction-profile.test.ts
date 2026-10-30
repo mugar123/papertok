@@ -1049,6 +1049,43 @@ test('a notable card viewed off For You first is shown once when For You shows i
   assert.deepEqual(temporalOf(profile).notable, { shown: 1, engaged: 1 });
 });
 
+// The same case for a recent card (Pablo, 2026-10-29, option A2): the session
+// remembers, in memory only, which papers it first viewed off For You.
+test('a recent card viewed off For You first in this session is shown once when For You shows it', () => {
+  const profile = createEmptyInteractionProfile();
+  const paper = { paperId: 'fresh', category: 'cs.LG', published: '2026-08-18T00:00:00.000Z' };
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5 }, NOW);
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5 }, NOW);
+  for (const kind of ['viewTime', 'skip', 'viewTime']) recordInteractionEvent(profile, { ...paper, kind, viewTime: 5, notable: false }, NOW);
+  recordInteractionEvent(profile, { ...paper, kind: 'like', notable: false }, NOW);
+  assert.deepEqual(temporalOf(profile).recent, { shown: 1, engaged: 1 });
+  // A skip of the card is its first For You event in this second case.
+  recordInteractionEvent(profile, { paperId: 'fresh-skipped', kind: 'viewTime', viewTime: 5, category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'fresh-skipped', kind: 'skip', category: 'cs.LG', notable: false }, NOW);
+  assert.equal(temporalOf(profile).recent.shown, 2);
+  assert.equal(temporalOf(profile).notable.shown, 0);
+});
+
+test('a recent card shown on For You before a view off For You is not shown again when For You shows it once more', () => {
+  const profile = createEmptyInteractionProfile();
+  const paper = { paperId: 'fresh', category: 'cs.LG' };
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5, notable: false }, NOW);
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5 }, NOW);
+  recordInteractionEvent(profile, { ...paper, kind: 'viewTime', viewTime: 5, notable: false }, NOW);
+  assert.equal(temporalOf(profile).recent.shown, 1);
+});
+
+test('what the session viewed off For You is not stored, so after a reload that paper counts no recent card', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG' }, NOW);
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  recordInteractionEvent(reloaded, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG', notable: false }, NOW);
+  assert.equal(temporalOf(reloaded).recent.shown, 0);
+  // The tab that viewed it still counts it.
+  recordInteractionEvent(profile, { paperId: 'fresh', kind: 'viewTime', viewTime: 5, category: 'cs.LG', notable: false }, NOW);
+  assert.equal(temporalOf(profile).recent.shown, 1);
+});
+
 // ENG-166, decision 4.
 test('once two thousand cards were shown every count is halved, and an unlike after it takes back the halved like', () => {
   const profile = createEmptyInteractionProfile();
