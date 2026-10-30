@@ -997,7 +997,12 @@ const isTopicPaper = (paperId: string) => paperId.startsWith('2612.');
 // cards a day's read offers (`daySlice`) and the year they end at move with
 // the date, and so do the ids the filter holds and its false positives over
 // the ranking: on the real clock the pass-over rate changed from one day to
-// the next (1.30% on 2026-10-30, 0.99% the day before).
+// the next (1.30% on 2026-10-30, 0.99% the day before). The rate follows the
+// ids the filter hashes, not the walk: at this instant, with the 14 other
+// cards of each load spelled 40 other ways, the 90-load session's worst rate
+// ranged from 0.59% to 1.64% (mean 1.03%) with main's newest-first notable
+// order, and from 0.33% to 1.64% (mean 0.96%) with the years in turns, above
+// 1.2% for 8 of the 40 spellings with either (ENG-166).
 const SESSION_START = Date.parse('2026-10-29T12:00:00Z');
 // The last year a notable lane reads (readNotableCandidates): the session's
 // notable papers are older, and the ones the harvest files are of this year.
