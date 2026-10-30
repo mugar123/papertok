@@ -31,8 +31,8 @@ import { useEntitySearch } from '../../hooks/use-entity-search.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import type { FollowRefusal } from '../following/follow-refused-toast.ts';
-import { toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
-import { toastError } from '../ui/toast.ts';
+import { sayFollowRefused, toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
@@ -208,9 +208,10 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.stopPropagation();
     setPendingEntity(entity.id);
     setRefusal(null);
+    // The palette's own layer is counted while it is open and leaves with it.
+    const overlaysAtStart = Math.max(0, openOverlayCount() - 1);
     const refused = await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow });
-    if (openNow.current) setRefusal(refused);
-    else if (refused) toastError(refused.message, { action: refused.action });
+    if (refused) sayFollowRefused(refused, { inView: openNow.current, showInLine: setRefusal, overlaysAtStart });
     setPendingEntity(null);
   }, [isFollowing, toggleFollow]);
 

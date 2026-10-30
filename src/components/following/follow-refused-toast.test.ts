@@ -2,7 +2,8 @@ import type { Action, ToastT } from 'sonner';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { followName, followRefusal, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
+import { followName, followRefusal, sayFollowRefused, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
+import { openOverlayCount, trackModalOverlay } from '../ui/toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
 /** The toast `id` put on screen, as the Toaster would render it. */
@@ -104,6 +105,64 @@ test('a refused press names the row, whichever field its surface filled', async 
     'Could not follow Econometrics. Try again.',
   ]);
   assert.equal(followName({ type: 'author', id: 'A3', displayName: 'Rosalind Franklin' }), 'Rosalind Franklin');
+});
+
+// Opening an overlay dismisses toasts, which Sonner announces on the next frame; Node has no frames.
+globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
+globalThis.cancelAnimationFrame ??= (handle) => clearTimeout(handle);
+
+// An overlay's portal ref, as Base UI calls it on opening; the cleanup closes it.
+const openOverlay = () => trackModalOverlay({} as HTMLElement)!;
+// The ids of the toasts on screen that were not in `before`.
+const newToasts = (before: Set<string | number>) => toast.getToasts()
+  .filter(entry => !before.has(entry.id) && !('dismiss' in entry && entry.dismiss))
+  .map(entry => entry.id);
+
+test('a refusal in the palette or the Follows list, while it is on screen, goes to its own line and raises no toast', () => {
+  const before = new Set(toast.getToasts().map(entry => entry.id));
+  const closePalette = openOverlay();
+  const lines: string[] = [];
+  sayFollowRefused({ message: 'Could not follow Ada Lovelace. Try again.' }, {
+    inView: true, showInLine: refused => lines.push(refused.message), overlaysAtStart: openOverlayCount() - 1,
+  });
+  assert.deepEqual(lines, ['Could not follow Ada Lovelace. Try again.']);
+  assert.equal(newToasts(before).length, 0, 'no toast was raised');
+  closePalette();
+});
+
+// Follow pressed in the palette, which the reader closes and then opens a
+// paper's More drawer before the write is refused: the toast must not sit
+// over that drawer, outside its focus trap.
+test('a refusal settling after the list closed waits for an overlay opened since, then shows in a toast with its action', () => {
+  const before = new Set(toast.getToasts().map(entry => entry.id));
+  const closePalette = openOverlay();
+  const overlaysAtStart = openOverlayCount() - 1;
+  closePalette();
+  const closeDrawer = openOverlay();
+  let reloaded = 0;
+  sayFollowRefused({ message: 'Your follows could not be loaded, so Ada Lovelace was not followed. Reload the page to try again.', action: { label: 'Reload', onClick: () => { reloaded += 1; } } }, {
+    inView: false, showInLine: () => assert.fail('the line is not on screen'), overlaysAtStart,
+  });
+  assert.equal(newToasts(before).length, 0, 'nothing sits over the drawer');
+  closeDrawer();
+  const raised = newToasts(before);
+  assert.equal(raised.length, 1, 'the refusal is on screen once the drawer left');
+  const { title, type, action } = shown(raised[0]);
+  assert.deepEqual([title, type, action?.label], ['Your follows could not be loaded, so Ada Lovelace was not followed. Reload the page to try again.', 'error', 'Reload']);
+  action!.onClick({} as Parameters<Action['onClick']>[0]);
+  assert.equal(reloaded, 1, 'the Reload action is kept');
+  toast.dismiss();
+});
+
+// The Follows sheet closed, or the Follows page left, before Undo was refused.
+test('a refusal settling after the list closed, with nothing opened since, shows at once', () => {
+  const before = new Set(toast.getToasts().map(entry => entry.id));
+  const closeSheet = openOverlay();
+  const overlaysAtStart = openOverlayCount() - 1;
+  closeSheet();
+  sayFollowRefused({ message: 'Could not follow Nature. Try again.' }, { inView: false, showInLine: () => assert.fail('the line is not on screen'), overlaysAtStart });
+  assert.deepEqual(newToasts(before).map(id => shown(id).title), ['Could not follow Nature. Try again.']);
+  toast.dismiss();
 });
 
 test('a press that went through says nothing', async () => {

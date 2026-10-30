@@ -78,6 +78,24 @@ export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, 
 }
 
 /**
+ * Says a refusal of a press made in the search palette or the Follows list:
+ * in the list's own line while it is on screen. A press can settle after the
+ * reader closed it, and a line no longer rendered is neither seen nor
+ * announced, so the refusal then becomes an error toast. That toast waits for
+ * any overlay opened since the press, as a page's Follow does.
+ * `overlaysAtStart` is `openOverlayCount()` at the press, less the list's own
+ * layer when it is one, since that layer leaves with it.
+ */
+export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, overlaysAtStart }: {
+  inView: boolean;
+  showInLine: (refused: FollowRefusal) => void;
+  overlaysAtStart: number;
+}) {
+  if (inView) showInLine(refused);
+  else toastError(refused.message, { action: refused.action, overlaysAtStart });
+}
+
+/**
  * `followRefusal` in a toast that stays until it is closed: the toast region
  * comes before the page in the tab order, so Tab from the button never
  * reaches its action, and a toast that left after 4 s took the action and a
