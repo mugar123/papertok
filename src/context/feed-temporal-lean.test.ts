@@ -50,6 +50,12 @@ test('a card counts as notable or recent only while it is a For You card, and a 
   assert.equal(forYouCardNotable(forYou, { id: 'plain' }, 'feed'), false);
   // A notable card the reader dismissed has left the list.
   assert.equal(forYouCardNotable(forYou, { id: 'dismissed', _notable: true }, 'feed'), true);
+  // A recent card that left the list, such as a skip settling after a refresh,
+  // still counts as recent, with the mark false or missing, and on an empty list.
+  assert.equal(forYouCardNotable(forYou, { id: 'refreshed-away', _notable: false }, 'feed'), false);
+  assert.equal(forYouCardNotable(forYou, { id: 'refreshed-away' }, 'feed'), false);
+  assert.equal(forYouCardNotable([], { id: 'refreshed-away' }, 'feed'), false);
+  assert.equal(forYouCardNotable([], { id: 'refreshed-away', _notable: true }, 'feed'), true);
   // The same papers on a Following card, a library row, a search result or a
   // card's Connections, or with no surface at all.
   for (const surface of ['following', 'lists', 'search', 'connections', 'similar', undefined]) {
