@@ -36,6 +36,7 @@ import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 
 import useQuickSave from '../../hooks/use-quick-save.ts';
+import useWaitFocus from '../../hooks/use-wait-focus.ts';
 import PaperCard from './paper-card.tsx';
 import SkeletonCard from './skeleton-card.tsx';
 import {
@@ -1068,6 +1069,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
   const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  // Try again, Check again and Explore again leave as the reload they start
+  // begins: the focus waits on the veil's heading, then lands on the retry
+  // button if the wait ends in one, or on the shown card's first control.
+  const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const retryButtonRef = useWaitFocus(
+    () => (atomVeil ? veilHeadingRef.current : null),
+    () => feedRef.current?.querySelector<HTMLElement>(
+      '.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) :is(a[href], button:not(:disabled))',
+    ) ?? null,
+  );
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
   useEffect(() => {
@@ -1211,7 +1222,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           art={<Petri pose="upset" className="feed-error-petri" />}
           title={'Error loading papers'}
           actions={(
-            <Button size="sm" onClick={handleRefresh}>
+            <Button ref={retryButtonRef} size="sm" onClick={handleRefresh}>
               <ArrowsClockwise size={16} aria-hidden="true" />
               {'Try again'}
             </Button>
@@ -1249,7 +1260,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           actions={(
             <>
               <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
-              <Button size="sm" variant="outline" onClick={handleRefresh}>
+              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRefresh}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
               </Button>
@@ -1272,7 +1283,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <p>
           {'There are no papers in your categories yet. Try broadening your interests.'}
         </p>
-        <button className="feed-retry-btn" onClick={handleRefresh}>
+        <button ref={retryButtonRef} className="feed-retry-btn" onClick={handleRefresh}>
           {'Explore again'}
         </button>
       </FeedLandmark>
@@ -1449,7 +1460,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               <Petri pose="flask" className="petri-loader" />
             </motion.div>
             <motion.div className="feed-empty-copy" variants={prefersReducedMotion ? undefined : ATOM_COPY_VARIANTS}>
-              <h2>
+              {/* Where a retry button's focus waits (useWaitFocus); never a tab stop. */}
+              <h2 ref={veilHeadingRef} tabIndex={-1}>
                 {atomVeil === 'gathering'
                   ? ('Gathering papers...')
                   : ('Searching for discoveries...')}
