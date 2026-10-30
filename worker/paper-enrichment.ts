@@ -13,7 +13,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { OPENALEX_PARAM_MAX_LENGTH, handleHarvestOpenAlex } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -47,6 +47,28 @@ interface Row { id: number; paper: string; enrich_misses: number }
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 
+// Filters on `key`, each with at most `perFilter` of the values and no longer
+// than the relay forwards: it drops a longer filter, and the request would go
+// out unfiltered and find none of the papers. 50 DOIs of 50 characters are
+// already too long for one. A value too long for a filter of its own is not asked.
+function openAlexFilters(key: string, values: string[], perFilter: number) {
+  const filters: string[] = [];
+  let count = 0;
+  for (const value of values) {
+    const alone = `${key}:${value}`;
+    if (alone.length > OPENALEX_PARAM_MAX_LENGTH) continue;
+    const joined = `${filters.at(-1)}|${value}`;
+    if (count > 0 && count < perFilter && joined.length <= OPENALEX_PARAM_MAX_LENGTH) {
+      filters[filters.length - 1] = joined;
+      count += 1;
+    } else {
+      filters.push(alone);
+      count = 1;
+    }
+  }
+  return filters;
+}
+
 // OpenAlex will not answer this run: its day (or the harvest's share of it) is
 // spent, or it is failing. The papers still waiting for it wait for the next run.
 class OpenAlexUnavailable extends Error {}
@@ -79,9 +101,9 @@ async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
   const dois = ids.filter(id => id.startsWith('doi:')).map(id => id.slice(4));
   const openAlexIds = ids.filter(id => id.startsWith('openalex:')).map(id => id.slice('openalex:'.length));
   const filters = [
-    ...chunks(arxivIds, ARXIV_CHUNK).map(chunk => `locations.landing_page_url:${chunk.flatMap(id => [`http://arxiv.org/abs/${id}`, `https://arxiv.org/abs/${id}`]).join('|')}`),
-    ...chunks(dois, ID_CHUNK).map(chunk => `doi:${chunk.join('|')}`),
-    ...chunks(openAlexIds, ID_CHUNK).map(chunk => `openalex:${chunk.join('|')}`),
+    ...openAlexFilters('locations.landing_page_url', arxivIds.map(id => `http://arxiv.org/abs/${id}|https://arxiv.org/abs/${id}`), ARXIV_CHUNK),
+    ...openAlexFilters('doi', dois, ID_CHUNK),
+    ...openAlexFilters('openalex', openAlexIds, ID_CHUNK),
   ];
   const byId: Record<string, Partial<Paper>> = {};
   for (const filter of filters) {
@@ -254,7 +276,7 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   // A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
   // can hold the journal's article as a work of its own, without the arXiv
   // location, and only that work then says it is retracted. Only the
-  // retraction is taken from it. One call per 50 such papers, in the same budget.
+  // retraction is taken from it. Up to 50 such papers a call, in the same budget.
   const journalDois = papers.map((paper, index) => (asksOpenAlex[index] && !getOpenAlexEnrichmentId(paper).includes(':')
     ? normalizeEnrichmentDoi(paper.doi) : ''));
 

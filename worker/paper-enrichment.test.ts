@@ -593,6 +593,74 @@ test('a DOI holding a comma is never put in an OpenAlex filter: the paper is ask
   assert.ok(works['ads:2026PhRvD.111a0001X'].enrichedAt, 'a paper with no way into OpenAlex is done, not left waiting');
 });
 
+// The relay forwards no parameter longer than 2,000 characters: a longer
+// filter is dropped and the request goes out unfiltered. OpenAlex here answers
+// a DOI filter with the retracted work of each DOI in it, and anything else
+// with nothing, as an unfiltered page would hold none of these papers.
+function openAlexByFilter(t: import('node:test').TestContext, retractedDois: string[]) {
+  const filters: Array<string | null> = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const filter = url.searchParams.get('filter');
+    filters.push(filter);
+    const asked = filter?.startsWith('doi:') ? filter.slice('doi:'.length).split('|') : [];
+    const selected = url.searchParams.get('select')?.split(',') ?? [];
+    const works = retractedDois.filter(doi => asked.includes(doi)).map((doi, index) => ({
+      ...JOURNAL_ONLY_WORK, id: `https://openalex.org/W44000009${index}`, doi: `https://doi.org/${doi}`, ids: { openalex: `https://openalex.org/W44000009${index}`, doi: `https://doi.org/${doi}` },
+    }));
+    return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  return filters;
+}
+
+const askedValues = (filters: Array<string | null>, key: string) => filters
+  .filter(filter => filter?.startsWith(`${key}:`))
+  .flatMap(filter => filter!.slice(key.length + 1).split('|'));
+
+test('fifty long journal DOIs and arXiv ids are asked in filters the relay forwards, each once, and a retraction in the second is found', async t => {
+  // 50-character DOIs, and arXiv ids of the longest form the id pattern takes.
+  const papers = Array.from({ length: 50 }, (_, index) => {
+    const id = `cond-mat.mes-hall/26100${String(index).padStart(2, '0')}`;
+    return { ...preprint, id, arxivId: id, doi: `10.5555/${'a'.repeat(38)}${String(index).padStart(4, '0')}`, title: `A paper with a long journal DOI (${index})` };
+  });
+  const last = papers[49];
+  const filters = openAlexByFilter(t, [last.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+  assert.deepEqual(askedValues(filters, 'doi').sort(), papers.map(paper => paper.doi).sort(), 'every DOI asked once');
+  assert.deepEqual(askedValues(filters, 'locations.landing_page_url').filter(value => value.startsWith('https:')).sort(),
+    papers.map(paper => `https://arxiv.org/abs/${paper.id}`).sort(), 'every arXiv id asked once');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
+  assert.notEqual(stored(db)[papers[0].id].paper.publicationStatus, 'retracted');
+});
+
+test('a DOI too long for any filter the relay forwards is not asked, and the papers beside it are', async t => {
+  const long = { ...preprint, id: '2610.44444', arxivId: '2610.44444', doi: `10.5555/${'b'.repeat(2_100)}`, title: 'A paper whose DOI is too long to ask' };
+  const beside = { ...preprint, id: '2610.55555', arxivId: '2610.55555', doi: '10.5555/beside', title: 'A paper beside it' };
+  const filters = openAlexByFilter(t, [beside.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: long, lanes: [] }, { paper: beside, lanes: [] }], { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+  assert.deepEqual(askedValues(filters, 'doi'), [beside.doi]);
+  assert.equal(stored(db)[beside.id].paper.publicationStatus, 'retracted');
+});
+
 // A search, a reader's lookup of a liked paper by DOI and the lanes of
 // followed entities ask OpenAlex without leaving retracted works out.
 test("OpenAlex's own record of a retracted paper is stored under no lane: a filed copy leaves its lanes, and a reader's like of it is kept", async () => {
