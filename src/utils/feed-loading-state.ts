@@ -48,7 +48,8 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
 /**
  * What a screen reader hears from the feed's status region. Under the veil it
  * is "Loading papers…", whatever started the wait: a refresh that empties the
- * feed and the automatic retry after it are one wait, so it is spoken once.
+ * feed and the automatic retry after it are one wait, so it is spoken once
+ * (and not at all while the focus is on the veil's heading: regionStatusText).
  * The veil's visible copy is in the page from its first frame, so it cannot
  * be the announcement. A refresh over shown papers has its own words, and
  * "Papers updated" only when it ended with papers and without a failure
@@ -59,6 +60,18 @@ export function feedStatusText({ isRefreshing, refreshDone, veil, hasPapers, fai
   if (veil) return 'Loading papers…';
   if (isRefreshing) return 'Refreshing papers…';
   return refreshDone && hasPapers && !failed ? 'Papers updated' : '';
+}
+
+/**
+ * What the feed's status region is given now, or null to leave it as it is.
+ * Nothing until the region has been in the page a moment (`regionReady`):
+ * words that arrive with the region are not spoken. Empty while the focus is
+ * on an element that already says it (the veil's heading, where a retry's
+ * focus waits), so a keyboard reader hears the wait once.
+ */
+export function regionStatusText({ status, regionReady, focusSpeaks }: { status: string; regionReady: boolean; focusSpeaks: boolean }) {
+  if (!regionReady) return null;
+  return focusSpeaks ? '' : status;
 }
 
 /**

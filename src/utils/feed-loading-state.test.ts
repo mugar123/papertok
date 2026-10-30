@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, regionStatusText } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -210,4 +210,15 @@ test('a load that replaces shown papers is not spoken as more papers', () => {
   const refreshing = { loadingNextPage: false, hasPapers: true };
   assert.equal(nextPageStatusText(refreshing), '');
   assert.equal(feedStatusText({ isRefreshing: true, refreshDone: false, veil: false, hasPapers: true, failed: false }), 'Refreshing papers…');
+});
+
+// The region was inserted empty and given "Loading papers…" one frame later,
+// often too soon to be spoken; and a keyboard Try again heard the wait twice,
+// from the focused veil heading and from the region.
+test('the status region speaks once it has settled, and not over a focus that already says it', () => {
+  assert.equal(regionStatusText({ status: 'Loading papers…', regionReady: false, focusSpeaks: false }), null);
+  assert.equal(regionStatusText({ status: 'Loading papers…', regionReady: true, focusSpeaks: false }), 'Loading papers…');
+  assert.equal(regionStatusText({ status: 'Loading papers…', regionReady: true, focusSpeaks: true }), '');
+  // Once the focus has gone on to a card, the outcome is spoken.
+  assert.equal(regionStatusText({ status: 'Papers updated', regionReady: true, focusSpeaks: false }), 'Papers updated');
 });

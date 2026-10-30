@@ -3,6 +3,13 @@ import { useLayoutEffect, useState } from 'react';
 type Focusable = Pick<HTMLElement, 'focus'>;
 
 /**
+ * What a feed hands its source's empty state for a retry button: the `ref`
+ * useWaitFocus returns, and the id the state names its text with, which
+ * describes the button (emptyStateDescription in empty-state.tsx).
+ */
+export type WaitRetry = { ref: (node: HTMLElement | null) => void; textId: string };
+
+/**
  * The memory behind useWaitFocus, apart from React. `attach` is the ref of
  * the retry buttons, and `settle` runs after each commit with the place the
  * focus waits on while a load runs (null once nothing is loading) and the
