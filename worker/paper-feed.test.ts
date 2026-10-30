@@ -1695,3 +1695,32 @@ test('a later page whose order this location does not hold says miss and ranks a
 test('a page within 1.5 s on the Worker writes no line', async t => {
   assert.deepEqual(await timedPage(t, 1_500), []);
 });
+
+// The ledger is a Durable Object, and a call to it throws, rather than
+// answering with an error status, when the object is overloaded or reset while
+// a deploy replaces its code.
+test('a page is served when the quota ledger throws, and the line it logs names no reader', async t => {
+  rankingCaches(t);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ users: [{ localId: 'reader-1' }] }));
+  t.after(() => { globalThis.fetch = realFetch; });
+  const warned = t.mock.method(console, 'warn', () => undefined);
+  const { env } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  Object.assign(env, {
+    FIREBASE_WEB_API_KEY: 'firebase-test-key',
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: (name: string): unknown => name,
+      get: () => ({ fetch: async () => { throw new Error('Durable Object reset because its code was updated.'); } }),
+    },
+  });
+  const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ categories: ['cs.CL'] }),
+  }), env, { waitUntil: () => undefined });
+  assert.equal(response.status, 200);
+  assert.deepEqual(ids((await response.json<{ papers: Array<{ id: string }> }>()).papers), ['2610.11111']);
+  assert.equal(warned.mock.calls.length, 1);
+  assert.doesNotMatch(warned.mock.calls.flatMap(call => call.arguments).join(' '), /reader-1/);
+});
