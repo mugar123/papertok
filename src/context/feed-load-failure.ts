@@ -85,7 +85,10 @@ const AUTO_RETRY_PAUSE_MS = 2_500;
  * a first screen refused or cut off just before 10 s still shows the error
  * about 22.5 s after the token. A first page of only seen papers whose next
  * page then times out reaches about 23.5 s: that page goes on as the same
- * load, with its own 10 s, before the 3.5 s retry.
+ * load, with its own 10 s, before the 3.5 s retry. These times hold while the
+ * session's one automatic retry is unused (autoRetryUsedRef in
+ * feed-context.tsx, armed again by a load that succeeds); after an error, Try
+ * again gets no automatic retry and shows its error about 10 s after the token.
  */
 export function automaticRetry(error: unknown, waitedFirstScreen: boolean) {
   return waitedFirstScreen && feedLoadFailure(error).reason === 'timeout'

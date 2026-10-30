@@ -20,9 +20,12 @@ const STORE_TIMEOUT_MS = 3_500;
 // verified in the last minute waits up to 4 s for Google
 // (worker/firebase-auth.ts) before the D1 reads and ranking, and the Worker's
 // hourly p90 wall time, all routes, reached 3.6 s. A first screen that times
-// out here retries once, at once and with STORE_TIMEOUT_MS, then shows its
-// error; one that fails for another reason retries after a pause with this
-// deadline again (automaticRetry in src/context/feed-load-failure.ts, ENG-116).
+// out here, while the session's one automatic retry is unused, retries once, at
+// once and with STORE_TIMEOUT_MS, then shows its error; one that fails for
+// another reason retries after a pause with this deadline again (automaticRetry
+// in src/context/feed-load-failure.ts, ENG-116). The retry is armed again only
+// by a load that succeeds: Try again after an error waits this deadline once
+// and then shows the error, about 10 s after the token.
 const FIRST_SCREEN_TIMEOUT_MS = 10_000;
 
 export interface CorpusPageRequest {
