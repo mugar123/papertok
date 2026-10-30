@@ -1,9 +1,11 @@
 import type { ComponentProps } from 'react';
 
 import { CheckCircle, CircleNotch, Info, Warning, XCircle } from '@phosphor-icons/react';
+import { useEffect } from 'react';
 import { Toaster as Sonner } from 'sonner';
 import { useTheme } from '../../context/theme-context.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
+import { dismissToastsOnEscape } from './toast.ts';
 
 /**
  * shadcn's Sonner wrapper, adapted: the theme comes from the app's own
@@ -16,6 +18,10 @@ import useIsPhone from '../../hooks/use-is-phone.ts';
 function Toaster(props: ComponentProps<typeof Sonner>) {
   const { theme } = useTheme();
   const isPhone = useIsPhone();
+  useEffect(() => {
+    window.addEventListener('keydown', dismissToastsOnEscape);
+    return () => window.removeEventListener('keydown', dismissToastsOnEscape);
+  }, []);
   return (
     <Sonner
       theme={theme}
