@@ -128,7 +128,7 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
           {`That was every similar paper for this one.${leftOut}`}
         </EmptyState>
       ),
-      emptyState: (
+      emptyState: () => (
         <EmptyState role="status" icon art={<Intersect />} title={'No similar papers left'} actions={closeAction}>
           {'You skipped every paper recommended for this one.'}
         </EmptyState>

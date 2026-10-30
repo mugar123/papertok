@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Checks, MagnifyingGlass } from '@phosphor-icons/react';
 import Petri from '../onboarding/petri.tsx';
@@ -105,14 +105,14 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
 
   const hasFollows = followedEntities.length > 0;
 
-  const emptyState = useMemo(() => hasFollows ? (
+  const emptyState = useCallback((retryRef: (node: HTMLElement | null) => void) => hasFollows ? (
     <EmptyState
       role="status"
       icon
       art={<Checks />}
       title={'No new publications from what you follow'}
       actions={(
-        <button className="feed-retry-btn" onClick={() => { void refresh(); }}>
+        <button ref={retryRef} className="feed-retry-btn" onClick={() => { void refresh(); }}>
           {'Check for updates'}
         </button>
       )}

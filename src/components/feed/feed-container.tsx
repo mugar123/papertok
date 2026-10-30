@@ -14,7 +14,9 @@ interface FeedSource {
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
   endCard?: ReactNode;
-  emptyState?: ReactNode;
+  // `retryRef` goes on the empty state's own retry button, if it has one,
+  // so a reader who pressed it keeps their place through the wait (useWaitFocus).
+  emptyState?: (retryRef: (node: HTMLElement | null) => void) => ReactNode;
   initialLoadPending?: boolean;
 }
 interface FeedContainerProps {
@@ -1068,8 +1070,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
   const feedStatus = feedStatusText({ isRefreshing, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0 });
-  // Try again, Check again and Explore again leave as the reload they start
-  // begins: the focus waits on the veil's heading, then lands on the retry
+  // Try again, Check again, Explore again and a source empty state's own
+  // retry leave as the reload they start begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const retryButtonRef = useWaitFocus(
@@ -1246,7 +1248,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState!(retryButtonRef)}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
