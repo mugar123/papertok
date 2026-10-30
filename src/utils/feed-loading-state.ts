@@ -46,73 +46,17 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
 }
 
 /**
- * What a screen reader hears from the feed's status region. Under the veil it
- * is "Loading papers…", whatever started the wait: a refresh that empties the
- * feed and the automatic retry after it are one wait, so it is spoken once
- * (and not at all while the focus is on the veil's heading: regionStatusText).
- * The veil's visible copy is in the page from its first frame, so it cannot
- * be the announcement. A refresh over shown papers has its own words while
- * its load runs (`loading`: the load that replaces the list, not a next
- * page). The refresh is held for a minimum time after its papers arrive
- * (refreshFeed), and saying it is still refreshing then would announce a wait
- * over cards already shown. "Papers updated" only when it ended with papers
- * and without a failure (`failed`: the load's error, or its automatic retry
- * still due): a refresh that fails keeps the old papers and has updated nothing.
- * Nor while a load that replaces the list runs: a refresh that timed out is
- * retried at once, inside the refresh's done hold, and nothing is updated yet.
+ * What a screen reader hears from the feed's status region: a refresh's own
+ * words, and "Loading papers…" under the veil otherwise. The veil's visible
+ * copy is in the page from its first frame, so it cannot be the announcement.
+ * One text through the veil's whole wait, its automatic retry included, so
+ * the wait is spoken once.
  */
-export function feedStatusText({ isRefreshing, loading, refreshDone, veil, hasPapers, failed }: { isRefreshing: boolean; loading: boolean; refreshDone: boolean; veil: boolean; hasPapers: boolean; failed: boolean }) {
-  if (veil) return 'Loading papers…';
-  if (isRefreshing && loading) return 'Refreshing papers…';
-  return refreshDone && hasPapers && !failed && !loading ? 'Papers updated' : '';
+export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string; veil: boolean }) {
+  return refreshStatus || (veil ? 'Loading papers…' : '');
 }
 
-export type RefreshStart = { refreshing: boolean; overCards: boolean };
-
-/**
- * Whether the running refresh began over shown cards (`overCards`), carried
- * from render to render: it changes only when a refresh starts or ends.
- * Following's refresh shows each follow's papers as it answers and is still
- * running until the last one does. A refresh that began under the veil is
- * then one "Loading papers…" wait until "Papers updated", not a second wait,
- * "Refreshing papers…", spoken over the first follow's cards. So
- * feedStatusText is told of a refresh only when it began over cards.
- */
-export function refreshStart(previous: RefreshStart, { isRefreshing, hasPapers }: { isRefreshing: boolean; hasPapers: boolean }): RefreshStart {
-  if (previous.refreshing === isRefreshing) return previous;
-  return { refreshing: isRefreshing, overCards: isRefreshing && hasPapers };
-}
-
-/**
- * What the feed's status region is given now, or null to leave it as it is.
- * Nothing until the region has been in the page a moment (`regionReady`):
- * words that arrive with the region are not spoken. Empty while the focus is
- * on an element that already says it (the veil's heading, where a retry's
- * focus waits), so a keyboard reader hears the wait once.
- */
-export function regionStatusText({ status, regionReady, focusSpeaks }: { status: string; regionReady: boolean; focusSpeaks: boolean }) {
-  if (!regionReady) return null;
-  return focusSpeaks ? '' : status;
-}
-
-/**
- * Which load is running: a next page, or a load that replaces the list. For
- * You's feed says it for itself (`feedLoadingNextPage`). A `source` does not:
- * Following's refresh sets `isRefreshing` without `loading`, and its silent
- * refresh sets `loading` alone, so a source's `loading` is a next page only
- * when it has one to fetch.
- */
-export function feedLoads({ fromSource, loading, isRefreshing, hasMore, feedLoadingNextPage }: { fromSource: boolean; loading: boolean; isRefreshing: boolean; hasMore: boolean; feedLoadingNextPage: boolean }) {
-  if (!fromSource) return { loadingNextPage: feedLoadingNextPage, replacingList: loading && !feedLoadingNextPage };
-  const loadingNextPage = hasMore && loading && !isRefreshing;
-  return { loadingNextPage, replacingList: (loading || isRefreshing) && !loadingNextPage };
-}
-
-/**
- * The feed tail's status: only for a next page (`loadingNextPage`), under
- * papers already shown. A load that replaces the list (a refresh, its
- * automatic retry, a follow change) is not more papers.
- */
-export function nextPageStatusText({ loadingNextPage, hasPapers }: { loadingNextPage: boolean; hasPapers: boolean }) {
-  return loadingNextPage && hasPapers ? 'Loading more papers…' : '';
+/** The feed tail's status: only for a next page, under papers already shown. */
+export function nextPageStatusText({ loading, hasPapers }: { loading: boolean; hasPapers: boolean }) {
+  return loading && hasPapers ? 'Loading more papers…' : '';
 }

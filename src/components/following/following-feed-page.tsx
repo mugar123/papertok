@@ -1,12 +1,10 @@
 import type { ComponentProps } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { WaitRetry } from '../../hooks/use-wait-focus.ts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Checks, MagnifyingGlass } from '@phosphor-icons/react';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { emptyStateDescription } from '../ui/empty-state-text.ts';
 import FeedContainer from '../feed/feed-container.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
@@ -107,15 +105,14 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
 
   const hasFollows = followedEntities.length > 0;
 
-  const emptyState = useCallback((retry: WaitRetry) => hasFollows ? (
+  const emptyState = useMemo(() => hasFollows ? (
     <EmptyState
-      textId={retry.textId}
       role="status"
       icon
       art={<Checks />}
       title={'No new publications from what you follow'}
       actions={(
-        <button ref={retry.ref} aria-describedby={emptyStateDescription(retry.textId)} className="feed-retry-btn" onClick={() => { void refresh(); }}>
+        <button className="feed-retry-btn" onClick={() => { void refresh(); }}>
           {'Check for updates'}
         </button>
       )}

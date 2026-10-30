@@ -1,7 +1,6 @@
-import type { AnimationEvent, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
+import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { Paper } from '../../models/paper.ts';
-import type { WaitRetry } from '../../hooks/use-wait-focus.ts';
 
 interface FeedSource {
   papers: Paper[];
@@ -15,10 +14,7 @@ interface FeedSource {
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
   endCard?: ReactNode;
-  // The empty state's own retry button, if it has one, takes `retry.ref`, so a
-  // reader who pressed it keeps their place through the wait (useWaitFocus),
-  // and is described by the state's text (`retry.textId`, emptyStateDescription).
-  emptyState?: (retry: WaitRetry) => ReactNode;
+  emptyState?: ReactNode;
   initialLoadPending?: boolean;
 }
 interface FeedContainerProps {
@@ -28,7 +24,7 @@ interface FeedContainerProps {
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, useId, startTransition } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
@@ -57,8 +53,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { emptyStateDescription, emptyStateTextIds } from '../ui/empty-state-text.ts';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedLoads, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshStart, regionStatusText, type RefreshStart } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -225,18 +220,16 @@ const STATUS_REGION_SETTLE_MS = 300;
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, spokenBy, children }: PropsWithChildren<{
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, children }: PropsWithChildren<{
   landmark: FeedContainerProps['landmark'];
   className?: string;
   nodeRef?: (node: HTMLElement | null) => void;
   status?: string;
-  // An element whose focus already says the status (the veil's heading).
-  spokenBy?: RefObject<HTMLElement | null>;
 }>) {
   // A live region speaks a change to its text, not the text it is inserted
   // with, and the feed's first render is often already a wait. So the region
   // goes in empty, and its first words wait until screen readers have taken
-  // it in (as RouteAnnouncer's region is in the page before it speaks).
+  // it in: words set in the frame after it is inserted are often not spoken.
   const statusRef = useRef<HTMLSpanElement | null>(null);
   const [regionReady, setRegionReady] = useState(false);
   useEffect(() => {
@@ -244,14 +237,8 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, s
     return () => { clearTimeout(settle); };
   }, []);
   useEffect(() => {
-    const text = regionStatusText({
-      status: status ?? '',
-      regionReady,
-      focusSpeaks: Boolean(spokenBy?.current) && document.activeElement === spokenBy?.current,
-    });
-    // The same words again would be spoken again.
-    if (text !== null && statusRef.current && statusRef.current.textContent !== text) statusRef.current.textContent = text;
-  }, [status, regionReady, spokenBy]);
+    if (regionReady && statusRef.current) statusRef.current.textContent = status ?? '';
+  }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
     return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
@@ -299,12 +286,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
-  const { loadingNextPage, replacingList } = feedLoads({ fromSource: Boolean(source), loading, isRefreshing, hasMore, feedLoadingNextPage: feed.loadingNextPage });
-  // Whether the running refresh began over cards: one that began under the
-  // veil is spoken as that wait until it ends (refreshStart).
-  const [lastRefreshStart, setLastRefreshStart] = useState<RefreshStart>({ refreshing: false, overCards: false });
-  const currentRefreshStart = refreshStart(lastRefreshStart, { isRefreshing, hasPapers: papers.length > 0 });
-  if (currentRefreshStart !== lastRefreshStart) setLastRefreshStart(currentRefreshStart);
   // Only the For You feed owns the context's list; Following and the Similar
   // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
@@ -372,6 +353,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
+  const refreshStatus = isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : '';
   // La píldora se va SIEMPRE diciendo «Actualizado».
   //
   // Al terminar el beat, la cara volvía al verbo. Ese cruce no informa de
@@ -1094,9 +1076,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ isRefreshing: isRefreshing && currentRefreshStart.overCards, loading: replacingList, refreshDone, veil: atomVeil !== null, hasPapers: papers.length > 0, failed: Boolean(error) || autoRetryPending });
-  // Try again, Check again, Explore again and a source empty state's own
-  // retry leave as the reload they start begins: the focus waits on the veil's heading, then lands on the retry
+  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  // Try again, Check again and Explore again leave as the reload they start
+  // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const retryButtonRef = useWaitFocus(
@@ -1105,11 +1087,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       '.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) :is(a[href], button:not(:disabled)):not([inert], [hidden], [inert] *, [hidden] *)',
     ) ?? null,
   );
-  // The empty state's title and body describe its retry button: a focus that
-  // lands there after the wait says the outcome, which the state's own role,
-  // inserted with its words or cut off by the focus move, may not.
-  const emptyTextId = useId();
-  const retryDescription = emptyStateDescription(emptyTextId);
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
   useEffect(() => {
@@ -1249,12 +1226,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return (
       <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
         <EmptyState
-          textId={emptyTextId}
           role="alert"
           art={<Petri pose="upset" className="feed-error-petri" />}
           title={'Error loading papers'}
           actions={(
-            <Button ref={retryButtonRef} aria-describedby={retryDescription} size="sm" onClick={handleRefresh}>
+            <Button ref={retryButtonRef} size="sm" onClick={handleRefresh}>
               <ArrowsClockwise size={16} aria-hidden="true" />
               {'Try again'}
             </Button>
@@ -1279,21 +1255,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState!({ ref: retryButtonRef, textId: emptyTextId })}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
     return (
       <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
         <EmptyState
-          textId={emptyTextId}
           role="status"
           art={<Petri pose="flask" className="feed-error-petri" />}
           title={'No papers for your topics yet'}
           actions={(
             <>
               <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
-              <Button ref={retryButtonRef} aria-describedby={retryDescription} size="sm" variant="outline" onClick={handleRefresh}>
+              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRefresh}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
               </Button>
@@ -1313,11 +1288,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           <Petri pose="flask" className="petri-loader" />
         </div>
         <h2>{'Searching for discoveries...'}</h2>
-        <p id={emptyStateTextIds(emptyTextId).body}>
+        <p>
           {'There are no papers in your categories yet. Try broadening your interests.'}
         </p>
-        {/* The heading is the wait's, not this outcome: the body says it. */}
-        <button ref={retryButtonRef} aria-describedby={emptyStateTextIds(emptyTextId).body} className="feed-retry-btn" onClick={handleRefresh}>
+        <button ref={retryButtonRef} className="feed-retry-btn" onClick={handleRefresh}>
           {'Explore again'}
         </button>
       </FeedLandmark>
@@ -1330,7 +1304,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} spokenBy={veilHeadingRef} landmark={landmark}>
+    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
@@ -1462,7 +1436,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   would speak for waits that are not happening. Under the
                   veil there is no page to add to: the landmark's status
                   speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loadingNextPage, hasPapers: papers.length > 0 })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0 })}</span>
             </div>
           </div>
         )}
