@@ -120,6 +120,31 @@ function providerAuthFailure(error: unknown, origin: string, env: WorkerEnv) {
   });
 }
 
+async function answerCorpusFeed(request: Request, env: WorkerEnv, origin: string, context: Pick<ExecutionContext, 'waitUntil'> | undefined, timings: FeedTimings) {
+  let identity: VerifiedIdentity;
+  const started = Date.now();
+  try {
+    identity = await verifyFirebaseIdentity(request, env);
+  } catch (error) {
+    captureWorkerException(error);
+    return providerAuthFailure(error, origin, env);
+  } finally {
+    timings.since('auth', started);
+  }
+  const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
+  try {
+    const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined, timings);
+    return json(answer, 200, headers);
+  } catch (error) {
+    if (error instanceof PaperStoreError) {
+      return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+    }
+    captureWorkerException(error);
+    console.error('Paper store failed', error);
+    return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
+  }
+}
+
 async function authenticateProtectedProviderRequest(request: Request, env: WorkerEnv, pathname: string) {
   if (!PROTECTED_PROVIDER_PATHS.has(pathname)) return null;
   return verifyFirebaseIdentity(request, env);
@@ -374,34 +399,17 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname === '/store/papers') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    // A request slower than the feed's budget leaves one line of its steps (feed-timings.ts).
+    // A request slower than the feed's budget leaves one line of its steps
+    // (feed-timings.ts). The runtime cancels a request whose reader went away
+    // (the app gives up at 3.5 s), except for work handed to waitUntil: the
+    // answer is handed to it, so the slowest requests still write their line.
     const started = Date.now();
     const timings = new FeedTimings();
-    try {
-      let identity: VerifiedIdentity;
-      try {
-        identity = await verifyFirebaseIdentity(request, env);
-      } catch (error) {
-        captureWorkerException(error);
-        return providerAuthFailure(error, origin, env);
-      } finally {
-        timings.since('auth', started);
-      }
-      const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
-      try {
-        const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined, timings);
-        return json(answer, 200, headers);
-      } catch (error) {
-        if (error instanceof PaperStoreError) {
-          return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
-        }
-        captureWorkerException(error);
-        console.error('Paper store failed', error);
-        return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
-      }
-    } finally {
+    const answered = answerCorpusFeed(request, env, origin, context, timings).finally(() => {
       timings.logIfSlow(routeForLog(url.pathname), Date.now() - started);
-    }
+    });
+    context?.waitUntil(answered);
+    return answered;
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {

@@ -1410,8 +1410,9 @@ test("a reader's first page with a single like answers without waiting for the l
 });
 
 // A signed-in first page through the router, whose identity check takes
-// `identityMs` on the clock, and the console lines it wrote.
-async function timedFirstPage(t: TestContext, identityMs: number) {
+// `identityMs` on the clock, and the console lines it wrote once the work it
+// handed to waitUntil (`waited`) settled.
+async function timedFirstPage(t: TestContext, identityMs: number, waited: Array<Promise<unknown>> = []) {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   rankingCaches(t);
   const realFetch = globalThis.fetch;
@@ -1437,8 +1438,9 @@ async function timedFirstPage(t: TestContext, identityMs: number) {
     method: 'POST',
     headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ categories: ['cs.CL'], negativeIds: ['2610.40001'] }),
-  }), env, { waitUntil: () => undefined });
+  }), env, { waitUntil: work => { waited.push(work); } });
   assert.equal(response.status, 200);
+  await Promise.all(waited);
   return logged.mock.calls.map(call => String(call.arguments[0]));
 }
 
@@ -1456,6 +1458,17 @@ test('a page slower than 1.5 s on the Worker leaves one line of its steps and co
     counts: { lanes: 2, groups: 1, candidates: 3, vectors: 2 },
   });
   assert.doesNotMatch(lines[0], /reader-1|2610|cs\.CL|area:|rejected/i);
+});
+
+// The runtime cancels a request whose reader went away (the app gives up at
+// 3.5 s) unless its work was handed to waitUntil, and those are the requests
+// the line is for.
+test('a slow page hands its answer and its line to waitUntil, so a reader who gives up does not cancel the line', async t => {
+  const waited: Array<Promise<unknown>> = [];
+  const lines = await timedFirstPage(t, 3_800, waited);
+  const settled = await Promise.all(waited);
+  assert.equal(settled.filter(work => work instanceof Response).length, 1, 'the answer is handed to waitUntil');
+  assert.equal(JSON.parse(lines[0]).totalMs, 3_800);
 });
 
 test('a page within 1.5 s on the Worker writes no line', async t => {
