@@ -52,7 +52,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -223,7 +223,14 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
   nodeRef?: (node: HTMLElement | null) => void;
   status?: string;
 }>) {
-  const statusRegion = <span className="visually-hidden" role="status">{status}</span>;
+  // A live region speaks a change to its text, not the text it is inserted
+  // with, and the feed's first render is often already a wait. So the region
+  // goes in empty and its words come after the commit (as RouteAnnouncer's).
+  const statusRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (statusRef.current) statusRef.current.textContent = status ?? '';
+  }, [status]);
+  const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
     return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
   }
@@ -1060,6 +1067,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
+  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
   useEffect(() => {
@@ -1197,7 +1205,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // la rama con papers. Un estado de la página sigue siendo la página.
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
         <EmptyState
           role="alert"
           art={<Petri pose="upset" className="feed-error-petri" />}
@@ -1217,7 +1225,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
+      <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark}>
         <div className="feed-container">
           <div className="feed-snap-item"><SkeletonCard /></div>
         </div>
@@ -1228,12 +1236,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
         <EmptyState
           role="status"
           art={<Petri pose="flask" className="feed-error-petri" />}
@@ -1256,7 +1264,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
         <div className="atom-loader">
           <Petri pose="flask" className="petri-loader" />
         </div>
@@ -1277,7 +1285,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
+    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
@@ -1406,8 +1414,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               {/* Spoken only while a page is actually on its way: the slot
                   is mounted ahead of the load, and a fresh one after every
                   page, so a live region carrying the words from the start
-                  would speak for waits that are not happening. */}
-              <span className="visually-hidden" role="status">{loading ? 'Loading more papers…' : ''}</span>
+                  would speak for waits that are not happening. Under the
+                  veil there is no page to add to: the landmark's status
+                  speaks for that wait. */}
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0 })}</span>
             </div>
           </div>
         )}
@@ -1422,15 +1432,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
       {/* The wait, over the container rather than instead of it. While the
           papers are on their way this is the whole screen; the frame they
-          land, the cards mount underneath and this recedes over them. */}
+          land, the cards mount underneath and this recedes over them. Not a
+          live region: it is inserted with its words, which a region does not
+          speak, and the landmark's status announces the wait instead. */}
       <AnimatePresence>
         {atomVeil && (
           <motion.div
             key="atom-veil"
             className="feed-empty feed-empty--veil"
-            role="status"
-            aria-live="polite"
-            aria-busy="true"
             variants={prefersReducedMotion ? ATOM_VEIL_REDUCED_VARIANTS : ATOM_VEIL_VARIANTS}
             initial={false}
             animate="shown"
