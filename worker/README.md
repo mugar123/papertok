@@ -96,7 +96,11 @@ The paper store's placement. D1 keeps `papertok-paper-store` in Western Europe
 (WEUR) with read replication off, so every D1 call is a round trip from the
 location the fetch handler runs in. A first `/store/papers` page makes several
 of them in sequence. On 2026-10-27 Cloudflare's analytics showed many
-invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline,
+invocations ending `clientDisconnected` at 3.4-3.5 s, the app's 3.5 s deadline
+(since ENG-116 the feed's requests of a load that fills a list with no cards
+shown wait 10 s, and every other `/store/papers` request 3.5 s, including a
+refresh over shown cards and the automatic retry of a first screen that timed
+out: `src/services/paper-store-service.ts`),
 while CPU stayed at 2-7 ms (p50), and one failing minute ran about 40 D1 queries
 that took about 0.9 s of D1 time in all: the rest was waiting. `wrangler.toml`
 sets `[placement] region = "aws:eu-central-1"`, so the fetch handler runs near
@@ -805,11 +809,14 @@ answer: the identity error (such as `AUTH_REQUIRED`), the feed's `PaperStoreErro
 looked for a kept order. It holds no reader, uid or hash of one, paper or work id, lane, category,
 interest, follow, query text or URL. `status` is the answer the Worker produced, not proof that
 the app received it. A line still shows `status` when the client left while the answer was on its
-way, or when the runtime did not learn that the client left; the app's 3.5 s deadline also counts
-its token and network time, which `totalMs` does not. A `status` line with `totalMs` near or above
-3,500 is therefore most likely an answer the app had already given up on.
+way, or when the runtime did not learn that the client left. The app's deadline starts once it
+has the reader's ID token: 10 s for a first screen (a load that replaces the list while no cards
+are shown) and 3.5 s for every other request, such as a refresh over shown cards or a next page.
+It also counts network time, which `totalMs` does not. The line does not say which kind of request
+it was, so only a `status` line with `totalMs` near or above 10 s is most likely an answer the app
+had already given up on; one near or above 3.5 s is too when it was not a first screen.
 
-The runtime cancels a request whose client went away, such as the app giving up at 3.5 s or a
+The runtime cancels a request whose client went away, such as the app giving up at its deadline or a
 closed tab, except for work handed to `waitUntil`. `enable_request_signal` in `wrangler.toml` makes
 `request.signal` abort at that moment, and the router then writes the line with `aborted: true` in
 place of `status` and `code`, provided the request has run for more than 1.5 s. Its `steps` are
