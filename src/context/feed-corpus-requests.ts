@@ -70,13 +70,16 @@ export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): Corpus
  * (the follows, exploration) holds the screen for its budget at most, counted
  * from this call, but an answer that arrived while the main page was awaited
  * is kept, since the reader waited for it anyway (ENG-116). An optional source
- * that fails or runs out gives no papers.
+ * that fails or runs out gives no papers. Its failure is handled from this
+ * call, so one that fails while the main page is awaited is not reported as an
+ * unhandled rejection.
  */
 export async function awaitScreenSources<T, O>(main: PromiseLike<T>, optional: Array<{ answer: PromiseLike<O[]>; budgetMs: number }>) {
   const startedAt = Date.now();
+  const optionalAnswers = optional.map(({ answer, budgetMs }) => ({ papers: Promise.resolve(answer).then(papers => papers, () => [] as O[]), budgetMs }));
   const mainAnswer = await Promise.resolve(main).then(value => ({ value }), (error: unknown) => ({ error }));
   const waited = Date.now() - startedAt;
-  const optionalPapers = await Promise.all(optional.map(({ answer, budgetMs }) => resolveWithin(answer, budgetMs - waited, [] as O[])));
+  const optionalPapers = await Promise.all(optionalAnswers.map(({ papers, budgetMs }) => resolveWithin(papers, budgetMs - waited, [] as O[])));
   return { main: mainAnswer, optional: optionalPapers };
 }
 

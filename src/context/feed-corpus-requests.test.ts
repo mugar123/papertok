@@ -210,6 +210,24 @@ test("follows that answered fill a first screen whose main page hangs, which sti
   assert.ok(at >= 10_000 && at < 10_100, `failed at ${at} ms`);
 });
 
+test('a source that fails before the main page answers gives no papers and no unhandled rejection', async (t) => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => { process.off('unhandledRejection', onUnhandled); });
+  const after = <T>(ms: number, settle: (resolve: (value: T) => void, reject: (error: Error) => void) => void) =>
+    new Promise<T>((resolve, reject) => { setTimeout(() => { settle(resolve, reject); }, ms); });
+  const { value } = await onTheClock(t, () => awaitScreenSources(after<string[]>(5_000, resolve => { resolve(['main']); }), [
+    // The follows' request answers 503 at 1 s.
+    { answer: after<string[]>(1_000, (_, reject) => { reject(new Error('follows 503')); }), budgetMs: 3_500 },
+    // The topic retrieval chunk failed to load before the screen was awaited.
+    { answer: Promise.reject(new Error('chunk 404')), budgetMs: 4_000 },
+  ]));
+  assert.deepEqual(value, { main: { value: ['main'] }, optional: [[], []] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(unhandled, []);
+});
+
 test('only a load that replaces the list waits the first screen deadline', async (t) => {
   assert.equal(waitsAsFirstScreen(coldEntry), true, 'a cold entry, a refresh, an interests edit or the retry');
   assert.equal(waitsAsFirstScreen({ reset: false, keepThroughVisible: false }), false, 'More');
