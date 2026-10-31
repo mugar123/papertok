@@ -20,6 +20,7 @@ import {
   visitChoiceDue,
   visitReaderReady,
 } from './nudges.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, getFeedDisplayState } from './feed-loading-state.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
 
 const fakeStorage = (seed: Record<string, string> = {}) => {
@@ -279,17 +280,62 @@ test('nothing is picked or opened while the profile could not be loaded, and it 
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
   assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: false }), null, 'the email nudge too');
   // Off screen the dialog closes, and it opens again when Try again brings the feed back.
-  assert.equal(privacyDialogOpen({ shown: false, modalOpen: false, wasOpen: true }), false);
+  assert.equal(privacyDialogOpen({ shown: false, cardsShown: true, modalOpen: false, wasOpen: true }), false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed', privacyOwed: true }), PRIVACY_NOTICE_ID);
-  assert.equal(privacyDialogOpen({ shown: true, modalOpen: false, wasOpen: false }), true);
+  assert.equal(privacyDialogOpen({ shown: true, cardsShown: true, modalOpen: false, wasOpen: false }), true);
 });
 
 // Whether the privacy dialog is open after each render, as NudgeHost feeds it:
-// `modalOpen` is whether a modal is on the page while the dialog is closed.
-const dialogSteps = (events: Array<{ shown: boolean; modalOpen: boolean }>) => {
+// `cardsShown` is whether the feed has cards (true unless a step says not), and
+// `modalOpen` whether a modal is on the page while the dialog is closed.
+const dialogSteps = (events: Array<{ shown: boolean; cardsShown?: boolean; modalOpen: boolean }>) => {
   let wasOpen = false;
-  return events.map(event => (wasOpen = privacyDialogOpen({ ...event, wasOpen })));
+  return events.map(({ cardsShown = true, ...event }) => (wasOpen = privacyDialogOpen({ ...event, cardsShown, wasOpen })));
 };
+
+test('the privacy dialog opens once the feed shows its first cards, never over its loading or error screen', () => {
+  // NudgeHost reads cards as the feed context having papers, which is exactly
+  // when FeedContainer leaves its skeleton, veil, error and empty screens.
+  for (const state of [{ loading: true }, { loading: true, showLoader: true }, { initialLoadPending: true }, { error: 'FEED_LOAD_FAILED' }, { error: 'FEED_LOAD_FAILED', autoRetryPending: true }, { error: FEED_EMPTY }, { hasSourceEmptyState: true }]) {
+    assert.notEqual(getFeedDisplayState({ hasPapers: false, ...state }), FEED_DISPLAY_STATES.FEED, JSON.stringify(state));
+    assert.equal(getFeedDisplayState({ hasPapers: true, ...state }), FEED_DISPLAY_STATES.FEED, `${JSON.stringify(state)} with papers`);
+  }
+  assert.deepEqual(
+    dialogSteps([
+      { shown: true, cardsShown: false, modalOpen: false },
+      { shown: true, cardsShown: false, modalOpen: false },
+      { shown: true, cardsShown: true, modalOpen: false },
+    ]),
+    [false, false, true],
+    'a cold load: the first page, or the error and its Try again, comes before the dialog',
+  );
+  assert.deepEqual(
+    dialogSteps([
+      { shown: true, cardsShown: false, modalOpen: true },
+      { shown: true, cardsShown: true, modalOpen: true },
+      { shown: true, cardsShown: true, modalOpen: false },
+    ]),
+    [false, false, true],
+    'cards under another dialog: it also waits for that one',
+  );
+  assert.deepEqual(
+    dialogSteps([
+      { shown: true, cardsShown: false, modalOpen: false },
+      { shown: false, cardsShown: true, modalOpen: false },
+      { shown: true, cardsShown: true, modalOpen: false },
+    ]),
+    [false, false, true],
+    'the reader left the loading feed and came back to its cards',
+  );
+  assert.deepEqual(
+    dialogSteps([
+      { shown: true, cardsShown: true, modalOpen: false },
+      { shown: true, cardsShown: false, modalOpen: false },
+    ]),
+    [true, true],
+    'once open it does not depend on the cards',
+  );
+});
 
 test('the privacy dialog never opens over another dialog: it waits for that one to close', () => {
   assert.deepEqual(
@@ -337,12 +383,12 @@ test('once open, the privacy dialog stays open until it is put away or the reade
 test('the privacy dialog opens once per policy version, for signed-in accounts created before the change', () => {
   const HOUR = 3_600_000;
   const createdAt = (uid: string, offsetMs: number) => ({ uid, metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) + offsetMs).toUTCString() } });
-  // A visit's arrival on /feed with no other dialog open, from the parts NudgeHost calls in this order.
+  // A visit's arrival on /feed, with its cards and no other dialog open, from the parts NudgeHost calls in this order.
   const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
     const picked = visitChoiceDue({ privacyOwed, dwellDone: false }) ? pickVisitNotice({ privacyOwed, eligible: ['email-down'] }) : null;
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
-    return privacyDialogOpen({ shown, modalOpen: false, wasOpen: false });
+    return privacyDialogOpen({ shown, cardsShown: true, modalOpen: false, wasOpen: false });
   };
   const storage = fakeStorage();
   const before = createdAt('reader-a', -24 * HOUR);

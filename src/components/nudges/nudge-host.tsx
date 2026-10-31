@@ -4,6 +4,7 @@ import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
+import { useFeed } from '../../context/feed-context.tsx';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
@@ -34,8 +35,8 @@ import PrivacyNotice from './privacy-notice.tsx';
 // Guests are out entirely: they already have one thing being asked of them.
 //
 // A privacy policy change takes the visit's turn before any nudge. Only
-// signed-in accounts are told, in a dialog that opens on arrival at the feed and
-// returns on later visits until the reader chooses Got it; utils/nudges.ts
+// signed-in accounts are told, in a dialog that opens once the feed shows its
+// first cards, never over its loading or error screen, and returns on later visits until the reader chooses Got it; utils/nudges.ts
 // decides who is owed it. While it is owed it is the visit's one notice, so
 // Hide for now (or Escape, the X) leaves the visit with nothing: the email
 // nudge waits for a visit after Got it, by the one-per-visit rule above.
@@ -126,14 +127,16 @@ export default function NudgeHost() {
   const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname, privacyOwed });
   const privacyShown = onScreen === PRIVACY_NOTICE_ID;
 
-  // The dialog never opens over another modal: one still open, or still playing
-  // its exit, as the reader reaches the feed is waited for. Modals are watched
-  // only while it waits.
+  // The dialog waits for the For You feed's first cards (/feed renders this
+  // context's list), so it never covers the loading or error screen. Nor does
+  // it open over another modal: one still open, or still playing its exit, is
+  // waited for. Modals are watched only while it waits with cards on screen.
+  const cardsShown = useFeed().papers.length > 0;
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  const waiting = privacyShown && !privacyOpen;
+  const waiting = privacyShown && cardsShown && !privacyOpen;
   const subscribe = useCallback((onChange: () => void) => (waiting ? subscribeToModals(onChange) : () => undefined), [waiting]);
   const modalOpen = useSyncExternalStore(subscribe, () => waiting && modalIsOpen(document), () => false);
-  const dialogOpen = privacyDialogOpen({ shown: privacyShown, modalOpen, wasOpen: privacyOpen });
+  const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
 
   // Hide for now puts it away for this visit and does not count as reading it,

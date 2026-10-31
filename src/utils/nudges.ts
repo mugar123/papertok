@@ -184,14 +184,16 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
 
 /**
  * Whether the privacy dialog is open. It opens when the notice is on screen
- * (`shown`) and no other modal is open, so it never lands over a paper or
- * another dialog: it waits for that one to close. Once open it stays open, under
- * any modal opened over it, until the reader puts it away or leaves the feed.
- * `wasOpen` is the value this returned on the previous render, and `modalOpen`
- * only matters while the dialog is closed (open, it is a modal itself).
+ * (`shown`), the feed shows its first cards (`cardsShown`) and no other modal is
+ * open, so it never lands over the feed's loading or error screen, a paper or
+ * another dialog: it waits for the cards, and for that dialog to close. Once
+ * open it stays open, under any modal opened over it, until the reader puts it
+ * away or leaves the feed. `wasOpen` is the value this returned on the previous
+ * render; `cardsShown` and `modalOpen` only matter while the dialog is closed
+ * (open, it is a modal itself).
  */
-export function privacyDialogOpen({ shown, modalOpen, wasOpen }: { shown: boolean; modalOpen: boolean; wasOpen: boolean }) {
-  return shown && (wasOpen || !modalOpen);
+export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; wasOpen: boolean }) {
+  return shown && (wasOpen || (cardsShown && !modalOpen));
 }
 
 export const PRIVACY_NOTICE_ID = 'privacy-change';
@@ -226,9 +228,9 @@ export function pickVisitNotice({ privacyOwed, eligible = [], dismissed = [], ra
 
 /**
  * Whether the visit's notice is chosen now, on the feed. A privacy change owed
- * to the reader is chosen at once, so its dialog opens as the reader arrives:
- * a minute into reading it would interrupt the card being read. A nudge waits
- * for the minute of reading.
+ * to the reader is chosen at once, so its dialog opens with the feed's first
+ * cards (privacyDialogOpen): a minute into reading it would interrupt the card
+ * being read. A nudge waits for the minute of reading.
  */
 export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolean; dwellDone: boolean }) {
   return privacyOwed || dwellDone;
