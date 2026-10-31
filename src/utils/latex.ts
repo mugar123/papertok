@@ -377,7 +377,9 @@ function joinsDelimiter(before: string, argument: string, after: string) {
 function unwrapTextFormatting(value: string) {
   let formulas: string | undefined;
   let text = value;
-  let source = Array.from(value, (character, index) => index);
+  // By UTF-16 unit, not code point: `Array.from(value)` is shorter by one
+  // for every character outside the BMP.
+  let source = Array.from({ length: value.length }, (_, index) => index);
   let walked = 0;
   // The argument each refused wrapper had, by where its backslash came from.
   const refused = new Map<number, string>();

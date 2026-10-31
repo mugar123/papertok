@@ -7,7 +7,7 @@ import {
   resolveHighlightRanges,
   segmentTextChunk,
 } from './text-highlights.ts';
-import { normalizeLatexText } from './latex.ts';
+import { normalizeLatexText, normalizeSavedLatexText } from './latex.ts';
 
 test('resolves a quote to a range in normalized space', () => {
   const text = 'The model reduced error by 12%.';
@@ -198,6 +198,44 @@ test('a saved quote ending on a font command closer maps onto the wrapped words 
   const text = 'x\\emph{ab}} and the rest of it';
   const [range] = resolveHighlightRanges(text, [{ quote: 'x\\emph{ab}', source: 'user' }]);
   assert.equal(normalizeLatexText(text).slice(range.start, range.end), 'xab');
+});
+
+// Math alphanumerics and emoji take two UTF-16 units; the offsets are in units.
+test('characters outside the BMP before a quote do not shift where it marks', () => {
+  for (const text of [
+    'The 𝒜 operator yields robust estimates',
+    'We study 𝑥 and 😀 with \\textbf{HERMES}, a harness for agents',
+    'We study 𝑥 with \\textbf{HERMES}, a harness for agents',
+  ]) {
+    const normalized = normalizeLatexText(text);
+    const whole = buildRangeAnchor(text, 0, normalized.length);
+    assert.equal(whole?.quote, normalizeSavedLatexText(text), text);
+    const tail = normalized.slice(-16);
+    const anchor = buildRangeAnchor(text, normalized.length - 16, normalized.length);
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }]) {
+      const [range] = resolveHighlightRanges(text, [highlight]);
+      assert.equal(normalized.slice(range.start, range.end), tail, text);
+    }
+  }
+  const text = 'We study 𝑥 with \\textbf{HERMES}, a harness for agents';
+  const [range] = resolveHighlightRanges(text, [{ quote: 'harness for agents', source: 'user' }]);
+  assert.equal(normalizeLatexText(text).slice(range.start, range.end), 'harness for agents');
+});
+
+// A quote that starts on a brace can also match a wrapper's brace earlier on.
+test('a quote cut at a plain brace marks the words it was selected on', () => {
+  const text = 'The \\textbf{set} is good and the set {S} is good.';
+  const normalized = normalizeLatexText(text);
+  assert.equal(normalized, 'The set is good and the set {S} is good.');
+  const start = normalized.indexOf('} is good');
+  const anchor = buildRangeAnchor(text, start, normalized.length);
+  assert.equal(anchor?.quote, '} is good.');
+  const [range] = resolveHighlightRanges(text, [{ quote: '} is good', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [start, start + '} is good'.length]);
+  // A wrapper the paragraph keeps as written still resolves by its own words.
+  const kept = 'intro \\[ \\textbf{x \\] rest} tail and more words';
+  const [rest] = resolveHighlightRanges(kept, [{ quote: 'x \\] rest} tail', source: 'user' }]);
+  assert.ok(rest);
 });
 
 test('a range too short to anchor is refused like any other', () => {
