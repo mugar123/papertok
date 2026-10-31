@@ -277,6 +277,27 @@ test('search_papers merges OpenAlex and arXiv, one paper per DOI', async () => {
   });
 });
 
+test('search_papers merges records that share a title and first author but no identifier, and says so', async () => {
+  // The published version under its DOI, and the preprint arXiv lists without one.
+  const published = {
+    ...OPENALEX_WORK,
+    title: 'Strained graphene in the lab',
+    authorships: [{ author: { id: 'https://openalex.org/A2', display_name: 'Luis Gómez' }, institutions: [] }],
+  };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [published] });
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const { answer } = await callTool(env, 'search_papers', { query: 'strained graphene' });
+    const papers = answer.result?.structuredContent?.papers as Array<{ doi?: string; arxivId?: string }>;
+    assert.deepEqual(papers.map(paper => [paper.doi, paper.arxivId]), [['10.1234/example.2026.1', '2603.01234']]);
+    const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
+    assert.match(String(tools?.find(tool => tool.name === 'search_papers')?.description), /identical title with a shared first-author name/);
+  });
+});
+
 test('search_papers ranks the merged list, so an arXiv-only title match survives a full OpenAlex page', async () => {
   // OpenAlex's record for the Llama 2 preprint carries another title: it sends
   // ten other works, and only arXiv knows the paper (src/services/paper-search-service.ts).
@@ -1005,12 +1026,14 @@ test("a tool leaves arXiv's seat to a reader who could take no other, in search_
       const looked = await callTool(env, 'get_paper', { id: '2603.01234' });
       assert.equal((looked.answer.result?.structuredContent?.paper as { id?: string }).id, 'openalex:W4400000123', 'get_paper answers from OpenAlex');
       assert.equal(arxivCalls(), 0);
-      // arXiv was idle: the model is told the refusal is PaperTok's pacing and
-      // how often it happens, not that arXiv is busy.
+      // arXiv was idle: each tool tells the model the refusal is PaperTok's
+      // pacing and how often it happens, not that arXiv is busy.
       const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
-      const description = String(tools?.find(tool => tool.name === 'get_paper')?.description);
-      assert.doesNotMatch(description, /busy/);
-      assert.match(description, /PaperTok's arXiv pacing .* one try in six/);
+      for (const name of ['search_papers', 'get_paper']) {
+        const description = String(tools?.find(tool => tool.name === name)?.description);
+        assert.doesNotMatch(description, /busy/, name);
+        assert.match(description, /PaperTok's arXiv pacing .* one try in six/, name);
+      }
 
       frozen = EVEN_ARXIV_PERIOD + 500;
       const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?search_query=strain', {
