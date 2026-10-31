@@ -1,5 +1,6 @@
 import type { FirestoreData, FirestoreWrite, QueryOptions } from './firestore-admin.ts';
-import test from 'node:test';
+import type { TestGlobals } from './test-types.ts';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
@@ -8,6 +9,7 @@ import {
   handleAccountDeletionRequest,
   runAccountDeletionSlice,
 } from './account-deletion.ts';
+import { handleEmailNotificationRequest } from './email-notifications.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
 const UID = 'alice-uid';
@@ -303,6 +305,63 @@ test('a profile pointing at somebody else\'s handle does not free that handle', 
   assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
 });
 
+test('a list pointing at somebody else\'s share does not delete that share', async () => {
+  // Rules from 2026-08-13 to 2026-08-20 let a client write any share id into its
+  // own list, so the pointer alone does not prove whose share it is.
+  const victimShare = 'b'.repeat(32);
+  const admin = memoryAdmin({
+    [`publicListOwners/${victimShare}`]: { ownerId: 'victim', listId: 'v-list' },
+    [`publicLists/${victimShare}`]: { title: 'Victim reading list' },
+    'users/victim/lists/v-list': { name: 'Victim reading list', publicShareId: victimShare },
+    [`users/${UID}/lists/legacy`]: { name: 'Planted', publicShareId: victimShare },
+  });
+
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(result?.complete, true);
+  assert.equal(admin.documents[`users/${UID}/lists/legacy`], undefined);
+  assert.deepEqual(admin.documents[`publicLists/${victimShare}`], { title: 'Victim reading list' });
+  assert.deepEqual(admin.documents[`publicListOwners/${victimShare}`], { ownerId: 'victim', listId: 'v-list' });
+  assert.equal(admin.documents['users/victim/lists/v-list']?.publicShareId, victimShare);
+});
+
+test('a share published after the last publicLists stage is still deleted through its pointer', async () => {
+  const lateShare = 'c'.repeat(32);
+  const admin = memoryAdmin({
+    [`users/${UID}/lists/early`]: { name: 'Early' },
+  });
+
+  let published = false;
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      // The session stays valid until Auth is deleted, so a publish from another
+      // tab lands after every slice has run its publicLists stage. Only the
+      // private list's pointer, read by the final sweep, can find this share.
+      fetchImpl: async () => {
+        published = true;
+        admin.documents[`publicListOwners/${lateShare}`] = { ownerId: UID, listId: 'late' };
+        admin.documents[`publicLists/${lateShare}`] = { title: 'Late' };
+        admin.documents[`users/${UID}/lists/late`] = { name: 'Late', publicShareId: lateShare };
+        return new Response('{}', { status: 200 });
+      },
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(published, true);
+  assert.equal(result?.complete, true);
+  assert.deepEqual(admin.documents, {});
+});
+
 test('a write that lands between the sweep and the Auth delete is swept too', async () => {
   const admin = memoryAdmin({
     [`userProfiles/${UID}`]: { handle: HANDLE },
@@ -327,6 +386,252 @@ test('a write that lands between the sweep and the Auth delete is swept too', as
   assert.ok(result);
   assert.equal(result.complete, true);
   assert.equal(admin.documents[`users/${UID}/highlights/late`], undefined);
+});
+
+test('a digest turned on while the Auth delete is in flight is purged too', async () => {
+  // Identity Toolkit still knows the account until accounts:delete returns, so
+  // the notification route accepts a settings save that lands after the purge.
+  const restore = stubIdentityLookup();
+  // An empty identity cache, so this test fails only when the purge is missing,
+  // not when the notification write's cache rule changes (email-notifications.test.ts owns that).
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  const store = kvStore();
+  const env = {
+    ...SERVICE,
+    NOTIFICATION_STORE: store as typeof store & KVNamespace,
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
+    EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
+  };
+
+  try {
+    let saved = false;
+    const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
+      idToken: TOKEN,
+      fetchImpl: async () => {
+        await handleEmailNotificationRequest(new Request('https://worker.test/notifications/preferences', {
+          method: 'PUT',
+          headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            maxPapers: 5,
+            follows: [{ type: 'author', canonicalId: 'A1', displayName: 'Ada', externalIds: {}, metadata: { categoryIds: [] } }],
+            previewItems: [],
+          }),
+        }), env, '/notifications/preferences');
+        saved = store.data.has(`notification:subscription:${UID}`);
+        return new Response('{}', { status: 200 });
+      },
+    });
+
+    assert.equal(saved, true);
+    assert.equal(result.complete, true);
+    assert.equal(store.data.has(`notification:subscription:${UID}`), false);
+  } finally {
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
+    restore();
+  }
+});
+
+// Only the deletion's own log lines are kept. Node 22 prints the experimental
+// MockTimers warning through console.error too, and that line still reaches
+// the real console.
+function captureErrors() {
+  const original = console.error;
+  const lines: string[] = [];
+  console.error = (...args: unknown[]) => {
+    const line = args.map(String).join(' ');
+    if (line.startsWith('Account deletion:')) lines.push(line);
+    else original(...args);
+  };
+  return { lines, restore: () => { console.error = original; } };
+}
+
+// The purge after the Auth delete waits a second before its retry. Timers are
+// mocked, so this ticks that second instead of sleeping through it.
+async function settleTickingTimers<T>(t: TestContext, run: Promise<T>) {
+  let settled = false;
+  const tracked = run.finally(() => { settled = true; });
+  while (!settled) {
+    await new Promise(resolve => { setImmediate(resolve); });
+    t.mock.timers.tick(1000);
+  }
+  return tracked;
+}
+
+test('a purge that fails after the Auth delete still lets the final sweep run, and the deletion completes', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const admin = memoryAdmin({ [`users/${UID}/lists/early`]: { name: 'Early' } });
+  const store = kvStore();
+  let authDeleted = false;
+  let readsAfterAuth = 0;
+  const get = store.get;
+  store.get = async (key: string, type?: string) => {
+    if (authDeleted) {
+      readsAfterAuth += 1;
+      throw new Error('KV GET failed: 503');
+    }
+    return get(key, type);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+
+  try {
+    const result = await settleTickingTimers(t, (async () => {
+      let slice;
+      for (let i = 0; i < 12; i += 1) {
+        slice = await runAccountDeletionSlice(admin, UID, env, {
+          idToken: TOKEN,
+          fetchImpl: async () => {
+            admin.documents[`users/${UID}/lists/late`] = { name: 'Late' };
+            authDeleted = true;
+            return new Response('{}', { status: 200 });
+          },
+        });
+        if (slice.complete) break;
+      }
+      return slice;
+    })());
+
+    assert.deepEqual(result, { complete: true, stage: 'auth' });
+    assert.equal(admin.documents[`users/${UID}/lists/late`], undefined);
+    assert.equal(readsAfterAuth, 2, 'one retry, then the failure is logged');
+    assert.equal(errors.lines.length, 1);
+    assert.match(errors.lines[0], /subscription purge/);
+    assert.doesNotMatch(errors.lines[0], new RegExp(UID));
+  } finally {
+    errors.restore();
+  }
+});
+
+test('a purge that KV refuses just after the Auth delete is retried once the second has passed', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const store = kvStore();
+  let authDeleted = false;
+  let refusals = 0;
+  const remove = store.delete;
+  store.delete = async (key: string) => {
+    // Workers KV refuses a second write to one key within a second.
+    if (authDeleted && refusals === 0 && key === `notification:subscription:${UID}`) {
+      refusals += 1;
+      throw new Error('KV DELETE failed: 429 Too Many Requests');
+    }
+    return remove(key);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+  const restore = stubIdentityLookup();
+
+  try {
+    let settled = false;
+    const deletion = handleAccountDeletionRequest(deletionRequest(), env, {
+      admin: memoryAdmin(),
+      fetchImpl: async () => {
+        // A digest saved from another tab while the Auth delete is in flight.
+        store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+        store.data.set('notification:unsubscribe:tok-2', UID);
+        authDeleted = true;
+        return new Response('{}', { status: 200 });
+      },
+    }).finally(() => { settled = true; });
+    while (refusals === 0 && !settled) await new Promise(resolve => { setImmediate(resolve); });
+    await new Promise(resolve => { setImmediate(resolve); });
+
+    assert.equal(refusals, 1);
+    assert.equal(settled, false, 'the retry waits for the second to pass');
+    assert.equal(store.data.has(`notification:subscription:${UID}`), true);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(await deletion, { complete: true, stage: 'auth' });
+    assert.equal(store.data.size, 0);
+    assert.deepEqual(errors.lines, []);
+  } finally {
+    restore();
+    errors.restore();
+  }
+});
+
+test('an unsubscribe index KV refuses after the Auth delete is still removed by the retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const store = kvStore();
+  let authDeleted = false;
+  let refusals = 0;
+  const remove = store.delete;
+  store.delete = async (key: string) => {
+    if (authDeleted && refusals === 0 && key === 'notification:unsubscribe:tok-2') {
+      refusals += 1;
+      throw new Error('KV DELETE failed: 429 Too Many Requests');
+    }
+    return remove(key);
+  };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+  const restore = stubIdentityLookup();
+
+  try {
+    let settled = false;
+    const deletion = handleAccountDeletionRequest(deletionRequest(), env, {
+      admin: memoryAdmin(),
+      fetchImpl: async () => {
+        store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+        store.data.set('notification:unsubscribe:tok-2', UID);
+        authDeleted = true;
+        return new Response('{}', { status: 200 });
+      },
+    }).finally(() => { settled = true; });
+    while (refusals === 0 && !settled) await new Promise(resolve => { setImmediate(resolve); });
+    await new Promise(resolve => { setImmediate(resolve); });
+    t.mock.timers.tick(1000);
+
+    assert.deepEqual(await deletion, { complete: true, stage: 'auth' });
+    assert.equal(refusals, 1);
+    assert.equal(store.data.size, 0);
+    assert.deepEqual(errors.lines, []);
+  } finally {
+    restore();
+    errors.restore();
+  }
+});
+
+test('a final sweep that fails after the Auth delete still purges the subscription, and the deletion completes', async () => {
+  const admin = memoryAdmin();
+  let authDeleted = false;
+  const runQuery = admin.runQuery;
+  admin.runQuery = (async (options: QueryOptions) => {
+    if (authDeleted) throw new FirestoreAdminError('FIRESTORE_UNAVAILABLE', 503, `users/${UID}`);
+    return runQuery(options);
+  });
+  const store = kvStore();
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const errors = captureErrors();
+
+  try {
+    const restore = stubIdentityLookup();
+    let result;
+    try {
+      result = await handleAccountDeletionRequest(deletionRequest(), env, {
+        admin,
+        fetchImpl: async () => {
+          // A digest saved from another tab while the Auth delete is in flight.
+          store.data.set(`notification:subscription:${UID}`, JSON.stringify({ uid: UID, unsubscribeToken: 'tok-2' }));
+          store.data.set('notification:unsubscribe:tok-2', UID);
+          authDeleted = true;
+          return new Response('{}', { status: 200 });
+        },
+      });
+    } finally {
+      restore();
+    }
+
+    assert.deepEqual(result, { complete: true, stage: 'auth' });
+    assert.equal(store.data.size, 0);
+    assert.equal(errors.lines.length, 1);
+    assert.match(errors.lines[0], /user tree sweep.*FIRESTORE_UNAVAILABLE/);
+    assert.doesNotMatch(errors.lines[0], new RegExp(UID));
+  } finally {
+    errors.restore();
+  }
 });
 
 test('paper stubs lose their createdBy attribution', async () => {

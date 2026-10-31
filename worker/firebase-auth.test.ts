@@ -1,7 +1,8 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
+import type { TestGlobals } from './test-types.ts';
 
 const UID = 'alice-uid';
 const EMAIL = 'alice@example.com';
@@ -93,6 +94,78 @@ test('an unsigned token is still refused: the signature is Google job, not ours'
     error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
   );
   assert.equal(lookups, 1);
+});
+
+/** The 60 s identity cache, as a map the test can look into. */
+function identityCache(t: TestContext) {
+  const entries = new Map<string, Response>();
+  const original = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = { default: {
+    match: async request => entries.get(String(request instanceof Request ? request.url : request))?.clone(),
+    put: async (request, response) => { entries.set(String(request instanceof Request ? request.url : request), response.clone()); },
+  } };
+  t.after(() => {
+    if (original === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = original;
+  });
+  return entries;
+}
+
+/** Identity Toolkit giving these answers, in order. */
+function stubAnswers(answers: Response[]) {
+  lookups = 0;
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes('identitytoolkit')) throw new Error(`unexpected fetch: ${url}`);
+    lookups += 1;
+    const answer = answers.shift();
+    if (!answer) throw new Error('Identity Toolkit was asked more often than the test expected');
+    return answer;
+  };
+}
+
+const verifiedAnswer = () => Response.json({ users: [{ localId: UID, email: EMAIL, emailVerified: true }] });
+const isAuthError = (code: string, status: number) => (error: unknown) => (
+  (error as { code: string; status: number }).code === code && (error as { code: string; status: number }).status === status
+);
+
+test('Identity Toolkit answering 5xx or 429 is an outage: 503 AUTH_UNAVAILABLE, nothing cached, and the next lookup verifies', async t => {
+  const cache = identityCache(t);
+  const token = fakeIdToken({ aud: PROJECT_ID });
+  const outages = {
+    // Google's JSON error body, and an HTML page for the 502 a front end can serve.
+    500: Response.json({ error: { code: 500, message: 'Internal error encountered.', status: 'INTERNAL' } }, { status: 500 }),
+    502: new Response('<html><title>Error 502 (Server Error)!!1</title></html>', { status: 502 }),
+    503: Response.json({ error: { code: 503, message: 'The service is currently unavailable.', status: 'UNAVAILABLE' } }, { status: 503 }),
+    429: Response.json({ error: { code: 429, message: 'Quota exceeded for quota metric', status: 'RESOURCE_EXHAUSTED' } }, { status: 429 }),
+  };
+  for (const [status, outage] of Object.entries(outages)) {
+    cache.clear();
+    stubAnswers([outage, verifiedAnswer()]);
+    await assert.rejects(
+      () => verifyFirebaseIdentity(bearing(token), ENV),
+      isAuthError('AUTH_UNAVAILABLE', 503),
+      `a ${status} from Identity Toolkit says nothing about the token`,
+    );
+    assert.equal(cache.size, 0, `nothing may be cached for a ${status}`);
+
+    assert.deepEqual(await verifyFirebaseIdentity(bearing(token), ENV), IDENTITY, `the lookup after a ${status} verifies`);
+    assert.equal(lookups, 2, `the lookup after a ${status} asks Google again`);
+    assert.equal(cache.size, 1, 'the verified identity is what gets cached');
+  }
+});
+
+test('Identity Toolkit refusing the token, or answering without a user, is still 401 AUTH_REQUIRED', async t => {
+  const cache = identityCache(t);
+  const token = fakeIdToken({ aud: PROJECT_ID });
+  const refusals = ['INVALID_ID_TOKEN', 'USER_NOT_FOUND', 'USER_DISABLED', 'TOKEN_EXPIRED'].map(message => (
+    Response.json({ error: { code: 400, message, errors: [{ message, domain: 'global', reason: 'invalid' }] } }, { status: 400 })
+  ));
+  for (const refusal of [...refusals, Response.json({ kind: 'identitytoolkit#GetAccountInfoResponse' })]) {
+    stubAnswers([refusal]);
+    await assert.rejects(() => verifyFirebaseIdentity(bearing(token), ENV), isAuthError('AUTH_REQUIRED', 401));
+    assert.equal(lookups, 1);
+  }
+  assert.equal(cache.size, 0);
 });
 
 test('without a configured project id the audience is not checked at all', async () => {
@@ -195,4 +268,13 @@ test('carries the verified account display name for notification greetings', asy
   stubUser({ localId: UID, email: EMAIL, emailVerified: true, displayName: 'Ada Reader' });
   assert.equal((await verify(fakeIdToken({ aud: PROJECT_ID }))).displayName, 'Ada Reader');
   assert.equal(lookups, 1);
+});
+
+test('an account name is collapsed and capped where it enters, so neither a caller nor the cache holds an unbounded provider string', async () => {
+  // Identity Toolkit passes on whatever the sign-in provider supplied, and the
+  // same object is what the 60 s identity cache stores for every route that reads it.
+  stubUser({ localId: UID, email: EMAIL, emailVerified: true, displayName: `  Ada \n  Lovelace ${'x'.repeat(500)}` });
+  const { displayName } = await verify(fakeIdToken({ aud: PROJECT_ID }));
+  assert.equal(displayName, `Ada Lovelace ${'x'.repeat(147)}`);
+  assert.equal(displayName?.length, 160);
 });

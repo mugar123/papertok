@@ -5,6 +5,7 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Interac
 import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendation-engine.ts';
 import type { FeedSnapshot } from './feed-snapshot.ts';
+import type { MarkWriteOptions } from './write-mark.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface LibraryEntry {
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
@@ -16,6 +17,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** A failed load waits for its one automatic retry. */
+  autoRetryPending: boolean;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -26,20 +29,26 @@ export interface FeedContextValue {
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
-  /** `seenFallback`: a page of papers shown before, carried by a load that skipped past it. */
-  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean }) => Promise<void>;
+  /**
+   * `seenFallback`: a page of papers shown before, carried by a load that
+   * skipped past it. `retriesTimeout`: the automatic retry of a first screen
+   * that timed out (automaticRetry). `listShown`: whether cards are on
+   * screen, from a caller that emptied or filled the list just before, which
+   * this render's `papers` does not show yet (waitsAsFirstScreen).
+   */
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
-  toggleLike: (paper: Paper) => Promise<void>;
+  toggleLike: (paper: Paper, options?: MarkWriteOptions) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
-  unmarkAsRead: (id: string) => Promise<void>;
+  unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
-  toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
+  toggleReadLater: (paper: Paper, value?: boolean, options?: MarkWriteOptions) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
   trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
   trackPdfOpened: (paper: Paper) => Promise<void>;
@@ -53,7 +62,7 @@ import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayou
 import { FeedContext } from './contexts.ts';
 import { db } from '../services/firebase.ts';
 import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
-import { useAnalyticsConsent } from './analytics-context.tsx';
+import { useAnalyticsConsent } from './privacy-context.tsx';
 import { useAuth } from './auth-context.tsx';
 import { auth } from '../services/firebase.ts';
 import { useFollowing } from './following-context.tsx';
@@ -80,13 +89,18 @@ import {
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
+import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
+import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
+import { unmarkRead } from './unmark-read.ts';
+import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
+import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
@@ -122,12 +136,12 @@ import {
   needsOpenAlexEnrichment,
   preserveFeedAbstracts,
 } from '../utils/feed-enrichment.ts';
-import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
+import { settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
-import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
+import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -139,8 +153,9 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 // instead of riding in the boot graph of every route.
 const loadTopicRetrieval = () => import('../services/topic-retrieval-service.ts');
 
-// How long exploration and the follows may hold a page: past it, the page is
-// shown without them.
+// How long exploration and the follows may hold a page, counted from the start
+// of the load: past it, the page is shown without them, unless a first screen
+// was still awaiting its main page when they answered (awaitScreenSources).
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
@@ -193,6 +208,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The request whose automatic retry is due. A retry's timer clears only its
+  // own: an older timer that fires after a newer failure must not end its wait.
+  const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
+  const autoRetryPending = autoRetryFor !== null;
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -226,6 +245,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const likedPaperIdsRef = useRef(likedPaperIds);
   const savedPaperIdsRef = useRef(savedPaperIds);
   const readPaperIdsRef = useRef(readPaperIds);
+  const personalLibraryRef = useRef(personalLibrary);
   const loadPapersRef = useRef<FeedContextValue['loadPapers'] | null>(null);
   const autoRetryUsedRef = useRef(false);
   const notInterestedIdsRef = useRef(notInterestedIds);
@@ -253,6 +273,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // write is coalesced behind it.
   const [initialInteractionProfile] = useState(createEmptyInteractionProfile);
   const interactionProfile = useRef(initialInteractionProfile);
+  // Follows each pending change to a paper's like, read or Read later mark, so
+  // every write's answer leaves the mark as Firestore will hold it (see writeMark).
+  const [markChangeLog] = useState(markChanges);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -271,6 +294,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
   useEffect(() => { readPaperIdsRef.current = readPaperIds; }, [readPaperIds]);
+  useEffect(() => { personalLibraryRef.current = personalLibrary; }, [personalLibrary]);
   useEffect(() => { notInterestedIdsRef.current = notInterestedIds; }, [notInterestedIds]);
   // Read by handlers that must keep one identity across re-ranks: a handler
   // that lists `papers` in its deps is handed anew to every mounted card on
@@ -928,6 +952,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // papers immediately. This is the only place allowed to blank the sets: a
     // profile that merely failed to load leaves them alone.
     if (leavesLoadedAccount(loadedProfileUserId.current, userId)) {
+      // A write still waiting may answer after the same account signs back
+      // in: what it sent to the screen is gone with these sets.
+      markChangeLog.screenReplaced();
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -991,6 +1018,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const saved = orderedSet('saved');
         const read = orderedSet('read');
 
+        // These sets and the library put every mark back where the profile
+        // has it, so a move an answer sent before is no longer on screen.
+        markChangeLog.screenReplaced();
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1124,13 +1154,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [carryViewedPapers, isKnownPaper, user?.uid]);
+  }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false, listShown }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1144,7 +1174,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions }],
+        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions, retriesTimeout }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1158,6 +1188,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     setLoading(true);
     setError(null);
+    setAutoRetryFor(null);
     pendingFailureEventRef.current = feedFailureEventStep(pendingFailureEventRef.current, { kind: 'load_started' }).hold;
 
     // A fresh load starts on the corpus's first page, the follows' included:
@@ -1190,6 +1221,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       && !isKnownPaper(paper.id)
     );
 
+    // Whether this load's store requests wait the first screen's deadline.
+    let firstScreen = false;
     try {
       // Inside the try, so a throw still releases feedLoadInFlight.
       const corpusPlan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
@@ -1219,7 +1252,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent };
+        firstScreen = waitsAsFirstScreen({ reset, hasPapers: papers.length > 0, listShown, retriesTimeout });
+        const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
@@ -1246,24 +1280,24 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           ? Math.min(NEARBY_EXPLORATION_MAX, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
-        const explore = async (categories: string[], count: number) => {
-          const papers = await resolveWithin(fetchCorpusPage({
-            categories: categories.slice(0, MAIN_CATEGORIES),
-            page: Math.floor(Math.random() * 30 / count),
-            pageSize: count,
-            order: queryMode,
-            negativeIds,
-            excludedIds,
-          }).then(answer => answer.papers, (e) => {
-            console.error('Error fetching explore papers:', e);
-            return [];
-          }), FEED_SOURCE_RENDER_BUDGET_MS, []);
+        const explore = (categories: string[], count: number) => fetchCorpusPage({
+          categories: categories.slice(0, MAIN_CATEGORIES),
+          page: Math.floor(Math.random() * 30 / count),
+          pageSize: count,
+          order: queryMode,
+          negativeIds,
+          excludedIds,
+          firstScreen: shared.firstScreen,
+        }).then(({ papers }) => {
           papers.forEach(p => {
             p._type = 'exploration';
             p._debugScore = { isExploration: true };
           });
           return papers;
-        };
+        }, (e: unknown) => {
+          console.error('Error fetching explore papers:', e);
+          return [];
+        });
         if (nearbyCats.length > 0) {
           explorationRequests.push(explore(nearbyCats, reset ? FIRST_SCREEN_EXPLORATION : exploreCount));
         }
@@ -1278,20 +1312,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           if (randomCats.length > 0) explorationRequests.push(explore(randomCats, RANDOM_EXPLORATION));
         }
 
-        const followedCandidatesPromise = followedEntities.length > 0
-          ? resolveWithin(
-            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(
-              followedCorpusRequest(corpusPlan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
-            )),
-            OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-            [],
-          )
+        // ─── STEP 4: Followed topics, authors, institutions and projects ───
+        const followedCandidates = followedEntities.length > 0
+          ? loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(
+            followedCorpusRequest(corpusPlan, followedEntities, follow => module.getFollowedTopicCategoryIds([follow]), shared),
+          ))
           : Promise.resolve<Paper[]>([]);
-        let mainPapers: Paper[] = [];
-        let mainFailure: { error: unknown } | null = null;
-        try {
-          let skipsSeen: boolean;
-          ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
+        const { main, optional: [followedPapers, ...explorationAnswers] } = await awaitScreenSources(
+          fetchCorpusPage({
             ...mainCorpusRequest(corpusPlan, shared),
             continues,
             // Unseen notable papers for the places of the largest page this
@@ -1299,21 +1327,25 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // exploration cards (two on the first screen, up to ten after it);
             // and the spares. A page has one place at least.
             notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
-          }));
-          rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, seenSent);
-          workerSkipsSeen.current = skipsSeen;
-        } catch (e) {
-          console.error('Error fetching main papers:', e);
-          mainFailure = { error: e };
-        }
+          }).then(answer => {
+            rankingSeen = hasSeenRanking(answer, seenSent);
+            workerSkipsSeen.current = answer.skipsSeen;
+            return answer.papers;
+          }),
+          [
+            { answer: followedCandidates, budgetMs: OPTIONAL_SOURCE_RENDER_BUDGET_MS },
+            ...explorationRequests.map(answer => ({ answer, budgetMs: FEED_SOURCE_RENDER_BUDGET_MS })),
+          ],
+          firstScreen,
+        );
+        const mainFailure = 'error' in main ? main : null;
+        if (mainFailure) console.error('Error fetching main papers:', mainFailure.error);
+        const mainPapers = 'value' in main ? main.value : [];
         mainPapers.forEach(p => { p._type = 'exploit'; });
-
-        // ─── STEP 4: Followed topics, authors, institutions and projects ───
-        const followedPapers = await followedCandidatesPromise;
 
         // Only give up when the follows cannot bootstrap the feed either, nor
         // the seen papers carried from an earlier page.
-        const explorationPapers = (await Promise.all(explorationRequests)).flat();
+        const explorationPapers = explorationAnswers.flat();
         if (mainFailure && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
           // The store's own error, so the reader's error state keeps its cause.
           throw mainFailure.error;
@@ -1374,7 +1406,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           excludedCount: activeMode === 'top' || activeMode === null ? excludedIds.length : 0,
         });
         if (plan.kind === 'relax-exclusions') {
-          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true });
+          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true, retriesTimeout, listShown });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw emptyFirstPageError();
@@ -1384,7 +1416,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout, listShown });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1488,7 +1520,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
-        // reader sees the error.
+        // failed feed is on screen. A load whose automatic retry is due sends
+        // it too, although the feed's wait covers its error.
         const { send, hold } = feedFailureEventStep(pendingFailureEventRef.current, {
           kind: 'load_failed',
           failure,
@@ -1498,14 +1531,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (send) void trackEvent('app_error', send);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
-        // error state with its manual "Reintentar" so there is no cascade.
+        // error state with its manual "Try again" so there is no cascade.
+        // While the retry is due, the feed shows its wait, not the error.
         if (reset && autoRetry && !autoRetryUsedRef.current) {
           autoRetryUsedRef.current = true;
+          setAutoRetryFor(requestId);
+          const retry = automaticRetry(failure, firstScreen);
           setTimeout(() => {
+            setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
+              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible, retriesTimeout: retry.retriesTimeout });
             }
-          }, 2500);
+          }, retry.pauseMs);
         }
       }
     } finally {
@@ -1577,10 +1614,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const signature = feedPreferenceSignature(userPreferences);
     const restoreKey = user?.uid && signature ? `${user.uid}:${signature}` : '';
     if (restoredSnapshotKeyRef.current === restoreKey) return;
-    restoredSnapshotKeyRef.current = restoreKey;
 
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    const restoreTimer = setTimeout(() => {
+    return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
@@ -1589,8 +1625,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-    }, 0);
-    return () => clearTimeout(restoreTimer);
+    });
   }, [feedMode, isKnownPaper, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
@@ -1602,36 +1637,30 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // end — fresh content arrives below the current card instead of on top of it.
   useEffect(() => {
     const signature = feedPreferenceSignature(userPreferences);
+    const plan = planPreferencesRefresh({
+      applied: preferencesSignatureRef.current,
+      signature,
+      ready: recommendationProfileReady,
+      onFeedRoute: feedRouteActive,
+      restored: restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`,
+    });
+    if (plan.action === 'forget') preferencesSignatureRef.current = null;
+    if (plan.action === 'keep-restored') preferencesSignatureRef.current = signature;
+    if (plan.action !== 'load') return;
 
-    if (!signature || !recommendationProfileReady) {
-      preferencesSignatureRef.current = null;
-      return;
-    }
-
-    // Off the feed route nothing is recorded, so preference edits made from
-    // settings or onboarding are picked up as a change on the next visit to
-    // the feed — and no source cascade fires for a feed nobody is looking at.
-    if (!feedRouteActive) return;
-
-    if (preferencesSignatureRef.current === signature) return;
-
-    const isColdMount = preferencesSignatureRef.current === null;
-    preferencesSignatureRef.current = signature;
-    if (isColdMount && restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`) return;
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
-    const refreshTimer = setTimeout(() => {
+    return scheduleRefresh(preferencesSignatureRef, signature, () => {
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
-        if (isColdMount) return;
+        if (plan.coldMount) return;
       } else {
         setPapers([]);
         setPage(0);
         setHasMore(true);
       }
-      void loadPapers(true, null);
-    }, 0);
-    return () => clearTimeout(refreshTimer);
+      void loadPapers(true, null, undefined, { listShown: Boolean(snapshot?.papers?.length) });
+    });
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // The last following signature the FEED applied, or null while there is no
@@ -1641,6 +1670,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // account's real follows landing read as a follow CHANGE — a re-rank and,
   // with the profile ready, a replacing reload — on every signed-in cold load.
   const followingSignatureRef = useRef<string | null>(null);
+  // The following signature whose replacing reload ran or was not due.
+  const followingReloadRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Warm the topic table as soon as a topic follow is known, off the feed's
@@ -1659,28 +1690,33 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!feedRouteActive) return;
     if (!user?.uid) {
       followingSignatureRef.current = null;
+      followingReloadRef.current = null;
       return;
     }
-    if (followingSignatureRef.current === signature) return;
     if (followingSignatureRef.current === null) {
       followingSignatureRef.current = signature;
+      followingReloadRef.current = signature;
       return;
     }
-    followingSignatureRef.current = signature;
-    reRankFeed();
-    if (recommendationProfileReady) {
-      feedCache.current = {};
-      // mergeFreshFeedPage keeps the cards through the visible one and lands
-      // the fresh ranking below them. reRankFeed() above changes papers
-      // whenever it reorders anything, changing loadPapers' identity — so this
-      // effect's cleanup can clear the timer before it fires. keepThroughVisible
-      // preserves the visible cards if the refresh does run.
-      const refreshTimer = setTimeout(
-        () => loadPapers(true, null, undefined, { keepThroughVisible: true }),
-        0,
-      );
-      return () => clearTimeout(refreshTimer);
+    if (followingSignatureRef.current !== signature) {
+      followingSignatureRef.current = signature;
+      reRankFeed();
     }
+    if (followingReloadRef.current === signature) return;
+    if (!recommendationProfileReady) {
+      followingReloadRef.current = signature;
+      return;
+    }
+    feedCache.current = {};
+    // mergeFreshFeedPage keeps the cards through the visible one and lands
+    // the fresh ranking below them. reRankFeed() above changes papers
+    // whenever it reorders anything, changing loadPapers' identity, so this
+    // effect's cleanup can clear the timer before it fires. The reload is
+    // recorded only when the timer runs, so the next run schedules it again
+    // without re-ranking twice.
+    return scheduleRefresh(followingReloadRef, signature, () => {
+      void loadPapers(true, null, undefined, { keepThroughVisible: true });
+    });
   }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady, user?.uid]);
 
   // Save current papers to cache before switching, then restore or fetch
@@ -1714,13 +1750,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setPage(0);
       setHasMore(true);
       setFeedMode(newMode);
-      setTimeout(() => loadPapers(true, newMode), 0);
+      setTimeout(() => loadPapers(true, newMode, undefined, { listShown: false }), 0);
     }
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
+  // A due automatic retry is the next load. The scroll sentinel stays mounted
+  // under the first wait's veil, and must not start pages in front of it.
   const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current) void loadPapers(false);
-  }, [hasMore, loadPapers]);
+    if (hasMore && !feedLoadInFlight.current && !autoRetryPending) void loadPapers(false);
+  }, [autoRetryPending, hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
   useLayoutEffect(() => {
@@ -1760,36 +1798,52 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, []);
 
-  const toggleLike = useCallback(async (paperInput: Paper) => {
+  const toggleLike = useCallback(async (paperInput: Paper, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
-    const isCurrentlyLiked = likedPaperIds.has(paper.id);
-    const newLiked = new Set(likedPaperIds);
+    const isCurrentlyLiked = markStartsOn(options, likedPaperIds.has(paper.id));
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
       boredomLevel.current = 0;
       void traverseAndExpandNetwork(paper);
-    }
-    
-    if (isCurrentlyLiked) {
-      newLiked.delete(paper.id);
-    } else {
-      newLiked.add(paper.id);
       countEngagement(paperInput.id, { likes: 1 });
 
       temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.1);
     }
-    recordProfileEvent({
-      paperId: paper.id,
-      kind: isCurrentlyLiked ? 'unlike' : 'like',
-      category: paper.primaryCategory,
-    }, paper);
-    setLikedPaperIds(newLiked);
-    reRankFeed(paper.id);
+    // By updater: a refusal that lands after another like changed must move
+    // only this paper back, not restore the set as it was when this call began.
+    const showLiked = (liked: boolean) => {
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: liked ? 'like' : 'unlike',
+        category: paper.primaryCategory,
+      }, paper);
+      setLikedPaperIds((ids) => {
+        const next = new Set(ids);
+        if (liked) next.add(paper.id);
+        else next.delete(paper.id);
+        return next;
+      });
+    };
 
-    if (userId) {
-      try {
+    await writeMark({
+      show: () => {
+        showLiked(!isCurrentlyLiked);
+        reRankFeed(paper.id);
+      },
+      undo: () => showLiked(isCurrentlyLiked),
+      failure: 'Error saving like:',
+      afterWrite: options?.afterWrite,
+      throwOnError: options?.throwOnError,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:like:${paper.id}`,
+      from: isCurrentlyLiked,
+      to: !isCurrentlyLiked,
+      isOn: () => likedPaperIdsRef.current.has(paper.id),
+      write: async () => {
+        if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
@@ -1800,19 +1854,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
           // kicker from. Written on like only; an unlike changes the flag.
-          paper: isCurrentlyLiked ? undefined : serializeLibraryPaper(paper),
+          paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
         void trackEvent('like_change', {
           action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
         });
-      } catch (err) {
-        console.error('Error saving like:', err);
-        setLikedPaperIds(likedPaperIds);
-      }
-    }
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
+      },
+    });
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1895,9 +1946,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId) return;
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.add(paper.id);
-    setReadPaperIds(newRead);
+    // A Reading history removal answered after this must leave the mark on,
+    // and this mark stays even if its own write is refused. A tap before React
+    // draws a refused unmark's undo finds the read already told.
+    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
+    // Built from the queued state, not the ref: an answered Reading history
+    // removal may have queued its move before React drew it.
+    setReadPaperIds((ids) => new Set(ids).add(paper.id));
     const readAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
     setPersonalLibrary((current) => {
@@ -1914,12 +1969,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
 
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: 'read',
-        category: paper.primaryCategory,
-        timestamp: readAt,
-      });
+      if (moves) {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'read',
+          category: paper.primaryCategory,
+          timestamp: readAt,
+        });
+      }
       const ref = interactionDocRef(userId, paper.id);
       await setDoc(ref, definedFields({
         read: true,
@@ -1927,13 +1984,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         paperCategory: paper.primaryCategory,
         timestamp: readAt,
         readAt,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         deviceType: getDeviceInfo().type,
       }), { merge: true });
     } catch (err) {
       console.error('Error saving read status:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, user?.uid, markChangeLog]);
 
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
@@ -2139,9 +2196,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        if (paper) interactionData.paper = serializeLibraryPaper(paper);
-
-        await setDoc(ref, interactionData, { merge: true });
+        await setDoc(ref, paper
+          ? { ...interactionData, paper: copyForMergeWrite(serializeLibraryPaper(paper)) }
+          : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
         if (options?.throwOnError) throw err;
@@ -2198,87 +2255,82 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
 
-  const unmarkAsRead = useCallback(async (paperId: string) => {
+  const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;
     if (!userId) return;
-    const newRead = new Set(readPaperIdsRef.current);
-    newRead.delete(paperId);
-    setReadPaperIds(newRead);
-    setPersonalLibrary((current) => {
-      if (!current[paperId]) return current;
-      const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-
-      return next;
-    });
-
-    try {
-      recordProfileEvent({ paperId, kind: 'unread' });
-      const ref = interactionDocRef(userId, paperId);
-      await updateDoc(ref, {
+    await unmarkRead(paperId, {
+      setReadIds: setReadPaperIds,
+      setLibrary: setPersonalLibrary,
+      write: () => updateDoc(interactionDocRef(userId, paperId), {
         read: deleteField(),
         readAt: deleteField(),
-      });
-    } catch (err) {
-      console.error('Error unmarking read status:', err);
-    }
-  }, [recordProfileEvent, user?.uid]);
+      }),
+      onUnmarked: () => recordProfileEvent({ paperId, kind: 'unread' }),
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
+      throwOnError: options?.throwOnError,
+      afterWrite: options?.afterWrite,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:read:${paperId}`,
+      isRead: () => readPaperIdsRef.current.has(paperId),
+    });
+  }, [recordProfileEvent, user?.uid, markChangeLog]);
 
-  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: { throwOnError: boolean }) => {
+  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return false;
     if (!userId || !paper?.id) return false;
-    const nextValue = value ?? !personalLibrary[paper.id]?.readLater;
+    const previous = personalLibrary[paper.id];
+    const nextValue = value ?? !previous?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
 
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: {
-          ...current[paper.id],
+    await writeMark({
+      show: () => {
+        setPersonalLibrary((current) => ({
+          ...current,
+          [paper.id]: {
+            ...current[paper.id],
+            paperId: paper.id,
+            ...readLaterStamp(current[paper.id], previous, { paper: storedPaper, updatedAt }, { late: Boolean(options?.afterWrite) }),
+            readLater: nextValue,
+          },
+        }));
+        recordProfileEvent({
           paperId: paper.id,
-          paper: storedPaper,
-          readLater: nextValue,
-          updatedAt,
-        },
-      };
-
-      return next;
-    });
-
-    try {
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: 'readLater',
-        value: nextValue,
-        category: paper.primaryCategory,
-        timestamp: updatedAt,
-      });
-      await setDoc(interactionDocRef(userId, paper.id), definedFields({
+          kind: 'readLater',
+          value: nextValue,
+          category: paper.primaryCategory,
+          timestamp: updatedAt,
+        });
+      },
+      undo: options?.throwOnError ? () => {
+        setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous, { paper: storedPaper, updatedAt }));
+        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
+      } : undefined,
+      write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
         libraryUpdatedAt: updatedAt,
-      }), { merge: true });
-    } catch (err) {
-      console.error('Error updating read later:', err);
-      if (options?.throwOnError) {
-        if (auth.currentUser?.uid === userId) {
-          const previousValue = Boolean(personalLibrary[paper.id]?.readLater);
-          setPersonalLibrary(current => ({
-            ...current,
-            [paper.id]: { ...current[paper.id], readLater: previousValue },
-          }));
-          recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: previousValue });
-        }
-        throw err;
-      }
-    }
+      }), { merge: true }),
+      failure: 'Error updating read later:',
+      afterWrite: options?.afterWrite,
+      throwOnError: options?.throwOnError,
+      stillSignedIn: () => auth.currentUser?.uid === userId,
+      changes: markChangeLog,
+      markKey: `${userId}:readLater:${paper.id}`,
+      // A removal from Read later (`afterWrite`) starts from a saved paper,
+      // not from whatever the screen showed when it was asked for.
+      from: markStartsOn(options, Boolean(previous?.readLater)),
+      to: nextValue,
+      isOn: () => Boolean(personalLibraryRef.current[paper.id]?.readLater),
+    });
     return nextValue;
-  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, markChangeLog]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
@@ -2314,7 +2366,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       await setDoc(interactionDocRef(userId, paper.id), definedFields({
         note: note.trim(),
         tags: normalizedTags,
-        paper: storedPaper,
+        paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
@@ -2370,7 +2422,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2383,7 +2435,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,

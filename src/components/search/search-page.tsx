@@ -33,7 +33,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { useLanguage } from '../../context/language-context.tsx';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { getOpenAlexHealth } from '../../services/open-alex-client.ts';
 import {
@@ -1021,6 +1021,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
+            analyticsSurface="search"
           />
         )}
       </PaperOverlay>

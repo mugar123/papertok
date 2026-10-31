@@ -33,6 +33,7 @@ import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
+import { FeedTimings } from './feed-timings.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
@@ -110,14 +111,45 @@ function upstreamFailureResponse(pathname: string, error: ProviderError, origin:
 
 // A credential that could not be checked is a refusal, not an outage to route
 // around: the protected provider routes answer it the same way.
+function authFailureCode(error: unknown) {
+  return error instanceof WorkerAuthError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE';
+}
+
 function providerAuthFailure(error: unknown, origin: string, env: WorkerEnv) {
-  const knownError = error instanceof WorkerAuthError;
-  const status = knownError ? error.status : 503;
-  return json({ code: knownError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE' }, status, {
+  const status = error instanceof WorkerAuthError ? error.status : 503;
+  return json({ code: authFailureCode(error) }, status, {
     ...corsHeaders(origin, env),
     'cache-control': 'no-store',
     ...(status === 429 ? { 'retry-after': '60' } : {}),
   });
+}
+
+// The answer to `POST /store/papers`, with the error code it carries, if any.
+async function answerCorpusFeed(
+  request: Request, env: WorkerEnv, origin: string, context: Pick<ExecutionContext, 'waitUntil'> | undefined, timings: FeedTimings,
+): Promise<{ response: Response; code?: string }> {
+  let identity: VerifiedIdentity;
+  const started = Date.now();
+  try {
+    identity = await verifyFirebaseIdentity(request, env);
+  } catch (error) {
+    captureWorkerException(error);
+    return { response: providerAuthFailure(error, origin, env), code: authFailureCode(error) };
+  } finally {
+    timings.since('auth', started);
+  }
+  const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
+  try {
+    const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined, timings);
+    return { response: json(answer, 200, headers) };
+  } catch (error) {
+    if (error instanceof PaperStoreError) {
+      return { response: json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers), code: error.code };
+    }
+    captureWorkerException(error);
+    console.error('Paper store failed', error);
+    return { response: json({ code: 'PAPER_STORE_FAILED' }, 502, headers), code: 'PAPER_STORE_FAILED' };
+  }
 }
 
 async function authenticateProtectedProviderRequest(request: Request, env: WorkerEnv, pathname: string) {
@@ -386,25 +418,22 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname === '/store/papers') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    let identity: VerifiedIdentity;
-    try {
-      identity = await verifyFirebaseIdentity(request, env);
-    } catch (error) {
-      captureWorkerException(error);
-      return providerAuthFailure(error, origin, env);
-    }
-    const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
-    try {
-      const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined);
-      return json(answer, 200, headers);
-    } catch (error) {
-      if (error instanceof PaperStoreError) {
-        return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
-      }
-      captureWorkerException(error);
-      console.error('Paper store failed', error);
-      return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
-    }
+    // A request slower than the feed's budget leaves one line of its steps
+    // (feed-timings.ts). The runtime cancels a request whose client went away
+    // (the app gives up at 3.5 s, or 10 s on a first screen; a tab closes), so such a request writes its
+    // line when its signal aborts, with the steps it finished
+    // (`enable_request_signal` in wrangler.toml). Its answer is not handed to
+    // waitUntil: an abandoned page reads no more D1, starts no provider
+    // lookup and writes no ranking cache that a retry's page would then lose.
+    const started = Date.now();
+    const route = routeForLog(url.pathname);
+    const timings = new FeedTimings();
+    const abandoned = () => timings.logIfSlow(route, Date.now() - started, { aborted: true });
+    request.signal.addEventListener('abort', abandoned, { once: true });
+    const { response, code } = await answerCorpusFeed(request, env, origin, context, timings);
+    request.signal.removeEventListener('abort', abandoned);
+    timings.logIfSlow(route, Date.now() - started, { status: response.status, code });
+    return response;
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {

@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 26 October 2026.</p>
+      <p class="lp-updated">Last updated 28 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -235,8 +235,10 @@
         Product events record the papers you view, open, like, save, highlight or annotate
         by their identifier, how long cards and the reader stay on screen, the authors,
         topics or institutions you follow by their identifier, search types and result
-        counts, and the outcome of sign-in and AI explanation requests. Events include
-        browser, operating system, device type and session identifiers.
+        counts, and the outcome of sign-in and AI explanation requests. They also record
+        when you open a paper's connections or its similar papers, and what you do in the
+        connections map, such as switching to the list or centring the graph on another
+        paper. Events include browser, operating system, device type and session identifiers.
       </p>
       <p>
         PaperTok does not send your name, email address, search text, notes, paper titles
@@ -251,10 +253,13 @@
       </p>
       <p>
         You can turn off both services in <strong>Settings → Privacy</strong> or, without
-        an account, with the <strong>Privacy</strong> button on the welcome screens and
-        feed. The choice is kept in this browser. Turning analytics off stops new browser
-        events and removes PostHog's stored browser identity; previously queued events
-        may still be delivered. On subsequent visits neither analytics library loads.
+        an account, with the <strong>Privacy</strong> button at the top of the welcome
+        screens and of the public pages a shared link opens: a paper, a list, an author,
+        institution, journal, topic or project page, and the page for a link that no longer
+        works. The choice is kept in this browser. Turning analytics off stops new
+        browser events and removes PostHog's stored browser identity; previously
+        queued events may still be delivered. On subsequent visits neither analytics
+        library loads.
         A previous rejection of detailed tracking remains disabled until you turn
         analytics on. To request deletion of previously collected data, write to the
         contact address below.
@@ -324,7 +329,8 @@
         related to that one, by its identifier. They are used to choose and rank that page.
         So the feed can go on from where you stopped, the server keeps the order it ranked
         for you, and how far down it you got, for up to 2 hours after your last page. It is
-        kept in the cache of the Cloudflare data center that answered you, under a key
+        kept in the cache of the Cloudflare data center where that server runs (placed near
+        Frankfurt; Cloudflare may move it to a nearby data center), under a key
         derived from your account, and is not copied elsewhere. It holds the papers of that
         order, not the list of papers you liked, saved or read at length. Deleting your
         account does not remove it sooner; it expires on its own. Apart from that order,

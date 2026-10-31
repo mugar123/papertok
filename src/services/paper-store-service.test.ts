@@ -4,6 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { withRequestDeadline } from '../utils/request-deadline.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -269,6 +270,61 @@ test('a request that got no answer is marked unreachable, while a deadline or a 
   const signedOut = new WorkerApiAuthError();
   const { options: noSession } = harness(async () => { throw signedOut; });
   await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, noSession), (error) => error === signedOut);
+});
+
+// ENG-116: the 3.5 s deadline started before the Firebase ID token was in hand,
+// so a slow token refresh spent the request's budget and readers saw a timeout
+// for a store that answered in time. The fake does what authenticatedWorkerFetch
+// does: the token first, then the request under the budget it was given. The
+// slow store keeps that budget bounded: without one, the 15 s default applies
+// and the feed waits for it. authenticatedWorkerFetch itself needs Firebase and
+// import.meta.env, which node --test does not have.
+test('a slow ID token does not spend the deadline of the store request, and the deadline still holds after it', async () => {
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const user = { getIdToken: async () => { await wait(2_000); return 'token'; } };
+  const storeAnswering = (afterMs: number) => (signal: AbortSignal) => new Promise<Response>((resolve, reject) => {
+    const answer = setTimeout(() => resolve(new Response(JSON.stringify({ papers: [STORED] }), { status: 200 })), afterMs);
+    signal.addEventListener('abort', () => { clearTimeout(answer); reject(signal.reason); }, { once: true });
+  });
+  const fetchWorkerTo = (store: (signal: AbortSignal) => Promise<Response>) => async (_url: string, init: RequestInit, timeoutMs?: number) => {
+    await user.getIdToken();
+    return store(withRequestDeadline(init, timeoutMs).signal);
+  };
+  const request = { categories: ['med.cardio'], page: 0, pageSize: 15 };
+  const [inTime, tooSlow] = await Promise.allSettled([
+    fetchCorpusPage(request, { apiBase: WORKER, fetchWorker: fetchWorkerTo(storeAnswering(1_600)) }),
+    fetchCorpusPage(request, { apiBase: WORKER, fetchWorker: fetchWorkerTo(storeAnswering(3_600)) }),
+  ]);
+  assert.ok(inTime.status === 'fulfilled');
+  assert.deepEqual(inTime.value.papers, [STORED]);
+  assert.ok(tooSlow.status === 'rejected');
+  assert.equal((tooSlow.reason as Error).name, 'TimeoutError');
+});
+
+// ENG-116: once the deadline started after the token, every feed failure was a
+// list's first page timing out at 3.5 s, mostly on a session's first load, and
+// the automatic retry usually brought the papers. That page waits longer; a
+// later page does not.
+test("a store that answers in 5 s fills a list's first screen, and a later page still times out", async () => {
+  const sent: unknown[] = [];
+  const answersIn5s = async (_url: string, init: RequestInit, timeoutMs?: number) => {
+    sent.push(JSON.parse(String(init.body)));
+    const { signal } = withRequestDeadline(init, timeoutMs);
+    return new Promise<Response>((resolve, reject) => {
+      const answer = setTimeout(() => resolve(new Response(JSON.stringify({ papers: [STORED] }), { status: 200 })), 5_000);
+      signal.addEventListener('abort', () => { clearTimeout(answer); reject(signal.reason); }, { once: true });
+    });
+  };
+  const options = { apiBase: WORKER, fetchWorker: answersIn5s };
+  const [firstScreen, laterPage] = await Promise.allSettled([
+    fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, firstScreen: true }, options),
+    fetchCorpusPage({ categories: ['med.cardio'], page: 1, pageSize: 15 }, options),
+  ]);
+  assert.ok(firstScreen.status === 'fulfilled');
+  assert.deepEqual(firstScreen.value.papers, [STORED]);
+  assert.ok(laterPage.status === 'rejected');
+  assert.equal((laterPage.reason as Error).name, 'TimeoutError');
+  assert.ok(sent.every(body => !Object.hasOwn(body as object, 'firstScreen')), 'the wait is the app\'s; the Worker is not told');
 });
 
 test('a connection lost while the answer arrives is marked unreachable too', async () => {

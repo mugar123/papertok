@@ -22,6 +22,7 @@ import {
   startAnalyticsClient,
   trackAcquisition,
   trackDay7Return,
+  trackProductEvent,
 } from './analytics-service.ts';
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -208,6 +209,113 @@ test('classifies acquisition without exposing the referring URL', () => {
     referrer: 'https://example.edu/private-path',
     location: { search: '?utm_medium=email&utm_campaign=private', origin: 'https://papertok.test' },
   }), 'email');
+});
+
+test('files a referrer by its whole host, not by a fragment of its name', () => {
+  const channelOf = (referrer: string) => inferAcquisitionChannel({
+    referrer,
+    location: { search: '', origin: 'https://papertok.test' },
+  });
+  const expected: Record<string, string> = {
+    // Search engines, including Google's country domains, its search properties
+    // (Scholar, Books, Images, News) and its Android search and News apps.
+    'https://google.com/': 'organic_search',
+    'https://www.google.com/': 'organic_search',
+    'https://www.google.co.uk/': 'organic_search',
+    'https://www.google.com.br/': 'organic_search',
+    'https://www.google.co.jp/': 'organic_search',
+    'https://www.google.de/': 'organic_search',
+    'https://www.google.cat/': 'organic_search',
+    'https://scholar.google.com/': 'organic_search',
+    'https://scholar.google.co.uk/': 'organic_search',
+    'https://scholar.google.de/': 'organic_search',
+    'https://books.google.com/': 'organic_search',
+    'https://images.google.com/': 'organic_search',
+    'https://news.google.com/': 'organic_search',
+    'https://ipv6.google.com/': 'organic_search',
+    'android-app://com.google.android.googlequicksearchbox/': 'organic_search',
+    'android-app://com.google.android.apps.searchlite/': 'organic_search',
+    'android-app://com.google.android.apps.magazines/': 'organic_search',
+    'https://www.bing.com/': 'organic_search',
+    'https://duckduckgo.com/': 'organic_search',
+    'https://html.duckduckgo.com/': 'organic_search',
+    'https://www.ecosia.org/': 'organic_search',
+    'https://ecosia.org/': 'organic_search',
+    'https://search.yahoo.com/': 'organic_search',
+    'https://uk.search.yahoo.com/': 'organic_search',
+    'https://search.yahoo.co.jp/': 'organic_search',
+    'https://de.search.yahoo.com/': 'organic_search',
+    'https://search.brave.com/': 'organic_search',
+    // Social networks, short links and the YouTube and YouTube Music apps included.
+    'https://t.co/abc': 'organic_social',
+    'https://x.com/': 'organic_social',
+    'https://www.x.com/': 'organic_social',
+    'https://mobile.twitter.com/': 'organic_social',
+    'https://l.facebook.com/': 'organic_social',
+    'https://old.reddit.com/': 'organic_social',
+    'https://m.youtube.com/': 'organic_social',
+    'android-app://com.google.android.youtube/': 'organic_social',
+    'android-app://com.google.android.apps.youtube.music/': 'organic_social',
+    // Other Google products and sites whose name only contains a search or social host.
+    'https://docs.google.com/': 'referral',
+    'https://mail.google.com/': 'referral',
+    'https://gemini.google.com/': 'referral',
+    'https://google.org/': 'referral',
+    'https://google.dev/': 'referral',
+    'https://translate.google.com/': 'referral',
+    'android-app://com.google.android.gm/': 'referral',
+    // A package name is matched whole: another vendor's package can end with a Google app's.
+    'android-app://net.example.com.google.android.youtube/': 'referral',
+    'android-app://net.example.com.google.android.googlequicksearchbox/': 'referral',
+    // Listed hosts do not apply to a package, nor packages to a web host.
+    'android-app://evil.t.co/': 'referral',
+    'android-app://com.example.x.com/': 'referral',
+    'android-app://com.example.youtube.com/': 'referral',
+    'android-app://com.example.facebook.com/': 'referral',
+    'android-app://t.co/': 'referral',
+    'https://com.google.android.youtube/': 'referral',
+    'https://com.google.android.googlequicksearchbox/': 'referral',
+
+    'https://notgoogle.example.org/': 'referral',
+    'https://www.yahoo.com/': 'referral',
+    'https://search.yahoo.example.org/': 'referral',
+    'https://notsearch.yahoo.com/': 'referral',
+    'https://search.yahoo.com.evil.example/': 'referral',
+    // A suffix that only looks like a country: any three-letter or generic TLD,
+    // and `co.com` / `com.com`, which anyone can register.
+    'https://search.yahoo.xyz/': 'referral',
+    'https://search.yahoo.net/': 'referral',
+    'https://a.search.yahoo.top/': 'referral',
+    'https://search.yahoo.co.com/': 'referral',
+    'https://search.yahoo.com.com/': 'referral',
+    'https://www.google.co.com/': 'referral',
+    'https://www.google.com.com/': 'referral',
+    'https://scholar.google.co.com/': 'referral',
+    'https://google.com.cat/': 'referral',
+    // A search engine's other sites link out too: only its search host is search.
+    'https://brave.com/download/': 'referral',
+    'https://community.brave.com/': 'referral',
+    'https://blog.ecosia.org/': 'referral',
+    'https://google.com.evil.example/': 'referral',
+    'https://chatgpt.com/': 'referral',
+    'https://copilot.microsoft.com/': 'referral',
+    'https://teams.microsoft.com/': 'referral',
+    'https://getpocket.com/': 'referral',
+    'https://dropbox.com/': 'referral',
+    'https://www.netflix.com/': 'referral',
+    'https://news.ycombinator.com/': 'referral',
+    'https://arxiv.org/abs/2401.00001': 'referral',
+    // A trailing dot names the host differently (referral, decided 2026-10-25) and
+    // upper case does not, for a listed host and for a pattern alike.
+    'https://t.co./': 'referral',
+    'https://www.google.com./': 'referral',
+    'https://search.yahoo.com./': 'referral',
+    'https://T.CO/abc': 'organic_social',
+    'https://WWW.Google.CO.UK/': 'organic_search',
+    'https://Search.Yahoo.Com/': 'organic_search',
+  };
+
+  assert.deepEqual(Object.fromEntries(Object.keys(expected).map(referrer => [referrer, channelOf(referrer)])), expected);
 });
 
 test('tracks acquisition once per browser session after consent', async t => {
@@ -424,7 +532,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; }) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -738,6 +846,19 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   await pending;
   await identifyAnalyticsUser({ uid: 'also-discarded' });
   assert.deepEqual(changes, []);
+
+  const capturedAccounts: Array<string | null> = [];
+  t.mock.method(posthog, 'capture', () => { capturedAccounts.push(identifiedAs); return undefined; });
+  storage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
+  await Promise.all([
+    identifyAnalyticsUser({ uid: 'next-account' }),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  await Promise.all([
+    identifyAnalyticsUser(null),
+    trackProductEvent('paper_open', { surface: 'feed' }),
+  ]);
+  assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {
@@ -775,6 +896,41 @@ test('drops unapproved events, parameter values, and arbitrary identity fields',
     name: 'Reader Name',
   }), {});
   assert.deepEqual(sanitizeProductEventParams('custom_event', { surface: 'feed' }), {});
+});
+
+test('opening connections or similar papers records where and whether a graph can exist, never which paper', () => {
+  assert.deepEqual(sanitizeProductEventParams('connections_open', {
+    surface: 'feed', graph_available: false, paper_id: 'W2741809807', paper_title: 'A private title', doi: '10.1234/private',
+  }, ANALYTICS_CONSENT.ENABLED), { surface: 'feed', graph_available: false });
+  assert.deepEqual(sanitizeProductEventParams('connections_open', { surface: 'connections', graph_available: true }), { surface: 'connections', graph_available: true });
+  assert.deepEqual(sanitizeProductEventParams('similar_open', { surface: 'similar', paper_id: 'W2741809807' }, ANALYTICS_CONSENT.ENABLED), { surface: 'similar' });
+  assert.deepEqual(sanitizeProductEventParams('similar_open', { surface: 'paper-W2741809807' }), {});
+});
+
+test('what a reader does in the connections map is one of six actions in the map or the list', () => {
+  for (const action of ['select_node', 'centre', 'back', 'switch_view', 'export', 'open_paper']) {
+    assert.deepEqual(sanitizeProductEventParams('connections_interact', { action, view: 'list' }), { action, view: 'list' });
+  }
+  assert.deepEqual(sanitizeProductEventParams('connections_interact', {
+    action: 'drag', view: 'grid', paper_id: 'W2741809807', node: 'Smith 2019',
+  }, ANALYTICS_CONSENT.ENABLED), {});
+
+  const capture = postHogCapture('connections_interact', { action: 'open_paper', view: 'map', paper_id: 'W2741809807' });
+  const sent = sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED);
+  assert.equal(sent?.event, 'connections_interact');
+  assert.equal(sent?.properties.action, 'open_paper');
+  assert.equal(sent?.properties.view, 'map');
+  assert.ok(!JSON.stringify(sent).includes('W2741809807'));
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+});
+
+test('connections and similar are allowed surfaces for paper events', () => {
+  for (const surface of ['connections', 'similar']) {
+    assert.deepEqual(sanitizeProductEventParams('paper_open', { surface, destination: 'pdf', position: 2 }), { surface, destination: 'pdf', position: 2 });
+    assert.deepEqual(sanitizeProductEventParams('paper_view', { surface, position: 0 }), { surface, position: 0 });
+    assert.deepEqual(sanitizeProductEventParams('paper_dwell', { surface, seconds: 9 }), { surface, seconds: 9 });
+    assert.deepEqual(sanitizeProductEventParams('save_change', { action: 'add', surface }), { action: 'add', surface });
+  }
 });
 
 test('an app error leaves with its kind and nothing from the error, and not at all once analytics is off', () => {

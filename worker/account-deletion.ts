@@ -60,6 +60,14 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 8000;
  */
 const RECENT_SIGN_IN_SECONDS = 240;
 
+/**
+ * Workers KV answers a second write to one key within a second with a 429. The
+ * purge after the Auth delete writes the keys that the purge before it, and any
+ * digest saved from another tab meanwhile, often wrote within that second, so a
+ * failed purge gets one retry once the second has passed.
+ */
+const KV_SAME_KEY_WRITE_INTERVAL_MS = 1000;
+
 export class AccountDeletionError extends Error {
   declare code: string;
   declare status: number;
@@ -237,8 +245,16 @@ async function deleteUserTree(admin: DeletionAdmin, uid: string) {
     const writes = [];
     for (const row of rows) {
       if (collectionId === 'lists') {
+        // The pointer catches a share published after the last publicLists
+        // stage, which only the final sweep after the Auth delete can see (an
+        // earlier slice reruns that stage). But the rules of 2026-08-13..20 let
+        // a client write any share id into its own list. Like requireOwnedShare,
+        // delete the share only when its owner record names this uid.
         const shareId = typeof row.data?.publicShareId === 'string' ? row.data.publicShareId : '';
-        if (/^[a-f0-9]{32}$/.test(shareId)) {
+        const owner = /^[a-f0-9]{32}$/.test(shareId)
+          ? await admin.getDocument<{ ownerId?: unknown }>(['publicListOwners', shareId])
+          : null;
+        if (owner?.ownerId === uid) {
           writes.push(deleteWrite(admin.name(['publicLists', shareId])));
           writes.push(deleteWrite(admin.name(['publicListOwners', shareId])));
         }
@@ -284,6 +300,16 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   throw new AccountDeletionError('AUTH_DELETE_FAILED', 502);
 }
 
+async function purgeAfterAuthDelete(env: WorkerEnv, uid: string) {
+  const keys = new Set<string>();
+  try {
+    await purgeEmailSubscription(env, uid, keys);
+  } catch {
+    await new Promise(resolve => { setTimeout(resolve, KV_SAME_KEY_WRITE_INTERVAL_MS); });
+    await purgeEmailSubscription(env, uid, keys);
+  }
+}
+
 /**
  * One bounded slice. Returns `{ complete, stage }` so the browser can POST
  * again until `complete` is true without the Worker holding the request
@@ -324,8 +350,24 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   await deleteAuthAccount(env, idToken, { fetchImpl });
   // The session stays valid until the line above returns, so anything the client
   // wrote after the sweep walked past it is an orphan nobody — not even its own
-  // author, now that Auth is gone — can ever remove. Sweep once more.
-  await deleteUserTree(admin, uid);
+  // author, now that Auth is gone — can ever remove. Sweep once more, the
+  // subscription included: a digest turned on in another tab meanwhile passed
+  // Identity Toolkit because the account still existed.
+  // Neither cleanup may skip the other, and neither may fail the request: the
+  // account is gone, so a retry can only be refused with AUTH_REQUIRED, and a
+  // failure here would tell the reader a deleted account still exists. The log
+  // only says which cleanup failed and why: it names no account, subscription
+  // or share, so whatever that cleanup missed stays behind untraced.
+  const [purge, sweep] = await Promise.allSettled([
+    purgeAfterAuthDelete(env, uid),
+    deleteUserTree(admin, uid),
+  ]);
+  for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep]] as const) {
+    if (outcome.status === 'rejected') {
+      const reason = outcome.reason as { code?: unknown; name?: unknown } | null;
+      console.error(`Account deletion: ${cleanup} after the Auth delete failed`, String(reason?.code || reason?.name || 'unknown'));
+    }
+  }
   return { complete: true, stage: 'auth' };
 }
 

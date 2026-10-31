@@ -14,7 +14,8 @@ export interface PaperCardProps {
   trackViewTime?: (paper: Paper, seconds: number) => void | Promise<void>;
   trackSkip?: (paper: Paper) => void | Promise<void>;
   onOpenPdf?: (paper: Paper) => void | Promise<void>;
-  onSaveToList?: (paper: Paper) => void | Promise<void>;
+  /** `surface` overrides the one a quick-save handler reports its saves under. */
+  onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
    * Holding Save on a touch screen. Where a tap on Save already opens the list
    * picker it does the same; the feed, whose tap quick-saves to Read later,
@@ -26,7 +27,11 @@ export interface PaperCardProps {
   titleAs?: 'h1' | 'h2';
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
-  analyticsSurface?: string;
+  /**
+   * The surface this card's events report. Required: a host that left it out
+   * used to report 'feed', which counted Search and Lists opens as For You.
+   */
+  analyticsSurface: string;
   position?: number;
   /** A feed request may still supply this paper's missing abstract. */
   abstractLoading?: boolean;
@@ -92,7 +97,7 @@ import { Toggle } from '../ui/toggle.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getProjectForPaper } from '../../services/open-aire-service.ts';
-import { authorExplorerPath } from '../../utils/explorer-paths.ts';
+import { authorExplorerPath, projectExplorerPath } from '../../utils/explorer-paths.ts';
 import { Link } from 'react-router-dom';
 import { useStableNavigate } from '../../hooks/use-stable-navigate.ts';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -126,7 +131,7 @@ import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-s
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
-import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
+import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
 import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
@@ -156,7 +161,7 @@ const STATUS_CHIP_ICONS = {
   subscription: LockKey,
 };
 import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts';
-import { hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
+import { getCitationGraphDoi, hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
 import { resolveWithin } from '../../utils/async-timing.ts';
 import {
@@ -167,7 +172,7 @@ import {
 } from '../../utils/external-url.ts';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
@@ -400,7 +405,7 @@ const PaperCard = memo(function PaperCard({
   titleAs = 'h2',
   publicMode = false,
   onAuthRequired,
-  analyticsSurface = 'feed',
+  analyticsSurface,
   position,
   abstractLoading = false,
 }: PaperCardProps) {
@@ -909,7 +914,7 @@ const PaperCard = memo(function PaperCard({
    * are the same words as before.
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
-  const abstractAttribution = semanticScholarAttribution(paper);
+  const abstractAttribution = sourceAttribution(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -1191,11 +1196,6 @@ const PaperCard = memo(function PaperCard({
   }, []);
 
   const selectRelatedPaper = useCallback((relatedPaper: Paper) => {
-    void trackEvent('select_content', {
-      content_type: 'paper',
-      surface: analyticsSurface,
-      position,
-    });
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
@@ -1213,7 +1213,14 @@ const PaperCard = memo(function PaperCard({
       setSelectedRelatedPaper((preparedPaper || relatedPaper) as Paper);
       setPendingRelatedPaper(null);
     });
-  }, [analyticsSurface, position, prepareRelatedPaper, trackEvent]);
+  }, [prepareRelatedPaper]);
+
+  // The host's quick save reports the host's surface; the paper opened from
+  // Connections saves under `connections`, where its views are counted.
+  const saveRelatedPaper = useCallback(
+    (relatedPaper: Paper) => onSaveToList(relatedPaper, 'connections'),
+    [onSaveToList],
+  );
 
   const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
@@ -1373,6 +1380,7 @@ const PaperCard = memo(function PaperCard({
       requireAuthentication('related');
       return;
     }
+    void trackEvent('connections_open', { surface: analyticsSurface, graph_available: Boolean(getCitationGraphDoi(paper)) });
     setShowRelated(true);
   };
 
@@ -1673,7 +1681,7 @@ const PaperCard = memo(function PaperCard({
     // identifier is the OpenAIRE id, which names one project.
     const path = publicMode
       ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+      : projectExplorerPath({ id: projectRouteId!, name: project.acronym!, funder: project.funder }, paperId);
     void trackEvent('select_content', {
       content_type: 'project',
       surface: analyticsSurface,
@@ -2101,6 +2109,7 @@ const PaperCard = memo(function PaperCard({
                     as="span"
                     className="pc-abstract-source"
                     lead={abstractAttribution.label}
+                    name={abstractAttribution.name}
                     href={abstractAttribution.href}
                     inert={!expanded && abstractClipped !== false}
                     onLinkClick={swallowClick}
@@ -2300,6 +2309,7 @@ const PaperCard = memo(function PaperCard({
             title={'Similar papers'}
             onClick={(event) => {
               event.stopPropagation();
+              void trackEvent('similar_open', { surface: analyticsSurface });
               openSimilar(paper, event.currentTarget);
             }}
           >
@@ -2497,13 +2507,12 @@ const PaperCard = memo(function PaperCard({
                 trackViewTime={trackViewTime}
                 trackSkip={trackSkip}
                 onOpenPdf={onOpenPdf}
-                onSaveToList={onSaveToList}
+                onSaveToList={saveRelatedPaper}
                 getInteractionState={getInteractionState}
                 hideScrollHint
                 publicMode={publicMode}
                 onAuthRequired={onAuthRequired}
-                analyticsSurface={analyticsSurface}
-                position={position}
+                analyticsSurface="connections"
               />
             </div>
           ) : activeRelatedPaper ? (

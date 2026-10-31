@@ -31,7 +31,11 @@ import { useLanguage } from '../../context/language-context.tsx';
 import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
+import { removePaperFromList } from './remove-paper-from-list.ts';
+import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
+import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
 import { writeNewList } from './write-new-list.ts';
+import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListNote from './list-note.tsx';
 import { ListRowAuthors, PaperListRow } from './list-row.tsx';
@@ -55,8 +59,10 @@ import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
 import ScientificText from '../scientific-text.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
+import { listPaperFromCopies } from './list-paper-copies.ts';
 import {
   ArrowLeft,
+  CircleNotch,
   DotsThree,
   CaretDown,
   Check,
@@ -76,7 +82,7 @@ import { downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
-import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import {
   PUBLIC_LIST_LIMITS,
   publishPublicList,
@@ -380,6 +386,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [createdListId, setCreatedListId] = useState<string | null>(null);
   const [foldersArrived, setFoldersArrived] = useState(false);
   const [removalOpen, setRemovalOpen] = useState(false);
+  // Rows whose removal the server has not answered yet, by `rowRemovalKey`.
+  const [pendingRemovals, setPendingRemovals] = useState<ReadonlySet<string>>(() => new Set());
   const [deletingList, setDeletingList] = useState<OwnList | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const isPhone = useIsPhone();
@@ -427,19 +435,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const savedPaper = savedPapers[paperId] ?? libraryPapers[paperId];
     if (!libraryPaper) return savedPaper;
     if (!savedPaper) return libraryPaper;
-    const mergedPaper = {
-      ...libraryPaper,
-      ...savedPaper,
-      doi: libraryPaper.doi || savedPaper.doi,
-      arxivId: libraryPaper.arxivId || savedPaper.arxivId,
-      openUrl: libraryPaper.openUrl || savedPaper.openUrl,
-      landingPageUrl: libraryPaper.landingPageUrl || savedPaper.landingPageUrl,
-      pdfUrl: libraryPaper.pdfUrl || savedPaper.pdfUrl,
-      abstract: libraryPaper.abstract || savedPaper.abstract,
-      summary: libraryPaper.summary || savedPaper.summary,
-      concepts: libraryPaper.concepts?.length ? libraryPaper.concepts : savedPaper.concepts,
-    };
-    return mergedPaper.sources ? mergedPaper : paperLegacyAdapter(mergedPaper);
+    return listPaperFromCopies(libraryPaper, savedPaper);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
   useEffect(() => subscribeToPublicListSync((key, state) => {
@@ -982,6 +978,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // Coming back from a paper restores the list that was open. Once per id: the
   // state survives in the history entry, so coming back after closing the list
   // must not snap it open again.
+  const [indexReturn] = useState(() => createIndexReturn(window));
   const autoOpenedListId = useRef<string | null>(null);
   useEffect(() => {
     const targetId = location.state?.openListId;
@@ -996,10 +993,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // effect and cancels the pending open. Marking it early meant the
       // retry was refused and the list never opened at all.
       autoOpenedListId.current = targetId;
+      indexReturn.resume(targetId, location.state?.indexTop);
       void openList(target);
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [displayLists, location.state, openList]);
+  }, [displayLists, location.state, openList, indexReturn]);
 
   /**
    * A paper in a list opens its card, not the PDF: the card is the whole
@@ -1027,7 +1025,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList) {
       void navigate(location.pathname, {
         replace: true,
-        state: { openListId: expandedList, pageMotion: 'still' },
+        state: { openListId: expandedList, indexTop: indexReturn.top(), pageMotion: 'still' },
       });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
@@ -1064,8 +1062,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   };
 
   const enterList = (list: OwnList) => {
+    indexReturn.leave(list.id);
     void openList(list);
   };
+
+  // A ref callback rather than `onExitComplete`: it runs when the index is committed.
+  // It sits on the block held back until the folders are released, so a return
+  // during that hold waits for the list names instead of spending the position.
+  const returnToIndex = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    indexReturn.arrive((listId) => node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(listId)}"]`));
+  }, [indexReturn]);
 
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
@@ -1142,59 +1149,30 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList === listId) setExpandedList(null);
   };
 
-  // Taking a read mark back, from the row's own button or from the card's
-  // read toggle in the overlay: the mark goes, and the row leaves the list.
-  const forgetRead = (paperId: string) => {
-    void unmarkAsRead(paperId);
-    setLists((prev) => prev.map((list) => {
-      if (list.id === '__read__') {
-        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
-      }
-      return list;
-    }));
+  // Firestore retries transient failures itself and rejects only a write that
+  // cannot succeed (list deleted elsewhere, rule refusal), so "Try again" would
+  // fail the same way.
+  const reportRemovalFailed = (removeError: unknown) => {
+    console.error('Error removing paper from list:', removeError);
+    toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
+  };
+  // Favorites, Read later and Reading history move a row only once the server
+  // accepts, so after a refusal the list on screen is already the saved one.
+  const reportMarkRemovalFailed = (removeError: unknown) => {
+    console.error('Error removing paper from list:', removeError);
+    toastError('The paper could not be removed');
   };
 
-  const handleUnmarkAsRead = (paperId: string) => {
-    forgetRead(paperId);
-  };
-
-  const handleUnlike = async (paperId: string, paper: Partial<Paper>) => {
-    await toggleLike(paper as Paper);
-    setLists((prev) => prev.map((list) => {
-      if (list.id === '__favorites__') {
-        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
-      }
-      return list;
-    }));
-  };
-
-  const handleRemoveFromCustomList = async (listId: string, paperId: string) => {
-    // Only a write the server accepted may claim an edit time. Stamping the
-    // local copy after a failed write would tell the freshness check that a
-    // removal happened, and the sync would publish a list the account never
-    // agreed to.
-    let editedAt: Date | null = null;
-    try {
-      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-      await updateDoc(listRef, {
-        paperIds: arrayRemove(paperId),
-        // The mark the background sync looks for (P25). Every edit leaves
-        // it; nothing else here decides when the public copy is rebuilt.
-        updatedAt: serverTimestamp(),
-      });
-      editedAt = new Date();
-    } catch (err) {
-      console.error('Error removing paper from custom list:', err);
-    }
-    setLists((prev) => prev.map((list) => {
-      if (list.id !== listId) return list;
-      return {
-        ...list,
-        paperIds: list.paperIds!.filter((id) => id !== paperId),
-        ...(editedAt ? { updatedAt: editedAt } : {}),
-      };
-    }));
-  };
+  const handleRemoveFromCustomList = (listId: string, paperId: string) => removePaperFromList(listId, paperId, {
+    write: () => updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
+      paperIds: arrayRemove(paperId),
+      // The mark the background sync looks for (P25). Every edit leaves
+      // it; nothing else here decides when the public copy is rebuilt.
+      updatedAt: serverTimestamp(),
+    }),
+    apply: setLists,
+    onFailed: reportRemovalFailed,
+  });
 
   const switchRowSheetStep = (step: 'menu' | 'remove' | 'edit') => {
     rowSheetFrom.current = rowSheetStepRef.current?.closest<HTMLElement>('[data-slot="drawer-content"]')?.offsetHeight ?? null;
@@ -1212,12 +1190,34 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
   }, [rowSheetStep, prefersReducedMotion]);
 
+  const rowKey = (listId: string, paperId: string) => rowRemovalKey(user?.uid ?? '', listId, paperId);
+  const rowSheetRemovalPending = rowSheet !== null && pendingRemovals.has(rowKey(rowSheet.listId, rowSheet.paperId));
+
   const removePaper = ({ listId, paperId, paper }: RowTarget) => {
-    if (listId === '__read__') handleUnmarkAsRead(paperId);
-    else if (listId === '__favorites__') void handleUnlike(paperId, paper);
-    else if (listId === '__read_later__') void toggleReadLater(paper as Paper);
-    else void handleRemoveFromCustomList(listId, paperId);
+    removeRowOnce(pendingRemovals, setPendingRemovals, rowKey(listId, paperId), () => (
+      removePaperFromMarkList(listId, paperId, paper as Paper, {
+        unmarkAsRead, toggleLike, toggleReadLater, onFailed: reportMarkRemovalFailed,
+      }) ?? handleRemoveFromCustomList(listId, paperId)
+    ));
   };
+
+  // The open card's toggles take a mark off at once, as they do in the feed.
+  // A refused write puts it back, so a paper opened from Favorites or Reading
+  // history returns to its row, and the toast says why. The card can be open
+  // from any list, so the message names the mark, not a removal.
+  const toggleLikeInCard = (paper: Paper) => {
+    if (!likedPaperIds.has(interactionIdFor(paper)!)) return toggleLike(paper);
+    return toggleLike(paper, { throwOnError: true }).catch(() => {
+      toastError('The like could not be removed');
+    });
+  };
+  // The card names its paper by the stored copy's id; the read mark lives
+  // under the id `isRead` checks, as the like does in `toggleLike`.
+  const unmarkReadInCard = (paperId: string) => (
+    unmarkAsRead((shownPaper && interactionIdFor(shownPaper)) ?? paperId, { throwOnError: true }).catch(() => {
+      toastError('The read mark could not be removed');
+    })
+  );
 
   const setListShareId = (listId: string, publicShareId: string | null | undefined) => {
     setPublicSnapshots((current) => {
@@ -1813,8 +1813,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                         )}
                       </motion.div>
                     );
+                    const removalPending = pendingRemovals.has(rowKey(list.id, paperId));
                     return (
                       <PaperListRow {...rowMotion} key={paperId}
+                        aria-busy={removalPending || undefined}
                         paper={paper}
                         onOpen={() => openPaperCard(paper)}
                         actions={(
@@ -1825,11 +1827,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               must look under the same key (R8: ids differ by
                               entry route). */}
                           {isPhone ? (
+                            // Renamed, and drawn as a spinner, while the removal
+                            // is pending: the sheet has closed, so this button
+                            // is the row's only cue. Not dimmed like the
+                            // desktop Trash button: it still opens the sheet,
+                            // whose Edit works, so its glyph keeps full contrast.
                             <Button
                               variant="ghost"
                               size="icon-sm"
                               aria-haspopup="dialog"
-                              aria-label={`Actions for ${paper.title}`}
+                              aria-label={removalPending ? `Actions for ${paper.title}, removing from list...` : `Actions for ${paper.title}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setRowSheet({ listId: list.id, listName: list.name, paperId, paper });
@@ -1837,7 +1844,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                                 setRowSheetOpen(true);
                               }}
                             >
-                              <DotsThree size={20} weight="bold" aria-hidden="true" />
+                              {removalPending
+                                ? <CircleNotch size={20} weight="bold" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                                : <DotsThree size={20} weight="bold" aria-hidden="true" />}
                             </Button>
                           ) : (
                             <>
@@ -1850,18 +1859,27 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             >
                               <PencilSimple size={16} aria-hidden="true" />
                             </Button>
+                            {/* Marked rather than disabled while the removal is
+                                pending: the dialog hands focus back here, and
+                                the new name tells a screen reader the removal is
+                                under way. A disabled button lets the click
+                                through to the row, which would open the card.
+                                Only the icon is dimmed: dimming the button
+                                would dim the focus ring the dialog hands back. */}
                             <Button
                               variant="ghost"
                               size="icon-sm"
+                              aria-disabled={removalPending || undefined}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (removalPending) return;
                                 setRemoving({ listId: list.id, listName: list.name, paperId, paper });
                                 setRemovalOpen(true);
                               }}
-                              aria-label={'Remove from list'}
-                              title={'Remove from list'}
+                              aria-label={removalPending ? 'Removing from list...' : 'Remove from list'}
+                              title={removalPending ? 'Removing from list...' : 'Remove from list'}
                             >
-                              <Trash size={16} aria-hidden="true" />
+                              <Trash size={16} aria-hidden="true" className={removalPending ? 'opacity-50' : undefined} />
                             </Button>
                             </>
                           )}
@@ -1872,7 +1890,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <ListRowAuthors
                               paper={paper}
                               onNavigate={() => {
-                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
+                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
                               }}
                             />
                           )}
@@ -1921,7 +1939,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       ) : (
         <motion.div key="index" {...listViewMotion}>
           {foldersReleased && (
-          <div className={startedHeld && !foldersArrived ? `lists-index-arrive${indexResumed ? ' is-resumed' : ''}` : undefined}>
+          <div ref={returnToIndex} className={startedHeld && !foldersArrived ? `lists-index-arrive${indexResumed ? ' is-resumed' : ''}` : undefined}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -1968,6 +1986,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <button
                         type="button"
                         className="list-card-name-btn"
+                        data-list-id={list.id}
                         onClick={(e) => { e.stopPropagation(); enterList(list); }}
                       >
                         {list.name}
@@ -2053,15 +2072,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             isLiked={likedPaperIds.has(interactionIdFor(shownPaper)!)}
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
-            onLike={toggleLike}
+            onLike={toggleLikeInCard}
             onNotInterested={(paper) => { void markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
-            onUnmarkAsRead={forgetRead}
+            onUnmarkAsRead={unmarkReadInCard}
             onOpenPdf={(paper) => onOpenPdf?.(paper)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
+            analyticsSurface="lists"
           />
         )}
       </PaperOverlay>
@@ -2117,9 +2137,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       </button>
                     </li>
                     <li>
-                      <button type="button" className="pc-share-row" onClick={() => switchRowSheetStep('remove')}>
-                        <Trash size={20} aria-hidden="true" />
-                        {'Remove from list'}
+                      {/* Only the icon is dimmed, so the focus ring and the
+                          label that says the removal is under way keep their
+                          contrast. */}
+                      <button
+                        type="button"
+                        className="pc-share-row"
+                        aria-disabled={rowSheetRemovalPending || undefined}
+                        onClick={() => { if (!rowSheetRemovalPending) switchRowSheetStep('remove'); }}
+                      >
+                        <Trash size={20} aria-hidden="true" className={rowSheetRemovalPending ? 'opacity-50' : undefined} />
+                        {rowSheetRemovalPending ? 'Removing from list...' : 'Remove from list'}
                       </button>
                     </li>
                   </ul>

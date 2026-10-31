@@ -1,3 +1,4 @@
+import { loadOptionalModule } from '../utils/module-load-recovery.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
 import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
@@ -70,8 +71,36 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
   'concept',
   'source',
 ]);
-const SEARCH_ENGINE_HOSTS = ['google.', 'bing.com', 'duckduckgo.com', 'search.yahoo.', 'ecosia.org', 'brave.com'];
-const SOCIAL_HOSTS = [
+// A referrer counts when its whole host is listed, or is a subdomain of a listed
+// one. A name that merely contains an entry is another site: chatgpt.com holds
+// `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
+// per country, so those two are patterns. Their suffix is `com`, a two-letter country
+// code, or a two-letter code under `co.` or `com.`; a generic suffix (`.xyz`) or
+// `co.com` and `com.com`, which anyone can register, is not. Any two letters pass, so
+// `google.com.de` counts as search.
+//
+// Only a provider's search properties count as search. Google's (web, Scholar, Books,
+// Images, News) do; Docs, Gmail, Gemini and the rest do not. Brave lists
+// `search.brave.com` and Ecosia `ecosia.org` and `www.ecosia.org`: brave.com, its forum
+// and blog.ecosia.org link out and are referrals. Bing and DuckDuckGo list their whole
+// domain, so every subdomain of them counts as search.
+//
+// Five Google apps on Android send their package name as the referrer and are filed
+// like their sites: the Google, Google Go and News apps as search, YouTube and YouTube
+// Music as social. Other Google apps count as referral. A package names one app, not a
+// domain with subdomains, so it is matched whole, and only in an `android-app:` referrer:
+// another vendor's package can end with a Google app's or with `t.co`.
+const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
+  /^(?:www\.|ipv6\.|scholar\.|books\.|images\.|news\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  'bing.com',
+  'duckduckgo.com',
+  /(?:^|\.)search\.yahoo\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/,
+  /^(?:www\.)?ecosia\.org$/,
+  'search.brave.com',
+];
+const ANDROID_SEARCH_PACKAGES = /^com\.google\.android\.(?:googlequicksearchbox|apps\.(?:searchlite|magazines))$/;
+const ANDROID_SOCIAL_PACKAGES = /^com\.google\.android\.(?:youtube|apps\.youtube\.music)$/;
+const SOCIAL_HOSTS: readonly (string | RegExp)[] = [
   'bsky.app',
   'facebook.com',
   'instagram.com',
@@ -110,12 +139,16 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   ai_feature: new Set(['rewrite', 'annotation']),
   ai_quota_scope: new Set(['user', 'provider']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
+  connections_action: new Set(['select_node', 'centre', 'back', 'switch_view', 'export', 'open_paper']),
+  connections_view: new Set(['map', 'list']),
   // `reader` and `auth_prompt` are the two surfaces the light redesign added.
   // A surface that is emitted but not listed here is not an error anywhere: the
   // sanitizer drops the parameter and the event still ships, so the event
   // arrives stripped of the one field that says where it happened. Adding a
-  // screen means adding it here in the same commit.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
+  // screen means adding it here in the same commit. `connections` is a paper
+  // opened from another paper's citation graph, and `similar` a card in the
+  // Similar papers layer.
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
 });
 
 const PAPER_DETAIL = { paper_id: 'identifier' };
@@ -179,6 +212,12 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
+  // A card's Connections (the citation graph) and Similar papers, counted
+  // apart: opening one, then what the reader does in the graph. Which paper is
+  // not sent; `graph_available` says whether it has a DOI to draw a graph from.
+  connections_open: { surface: 'surface', graph_available: 'boolean' },
+  connections_interact: { action: 'connections_action', view: 'connections_view' },
+  similar_open: { surface: 'surface' },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
@@ -386,7 +425,7 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   }
 }
 
-// Allowing only has to persist: AnalyticsProvider renders the Vercel script
+// Allowing only has to persist: PrivacyProvider renders the Vercel script
 // while analytics is on, and PostHog loads on the next event. A PostHog
 // already loaded in this tab switches level at once (see `applyConsent`).
 // Withdrawing stops recording at once: the provider stops rendering the Vercel
@@ -397,8 +436,13 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
   if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
-  const client = analyticsClient && await analyticsClient;
-  if (client) applyConsent(client, value as Consent);
+  // Persisting the preference must not wait for an SDK that a blocker can stall.
+  // Read the latest choice when it arrives, rather than applying a stale toggle.
+  if (analyticsClient) {
+    void analyticsClient.then(client => {
+      if (client) applyConsent(client, readAnalyticsConsent());
+    }).catch(error => { console.warn('Could not update analytics preferences', error); });
+  }
   return true;
 }
 
@@ -509,16 +553,15 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
  * capture made before `init` instead of queueing it, so every send waits for
  * this promise rather than firing into a client that is not ready yet.
  *
- * A load that fails is not retried: the tab stops reporting, and the next page
- * load tries again. Vite reports the failure like any other chunk's, so
- * main.jsx's reload (once a minute at most) applies to it, which is the right
- * answer when a deploy replaced the chunk. That is also why nothing is loaded
- * while the browser says it is offline: a failure there would only reload.
+ * A blocked SDK disables reporting for this page. Optional module failures do
+ * not invoke the application's stale-chunk reload policy.
  */
 function loadAnalyticsClient() {
   if (!analyticsClient && globalThis.navigator?.onLine === false) return Promise.resolve(null);
-  analyticsClient ??= import('posthog-js')
-    .then(({ posthog }) => {
+  analyticsClient ??= loadOptionalModule(() => import('posthog-js'))
+    .then(module => {
+      if (!module) return null;
+      const { posthog } = module;
       startAnalyticsClient(posthog, readAnalyticsConsent());
       return posthog;
     })
@@ -603,8 +646,10 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
 }
 
-function hostnameMatches(hostname: string, patterns: string[]) {
-  return patterns.some(pattern => hostname === pattern || hostname.endsWith(`.${pattern}`) || hostname.includes(pattern));
+function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
+  return patterns.some(pattern => typeof pattern === 'string'
+    ? hostname === pattern || hostname.endsWith(`.${pattern}`)
+    : pattern.test(hostname));
 }
 
 export function inferAcquisitionChannel({
@@ -629,6 +674,10 @@ export function inferAcquisitionChannel({
     const currentOrigin = location?.origin ? new URL(location.origin).origin : '';
     if (currentOrigin && referrerUrl.origin === currentOrigin) return 'direct';
     const hostname = referrerUrl.hostname.toLowerCase();
+    if (referrerUrl.protocol === 'android-app:') {
+      if (ANDROID_SEARCH_PACKAGES.test(hostname)) return 'organic_search';
+      return ANDROID_SOCIAL_PACKAGES.test(hostname) ? 'organic_social' : 'referral';
+    }
     if (hostnameMatches(hostname, SEARCH_ENGINE_HOSTS)) return 'organic_search';
     if (hostnameMatches(hostname, SOCIAL_HOSTS)) return 'organic_social';
     return 'referral';
@@ -743,7 +792,7 @@ const PAGE_LOADED_AT = Date.now();
 let appCrashReported = false;
 
 /**
- * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
+ * The report for GlobalErrorBoundary, which sits outside PrivacyProvider.
  * A crash inside main.tsx's window after an earlier page's chunk reload counts
  * as the chunk failing again. A forced-reload mark written by this page means
  * the app is already reloading it, for a missing chunk (main.tsx) or for a

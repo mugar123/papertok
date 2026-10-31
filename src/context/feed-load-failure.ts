@@ -70,6 +70,32 @@ export function feedLoadOutcome(error: unknown) {
     : { error: 'FEED_LOAD_FAILED', autoRetry: true };
 }
 
+// The pause before the automatic retry, which gives a transient failure (a
+// dropped connection, a Worker or source that failed for a moment) time to clear.
+const AUTO_RETRY_PAUSE_MS = 2_500;
+
+/**
+ * When the automatic retry of a failed load runs, and whether its requests
+ * wait the first screen's deadline again. A first screen that timed out
+ * already gave the Worker its 10 s, and the request it sent warms it (the
+ * isolate, the token's verification, the store's reads): the retry goes at
+ * once, with the store's usual deadline, so a Worker that does not answer
+ * shows the error 13.5 s after the first token instead of 22.5 s (ENG-116).
+ * Any other failure keeps the pause, and its retry the load's own deadline:
+ * a first screen refused or cut off just before 10 s still shows the error
+ * about 22.5 s after the token. A first page of only seen papers whose next
+ * page then times out reaches about 23.5 s: that page goes on as the same
+ * load, with its own 10 s, before the 3.5 s retry. These times hold while the
+ * session's one automatic retry is unused (autoRetryUsedRef in
+ * feed-context.tsx, armed again by a load that succeeds); after an error, Try
+ * again gets no automatic retry and shows its error about 10 s after the token.
+ */
+export function automaticRetry(error: unknown, waitedFirstScreen: boolean) {
+  return waitedFirstScreen && feedLoadFailure(error).reason === 'timeout'
+    ? { pauseMs: 0, retriesTimeout: true }
+    : { pauseMs: AUTO_RETRY_PAUSE_MS, retriesTimeout: false };
+}
+
 /** The `app_error` a failed load owes. */
 function feedLoadFailedEvent(error: unknown) {
   const { reason, status, code } = feedLoadFailure(error);
@@ -85,11 +111,13 @@ interface FeedScreen {
 }
 
 /**
- * Whether the reader is looking at the error now. The provider keeps loading
- * on other pages, so a failure there is held until the reader returns to
- * /feed and the error is still on screen.
+ * Whether the failed attempt is on the reader's screen now: /feed with no
+ * card. The screen shows the error, or, while the attempt's automatic retry is
+ * due, the feed's wait over it (ENG-116). The provider keeps loading on other
+ * pages, so a failure there is held until the reader returns to /feed and no
+ * card covers it.
  */
-function feedErrorOnScreen({ feedVisible, error, shownPapers }: FeedScreen) {
+function failedLoadOnScreen({ feedVisible, error, shownPapers }: FeedScreen) {
   return feedVisible && error !== null && shownPapers === 0;
 }
 
@@ -99,14 +127,17 @@ type FeedFailureChange =
   | { kind: 'screen_changed'; screen: FeedScreen };
 
 /**
- * What the provider does with the `app_error` a failed load owes. It is sent
- * once, where the load runs, when the reader sees the error: at once on /feed
- * with no card, or later, when the last card is dismissed or the reader
- * returns to /feed. A new load drops the event a previous attempt still held.
+ * What the provider does with the `app_error` a failed load owes. It marks a
+ * failed attempt on /feed with no card, sent once, where the load runs: at
+ * once, or later, when the last card is dismissed or the reader returns to
+ * /feed. The reader may not see the error itself: while the attempt's
+ * automatic retry is due the feed shows its wait instead, and the event is
+ * still sent, so each attempt has its outcome for the retry diagnostics
+ * (ENG-116). A new load drops the event a previous attempt still held.
  */
 export function feedFailureEventStep(held: FeedLoadFailedEvent | null, change: FeedFailureChange) {
   if (change.kind === 'load_started') return { send: null, hold: null };
   const owed = change.kind === 'load_failed' ? feedLoadFailedEvent(change.failure) : held;
   if (!owed) return { send: null, hold: null };
-  return feedErrorOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
+  return failedLoadOnScreen(change.screen) ? { send: owed, hold: null } : { send: null, hold: owed };
 }
