@@ -1005,6 +1005,12 @@ test("a tool leaves arXiv's seat to a reader who could take no other, in search_
       const looked = await callTool(env, 'get_paper', { id: '2603.01234' });
       assert.equal((looked.answer.result?.structuredContent?.paper as { id?: string }).id, 'openalex:W4400000123', 'get_paper answers from OpenAlex');
       assert.equal(arxivCalls(), 0);
+      // arXiv was idle: the model is told the refusal is PaperTok's pacing and
+      // how often it happens, not that arXiv is busy.
+      const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
+      const description = String(tools?.find(tool => tool.name === 'get_paper')?.description);
+      assert.doesNotMatch(description, /busy/);
+      assert.match(description, /PaperTok's arXiv pacing .* one try in six/);
 
       frozen = EVEN_ARXIV_PERIOD + 500;
       const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?search_query=strain', {

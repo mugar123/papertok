@@ -29,7 +29,8 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  * browser. The caller's `CF-Connecting-IP` travels with each ask, so those
  * allowances count this caller. ENG-91 puts agents in the lowest budget tier:
  * a billed OpenAlex miss spends `exploration` (`handleAgentOpenAlex`), and an
- * arXiv miss takes no seat a reader could book (`handleAgentArxiv`). The
+ * arXiv miss takes no seat a reader booked, and only the last second of a
+ * public period's (`handleAgentArxiv`). The
  * citation graph waits for phase 2: the browser's needs an account, and these
  * callers have none.
  */
@@ -94,7 +95,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv, or on OpenAlex when arXiv is busy or failing, and any other id on OpenAlex. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in six) and arXiv answers, otherwise on OpenAlex; any other id is looked up on OpenAlex. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -414,8 +415,8 @@ function openAlexPaper(work: OpenAlexWork) {
 }
 
 // arXiv refuses an agent whenever the beat's current seat is taken, by a
-// search's own arXiv miss too, or is one a reader may still need
-// (`handleAgentArxiv`). OpenAlex indexes the
+// search's own arXiv miss too, and whenever the beat is not in a public
+// period's last second (`handleAgentArxiv`): about five tries in six. OpenAlex indexes the
 // same preprints, so a refusal or failure asks it for the work at the arXiv
 // landing page, as the app's paper page does (`fetchPaperByArxivIdViaOpenAlex`):
 // one billed unit, in the agent tier. arXiv's answer that it has no such
