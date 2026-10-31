@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explorerAuthorIdentityUnverified, explorerFollowEntity } from './explorer-follow-entity.ts';
+import { createFollowEntity } from '../../utils/following.ts';
 
 /** The page's Follow for an author route, computed the way EntityExplorer does. */
 function authorFollow(routeId: string, entity: { id?: string; verified?: boolean; orcid?: string | null }, name: string) {
@@ -31,6 +32,28 @@ test('an author the route or the source paper identifies can be followed', () =>
   const confirmed = authorFollow('Wei Zhang', { id: 'https://openalex.org/A5023888391', verified: true }, 'Wei Zhang');
   assert.equal(confirmed.authorIdentityUnverified, false);
   assert.equal(confirmed.follow?.id, 'https://openalex.org/A5023888391');
+});
+
+// ENG-123 (D2, D5): the Explorer's source page offers Follow for a journal,
+// by its OpenAlex id, with its ISSN-L for display. A repository's firehose,
+// a conference and the working-paper series OpenAlex types as journals do
+// not get one. Source records shaped as OpenAlex returns them; the ids are
+// real (AER from `/sources/issn:0002-8282` on 2026-10-25).
+test('a journal can be followed from its source page; a repository or a working-paper series cannot', () => {
+  const sourcePage = (entity: { id: string; type: string; issn_l?: string | null }, name: string) => explorerFollowEntity({
+    type: 'source', routeId: entity.id.split('/').pop()!, entity, authorIdentityUnverified: false, officialName: name, displayName: name,
+  });
+  const journal = sourcePage({ id: 'https://openalex.org/S23254222', type: 'journal', issn_l: '0002-8282' }, 'American Economic Review');
+  assert.deepEqual(createFollowEntity(journal!), {
+    type: 'journal',
+    canonicalId: 'S23254222',
+    displayName: 'American Economic Review',
+    source: 'openalex',
+    externalIds: { issnl: '0002-8282' },
+    metadata: {},
+  });
+  assert.equal(sourcePage({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
+  assert.equal(sourcePage({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
 });
 
 test('no entity yet is not an unverified author, and has no Follow', () => {

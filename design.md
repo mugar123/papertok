@@ -402,7 +402,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the
   field (`color-mix` of `--area-accent`) or from a status tint.
-- **State:** toggles are `aria-pressed` chips (`toggle.tsx`); a toggle group's
+- **State:** toggles are `aria-pressed` chips (`toggle.ts`); a toggle group's
   `value` is always an array.
 
 ### Cards / Containers
@@ -450,7 +450,24 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   `textarea`).
 - **Toasts:** Sonner (`ui/sonner.tsx`) on paper with a hairline; a success
   carries the check icon. On a phone, a toast confirming a sheet's action comes
-  in at the top, clear of the thumb.
+  in at the top, clear of the thumb. An error toast (`toastError` in
+  `ui/toast.ts`) stays until it is closed, with a close button; Escape anywhere
+  puts it away unless a dialog, menu or field already used the key. Toasts that
+  leave on their own, such as an Undo, are not affected by Escape. The search
+  palette and the Follows list say a refused Follow or Undo in their own line
+  instead: on a phone they fill the screen, and a toast would cover their
+  first row outside their focus trap, where Escape closes them. A refusal
+  that settles after the reader closed them comes as an error toast. For the
+  same reason, opening a dialog, alert dialog, drawer or sheet (the palette
+  among them) puts away the error toasts raised before it, and the refusal of
+  a Follow, Unfollow or Undo pressed before it opened that settles later
+  waits and appears once it has closed. Other errors, and those of an action
+  taken inside the open overlay, appear at once. An overlay opened while
+  focus is in the toasts, as from "Add to list", keeps focus as they leave
+  and returns it on close to the control used before the toasts. Popovers,
+  tooltips, selects and dropdown menus sit beside their control, so they do
+  neither; a menu drawn as a dialog or drawer (the paper's More menu, the rail
+  menu, and the account menu on a phone) counts as an overlay.
 
 ### The Action Rail (signature)
 The card's right-hand column: Like, Save, Connections, Similar papers and More
@@ -480,7 +497,7 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project or topic can be followed: the Explorer header, beside a
+institution, project, topic or journal can be followed: the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press

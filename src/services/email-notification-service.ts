@@ -1,5 +1,5 @@
-import type { Paper, PaperAuthor } from '../models/paper.ts';
-import type { FollowEntity } from '../utils/following.ts';
+import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
+import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
@@ -101,6 +101,7 @@ export function serializeUpdateForNotifications(paper: NotificationPaper = {}) {
     landingPageUrl: paper.landingPageUrl,
     pdfUrl: paper.pdfUrl,
     matches: (paper._followedEntityMatches || [])
+      .filter(isDigestFollow)
       .slice(0, 4)
       .map(follow => serializeFollowForNotifications(follow as Partial<FollowEntity>)),
   };
@@ -166,6 +167,17 @@ export async function getEmailNotificationHealth() {
 }
 
 /**
+ * Whether the reader follows anything the weekly digest is built from. A
+ * journal is not (D6), so a reader who follows only journals has no digest,
+ * and the Worker refuses to subscribe them (EMAIL_FOLLOWS_REQUIRED).
+ */
+export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
+  return follows.some(isDigestFollow);
+}
+
+const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 'string' && match.type === 'journal';
+
+/**
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
  * before the Worker that ignores it, and that Worker's default is daily.
@@ -184,8 +196,14 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English only: a preference saved as 'es' before the interface went
     // English-only must not keep the emails in Spanish.
     language: 'en',
-    follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
-    previewItems: previewItems.slice(0, 20).map(paper => serializeUpdateForNotifications(paper)),
+    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
+    // A paper that matches journals only is not in the digest. Any other
+    // match keeps it, a legacy string match included: the Worker drops that
+    // match (`sanitizeFollow`) and keeps the paper, as before journals.
+    previewItems: previewItems
+      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
+      .slice(0, 20)
+      .map(paper => serializeUpdateForNotifications(paper)),
   };
 }
 

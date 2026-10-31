@@ -82,7 +82,8 @@ export interface PaperResearchResource {
 }
 
 export interface PaperFollowMatch {
-  type: 'author' | 'topic' | 'institution' | 'project';
+  // A journal is an OpenAlex source, followed by its `S…` id (ENG-123).
+  type: 'author' | 'topic' | 'institution' | 'project' | 'journal';
   canonicalId: string;
   displayName: string;
   source?: string;
@@ -107,7 +108,9 @@ export interface PaperRecommendationScore {
   missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
-  followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
+  // The follows the client's ranking boosts. A followed journal's papers come
+  // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
+  followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
   explanation: string;
 }
@@ -155,6 +158,10 @@ export interface Paper {
   huggingFaceUpvotes?: number;
 
   journal?: string;
+  // The OpenAlex source id (`S…`) of the journal that published the work, read
+  // from OpenAlex's primary location when that source is a journal; absent
+  // otherwise. The lane of a followed journal is filed by it (ENG-123).
+  venueId?: string;
   conference?: string;
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).

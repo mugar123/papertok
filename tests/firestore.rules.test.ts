@@ -26,6 +26,7 @@ import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import {
   deleteDoc,
@@ -362,6 +363,25 @@ test('the owner writes the subjects they added, up to 150, and nobody else does'
   await assertFails(setDoc(ref, { addedPreferences: list(151) }, { merge: true }));
   await assertFails(setDoc(ref, { addedPreferences: 'econ.EM' }, { merge: true }));
   await assertFails(setDoc(doc(asBob(), 'users', ALICE), { addedPreferences: ['econ.EM'] }, { merge: true }));
+});
+
+test('the owner follows a journal by its OpenAlex source id, and nobody else writes it', async () => {
+  // ENG-123: the document FollowingProvider.toggleFollow writes for a journal.
+  await reset();
+  const journal = createFollowEntity({
+    type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review',
+    source: 'openalex', externalIds: { issnl: '0002-8282' },
+  })!;
+  const followDoc = (db: ReturnType<typeof asAlice>, key = createFollowKey(journal.type, journal.canonicalId)) => doc(db, 'users', ALICE, 'following', key);
+  await assertSucceeds(setDoc(followDoc(asAlice()), { ...journal, followedAt: serverTimestamp() }));
+  await assertFails(setDoc(followDoc(asBob()), { ...journal, followedAt: serverTimestamp() }));
+  // A journal is its source id: a name or an ISSN in its place is refused.
+  await assertFails(setDoc(followDoc(asAlice(), 'journal_0002-8282'), { ...journal, canonicalId: '0002-8282', followedAt: serverTimestamp() }));
+  await assertFails(setDoc(followDoc(asAlice(), 'journal_aer'), { ...journal, canonicalId: 'American Economic Review', followedAt: serverTimestamp() }));
+  // The other kinds of follow are written as before.
+  const author = createFollowEntity({ type: 'author', id: 'A5023888391', displayName: 'Wei Zhang', source: 'openalex' })!;
+  await assertSucceeds(setDoc(followDoc(asAlice(), createFollowKey(author.type, author.canonicalId)), { ...author, followedAt: serverTimestamp() }));
+  await assertSucceeds(deleteDoc(followDoc(asAlice())));
 });
 
 test('a legacy field cannot be given a new value', async () => {

@@ -1,7 +1,7 @@
 import type { ComponentProps, MouseEvent } from 'react';
 import type { FollowInput } from '../../utils/following.ts';
 
-import { useCallback, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -30,6 +30,9 @@ import { Button } from '../ui/button.tsx';
 import { useEntitySearch } from '../../hooks/use-entity-search.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import type { FollowRefusal } from '../following/follow-refused-toast.ts';
+import { sayFollowRefused, toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
@@ -46,7 +49,7 @@ import { authorDisplayName } from '../../utils/explorer-paths.ts';
 import { readRecentSearches, updateRecentSearches } from './recent-searches.ts';
 import type { RecentOwner } from './recent-search-owner.ts';
 import { recentsShownTo, shouldRememberQuery } from './recent-search-owner.ts';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 
 const COPY = {
   en: {
@@ -128,6 +131,17 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   } = useEntitySearch(open, knownPapers, activeSection);
   const visibleIssues = searchIssues.filter(issue => activeSection === 'all' || issue.section === activeSection);
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
+  // Why the last Follow or Unfollow pressed here changed nothing. Shown in the
+  // palette, not in a toast: on a phone the palette is the whole screen and a
+  // toast at the top covers its first row's Follow, outside the focus trap,
+  // where Escape closes the palette and leaves the toast (followRefusal).
+  const [refusal, setRefusal] = useState<FollowRefusal | null>(null);
+  // A Follow can settle after the palette has closed, where its line is gone;
+  // that refusal goes to a toast instead.
+  const openNow = useRef(open);
+  useEffect(() => {
+    openNow.current = open;
+  });
 
   const rememberQuery = useEffectEvent(() => {
     if (!shouldRememberQuery({
@@ -152,6 +166,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   useLayoutEffect(() => {
     if (open) {
       reset();
+      setRefusal(null);
       setLeavingBySelect(false);
       setActiveSection('all');
       setSelectedValue('');
@@ -172,7 +187,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   }, [selectedValue]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const go = useCallback((path: string, state: object | null = null) => {
+  // The refusal line takes room above the list, which can push the Follow just
+  // pressed, still focused, below the list's visible part. Bring it back
+  // before that frame is painted.
+  useLayoutEffect(() => {
+    if (refusal && document.activeElement instanceof HTMLElement) document.activeElement.scrollIntoView({ block: 'nearest' });
+  }, [refusal]);
+
+  const go =useCallback((path: string, state: object | null = null) => {
     setLeavingBySelect(true);
     onOpenChange(false);
     // Router state, when there is any: the public paper page paints a paper
@@ -185,14 +207,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.preventDefault();
     event.stopPropagation();
     setPendingEntity(entity.id);
-    try {
-      await toggleFollow(entity);
-    } catch (error) {
-      console.error('Could not update follow state', error);
-    } finally {
-      setPendingEntity(null);
-    }
-  }, [toggleFollow]);
+    setRefusal(null);
+    // The palette's own layer is counted while it is open and leaves with it.
+    const overlaysAtStart = Math.max(0, openOverlayCount() - 1);
+    const refused = await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow });
+    if (refused) sayFollowRefused(refused, { inView: openNow.current, showInLine: setRefusal, overlaysAtStart });
+    setPendingEntity(null);
+  }, [isFollowing, toggleFollow]);
 
   // Type positions stay fixed while the result groups retain relevance ordering.
   const orderedSections = SECTIONS;
@@ -224,6 +245,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
   const changeQuery = (value: string, typed = false) => {
     typedQuery.current = typed;
+    setRefusal(null);
     setSelectedValue('');
     setManualSelection(false);
     selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
@@ -237,7 +259,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       <Toggle
         className={`sc-follow ${following ? 'is-following' : ''}`}
         onClick={(event) => { void follow(event, entity); }}
-        disabled={pending}
+        pending={pending}
         pressed={following}
         aria-label={following ? copy.following : copy.follow}
         onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}
@@ -443,6 +465,15 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         </div>
 
         <TabsContent value={activeSection} className="sc-panel">
+          {/* Above the list, so it stays in view however far the list is
+              scrolled. The status span is always there, so the message put
+              into it is announced; the action sits beside it, a Tab away. */}
+          <div className={refusal ? 'sc-status sc-status--warn sc-refusal' : undefined}>
+            {refusal && <WarningCircle size={14} aria-hidden="true" />}
+            <span role="status">{refusal?.message}</span>
+            {refusal?.action && <Button variant="ghost" size="sm" onClick={refusal.action.onClick}
+              onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>{refusal.action.label}</Button>}
+          </div>
           <CommandList className="sc-list">
             {!hasQuery && <>
               {activeSection === 'all' && recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>

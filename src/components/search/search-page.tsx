@@ -30,6 +30,8 @@ import { searchProjects } from '../../services/open-aire-service.ts';
 import { searchPapersAcrossSources } from '../../services/paper-search-service.ts';
 import { searchEntities } from '../../services/entity-search-service.ts';
 import { useFollowing } from '../../context/following-context.tsx';
+import { followName, toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { useLanguage } from '../../context/language-context.tsx';
@@ -237,7 +239,7 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: Fo
     <FollowToggle
       pressed={following}
       onClick={(event) => onToggle(event, entity)}
-      disabled={pending}
+      pending={pending}
       followLabel={'Follow'}
       followingLabel={'Following'}
     />
@@ -429,10 +431,12 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
 
   const handleToggleFollow = async (e: MouseEvent, entity: FollowInput) => {
     e.stopPropagation();
+    const following = isFollowing(entity);
+    const overlaysAtStart = openOverlayCount();
     try {
       await toggleFollow(entity);
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      toastFollowRefused(error, { name: followName(entity), following, overlaysAtStart });
     }
   };
 
@@ -695,7 +699,11 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape' && query) clearSearch();
+              // Taken, so the same Escape does not also put away an error toast.
+              if (event.key === 'Escape' && query) {
+                event.preventDefault();
+                clearSearch();
+              }
             }}
             autoComplete="off"
             autoFocus

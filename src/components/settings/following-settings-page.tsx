@@ -9,6 +9,7 @@ import {
   Briefcase,
   Buildings,
   CircleNotch,
+  FileText,
   Tag,
   User,
   UserMinus,
@@ -16,6 +17,11 @@ import {
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
+import { openingFollowType } from './opening-follow-type.ts';
+import type { FollowRefusal } from '../following/follow-refused-toast.ts';
+import { followRefusal, sayFollowRefused } from '../following/follow-refused-toast.ts';
+import { openOverlayCount } from '../ui/toast.ts';
+import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -38,7 +44,10 @@ const FOLLOW_TABS = [
   { type: 'topic', label: { en: 'Topics' }, Icon: Tag },
   { type: 'institution', label: { en: 'Institutions' }, Icon: Buildings },
   { type: 'project', label: { en: 'Projects' }, Icon: Briefcase },
+  // The Explorer's icon for a source page.
+  { type: 'journal', label: { en: 'Journals' }, Icon: FileText },
 ];
+const FOLLOW_TAB_TYPES = FOLLOW_TABS.map(tab => tab.type);
 
 function getFollowDisplayName(entity: FollowEntity) {
   return entity.type === 'institution'
@@ -65,7 +74,7 @@ const RELEASE_MS = 280;
  * balloon, closes the question, and unfollows once it has gone, so the row
  * leaves in sight of the list it returns to; a toast offers Undo.
  */
-function useFollowedView() {
+function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const { language, locale } = useLanguage();
   const following = useFollowing();
   const { followedByType } = following;
@@ -79,14 +88,29 @@ function useFollowedView() {
   // Undo runs renders later, when this render's toggleFollow and isFollowing
   // close over follows that no longer hold.
   const latest = useRef(following);
+  // Whether the list, and so its status line, is on screen: the page while it
+  // is mounted, the phone sheet while it is open. A write can settle after
+  // the reader has left either.
+  const inView = useRef(false);
   useEffect(() => {
     latest.current = following;
+    inView.current = sheetOpen ?? true;
   });
-  useEffect(() => () => clearTimeout(releaseTimer.current), []);
+  useEffect(() => () => {
+    clearTimeout(releaseTimer.current);
+    inView.current = false;
+  }, []);
 
-  const activeType = selectedType
-    || FOLLOW_TABS.find(tab => followedByType[tab.type]?.length > 0)?.type
-    || 'author';
+  // `openOverlayCount()` at a press, less the open sheet's own layer, which
+  // leaves with it.
+  const overlaysUnderList = () => Math.max(0, openOverlayCount() - (sheetOpen !== undefined && inView.current ? 1 : 0));
+  const sayRefused = (refused: FollowRefusal, overlaysAtStart: number) => {
+    sayFollowRefused(refused, { inView: inView.current, showInLine: ({ message }) => setActionError(message), overlaysAtStart });
+  };
+
+  const { state: locationState } = useLocation();
+  const requestedType = (locationState as { followType?: unknown } | null)?.followType;
+  const activeType = selectedType || openingFollowType(FOLLOW_TAB_TYPES, requestedType, followedByType);
   const activeTab = FOLLOW_TABS.find(tab => tab.type === activeType) || FOLLOW_TABS[0];
   const visibleEntities = useMemo(
     () => [...(followedByType[activeType] || [])]
@@ -100,10 +124,11 @@ function useFollowedView() {
   const handleUnfollow = async (entity: FollowEntity) => {
     setActionError('');
     const displayName = getFollowDisplayName(entity);
+    const overlaysAtStart = overlaysUnderList();
     try {
       await latest.current.toggleFollow(entity);
     } catch {
-      setActionError(`Could not unfollow ${displayName}.`);
+      sayRefused({ message: `Could not unfollow ${displayName}.` }, overlaysAtStart);
       return;
     }
     toast(`Unfollowed ${displayName}`, {
@@ -111,7 +136,17 @@ function useFollowedView() {
         label: 'Undo',
         onClick: () => {
           if (latest.current.isFollowing(entity)) return;
-          latest.current.toggleFollow(entity).catch(() => toast.error(`Could not follow ${displayName} again`));
+          // A journal's Undo can meet the journal limit, which another
+          // device's follow may have reached in the meantime. Said in the
+          // list's status line while the list is on screen, as the palette
+          // does: on a phone the list is a sheet, and a toast would sit over
+          // it outside its focus trap. The toast outlives the list, though,
+          // so an Undo pressed after it closed is answered in a toast.
+          setActionError('');
+          const undoOverlaysAtStart = overlaysUnderList();
+          latest.current.toggleFollow(entity).catch((error: unknown) => {
+            sayRefused(followRefusal(error, { name: displayName, following: false }), undoOverlaysAtStart);
+          });
         },
       },
     });
@@ -141,6 +176,7 @@ function useFollowedView() {
     setSelectedType,
     visibleEntities,
     actionError,
+    clearActionError: () => setActionError(''),
     askUnfollow,
     unfollowing,
     unfollowOpen,
@@ -160,9 +196,11 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 
 /** The follows of the type on show, or its loading or empty state. */
 function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
-  const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
+  const { activeType, activeTab, language, loading, followedEntities, followedByType, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
+  const limitNote = activeType === 'journal' ? journalLimitNote(followedByType.journal?.length ?? 0) : null;
   return (
     <>
+      {limitNote && <p className="following-settings-note">{limitNote}</p>}
       {loading && followedEntities.length === 0 ? (
         <div className="following-settings-loading" role="status">
           <CircleNotch size={24} />
@@ -228,16 +266,20 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
         </section>
       ) : (
         <section className="following-settings-empty">
+          {/* Search finds no journals, so the Journals tab says how to reach
+              a journal's page instead of sending the reader there. */}
           <EmptyState
             art={<Petri pose="compass" className="following-settings-empty-petri" />}
             title={'Nothing followed here yet'}
-            actions={(
+            actions={activeType !== 'journal' && (
               <Button size="sm" onClick={onExplore}>
                 {'Explore PaperTok'}
               </Button>
             )}
           >
-            {'What you follow shows up here and shapes your feed.'}
+            {activeType === 'journal'
+              ? 'Open a paper with Read in plain words and select its journal’s name to follow the journal from its page.'
+              : 'What you follow shows up here and shapes your feed.'}
           </EmptyState>
         </section>
       )}
@@ -374,8 +416,8 @@ export default function FollowingSettingsPage() {
  */
 export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
-  const view = useFollowedView();
-  const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing } = view;
+  const view = useFollowedView({ sheetOpen: open });
+  const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing, clearActionError } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
   const returning = !unfollowOpen && unfollowing !== null;
   // A page opened from the sheet waits for the sheet to close; the sheet
@@ -391,7 +433,10 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
       open={open}
       onOpenChange={onOpenChange}
       onOpenChangeComplete={(isOpen) => {
-        if (isOpen || !pendingPath) return;
+        if (isOpen) return;
+        // A line left from this visit would greet the next one as news.
+        clearActionError();
+        if (!pendingPath) return;
         setPendingPath(null);
         void navigate(pendingPath);
       }}

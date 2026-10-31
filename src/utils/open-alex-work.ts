@@ -4,7 +4,7 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 import { normalizePmid } from './public-navigation.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
+import { isListedWorkingPaperSeries, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
 
 // An OpenAlex work as the app's papers: a whole card (`mapOpenAlexWork`) or the
 // fields it adds to a card from another source (`mapOpenAlexEnrichmentWork`).
@@ -115,6 +115,19 @@ export function getArxivIdFromWork(work: OpenAlexWork | null | undefined) {
   return candidates.map(extractArxivId).find(Boolean) || '';
 }
 
+/**
+ * The OpenAlex id (`S…`) of the journal that published a work: its primary
+ * location's source, when OpenAlex types that source a journal. A repository
+ * (arXiv, SSRN, Zenodo), a conference, a listed working-paper series (the
+ * Explorer's rule for what a reader can follow) or a missing source gives none.
+ */
+export function openAlexJournalId(work: OpenAlexWork | null | undefined) {
+  const source = work?.primary_location?.source;
+  if (source?.type !== 'journal') return undefined;
+  const id = String(source.id || '').replace(/^https?:\/\/openalex\.org\//i, '');
+  return /^S\d+$/.test(id) && !isListedWorkingPaperSeries(id) ? id : undefined;
+}
+
 function getReliableEnrichmentDoi(work: OpenAlexWork, arxivId: string) {
   const doi = normalizeDoi(work?.doi || work?.ids?.doi);
   if (!doi) return undefined;
@@ -168,6 +181,7 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
         : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
       pmid: normalizePmid(work.ids?.pmid) || undefined,
       journal: work.primary_location?.source?.display_name,
+      venueId: openAlexJournalId(work),
       publisher: work.primary_location?.source?.host_organization_name,
       openAccess: work.open_access?.is_oa,
       pdfUrl: work.open_access?.oa_url,
@@ -175,6 +189,9 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
     },
   };
 }
+
+/** The `sourceName` of a work whose source OpenAlex gives no name: not a name to show. */
+export const UNNAMED_SOURCE = 'Unknown Journal';
 
 /** A work as a card of its own, the shape the OpenAlex search and topic lanes show. */
 export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider = 'openalex_search'): Paper | null {
@@ -201,7 +218,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
   const pdfUrl = work.open_access?.oa_url || null;
   const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
 
-  const sourceName = work.primary_location?.source?.display_name || 'Unknown Journal';
+  const sourceName = work.primary_location?.source?.display_name || UNNAMED_SOURCE;
 
   const semanticEntries = work.concepts?.length ? work.concepts : (work.topics || []);
   const conceptObjects = usableOpenAlexConcepts(semanticEntries);
@@ -222,6 +239,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
     publishedDate: work.publication_date,
     year: work.publication_year,
     sourceName,
+    venueId: openAlexJournalId(work),
     sourceType: work.type === 'conference-paper' || work.type === 'proceedings-article' ? 'conference' : 'journal',
     publicationType,
     publicationStatus,
