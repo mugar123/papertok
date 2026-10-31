@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cardPhotoUrl, shareCardFor } from './share-card.ts';
+import { cardPhotoUrl, paperShareCardFor, shareCardFor } from './share-card.ts';
 
 test('an author\'s card prints the name, the initials and the counts', () => {
   const card = shareCardFor('author', 'Author', {
@@ -78,4 +78,46 @@ test('a picture from anywhere but Wikimedia, or over plain http, is not fetched'
   assert.equal(cardPhotoUrl('https://commons.wikimedia.org/wiki/File:Logo.png'), '');
   assert.equal(cardPhotoUrl('https://upload.wikimedia.org.example.com/thumb/a/100px-x.png'), '');
   assert.equal(cardPhotoUrl('not a url'), '');
+});
+
+test('a paper\'s card prints its title, first three authors and venue', () => {
+  const card = paperShareCardFor({
+    title: 'The state of OA: a large-scale analysis of the prevalence and impact of Open Access articles',
+    authors: ['Heather Piwowar', 'Jason Priem', 'Vincent Larivière', 'Juan Pablo Alperin', 'Lisa Matthias'],
+    journal: 'PeerJ',
+    year: 2018,
+  })!;
+  assert.equal(card.authors, 'Heather Piwowar, Jason Priem, Vincent Larivière et al.');
+  assert.equal(card.venue, 'PeerJ · 2018');
+});
+
+test('when three authors do not fit, fewer are named and "et al." stays', () => {
+  const card = paperShareCardFor({
+    title: 'A title',
+    authors: [
+      'Maria Fernanda Rodríguez-Villalobos', 'Krishnamurthy Venkataraghavan Subramanian',
+      'Anne-Marie Leclerc-Beauchamp', ...Array.from({ length: 14 }, (_, index) => `Author ${index + 4}`),
+    ],
+  })!;
+  assert.equal(card.authors, 'Maria Fernanda Rodríguez-Villalobos et al.');
+  const three = paperShareCardFor({
+    title: 'A title',
+    authors: ['Alexandra Kowalczyk-Brennan', 'Christopher Montgomery', 'Elizabeth Fairweather', 'Sam Lee'],
+  })!;
+  assert.equal(three.authors, 'Alexandra Kowalczyk-Brennan, Christopher Montgomery et al.', 'three names here clipped "et al." on the rendered card');
+});
+
+test('a first author too long for the line is clipped before "et al.", not with it', () => {
+  const consortium = 'The International Consortium for Long-Term Observational Studies of Coastal Ecosystems';
+  const shared = paperShareCardFor({ title: 'A title', authors: [consortium, 'Jane Doe'] })!;
+  assert.equal(shared.authors, 'The International Consortium for Long-Term Observational S… et al.');
+  const alone = paperShareCardFor({ title: 'A title', authors: [consortium] })!;
+  assert.equal(alone.authors, 'The International Consortium for Long-Term Observational Studies…', 'a sole author claims no "et al."');
+});
+
+test('a title the fonts cannot draw has no card; such authors or a venue are left off', () => {
+  assert.equal(paperShareCardFor({ title: 'Readout with α-tuned pulses', authors: [] }), null);
+  const card = paperShareCardFor({ title: 'Deep learning', authors: ['张伟', 'Li Wei'], journal: 'Zeitschrift für Physik', year: 2020 })!;
+  assert.equal(card.authors, '', 'a line with a name the fonts lack is left off whole, not with the name skipped');
+  assert.equal(card.venue, '2020', 'the mono font carries no ü, so only the year is printed');
 });

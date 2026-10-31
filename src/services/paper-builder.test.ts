@@ -1855,6 +1855,32 @@ test('leaves the placeholder alone when the enrichment has nothing either', () =
   );
 });
 
+// ENG-109: a card credits the source of an abstract recovered from Crossref or
+// Semantic Scholar. The credit travels with the text whichever record of the
+// paper a merge starts from: a journal article without an abstract taking its
+// working paper's row (ENG-133), or the search palette's copy of a feed card
+// beside a provider's record of the same paper.
+test('an abstract recovered from another source keeps its credit, whichever record a merge starts from', () => {
+  const text = 'The abstract Semantic Scholar holds for this paper, in full.';
+  const recovered = PaperBuilder.merge(PaperBuilder.create({ id: 'openalex:W1', doi: '10.5555/credited', sources: { primary: 'openalex', enrichedBy: [] } }), { abstract: text, abstractSource: 'semanticscholar' }, 'semanticscholar');
+  const article = PaperBuilder.create({ id: 'openalex:W2', doi: '10.5555/credited', sources: { primary: 'openalex', enrichedBy: [] } });
+  const taken = PaperBuilder.merge(article, recovered, 'openalex');
+  assert.deepEqual([taken.abstract, taken.abstractSource], [text, 'semanticscholar']);
+  assert.ok(taken.sources.enrichedBy.includes('semanticscholar'), 'the credited source is among the sources merged in');
+  for (const records of [[recovered, article], [article, recovered]]) {
+    assert.equal(PaperBuilder.deduplicate(records)[0].abstractSource, 'semanticscholar', records[0].id);
+  }
+  // A paper with an abstract of its own keeps it, crediting no other source.
+  const own = PaperBuilder.merge(PaperBuilder.create({ id: 'openalex:W3', abstract: 'The text OpenAlex lists for this paper itself.' }), recovered, 'openalex');
+  assert.deepEqual([own.abstract, own.abstractSource], ['The text OpenAlex lists for this paper itself.', undefined]);
+  // A credit the base holds without a usable text does not pass to the text
+  // another record brings.
+  const placeholder = { ...article, abstractSource: 'semanticscholar' as const };
+  const arxiv = PaperBuilder.merge(placeholder, { abstract: 'The abstract arXiv lists for this paper.' }, 'arxiv');
+  assert.deepEqual([arxiv.abstract, 'abstractSource' in arxiv], ['The abstract arXiv lists for this paper.', false]);
+  assert.equal(PaperBuilder.merge(placeholder, { abstract: 'The abstract Crossref holds.', abstractSource: 'crossref' }, 'crossref').abstractSource, 'crossref');
+});
+
 test('OpenAlex ids are grafted onto the authors a card already shows, without touching the names', () => {
   const base = PaperBuilder.create({
     id: '2609.05134',
