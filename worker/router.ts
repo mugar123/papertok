@@ -407,7 +407,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     // A request slower than the feed's budget leaves one line of its steps
     // (feed-timings.ts). The runtime cancels a request whose client went away
-    // (the app gives up at 3.5 s, a tab closes), so such a request writes its
+    // (the app gives up at 3.5 s, or 10 s on a first screen; a tab closes), so such a request writes its
     // line when its signal aborts, with the steps it finished
     // (`enable_request_signal` in wrangler.toml). Its answer is not handed to
     // waitUntil: an abandoned page reads no more D1, starts no provider
