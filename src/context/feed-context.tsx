@@ -284,7 +284,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const [markChangeLog] = useState(markChanges);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
-  // recommendations, which is worse than skipping a session's deltas: the
+  // recommendations, so the write-back waits for it. The events recorded
+  // before then are not skipped: they are held (heldProfileEvents). The
   // interaction documents are still the source of truth either way.
   const interactionProfileHydrated = useRef(false);
   // What the account recorded before its profile loaded, for the profile that
