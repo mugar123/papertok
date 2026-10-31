@@ -461,8 +461,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   same reason, opening a dialog, alert dialog, drawer or sheet (the palette
   among them) puts away the error toasts raised before it, and the refusal of
   a Follow, Unfollow or Undo pressed before it opened that settles later
-  waits and appears once it has closed. Other errors, and those of an action
-  taken inside the open overlay, appear at once. Signing out, or into another
+  waits and appears once it has closed. Other errors, those of an action
+  taken inside the open overlay, and those raised as an overlay plays its
+  leave, appear at once. Signing out, or into another
   account, puts away the error toasts on screen and those with an action,
   such as an Undo, whose action would act for the reader now, and the
   refusal of a press made before it that settles later is not shown. An overlay opened while

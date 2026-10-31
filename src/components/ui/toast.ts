@@ -23,6 +23,14 @@ function isLeaving(portal: HTMLElement) {
 }
 
 /**
+ * How many modal overlays are open, those already leaving left out: one
+ * leaving is on its way out and no longer holds anything back.
+ */
+function openOverlays() {
+  return [...overlayPortals].filter(portal => !isLeaving(portal)).length;
+}
+
+/**
  * Noted as an action starts, for `toastError`: how many modal overlays are
  * open, less those already leaving and `leaving`, the overlays that leave
  * with the press (the palette or sheet it was made in, the question it
@@ -30,8 +38,7 @@ function isLeaving(portal: HTMLElement) {
  * let an overlay opened after the press pass for one open before it.
  */
 export function actionStart({ leaving = 0 } = {}): ActionStart {
-  const open = [...overlayPortals].filter(portal => !isLeaving(portal)).length;
-  return { overlays: Math.max(0, open - leaving), account };
+  return { overlays: Math.max(0, openOverlays() - leaving), account };
 }
 
 /** Whether the account that started an action is still the one signed in. */
@@ -49,13 +56,14 @@ export function sameAccount(startedAt: ActionStart) {
  * outside its focus trap, where Escape closes the overlay and leaves the
  * toast. Left out, the error belongs to what is on top now, such as an action
  * inside the open dialog, and appears at once, since it is the reader's only
- * answer to that action. It is announced when it appears. The id is returned
+ * answer to that action. An overlay already playing its leave holds nothing
+ * back. It is announced when it appears. The id is returned
  * either way.
  */
 export function toastError(title: Parameters<typeof toast.error>[0], { startedAt = actionStart(), ...options }: ExternalToast & { startedAt?: ActionStart } = {}) {
   const errorOptions = { duration: Infinity, closeButton: true, ...options };
   const ownAccount = sameAccount(startedAt);
-  if (ownAccount && overlayPortals.size <= startedAt.overlays) return toast.error(title, errorOptions);
+  if (ownAccount && openOverlays() <= startedAt.overlays) return toast.error(title, errorOptions);
   heldCount += 1;
   const id = options.id ?? `held-error-${heldCount}`;
   if (ownAccount) heldErrors.push({ overlaysAtStart: startedAt.overlays, show: () => { toast.error(title, { ...errorOptions, id }); } });
@@ -161,8 +169,9 @@ export function trackModalOverlay(portal: HTMLElement | null) {
   dismissPersistentToasts();
   return () => {
     overlayPortals.delete(portal);
-    const due = heldErrors.filter(held => held.overlaysAtStart >= overlayPortals.size);
-    heldErrors = heldErrors.filter(held => held.overlaysAtStart < overlayPortals.size);
+    const open = openOverlays();
+    const due = heldErrors.filter(held => held.overlaysAtStart >= open);
+    heldErrors = heldErrors.filter(held => held.overlaysAtStart < open);
     for (const held of due) held.show();
   };
 }

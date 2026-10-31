@@ -268,6 +268,29 @@ test('an error of an action taken in the open overlay appears at once', () => {
   toast.dismiss();
 });
 
+// The save dialog closes as its list's publishing fails: "List created, but
+// still private" is raised while the dialog plays its leave.
+test('an error raised while the overlay over it plays its leave appears at once', () => {
+  const closeSaveDialog = openOverlay();
+  closeSaveDialog.startLeaving();
+  const error = toastError('List created, but still private');
+  assert.ok(onScreen(error), 'the error is on screen during the leave');
+  closeSaveDialog();
+  toast.dismiss();
+});
+
+// A Follow's refusal settles while the palette opened after the press is
+// already leaving.
+test('an error of an action started behind an overlay that is leaving now appears at once', () => {
+  const startedAt = actionStart();
+  const closePalette = openOverlay();
+  closePalette.startLeaving();
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
+  assert.ok(onScreen(error), 'the error is on screen during the leave');
+  closePalette();
+  toast.dismiss();
+});
+
 test('an error of an action whose overlay has closed since appears at once', () => {
   const closePalette = openOverlay();
   const startedAt = actionStart();
