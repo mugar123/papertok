@@ -22,7 +22,7 @@ import type { FollowRefusal } from '../following/follow-refused-toast.ts';
 import { followRefusal, sayFollowRefused } from '../following/follow-refused-toast.ts';
 import type { ActionStart } from '../ui/toast.ts';
 import { sameAccount } from '../ui/toast.ts';
-import { followsListPress } from './follows-list-press.ts';
+import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -168,7 +168,8 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   };
   const finishUnfollow = (isOpen: boolean) => {
     if (isOpen) return;
-    if (confirmedAt && unfollowing) void handleUnfollow(unfollowing, confirmedAt);
+    const unfollow = unfollowOnLeave({ confirmedAt, unfollowing });
+    if (unfollow) void handleUnfollow(unfollow.entity, unfollow.startedAt);
     setConfirmedAt(null);
     setUnfollowing(null);
   };

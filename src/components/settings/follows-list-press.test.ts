@@ -3,8 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
 import { sayFollowRefused } from '../following/follow-refused-toast.ts';
-import { trackModalOverlay } from '../ui/toast.ts';
-import { followsListPress } from './follows-list-press.ts';
+import { forgetAccountToasts, trackModalOverlay } from '../ui/toast.ts';
+import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
 
 // Opening an overlay dismisses toasts, which Sonner announces on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -67,6 +67,32 @@ test('an Unfollow pressed in the phone sheet and refused after the palette opene
   closePalette();
   assert.deepEqual(shown(), ['Could not unfollow Nature.'], 'the refusal is on screen once the palette left');
   toast.dismiss();
+});
+
+// The question leaves after Unfollow is pressed in it, and the reader opens
+// the palette meanwhile: the write takes the press noted in the question.
+test('the unfollow written once the question has left keeps the press noted in it', () => {
+  const closeQuestion = openOverlay();
+  const confirmedAt = followsListPress({ press: 'unfollow', inOpenSheet: false });
+  closeQuestion.startLeaving();
+  const closePalette = openOverlay();
+  closeQuestion();
+  const unfollow = unfollowOnLeave({ confirmedAt, unfollowing: 'Nature' });
+  assert.ok(unfollow, 'the confirmed unfollow is written');
+  assert.equal(unfollow.entity, 'Nature');
+  const shown = refusedAfterLeaving(unfollow.startedAt);
+  assert.deepEqual(shown(), [], 'nothing sits over the palette');
+  closePalette();
+  assert.deepEqual(shown(), ['Could not unfollow Nature.'], 'the refusal is on screen once the palette left');
+  toast.dismiss();
+});
+
+test('a question cancelled, or left after the account changed, writes no unfollow', () => {
+  forgetAccountToasts('reader-a');
+  const confirmedAt = followsListPress({ press: 'unfollow', inOpenSheet: false });
+  assert.equal(unfollowOnLeave({ confirmedAt: null, unfollowing: 'Nature' }), null, 'cancelled');
+  forgetAccountToasts('reader-b');
+  assert.equal(unfollowOnLeave({ confirmedAt, unfollowing: 'Nature' }), null, 'reader B would unfollow Nature');
 });
 
 // The Undo toast outlives the phone sheet: pressed while the sheet plays its
