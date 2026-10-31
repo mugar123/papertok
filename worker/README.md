@@ -1104,7 +1104,11 @@ Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract, the feed's internal fields (the
 adapter's `provider` label among them) and `sourceType`, which
 `mapOpenAlexWork` writes as `journal` for every work that is not a conference
-paper, a repository preprint included. They come with
+paper, a repository preprint included. `get_paper` gives an OpenAlex work a
+`journal` and `publisher` only when its primary source is a venue (a
+`journal`, `conference` or `book series`), so a preprint on arXiv or SSRN,
+the arXiv fallback's record included, names no repository as its journal, as
+a search's record of it names none. They come with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
 institutions, 5 concepts, 5 names in `categories` (an OpenAlex record's concept
 names, or in a search its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`

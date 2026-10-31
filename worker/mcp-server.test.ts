@@ -462,7 +462,7 @@ test('a field the source did not give stays absent, in a search and in get_paper
   };
   const unknown = ['abstract', 'openAccess', 'citationCount', 'referenceCount', 'hasReferences', 'hasData', 'hasSupplement',
     'concepts', 'topics', 'institutions', 'biomedicalTerms', 'projectIds', 'researchResources', 'categories', 'keywords',
-    'primaryCategory', 'primaryTopic', 'sourceType', 'provider'];
+    'primaryCategory', 'primaryTopic', 'sourceType', 'provider', 'sourceName', 'journal', 'publisher'];
   // A work OpenAlex lists without authorships.
   const anonymous = { ...bare, id: 'https://openalex.org/W4400000078', authorships: undefined };
   await withUpstream(url => {
@@ -542,22 +542,29 @@ test('a repository preprint is given no journal venue and no feed adapter label,
     primary_location: {
       landing_page_url: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4400088',
       is_published: false,
-      source: { display_name: 'SSRN Electronic Journal', type: 'repository' },
+      source: { display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'Elsevier BV' },
     },
   };
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works/W4400000088')) return Response.json(ssrn);
+    if (url.startsWith('https://api.openalex.org/works?filter=locations')) return Response.json({ results: [OPENALEX_LAB_PREPRINT] });
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [ssrn] });
     throw new Error(`unexpected upstream ${url}`);
-  }, async () => {
+  }, async calls => {
     const env = routeEnv();
     const searched = await callTool(env, 'search_papers', { query: 'graphene prices', sources: ['openalex'] });
     const [listed] = searched.answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
     const looked = await callTool(env, 'get_paper', { id: 'W4400000088' });
     const paper = looked.answer.result?.structuredContent?.paper as Record<string, unknown>;
-    for (const [name, relayed] of [['search', listed], ['get_paper', paper]] as const) {
+    // In an odd period arXiv's seat is not a tool's, so get_paper answers an
+    // arXiv id with OpenAlex's record, whose source is arXiv's repository.
+    const clock = mock.method(Date, 'now', () => EVEN_ARXIV_PERIOD + 3_000);
+    const fallback = await callTool(env, 'get_paper', { id: '2603.01234' }).finally(() => clock.mock.restore());
+    const fromOpenAlex = fallback.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    assert.equal(fromOpenAlex.id, 'openalex:W4400000123');    assert.equal(calls.some(url => url.startsWith('https://export.arxiv.org/')), false);
+    for (const [name, relayed] of [['search', listed], ['get_paper', paper], ['arXiv fallback', fromOpenAlex]] as const) {
       assert.equal(relayed.publicationType, 'preprint', name);
-      assert.deepEqual(['sourceType', 'provider'].filter(key => key in relayed), [], name);
+      assert.deepEqual(['sourceType', 'provider', 'journal', 'publisher'].filter(key => key in relayed), [], name);
     }
   });
 });

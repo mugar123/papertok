@@ -7,6 +7,7 @@ import { restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
+import { OPENALEX_VENUE_SOURCE_TYPES } from '../src/utils/publication-status.ts';
 import { handleAgentArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
@@ -401,9 +402,15 @@ function getPaperArguments(args: Arguments) {
 // `openalex:W…`; a search returns the second, so an OpenAlex work keeps one id
 // whichever tool returned it and whichever OpenAlex, DOI or PubMed identifier
 // found it. An arXiv id that arXiv answers keeps the arXiv id.
+//
+// The paper page's mapper names the work's primary source as its `journal`
+// and that source's host as its `publisher`. A repository (arXiv, SSRN) or a
+// platform holds a copy and is no venue, so the paper keeps neither field and
+// the client cannot cite the repository as the journal.
 function openAlexPaper(work: OpenAlexWork) {
-  const paper = formatOpenAlexWorkAsPaper(work);
-  return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
+  const { journal, publisher, ...paper } = formatOpenAlexWorkAsPaper(work);
+  const venue = OPENALEX_VENUE_SOURCE_TYPES.has(String(work.primary_location?.source?.type || ''));
+  return { paper: publicPaper({ ...paper, ...(venue ? { journal, publisher } : {}), id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
 }
 
 // arXiv refuses an agent whenever the beat's current seat is taken, by a

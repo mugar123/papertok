@@ -50,7 +50,7 @@ export function openAlexPublicationStatus(work: OpenAlexStatusFields) {
 // source shows nothing either way, and neither does a venue for an editorial,
 // a chapter or a dataset.
 const OPENALEX_REVIEWED_TYPES = new Set(['article', 'review', 'conference-paper']);
-const OPENALEX_VENUE_SOURCE_TYPES = new Set(['journal', 'conference', 'book series']);
+export const OPENALEX_VENUE_SOURCE_TYPES: ReadonlySet<string> = new Set(['journal', 'conference', 'book series']);
 
 // OpenAlex files many working-paper series as journals and their papers as
 // articles. IMF Working Paper, FEDS, the FRBSF and Kansas City Fed series and
