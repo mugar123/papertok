@@ -320,6 +320,13 @@ function signedInFeed(userId = 'reader') {
     readLibrary(readLater: string[]) {
       feed.readLater = new Set(readLater);
     },
+    // FeedProvider's account effect when the same account signs out and back
+    // in before any profile loaded: it drops the held events, and the
+    // provisional profile, the marks on screen and the writes still waiting
+    // stay.
+    signOutAndBackIn() {
+      feed.held = null;
+    },
   };
 }
 
@@ -572,6 +579,46 @@ for (const [card, tapped] of REVERSE_TAPS) {
 
     assert.ok(reader.feed.saved.has('saved'));
     assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal);
+  });
+}
+
+// Until the profile loads, a paper marked in an earlier session shows
+// unmarked. The reader marks it, and the change is dropped from the held
+// events before Firestore refuses it: its undo, which puts back the unmarked
+// screen, must not take the stored mark back.
+const STORED_MARKS: Array<{ mark: string; set: 'liked' | 'readLater'; stored: InteractionEvent; tap: (reader: ReturnType<typeof signedInFeed>, write: () => Promise<void>) => Promise<void> }> = [
+  { mark: 'like', set: 'liked', stored: likeOf('marked'), tap: (reader, write) => reader.like('marked', write) },
+  { mark: 'Read later', set: 'readLater', stored: { paperId: 'marked', kind: 'readLater', value: true }, tap: (reader, write) => reader.readLater('marked', write) },
+];
+
+for (const { mark, set, stored, tap } of STORED_MARKS) {
+  test(`a ${mark} tapped while the profile loads and refused after the same account signs out and back in leaves the ${mark} stored in an earlier session`, async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const reader = signedInFeed();
+    const write = pendingWrite();
+    const pressed = tap(reader, write.write);
+    reader.signOutAndBackIn();
+    write.answer(false);
+    await pressed;
+    reader.load(storedProfileWith(stored));
+
+    assert.deepEqual(curatedIds(reader.feed.profile, set), ['marked']);
+    assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(storedProfileWith(stored))));
+  });
+
+  test(`a ${mark} tapped while the profile loads, pushed out of a long wait's held events and refused, leaves the ${mark} stored in an earlier session`, async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const reader = signedInFeed();
+    const write = pendingWrite();
+    const pressed = tap(reader, write.write);
+    for (let index = 0; index < 10_000; index += 1) {
+      reader.feed.held = holdProfileEvent(reader.feed.held, 'reader', { paperId: `card-${index}`, kind: 'skip', notable: false }, NOW);
+    }
+    write.answer(false);
+    await pressed;
+    reader.load(storedProfileWith(stored));
+
+    assert.deepEqual(curatedIds(reader.feed.profile, set), ['marked']);
   });
 }
 

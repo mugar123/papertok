@@ -18,6 +18,9 @@ export type HeldProfileEvents = { userId: string; events: Array<{ event: Interac
 // a wait this long keeps only its latest events.
 const MAX_HELD_EVENTS = 500;
 
+// The events held that no loaded profile has recorded (replayHeldEvents).
+const unrecorded = new WeakSet<InteractionEvent>();
+
 /**
  * `held` with `event` of `userId` added. Events of another account are
  * dropped: they never reach this account's profile. Past MAX_HELD_EVENTS the
@@ -28,7 +31,9 @@ const MAX_HELD_EVENTS = 500;
  * neither is replayed. Replayed, they would not cancel on a profile that
  * already holds the mark: until the profile loads, a paper liked in an earlier
  * session shows unliked, a like of it adds nothing to the stored like, and its
- * undo would remove it. When `undoes` is no longer held, `event` is held.
+ * undo would remove it. When `undoes` was held and dropped before any profile
+ * recorded it, by a sign-out or past MAX_HELD_EVENTS, `event` is dropped too,
+ * for the same reason. When `undoes` was never held, `event` is held.
  */
 export function holdProfileEvent(held: HeldProfileEvents | null, userId: string, event: InteractionEvent, at = Date.now(), undoes?: InteractionEvent | null): HeldProfileEvents {
   const kept = held?.userId === userId ? held : { userId, events: [] };
@@ -37,7 +42,9 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
     kept.events.splice(undone, 1);
     return kept;
   }
+  if (undoes && unrecorded.has(undoes)) return kept;
   kept.events.push({ event, at });
+  unrecorded.add(event);
   if (kept.events.length > MAX_HELD_EVENTS) kept.events.shift();
   return kept;
 }
@@ -81,6 +88,7 @@ export function replayHeldEvents(held: HeldProfileEvents | null, userId: string,
   held.events.forEach(({ event, at, refused }) => {
     if (refused || holdsAlready(profile, event)) return;
     recordInteractionEvent(profile, event, at);
+    unrecorded.delete(event);
     recorded = true;
   });
   return recorded;
