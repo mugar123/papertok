@@ -1,6 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 
+import { PaperBuilder } from '../services/paper-builder.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 import { normalizePmid } from './public-navigation.ts';
@@ -42,6 +43,24 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'is_retracted',
 ]);
 
+// OpenAlex work types, in OpenAlex's current vocabulary. The filter used to ask
+// for `proceedings-article`, Crossref's name for a conference paper, which
+// OpenAlex no longer uses: `type:proceedings-article` matches zero works
+// (probed 2026-09-22 through the Worker relay; `conference-paper` matched 16.2
+// million). So the filter that meant "articles and conference papers" had been
+// silently returning journal articles alone -- "Segment Anything" (ICCV 2023)
+// and every other NeurIPS/CVPR/ICCV paper was invisible to the feed and to the
+// search. `scripts/diagnostics/search-coverage-check.mjs` re-runs the probe.
+export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper', 'review']);
+
+// What a paper SEARCH accepts, the app's and the MCP server's. A reader looking
+// up a specific paper expects the arXiv preprint when that is the record
+// OpenAlex carries -- FC-CLIP's most cited record is the preprint
+// (W4385645314) -- and a survey when the title is a survey. Category discovery
+// also includes economics and finance preprints, whose working papers may have
+// no arXiv copy. Queries without those categories keep the narrower list;
+// datasets, theses, and paratext are still left out here.
+export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint']);
 
 // The fields an enrichment of another source's card asks for.
 export const OPENALEX_ENRICHMENT_SELECT = [
@@ -89,6 +108,20 @@ export const MAX_ENRICHMENT_AUTHORS = 50;
 
 function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+}
+
+// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
+// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
+// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
+// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
+// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
+// sent: the URL parser resolves it first, into another path. A DOI the relay
+// would refuse, or the parser rewrite, has no path id ('').
+export function doiPathId(doi: string) {
+  const id = `doi:${encodeURIComponent(doi)
+    .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%2F/gi, '/')}`;
+  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 function extractArxivId(value: unknown) {
@@ -198,7 +231,9 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
 
   const abstract = usableOpenAlexAbstract(work) || 'No abstract available.';
 
-  const isOpenAccess = work.open_access?.is_oa || false;
+  // A work without `open_access` says nothing about access: `accessStatusForPaper`
+  // reads only an explicit `false` as a paywall.
+  const isOpenAccess = typeof work.open_access?.is_oa === 'boolean' ? work.open_access.is_oa : undefined;
   const pdfUrl = work.open_access?.oa_url || null;
   const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
 
@@ -241,4 +276,60 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
     keywords: concepts,
     raw: work
   };
+}
+
+/** A work as the paper the public paper page and the Explorer show, built through `PaperBuilder`. */
+export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
+  // OpenAlex dates a work as a calendar day. The year is read from that text:
+  // as a Date it is midnight UTC, still the previous year west of Greenwich on
+  // 1 January, which is where OpenAlex files a work known only by its year.
+  const date = work.publication_date || '';
+  const published = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+
+  const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
+  const institutions = [...new Map((work.authorships || [])
+    .flatMap(authorship => authorship.institutions || [])
+    .filter(Boolean)
+    .map(institution => [institution.id || institution.ror || institution.display_name, {
+      id: institution.id,
+      ror: institution.ror,
+      displayName: institution.display_name,
+    }])).values()];
+  const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
+  const openAlexId = work.id!.split('/').pop()!;
+  
+  return PaperBuilder.create({
+    id: openAlexId,
+    sources: { primary: 'openalex', enrichedBy: [] },
+    title: work.title || 'No Title',
+    abstract: usableOpenAlexAbstract(work),
+    authors,
+    institutions,
+    year: Number(published.slice(0, 4)) || undefined,
+    published,
+    publicationType: work.type || work.primary_location?.source?.type || 'journal',
+    publicationStatus: openAlexPublicationStatus(work),
+    peerReviewed: openAlexPeerReviewed(work),
+    workingPaper: openAlexIsWorkingPaper(work) || undefined,
+    openAccess: work.open_access?.is_oa,
+    pdfUrl: work.open_access?.oa_url,
+    landingPageUrl: work.primary_location?.landing_page_url || work.id,
+    doi: work.doi,
+    arxivId: getArxivIdFromWork(work) || undefined,
+    pmid: normalizePmid(work.ids?.pmid) || undefined,
+    journal: work.primary_location?.source?.display_name,
+    publisher: work.primary_location?.source?.host_organization_name,
+    citationCount: work.cited_by_count || 0,
+    citationCountKnown: Number.isFinite(work.cited_by_count),
+    concepts: work.concepts || [],
+    categories: categories,
+    keywords: categories,
+    // The work's branch of science, kept because `categories` above is a list
+    // of concept names — "Toric code", "The Imaginary" — and a concept is not a
+    // field. Without this the Explorer's rows had nothing to take a field
+    // colour from and every one of them rendered in the brand ink, while the
+    // same paper in the feed, which arrives with an arXiv category, rendered in
+    // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
+    primaryTopic: work.primary_topic || null,
+  });
 }

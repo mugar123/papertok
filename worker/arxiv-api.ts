@@ -19,8 +19,8 @@ export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 export const ARXIV_PACE_PERIOD_MS = 3_000;
 export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // A request from outside the Worker (`handleArxiv`: a reader, a guest or a
-// script) may take only every other seat, 10 misses a minute app-wide, so
-// cache-busting queries cannot hold every seat however many addresses send
+// script; `handleAgentArxiv`: an AI client) may take only every other seat,
+// 10 misses a minute app-wide, so cache-busting queries cannot hold every seat however many addresses send
 // them; the caller allowance below counts one address, and one IPv6 host can
 // send from a whole /64. The Worker's own callers take any seat: the
 // harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
@@ -29,6 +29,13 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // allowance, can still hold every seat. Spacing towards arXiv is unchanged:
 // still one call every three seconds.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
+// Whole seconds from `now` to the start of the next public seat after the
+// current period: 1 to 6.
+function nextPublicSeatSeconds(now: number) {
+  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS) + 1;
+  while (!PUBLIC_SEAT(slot)) slot += 1;
+  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000));
+}
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
@@ -60,17 +67,29 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 export function handleArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, true);
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
 }
 
 // The route as the paper harvest asks it in-process: no caller to count.
 export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, false);
+  return relayArxiv(request, env, { perCaller: false, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
+}
+
+/**
+ * The route as the MCP server asks it in-process for an AI client: the
+ * caller's allowance is counted, but a miss takes only the seat of the period
+ * the beat is in, never one ahead. Readers book the seats ahead of them, so an
+ * agent gets a seat no reader booked and gives way to readers (ENG-91 puts
+ * agents in the lowest budget tier). An agent is a caller from outside the
+ * Worker, so that seat must also be a public one.
+ */
+export function handleAgentArxiv(request: Request, env: WorkerEnv) {
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
 }
 
 // `perCaller` is true for a request from outside the Worker: it spends its
 // address's allowance and takes only public seats.
-async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) {
+async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -115,7 +134,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) 
     const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
-      maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+      maxWaitMs,
       accepts: perCaller ? PUBLIC_SEAT : undefined,
     });
     if (!seat.accepted && !seat.code) {
@@ -123,10 +142,16 @@ async function relayArxiv(request: Request, env: WorkerEnv, perCaller: boolean) 
       if (caller?.reading.accepted && caller.reservation) {
         await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
       }
+      // After the window it was refused within, which is at least this period.
+      // A caller that looks less than a period ahead is told when the next
+      // seat it can take starts instead: from a public period, the period
+      // after it is not one, and a retry there would be refused again.
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
-        'retry-after': paceRetryAfterSeconds(ARXIV_PACE_MAX_WAIT_MS),
+        'retry-after': perCaller && maxWaitMs < ARXIV_PACE_PERIOD_MS
+          ? nextPublicSeatSeconds(Date.now())
+          : paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }
     if (seat.code) console.warn(`arXiv beat unavailable (${seat.code}); sending unpaced`);

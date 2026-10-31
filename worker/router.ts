@@ -39,6 +39,7 @@ import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
+import { MCP_PATH, handleMcpRequest } from './mcp-server.ts';
 import { handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
 import {
   handleBioRxiv,
@@ -238,6 +239,18 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       });
     }
     return handleShareRoute(request, env);
+  }
+  // The public MCP server (worker/mcp-server.ts). Its clients are remote
+  // agents that send no Origin, and it answers POST, so it comes before the
+  // GET-only provider routes whose handlers its tools call in-process.
+  if (url.pathname === MCP_PATH) {
+    try {
+      return await handleMcpRequest(request, env);
+    } catch (error) {
+      captureWorkerException(error);
+      console.error('MCP request failed', error);
+      return json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'Internal error' } }, 500, { 'cache-control': 'no-store' });
+    }
   }
   if (url.pathname === '/notifications/unsubscribe' && ['GET', 'POST'].includes(request.method)) {
     return handleEmailUnsubscribe(request, env);
