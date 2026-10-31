@@ -45,17 +45,23 @@ export function dropHeldErrors() {
  * stack and never dismisses a toast. Toasts that leave on their own (an Undo, a
  * loading message) are kept. An Escape something else already took (a
  * dialog, menu or sheet, which Base UI cancels; the search field clearing its
- * query) is left alone, so it does that and keeps the toast.
+ * query) is left alone, so it does that and keeps the toast. A control on the
+ * page keeps focus, also when the toasts put away were the last and Sonner
+ * still remembers a control from an earlier visit to them
+ * (`returnFocusFromToasts`).
  */
-function dismissToastsOnEscape(event: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'isComposing'>) {
+function dismissToastsOnEscape(doc: Document, event: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'isComposing'>) {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+  const focused = doc.activeElement;
+  if (focused !== doc.body && !doc.querySelector('[data-sonner-toaster]')?.contains(focused)) returnFocusFromToasts(doc);
   dismissPersistentToasts();
 }
 
 /** Mounted once, by the Toaster; returns the way to stop listening. */
-export function listenForToastEscape(target: Pick<Window, 'addEventListener' | 'removeEventListener'>) {
-  target.addEventListener('keydown', dismissToastsOnEscape);
-  return () => target.removeEventListener('keydown', dismissToastsOnEscape);
+export function listenForToastEscape(target: Pick<Window, 'addEventListener' | 'removeEventListener' | 'document'>) {
+  const onKeyDown = (event: KeyboardEvent) => { dismissToastsOnEscape(target.document, event); };
+  target.addEventListener('keydown', onKeyDown);
+  return () => target.removeEventListener('keydown', onKeyDown);
 }
 
 /** Puts away the toasts that stay until they are closed, and keeps those that leave on their own. */

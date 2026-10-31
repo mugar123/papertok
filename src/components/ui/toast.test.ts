@@ -127,8 +127,8 @@ Object.assign(globalThis, { HTMLElement: PageElement, FocusEvent: PageFocusEvent
  * the key first, as a dialog, a menu or the search field clearing its query
  * does (`preventDefault`).
  */
-function page({ taken = false } = {}) {
-  const target = new EventTarget();
+function page({ taken = false, doc = new PageDocument() } = {}) {
+  const target = Object.assign(new EventTarget(), { document: doc as unknown as Document });
   if (taken) target.addEventListener('keydown', (event) => { event.preventDefault(); });
   const stop = listenForToastEscape(target);
   const press = (key: string, { isComposing = false } = {}) => {
@@ -316,6 +316,21 @@ test('an overlay opened from a page control after that toast left keeps focus, a
   assert.equal(doc.activeElement.name, 'Save to list', 'focus is in the sheet');
   close();
   assert.equal(doc.activeElement.name, 'Filters', 'closing the sheet returns focus to Filters');
+});
+
+// The same visit to the toasts, then Escape on Filters puts away the error
+// toast, which was the last.
+test('Escape on a page control keeps focus there when the toasts it puts away were the last', () => {
+  const { doc, addToList, leave } = savedToastWithError();
+  addToList.remove();
+  doc.element('Filters').focus();
+  const { press, stop } = page({ doc });
+  toastError('Could not follow Nature. Try again.');
+  press('Escape');
+  leave();
+  assert.equal(doc.activeElement.name, 'Filters', 'focus stays on Filters, not on Save');
+  stop();
+  toast.dismiss();
 });
 
 test('once the Toaster stops listening, Escape leaves the toast', () => {
