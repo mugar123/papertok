@@ -2102,3 +2102,30 @@ export async function readPapersByIds(env: StoreEnv, paperIds: string[]) {
 }
 
 export const FEED_LAST_PAGE = FEED_MAX_PAGE;
+
+// ─── Keeping D1 busy (ENG-116) ───
+
+// D1 held the feed's requests 16-33 s before running anything 8 times from
+// 2026-10-28 to 30, 6 of them after it had run nothing for 30 minutes or more.
+// A read every minute leaves it no such idle (worker/README.md, the paper
+// store's ping).
+export const PAPER_STORE_PING_CRON = '* * * * *';
+// A ping is one round trip to WEUR; one past this was held, and its line says
+// for how long.
+const SLOW_PING_MS = 2_000;
+
+/**
+ * One row of `works`, on the primary every query of the store runs on (read
+ * replication is off). SQLite answers `SELECT 1` without reading the
+ * database; this reads one of its pages, at one row read a minute.
+ */
+export async function pingPaperStore(env: Pick<StoreEnv, 'PAPER_STORE'>) {
+  const db = database(env);
+  const started = Date.now();
+  try {
+    await db.prepare('SELECT 1 FROM works LIMIT 1').first();
+  } finally {
+    const totalMs = Date.now() - started;
+    if (totalMs > SLOW_PING_MS) console.log(JSON.stringify({ event: 'slow_paper_store_ping', totalMs }));
+  }
+}
