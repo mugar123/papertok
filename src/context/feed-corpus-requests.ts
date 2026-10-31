@@ -3,6 +3,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup, InterestMemoryInput } from '../utils/interest-memory.ts';
 
 import { corpusPositiveIds } from '../services/paper-store-service.ts';
+import { resolveWithin } from '../utils/async-timing.ts';
 import { coldAddedInterests, dormantCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
 
@@ -25,7 +26,7 @@ export interface FeedPlan {
   coldAdded: string[];
 }
 
-type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds' | 'seen'>;
+type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds' | 'seen' | 'firstScreen'>;
 
 /**
  * The plan for a page: a new one on a list's first page, and the list's own
@@ -46,9 +47,53 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
   };
 }
 
+/**
+ * Whether a load's requests may wait the first screen's longer deadline
+ * (`firstScreen`): a load that replaces a list with no cards shown
+ * (`hasPapers` false), which is the screen the reader waits on: a cold entry,
+ * an interests edit or a mode switch that emptied the list, Try again, or a
+ * follow change after the error. That includes the later pages it fetches
+ * while every card of its first page was seen. A load over shown cards (a
+ * refresh, a follow change, an interests edit that restored a saved page,
+ * their automatic retry) keeps the store's usual deadline, as do next pages.
+ * The automatic retry of a first screen that timed out has had its wait
+ * (`retriesTimeout`, automaticRetry in feed-load-failure.ts).
+ *
+ * `hasPapers` is the list of the render that started the load. A caller that
+ * emptied or filled the list just before, which that render does not show
+ * yet, says what is on screen with `listShown`.
+ */
+export function waitsAsFirstScreen({ reset, hasPapers, listShown = hasPapers, retriesTimeout = false }: { reset: boolean; hasPapers: boolean; listShown?: boolean; retriesTimeout?: boolean }) {
+  return reset && !listShown && !retriesTimeout;
+}
+
 /** The reader's interests, asked by group. */
 export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): CorpusPageRequest {
   return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE };
+}
+
+/**
+ * The answers of one screen's requests, started together just before this
+ * call. The main page is awaited until its own deadline; each optional source
+ * (the follows, exploration) holds the screen for its budget at most, counted
+ * from this call, and gives no papers when it fails or runs out. On a first
+ * screen (`firstScreen`, waitsAsFirstScreen) an answer that arrived after its
+ * budget but while the main page was awaited is kept, since the reader waited
+ * for it anyway (ENG-116); a refresh over shown cards and a next page leave it
+ * out. An optional source's failure is handled from this call, so one that
+ * fails while the main page is awaited is not reported as an unhandled
+ * rejection.
+ */
+export async function awaitScreenSources<T, O>(main: PromiseLike<T>, optional: Array<{ answer: PromiseLike<O[]>; budgetMs: number }>, firstScreen: boolean) {
+  const startedAt = Date.now();
+  const optionalAnswers = optional.map(({ answer, budgetMs }) => {
+    const papers = Promise.resolve(answer).then(answered => answered, () => [] as O[]);
+    return { papers, onTime: firstScreen ? null : resolveWithin(papers, budgetMs, [] as O[]), budgetMs };
+  });
+  const mainAnswer = await Promise.resolve(main).then(value => ({ value }), (error: unknown) => ({ error }));
+  const waited = Date.now() - startedAt;
+  const optionalPapers = await Promise.all(optionalAnswers.map(({ papers, onTime, budgetMs }) => onTime ?? resolveWithin(papers, budgetMs - waited, [] as O[])));
+  return { main: mainAnswer, optional: optionalPapers };
 }
 
 /**
