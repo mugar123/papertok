@@ -8,7 +8,7 @@ const SLOW_FEED_MS = 1_500;
 type FeedStep =
   | 'auth' | 'body' | 'quota' | 'follows' | 'ids' | 'likesWait' | 'cacheRead' | 'keys' | 'wave1' | 'notableCheck'
   | 'vectors' | 'rankCpu' | 'walk' | 'works' | 'cacheWrite';
-type FeedCount = 'lanes' | 'groups' | 'candidates' | 'notable' | 'vectors';
+type FeedCount = 'lanes' | 'groups' | 'candidates' | 'notable' | 'vectors' | 'vectorRounds';
 
 /**
  * Durations in milliseconds by `Date.now()`, summed when a step runs more than
