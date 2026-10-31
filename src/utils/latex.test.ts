@@ -158,9 +158,97 @@ test('a text-mode \\stackrel tilde becomes one formula, not a stackrel around tw
   );
 });
 
+function timedNormalization(text: string) {
+  const started = performance.now();
+  const normalized = normalizeLatexText(text);
+  return { normalized, elapsed: performance.now() - started };
+}
+
+const STACKREL_TILDE_OPENER = '\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}';
+
+// An unclosed argument is left as written, and quickly: 18 macros after one
+// took seconds while a backslash could start a macro or stand alone. The `$}`
+// forms balance the argument's `{`, which is what lets the formula close and
+// its text go through the maths pass; a lone `$\ensuremath{…$` never closes and
+// stays prose.
+test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written, at once however many macros follow it', () => {
+  const macros = `${'\\ab '.repeat(18)}x`;
+  const cases = [
+    `\\ensuremath{${macros}`,
+    `$}\\ensuremath{${macros}$`,
+    `${STACKREL_TILDE_OPENER}{${macros}`,
+    `$}${STACKREL_TILDE_OPENER}{${macros}$`,
+  ];
+  for (const unclosed of cases) {
+    const { normalized, elapsed } = timedNormalization(unclosed);
+    assert.ok(elapsed < 100, `${unclosed.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.ok(normalized.includes(`{${macros}`), normalized);
+  }
+});
+
+// `\}` is an escaped brace, so none of these arguments closes, and no start may
+// read through the starts after it.
+test('\\ensuremath starts whose argument never closes do not rescan one another', () => {
+  const unit = '\\ensuremath{a\\}';
+  const count = 8000;
+  const cases = [
+    unit.repeat(count),
+    `We study ${unit} `.repeat(count),
+    `$${'}'.repeat(count)}${unit.repeat(count)}$`,
+    `${STACKREL_TILDE_OPENER}{${unit.repeat(count)}`,
+  ];
+  for (const text of cases) {
+    const { normalized, elapsed } = timedNormalization(text);
+    assert.ok(elapsed < 100, `${text.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.equal(normalized.split('\\ensuremath{a\\}').length - 1, count, normalized.slice(0, 80));
+  }
+});
+
+test('an escaped brace inside \\ensuremath belongs to the formula and does not end it', () => {
+  assert.equal(normalizeLatexText('\\ensuremath{\\{}x\\ensuremath{\\}}'), '\\(\\{\\)x\\(\\}\\)');
+  assert.equal(normalizeLatexText('\\ensuremath{a\\}b} c'), '\\(a\\}b\\) c');
+  assert.equal(
+    normalizeLatexText(`${STACKREL_TILDE_OPENER}{\\{x}`),
+    '\\(\\tilde{\\{x}\\)',
+  );
+  // The same inside the one inner group an argument may carry.
+  assert.equal(normalizeLatexText('\\ensuremath{{a\\}b}} c'), '\\({a\\}b}\\) c');
+  assert.equal(
+    normalizeLatexText(`${STACKREL_TILDE_OPENER}{{a\\}b}} c`),
+    '\\(\\tilde{{a\\}b}}\\) c',
+  );
+  // With only an escaped closer there is no closing brace: the text stays raw.
+  assert.equal(normalizeLatexText('\\ensuremath{x\\} y'), '\\ensuremath{x\\} y');
+  assert.equal(normalizeLatexText('$x\\ensuremath{\\}y$'), '$x\\ensuremath{\\}y$');
+});
+
 test('an \\ifmmode without an \\else branch still yields its maths spelling', () => {
   assert.equal(normalizeLatexText('4\\ifmmode\\times\\fi{}4 sites'), '4\\(\\times\\)4 sites');
   assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');
+});
+
+// With no `\fi` after them, 1000 `\ifmmode\else` pairs took seconds while each
+// start tried every later `\else` as its branch, 30000 bare starts took
+// seconds while each one rescanned the rest of the text, and so did one start
+// followed by 20000 `\else`.
+test('\\ifmmode conditionals that never close stay as written, at once however many follow', () => {
+  const closed = '4\\ifmmode\\times\\else\\texttimes\\fi{}4 ';
+  const pairs = '\\ifmmode a\\else b'.repeat(1000);
+  const starts = '\\ifmmode'.repeat(30000);
+  const elses = `\\ifmmode${'\\else x'.repeat(20000)}`;
+  const cases = [
+    { text: pairs, expected: pairs },
+    { text: `$${pairs}$`, expected: `$${pairs}$` },
+    { text: `${closed}${pairs}`, expected: `4\\(\\times\\)4 ${pairs}` },
+    { text: starts, expected: starts },
+    { text: elses, expected: elses },
+    { text: `$${elses}$`, expected: `$${elses}$` },
+  ];
+  for (const { text, expected } of cases) {
+    const { normalized, elapsed } = timedNormalization(text);
+    assert.ok(elapsed < 100, `${text.slice(0, 20)} took ${elapsed.toFixed(1)} ms`);
+    assert.equal(normalized, expected);
+  }
 });
 
 /* --- Environments the delimiter list knows and KaTeX does not ------------- */
