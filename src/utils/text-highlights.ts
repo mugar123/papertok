@@ -267,30 +267,54 @@ export function buildRangeAnchor(text: unknown, start: number, end: number) {
   return { quote: savedQuote(space, from, to, words), kind: 'user' };
 }
 
+/** Slices `savedQuote` normalizes for one selection before it keeps the bare one. */
+const QUOTE_TRIES = 8;
+
 /**
  * The painted characters `from`..`to` as the slice of the saved space they
  * came from. Font commands the selection covers whole come with it, so it reads
  * as the selected words and selecting `HERMES harness` stores the
  * `\textbf{HERMES} harness` a reader selected on main. A selection that cuts
  * across a wrapper keeps the brace between, which still marks it.
+ *
+ * Between two painted characters the saved text holds only what unwrapping
+ * removed: font command openers, their closing braces and spaces. A slice that
+ * starts before a closer it does not open, or ends after an opener it does not
+ * close, keeps that brace however it is unwrapped, so those are never tried.
+ * The rest are tried widest first, and each try normalizes the whole slice:
+ * past `QUOTE_TRIES` the bare slice is kept, so a text that makes many of them
+ * fail cannot stall the reader's selection handler.
  */
 function savedQuote({ text: saved, source }: ReturnType<typeof savedHighlightSpace>, from: number, to: number, words: string) {
-  const firsts = [];
-  for (let index = from > 0 ? source[from - 1] + 1 : 0; index < source[from]; index += 1) {
-    if (saved[index] === '\\') firsts.push(index);
+  const start = source[from];
+  const end = source[to - 1] + 1;
+  // Walking outward from the selection, `open` counts the braces passed that
+  // face the selection less those that face away. A slice may start or end
+  // only where it is at its highest yet: there, every brace facing away has a
+  // partner facing the selection inside the slice.
+  const firsts = [start];
+  for (let index = start - 1, open = 0, most = 0; index >= (from > 0 ? source[from - 1] + 1 : 0); index -= 1) {
+    open += saved[index] === '{' ? 1 : saved[index] === '}' ? -1 : 0;
+    if (saved[index] === '\\' && open >= most) firsts.push(index);
+    most = Math.max(most, open);
   }
-  firsts.push(source[from]);
-  const lasts = [];
-  for (let index = to < source.length ? source[to] : saved.length; index > source[to - 1] + 1; index -= 1) {
-    if (saved[index - 1] === '}') lasts.push(index);
+  const lasts = [end];
+  for (let index = end, open = 0, most = 0; index < (to < source.length ? source[to] : saved.length); index += 1) {
+    open += saved[index] === '}' ? 1 : saved[index] === '{' ? -1 : 0;
+    if (saved[index] === '}' && open >= most) lasts.push(index + 1);
+    most = Math.max(most, open);
   }
-  lasts.push(source[to - 1] + 1);
+  firsts.reverse();
+  lasts.reverse();
+  let tries = 0;
   for (const first of firsts) {
     for (const last of lasts) {
-      if (normalizeLatexText(saved.slice(first, last)) === words) return saved.slice(first, last);
+      const quote = saved.slice(first, last);
+      if (normalizeLatexText(quote) === words) return quote;
+      if (++tries === QUOTE_TRIES) return saved.slice(start, end);
     }
   }
-  return saved.slice(source[from], source[to - 1] + 1);
+  return saved.slice(start, end);
 }
 
 export const HIGHLIGHT_MIN_QUOTE_LENGTH = MIN_QUOTE_LENGTH;

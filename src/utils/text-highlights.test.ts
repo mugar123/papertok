@@ -193,6 +193,28 @@ test('a selection over unwrapped words marks the mention that was selected', () 
   assert.equal(buildRangeAnchor(nested, 2, 16)?.quote, '\\textbf{\\emph{HERMES}} harness');
 });
 
+// Each slice that might read as the selection is normalized whole, and every
+// start was tried against every end: with 160 empty wrappers either side, a
+// selection held the reader's selection handler for seconds.
+test('a selection between many removed font commands anchors at once', () => {
+  const empty = '\\emph{}'.repeat(160);
+  for (const [text, quote] of [
+    [`\\textbf{prefix ${empty}} \\textbf{selected words}\\textbf{${empty} suffix}`, '\\textbf{selected words}'],
+    // Cut across a wrapper at either end, no slice reads as the selected words.
+    [`\\textbf{prefix ${empty}selected} words${empty} suffix`, 'selected} words'],
+    [`prefix ${empty} selected \\textbf{words${empty} suffix}`, 'selected \\textbf{words'],
+  ]) {
+    const start = normalizeLatexText(text).indexOf('selected words');
+    const started = performance.now();
+    const anchor = buildRangeAnchor(text, start, start + 'selected words'.length);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 500, `took ${elapsed.toFixed(1)} ms`);
+    assert.equal(anchor?.quote, quote);
+    const [range] = resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+    assert.deepEqual([range.start, range.end], [start, start + 'selected words'.length], quote);
+  }
+});
+
 // A closing brace glued to the wrapper's own closer belongs to the text.
 test('a saved quote ending on a font command closer maps onto the wrapped words alone', () => {
   const text = 'x\\emph{ab}} and the rest of it';
