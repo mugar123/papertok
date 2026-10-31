@@ -171,7 +171,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const changeId = ++authChangeId;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();
-      forgetAccountErrors();
+      forgetAccountErrors(currentUser?.uid ?? null);
       setLoading(true);
       setProfileLoadError(null);
       setUser(currentUser);

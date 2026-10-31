@@ -233,12 +233,16 @@ test('an error of an action whose overlay has closed since appears at once', () 
   toast.dismiss();
 });
 
+// Auth says who is signed in; each call here names someone new.
+let readers = 0;
+const switchAccount = () => { readers += 1; forgetAccountErrors(`reader-${readers}`); };
+
 // Signed out from the account menu while a Follow's refusal waited behind it.
 test('an error still waiting when the account changes is never shown', () => {
   const startedAt = actionStart();
   const closeAccountMenu = openOverlay();
   const error = toastError('Could not follow Nature. Try again.', { startedAt });
-  forgetAccountErrors();
+  switchAccount();
   closeAccountMenu();
   assert.ok(!onScreen(error), 'the reader signed in next does not see it');
 });
@@ -247,12 +251,12 @@ test('an error still waiting when the account changes is never shown', () => {
 // way: its refusal settles when someone else, or nobody, is signed in.
 test('an error of an action started before the account changed is never shown', () => {
   const startedAt = actionStart();
-  forgetAccountErrors();
+  switchAccount();
   const error = toastError('Could not follow Nature. Try again.', { startedAt });
   assert.ok(!onScreen(error), 'the reader now does not see it');
   const startedBehindPalette = actionStart();
   const closePalette = openOverlay();
-  forgetAccountErrors();
+  switchAccount();
   const held = toastError('Could not follow Nature. Try again.', { startedAt: startedBehindPalette });
   closePalette();
   assert.ok(!onScreen(held), 'nor once the overlay opened since has left');
@@ -260,8 +264,21 @@ test('an error of an action started before the account changed is never shown', 
 
 test('an error on screen when the account changes is put away', () => {
   const error = toastError('Could not follow Nature. Try again.');
-  forgetAccountErrors();
+  switchAccount();
   assert.ok(!onScreen(error), 'the reader signed in next does not see it');
+});
+
+// "Try again" on the profile error screen listens to auth again, and auth
+// names the same reader again while their Follow is still under way.
+test('auth naming the same reader again keeps their errors', () => {
+  switchAccount();
+  const onScreenBefore = toastError('The list could not be deleted');
+  const startedAt = actionStart();
+  forgetAccountErrors(`reader-${readers}`);
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
+  assert.ok(onScreen(onScreenBefore), 'the error already on screen stays');
+  assert.ok(onScreen(error), 'the refusal of their own press is shown');
+  toast.dismiss();
 });
 
 test('an error raised with no overlay open appears at once', () => {
