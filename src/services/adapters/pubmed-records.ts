@@ -21,7 +21,7 @@ export interface PubmedResponse {
 
 import { CATEGORIES } from '../../data/category-taxonomy.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmed-efetch.ts';
-import { MONTHS, PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries } from '../../utils/medline-record.ts';
+import { MONTHS, PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries, isRetractedPublication } from '../../utils/medline-record.ts';
 
 // PubMed's E-utilities payloads as the app's papers, for the browser's
 // adapter and the Worker's paper store alike: neither fetch path lives here.
@@ -169,7 +169,8 @@ export function assignPubmedCategory(paper: Paper, internalCategories?: string[]
 // notices, expressions of concern and front matter can carry `Journal
 // Article` too, so they also come before it; `isFeedPublication` leaves their
 // types out. `Retracted Publication`, the retracted article itself, is not
-// among them.
+// among them: it keeps the article's type, and `mapPubmedSummary` gives it
+// the status `retracted`.
 const PUBTYPE_MAP: Array<[RegExp, string]> = [
   [/preprint/i, 'preprint'],
   [/review/i, 'review'],
@@ -257,7 +258,7 @@ export function mapPubmedSummary(raw: PubmedSummary, provider = 'pubmed'): Paper
     journal: raw.source || '',
     year: parseInt(published.substring(0, 4)) || undefined,
     published,
-    publicationStatus: 'published',
+    publicationStatus: isRetractedPublication(raw.pubtype) ? 'retracted' : 'published',
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
     publicationType: chapter ? 'book-chapter' : publicationTypeFromPubtype(raw.pubtype),
     sourceType: chapter ? 'book-series' : undefined,

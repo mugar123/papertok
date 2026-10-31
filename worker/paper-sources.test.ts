@@ -2127,6 +2127,45 @@ test("a notable lane's listing does not renew a paper without an abstract, so th
   });
 });
 
+test("a notable lane's listing does not renew a paper with a PubMed id, so the refresh reads PubMed's retraction from Europe PMC", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // A synthetic variant of the recorded work with a PubMed id. OpenAlex's
+  // listing keeps it while `is_retracted` stays false; Europe PMC's record
+  // types it retracted once PubMed does.
+  const inPubmed = { ...plsiWork, id: 'https://openalex.org/W1000000005', doi: 'https://doi.org/10.5555/cited-in-pubmed', title: 'A most-cited article PubMed also indexes', ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/9500320' } };
+  let pubType = ['Journal Article'];
+  const { urls, env } = relay(t, url => {
+    if (url.hostname === 'www.ebi.ac.uk') return { resultList: { result: [{ id: '9500320', source: 'MED', pmid: '9500320', title: inPubmed.title, pubTypeList: { pubType } }] } };
+    return url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: [plsiWork, inPubmed] } : { results: [] };
+  });
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const statusAndLanes = () => Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [
+    JSON.parse(row.paper).id,
+    [JSON.parse(row.paper).publicationStatus, (db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(row.id) as Array<{ lane: string }>).map(lane => lane.lane)],
+  ]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  const enrichedAt = Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string }>).map(row => [row.id, row.enriched_at]));
+  assert.deepEqual(enrichedAt, { 'openalex:W2107743791': new Date(next).toISOString(), 'openalex:W1000000005': enriched });
+
+  // PubMed types it retracted; OpenAlex has not caught up and still lists it.
+  pubType = ['Journal Article', 'Retracted Publication'];
+  const due = first + 14 * DAY + 3_600_000;
+  t.mock.timers.setTime(due);
+  urls.length = 0;
+  await enrichPending(store, 50, due);
+  assert.ok(urls.some(url => url.hostname === 'www.ebi.ac.uk'), 'the refresh asks Europe PMC for its PubMed id');
+  assert.deepEqual(statusAndLanes(), { 'openalex:W2107743791': ['published', ['notable:cs.CV']], 'openalex:W1000000005': ['retracted', []] });
+});
+
 test("a notable lane's listing renews the row a record merged into, and not one whose record it turned away", async t => {
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-23T03:00:00Z');

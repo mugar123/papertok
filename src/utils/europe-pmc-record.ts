@@ -2,6 +2,7 @@ interface EuropePmcUrl { availabilityCode?: string; availability?: string; docum
 export interface EuropePmcRecord {
   id?: string; pmid?: string; pmcid?: string; abstractText?: string; citedByCount?: number | string;
   isOpenAccess?: string; license?: string; hasReferences?: string; hasData?: string; hasSuppl?: string;
+  pubTypeList?: { pubType?: string[] };
   fullTextUrlList?: { fullTextUrl?: EuropePmcUrl[] };
   keywordList?: { keyword?: string[] };
   meshHeadingList?: { meshHeading?: Array<{ descriptorName?: string | { $?: string; value?: string }; majorTopic_YN?: string; meshQualifierList?: { meshQualifier?: Array<{ majorTopic_YN?: string }> } }> };
@@ -29,6 +30,7 @@ export interface EuropePmcRecord {
 
 import { safeCatalogUrl } from './external-url.ts';
 import { orderMeshDescriptors } from './mesh-check-tags.ts';
+import { isRetractedPublication } from './medline-record.ts';
 
 // `OA` is open access; `F` is free full text. Both mean the reader can open it,
 // which is the only question either caller is asking.
@@ -156,5 +158,6 @@ export function mapEuropePmcRecord(raw: EuropePmcRecord | null | undefined) {
     hasReferences: isYes(raw?.hasReferences),
     hasData: isYes(raw?.hasData),
     hasSupplement: isYes(raw?.hasSuppl),
+    retracted: isRetractedPublication(raw?.pubTypeList?.pubType),
   };
 }

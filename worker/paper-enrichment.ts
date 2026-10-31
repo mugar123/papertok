@@ -4,7 +4,7 @@ import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
 import type { WorkerEnv } from './env.ts';
 import type { StoreEnv } from './paper-store.ts';
 
-import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
+import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, normalizeEnrichmentDoi, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
 import { normalizeScientificMarkup } from '../src/utils/latex.ts';
@@ -13,7 +13,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { OPENALEX_PARAM_MAX_LENGTH, handleHarvestOpenAlex } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -47,6 +47,28 @@ interface Row { id: number; paper: string; enrich_misses: number }
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 
+// Filters on `key`, each with at most `perFilter` of the values and no longer
+// than the relay forwards: it drops a longer filter, and the request would go
+// out unfiltered and find none of the papers. 50 DOIs of 50 characters are
+// already too long for one. A value too long for a filter of its own is not asked.
+function openAlexFilters(key: string, values: string[], perFilter: number) {
+  const filters: string[] = [];
+  let count = 0;
+  for (const value of values) {
+    const alone = `${key}:${value}`;
+    if (alone.length > OPENALEX_PARAM_MAX_LENGTH) continue;
+    const joined = `${filters.at(-1)}|${value}`;
+    if (count > 0 && count < perFilter && joined.length <= OPENALEX_PARAM_MAX_LENGTH) {
+      filters[filters.length - 1] = joined;
+      count += 1;
+    } else {
+      filters.push(alone);
+      count = 1;
+    }
+  }
+  return filters;
+}
+
 // OpenAlex will not answer this run: its day (or the harvest's share of it) is
 // spent, or it is failing. The papers still waiting for it wait for the next run.
 class OpenAlexUnavailable extends Error {}
@@ -54,7 +76,10 @@ class OpenAlexUnavailable extends Error {}
 async function openAlexChunk(env: EnrichEnv, filter: string) {
   const url = new URL('https://papertok.internal/openalex/works');
   url.searchParams.set('filter', filter);
-  url.searchParams.set('per_page', '50');
+  // Twice the values a filter holds: OpenAlex can answer one value with two
+  // works (an eprint beside the journal's article, a duplicate DOI record), and
+  // a full page would leave the last papers' works, retractions included, out.
+  url.searchParams.set('per_page', '100');
   url.searchParams.set('select', OPENALEX_ENRICHMENT_SELECT);
   for (let attempt = 0; ; attempt += 1) {
     // A timeout or a refused connection is OpenAlex failing, like a 5xx.
@@ -79,9 +104,9 @@ async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
   const dois = ids.filter(id => id.startsWith('doi:')).map(id => id.slice(4));
   const openAlexIds = ids.filter(id => id.startsWith('openalex:')).map(id => id.slice('openalex:'.length));
   const filters = [
-    ...chunks(arxivIds, ARXIV_CHUNK).map(chunk => `locations.landing_page_url:${chunk.flatMap(id => [`http://arxiv.org/abs/${id}`, `https://arxiv.org/abs/${id}`]).join('|')}`),
-    ...chunks(dois, ID_CHUNK).map(chunk => `doi:${chunk.join('|')}`),
-    ...chunks(openAlexIds, ID_CHUNK).map(chunk => `openalex:${chunk.join('|')}`),
+    ...openAlexFilters('locations.landing_page_url', arxivIds.map(id => `http://arxiv.org/abs/${id}|https://arxiv.org/abs/${id}`), ARXIV_CHUNK),
+    ...openAlexFilters('doi', dois, ID_CHUNK),
+    ...openAlexFilters('openalex', openAlexIds, ID_CHUNK),
   ];
   const byId: Record<string, Partial<Paper>> = {};
   for (const filter of filters) {
@@ -251,11 +276,21 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   if (rows.length === 0) return { workIds: [], stop: true };
   const papers = rows.map(row => JSON.parse(row.paper) as Paper);
   const asksOpenAlex = rows.map((row, index) => (row.refresh || needsOpenAlexEnrichment(papers[index])) && Boolean(getOpenAlexEnrichmentId(papers[index])));
+  // A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
+  // can hold the journal's article as a work of its own, without the arXiv
+  // location, and only that work then says it is retracted. Only the
+  // retraction is taken from it. Up to 50 such papers a call, fewer when their
+  // DOIs are long (`openAlexFilters`), in the same budget.
+  const journalDois = papers.map((paper, index) => (asksOpenAlex[index] && !getOpenAlexEnrichmentId(paper).includes(':')
+    ? normalizeEnrichmentDoi(paper.doi) : ''));
 
   let openAlex: Record<string, Partial<Paper>> = {};
   let openAlexAnswered = true;
   try {
-    openAlex = await openAlexEnrichments(env, [...new Set(papers.filter((_, index) => asksOpenAlex[index]).map(getOpenAlexEnrichmentId))]);
+    openAlex = await openAlexEnrichments(env, [...new Set([
+      ...papers.filter((_, index) => asksOpenAlex[index]).map(getOpenAlexEnrichmentId),
+      ...journalDois.filter(Boolean).map(doi => `doi:${doi}`),
+    ])]);
   } catch (error) {
     if (!(error instanceof OpenAlexUnavailable)) throw error;
     console.warn('OpenAlex enrichment stopped for this run', error.message);
@@ -267,6 +302,11 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     pmids.length ? europePmcRecords(pmids).catch(() => new Map()) : new Map(),
   ]);
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
+  // Set after the merge rather than merged as OpenAlex's record: a paper
+  // OpenAlex does not know by its arXiv id has had no OpenAlex enrichment, so
+  // it does not list OpenAlex in `sources.enrichedBy`, and it counts a miss.
+  enriched = enriched.map((paper, index): Paper => (journalDois[index] && paper.publicationStatus !== 'retracted'
+    && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' ? { ...paper, publicationStatus: 'retracted' } : paper));
   enriched = mergeICiteEnrichment(enriched, iCite);
   enriched = mergeEuropePmcEnrichment(enriched, europePmc);
   // The abstract of an OpenAlex or PubMed paper listed without one, from the

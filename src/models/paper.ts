@@ -342,6 +342,19 @@ export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'su
   return credited.trim().startsWith(kept.trim()) ? source : undefined;
 }
 
+/**
+ * `paper` with the retraction that `other`, another copy of the same paper,
+ * records (ENG-84). No provider confirms that a paper is not retracted, so a
+ * copy written before a provider reported it, or by a writer that keeps no
+ * status (the `savedPapers` document), never removes it. Returns `paper`
+ * itself when `other` adds nothing.
+ */
+export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
+    ? { ...paper, publicationStatus: 'retracted' }
+    : paper;
+}
+
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
 
 /**
