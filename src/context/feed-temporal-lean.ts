@@ -63,8 +63,8 @@ const PRIOR_ENGAGEMENTS = 5;
  * opened PDFs it got over the times it was shown. Each page draws a rate for
  * each kind from its Gamma posterior, whose prior is the account's rate over
  * both kinds, so a kind shown less is not taken for one liked less. Equal
- * rates give today's one place in NOTABLE_EVERY; a notable rate k times the
- * recent one gives k notable cards for every NOTABLE_EVERY - 1 others. Each
+ * drawn rates give today's one place in NOTABLE_EVERY; a notable rate k times
+ * the recent one gives k notable cards for every NOTABLE_EVERY - 1 others. Each
  * page draws again, so a share the counts make unlikely still comes up now
  * and then, as in exploration (pickExplorationCategories). The draw is kept
  * between one in NOTABLE_EVERY and one in NOTABLE_EVERY_MIN, so neither kind
