@@ -1116,7 +1116,7 @@ SDK is not used, so the package lock is unchanged.
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts, which `get_paper` keeps in `topics` only. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when arXiv refuses or fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about five tries in six) or arXiv fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
@@ -1176,8 +1176,12 @@ points:
   public (even) seat. Readers book seats up to four seconds ahead, and a
   reader in the first two seconds of a public period can wait for no seat but
   that period's, so an agent takes a public seat only from two seconds into
-  its period: it gets only a seat no reader booked or could still need, and a
-  search's own arXiv miss takes the seat of its period. An agent may ask in
+  its period: it never takes a seat a reader booked, and a lone reader is never
+  refused because of it, but two readers arriving within about four seconds
+  after an agent's call can find one seat fewer, and the second is refused. A
+  search's own arXiv miss takes the seat of its period. An agent's call always
+  goes out in its period's last second, so it and the next period's call (a
+  Worker-only seat, such as the harvest's) can be less than a second apart. An agent may ask in
   one second of every six, so even on an idle Worker about five in six
   uncached arXiv lookups are refused, which a search lists under
   `unavailable` and `get_paper` answers from OpenAlex for one billed unit.

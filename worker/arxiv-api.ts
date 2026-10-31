@@ -27,13 +27,17 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // and share pages. A signed-in reader chooses the ids those lookups ask for
 // through POST /store/papers, so one account, within its per-minute feed
 // allowance, can still hold every seat. Spacing towards arXiv is unchanged:
-// still one call every three seconds.
+// one call per three-second period. A seat taken late in its period goes out
+// then, so it and the next period's seat can be less than a second apart; an
+// agent's seat (AGENT_SEAT) always goes out in its period's last second.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // A reader in a public period's first two seconds can wait for no seat but
 // that period's: the next public one starts more than ARXIV_PACE_MAX_WAIT_MS
 // away. An agent (`handleAgentArxiv`) may take a public period's seat only
-// from this far into the period, when no reader still to come could have
-// taken it.
+// from this far into the period, so a lone reader is never refused because of
+// it. Any public seat an agent takes is still one seat fewer for readers: a
+// reader who comes later in that period books the next public seat, and a
+// second reader within the next four seconds then finds none and is refused.
 const ARXIV_AGENT_SEAT_OFFSET_MS = 2 * ARXIV_PACE_PERIOD_MS - ARXIV_PACE_MAX_WAIT_MS;
 const AGENT_SEAT = (slot: number) => PUBLIC_SEAT(slot) && Date.now() - slot * ARXIV_PACE_PERIOD_MS >= ARXIV_AGENT_SEAT_OFFSET_MS;
 // Whole seconds from `now` to the next moment an agent may take a seat, after
@@ -86,11 +90,14 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
  * The route as the MCP server asks it in-process for an AI client: the
  * caller's allowance is counted, and a miss takes only the seat of the period
  * the beat is in, never one ahead, and only once the period is
- * ARXIV_AGENT_SEAT_OFFSET_MS old. Readers book the seats ahead of them, and a
- * reader who comes later in the period would have had no other seat to take,
- * so an agent gets only a seat no reader can use and gives way to readers
- * (ENG-91 puts agents in the lowest budget tier). An agent is a caller from
- * outside the Worker, so that seat must also be a public one.
+ * ARXIV_AGENT_SEAT_OFFSET_MS old. Readers book the seats ahead of them, so an
+ * agent never takes a seat a reader has booked, and a reader in the period's
+ * first two seconds, who could wait for no other seat, finds it free (ENG-91
+ * puts agents in the lowest budget tier). Two readers after it can still find
+ * one seat fewer (ARXIV_AGENT_SEAT_OFFSET_MS). An agent is a caller from
+ * outside the Worker, so that seat must also be a public one. It may ask in
+ * one second of every six, so even on an idle Worker about five in six
+ * uncached agent lookups are refused.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
   return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0, accepts: AGENT_SEAT });
