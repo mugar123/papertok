@@ -36,6 +36,8 @@ export function mapEuropePmcResult(result: EuropePmcRecord): (Partial<Paper> & {
     hasData: record.hasData,
     hasSupplement: record.hasSupplement,
     accessSource: record.openAccess ? 'europepmc' : undefined,
+    // A record without the type says nothing of a retraction.
+    publicationStatus: record.retracted ? 'retracted' : undefined,
   };
 }
 

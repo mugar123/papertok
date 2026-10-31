@@ -204,6 +204,10 @@ test('a journal DOI is a way into OpenAlex when there is no arXiv id', () => {
     'the arXiv pseudo-DOI is not a second route to the same work',
   );
   assert.equal(getOpenAlexEnrichmentId({ id: 'pmid:1', doi: 'not a doi' }), '');
+  // OpenAlex reads `,` and `|` in a filter as separators.
+  for (const doi of ['10.1103/PhysRevD.1,10.1103/PhysRevD.2', '10.1103/PhysRevD.1|10.1103/PhysRevD.2']) {
+    assert.equal(getOpenAlexEnrichmentId({ id: 'ads:x', doi }), '', doi);
+  }
 });
 
 test('a paper reachable only by its DOI is worth enriching', () => {

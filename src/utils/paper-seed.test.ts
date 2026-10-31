@@ -2,6 +2,7 @@ import type { PaperAuthor } from '../models/paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paper-seed.ts';
+import { reviewTagForPaper } from './paper-status.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
 
 test('a handed-over copy paints only when it carries a title and a real abstract', () => {
@@ -82,6 +83,17 @@ test('the copy only lays over the provider where it speaks', () => {
   assert.equal(paper!.primaryCategory, undefined);
   assert.equal(hydrateSeededPaper(null, provider), provider);
   assert.equal(hydrateSeededPaper(seed, null), seed, 'no answer: the copy is the paper, as before');
+});
+
+// ENG-84. The search palette hands PubMed's retracted record to the paper
+// page, and a list hands a copy that kept the retraction; OpenAlex can answer
+// from data that does not have it yet.
+test('a retraction the copy states stands over a provider that states none, and the provider\'s stands too', () => {
+  const retracted = { ...seed, publicationStatus: 'retracted' as const };
+  const published = { ...provider, publicationStatus: 'published' as const };
+  assert.equal(reviewTagForPaper(hydrateSeededPaper(retracted, published))?.key, 'retracted');
+  assert.equal(reviewTagForPaper(hydrateSeededPaper(seed, { ...provider, publicationStatus: 'retracted' }))?.key, 'retracted');
+  assert.equal(hydrateSeededPaper({ ...seed, publicationStatus: 'preprint' }, published)!.publicationStatus, 'published', 'any other status is the provider\'s');
 });
 
 // ENG-109: a feed card's abstract can come from Semantic Scholar, which the
