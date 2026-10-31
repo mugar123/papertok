@@ -1218,6 +1218,25 @@ test("a paper both sources found is listed with arXiv's categories, get_paper an
   });
 });
 
+test('a work without concepts is listed with its topic names as categories, which get_paper does not give, and search_papers says so', async () => {
+  const topical = { ...OPENALEX_WORK, topics: [{ id: 'https://openalex.org/T1', display_name: 'Graphene and 2D materials', score: 0.99 }] };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [topical] });
+    if (url.startsWith('https://api.openalex.org/works/')) return Response.json(topical);
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    type Relayed = { id: string; categories?: string[] };
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene sheets under strain', sources: ['openalex'] });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
+    assert.deepEqual(listed.categories, ['Graphene and 2D materials']);
+    const { answer } = await callTool(env, 'get_paper', { id: listed.id });
+    assert.equal((answer.result?.structuredContent?.paper as Relayed).categories, undefined);
+    const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
+    assert.match(String(tools?.find(tool => tool.name === 'search_papers')?.description), /topic names/);
+  });
+});
+
 test('get_paper does not present another work as a DOI the one-work list did not match', async () => {
   await withUpstream(url => {
     // OpenAlex reads `,` in the filter as another clause and answers with whatever matched.
