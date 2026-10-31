@@ -252,8 +252,11 @@ tag = "v5"
 deleted_classes = ["KimiBudgetLedger"]
 
 [triggers]
-# Digests every 20 minutes in the morning; the paper harvest once a day.
-crons = ["*/20 7-13 * * *", "30 2 * * *"]
+# Digests every 20 minutes in the morning; the paper harvest once a day; and,
+# every minute, one read that keeps the paper store's D1 from sitting idle
+# (worker/README.md, the paper store's ping). Each expression is one of the
+# account's Cron Triggers: 5 on Workers Free, 250 on Paid (October 2026).
+crons = ["*/20 7-13 * * *", "30 2 * * *", "* * * * *"]
 
 # Workers Logs: keeps the Worker's console lines, 3 days on the Free plan
 # (worker/README.md, "Logs"). This block has to stay: without it every
