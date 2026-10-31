@@ -19,9 +19,21 @@ const MAX_HELD_EVENTS = 500;
  * `held` with `event` of `userId` added. Events of another account are
  * dropped: they never reach this account's profile. Past MAX_HELD_EVENTS the
  * oldest event is dropped.
+ *
+ * `undoes` is the held event of a change Firestore refused, which `event`
+ * takes back on screen. Storage never had that change, so the two cancel and
+ * neither is replayed. Replayed, they would not cancel on a profile that
+ * already holds the mark: until the profile loads, a paper liked in an earlier
+ * session shows unliked, a like of it adds nothing to the stored like, and its
+ * undo would remove it. When `undoes` is no longer held, `event` is held.
  */
-export function holdProfileEvent(held: HeldProfileEvents | null, userId: string, event: InteractionEvent, at = Date.now()): HeldProfileEvents {
+export function holdProfileEvent(held: HeldProfileEvents | null, userId: string, event: InteractionEvent, at = Date.now(), undoes?: InteractionEvent | null): HeldProfileEvents {
   const kept = held?.userId === userId ? held : { userId, events: [] };
+  const undone = undoes ? kept.events.findIndex((entry) => entry.event === undoes) : -1;
+  if (undone >= 0) {
+    kept.events.splice(undone, 1);
+    return kept;
+  }
   kept.events.push({ event, at });
   if (kept.events.length > MAX_HELD_EVENTS) kept.events.shift();
   return kept;

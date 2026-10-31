@@ -398,21 +398,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // The paper, when there is one, lends the event its OpenAlex concepts and
   // authors, its area and its date (profileEvent). Called before the re-rank
   // it feeds, so that re-rank sees it. A guest's events only move the guest's
-  // lean.
-  const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
+  // lean. Returns the event recorded, for the undo of a refused change to name
+  // as `undoes` (holdProfileEvent).
+  const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null, undoes?: InteractionEvent | null) => {
     const userId = user?.uid;
     if (!userId) {
       guestLean.current = leanAfterEvent(guestLean.current, profileEvent(event, paper));
-      return;
+      return null;
     }
     const recorded = profileEvent(event, paper);
     recordInteractionEvent(interactionProfile.current, recorded);
     profileSignals.current = readProfileSignals(interactionProfile.current);
     if (!interactionProfileHydrated.current) {
-      heldProfileEvents.current = holdProfileEvent(heldProfileEvents.current, userId, recorded);
-      return;
+      heldProfileEvents.current = holdProfileEvent(heldProfileEvents.current, userId, recorded, Date.now(), undoes);
+      return recorded;
     }
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
+    return recorded;
   }, [user?.uid]);
 
   // The late-enrichment merges each call this once more (OpenAlex, then
@@ -1843,27 +1845,29 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     // By updater: a refusal that lands after another like changed must move
     // only this paper back, not restore the set as it was when this call began.
-    const showLiked = (liked: boolean) => {
-      recordProfileEvent({
+    const showLiked = (liked: boolean, undoes?: InteractionEvent | null) => {
+      const recorded = recordProfileEvent({
         paperId: paper.id,
         kind: liked ? 'like' : 'unlike',
         category: paper.primaryCategory,
         notable,
-      }, paper);
+      }, paper, undoes);
       setLikedPaperIds((ids) => {
         const next = new Set(ids);
         if (liked) next.add(paper.id);
         else next.delete(paper.id);
         return next;
       });
+      return recorded;
     };
+    let shown: InteractionEvent | null = null;
 
     await writeMark({
       show: () => {
-        showLiked(!isCurrentlyLiked);
+        shown = showLiked(!isCurrentlyLiked);
         reRankFeed(paper.id);
       },
-      undo: () => showLiked(isCurrentlyLiked),
+      undo: () => showLiked(isCurrentlyLiked, shown),
       failure: 'Error saving like:',
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
@@ -2283,6 +2287,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;
     if (!userId) return;
+    let unmarked: InteractionEvent | null = null;
     await unmarkRead(paperId, {
       setReadIds: setReadPaperIds,
       setLibrary: setPersonalLibrary,
@@ -2290,8 +2295,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         read: deleteField(),
         readAt: deleteField(),
       }),
-      onUnmarked: () => recordProfileEvent({ paperId, kind: 'unread' }),
-      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
+      onUnmarked: () => { unmarked = recordProfileEvent({ paperId, kind: 'unread' }); },
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }, null, unmarked),
       throwOnError: options?.throwOnError,
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
@@ -2310,6 +2315,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const nextValue = value ?? !previous?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
+    let shown: InteractionEvent | null = null;
 
     await writeMark({
       show: () => {
@@ -2322,7 +2328,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             readLater: nextValue,
           },
         }));
-        recordProfileEvent({
+        shown = recordProfileEvent({
           paperId: paper.id,
           kind: 'readLater',
           value: nextValue,
@@ -2332,7 +2338,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       },
       undo: options?.throwOnError ? () => {
         setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous, { paper: storedPaper, updatedAt }));
-        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
+        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) }, null, shown);
       } : undefined,
       write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,

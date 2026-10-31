@@ -25,10 +25,18 @@ function storedProfile() {
 }
 
 // What the feed does with an event while the profile loads: records it on the
-// provisional profile and holds it.
-function recordWhileLoading(held: HeldProfileEvents | null, userId: string, provisional: ReturnType<typeof createEmptyInteractionProfile>, event: InteractionEvent, at: number) {
+// provisional profile and holds it. `undoes` is the held event of a refused
+// change this event takes back on screen.
+function recordWhileLoading(held: HeldProfileEvents | null, userId: string, provisional: ReturnType<typeof createEmptyInteractionProfile>, event: InteractionEvent, at: number, undoes?: InteractionEvent) {
   recordInteractionEvent(provisional, event, at);
-  return holdProfileEvent(held, userId, event, at);
+  return holdProfileEvent(held, userId, event, at, undoes);
+}
+
+// The aggregate of an account that made `event` in an earlier session.
+function storedProfileWith(event: InteractionEvent) {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, event, NOW - 86_400_000);
+  return deserializeInteractionProfile(serializeInteractionProfile(profile))!;
 }
 
 test('likes and views recorded before a late profile arrives are kept on it', () => {
@@ -58,6 +66,70 @@ test('likes and views recorded before a late profile arrives are kept on it', ()
   const after = readProfileSignals(profile, NOW).temporal;
   assert.ok(Math.abs(after.lean - -0.3) < 1e-9, `lean ${after.lean}`);
   assert.equal(after.recent.engaged, 3);
+});
+
+// Until the profile loads, a paper liked in an earlier session shows unliked.
+// A like of it that Firestore refuses is taken back on screen, and storage
+// still holds the earlier like.
+for (const [card, fields] of [
+  ['a notable For You card', { notable: true, published: null }],
+  ['a recent For You card', { notable: false, published: '2026-10-28' }],
+  ['a card off For You', { published: TWO_YEARS_AGO }],
+] as const) {
+  test(`a refused like of ${card} taken back before the load leaves the stored like`, () => {
+    const like: InteractionEvent = { paperId: 'liked', kind: 'like', category: 'cs.LG', concepts: [{ id: 'C1', score: 0.9 }], ...fields };
+    const stored = storedProfileWith(like);
+    const before = readProfileSignals(stored, NOW).temporal;
+
+    const provisional = createEmptyInteractionProfile();
+    let held = recordWhileLoading(null, 'reader', provisional, { ...like }, NOW);
+    const shown = held.events.at(-1)!.event;
+    held = recordWhileLoading(held, 'reader', provisional, { ...like, kind: 'unlike' }, NOW + 1, shown);
+    held = recordWhileLoading(held, 'reader', provisional, { paperId: 'next', kind: 'skip', notable: false }, NOW + 2);
+
+    const profile = storedProfileWith(like);
+    replayHeldEvents(held, 'reader', profile);
+    assert.deepEqual(curatedIds(profile, 'liked'), ['liked']);
+    const after = readProfileSignals(profile, NOW);
+    assert.deepEqual(
+      [after.temporal.notable.engaged, after.temporal.recent.engaged, after.temporal.lean],
+      [before.notable.engaged, before.recent.engaged, before.lean],
+    );
+    assert.equal(after.conceptAffinities.C1, readProfileSignals(stored, NOW).conceptAffinities.C1);
+
+    // Taken back alone, the pair leaves the profile as stored.
+    const pairOnly = recordWhileLoading(null, 'reader', provisional, { ...like }, NOW);
+    const pairShown = pairOnly.events.at(-1)!.event;
+    recordWhileLoading(pairOnly, 'reader', provisional, { ...like, kind: 'unlike' }, NOW + 1, pairShown);
+    const untouched = storedProfileWith(like);
+    assert.equal(replayHeldEvents(pairOnly, 'reader', untouched), false);
+    assert.equal(JSON.stringify(serializeInteractionProfile(untouched)), JSON.stringify(serializeInteractionProfile(stored)));
+  });
+}
+
+test('an unlike the reader taps before the load still takes back a stored like', () => {
+  const like: InteractionEvent = { paperId: 'liked', kind: 'like', notable: true, published: null };
+  const provisional = createEmptyInteractionProfile();
+  let held = recordWhileLoading(null, 'reader', provisional, { ...like }, NOW);
+  held = recordWhileLoading(held, 'reader', provisional, { ...like, kind: 'unlike' }, NOW + 1);
+
+  const profile = storedProfileWith(like);
+  assert.equal(replayHeldEvents(held, 'reader', profile), true);
+  assert.deepEqual(curatedIds(profile, 'liked'), []);
+  assert.equal(readProfileSignals(profile, NOW).temporal.notable.engaged, 0);
+});
+
+test('a refused Read later taken back before the load leaves the stored mark', () => {
+  const stored: InteractionEvent = { paperId: 'later', kind: 'readLater', value: true };
+  const provisional = createEmptyInteractionProfile();
+  let held = recordWhileLoading(null, 'reader', provisional, { ...stored }, NOW);
+  const shown = held.events.at(-1)!.event;
+  held = recordWhileLoading(held, 'reader', provisional, { ...stored, value: false }, NOW + 1, shown);
+  held = recordWhileLoading(held, 'reader', provisional, { paperId: 'next', kind: 'skip', notable: false }, NOW + 2);
+
+  const profile = storedProfileWith(stored);
+  replayHeldEvents(held, 'reader', profile);
+  assert.deepEqual(curatedIds(profile, 'readLater'), ['later']);
 });
 
 test('an account change before the load drops the held events', () => {
