@@ -145,7 +145,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { heldMarkStarts, holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { heldMarkStarts, holdProfileEvent, refuseHeldEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -416,6 +416,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
     return recorded;
   }, [user?.uid]);
+
+  // A mark's write: when Firestore refuses it, the event its change held for
+  // the profile still loading is not replayed (refuseHeldEvent).
+  const refusing = useCallback(async (write: Promise<void>, held: InteractionEvent | null) => {
+    try {
+      await write;
+    } catch (error) {
+      if (held) refuseHeldEvent(heldProfileEvents.current, held);
+      throw error;
+    }
+  }, []);
 
   // The late-enrichment merges each call this once more (OpenAlex, then
   // iCite) after the feed has already rendered, just to persist the enriched
@@ -1883,7 +1894,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       write: async () => {
         if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
-        await setDoc(ref, definedFields({
+        await refusing(setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
@@ -1895,13 +1906,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }), { merge: true });
+        }), { merge: true }), shown);
         void trackEvent('like_change', {
           action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
         });
       },
     });
-  }, [withInteractionId, recordProfileEvent, countEngagement, feedCardNotable, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
+  }, [withInteractionId, recordProfileEvent, refusing, countEngagement, feedCardNotable, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -2294,10 +2305,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     await unmarkRead(paperId, {
       setReadIds: setReadPaperIds,
       setLibrary: setPersonalLibrary,
-      write: () => updateDoc(interactionDocRef(userId, paperId), {
+      write: () => refusing(updateDoc(interactionDocRef(userId, paperId), {
         read: deleteField(),
         readAt: deleteField(),
-      }),
+      }), unmarked),
       onUnmarked: () => { unmarked = recordProfileEvent({ paperId, kind: 'unread' }); },
       onRestored: () => recordProfileEvent({ paperId, kind: 'read' }, null, unmarked),
       throwOnError: options?.throwOnError,
@@ -2307,7 +2318,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       markKey: markKey(userId, 'read', paperId),
       isRead: () => readPaperIdsRef.current.has(paperId),
     });
-  }, [recordProfileEvent, user?.uid, markChangeLog]);
+  }, [recordProfileEvent, refusing, user?.uid, markChangeLog]);
 
   const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
@@ -2343,14 +2354,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous, { paper: storedPaper, updatedAt }));
         recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) }, null, shown);
       } : undefined,
-      write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
+      write: () => refusing(setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
         paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
         libraryUpdatedAt: updatedAt,
-      }), { merge: true }),
+      }), { merge: true }), shown),
       failure: 'Error updating read later:',
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
@@ -2364,7 +2375,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       isOn: () => Boolean(personalLibraryRef.current[paper.id]?.readLater),
     });
     return nextValue;
-  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, markChangeLog]);
+  }, [withInteractionId, personalLibrary, recordProfileEvent, refusing, user?.uid, markChangeLog]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);

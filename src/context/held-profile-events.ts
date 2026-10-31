@@ -10,8 +10,9 @@ import { markKey } from './write-mark.ts';
  * profile arrives (INTERACTIONS_NETWORK_TIMEOUT_MS), and their likes, views
  * and saves move the provisional profile in the meantime. The profile that
  * arrives replaces it, so they are kept here to be recorded again on it.
+ * `refused` marks the event of a change Firestore refused (refuseHeldEvent).
  */
-export type HeldProfileEvents = { userId: string; events: Array<{ event: InteractionEvent; at: number }> };
+export type HeldProfileEvents = { userId: string; events: Array<{ event: InteractionEvent; at: number; refused?: boolean }> };
 
 // A load that never ends leaves the feed holding every card the reader passes;
 // a wait this long keeps only its latest events.
@@ -42,6 +43,19 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
 }
 
 /**
+ * Marks the held `event` of a change Firestore refused, which storage never
+ * had: it is not replayed. It stays held for an undo that follows to name as
+ * `undoes`. Without that undo, nothing else takes it back: the list picker
+ * keeps a refused Read later change on screen, and a change refused while a
+ * newer one to the same mark stands is not undone, such as a like and the
+ * unlike after it, both refused, on a paper liked in an earlier session.
+ */
+export function refuseHeldEvent(held: HeldProfileEvents | null, event: InteractionEvent) {
+  const entry = held?.events.find((candidate) => candidate.event === event);
+  if (entry) entry.refused = true;
+}
+
+/**
  * Records `held` on the profile of `userId` that just arrived, in the order
  * and at the times they happened, and says whether it recorded any. The
  * stored aggregate cannot hold them already: the feed writes the profile back
@@ -52,11 +66,13 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
  * author and session impacts, its exposure and its dwell count twice. A For
  * You card the rebuild lists as viewed adds no shown when replayed, while a
  * like of it still adds engaged. Both are bounded by the events of that wait.
+ * A refused change's event is left out.
  */
 export function replayHeldEvents(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
-  if (held?.userId !== userId || held.events.length === 0) return false;
-  held.events.forEach(({ event, at }) => recordInteractionEvent(profile, event, at));
-  return true;
+  if (held?.userId !== userId) return false;
+  const stored = held.events.filter(({ refused }) => !refused);
+  stored.forEach(({ event, at }) => recordInteractionEvent(profile, event, at));
+  return stored.length > 0;
 }
 
 // The mark an event of a like, read or Read later change moves, and the
@@ -73,17 +89,18 @@ function markMoved({ kind }: InteractionEvent): [MarkName, CuratedSetName] | nul
  * arrived, read before replayHeldEvents: the value a like, read or Read later
  * mark whose changes still wait started from. Until the profile loads, a
  * paper marked in an earlier session shows unmarked, and a tap on it starts
- * from there. When each event held for the mark is a change still waiting
- * (`shown` of them), they all started from what the profile stores, so a
- * refusal leaves the mark as stored. Otherwise an earlier change of the wait
- * was answered and shown, and the mark keeps the value it started from.
+ * from there. When each event held for the mark, but a refused one, is a
+ * change still waiting (`shown` of them), they all started from what the
+ * profile stores, so a refusal leaves the mark as stored. Otherwise an
+ * earlier change of the wait was accepted and shown, and the mark keeps the
+ * value it started from.
  */
 export function heldMarkStarts(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
   const marks = new Map<string, { stored: boolean; held: number }>();
   if (held?.userId === userId) {
-    held.events.forEach(({ event }) => {
+    held.events.forEach(({ event, refused }) => {
       const moved = markMoved(event);
-      if (!moved) return;
+      if (!moved || refused) return;
       const key = markKey(userId, moved[0], event.paperId);
       const mark = marks.get(key) ?? { stored: curatedIds(profile, moved[1]).includes(event.paperId), held: 0 };
       mark.held += 1;

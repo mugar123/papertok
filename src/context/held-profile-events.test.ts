@@ -11,7 +11,8 @@ import {
   viewedIds,
 } from '../utils/interaction-profile.ts';
 import { corpusOrder } from './feed-temporal-lean.ts';
-import { heldMarkStarts, holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { heldMarkStarts, holdProfileEvent, refuseHeldEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, writeMark } from './write-mark.ts';
 
 const NOW = Date.parse('2026-10-30T12:00:00Z');
@@ -198,12 +199,22 @@ function signedInFeed(userId = 'reader') {
     held: null as HeldProfileEvents | null,
     liked: new Set<string>(),
     readLater: new Set<string>(),
+    read: new Set<string>(),
     changes: markChanges(),
   };
   const record = (event: InteractionEvent, undoes?: InteractionEvent | null) => {
     recordInteractionEvent(feed.profile, event, NOW);
     if (!feed.hydrated) feed.held = holdProfileEvent(feed.held, userId, event, NOW, undoes);
     return event;
+  };
+  // FeedProvider's `refusing`.
+  const refusing = async (write: () => Promise<void>, held: InteractionEvent | null) => {
+    try {
+      await write();
+    } catch (error) {
+      if (held) refuseHeldEvent(feed.held, held);
+      throw error;
+    }
   };
   const toggle = (set: 'liked' | 'readLater', paperId: string, eventFor: (on: boolean) => InteractionEvent, write: () => Promise<void>, undoable: boolean) => {
     const from = feed[set].has(paperId);
@@ -218,7 +229,7 @@ function signedInFeed(userId = 'reader') {
     return writeMark({
       show: () => { shown = showOn(!from); },
       undo: undoable ? () => { showOn(from, shown); } : undefined,
-      write,
+      write: () => refusing(write, shown),
       failure: 'refused',
       stillSignedIn: () => true,
       changes: feed.changes,
@@ -233,6 +244,22 @@ function signedInFeed(userId = 'reader') {
     like: (paperId: string, write: () => Promise<void>) => toggle('liked', paperId, (on) => likeOf(paperId, on ? 'like' : 'unlike'), write, true),
     // The quick save takes a refused change back; the list picker keeps it.
     readLater: (paperId: string, write: () => Promise<void>, undoable = true) => toggle('readLater', paperId, (value) => ({ paperId, kind: 'readLater', value }), write, undoable),
+    // A removal from Reading history (FeedProvider's unmarkAsRead).
+    unmarkRead(paperId: string, write: () => Promise<void>) {
+      let unmarked: InteractionEvent | null = null;
+      return unmarkRead<{ readAt?: string | null }>(paperId, {
+        setReadIds: (update) => { feed.read = update(feed.read); },
+        setLibrary: () => {},
+        write: () => refusing(write, unmarked),
+        onUnmarked: () => { unmarked = record({ paperId, kind: 'unread' }); },
+        onRestored: () => { record({ paperId, kind: 'read' }, unmarked); },
+        throwOnError: true,
+        stillSignedIn: () => true,
+        changes: feed.changes,
+        markKey: markKey(userId, 'read', paperId),
+        isRead: () => feed.read.has(paperId),
+      });
+    },
     load(profile: InteractionProfile) {
       const starts = heldMarkStarts(feed.held, userId, profile);
       replayHeldEvents(feed.held, userId, profile);
@@ -241,6 +268,7 @@ function signedInFeed(userId = 'reader') {
       feed.hydrated = true;
       feed.changes.screenReplaced(starts);
       feed.liked = new Set(curatedIds(profile, 'liked'));
+      feed.read = new Set(curatedIds(profile, 'read'));
       feed.readLater = new Set();
     },
     readLibrary(readLater: string[]) {
@@ -319,4 +347,57 @@ test('a quick save to Read later tapped while the profile loads and refused afte
 
   assert.ok(reader.feed.readLater.has('later'));
   assert.deepEqual(curatedIds(reader.feed.profile, 'readLater'), ['later']);
+});
+
+// The unlike is sent before the like is answered. The like's refusal moves
+// nothing while the unlike stands, and the unlike's refusal finds the screen
+// unliked already: neither undo runs.
+test('a like and the unlike after it, both refused before the profile arrives, leave a like stored in an earlier session', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const reader = signedInFeed();
+  const writes = [pendingWrite(), pendingWrite()];
+  const pressed = writes.map((write) => reader.like('liked', write.write));
+  writes.forEach((write) => write.answer(false));
+  await Promise.all(pressed);
+  assert.ok(!reader.feed.liked.has('liked'));
+  reader.load(storedProfileWith(likeOf('liked')));
+
+  assert.ok(reader.feed.liked.has('liked'));
+  assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), ['liked']);
+  assert.equal(readProfileSignals(reader.feed.profile, NOW).temporal.notable.engaged, 1);
+});
+
+test('a Read later change the list picker keeps on screen after a refusal before the profile arrives is not replayed', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const reader = signedInFeed();
+  const write = pendingWrite();
+  const pressed = reader.readLater('later', write.write, false);
+  write.answer(false);
+  await pressed;
+  assert.ok(reader.feed.readLater.has('later'), 'the picker keeps what it showed');
+  reader.load(storedProfile());
+
+  assert.deepEqual(curatedIds(reader.feed.profile, 'readLater'), []);
+});
+
+// Until the profile loads, a paper read in an earlier session is not in the
+// read set. A removal from Reading history then starts from unread and moves
+// nothing back when refused.
+test('a Reading history removal refused before the profile arrives leaves the paper read where storage has it', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const stored = () => {
+    const profile = createEmptyInteractionProfile();
+    recordInteractionEvent(profile, { paperId: 'first', kind: 'read' }, NOW - 2 * 86_400_000);
+    recordInteractionEvent(profile, { paperId: 'second', kind: 'read' }, NOW - 86_400_000);
+    return deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  };
+  const reader = signedInFeed();
+  const write = pendingWrite();
+  const removed = reader.unmarkRead('first', write.write);
+  write.answer(false);
+  await assert.rejects(removed, /permission-denied/);
+  reader.load(stored());
+
+  assert.deepEqual(curatedIds(reader.feed.profile, 'read'), curatedIds(stored(), 'read'));
+  assert.ok(reader.feed.read.has('first'));
 });
