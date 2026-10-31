@@ -1021,6 +1021,56 @@ test('liking and unliking, or saving and unsaving, a card leaves its kind\'s cou
   }
 });
 
+// A refused unlike or unsave is taken back with a like or save (`restores`),
+// tapped on a card that may report another kind than the first engagement's:
+// a Lists or Search card reports none, and its paper keeps its own date.
+test('a like or save that restores a removal that did not stand puts back exactly what the removal took, whichever card it was tapped on', () => {
+  const engagements = [
+    ['a recent For You card', { notable: false, published: '2026-08-18T00:00:00.000Z' }, '2026-08-18T00:00:00.000Z'],
+    ['a notable For You card', { notable: true, published: null }, '2018-01-01T00:00:00.000Z'],
+    ['a card off For You', { published: '2018-01-01T00:00:00.000Z' }, '2018-01-01T00:00:00.000Z'],
+  ] as const;
+  for (const [first, fields, date] of engagements) {
+    const reverses = [
+      ['off For You', { published: date }],
+      ['on a recent For You card', { notable: false, published: date }],
+      ['on a notable For You card', { notable: true, published: null }],
+    ] as const;
+    for (const [tapped, reverse] of reverses) {
+      for (const [add, remove] of [['like', 'unlike'], ['save', 'unsave']]) {
+        const profile = createEmptyInteractionProfile();
+        recordInteractionEvent(profile, { paperId: 'other', kind: 'save', category: 'cs.LG', notable: false, published: '2026-08-18T00:00:00.000Z' }, NOW);
+        recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', ...fields }, NOW);
+        const before = temporalOf(profile);
+        recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+        recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', ...reverse, restores: true }, NOW);
+        assert.deepEqual(temporalOf(profile), before, `a ${add} of ${first}, restored ${tapped}`);
+        // Restored, it is remembered: the next removal takes it back again.
+        recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+        assert.deepEqual(temporalOf(profile).notable.engaged + temporalOf(profile).recent.engaged, 1, `a ${add} of ${first}, removed again`);
+      }
+    }
+  }
+});
+
+test('a like that restores an unlike which took nothing back adds nothing, and one after a halving puts back the halved like', () => {
+  // Liked off For You at an age that moves no lean, the like counted nothing.
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'card', kind: 'like', category: 'cs.LG', published: '2026-03-01T00:00:00.000Z' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'card', kind: 'unlike', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'card', kind: 'like', category: 'cs.LG', notable: false, published: '2026-08-18T00:00:00.000Z', restores: true }, NOW);
+  assert.deepEqual(temporalOf(profile), { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0 });
+
+  const halved = createEmptyInteractionProfile();
+  recordInteractionEvent(halved, { paperId: 'liked', kind: 'like', category: 'cs.LG', notable: true, published: null }, NOW);
+  recordInteractionEvent(halved, { paperId: 'liked', kind: 'unlike', category: 'cs.LG' }, NOW);
+  for (let index = 0; index < 2000; index += 1) {
+    recordInteractionEvent(halved, { paperId: `card-${index}`, kind: 'skip', category: 'cs.LG', notable: index % 10 === 0 }, NOW);
+  }
+  recordInteractionEvent(halved, { paperId: 'liked', kind: 'like', category: 'cs.LG', published: '2018-01-01T00:00:00.000Z', restores: true }, NOW);
+  assert.deepEqual(temporalOf(halved), { notable: { shown: 100, engaged: 0.5 }, recent: { shown: 900, engaged: 0 }, lean: 0 });
+});
+
 test('a paper liked, saved or opened again counts once for each, and a card viewed again is shown once', () => {
   const profile = createEmptyInteractionProfile();
   const card = { paperId: 'card', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' };

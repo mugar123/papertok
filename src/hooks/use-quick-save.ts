@@ -119,9 +119,10 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
             });
             return held;
           },
+          // The removal did not stand: the save puts back what it took.
           restore: async () => {
             if (auth.currentUser?.uid !== user?.uid) return;
-            await markSaved(paper, { surface: saveSurface });
+            await markSaved(paper, { surface: saveSurface, restores: true });
           },
           onRemoved: () => {
             if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface: saveSurface, paper_id: paper.id });

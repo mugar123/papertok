@@ -43,7 +43,12 @@ export interface FeedContextValue {
   toggleLike: (paper: Paper, surface?: string, options?: MarkWriteOptions) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
-  markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => Promise<void>;
+  /**
+   * `restores`: the save puts back a removal that did not stand, such as the
+   * quick save's when its unsave is refused, and restores exactly what that
+   * unsave took from the counts, whichever surface it reports.
+   */
+  markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
@@ -1843,7 +1848,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     const isCurrentlyLiked = markStartsOn(options, likedPaperIds.has(paper.id));
-    // Read at the tap: a refusal's reverse event names the same kind of card.
+    // Read at the tap, for the reverse event of a refusal too.
     const notable = feedCardNotable(paperInput, surface);
 
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
@@ -1854,12 +1859,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     // By updater: a refusal that lands after another like changed must move
     // only this paper back, not restore the set as it was when this call began.
+    // `undoes` is the refused change's event: the like that takes back a
+    // refused unlike restores what that unlike took from the counts.
     const showLiked = (liked: boolean, undoes?: InteractionEvent | null) => {
       const recorded = recordProfileEvent({
         paperId: paper.id,
         kind: liked ? 'like' : 'unlike',
         category: paper.primaryCategory,
         notable,
+        restores: Boolean(undoes),
       }, paper, undoes);
       setLikedPaperIds((ids) => {
         const next = new Set(ids);
@@ -2186,7 +2194,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; surface?: string }) => {
+  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
@@ -2212,6 +2220,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       kind: 'save',
       category: paper?.primaryCategory,
       notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput, options?.surface),
+      restores: options?.restores,
     }, paper);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);

@@ -29,6 +29,10 @@ interface TemporalState extends TemporalSignal {
   // The papers whose like, save or opened PDF counted, oldest first, so that
   // each counts once and an unlike or unsave takes back what it added.
   papers: Map<string, EngagedPaper>;
+  // In memory only: what the latest unlike or unsave of a paper took back,
+  // null when it took nothing, keyed `<signal>:<paper id>`, for a like or save
+  // that `restores` it to put back.
+  taken: Map<string, CountedEngagement | null>;
 }
 export interface InteractionProfile {
   version: number; updatedAt: string | null;
@@ -69,6 +73,10 @@ export interface InteractionEvent {
   published?: string | null;
   // The card's area (areaKeyForPaper), for a card whose category is no leaf.
   area?: string | null;
+  // On a like or a save that puts back an unlike or unsave that did not
+  // stand, such as one Firestore refused: it restores exactly what that took,
+  // whichever card it was tapped on.
+  restores?: boolean;
 }
 export interface ProfileSignals {
   categoryAffinities: Record<string, number>;
@@ -247,7 +255,7 @@ function toTimestampMs(value: unknown) {
 }
 
 function emptyTemporal(): TemporalState {
-  return { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0, halvings: 0, papers: new Map() };
+  return { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0, halvings: 0, papers: new Map(), taken: new Map() };
 }
 
 export function createEmptyInteractionProfile(): InteractionProfile {
@@ -540,20 +548,34 @@ function countShown(profile: InteractionProfile, event: InteractionEvent) {
 /**
  * A like, a save or an opened PDF of a paper: once per paper and signal, it
  * counts toward its kind when it is a For You card, and moves the lean by
- * `step`. What it added is kept, for an unlike or unsave to take back.
+ * `step`. What it added is kept, for an unlike or unsave to take back. A like
+ * or save that `restores` puts back what the paper's latest unlike or unsave
+ * took instead, halved as the counts were since: the card it was tapped on
+ * may be of another kind, or off For You.
  */
 function countEngagement(profile: InteractionProfile, event: InteractionEvent, signal: EngagementSignal, step: number, now: number) {
   const { temporal } = profile;
   const paper = temporal.papers.get(event.paperId) ?? {};
   if (paper[signal]) return;
-  const lean = leanAfterEngaging(temporal.lean, event, step, now);
-  const counted: CountedEngagement = { epoch: temporal.halvings, lean: lean - temporal.lean };
-  temporal.lean = lean;
-  if (typeof event.notable === 'boolean') {
-    counted.notable = event.notable;
-    countsOf(temporal, event.notable).engaged += 1;
+  const takenKey = `${signal}:${event.paperId}`;
+  const taken = temporal.taken.get(takenKey);
+  temporal.taken.delete(takenKey);
+  let counted: CountedEngagement;
+  if (event.restores === true && taken !== undefined) {
+    if (taken === null) return;
+    counted = taken;
+    temporal.lean = clamp(temporal.lean + counted.lean, -1, 1);
+    if (typeof counted.notable === 'boolean') countsOf(temporal, counted.notable).engaged += 0.5 ** (temporal.halvings - counted.epoch);
+  } else {
+    const lean = leanAfterEngaging(temporal.lean, event, step, now);
+    counted = { epoch: temporal.halvings, lean: lean - temporal.lean };
+    temporal.lean = lean;
+    if (typeof event.notable === 'boolean') {
+      counted.notable = event.notable;
+      countsOf(temporal, event.notable).engaged += 1;
+    }
+    if (counted.notable === undefined && counted.lean === 0) return;
   }
-  if (counted.notable === undefined && counted.lean === 0) return;
   paper[signal] = counted;
   temporal.papers.delete(event.paperId);
   temporal.papers.set(event.paperId, paper);
@@ -561,11 +583,15 @@ function countEngagement(profile: InteractionProfile, event: InteractionEvent, s
 }
 
 // An unlike or unsave: takes back what the like or save added, halved as the
-// counts were since.
+// counts were since, and remembers it (`taken`).
 function undoEngagement(profile: InteractionProfile, paperId: string, signal: EngagementSignal) {
   const { temporal } = profile;
   const paper = temporal.papers.get(paperId);
   const counted = paper?.[signal];
+  const takenKey = `${signal}:${paperId}`;
+  temporal.taken.delete(takenKey);
+  temporal.taken.set(takenKey, counted ?? null);
+  while (temporal.taken.size > MAX_ENGAGED_PAPERS) temporal.taken.delete(temporal.taken.keys().next().value!);
   if (!paper || !counted) return;
   if (typeof counted.notable === 'boolean') {
     const kind = countsOf(temporal, counted.notable);

@@ -218,11 +218,12 @@ function signedInFeed(userId = 'reader') {
       throw error;
     }
   };
-  const toggle = (set: 'liked' | 'readLater', paperId: string, eventFor: (on: boolean) => InteractionEvent, write: () => Promise<void>, undoable: boolean) => {
+  // `eventFor(on, restores)`: `restores` on the undo of a refused change.
+  const toggle = (set: 'liked' | 'readLater', paperId: string, eventFor: (on: boolean, restores: boolean) => InteractionEvent, write: () => Promise<void>, undoable: boolean) => {
     const from = feed[set].has(paperId);
     let shown: InteractionEvent | null = null;
     const showOn = (on: boolean, undoes?: InteractionEvent | null) => {
-      const recorded = record(eventFor(on), undoes);
+      const recorded = record(eventFor(on, Boolean(undoes)), undoes);
       feed[set] = new Set(feed[set]);
       if (on) feed[set].add(paperId);
       else feed[set].delete(paperId);
@@ -244,12 +245,12 @@ function signedInFeed(userId = 'reader') {
   // FeedProvider's markSaved, unmarkSaved, markNotInterested and
   // undoNotInterested: the screen changes, the event is recorded, and the
   // write follows. A refused write throws only when `throwOnError` asks.
-  const setMark = async (set: 'saved' | 'dismissed', paperId: string, on: boolean, kind: string, write: () => Promise<void>, throwOnError = false) => {
+  const setMark = async (set: 'saved' | 'dismissed', paperId: string, on: boolean, kind: string, write: () => Promise<void>, throwOnError = false, fields: Partial<InteractionEvent> = {}) => {
     if (feed[set].has(paperId) === on) return;
     feed[set] = new Set(feed[set]);
     if (on) feed[set].add(paperId);
     else feed[set].delete(paperId);
-    const recorded = record({ ...likeOf(paperId), kind });
+    const recorded = record({ ...likeOf(paperId), kind, ...fields });
     try {
       await refusing(write, recorded);
     } catch (error) {
@@ -269,11 +270,23 @@ function signedInFeed(userId = 'reader') {
         if (!alreadySaved) await unsave(paperId, rollback);
       }
     },
+    // useQuickSave's removal (unmarkThenConfirm): a refused unsave is put back
+    // by a save that restores what it took. `card` as for `like`.
+    async quickRemove(paperId: string, write: () => Promise<void>, restore: () => Promise<void>, card?: Pick<InteractionEvent, 'notable' | 'published'>) {
+      try {
+        await setMark('saved', paperId, false, 'unsave', write, true, card);
+      } catch {
+        await setMark('saved', paperId, true, 'save', restore, false, { ...card, restores: true });
+      }
+    },
     save: (paperId: string, write: () => Promise<void>) => setMark('saved', paperId, true, 'save', write),
     unsave,
     dismiss: (paperId: string, write: () => Promise<void>) => setMark('dismissed', paperId, true, 'notInterested', write),
     undoDismiss: (paperId: string, write: () => Promise<void>) => setMark('dismissed', paperId, false, 'undoNotInterested', write),
-    like: (paperId: string, write: () => Promise<void>) => toggle('liked', paperId, (on) => likeOf(paperId, on ? 'like' : 'unlike'), write, true),
+    // `card`: the tapped card's kind and date, a notable For You card's by default.
+    like: (paperId: string, write: () => Promise<void>, card?: Pick<InteractionEvent, 'notable' | 'published'>) => toggle(
+      'liked', paperId, (on, restores) => ({ ...likeOf(paperId, on ? 'like' : 'unlike'), ...card, restores }), write, true,
+    ),
     // The quick save takes a refused change back; the list picker keeps it.
     readLater: (paperId: string, write: () => Promise<void>, undoable = true) => toggle('readLater', paperId, (value) => ({ paperId, kind: 'readLater', value }), write, undoable),
     // A removal from Reading history (FeedProvider's unmarkAsRead).
@@ -510,4 +523,57 @@ test('a dismissal taken back while the profile loads, refused, leaves a dismissa
 
   assert.ok(reader.feed.dismissed.has('dismissed'));
   assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
+});
+
+// The paper was liked or saved from a recent For You card in an earlier
+// session. A Lists card reports no kind, a notable For You card the other one.
+const RECENT_FOR_YOU = { notable: false, published: '2026-10-28' };
+const REVERSE_TAPS = [
+  ['a card off For You', { notable: undefined, published: '2026-10-28' }],
+  ['a notable For You card', { notable: true, published: null }],
+] as const;
+
+for (const [card, tapped] of REVERSE_TAPS) {
+  test(`an unlike refused after the profile arrives, tapped on ${card}, leaves the stored like's counts`, async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const stored = () => storedProfileWith({ ...likeOf('liked'), ...RECENT_FOR_YOU });
+    const reader = signedInFeed();
+    reader.load(stored());
+    await reader.like('liked', refused, tapped);
+
+    assert.ok(reader.feed.liked.has('liked'));
+    assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), ['liked']);
+    assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal);
+  });
+
+  test(`a quick save removal refused after the profile arrives, tapped on ${card}, leaves the stored save's counts`, async () => {
+    const stored = () => storedProfileWith({ ...likeOf('saved'), kind: 'save', ...RECENT_FOR_YOU });
+    const reader = signedInFeed();
+    reader.load(stored());
+    await reader.quickRemove('saved', refused, accepted, tapped);
+
+    assert.ok(reader.feed.saved.has('saved'));
+    assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal);
+  });
+}
+
+// Until the profile loads, a paper liked in an earlier session shows unliked:
+// the reader likes it, which storage already holds, then unlikes it. The
+// profile arrives while the unlike waits, its replay takes the stored like
+// back, and Firestore refuses the unlike.
+test('an unlike tapped while the profile loads and refused after it arrives leaves the stored like\'s counts', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const stored = () => storedProfileWith({ ...likeOf('liked'), ...RECENT_FOR_YOU });
+  const [card] = REVERSE_TAPS;
+  const reader = signedInFeed();
+  await reader.like('liked', accepted, card[1]);
+  const write = pendingWrite();
+  const pressed = reader.like('liked', write.write, card[1]);
+  reader.load(stored());
+  assert.ok(!reader.feed.liked.has('liked'), 'the profile that arrives keeps the waiting unlike');
+  write.answer(false);
+  await pressed;
+
+  assert.ok(reader.feed.liked.has('liked'));
+  assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal);
 });
