@@ -148,7 +148,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { heldMarkStarts, holdProfileEvent, refuseHeldEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -291,7 +291,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // truth either way.
   const interactionProfileHydrated = useRef(false);
   // What the account recorded before its profile loaded, for the profile that
-  // arrives to record again (replayHeldEvents).
+  // arrives to record again (adoptHeldEvents).
   const heldProfileEvents = useRef<HeldProfileEvents | null>(null);
   // The account whose profile is currently reflected in the state above.
   const loadedProfileUserId = useRef<string | null>(null);
@@ -1047,11 +1047,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
           : [];
         // The reader may have liked, viewed or saved papers while it loaded:
-        // they moved the provisional profile this one replaces. What it
-        // stores of the marks they changed is read first, for the changes
-        // whose writes still wait.
-        const markStarts = heldMarkStarts(heldProfileEvents.current, userId, profile);
-        const replayed = replayHeldEvents(heldProfileEvents.current, userId, profile);
+        // they moved the provisional profile this one replaces, and are
+        // recorded again on it. The sets and the library below put every
+        // mark back where the profile has it.
+        adoptHeldEvents(heldProfileEvents.current, userId, profile, {
+          changes: markChangeLog,
+          flush: () => scheduleInteractionProfileFlush(userId, profile),
+        });
         heldProfileEvents.current = null;
         interactionProfile.current = profile;
         carryViewedPapers(profile);
@@ -1059,7 +1061,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // for a new account — is safe to write back.
         interactionProfileHydrated.current = true;
         loadedProfileUserId.current = userId;
-        if (replayed) scheduleInteractionProfileFlush(userId, profile);
 
         // getDocs returned these ids ordered by document id, and the lists that
         // render them still expect exactly that order.
@@ -1069,9 +1070,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const saved = orderedSet('saved');
         const read = orderedSet('read');
 
-        // These sets and the library put every mark back where the profile
-        // has it, so a move an answer sent before is no longer on screen.
-        markChangeLog.screenReplaced(markStarts);
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);

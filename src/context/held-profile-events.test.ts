@@ -11,7 +11,7 @@ import {
   viewedIds,
 } from '../utils/interaction-profile.ts';
 import { corpusOrder } from './feed-temporal-lean.ts';
-import { heldMarkStarts, holdProfileEvent, refuseHeldEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, writeMark } from './write-mark.ts';
 
@@ -188,10 +188,10 @@ const likeOf = (paperId: string, kind = 'like'): InteractionEvent => ({
 
 // FeedProvider's like and Read later toggles and its profile load, with the
 // real mark log. Until the profile arrives, each event moves the provisional
-// profile and is held. The load reads what the profile stores of the marks
-// the held events moved, replays them, then draws the liked set from the
-// profile and empties the library until it is read again from the
-// interaction records.
+// profile and is held. The load adopts the held events as FeedProvider does
+// (adoptHeldEvents), counting the writes it schedules in `feed.flushes`, then
+// draws the liked set from the profile and empties the library until it is
+// read again from the interaction records.
 function signedInFeed(userId = 'reader') {
   const feed = {
     hydrated: false,
@@ -203,6 +203,7 @@ function signedInFeed(userId = 'reader') {
     saved: new Set<string>(),
     dismissed: new Set<string>(),
     changes: markChanges(),
+    flushes: 0,
   };
   const record = (event: InteractionEvent, undoes?: InteractionEvent | null) => {
     recordInteractionEvent(feed.profile, event, NOW);
@@ -306,12 +307,10 @@ function signedInFeed(userId = 'reader') {
       });
     },
     load(profile: InteractionProfile) {
-      const starts = heldMarkStarts(feed.held, userId, profile);
-      replayHeldEvents(feed.held, userId, profile);
+      adoptHeldEvents(feed.held, userId, profile, { changes: feed.changes, flush: () => { feed.flushes += 1; } });
       feed.held = null;
       feed.profile = profile;
       feed.hydrated = true;
-      feed.changes.screenReplaced(starts);
       feed.liked = new Set(curatedIds(profile, 'liked'));
       feed.read = new Set(curatedIds(profile, 'read'));
       feed.saved = new Set(curatedIds(profile, 'saved'));
@@ -509,6 +508,25 @@ test('a save or a dismissal refused while the profile loads, on a paper storage 
 
   assert.deepEqual([curatedIds(reader.feed.profile, 'saved'), curatedIds(reader.feed.profile, 'notInterested')], [[], []]);
   assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(storedProfile())));
+});
+
+// What the held events add reaches storage when the profile arrives, without
+// waiting for the reader's next event.
+test('the events held while the profile loads are written back when it arrives, and a load they add nothing to writes nothing', async () => {
+  const reader = signedInFeed();
+  await reader.like('new', accepted);
+  reader.load(storedProfile());
+  assert.equal(reader.feed.flushes, 1);
+  assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), ['new']);
+
+  const idle = signedInFeed();
+  idle.load(storedProfile());
+  // A like storage already holds, and a save storage refused.
+  const known = signedInFeed();
+  await known.like('liked', accepted);
+  await known.save('other', refused);
+  known.load(storedProfileWith(likeOf('liked')));
+  assert.deepEqual([idle.feed.flushes, known.feed.flushes], [0, 0]);
 });
 
 // Until the profile loads, a paper dismissed in an earlier session shows

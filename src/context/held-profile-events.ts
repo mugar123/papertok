@@ -1,5 +1,5 @@
 import type { CuratedSetName, InteractionEvent, InteractionProfile } from '../utils/interaction-profile.ts';
-import type { MarkName } from './write-mark.ts';
+import type { MarkChanges, MarkName } from './write-mark.ts';
 
 import { curatedIds, recordInteractionEvent } from '../utils/interaction-profile.ts';
 import { markKey } from './write-mark.ts';
@@ -122,7 +122,7 @@ function markMoved({ kind }: InteractionEvent): [MarkName, CuratedSetName] | nul
  * earlier change of the wait was accepted and shown, and the mark keeps the
  * value it started from.
  */
-export function heldMarkStarts(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
+function heldMarkStarts(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
   const marks = new Map<string, { stored: boolean; held: number }>();
   if (held?.userId === userId) {
     held.events.forEach(({ event, refused }) => {
@@ -138,4 +138,19 @@ export function heldMarkStarts(held: HeldProfileEvents | null, userId: string, p
     const mark = marks.get(key);
     return mark?.held === shown ? mark.stored : undefined;
   };
+}
+
+/**
+ * What the feed does with `held` when the profile of `userId` arrives. It
+ * reads what the profile stores of the marks the held events moved
+ * (heldMarkStarts), records the held events on it (replayHeldEvents) and,
+ * when they added anything, calls `flush` to write it back, so they reach
+ * storage without waiting for the reader's next event. The screen then shows
+ * the profile's marks, so `changes` learns that what earlier answers sent to
+ * it is gone, and what the marks still waiting on a write started from.
+ */
+export function adoptHeldEvents(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile, { changes, flush }: { changes: Pick<MarkChanges, 'screenReplaced'>; flush: () => void }) {
+  const markStarts = heldMarkStarts(held, userId, profile);
+  if (replayHeldEvents(held, userId, profile)) flush();
+  changes.screenReplaced(markStarts);
 }
