@@ -545,6 +545,61 @@ export function savedHighlightSpace(text: unknown) {
   return { text: saved, current, source, toCurrent: (offset: number) => offsets[offset] };
 }
 
+const FONT_OPENER = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{`, 'y');
+const FONT_COMMAND_NAMES = FONT_COMMANDS.split('|');
+
+/**
+ * The words a stored quote paints. A quote is a slice of the saved text, so a
+ * selection that starts inside a font command keeps the brace that closes it
+ * (`HERMES}, a harness`) and one that ends inside keeps the command that opens
+ * it (`a \textbf{harn`), as does a quote cut at the storage limit, which may
+ * stop inside the command's name. The card paints none of those, so the
+ * margin and the copied note drop them. A `}` is a leftover when no brace
+ * before it is open, and a font command's `{` when no `}` after it closes it;
+ * any other brace, escaped or paired, is the text's own. The quote alone does
+ * not say which wrappers its paragraph keeps as written, so every complete
+ * one unwraps here. What is stored stays as it is: the highlight finds its
+ * words again through it.
+ */
+export function paintedQuote(quote: unknown) {
+  const text = normalizeLatexText(quote);
+  const cuts: [number, number][] = [];
+  // Each open brace: where its font command starts and ends, or null for a plain one.
+  const open: ([number, number] | null)[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\\') {
+      FONT_OPENER.lastIndex = index;
+      const opener = FONT_OPENER.exec(text);
+      if (opener) {
+        open.push([index, index + opener[0].length]);
+        index += opener[0].length - 1;
+      } else {
+        index += 1;
+      }
+    } else if (text[index] === '{') {
+      open.push(null);
+    } else if (text[index] === '}' && open.pop() === undefined) {
+      cuts.push([index, index + 1]);
+    }
+  }
+  for (const opener of open) if (opener) cuts.push(opener);
+  cuts.sort((a, b) => a[0] - b[0]);
+  const name = /\\([a-zA-Z]*)$/.exec(text);
+  if (name && !isEscaped(text, name.index) && FONT_COMMAND_NAMES.some(command => command.startsWith(name[1]))) {
+    cuts.push([name.index, text.length]);
+  }
+
+  let painted = '';
+  let cursor = 0;
+  for (const [from, to] of cuts) {
+    painted += text.slice(cursor, from);
+    cursor = to;
+    // Whitespace was collapsed before, so a removal must not leave two spaces.
+    if (!painted || /\s$/.test(painted)) while (/\s/.test(text[cursor] ?? '')) cursor += 1;
+  }
+  return (painted + text.slice(cursor)).trim();
+}
+
 /**
  * `normalizeLatexText` escapes every prose `%` to `\%` so a later LaTeX pass
  * cannot read it as a comment — but a screen (or a page of HTML) prints what
