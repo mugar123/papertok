@@ -29,11 +29,32 @@ class PageElement extends EventTarget {
   readonly name: string;
   readonly parent: PageElement | null;
   private removed = false;
+  private readonly children: PageElement[] = [];
+  private readonly attributes = new Set<string>();
   constructor(ownerDocument: PageDocument, name: string, parent: PageElement | null) {
     super();
     this.ownerDocument = ownerDocument;
     this.name = name;
     this.parent = parent;
+    parent?.children.push(this);
+  }
+
+  setAttribute(name: string) {
+    this.attributes.add(name);
+  }
+
+  hasAttribute(name: string) {
+    return this.attributes.has(name);
+  }
+
+  // Only the overlay's popup is looked up, by its slot; the name stands in for it.
+  querySelector(selector: string): PageElement | null {
+    assert.equal(selector, '[data-slot$="-content"]');
+    for (const child of this.children) {
+      const found = child.name.endsWith('-content') ? child : child.querySelector(selector);
+      if (found) return found;
+    }
+    return null;
   }
 
   get isConnected(): boolean {
@@ -183,8 +204,15 @@ test('Escape keeps the toasts that leave on their own, such as an Undo or a load
  * and Escape there closes the overlay, not the toast. Each overlay's portal
  * takes this ref, which Base UI calls with the portal's element as the overlay
  * opens, and whose returned cleanup it calls once the overlay has left.
+ * `startLeaving` marks its popup closed, as Base UI does when the leave starts.
  */
-const openOverlay = () => trackModalOverlay(new PageDocument().element('portal') as unknown as HTMLElement)!;
+function openOverlay() {
+  const doc = new PageDocument();
+  const portal = doc.element('portal');
+  const popup = doc.element('dialog-content', portal);
+  const close = trackModalOverlay(portal as unknown as HTMLElement)!;
+  return Object.assign(close, { startLeaving: () => { popup.setAttribute('data-closed'); } });
+}
 
 test('opening an overlay puts away the toasts that stay until closed, keeping the ones that leave on their own', () => {
   const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
@@ -211,6 +239,22 @@ test('an error of an action started behind overlays opened since appears once th
   closePalette();
   assert.ok(onScreen(error), 'the error is on screen once both have left, over the sheet it was pressed in');
   closeSheet();
+  toast.dismiss();
+});
+
+// Follow pressed on an Explorer journal page as the reader over it plays its
+// leave; the palette opens before the refusal arrives, and the reader's
+// portal detaches meanwhile.
+test('an overlay still leaving at the press does not count as open before it', () => {
+  const closeReader = openOverlay();
+  closeReader.startLeaving();
+  const startedAt = actionStart();
+  const closePalette = openOverlay();
+  closeReader();
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
+  assert.ok(!onScreen(error), 'nothing sits over the palette opened after the press');
+  closePalette();
+  assert.ok(onScreen(error), 'the error is on screen once the palette has left');
   toast.dismiss();
 });
 

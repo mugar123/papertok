@@ -112,8 +112,9 @@ globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callb
 globalThis.cancelAnimationFrame ??= (handle) => clearTimeout(handle);
 
 // An overlay's portal ref, as Base UI calls it on opening; the cleanup closes
-// it. Node has no DOM: the portal's page draws no toast list.
-const openOverlay = () => trackModalOverlay({ ownerDocument: { querySelector: () => null } } as unknown as HTMLElement)!;
+// it. Node has no DOM: the portal's page draws no toast list, and the portal
+// finds no popup marked closed, so it stays open until then.
+const openOverlay = () => trackModalOverlay({ ownerDocument: { querySelector: () => null }, querySelector: () => null } as unknown as HTMLElement)!;
 // The ids of the toasts on screen that were not in `before`.
 const newToasts = (before: Set<string | number>) => toast.getToasts()
   .filter(entry => !before.has(entry.id) && !('dismiss' in entry && entry.dismiss))
