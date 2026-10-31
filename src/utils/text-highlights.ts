@@ -62,6 +62,20 @@ function byLayer(a: HighlightRange, b: HighlightRange) {
 }
 
 /**
+ * Whether `buildHighlightPlan` paints any of `start`..`end`: it marks prose,
+ * and a formula only when the range covers it whole. A quote can also occur
+ * inside a formula, and resolving it there drew no mark at all.
+ */
+function drawsMark(formulas: [number, number][], start: number, end: number) {
+  let inFormulas = 0;
+  for (const [from, to] of formulas) {
+    if (start <= from && to <= end) return true;
+    inFormulas += Math.max(0, Math.min(end, to) - Math.max(start, from));
+  }
+  return inFormulas < end - start;
+}
+
+/**
  * Maps quotes onto character ranges of the normalized text.
  *
  * A quote the model mangled simply fails to match and is dropped: a missing
@@ -94,21 +108,26 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
       for (let candidate = haystack.indexOf(needle); candidate !== -1; candidate = haystack.indexOf(needle, candidate + 1)) {
         const start = toCurrent(candidate);
         const end = toCurrent(candidate + needle.length);
-        if (end > start && (!accepts || accepts(start, end)) && !ranges.some(range => claimed(range) && start < range.end && end > range.start)) return { start, end };
+        if (end > start && (!accepts || accepts(start, end)) && drawsMark(space.formulas, start, end) && !ranges.some(range => claimed(range) && start < range.end && end > range.start)) return { start, end };
       }
       return null;
     };
     if (quote.length < MIN_QUOTE_LENGTH) continue;
     // Found in the text it was cut from, where main found it too. A quote not
     // cut from it, such as one the model wrote or a selection read off the
-    // screen, may only occur in the painted text. A quote that starts or ends
-    // on a brace can also match a wrapper's brace earlier in the paragraph, so
-    // the occurrence that paints the quote as it stands comes first, then the
-    // one that paints its words without the cut brackets; a wrapper the
-    // paragraph keeps as written paints differently and still resolves.
+    // screen, may only occur in the painted text. The first occurrence that
+    // paints the quote as it reads on its own wins: selecting bold `agent
+    // harness` stores `\textbf{agent harness}`, which a formula or an escaped
+    // `\\textbf` elsewhere in the paragraph shows as written, and preferring
+    // that spelling marked the other mention or nothing (2026-10-31). Next is
+    // one that paints the quote as written, which is how a wrapper the
+    // paragraph keeps resolves; then one that paints its words without the
+    // cut brackets, because a quote that starts or ends on a brace can also
+    // match a wrapper's brace earlier in the paragraph.
     const words = paintedQuote(quote);
     const paints = (text: string) => (start: number, end: number) => space.current.slice(start, end).trim() === text;
-    const found = findFree(space.text, quote, space.toCurrent, paints(quote))
+    const found = findFree(space.text, quote, space.toCurrent, paints(normalizeLatexText(quote)))
+      ?? findFree(space.text, quote, space.toCurrent, paints(quote))
       ?? findFree(space.text, quote, space.toCurrent, paints(words))
       ?? findFree(space.text, quote, space.toCurrent)
       ?? (space.text === space.current ? null : findFree(space.current, quote));

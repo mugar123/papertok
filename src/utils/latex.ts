@@ -566,6 +566,7 @@ export function normalizeSavedLatexText(text: unknown) {
  * space quotes live in. `current` is the painted text, `source` the index in
  * `text` of each of its characters, and `toCurrent` maps an offset in `text`
  * onto `current`: the number of characters before it that unwrapping kept.
+ * `formulas` are the spans of `current` that `splitLatexText` hands to KaTeX.
  */
 export function savedHighlightSpace(text: unknown) {
   const saved = normalizeSavedLatexText(text);
@@ -576,7 +577,7 @@ export function savedHighlightSpace(text: unknown) {
     while (kept < source.length && source[kept] < index) kept += 1;
     offsets[index] = kept;
   }
-  return { text: saved, current, source, toCurrent: (offset: number) => offsets[offset] };
+  return { text: saved, current, source, formulas: formulaSpans(current), toCurrent: (offset: number) => offsets[offset] };
 }
 
 const FONT_OPENER = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{`, 'y');

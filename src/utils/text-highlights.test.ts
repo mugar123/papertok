@@ -260,6 +260,41 @@ test('a quote cut at a plain brace marks the words it was selected on', () => {
   assert.ok(rest);
 });
 
+// Selecting a bold mention stores its font command, which a formula later in
+// the paragraph holds as written. Resolved inside that formula, the highlight
+// covered part of it and drew no mark.
+test('a selection over a font command marks that mention, not the same command inside a formula', () => {
+  const text = 'The \\textbf{agent harness} works; later $q = \\textbf{agent harness}$ holds.';
+  const anchor = buildRangeAnchor(text, 4, 17);
+  assert.equal(anchor?.quote, '\\textbf{agent harness}');
+  for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }, { quote: anchor?.quote, source: 'ai' }]) {
+    assert.deepEqual(resolveHighlightRanges(text, [highlight]).map(range => [range.start, range.end]), [[4, 17]]);
+    const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+    assert.deepEqual(marked.map(item => [item.type, item.value]), [['mark', 'agent harness']]);
+  }
+});
+
+// Every kind of formula holds the command as written, before the mention or
+// after it, and so does prose where the command's backslash is escaped.
+test('a selection over a font command marks that mention wherever else the paragraph keeps the command as written', () => {
+  for (const command of ['textbf', 'emph']) {
+    const wrapped = `\\${command}{agent harness}`;
+    for (const kept of ['$q = W$', '$$q = W$$', '\\(q = W\\)', '\\[q = W\\]', '\\begin{equation}q = W\\end{equation}', '\\W']) {
+      const elsewhere = kept.replace('W', wrapped);
+      for (const text of [`The ${wrapped} works; later ${elsewhere} holds.`, `Later ${elsewhere} holds; the ${wrapped} works.`]) {
+        const start = normalizeLatexText(text).indexOf(' agent harness') + 1;
+        const end = start + 'agent harness'.length;
+        const anchor = buildRangeAnchor(text, start, end);
+        assert.equal(anchor?.quote, wrapped, text);
+        for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }]) {
+          const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+          assert.deepEqual(marked.map(item => [item.start, item.end]), [[start, end]], text);
+        }
+      }
+    }
+  }
+});
+
 test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);
