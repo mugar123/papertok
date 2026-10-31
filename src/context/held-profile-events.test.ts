@@ -280,6 +280,11 @@ function signedInFeed(userId = 'reader') {
         await setMark('saved', paperId, true, 'save', restore, false, { ...card, restores: true });
       }
     },
+    // The Undo of a removal, the quick save's (restoreSave) or the list
+    // picker's: a save that restores what the removal took. `card` as for `like`.
+    restoreRemoval: (paperId: string, write: () => Promise<void>, card?: Pick<InteractionEvent, 'notable' | 'published'>) => (
+      setMark('saved', paperId, true, 'save', write, true, { ...card, restores: true })
+    ),
     // A recent For You card the reader passes.
     pass(paperId: string) {
       record({ paperId, kind: 'skip', notable: false });
@@ -692,4 +697,60 @@ test('a quick save to Read later refused and taken back while the profile loads 
 
   const reloaded = deserializeInteractionProfile(serializeInteractionProfile(reader.feed.profile))!;
   assert.deepEqual(curatedIds(reloaded, 'readLater'), ['later']);
+});
+
+// The cards an account passes on For You, one in ten notable. The counts are
+// halved each time the cards shown reach two thousand.
+function passCards(profile: InteractionProfile, count: number, prefix: string) {
+  for (let index = 0; index < count; index += 1) {
+    recordInteractionEvent(profile, { paperId: `${prefix}-${index}`, kind: 'skip', notable: index % 10 === 0 }, NOW);
+  }
+}
+
+// The aggregate of an account that made `event` in an earlier session and
+// then passed two thousand cards: every count was halved once since, so that
+// engagement counts 0.5.
+function storedHalvedWith(event: InteractionEvent) {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, event, NOW - 86_400_000);
+  passCards(profile, 2000, 'earlier');
+  return deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+}
+
+// The outside verifier's second case on PR #419 at 16770562: a removal that
+// did not stand, tapped on the card the paper was liked or saved on. What the
+// removal took, halved as the counts were, is put back at that weight, not
+// as a new engagement worth 1.
+test('a removal refused after a halving, tapped on the same kind of card, leaves the halved like or save as stored', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  for (const [mark, signal] of [['like', 'like'], ['save', 'save']] as const) {
+    const stored = () => storedHalvedWith({ ...likeOf('marked'), kind: signal, ...RECENT_FOR_YOU });
+    assert.equal(readProfileSignals(stored(), NOW).temporal.recent.engaged, 0.5);
+    const reader = signedInFeed();
+    reader.load(stored());
+    if (mark === 'like') await reader.like('marked', refused, RECENT_FOR_YOU);
+    else await reader.quickRemove('marked', refused, accepted, RECENT_FOR_YOU);
+
+    assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal, `a refused ${mark} removal`);
+  }
+});
+
+test('the Undo of a save removal puts back the save halved as the counts were, also across a halving since the removal', async () => {
+  const save: InteractionEvent = { ...likeOf('saved'), kind: 'save', ...RECENT_FOR_YOU };
+  const reader = signedInFeed();
+  reader.load(storedHalvedWith(save));
+  await reader.quickRemove('saved', accepted, accepted, RECENT_FOR_YOU);
+  assert.equal(readProfileSignals(reader.feed.profile, NOW).temporal.recent.engaged, 0);
+  await reader.restoreRemoval('saved', accepted, RECENT_FOR_YOU);
+  assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(storedHalvedWith(save), NOW).temporal);
+
+  // Removed, then taken back a thousand cards later, when every count was
+  // halved again: the save counts as it would had it never left, a quarter.
+  const kept = storedHalvedWith(save);
+  passCards(kept, 1000, 'later');
+  await reader.quickRemove('saved', accepted, accepted, RECENT_FOR_YOU);
+  passCards(reader.feed.profile, 1000, 'later');
+  await reader.restoreRemoval('saved', accepted, RECENT_FOR_YOU);
+  assert.equal(readProfileSignals(kept, NOW).temporal.recent.engaged, 0.25);
+  assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(kept, NOW).temporal);
 });
