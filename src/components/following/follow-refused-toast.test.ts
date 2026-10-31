@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
 import { followName, followRefusal, sayFollowRefused, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
-import { actionStart, forgetAccountErrors, trackModalOverlay } from '../ui/toast.ts';
+import { actionStart, forgetAccountToasts, trackModalOverlay } from '../ui/toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
 /** The toast `id` put on screen, as the Toaster would render it. */
@@ -174,13 +174,13 @@ test('a refusal settling after the account changed is said neither in the line n
   const before = new Set(toast.getToasts().map(entry => entry.id));
   const closePalette = openOverlay();
   const inPalette = actionStart({ leaving: 1 });
-  forgetAccountErrors('reader-a');
+  forgetAccountToasts('reader-a');
   const refused = { message: 'Could not follow Ada Lovelace. Try again.' };
   sayFollowRefused(refused, { inView: true, showInLine: () => assert.fail('the reader now did not press it'), startedAt: inPalette });
   closePalette();
   sayFollowRefused(refused, { inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt: inPalette });
   const onPage = actionStart();
-  forgetAccountErrors(null);
+  forgetAccountToasts(null);
   toastFollowRefused(new Error('PERMISSION_DENIED'), { name: 'Econometrica', following: false, startedAt: onPage });
   assert.equal(newToasts(before).length, 0, 'no toast was raised');
 });

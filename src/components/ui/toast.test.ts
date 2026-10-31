@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { actionStart, forgetAccountErrors, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
+import { actionStart, forgetAccountToasts, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -235,7 +235,7 @@ test('an error of an action whose overlay has closed since appears at once', () 
 
 // Auth says who is signed in; each call here names someone new.
 let readers = 0;
-const switchAccount = () => { readers += 1; forgetAccountErrors(`reader-${readers}`); };
+const switchAccount = () => { readers += 1; forgetAccountToasts(`reader-${readers}`); };
 
 // Signed out from the account menu while a Follow's refusal waited behind it.
 test('an error still waiting when the account changes is never shown', () => {
@@ -268,13 +268,25 @@ test('an error on screen when the account changes is put away', () => {
   assert.ok(!onScreen(error), 'the reader signed in next does not see it');
 });
 
+// Unfollowed Nature, then signed into another account in another tab within
+// the Undo's few seconds: pressed here, the Undo would follow Nature for them.
+test('a toast with an action on screen when the account changes is put away, a plain one stays', () => {
+  const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
+  const addToList = toast.success('Saved to Read later', { action: { label: 'Add to list', onClick: () => {} } });
+  const plain = toast.success('Link copied');
+  switchAccount();
+  assert.deepEqual([undo, addToList].map(onScreen), [false, false], 'their actions were the account before');
+  assert.ok(onScreen(plain), 'a toast without an action stays');
+  toast.dismiss();
+});
+
 // "Try again" on the profile error screen listens to auth again, and auth
 // names the same reader again while their Follow is still under way.
 test('auth naming the same reader again keeps their errors', () => {
   switchAccount();
   const onScreenBefore = toastError('The list could not be deleted');
   const startedAt = actionStart();
-  forgetAccountErrors(`reader-${readers}`);
+  forgetAccountToasts(`reader-${readers}`);
   const error = toastError('Could not follow Nature. Try again.', { startedAt });
   assert.ok(onScreen(onScreenBefore), 'the error already on screen stays');
   assert.ok(onScreen(error), 'the refusal of their own press is shown');

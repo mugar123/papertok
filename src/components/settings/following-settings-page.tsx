@@ -138,7 +138,9 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
       action: {
         label: 'Undo',
         onClick: () => {
-          if (latest.current.isFollowing(entity)) return;
+          // The account change puts this toast away; a press as it leaves
+          // would still follow for whoever signed in since.
+          if (!sameAccount(startedAt) || latest.current.isFollowing(entity)) return;
           // A journal's Undo can meet the journal limit, which another
           // device's follow may have reached in the meantime. Said in the
           // list's status line while the list is on screen, as the palette

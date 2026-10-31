@@ -4,7 +4,7 @@ import { toast, type ExternalToast } from 'sonner';
 let openModalOverlays = 0;
 /** Who is signed in as far as toasts know: a user ID, null for nobody, undefined until auth first answers. */
 let signedIn: string | null | undefined;
-/** Counts the account changes (`forgetAccountErrors`). */
+/** Counts the account changes (`forgetAccountToasts`). */
 let account = 0;
 /** Errors waiting for the overlays opened after their action started to leave. */
 let heldErrors: Array<{ overlaysAtStart: number; show: () => void }> = [];
@@ -53,17 +53,21 @@ export function toastError(title: Parameters<typeof toast.error>[0], { startedAt
 /**
  * Called with whoever auth says is signed in, `uid` or null, each time it
  * says so. When the account changed, by signing out or in, here or in another
- * tab, the errors of what the account before did are not this reader's: puts
- * away those on screen, forgets those waiting for an overlay, and keeps
- * `toastError` from showing those of actions still under way. The same
- * account again, as when the profile load is tried again, keeps them.
+ * tab, the errors of what the account before did are not this reader's, and
+ * an Undo or other action on a toast would act for the reader now: puts away
+ * the error toasts and those with an action, forgets the errors waiting for
+ * an overlay, and keeps `toastError` from showing those of actions still
+ * under way. The same account again, as when the profile load is tried
+ * again, keeps them.
  */
-export function forgetAccountErrors(uid: string | null) {
+export function forgetAccountToasts(uid: string | null) {
   if (uid === signedIn) return;
   signedIn = uid;
   account += 1;
   heldErrors = [];
-  dismissPersistentToasts();
+  for (const shown of toast.getToasts()) {
+    if (('duration' in shown && shown.duration === Infinity) || ('action' in shown && shown.action)) toast.dismiss(shown.id);
+  }
 }
 
 /**
