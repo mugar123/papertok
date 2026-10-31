@@ -16,7 +16,7 @@ import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, entityLane, followLane } from '../src/utils/follow-lanes.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
-import { reserveRequestQuota } from './request-quota-ledger.ts';
+import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
 // (paper-harvest.ts), merged into one row per paper, enriched and embedded
@@ -1100,11 +1100,23 @@ function selectDiverseEagerly<C extends DiversityCandidate>(candidates: C[]): C[
 }
 
 export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
+  // One ledger object holds the UTC hour, with each minute's counts as keys in
+  // it. A new object takes a median of 0.49 s to answer its first call, against
+  // 39 ms for one already in use (production, 2026-10-28 to 30); with an object
+  // per minute, nearly every session's first page would wait for a new one.
+  const now = new Date().toISOString();
+  const minute = now.slice(0, 16);
+  const appMinuteLimit = Math.floor(Number(env.PROVIDER_GLOBAL_MINUTE_LIMIT)) || DEFAULT_FEED_GLOBAL_MINUTE_LIMIT;
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
-    periodKey: `store-feed:${new Date().toISOString().slice(0, 16)}`,
-    subject: `uid:${uid}`,
+    periodKey: `store-feed:hour:${now.slice(0, 13)}`,
+    subject: `uid:${uid}:${minute}`,
     subjectLimit: Math.floor(Number(env.PROVIDER_USER_MINUTE_LIMIT)) || DEFAULT_FEED_USER_MINUTE_LIMIT,
-    globalLimit: Math.floor(Number(env.PROVIDER_GLOBAL_MINUTE_LIMIT)) || DEFAULT_FEED_GLOBAL_MINUTE_LIMIT,
+    part: { subject: `minute:${minute}`, limit: appMinuteLimit },
+    // The object's own count is the hour's total, which 60 full minutes reach
+    // and do not pass. It stays within the ledger's maximum: a limit above it
+    // makes the ledger refuse the request as malformed, which lets every page
+    // through.
+    globalLimit: Math.min(appMinuteLimit * 60, LEDGER_MAX_LIMIT),
   }).catch((error: unknown) => {
     // The call throws, rather than answering with a code, when the object is
     // overloaded or reset during a deploy. The error is the object's own and
