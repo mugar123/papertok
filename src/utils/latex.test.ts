@@ -244,7 +244,7 @@ test('a font command with a space at the edge of its argument leaves one space',
 test('normalizing a text four times as long takes about four times as long', () => {
   const fastest = (text: string) => {
     let best = Infinity;
-    for (let run = 0; run < 3; run += 1) {
+    for (let run = 0; run < 7; run += 1) {
       const started = performance.now();
       normalizeLatexText(text);
       best = Math.min(best, performance.now() - started);
@@ -260,7 +260,7 @@ test('normalizing a text four times as long takes about four times as long', () 
   ] as const) {
     const once = fastest(build(size));
     const fourfold = fastest(build(4 * size));
-    assert.ok(fourfold < 10 * once + 25, `${name}: ${once.toFixed(1)} ms, four times as long ${fourfold.toFixed(1)} ms`);
+    assert.ok(fourfold < 10 * once, `${name}: ${once.toFixed(1)} ms, four times as long ${fourfold.toFixed(1)} ms`);
   }
 });
 
