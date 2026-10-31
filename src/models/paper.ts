@@ -122,6 +122,12 @@ export interface Paper {
   sources: PaperSources;
   title: string;
   abstract: string;
+  // The source a card credits for `abstract` when Crossref or Semantic Scholar
+  // supplied it: recovered for a record that had none (`mergeFeedAbstracts`),
+  // or Semantic Scholar's own record's text (`SemanticScholarAdapter`).
+  // Absent for any other record's own text, and on rows recovered before
+  // ENG-109.
+  abstractSource?: 'crossref' | 'semanticscholar';
   language?: string;
   // The builder preserves older name-only arrays; enrichment must accept both.
   authors: Array<PaperAuthor | string>;
@@ -314,6 +320,34 @@ export function storedClassification(paper: Partial<Paper>) {
   };
 }
 
+/**
+ * The source a stored copy credits for the text it keeps (ENG-109): the
+ * paper's `abstractSource`, when `kept` is that source's text or its start.
+ * A copy keeps one text, cut to its cap: the summary where one was built,
+ * else the abstract. The source credits the abstract, or the summary of a
+ * copy read back, which has no abstract. Anything else stored in the field
+ * credits no one.
+ */
+export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'summary' | 'abstractSource'>>, kept: string | null | undefined) {
+  const source = paper.abstractSource;
+  const credited = paper.abstract || paper.summary;
+  if ((source !== 'crossref' && source !== 'semanticscholar') || !kept?.trim() || !credited) return undefined;
+  return credited.trim().startsWith(kept.trim()) ? source : undefined;
+}
+
+/**
+ * `paper` with the retraction that `other`, another copy of the same paper,
+ * records (ENG-84). No provider confirms that a paper is not retracted, so a
+ * copy written before a provider reported it, or by a writer that keeps no
+ * status (the `savedPapers` document), never removes it. Returns `paper`
+ * itself when `other` adds nothing.
+ */
+export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
+    ? { ...paper, publicationStatus: 'retracted' }
+    : paper;
+}
+
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
 
 /**
@@ -404,6 +438,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   const storedId = legacyPaper.id === undefined || legacyPaper.id === null ? '' : String(legacyPaper.id).trim();
   const canonicalId = storedId || doi || (arxivId ? `arxiv:${arxivId.split('/').pop()}` : String(Date.now()));
   const classification = readStoredClassification(legacyPaper);
+  const abstractSource = storedAbstractSource(legacyPaper, legacyPaper.summary || legacyPaper.abstract);
 
   return {
     id: canonicalId,
@@ -413,6 +448,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     },
     title: legacyPaper.title || 'Untitled',
     abstract: legacyPaper.summary || legacyPaper.abstract || 'No abstract available.',
+    ...(abstractSource && { abstractSource }),
     authors,
     arxivId: arxivId || undefined,
     doi: doi || undefined,

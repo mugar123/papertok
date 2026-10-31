@@ -121,6 +121,16 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
 export const OPENALEX_NOT_LISTED_SERIES_FILTER = [...WORKING_PAPER_SOURCE_IDS].map(id => `primary_location.source.id:!${id}`).join(',');
 
 /**
+ * An OpenAlex `article` whose own primary source is a journal, and that
+ * `openAlexPeerReviewed` calls reviewed: OpenAlex's record of the journal
+ * version, never a preprint, a report or a listed series.
+ */
+export function openAlexIsJournalArticle(work: OpenAlexStatusFields) {
+  return openAlexType(work) === 'article' && work?.primary_location?.source?.type === 'journal'
+    && isVenue(work.primary_location) && openAlexPeerReviewed(work) === true;
+}
+
+/**
  * The part of `openAlexPeerReviewed` an OpenAlex works filter can express,
  * for a list that keeps only reviewed work: the types the rule can call
  * reviewed, and no listed series as the primary source. Every work it leaves

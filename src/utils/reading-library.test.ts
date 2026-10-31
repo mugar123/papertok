@@ -1,17 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { deleteField, FieldValue } from 'firebase/firestore';
 import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { paperLegacyAdapter, storedClassification } from '../models/paper.ts';
 import { OpenAlexAdapter } from '../services/adapters/open-alex-adapter.ts';
+import { SemanticScholarAdapter } from '../services/adapters/semantic-scholar-adapter.ts';
 import { mapEuropePmcSearchResult } from '../services/domain-source-records.ts';
-import { mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from '../utils/open-alex-work.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from './area-accent.ts';
-import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeOpenAlexEnrichment } from './feed-enrichment.ts';
+import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment } from './feed-enrichment.ts';
+import { hydrateSeededPaper } from './paper-seed.ts';
 import { abstractExcerpt, papersToBibTeX, papersToRIS, serializeLibraryPaper } from './reading-library.ts';
 import { buildSavedPaperPayload } from './saved-paper-payload.ts';
+import { sourceAttribution } from './source-attribution.ts';
+import { copyForMergeWrite } from './stored-copy-write.ts';
 
 const works = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as {
   sample: OpenAlexWork[]; named: OpenAlexWork[];
@@ -74,12 +79,14 @@ test('no stored copy changes the field, its name or its ink', () => {
 type StoredFields = Record<string, unknown>;
 const isMap = (value: unknown): value is StoredFields => typeof value === 'object' && value !== null && !Array.isArray(value);
 // What setDoc(ref, data, { merge: true }) leaves: a field sent replaces the
-// stored one, a map merges key by key, and a field not sent stays.
+// stored one, a map merges key by key, a field not sent stays, and a field
+// sent as deleteField() goes.
 const mergeIntoStored = (stored: StoredFields, sent: StoredFields): StoredFields => {
   const merged = { ...stored };
   for (const [key, value] of Object.entries(sent)) {
     const before = merged[key];
-    merged[key] = isMap(value) && isMap(before) ? mergeIntoStored(before, value) : value;
+    if (value instanceof FieldValue && value.isEqual(deleteField())) delete merged[key];
+    else merged[key] = isMap(value) && isMap(before) ? mergeIntoStored(before, value) : value;
   }
   return merged;
 };
@@ -145,6 +152,102 @@ test('a paper liked and saved before OpenAlex answered keeps the field the answe
   // evidence: the document keeps its version, so the stamp is still dropped.
   const stamped = mergeIntoStored({ title: shown.title, primaryCategory: 'physics.bio-ph', savedAt: '2026-10-01T12:00:00.000Z' }, { primaryTopic });
   assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: shown.id, ...stamped })), 'Biology', 'savedPapers document from before PAP-60');
+});
+
+// ENG-109. The Worker recovered this journal article's abstract from Semantic
+// Scholar or Crossref, and the card credits that source. Liked, saved or put
+// in a list, the paper opens from there on its stored copy laid over
+// OpenAlex's record, which still has no abstract: the page showed the
+// recovered text and credited no one.
+test('a paper opened from a stored copy credits the source of the abstract its card showed', () => {
+  const work = { id: 'https://openalex.org/W4410000002', doi: 'https://doi.org/10.5555/recovered', title: 'A journal article OpenAlex lists without its abstract', type: 'article', publication_date: '2026-10-20' };
+  const openAlex = PaperBuilder.create(mapOpenAlexWork(work)!);
+  const text = 'The abstract this source holds for the journal article, in full.';
+  for (const [source, name] of [['semanticscholar', 'Semantic Scholar'], ['crossref', 'Crossref']] as const) {
+    const [card] = mergeFeedAbstracts([openAlex], [{ doi: '10.5555/recovered', abstract: text, sources: { primary: source, enrichedBy: [] } }]);
+    assert.deepEqual([sourceAttribution(card)?.label, sourceAttribution(card)?.name], ['Abstract:', name], 'the card');
+    for (const [copy, stored] of storedCopies(card)) {
+      const page = hydrateSeededPaper(stored, openAlex);
+      assert.equal(page?.abstract, text, `${source}, ${copy}`);
+      assert.deepEqual([sourceAttribution(page)?.label, sourceAttribution(page)?.name], ['Abstract:', name], `${source}, ${copy}`);
+    }
+  }
+});
+
+// ENG-109. Semantic Scholar's own records, from a search or an author's
+// name-only results, carry its abstract. Merged into OpenAlex's record of the
+// paper, which had none, the card said only "With data from Semantic Scholar";
+// liked or saved, the record or the merged card left no credit in its copy,
+// and the page opened from there showed Semantic Scholar's text with none.
+test("a Semantic Scholar record's abstract keeps its credit in another record of the paper and in every stored copy", () => {
+  const text = 'The abstract Semantic Scholar lists for this journal article, in full.';
+  const work = { id: 'https://openalex.org/W4410000004', doi: 'https://doi.org/10.5555/s2-record', title: 'A journal article both list', type: 'article', publication_date: '2026-10-20' };
+  const openAlex = PaperBuilder.create(mapOpenAlexWork(work)!);
+  const s2 = () => new SemanticScholarAdapter().mapToStandard({ paperId: 'c'.repeat(40), title: work.title, abstract: text, externalIds: { DOI: '10.5555/s2-record' } });
+  const credit = (paper: Partial<Paper> | null) => [paper?.abstract, sourceAttribution(paper)?.label, sourceAttribution(paper)?.name];
+  const [record] = PaperBuilder.deduplicate([s2()]);
+  assert.deepEqual(credit(record), [text, 'From', 'Semantic Scholar'], 'the record');
+  for (const rows of [[openAlex, s2()], [s2(), openAlex]]) {
+    const merged = PaperBuilder.deduplicate(rows);
+    assert.equal(merged.length, 1);
+    assert.deepEqual(credit(merged[0]), [text, rows[0] === openAlex ? 'Abstract:' : 'From', 'Semantic Scholar'], `merged into ${rows[0].id}`);
+  }
+  const [merged] = PaperBuilder.deduplicate([openAlex, s2()]);
+  for (const card of [record, merged]) {
+    for (const [copy, stored] of storedCopies(card)) {
+      assert.deepEqual(credit(hydrateSeededPaper(stored, openAlex)), [text, 'Abstract:', 'Semantic Scholar'], `${card.id}, ${copy}`);
+    }
+  }
+  // A record without an abstract credits no one for the placeholder.
+  assert.equal(new SemanticScholarAdapter().mapToStandard({ paperId: 'd'.repeat(40), title: work.title }).abstractSource, undefined);
+});
+
+test("a stored copy credits no source for a text the source did not supply", () => {
+  const recovered = 'The abstract Semantic Scholar holds for this paper, in full.';
+  const card = { id: 'openalex:W4410000002', title: 'A journal article', abstract: recovered, abstractSource: 'semanticscholar' as const };
+  // The copy keeps the summary where one was built, which is another text.
+  const summarised = { ...card, summary: 'A summary another source wrote for this paper.' };
+  assert.equal('abstractSource' in serializeLibraryPaper(summarised), false, 'interaction copy');
+  assert.equal('abstractSource' in buildSavedPaperPayload(summarised, '2026-10-20T12:00:00.000Z'), false, 'savedPapers document');
+  // A value no card credits, as a document could hold it, credits no one.
+  for (const abstractSource of ['openalex', 'Semantic Scholar', '', null]) {
+    const stored: Partial<Paper> = paperLegacyAdapter(JSON.parse(JSON.stringify({ id: card.id, title: card.title, summary: recovered, abstractSource })));
+    assert.equal(stored.abstractSource, undefined, String(abstractSource));
+  }
+  // A copy without text credits no one for the placeholder it shows.
+  assert.equal(paperLegacyAdapter({ id: card.id, title: card.title, abstractSource: 'semanticscholar' }).abstractSource, undefined);
+});
+
+// ENG-109. A like stored the text Semantic Scholar supplied, with its credit.
+// OpenAlex then listed the paper's own abstract, which replaced it on the
+// card, and a read mark or a save wrote the new text without a credit. Each
+// write merges into the stored copy, which kept the earlier credit: Reading
+// history and the lists showed OpenAlex's text over "Abstract: Semantic
+// Scholar".
+test('a later copy that credits no one takes away the credit an earlier copy stored', () => {
+  const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
+  const own = 'The abstract OpenAlex now lists for this journal article itself.';
+  const card = { id: 'openalex:W4410000002', title: 'A journal article', sources: { primary: 'openalex', enrichedBy: [] } };
+  const credited = { ...card, abstract: recovered, abstractSource: 'semanticscholar' as const };
+  const shown = (copy: Partial<Paper>) => [copy.abstract, sourceAttribution(copy)?.label ?? null, sourceAttribution(copy)?.name ?? null];
+
+  const liked = mergeIntoStored({}, { liked: true, paper: copyForMergeWrite(serializeLibraryPaper(credited)) });
+  assert.deepEqual(shown(paperLegacyAdapter(liked.paper as Partial<Paper>)), [recovered, 'Abstract:', 'Semantic Scholar'], 'interaction copy, liked');
+  const read = mergeIntoStored(liked, { read: true, paper: copyForMergeWrite(serializeLibraryPaper({ ...card, abstract: own })) });
+  assert.deepEqual(shown(paperLegacyAdapter(read.paper as Partial<Paper>)), [own, null, null], 'interaction copy, read');
+
+  const savedAt = '2026-10-26T12:00:00.000Z';
+  const saved = mergeIntoStored({}, copyForMergeWrite(buildSavedPaperPayload(credited, savedAt)));
+  assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...saved })), [recovered, 'Abstract:', 'Semantic Scholar'], 'savedPapers document');
+  const savedAgain = mergeIntoStored(saved, copyForMergeWrite(buildSavedPaperPayload({ ...card, abstract: own }, savedAt)));
+  assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...savedAgain })), [own, null, null], 'savedPapers document, saved again');
+
+  // A save that brings no text leaves the stored text, and its credit.
+  const untouched = mergeIntoStored(saved, copyForMergeWrite(buildSavedPaperPayload(card, savedAt)));
+  assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...untouched })), [recovered, 'Abstract:', 'Semantic Scholar'], 'savedPapers document, saved without a text');
+  // And a credited text written over an uncredited one is credited.
+  const creditedLater = mergeIntoStored(savedAgain, copyForMergeWrite(buildSavedPaperPayload(credited, savedAt)));
+  assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...creditedLater })), [recovered, 'Abstract:', 'Semantic Scholar'], 'savedPapers document, credited again');
 });
 
 const paper = {

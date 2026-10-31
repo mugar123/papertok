@@ -122,7 +122,7 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
       papers,
       loading: false,
       hasMore: false,
-      surface: 'other',
+      surface: 'similar',
       endCard: (
         <EmptyState className="similar-end" icon art={<Intersect />} title={'No more similar papers'} actions={closeAction}>
           {`That was every similar paper for this one.${leftOut}`}

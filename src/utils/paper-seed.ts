@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 
+import { withRetractionOf } from '../models/paper.ts';
 import { getArxivArchiveArea } from '../data/category-taxonomy.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
@@ -87,12 +88,22 @@ export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydr
     && getArxivArchiveArea(hydrated.primaryCategory)
     ? hydrated
     : present(seed.categories) || present(seed.primaryCategory) ? seed : hydrated;
+  const abstract = hydratedAbstract(seed.abstract, hydrated.abstract);
+  // The source a card credits for the text comes with it: the copy's, or the
+  // provider's for the same text when the copy names none, as a copy stored
+  // without the field does.
+  const abstractSource = abstract === seed.abstract && seed.abstractSource
+    ? seed.abstractSource
+    : abstract === hydrated.abstract ? hydrated.abstractSource : undefined;
+  // A retraction the copy states stands, as in `PaperBuilder.merge`: OpenAlex
+  // or arXiv can answer from data without the retraction PubMed gave the copy.
   return {
-    ...hydrated,
+    ...withRetractionOf(hydrated, seed),
     id: keep('id'),
     title: keep('title'),
     authors: hydratedAuthors(seed.authors, hydrated.authors),
-    abstract: hydratedAbstract(seed.abstract, hydrated.abstract),
+    abstract,
+    abstractSource,
     primaryCategory: classification.primaryCategory,
     categories: classification.categories,
     allCategories: classification.allCategories ?? classification.categories,

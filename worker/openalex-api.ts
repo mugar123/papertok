@@ -121,6 +121,9 @@ export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: 
   }
 }
 
+/** The longest parameter value the relay forwards; a longer one is dropped. */
+export const OPENALEX_PARAM_MAX_LENGTH = 2_000;
+
 // Rebuilds the upstream URL from an entity allowlist and a parameter allowlist.
 // Nothing the caller sends reaches OpenAlex verbatim -- in particular an
 // `api_key` in the query is dropped, so a caller cannot spend someone else's
@@ -148,7 +151,7 @@ function openAlexTargetUrl(pathname: string, searchParams: URLSearchParams) {
   const url = new URL(`https://api.openalex.org/${entity}${id ? `/${id}` : ''}`);
   for (const name of OPENALEX_PARAMS) {
     const value = searchParams.get(name);
-    if (value === null || value.length > 2_000) continue;
+    if (value === null || value.length > OPENALEX_PARAM_MAX_LENGTH) continue;
     // Trimmed here, and the cache key is then read back off this URL. The two used
     // to disagree -- the key trimmed, the upstream URL did not -- so `filter=x`
     // and `filter=%20x%20` collided on one entry for six hours, and a spoofable

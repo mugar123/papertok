@@ -368,7 +368,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'title', 'authors', 'primaryCategory', 'categories', 'primaryTopic',
             'classificationVersion', 'published', 'arxivId',
-            'summary', 'doi', 'landingPageUrl', 'savedAt'
+            'summary', 'abstractSource', 'doi', 'landingPageUrl', 'savedAt'
           ])
           && validString(request.resource.data.title, 1000)
           && (!('authors' in request.resource.data)
@@ -383,6 +383,9 @@ service cloud.firestore {
               && request.resource.data.classificationVersion > 0)
           && (!('summary' in request.resource.data)
             || validString(request.resource.data.summary, 1000))
+          // The source the card credits for the summary's text (ENG-109).
+          && (!('abstractSource' in request.resource.data)
+            || request.resource.data.abstractSource in ['crossref', 'semanticscholar'])
           && (!('doi' in request.resource.data)
             || request.resource.data.doi == null
             || validString(request.resource.data.doi, 300))

@@ -80,6 +80,10 @@ export class SemanticScholarAdapter {
       arxivId,
       title: raw.title || 'Untitled',
       abstract: raw.abstract || 'No abstract available.',
+      // Semantic Scholar's licence asks for a credit wherever its data is
+      // shown (ENG-109). Named on the text, the credit follows it into
+      // another record of the paper that lacks one, and into a stored copy.
+      ...(raw.abstract?.trim() && { abstractSource: 'semanticscholar' as const }),
       authors: raw.authors?.map(a => ({ name: a.name, id: a.authorId })) || [],
       publishedDate: raw.year ? `${raw.year}-01-01` : null,
       year: raw.year || undefined,

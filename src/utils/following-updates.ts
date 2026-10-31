@@ -67,19 +67,24 @@ function mergeMatches(left: NonNullable<Paper['_followedEntityMatches']> = [], r
 }
 
 function mergeFollowingUpdatePaperRecords(current: Paper, paper: Paper, updateKey: string): Paper {
-  return {
+  // The longer abstract, with the source a card credits for it.
+  const text = current.abstract?.length >= (paper.abstract?.length || 0) ? current : paper;
+  const merged: Paper = {
     ...current,
     ...paper,
     id: current.id || paper.id,
     doi: current.doi || paper.doi,
     arxivId: current.arxivId || paper.arxivId,
     pmid: current.pmid || paper.pmid,
-    abstract: current.abstract?.length >= (paper.abstract?.length || 0) ? current.abstract : paper.abstract,
+    abstract: text.abstract,
     citationCount: Math.max(current.citationCount || 0, paper.citationCount || 0),
     citationCountKnown: Boolean(current.citationCountKnown || paper.citationCountKnown),
     _followedEntityMatches: mergeMatches(current._followedEntityMatches, paper._followedEntityMatches),
     updateKey,
   };
+  if (text.abstractSource) merged.abstractSource = text.abstractSource;
+  else delete merged.abstractSource;
+  return merged;
 }
 
 export function mergeFollowingUpdatePapers(papers: Paper[] = [], limit = 60) {

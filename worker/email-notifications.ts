@@ -934,18 +934,16 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 /**
  * Account deletion: drop the newsletter records even when the account never
  * subscribed. Missing KV is not a failure here — there is nothing to erase.
+ * A retry passes the same `keys`: once the subscription is gone, only the
+ * earlier attempt still knows its unsubscribe index and delivery state.
  */
-export async function purgeEmailSubscription(env: WorkerEnv, uid: string) {
+export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   const subscription = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
-  await Promise.all([
-    env.NOTIFICATION_STORE.delete(key),
-    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
-    subscription?.unsubscribeToken
-      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
-      : Promise.resolve(),
-  ]);
+  keys.add(key).add(deliveryStateKey(uid, subscription || { uid }));
+  if (subscription?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`);
+  await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
   return { purged: true };
 }
 

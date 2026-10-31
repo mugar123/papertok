@@ -196,13 +196,14 @@ async function seed(db: D1Database, corpus: Corpus, readers: string[][], now: nu
   return papersOf;
 }
 
-// What the store's statements read, told apart by their SQL.
+// What the store's statements read, told apart by their SQL. The notable scan
+// is a lane's window (`published >= ?`) and the lookup of its day's slice.
 const KINDS = [
-  ['notable', /\bROW_NUMBER\(\)/],
+  ['notable', /\bwork_lanes WHERE lane = \? AND published >= \?|\badsBibcode\b/],
   ['lanes', /\bFROM work_lanes WHERE lane = \?/],
-  ['vectors', /\bFROM work_vectors\b/],
-  ['keys', /\bFROM work_keys\b/],
-  ['works', /\bFROM works\b|\bUPDATE works\b/],
+  ['vectors', /\bwork_vectors\b/],
+  ['keys', /\bwork_keys\b/],
+  ['works', /\b(?:FROM|JOIN|UPDATE) works\b/],
 ] as const;
 type Kind = typeof KINDS[number][0] | 'other';
 const byKind = (): Record<Kind, number> => ({ lanes: 0, notable: 0, vectors: 0, keys: 0, works: 0, other: 0 });

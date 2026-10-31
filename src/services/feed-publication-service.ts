@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
-import { keepNotablePlaces } from '../utils/feed-enrichment.ts';
+import { keepNotablePlaces, mergeOpenAlexEnrichment, preserveFeedAbstracts } from '../utils/feed-enrichment.ts';
+import { mergeEuropePmcEnrichment } from './europe-pmc-records.ts';
 import { normalizeDoi } from '../utils/public-navigation.ts';
 import { isFeedPublication, withCrossrefType } from './feed-publication-rules.ts';
 
@@ -21,7 +22,8 @@ let retryAt = 0;
 let nextRequestAt = 0;
 
 /**
- * Removes confirmed books and book reviews the reader has not reached. The
+ * Removes confirmed books, book reviews and retracted papers (any card in
+ * `classified` the feed leaves out) the reader has not reached. The
  * visible card and the one after it stay, since a swipe shows the next card
  * before the scroll reports it as visible. With no card reported, the reader
  * is on the first card: a restore reports the card FeedContainer opens on, on
@@ -39,6 +41,29 @@ export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[],
   const kept = unreached.filter(paper => !excluded.has(paper.id));
   if (kept.length === unreached.length) return papers;
   return [...papers.slice(0, lastReached + 1), ...keepNotablePlaces(unreached, kept.filter(paper => !paper._notable), kept.filter(paper => paper._notable))];
+}
+
+/**
+ * A restored feed's cards after a late OpenAlex or Europe PMC answer, given
+ * `merged`, the cards with that answer merged in. Only a card in `loading`
+ * takes a text (`preserveFeedAbstracts`), and the cards the answer calls
+ * retracted (`PaperBuilder.merge` keeps a retraction whichever record states
+ * it) leave by the rule a confirmed book leaves by: only those the reader has
+ * not reached.
+ */
+function withLateAnswer(current: Paper[], merged: Paper[], loading: ReadonlySet<string>, visiblePaperId: string | null) {
+  const cards = preserveFeedAbstracts(current, merged, loading);
+  return dropUnreachedPublications(cards, cards.filter(paper => paper.publicationStatus === 'retracted'), visiblePaperId);
+}
+
+/** `withLateAnswer` for the records `enrichPapersBatch` answers with, by card id. */
+export function withLateOpenAlexAnswer(current: Paper[], records: Record<string, Partial<Paper>>, loading: ReadonlySet<string>, visiblePaperId: string | null) {
+  return withLateAnswer(current, mergeOpenAlexEnrichment(current, records), loading, visiblePaperId);
+}
+
+/** `withLateAnswer` for the records `enrichPubmedIds` answers with, by PMID. */
+export function withLateEuropePmcAnswer(current: Paper[], records: Parameters<typeof mergeEuropePmcEnrichment>[1], loading: ReadonlySet<string>, visiblePaperId: string | null) {
+  return withLateAnswer(current, mergeEuropePmcEnrichment(current, records), loading, visiblePaperId);
 }
 
 // Results outlive the tab, so a reopened app does not ask Crossref again for

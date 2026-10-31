@@ -134,11 +134,11 @@ async function lookupIdentity(token: string, env: WorkerEnv) {
   try {
     payload = JSON.parse(body);
   } catch {
-    // An answer that is not JSON is still an answer, and an answer without a user
-    // in it is a refusal.
+    // An answer that is not JSON is still an answer. Unless its status says
+    // Google failed (5xx or 429), an answer without a user in it is a refusal.
     payload = {};
   }
-  return { ok: response.ok, payload };
+  return { ok: response.ok, status: response.status, payload };
 }
 
 /**
@@ -178,11 +178,16 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   try {
     lookup = await lookupIdentity(token, env);
   } catch {
-    // Reaching Identity Toolkit failed. That is a statement about Google, not
-    // about the token, and the difference matters: this verifier sits in front of
-    // every protected route on each miss of the 60 s identity cache, so reporting
-    // an outage as 401 would tell a whole session's worth of users that they had
-    // been signed out. 503 says retry.
+    lookup = null;
+  }
+  // Reaching Identity Toolkit failed, or it answered 5xx (an outage) or 429 (a
+  // quota). Each is a statement about Google, not about the token, and the
+  // difference matters: this verifier sits in front of every protected route on
+  // each miss of the 60 s identity cache, so reporting an outage as 401 would
+  // tell a whole session's worth of users that they had been signed out. 503
+  // says retry. A 400 such as INVALID_ID_TOKEN or USER_NOT_FOUND is Google's
+  // answer about the token, and stays 401 below.
+  if (!lookup || lookup.status >= 500 || lookup.status === 429) {
     throw new WorkerAuthError('AUTH_UNAVAILABLE', 503);
   }
   const user = lookup.payload?.users?.[0];

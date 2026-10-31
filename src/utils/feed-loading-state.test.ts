@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, firstLoadSettled, getFeedDisplayState } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -114,6 +114,29 @@ test('a first load that failed is still the first wait, so its retry gets the ve
   );
 });
 
+// ENG-116: the reader saw "Error loading papers" for the 2.5 s before the
+// automatic retry, even when that retry then brought the papers.
+test('a failed first load keeps the discovery screen while its automatic retry is due, and shows the error once none is', () => {
+  const failed = { ...baseState, error: 'FEED_LOAD_FAILED', initialLoadPending: true };
+  assert.equal(getFeedDisplayState({ ...failed, autoRetryPending: true }), FEED_DISPLAY_STATES.INITIAL_DISCOVERY);
+  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...failed, autoRetryPending: true }), autoRetryPending: true }), 'discovery');
+  assert.equal(getFeedDisplayState({ ...failed, autoRetryPending: false }), FEED_DISPLAY_STATES.ERROR);
+  // An empty answer has no automatic retry, and stays the empty state.
+  assert.equal(getFeedDisplayState({ ...baseState, error: FEED_EMPTY }), FEED_DISPLAY_STATES.EMPTY);
+});
+
+// A feed emptied for a reset, such as new interests with no snapshot, showed
+// the error and its alert for the 2.5 s before its automatic retry too.
+test('an emptied feed whose reset failed keeps its gathering wait while the automatic retry is due', () => {
+  const failed = { ...baseState, error: 'FEED_LOAD_FAILED' };
+  const waiting = getFeedDisplayState({ ...failed, autoRetryPending: true });
+  assert.notEqual(waiting, FEED_DISPLAY_STATES.ERROR);
+  assert.equal(feedAtomVeilCopy({ displayState: waiting, autoRetryPending: true }), 'gathering');
+  // The retry itself, once the loader has been up, keeps the same wait.
+  assert.equal(feedAtomVeilCopy({ displayState: getFeedDisplayState({ ...baseState, loading: true, showLoader: true }), loading: true }), 'gathering');
+  assert.equal(getFeedDisplayState(failed), FEED_DISPLAY_STATES.ERROR);
+});
+
 test('the first wait ends with papers, or with a load that finished empty and clean', () => {
   assert.equal(firstLoadSettled({ hasPapers: true, loadStarted: false, loading: true, error: null }), true);
   assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: true, loading: false, error: null }), true);
@@ -122,4 +145,32 @@ test('the first wait ends with papers, or with a load that finished empty and cl
 
 test('a first load the store answered with no papers is over: it is not retried', () => {
   assert.equal(firstLoadSettled({ hasPapers: false, loadStarted: true, loading: false, error: FEED_EMPTY }), true);
+});
+
+// PR #425 browser check: the first wait was spoken, if at all, as the tail's
+// "Loading more papers…", wording for a next page.
+test('the first wait is announced as loading papers, once, through its automatic retry', () => {
+  const firstWait = (state: Parameters<typeof getFeedDisplayState>[0]) => feedStatusText({
+    refreshStatus: '',
+    veil: feedAtomVeilCopy({ displayState: getFeedDisplayState(state), ...state }) !== null,
+  });
+  const loadingFirst = { ...baseState, loading: true, initialLoadPending: true };
+  const retryDue = { ...baseState, error: 'FEED_LOAD_FAILED', initialLoadPending: true, autoRetryPending: true };
+  assert.equal(firstWait(loadingFirst), 'Loading papers…');
+  assert.equal(firstWait(retryDue), firstWait(loadingFirst));
+  assert.equal(firstWait({ ...baseState, error: 'FEED_LOAD_FAILED' }), '');
+  assert.equal(firstWait({ ...baseState, hasPapers: true }), '');
+  // An emptied feed reloading under the veil is a wait too.
+  assert.equal(firstWait({ ...baseState, loading: true, showLoader: true }), 'Loading papers…');
+});
+
+test('a refresh keeps its own words under the veil', () => {
+  assert.equal(feedStatusText({ refreshStatus: 'Refreshing papers…', veil: true }), 'Refreshing papers…');
+  assert.equal(feedStatusText({ refreshStatus: 'Papers updated', veil: false }), 'Papers updated');
+});
+
+test('the tail speaks of more papers only under papers already shown', () => {
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: false }), '');
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true }), '');
 });

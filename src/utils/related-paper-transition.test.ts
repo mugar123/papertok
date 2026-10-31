@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
+  stepRelatedPaperTrail,
 } from './related-paper-transition.ts';
+
+test('centring on a paper already on the trail cuts the trail back to it', () => {
+  const start = { doi: '10.1000/p' };
+  const reference = { doi: '10.1000/r' };
+  const trail = stepRelatedPaperTrail([start], reference);
+  assert.deepEqual(trail, [start, reference]);
+  // P cites R, so P is among R's citations; centring on it returns to P.
+  assert.deepEqual(stepRelatedPaperTrail(trail, { doi: 'https://doi.org/10.1000/P' }), [start]);
+  assert.deepEqual(stepRelatedPaperTrail(trail, { doi: '10.1000/q' }), [start, reference, { doi: '10.1000/q' }]);
+});
 
 test('prefers normalized stable identifiers for related paper identity', () => {
   assert.equal(

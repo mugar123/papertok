@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { storedClassification } from '../models/paper.ts';
+import { storedAbstractSource, storedClassification } from '../models/paper.ts';
 
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
@@ -80,9 +80,13 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
   const arxivId = text(paper?.arxivId, 300);
   if (arxivId) payload.arxivId = arxivId;
 
-  // The rules cap it at 1000; the app has always stored 500.
+  // The rules cap it at 1000; the app has always stored 500. The source a card
+  // credits for that text comes with it (ENG-109); the rules accept only the
+  // two sources a card credits.
   const summary = text(paper?.summary, 500) ?? text(paper?.abstract, 500);
   if (summary) payload.summary = summary;
+  const abstractSource = storedAbstractSource(paper || {}, summary);
+  if (abstractSource) payload.abstractSource = abstractSource;
 
   const doi = text(paper?.doi, 300);
   if (doi) payload.doi = doi;

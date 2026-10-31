@@ -1,6 +1,6 @@
 # Share card assets
 
-The fonts and etchings `worker/share-card-render.ts` draws a profile's preview card with.
+The fonts and etchings `worker/share-card-render.ts` draws a profile's or a paper's preview card with.
 wrangler bundles them as data (`[[rules]]` in `wrangler.toml`).
 
 | File | Source |
@@ -14,8 +14,9 @@ wrangler bundles them as data (`[[rules]]` in `wrangler.toml`).
 satori reads TrueType but not WOFF2, and it cannot use a variable font, so the fonts are
 static instances. The two Newsreader files cover the Unicode ranges `DRAWABLE_RANGES` lists
 in `worker/share-card.ts`: Basic Latin, Latin-1, Latin Extended-A and B, combining marks,
-Latin Extended Additional and general punctuation. A name with any other character gets its
-type's static image instead of a card. Change the ranges and the fonts together.
+Latin Extended Additional and general punctuation. A name or a paper title with any other
+character gets its type's static image instead of a card. Change the ranges and the fonts
+together.
 
 To rebuild them, with `fonttools` installed:
 

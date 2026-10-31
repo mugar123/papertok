@@ -7,8 +7,26 @@ import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
-// Inside the feed's 4 s first-paint budget, with room for the response.
+// Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
+// so a token refresh does not spend it. The exploration and follows requests
+// also have render budgets, counted from the start of the load
+// (awaitScreenSources in src/context/feed-corpus-requests.ts), and give no
+// papers when those run out.
 const STORE_TIMEOUT_MS = 3_500;
+// The requests of a list's first screen (`firstScreen`). After the 2026-10-28
+// fixes every feed failure was that page timing out at 3.5 s, mostly on a
+// session's first load; in most sessions the automatic retry, 2.5 s later,
+// showed papers 7-9 s after the feed opened. A token the Worker has not
+// verified in the last minute waits up to 4 s for Google
+// (worker/firebase-auth.ts) before the D1 reads and ranking, and the Worker's
+// hourly p90 wall time, all routes, reached 3.6 s. A first screen that times
+// out here, while the session's one automatic retry is unused, retries once, at
+// once and with STORE_TIMEOUT_MS, then shows its error; one that fails for
+// another reason retries after a pause with this deadline again (automaticRetry
+// in src/context/feed-load-failure.ts, ENG-116). The retry is armed again only
+// by a load that succeeds: Try again after an error waits this deadline once
+// and then shows the error, about 10 s after the token.
+const FIRST_SCREEN_TIMEOUT_MS = 10_000;
 
 export interface CorpusPageRequest {
   categories?: string[];
@@ -40,10 +58,16 @@ export interface CorpusPageRequest {
    * it lacks, which can take seconds: for More like this, never a feed page.
    */
   waitForLikes?: boolean;
+  /**
+   * A request of a load that fills a list with no cards shown, which the
+   * reader waits for (waitsAsFirstScreen in src/context/feed-corpus-requests.ts): it may take
+   * FIRST_SCREEN_TIMEOUT_MS instead of STORE_TIMEOUT_MS. Not sent.
+   */
+  firstScreen?: boolean;
 }
 
 interface StoreOptions {
-  fetchWorker?: (url: string, init: RequestInit) => Promise<Response>;
+  fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
 
@@ -54,13 +78,12 @@ function markUnreachable(error: unknown): never {
   throw error;
 }
 
-async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions) {
+async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-  }).catch(markUnreachable);
+  }, timeoutMs).catch(markUnreachable);
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.
@@ -95,7 +118,7 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
  */
-export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
@@ -141,7 +164,7 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
     } else break;
   }
-  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options);
+  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
 }
 
 /**

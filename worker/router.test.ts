@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import test, { type TestContext } from 'node:test';
 import worker from './index.ts';
 import { routeForLog } from './router.ts';
+import { PAPER_STORE_PING_CRON } from './paper-store.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals, TestNamespace } from './test-types.ts';
 import type { runEmailNotificationSchedule } from './email-notifications.ts';
@@ -203,6 +206,80 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
   assert.equal(summary.disabled, true);
   assert.equal(summary.sent, 0);
   assert.ok(saved.some(({ value }) => value.scheduledAt === '2026-10-13T07:20:00.000Z'));
+});
+
+// The paper store's D1 with its migrations, counting the statements it runs;
+// `onStatement` runs as each one starts.
+function countingPaperStore(onStatement = () => {}) {
+  const { binding } = testD1();
+  const store = { statements: 0 };
+  const counted = <Result>(execute: () => Promise<Result>) => {
+    store.statements += 1;
+    onStatement();
+    return execute();
+  };
+  const PAPER_STORE = {
+    prepare(sql: string) {
+      const statement = binding.prepare(sql);
+      return { first: () => counted(() => statement.first()), all: () => counted(() => statement.all()), run: () => counted(() => statement.run()) };
+    },
+  } as unknown as D1Database;
+  return { store, PAPER_STORE };
+}
+
+function consoleLines(t: TestContext) {
+  const lines: unknown[][] = [];
+  for (const level of ['log', 'info', 'warn', 'error'] as const) t.mock.method(console, level, (...args: unknown[]) => { lines.push(args); });
+  return lines;
+}
+
+const minute = { scheduledTime: Date.parse('2026-10-31T21:43:00Z'), cron: PAPER_STORE_PING_CRON };
+
+test('the minute cron runs one statement on the paper store, no other job and no log line', async t => {
+  const lines = consoleLines(t);
+  const { store, PAPER_STORE } = countingPaperStore();
+  const notifications: string[] = [];
+  const NOTIFICATION_STORE = Object.fromEntries(['get', 'put', 'list', 'delete'].map(method => [method, async () => {
+    notifications.push(method);
+    return method === 'list' ? { keys: [], list_complete: true } : null;
+  }])) as unknown as KVNamespace;
+  const harvests: unknown[] = [];
+  const PAPER_HARVEST = { create: async (options: unknown) => { harvests.push(options); } } as unknown as WorkerEnv['PAPER_HARVEST'];
+  const jobs: Promise<unknown>[] = [];
+  await worker.scheduled(minute, { PAPER_STORE, NOTIFICATION_STORE, PAPER_HARVEST }, { waitUntil: job => jobs.push(job) });
+  await Promise.all(jobs);
+  assert.equal(store.statements, 1);
+  assert.deepEqual(notifications, []);
+  assert.deepEqual(harvests, []);
+  assert.deepEqual(lines, []);
+});
+
+test('a paper store ping held past 2 s writes one line with its duration only', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-31T21:43:20Z') });
+  const lines = consoleLines(t);
+  const { PAPER_STORE } = countingPaperStore(() => t.mock.timers.tick(25_400));
+  const jobs: Promise<unknown>[] = [];
+  await worker.scheduled(minute, { PAPER_STORE }, { waitUntil: job => jobs.push(job) });
+  await Promise.allSettled(jobs);
+  assert.deepEqual(lines.map(args => args.map(arg => JSON.parse(String(arg)))), [[{ event: 'slow_paper_store_ping', totalMs: 25_400 }]]);
+});
+
+test('a paper store ping that fails fails the cron run instead of passing as a quiet minute', async t => {
+  consoleLines(t);
+  const PAPER_STORE = { prepare: () => ({ first: async () => { throw new Error('D1_ERROR: storage operation exceeded timeout'); } }) } as unknown as D1Database;
+  const jobs: Promise<unknown>[] = [];
+  await assert.rejects(worker.scheduled(minute, { PAPER_STORE }, { waitUntil: job => jobs.push(job) }), /D1_ERROR/);
+  await Promise.allSettled(jobs);
+});
+
+// Cloudflare hands the handler the expression as wrangler.toml spells it, and
+// the handler runs the email schedule for any expression it does not know: a
+// respelled ping cron would run that schedule every minute.
+test('wrangler.toml triggers the paper store ping by the expression the handler dispatches', () => {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const crons = /^crons\s*=\s*(\[[^\]\n]*\])/m.exec(config)?.[1];
+  assert.ok(crons, 'wrangler.toml lists [triggers] crons');
+  assert.ok((JSON.parse(crons) as string[]).includes(PAPER_STORE_PING_CRON));
 });
 
 for (const path of ['/recommendations', '/store/feed', '/lists/attribute']) {

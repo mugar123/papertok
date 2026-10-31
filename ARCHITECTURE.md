@@ -149,7 +149,8 @@ them beside its preprints, under the same ranking. Such an article leaves its
 area lane (below), so the readers of the area's other leaves no longer get it.
 
 Area lanes (`area:<area>`) hold OpenAlex journal articles labeled with an area
-rather than one of its leaves. [paper-store.ts](worker/paper-store.ts) adds them
+rather than one of its leaves; Chemistry's also holds the ChemRxiv preprints
+OpenAlex labels Chemistry. [paper-store.ts](worker/paper-store.ts) adds them
 to the candidates of a request that asks for the area's leaves and no follows,
 without reserving positions in a page. Open and closed access use the same
 ranking rules. After embedding,

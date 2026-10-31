@@ -26,8 +26,12 @@ export interface OpenTarget { mode: 'external' | 'inline'; url: string; }
  * in a new tab, where the reader may have to sign in with the university:
  * through the library's resolver or remote-access login, or at the publisher
  * when the library documents no login.
+ *
+ * A ChemRxiv DOI is here too: it resolves to the preprint, which anyone can
+ * read, and it is what makes the access chip say open (paper-status.ts).
  */
-import { isTrustedInlinePdfUrl, safeExternalUrl } from './external-url.ts';
+import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from './external-url.ts';
+import { isChemRxivDoi } from './paper-status.ts';
 import { isAIReadablePdfUrl } from './ai-explanation-access.ts';
 
 function arxivPdfUrl(arxivId: unknown) {
@@ -84,6 +88,9 @@ export function openTargetsForPaper(paper: Partial<Paper> | null | undefined, op
     paper?.openAccessPdfUrl,
     arxivPdfUrl(paper?.arxivId),
     paper?.pdfUrl,
+    // Before the landing page, which for a journal record that took its
+    // preprint's DOI in a merge is still the journal record's own.
+    isChemRxivDoi(paper?.doi) ? safeDoiUrl(paper?.doi) : '',
     paper?.landingPageUrl,
   ];
 

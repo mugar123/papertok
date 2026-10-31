@@ -2,6 +2,7 @@ import type { PaperAuthor } from '../models/paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paper-seed.ts';
+import { reviewTagForPaper } from './paper-status.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
 
 test('a handed-over copy paints only when it carries a title and a real abstract', () => {
@@ -82,6 +83,34 @@ test('the copy only lays over the provider where it speaks', () => {
   assert.equal(paper!.primaryCategory, undefined);
   assert.equal(hydrateSeededPaper(null, provider), provider);
   assert.equal(hydrateSeededPaper(seed, null), seed, 'no answer: the copy is the paper, as before');
+});
+
+// ENG-84. The search palette hands PubMed's retracted record to the paper
+// page, and a list hands a copy that kept the retraction; OpenAlex can answer
+// from data that does not have it yet.
+test('a retraction the copy states stands over a provider that states none, and the provider\'s stands too', () => {
+  const retracted = { ...seed, publicationStatus: 'retracted' as const };
+  const published = { ...provider, publicationStatus: 'published' as const };
+  assert.equal(reviewTagForPaper(hydrateSeededPaper(retracted, published))?.key, 'retracted');
+  assert.equal(reviewTagForPaper(hydrateSeededPaper(seed, { ...provider, publicationStatus: 'retracted' }))?.key, 'retracted');
+  assert.equal(hydrateSeededPaper({ ...seed, publicationStatus: 'preprint' }, published)!.publicationStatus, 'published', 'any other status is the provider\'s');
+});
+
+// ENG-109: a feed card's abstract can come from Semantic Scholar, which the
+// card credits. The search palette hands that card to the paper page, whose
+// provider has no abstract or its own.
+test('the abstract the page keeps brings the source credited for it', () => {
+  const credited = { ...seed, abstractSource: 'semanticscholar' as const };
+  assert.equal(hydrateSeededPaper(credited, { ...provider, abstract: 'No abstract available.' })!.abstractSource, 'semanticscholar');
+  assert.equal(hydrateSeededPaper(credited, provider)!.abstractSource, 'semanticscholar', 'the text the reader read in the feed stays, and so does its credit');
+  // A text as long as a stored copy's cap reads as cut, so the provider's own text replaces it.
+  const long = { ...credited, abstract: 'S'.repeat(STORED_SUMMARY_CAP) };
+  const hydrated = hydrateSeededPaper(long, provider)!;
+  assert.deepEqual([hydrated.abstract, hydrated.abstractSource], [provider.abstract, undefined]);
+  // A copy without the field keeps the provider's credit for the same text.
+  const recovered = { ...provider, abstract: seed.abstract, abstractSource: 'crossref' as const };
+  assert.equal(hydrateSeededPaper(seed, recovered)!.abstractSource, 'crossref');
+  assert.equal(hydrateSeededPaper(seed, { ...recovered, abstract: `${seed.abstract} More.` })!.abstractSource, undefined, "the copy's own text is not the provider's");
 });
 
 test('a whole stored abstract stays; one cut at the cap gives way to the provider\'s', () => {

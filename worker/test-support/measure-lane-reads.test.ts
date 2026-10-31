@@ -18,28 +18,29 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     // next page reads none of it from its kept order, but ranks again, as a first
     // page does, 16 minutes later (RANKING_KEPT_MS) or after a dismissal, which is
     // a negative: its vector is read even without likes. A lean that moved to
-    // `relevance` changes `rankedBy` too.
-    [1, 0, 0, '', 140, 30, 0, 20],
+    // `relevance` changes `rankedBy` too. The notable reads return the lane's
+    // 30 rows, then the 30 of the day's slice that its lookup offers.
+    [1, 0, 0, '', 140, 60, 0, 20],
     [1, 0, 1, '', 0, 0, 0, 20],
-    [1, 0, 1, 'after 16 min', 140, 30, 0, 20],
-    [1, 0, 1, 'after a dismissal', 140, 30, 160, 20],
-    [1, 0, 1, 'after the lean moved', 140, 30, 0, 20],
-    [1, 4, 0, '', 140, 30, 160, 20],
+    [1, 0, 1, 'after 16 min', 140, 60, 0, 20],
+    [1, 0, 1, 'after a dismissal', 140, 60, 160, 20],
+    [1, 0, 1, 'after the lean moved', 140, 60, 0, 20],
+    [1, 4, 0, '', 140, 60, 160, 20],
     [1, 4, 1, '', 0, 0, 0, 20],
-    [1, 4, 1, 'after 16 min', 140, 30, 160, 20],
-    [1, 4, 1, 'after a dismissal', 140, 30, 160, 20],
-    [1, 4, 1, 'after the lean moved', 140, 30, 160, 20],
+    [1, 4, 1, 'after 16 min', 140, 60, 160, 20],
+    [1, 4, 1, 'after a dismissal', 140, 60, 160, 20],
+    [1, 4, 1, 'after the lean moved', 140, 60, 160, 20],
     // cs.LG, cs.RO, area:cs and area:ai; two notable lanes: 4 + 266 + 60 vectors.
-    [2, 0, 0, '', 280, 60, 0, 20],
+    [2, 0, 0, '', 280, 120, 0, 20],
     [2, 0, 1, '', 0, 0, 0, 20],
-    [2, 0, 1, 'after 16 min', 280, 60, 0, 20],
-    [2, 0, 1, 'after a dismissal', 280, 60, 330, 20],
-    [2, 0, 1, 'after the lean moved', 280, 60, 0, 20],
-    [2, 4, 0, '', 280, 60, 330, 20],
+    [2, 0, 1, 'after 16 min', 280, 120, 0, 20],
+    [2, 0, 1, 'after a dismissal', 280, 120, 330, 20],
+    [2, 0, 1, 'after the lean moved', 280, 120, 0, 20],
+    [2, 4, 0, '', 280, 120, 330, 20],
     [2, 4, 1, '', 0, 0, 0, 20],
-    [2, 4, 1, 'after 16 min', 280, 60, 330, 20],
-    [2, 4, 1, 'after a dismissal', 280, 60, 330, 20],
-    [2, 4, 1, 'after the lean moved', 280, 60, 330, 20],
+    [2, 4, 1, 'after 16 min', 280, 120, 330, 20],
+    [2, 4, 1, 'after a dismissal', 280, 120, 330, 20],
+    [2, 4, 1, 'after the lean moved', 280, 120, 330, 20],
   ]);
   // The seen filter holds the newest papers of every asked lane, leaf and area,
   // as a feed without likes serves them: the leaf papers of one night come
@@ -70,6 +71,27 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
     assert.equal(row.rowsReadBy.other, 0, 'every row read comes from a statement of a known kind');
     assert.ok(row.rowsReadBy.lanes >= row.returned.lanes && row.rowsReadBy.notable >= row.returned.notable);
     assert.ok(row.calls > 0 && row.wallMs > 0 && Number.isFinite(row.cpuMs));
+  }
+  // ENG-150. A page that ranks reads each of a notable lane's 30 rows once, in
+  // its index's order, and at most the one index entry past them that ends the
+  // range, then looks up the stored row of each of the day's slice, here all
+  // 30, at three rows read an id: its JSON value, the row and the lane's entry
+  // for it, which keeps a paper that left the lane since the first read from
+  // being offered. Numbering the years in SQL read about eight rows a row.
+  for (const row of rows.filter(ranked => ranked.returned.lanes > 0)) {
+    const perLane = 30 + 3 * 30;
+    assert.ok(
+      row.rowsReadBy.notable >= row.categories * perLane && row.rowsReadBy.notable <= row.categories * (perLane + 1),
+      `${row.rowsReadBy.notable} notable rows read for ${row.categories} categories, ${row.likes} likes, page ${row.page + 1} ${row.after}`,
+    );
+  }
+  // A lookup by id reads two rows an id, not three: every candidate has a
+  // vector, and every id the walk and the page read has a stored row. Likes
+  // add `keepLiked`, which writes and returns no row.
+  for (const row of rows) {
+    const label = `${row.categories} categories, ${row.likes} likes, page ${row.page + 1} ${row.after}`;
+    assert.equal(row.rowsReadBy.vectors, 2 * row.returned.vectors, `vector rows of ${label}`);
+    if (row.likes === 0) assert.equal(row.rowsReadBy.works, 2 * row.returned.works, `works rows of ${label}`);
   }
   assert.deepEqual(rows.filter(row => row.rowsWritten > 0).map(row => [row.categories, row.likes, row.page, row.rowsWritten]), [
     [1, 4, 0, 4],

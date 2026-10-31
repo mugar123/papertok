@@ -132,7 +132,9 @@ test('SOURCE: the builder emits exactly the fields the rules allow', async () =>
 
   assert.ok(allowed.length > 5, 'expected to have parsed the rules allowlist');
 
-  const emitted = Object.keys(buildSavedPaperPayload(full, SAVED_AT));
+  // With the source a card credits for its abstract (ENG-109).
+  const emitted = Object.keys(buildSavedPaperPayload({ ...full, abstractSource: 'semanticscholar' }, SAVED_AT));
+  assert.ok(emitted.includes('abstractSource'), 'expected the credited source in the payload');
   for (const key of emitted) {
     assert.ok(allowed.includes(key), `the builder emits '${key}', which the rules refuse`);
   }

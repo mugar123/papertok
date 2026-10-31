@@ -1,4 +1,4 @@
-import type { ShareCard } from './share-card.ts';
+import type { CardNode, PaperShareCard, ShareCard } from './share-card.ts';
 
 // Each import below is a module wrangler bundles (`[[rules]]` in wrangler.toml):
 // a Worker may not compile WebAssembly from bytes at run time, so the two
@@ -21,7 +21,7 @@ import microscope from './share-card-assets/microscope.png';
 import scrolls from './share-card-assets/scrolls.png';
 import lab from './share-card-assets/lab.png';
 
-import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, shareCardTree } from './share-card.ts';
+import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, paperCardTree, shareCardTree } from './share-card.ts';
 
 const FONTS = [
   { name: 'Newsreader Display', data: newsreaderDisplay, weight: 400 as const, style: 'normal' as const },
@@ -42,15 +42,24 @@ let art: Record<'microscope' | 'scrolls' | 'lab', string> | null = null;
 
 /** The card as a PNG, `photo` its picture as a data URL or null. */
 export async function renderShareCard(card: ShareCard, photo: string | null) {
+  art ??= { microscope: pngDataUrl(microscope), scrolls: pngDataUrl(scrolls), lab: pngDataUrl(lab) };
+  return draw(shareCardTree(card, { art, photo }));
+}
+
+/** A shared paper's card as a PNG. */
+export function renderPaperCard(card: PaperShareCard) {
+  return draw(paperCardTree(card));
+}
+
+async function draw(cardTree: CardNode) {
   // Once per isolate. Neither engine can be started a second time (resvg
   // refuses, satori keeps its first answer), so an isolate whose start failed
   // draws no card until it is replaced; each card it is asked for falls back
   // to the static image, which share-image.ts keeps five minutes.
   ready ??= Promise.all([initLayout(layoutWasm), initRasterizer(rasterizerWasm)]);
   await ready;
-  art ??= { microscope: pngDataUrl(microscope), scrolls: pngDataUrl(scrolls), lab: pngDataUrl(lab) };
   // satori's element type is React's; the tree is the plain object React builds.
-  const tree = shareCardTree(card, { art, photo }) as Parameters<typeof satori>[0];
+  const tree = cardTree as Parameters<typeof satori>[0];
   const svg = await satori(tree, { width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT, fonts: FONTS });
   // Their memory is WebAssembly's, returned only when freed.
   const rasterizer = new Resvg(svg, { fitTo: { mode: 'width', value: SHARE_CARD_WIDTH } });

@@ -3,18 +3,20 @@ import type { MouseEventHandler } from 'react';
 import './source-attribution.css';
 
 /**
- * The credit Semantic Scholar's API licence asks for where its data is
- * shown: `lead` leads into the linked name ("From", "With data from"), and
- * the link goes back to it with
- * `utm_source=api` (utils/semantic-scholar-attribution.ts builds the href).
- * A plain line of text, not a live region: it arrives with the data it credits.
+ * The credit a paper's data source gets where the data is shown
+ * (utils/source-attribution.ts decides which): `lead` leads into the source's
+ * name ("From", "With data from", "Abstract:"). With `href`, the name links
+ * back to the source; Semantic Scholar's licence asks for that link, with
+ * `utm_source=api`. A plain line of text, not a live region: it arrives with
+ * the data it credits.
  * `as="span"` sets it inside the paragraph it credits, so it arrives and leaves
  * with those words; `onLinkClick` keeps a press on the link from reaching a
  * clickable surface around it.
  */
-export function SourceAttribution({ lead, href, className = '', as: Tag = 'p', inert, onLinkClick }: {
+export function SourceAttribution({ lead, name, href, className = '', as: Tag = 'p', inert, onLinkClick }: {
   lead: string;
-  href: string;
+  name: string;
+  href?: string;
   className?: string;
   as?: 'p' | 'span';
   inert?: boolean;
@@ -23,9 +25,11 @@ export function SourceAttribution({ lead, href, className = '', as: Tag = 'p', i
   return (
     <Tag className={`source-attribution ${className}`.trim()} inert={inert}>
       {lead}{' '}
-      <a href={href} target="_blank" rel="noopener noreferrer" onClick={onLinkClick}>
-        Semantic Scholar<span className="visually-hidden"> (opens in a new tab)</span>
-      </a>
+      {href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" onClick={onLinkClick}>
+          {name}<span className="visually-hidden"> (opens in a new tab)</span>
+        </a>
+      ) : name}
     </Tag>
   );
 }

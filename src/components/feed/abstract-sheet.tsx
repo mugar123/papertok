@@ -4,7 +4,7 @@ import { X } from '@phosphor-icons/react';
 import ScientificText from '../scientific-text.ts';
 import { usePopupOpenOnMount } from '../../hooks/use-popup-open-on-mount.ts';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/area-accent.ts';
-import { semanticScholarAttribution } from '../../utils/semantic-scholar-attribution.ts';
+import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { Button } from '../ui/button.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Drawer, DrawerBody, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
@@ -25,7 +25,7 @@ import './abstract-sheet.css';
 export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClose: () => void }) {
   const { open, requestClose } = usePopupOpenOnMount();
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const attribution = semanticScholarAttribution(paper);
+  const attribution = sourceAttribution(paper);
   return (
     <Drawer
       open={open}
@@ -48,7 +48,7 @@ export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClos
         </header>
         <DrawerBody className="abstract-sheet-body" data-base-ui-swipe-ignore>
           <p className="abstract-sheet-text"><ScientificText>{paper.abstract}</ScientificText></p>
-          {attribution && <SourceAttribution className="abstract-sheet-source" lead={attribution.label} href={attribution.href} />}
+          {attribution && <SourceAttribution className="abstract-sheet-source" lead={attribution.label} name={attribution.name} href={attribution.href} />}
         </DrawerBody>
       </DrawerContent>
     </Drawer>

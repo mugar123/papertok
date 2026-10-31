@@ -2,7 +2,7 @@ interface CitationDownload { href: string; download: string; click(): void; remo
 declare const document: { createElement(tag: 'a'): CitationDownload; body: { appendChild(link: CitationDownload): unknown } };
 
 import type { Paper } from '../models/paper.ts';
-import { storedClassification } from '../models/paper.ts';
+import { storedAbstractSource, storedClassification } from '../models/paper.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
@@ -32,6 +32,8 @@ export function abstractExcerpt(paper: Partial<Paper> = {}, chars = 500) {
 }
 
 export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; url?: string } = {}) {
+  const summary = abstractExcerpt(paper, STORED_SUMMARY_CAP);
+  const abstractSource = storedAbstractSource(paper, summary);
   return {
     id: paper.id || paper.arxivId || paper.doi || '',
     title: typeof paper.title === 'string' ? paper.title : '',
@@ -39,12 +41,17 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     ...storedClassification(paper),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
-    summary: abstractExcerpt(paper, STORED_SUMMARY_CAP),
+    summary,
+    ...(abstractSource && { abstractSource }),
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
     pdfUrl: paper.pdfUrl || paper.openAccessPdfUrl || '',
     landingPageUrl: paper.landingPageUrl || paper.url || '',
+    // A list shows the retraction the card showed (ENG-84). Only a retraction
+    // is kept: no provider confirms the opposite, and a merge write keeps one
+    // an earlier copy stored.
+    ...(paper.publicationStatus === 'retracted' && { publicationStatus: 'retracted' as const }),
   };
 }
 
