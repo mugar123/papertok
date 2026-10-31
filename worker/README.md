@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs the email schedule.
+Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -150,6 +150,45 @@ effort: objects created before the deploy, such as the providers' pace objects,
 stay where they are, and minute, hour and day objects are created in WEUR as
 their periods start. Reservations stay one transaction in one object per period.
 
+The paper store's ping (ENG-116). From 2026-10-28 to 2026-10-30, about 61 hours,
+store requests passed sign-in and the quota ledger and then waited 16-33 s
+before D1 ran any query, 8 times; once D1 started, every waiting request ended
+within 1-3 s. 6 of the 8 came after D1 had run nothing for 30 minutes or more.
+What waits is on Cloudflare's side and not visible to us. The `* * * * *` cron
+(`PAPER_STORE_PING_CRON` and `pingPaperStore` in `worker/paper-store.ts`) reads
+one row of `works` every minute, so one query a minute reaches D1. That tests
+the idle explanation; it does not prove idle was the cause. With read
+replication off, every query of the store, the ping included, runs on the
+database's primary in WEUR. SQLite answers `SELECT 1` without reading the
+database, so the ping reads a row, which also reads a page of the table. It
+costs about 1,440 Worker invocations and 1,440 rows read a day, against about
+1,500 invocations a day of other traffic at the end of October 2026: a small
+share of the requests and D1 rows read that either Workers plan includes. The
+cron runs where Cloudflare runs crons, not in the placement above, so it does
+not use the placed fetch handler's own path to D1: a hold on that path would go
+on. A ping that takes more than 2 s writes one `slow_paper_store_ping` line with
+its `totalMs` (see [Logs](#logs)), so the line also times a hold that still
+happens; a faster ping writes nothing. A ping that fails fails its cron run,
+which error tracking reports (see [Error monitoring](#error-monitoring)).
+Holds that go on show in Workers Logs as `slow_paper_store_ping` lines and as
+`slow_feed_request` lines with `totalMs` above 10 s, and in PostHog as
+`app_error` events with `kind = feed_load_failed`, which also counts offline
+readers, refused tokens and rejected requests, so count only `reason = timeout`
+(a hold of 16-33 s reaches the client as that reason). Before the cron,
+Cloudflare's analytics showed about 3 holds a day. Compare the week after with
+the same Cloudflare analytics query that gave that figure, not with the other
+signals, which did not exist or were not counted that way before. Holds that
+continue at that rate suggest idle is not their cause, and the cron can be
+removed (in the order above); a quiet week alone does not prove it was.
+
+Removing the ping, by deleting it or by rolling back past it. Remove the
+`* * * * *` trigger first (from `wrangler.toml` and from the account's schedules;
+the PUT body of [Checking the schedules](#checking-the-schedules) must leave that
+cron out), read the schedules to confirm it is gone, wait for Cloudflare to
+propagate the removal (up to 15 minutes), and only then deploy code without the
+ping: older code, or a change that deletes `PAPER_STORE_PING_CRON` and
+`pingPaperStore`. Code without the ping treats an unknown cron as the email
+schedule, so a trigger that is still registered would run it every minute.
 
 The For You feed reads one paper corpus instead of each source per reader and page. `worker/paper-store.ts` keeps it in D1 (`PAPER_STORE`, database `papertok-paper-store`): one row per paper in the app's `Paper` contract, the identifiers it is known by (`PaperBuilder.identityKeys`), the lanes it can be asked for under, and an int8 vector from Workers AI (`@cf/qwen/qwen3-embedding-0.6b`): the leading 256 of the model's 1,024 dimensions, which it is trained to make an embedding of their own (migration 0004 cut the vectors stored before). A row carries neither `openAlex`, the enrichment's copy of OpenAlex's answer, whose fields the app reads are already merged into the paper, nor `summary`, which repeats `abstract` (`storedPaper`). Enrichment's `rewriteWorks` compares rows in that stored form, so an enrichment that changes nothing leaves the stored paper unwritten. A row an earlier Worker stored keeps both until its next ingest or enrichment rewrites it. The app's library copies, interaction excerpts and RIS export read `abstract` when a paper has no `summary`; an older bundle reads only `summary`, so publish the frontend before deploying the Worker that stops storing `summary`.
 
@@ -199,6 +238,7 @@ When the source a row was built from lists the paper again, as arXiv does with a
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying (0011 came after its deploy: step 3)
 npx wrangler dev --port 8787 --test-scheduled
 curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding
+curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"     # one ping of local D1
 npx wrangler workflows instances list papertok-paper-harvest  # production runs
 ```
 
@@ -230,6 +270,32 @@ npx wrangler secret put POSTHOG_PROJECT_TOKEN # PostHog's public project token; 
 npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
+
+### Checking the schedules
+
+A deploy that reports an error after uploading the script (for example "No
+access" from the subdomain or routes step) has put the new code live but may not
+have sent the cron schedules: wrangler awaits the subdomain and zone routes
+steps before it sends them, and with the account token either can fail. That
+left the `* * * * *` trigger unregistered on 2026-10-31. Do not dismiss such an
+error as harmless. After every Worker deploy, failed or not, compare the
+account's schedules with `crons` in `wrangler.toml`. With the Workers schedules
+API (an API token that can edit Workers scripts, in `$CLOUDFLARE_API_TOKEN`; the
+account ID is that of the account that owns the Worker; the script name is
+`name` in `wrangler.toml`):
+
+```
+WORKER_NAME=papertok-report-api
+curl -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/schedules"
+curl -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+  --data '[{"cron":"*/20 7-13 * * *"},{"cron":"30 2 * * *"},{"cron":"* * * * *"}]' \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/schedules"
+```
+
+The PUT replaces the whole list. The body above is today's `crons` in
+`wrangler.toml`; when the file changes, send one object per cron it lists (none
+that it no longer lists), then read the schedules again.
 
 Placement is set in `wrangler.toml` (`[placement]`, see the paper store's
 placement above); a change made in the dashboard is undone by the next deploy.
@@ -783,8 +849,10 @@ Subscription preferences and delivery state use separate, generation-scoped KV r
 Workers Logs stores the Worker's `console.*` lines. The per-request invocation logs are off
 (`invocation_logs = false` in `wrangler.toml`), because each one would store the request's URL
 with its search text or unsubscribe token. The stored lines are the route handlers' error details,
-the AI rewrite and annotation outcomes, the email schedule summary, the nightly harvest's phase
-failures and its thin-leaves line (step 8 of [Paper store](#paper-store)), a fixed line,
+the AI rewrite and annotation outcomes, the email schedule summary, one
+`{ "event": "slow_paper_store_ping", "totalMs": … }` line, and nothing else, for each minute's ping
+of the paper store that takes more than 2 s (the paper store's ping in [Paper store](#paper-store)),
+the nightly harvest's phase failures and its thin-leaves line (step 8 of [Paper store](#paper-store)), a fixed line,
 `Feed walk has no kept order to go on with`, for each page with `skipsSeen` that goes on with a walk
 (one past the first, or a first one that sends `continues`) and finds no order kept for its reader
 (`readFeedPage`; it names no reader and no paper, and counts the walks that started again from the
