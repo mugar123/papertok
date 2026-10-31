@@ -43,7 +43,12 @@
 /* The change itself is the message, so it reads in the body colour and size,
    not as a muted lede. */
 .privacy-notice-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   margin: 0;
+  padding-left: 1.25em;
+  list-style: disc;
   color: var(--text-primary);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);

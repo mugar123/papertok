@@ -156,25 +156,30 @@ test('the page says a sign-in that continues in the tab briefly keeps its trip i
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
 });
 
-test('the in-app summary is short: at most two sentences, its lead change up front, the full list left to the page', () => {
-  const sentences = PRIVACY_POLICY_CHANGE.match(/[.!?](\s|$)/g)?.length ?? 0;
-  assert.ok(sentences >= 1 && sentences <= 2, 'one or two sentences');
+test('the in-app summary is short: at most three bullets, its lead change up front, the full list left to the page', () => {
+  assert.ok(PRIVACY_POLICY_CHANGE.length >= 1 && PRIVACY_POLICY_CHANGE.length <= 3, 'one to three bullets');
+  for (const bullet of PRIVACY_POLICY_CHANGE) {
+    const sentences = bullet.match(/[.!?](\s|$)/g)?.length ?? 0;
+    assert.ok(sentences >= 1 && sentences <= 2, `one or two sentences: "${bullet}"`);
+  }
   // The dialog has to fit it on a phone's screen; the page has every detail.
-  assert.ok(PRIVACY_POLICY_CHANGE.length <= 400, PRIVACY_POLICY_CHANGE.length + ' characters');
+  const characters = PRIVACY_POLICY_CHANGE.join(' ').length;
+  assert.ok(characters <= 520, characters + ' characters');
   const { lead } = PRIVACY_POLICY_CHANGE_EVIDENCE;
-  const at = PRIVACY_POLICY_CHANGE.indexOf(lead);
-  assert.ok(at >= 0 && at < 40, `"${lead}" is in the lead clause`);
+  const at = PRIVACY_POLICY_CHANGE[0].indexOf(lead);
+  assert.ok(at >= 0 && at < 40, `"${lead}" is in the first bullet's lead clause`);
 });
 
 test("every clause of the in-app summary is the page's own words", () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const { clauses, unsaid } = PRIVACY_POLICY_CHANGE_EVIDENCE;
   assert.ok(clauses.length > 0, 'the summary names where on the page it comes from');
+  const summary = PRIVACY_POLICY_CHANGE.join(' ');
   for (const [said, onPage] of clauses) {
-    assert.ok(PRIVACY_POLICY_CHANGE.includes(said), 'the summary says "' + said + '"');
+    assert.ok(summary.includes(said), 'the summary says "' + said + '"');
     assert.match(html, onPage);
   }
-  for (const [claim, why] of unsaid) assert.doesNotMatch(PRIVACY_POLICY_CHANGE, claim, why);
+  for (const [claim, why] of unsaid) assert.doesNotMatch(summary, claim, why);
 });
 
 test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {

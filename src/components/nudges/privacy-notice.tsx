@@ -35,7 +35,9 @@ export default function PrivacyNotice({ open, onAcknowledge, onHide }: { open: b
           <ShieldCheck size={20} aria-hidden="true" />
           {COPY.title}
         </DialogTitle>
-        <DialogDescription className="privacy-notice-summary">{PRIVACY_POLICY_CHANGE}</DialogDescription>
+        <DialogDescription render={<ul />} className="privacy-notice-summary">
+          {PRIVACY_POLICY_CHANGE.map(change => <li key={change}>{change}</li>)}
+        </DialogDescription>
         <p className="privacy-notice-policy">
           <a href="/privacy.html" target="_blank" rel="noopener noreferrer">
             {COPY.policy}
