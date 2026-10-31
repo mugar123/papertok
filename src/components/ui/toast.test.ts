@@ -10,6 +10,119 @@ globalThis.cancelAnimationFrame ??= (handle) => clearTimeout(handle);
 const onScreen = (id: string | number) => toast.getToasts().some(shown => shown.id === id);
 
 /**
+ * Node has no DOM. A document with what these tests need of one: elements
+ * that take focus, moved as a browser moves it (focusout on the element losing
+ * it and its ancestors first, with focus on the body meanwhile; a handler that
+ * moves focus then wins), and the toast list as Sonner 2.0.8 draws it
+ * (node_modules/sonner/dist/index.mjs:1125-1188).
+ */
+class PageFocusEvent extends Event {
+  readonly relatedTarget: EventTarget | null;
+  constructor(type: string, init: FocusEventInit = {}) {
+    super(type, init);
+    this.relatedTarget = init.relatedTarget ?? null;
+  }
+}
+
+class PageElement extends EventTarget {
+  readonly ownerDocument: PageDocument;
+  readonly name: string;
+  readonly parent: PageElement | null;
+  private removed = false;
+  constructor(ownerDocument: PageDocument, name: string, parent: PageElement | null) {
+    super();
+    this.ownerDocument = ownerDocument;
+    this.name = name;
+    this.parent = parent;
+  }
+
+  get isConnected(): boolean {
+    return !this.removed && (this.parent?.isConnected ?? true);
+  }
+
+  contains(other: unknown) {
+    let node = other instanceof PageElement ? other : null;
+    while (node && node !== this) node = node.parent;
+    return node === this;
+  }
+
+  focus() {
+    this.ownerDocument.moveFocus(this);
+  }
+
+  // Focus on a removed element falls to the body unheard: React hears focus
+  // events at its root, and the element has left it.
+  remove() {
+    this.removed = true;
+    if (!this.ownerDocument.activeElement.isConnected) this.ownerDocument.activeElement = this.ownerDocument.body;
+  }
+}
+
+class PageDocument {
+  readonly body: PageElement = new PageElement(this, 'body', null);
+  activeElement = this.body;
+  private toastList: PageElement | null = null;
+
+  element(name: string, parent = this.body) {
+    return new PageElement(this, name, parent);
+  }
+
+  querySelector(selector: string) {
+    return selector === '[data-sonner-toaster]' && this.toastList?.isConnected ? this.toastList : null;
+  }
+
+  moveFocus(target: PageElement) {
+    const from = this.activeElement;
+    if (target === from || !target.isConnected) return;
+    this.activeElement = this.body;
+    for (let node = from === this.body ? null : from; node; node = node.parent) {
+      node.dispatchEvent(new PageFocusEvent('focusout', { relatedTarget: target }));
+    }
+    if (this.activeElement !== this.body) return;
+    this.activeElement = target;
+    for (let node: PageElement | null = target; node; node = node.parent) {
+      node.dispatchEvent(new PageFocusEvent('focusin', { relatedTarget: from === this.body ? null : from }));
+    }
+  }
+
+  /**
+   * Sonner's toast list: focus entering it notes the control it came from,
+   * and focus leaving it, or the list leaving once its last toast has gone
+   * (`leave`), focuses that control again.
+   */
+  toasts() {
+    const list = this.element('toasts');
+    this.toastList = list;
+    let focusWithin = false;
+    let cameFrom: PageElement | null = null;
+    const relatedTarget = (event: Event) => (event instanceof PageFocusEvent ? event.relatedTarget : null);
+    list.addEventListener('focusin', (event) => {
+      if (focusWithin) return;
+      focusWithin = true;
+      const from = relatedTarget(event);
+      cameFrom = from instanceof PageElement ? from : null;
+    });
+    list.addEventListener('focusout', (event) => {
+      if (!focusWithin || list.contains(relatedTarget(event))) return;
+      focusWithin = false;
+      cameFrom?.focus();
+      cameFrom = null;
+    });
+    const leave = () => {
+      list.remove();
+      if (!cameFrom) return;
+      cameFrom.focus();
+      cameFrom = null;
+      focusWithin = false;
+    };
+    return { list, leave };
+  }
+}
+
+// The document's elements and focus events stand in for the DOM's.
+Object.assign(globalThis, { HTMLElement: PageElement, FocusEvent: PageFocusEvent });
+
+/**
  * The window as the Toaster listens to it: `taken` is a listener that handles
  * the key first, as a dialog, a menu or the search field clearing its query
  * does (`preventDefault`).
@@ -71,7 +184,7 @@ test('Escape keeps the toasts that leave on their own, such as an Undo or a load
  * takes this ref, which Base UI calls with the portal's element as the overlay
  * opens, and whose returned cleanup it calls once the overlay has left.
  */
-const openOverlay = () => trackModalOverlay({} as HTMLElement)!;
+const openOverlay = () => trackModalOverlay(new PageDocument().element('portal') as unknown as HTMLElement)!;
 
 test('opening an overlay puts away the toasts that stay until closed, keeping the ones that leave on their own', () => {
   const undo = toast('Unfollowed Nature', { action: { label: 'Undo', onClick: () => {} } });
@@ -135,6 +248,74 @@ test('an error raised with no overlay open appears at once', () => {
   const error = toastError('The list could not be deleted');
   assert.ok(onScreen(error), 'the error toast is on screen');
   toast.dismiss();
+});
+
+/**
+ * A sheet opening on `doc` as Base UI opens one: its portal attaches first;
+ * its popup mounts next and notes what has focus, to return it there on
+ * close; a frame later it takes focus.
+ */
+function openSheet(doc: PageDocument) {
+  const portal = doc.element('portal');
+  const untrack = trackModalOverlay(portal as unknown as HTMLElement)!;
+  const returnTo = doc.activeElement;
+  doc.element('Save to list', portal).focus();
+  return () => {
+    untrack();
+    portal.remove();
+    returnTo.focus();
+  };
+}
+
+/**
+ * The card's Save shows "Saved to Read later" with "Add to list", while an
+ * error toast stays from earlier. The reader moves focus into the toasts
+ * (Alt+T, Tab) and onto "Add to list".
+ */
+function savedToastWithError() {
+  const doc = new PageDocument();
+  const save = doc.element('Save');
+  const { list, leave } = doc.toasts();
+  const addToList = doc.element('Add to list', list);
+  save.focus();
+  addToList.focus();
+  return { doc, addToList, leave };
+}
+
+// Enter on "Add to list" opens Save to list; the Saved toast leaves with its
+// action, and the error toast, put away as the sheet opened, was the last.
+test('an overlay opened from a toast action keeps focus when the toasts leave, and returns it to the control used before the toasts', () => {
+  const { doc, addToList, leave } = savedToastWithError();
+  const close = openSheet(doc);
+  addToList.remove();
+  leave();
+  assert.equal(doc.activeElement.name, 'Save to list', 'focus is in the sheet, not on Save behind it');
+  close();
+  assert.equal(doc.activeElement.name, 'Save', 'closing the sheet returns focus to Save');
+});
+
+// Opened late (its code still loading, or frames held back in a hidden tab):
+// the Saved toast and its focused action left first, and focus fell to the
+// body unheard.
+test('an overlay opened after the toast whose action had focus left keeps focus when the last toast leaves', () => {
+  const { doc, addToList, leave } = savedToastWithError();
+  addToList.remove();
+  const close = openSheet(doc);
+  leave();
+  assert.equal(doc.activeElement.name, 'Save to list', 'focus is in the sheet');
+  close();
+  assert.equal(doc.activeElement.name, 'Save', 'closing the sheet returns focus to Save');
+});
+
+test('an overlay opened from a page control after that toast left keeps focus, and returns it to that control', () => {
+  const { doc, addToList, leave } = savedToastWithError();
+  addToList.remove();
+  doc.element('Filters').focus();
+  const close = openSheet(doc);
+  leave();
+  assert.equal(doc.activeElement.name, 'Save to list', 'focus is in the sheet');
+  close();
+  assert.equal(doc.activeElement.name, 'Filters', 'closing the sheet returns focus to Filters');
 });
 
 test('once the Toaster stops listening, Escape leaves the toast', () => {

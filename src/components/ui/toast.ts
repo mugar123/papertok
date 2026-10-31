@@ -66,10 +66,32 @@ function dismissPersistentToasts() {
 }
 
 /**
+ * Sonner (2.0.8) remembers the control that had focus when focus entered the
+ * toasts (Alt+T, Tab, a press on an action) and focuses it again when focus
+ * leaves them, or when the last toast has left. A focused button that leaves
+ * with its toast never tells Sonner, so that memory can outlive the visit.
+ * Save to list, opened from the "Add to list" action, lost focus to the
+ * card's Save behind it (WCAG 2.4.3): Sonner took focus back as the sheet
+ * took it from the action, or once the toasts the sheet put away had left.
+ * So, as an overlay opens and before it takes focus, Sonner hears that focus
+ * has left the toasts. Focus in them, or lost with a toast, goes back to that
+ * control now; the overlay takes it from there and returns it there on close.
+ * Focus on any other control stays where it is.
+ */
+function returnFocusFromToasts(doc: Document) {
+  const toasts = doc.querySelector('[data-sonner-toaster]');
+  if (!toasts) return;
+  const focused = doc.activeElement;
+  toasts.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  if (focused instanceof HTMLElement && focused !== doc.body && !toasts.contains(focused)) focused.focus({ preventScroll: true });
+}
+
+/**
  * The ref of every modal overlay's portal: the dialog, alert dialog, drawer
  * and sheet in this folder, and so the search palette, the reader, save to
  * list, related papers and every confirmation built on them. The portal
- * attaches as the overlay opens, before that frame is painted, and detaches
+ * attaches as the overlay opens, before that frame is painted and before the
+ * overlay takes focus, and detaches
  * once its leave has played. On a phone, or at 400% zoom, these overlays cover
  * the screen and trap focus, and an error toast over one sits outside the
  * trap, where Escape closes the overlay and leaves the toast. So opening one
@@ -82,6 +104,7 @@ function dismissPersistentToasts() {
  */
 export function trackModalOverlay(portal: HTMLElement | null) {
   if (!portal) return undefined;
+  returnFocusFromToasts(portal.ownerDocument);
   openModalOverlays += 1;
   dismissPersistentToasts();
   return () => {

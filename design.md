@@ -462,7 +462,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   among them) puts away the error toasts raised before it, and the refusal of
   a Follow, Unfollow or Undo pressed before it opened that settles later
   waits and appears once it has closed. Other errors, and those of an action
-  taken inside the open overlay, appear at once. Popovers,
+  taken inside the open overlay, appear at once. An overlay opened while
+  focus is in the toasts, as from "Add to list", keeps focus as they leave
+  and returns it on close to the control used before the toasts. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do
   neither; a menu drawn as a dialog or drawer (the paper's More menu, the rail
   menu, and the account menu on a phone) counts as an overlay.
