@@ -16,6 +16,14 @@ export function markStartsOn(options: Pick<MarkWriteOptions, 'afterWrite'> | und
   return Boolean(options?.afterWrite) || isOn;
 }
 
+/** The marks FeedContext follows on each paper. */
+export type MarkName = 'like' | 'read' | 'readLater';
+
+/** The key `markChanges` follows one mark of one paper for one account by. */
+export function markKey(userId: string | undefined, mark: MarkName, paperId: string) {
+  return `${userId}:${mark}:${paperId}`;
+}
+
 interface MarkChange {
   to: boolean;
   /** Whether the screen should show this change's value now. */
@@ -185,11 +193,23 @@ export function markChanges() {
      * Every mark on screen was set anew, as a profile load sets them: what
      * earlier changes sent to the screen no longer describes it. Changes
      * still waiting stay followed, as their answers have yet to land.
+     * `startsFrom(key, shown)`, given how many of a mark's waiting changes the
+     * screen showed, may return the value the load says they started from.
+     * The screen before a load can show a mark unlike storage, such as a
+     * paper liked in an earlier session that shows unliked until the profile
+     * arrives: refused, those changes then leave the mark as stored.
      */
-    screenReplaced() {
+    screenReplaced(startsFrom?: (key: string, shown: number) => boolean | undefined) {
       for (const [key, mark] of marks) {
-        if (mark.changes.some((change) => change.pending)) delete mark.sent;
-        else marks.delete(key);
+        const waiting = mark.changes.filter((change) => change.pending);
+        if (waiting.length === 0) {
+          marks.delete(key);
+          continue;
+        }
+        delete mark.sent;
+        // A change shown before its answer has nothing to wait on (`answered`).
+        const stored = startsFrom?.(key, waiting.filter((change) => !change.answered).length);
+        if (stored !== undefined) mark.startedFrom = stored;
       }
     },
     unshownChange(key: string, to: boolean) {

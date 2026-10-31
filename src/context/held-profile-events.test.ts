@@ -1,4 +1,4 @@
-import type { InteractionEvent } from '../utils/interaction-profile.ts';
+import type { InteractionEvent, InteractionProfile } from '../utils/interaction-profile.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -11,7 +11,8 @@ import {
   viewedIds,
 } from '../utils/interaction-profile.ts';
 import { corpusOrder } from './feed-temporal-lean.ts';
-import { holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { heldMarkStarts, holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { markChanges, markKey, writeMark } from './write-mark.ts';
 
 const NOW = Date.parse('2026-10-30T12:00:00Z');
 const TWO_YEARS_AGO = '2024-10-01';
@@ -165,4 +166,157 @@ test('a profile that arrives before any event is left as stored', () => {
   assert.equal(replayHeldEvents(null, 'reader', profile), false);
   assert.equal(replayHeldEvents({ userId: 'reader', events: [] }, 'reader', profile), false);
   assert.equal(JSON.stringify(serializeInteractionProfile(profile)), before);
+});
+
+// A write the test answers: accepted with `answer(true)`, refused with
+// `answer(false)`.
+function pendingWrite() {
+  let answer!: (accepted: boolean) => void;
+  const accepted = new Promise<boolean>((resolve) => { answer = resolve; });
+  return {
+    answer,
+    write: async () => {
+      if (!(await accepted)) throw new Error('permission-denied');
+    },
+  };
+}
+
+const likeOf = (paperId: string, kind = 'like'): InteractionEvent => ({
+  paperId, kind, category: 'cs.LG', concepts: [{ id: 'C1', score: 0.9 }], notable: true, published: null,
+});
+
+// FeedProvider's like and Read later toggles and its profile load, with the
+// real mark log. Until the profile arrives, each event moves the provisional
+// profile and is held. The load reads what the profile stores of the marks
+// the held events moved, replays them, then draws the liked set from the
+// profile and empties the library until it is read again from the
+// interaction records.
+function signedInFeed(userId = 'reader') {
+  const feed = {
+    hydrated: false,
+    profile: createEmptyInteractionProfile(),
+    held: null as HeldProfileEvents | null,
+    liked: new Set<string>(),
+    readLater: new Set<string>(),
+    changes: markChanges(),
+  };
+  const record = (event: InteractionEvent, undoes?: InteractionEvent | null) => {
+    recordInteractionEvent(feed.profile, event, NOW);
+    if (!feed.hydrated) feed.held = holdProfileEvent(feed.held, userId, event, NOW, undoes);
+    return event;
+  };
+  const toggle = (set: 'liked' | 'readLater', paperId: string, eventFor: (on: boolean) => InteractionEvent, write: () => Promise<void>, undoable: boolean) => {
+    const from = feed[set].has(paperId);
+    let shown: InteractionEvent | null = null;
+    const showOn = (on: boolean, undoes?: InteractionEvent | null) => {
+      const recorded = record(eventFor(on), undoes);
+      feed[set] = new Set(feed[set]);
+      if (on) feed[set].add(paperId);
+      else feed[set].delete(paperId);
+      return recorded;
+    };
+    return writeMark({
+      show: () => { shown = showOn(!from); },
+      undo: undoable ? () => { showOn(from, shown); } : undefined,
+      write,
+      failure: 'refused',
+      stillSignedIn: () => true,
+      changes: feed.changes,
+      markKey: markKey(userId, set === 'liked' ? 'like' : 'readLater', paperId),
+      from,
+      to: !from,
+      isOn: () => feed[set].has(paperId),
+    });
+  };
+  return {
+    feed,
+    like: (paperId: string, write: () => Promise<void>) => toggle('liked', paperId, (on) => likeOf(paperId, on ? 'like' : 'unlike'), write, true),
+    // The quick save takes a refused change back; the list picker keeps it.
+    readLater: (paperId: string, write: () => Promise<void>, undoable = true) => toggle('readLater', paperId, (value) => ({ paperId, kind: 'readLater', value }), write, undoable),
+    load(profile: InteractionProfile) {
+      const starts = heldMarkStarts(feed.held, userId, profile);
+      replayHeldEvents(feed.held, userId, profile);
+      feed.held = null;
+      feed.profile = profile;
+      feed.hydrated = true;
+      feed.changes.screenReplaced(starts);
+      feed.liked = new Set(curatedIds(profile, 'liked'));
+      feed.readLater = new Set();
+    },
+    readLibrary(readLater: string[]) {
+      feed.readLater = new Set(readLater);
+    },
+  };
+}
+
+// Until the profile loads, a paper liked in an earlier session shows unliked.
+// The reader likes it, the profile arrives while the write waits, and
+// Firestore refuses the like: storage still holds the earlier like.
+test('a like tapped while the profile loads and refused after it arrives leaves a like stored in an earlier session', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const before = readProfileSignals(storedProfileWith(likeOf('liked')), NOW).temporal;
+  const reader = signedInFeed();
+  const write = pendingWrite();
+  const pressed = reader.like('liked', write.write);
+  assert.ok(reader.feed.liked.has('liked'), 'the tap shows the like');
+  reader.load(storedProfileWith(likeOf('liked')));
+  write.answer(false);
+  await pressed;
+
+  assert.ok(reader.feed.liked.has('liked'), 'the screen keeps the stored like');
+  assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), ['liked']);
+  const after = readProfileSignals(reader.feed.profile, NOW).temporal;
+  assert.deepEqual([after.notable.engaged, after.lean], [before.notable.engaged, before.lean]);
+});
+
+test('a like tapped while the profile loads and refused after it arrives is taken back when storage never had it', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const reader = signedInFeed();
+  const write = pendingWrite();
+  const pressed = reader.like('new', write.write);
+  reader.load(storedProfile());
+  assert.ok(reader.feed.liked.has('new'), 'the profile that arrives keeps the waiting like');
+  write.answer(false);
+  await pressed;
+
+  assert.ok(!reader.feed.liked.has('new'));
+  assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), []);
+  assert.equal(readProfileSignals(reader.feed.profile, NOW).temporal.notable.engaged, 0);
+});
+
+// The like and the unlike before it were accepted, so storage no longer holds
+// the earlier like when the last like is refused.
+test('a like refused after the profile arrives, after an unlike accepted while it loaded, leaves the paper unliked', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const reader = signedInFeed();
+  for (const accepted of [true, true]) {
+    const write = pendingWrite();
+    const pressed = reader.like('liked', write.write);
+    write.answer(accepted);
+    await pressed;
+  }
+  assert.ok(!reader.feed.liked.has('liked'));
+  const write = pendingWrite();
+  const pressed = reader.like('liked', write.write);
+  reader.load(storedProfileWith(likeOf('liked')));
+  write.answer(false);
+  await pressed;
+
+  assert.ok(!reader.feed.liked.has('liked'));
+  assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), []);
+});
+
+test('a quick save to Read later tapped while the profile loads and refused after it arrives leaves the stored mark', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const stored = () => storedProfileWith({ paperId: 'later', kind: 'readLater', value: true });
+  const reader = signedInFeed();
+  const write = pendingWrite();
+  const pressed = reader.readLater('later', write.write);
+  reader.load(stored());
+  reader.readLibrary(['later']);
+  write.answer(false);
+  await pressed;
+
+  assert.ok(reader.feed.readLater.has('later'));
+  assert.deepEqual(curatedIds(reader.feed.profile, 'readLater'), ['later']);
 });

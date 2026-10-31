@@ -1,6 +1,8 @@
-import type { InteractionEvent, InteractionProfile } from '../utils/interaction-profile.ts';
+import type { CuratedSetName, InteractionEvent, InteractionProfile } from '../utils/interaction-profile.ts';
+import type { MarkName } from './write-mark.ts';
 
-import { recordInteractionEvent } from '../utils/interaction-profile.ts';
+import { curatedIds, recordInteractionEvent } from '../utils/interaction-profile.ts';
+import { markKey } from './write-mark.ts';
 
 /**
  * The events an account recorded while its stored profile was still loading,
@@ -55,4 +57,41 @@ export function replayHeldEvents(held: HeldProfileEvents | null, userId: string,
   if (held?.userId !== userId || held.events.length === 0) return false;
   held.events.forEach(({ event, at }) => recordInteractionEvent(profile, event, at));
   return true;
+}
+
+// The mark an event of a like, read or Read later change moves, and the
+// curated set the profile stores it in.
+function markMoved({ kind }: InteractionEvent): [MarkName, CuratedSetName] | null {
+  if (kind === 'like' || kind === 'unlike') return ['like', 'liked'];
+  if (kind === 'read' || kind === 'unread') return ['read', 'read'];
+  if (kind === 'readLater') return ['readLater', 'readLater'];
+  return null;
+}
+
+/**
+ * For markChanges' screenReplaced, from the profile of `userId` that just
+ * arrived, read before replayHeldEvents: the value a like, read or Read later
+ * mark whose changes still wait started from. Until the profile loads, a
+ * paper marked in an earlier session shows unmarked, and a tap on it starts
+ * from there. When each event held for the mark is a change still waiting
+ * (`shown` of them), they all started from what the profile stores, so a
+ * refusal leaves the mark as stored. Otherwise an earlier change of the wait
+ * was answered and shown, and the mark keeps the value it started from.
+ */
+export function heldMarkStarts(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
+  const marks = new Map<string, { stored: boolean; held: number }>();
+  if (held?.userId === userId) {
+    held.events.forEach(({ event }) => {
+      const moved = markMoved(event);
+      if (!moved) return;
+      const key = markKey(userId, moved[0], event.paperId);
+      const mark = marks.get(key) ?? { stored: curatedIds(profile, moved[1]).includes(event.paperId), held: 0 };
+      mark.held += 1;
+      marks.set(key, mark);
+    });
+  }
+  return (key: string, shown: number) => {
+    const mark = marks.get(key);
+    return mark?.held === shown ? mark.stored : undefined;
+  };
 }

@@ -98,7 +98,7 @@ import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
@@ -145,7 +145,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
+import { heldMarkStarts, holdProfileEvent, replayHeldEvents, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -1032,7 +1032,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
           : [];
         // The reader may have liked, viewed or saved papers while it loaded:
-        // they moved the provisional profile this one replaces.
+        // they moved the provisional profile this one replaces. What it
+        // stores of the marks they changed is read first, for the changes
+        // whose writes still wait.
+        const markStarts = heldMarkStarts(heldProfileEvents.current, userId, profile);
         const replayed = replayHeldEvents(heldProfileEvents.current, userId, profile);
         heldProfileEvents.current = null;
         interactionProfile.current = profile;
@@ -1053,7 +1056,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // These sets and the library put every mark back where the profile
         // has it, so a move an answer sent before is no longer on screen.
-        markChangeLog.screenReplaced();
+        markChangeLog.screenReplaced(markStarts);
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1873,7 +1876,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:like:${paper.id}`,
+      markKey: markKey(userId, 'like', paper.id),
       from: isCurrentlyLiked,
       to: !isCurrentlyLiked,
       isOn: () => likedPaperIdsRef.current.has(paper.id),
@@ -1984,7 +1987,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A Reading history removal answered after this must leave the mark on,
     // and this mark stays even if its own write is refused. A tap before React
     // draws a refused unmark's undo finds the read already told.
-    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
+    const moves = markChangeLog.stand(markKey(userId, 'read', paper.id), true, readPaperIdsRef.current.has(paper.id));
     // Built from the queued state, not the ref: an answered Reading history
     // removal may have queued its move before React drew it.
     setReadPaperIds((ids) => new Set(ids).add(paper.id));
@@ -2301,7 +2304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:read:${paperId}`,
+      markKey: markKey(userId, 'read', paperId),
       isRead: () => readPaperIdsRef.current.has(paperId),
     });
   }, [recordProfileEvent, user?.uid, markChangeLog]);
@@ -2353,7 +2356,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:readLater:${paper.id}`,
+      markKey: markKey(userId, 'readLater', paper.id),
       // A removal from Read later (`afterWrite`) starts from a saved paper,
       // not from whatever the screen showed when it was asked for.
       from: markStartsOn(options, Boolean(previous?.readLater)),
