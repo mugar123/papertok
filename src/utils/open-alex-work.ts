@@ -75,8 +75,9 @@ export const OPENALEX_ENRICHMENT_SELECT = [
   'locations',
   'primary_location',
   'type',
-  // `openAlexPublicationStatus` reads it. No other source's mapper marks a
-  // paper retracted, so this is how one another source listed is found to be.
+  // `openAlexPublicationStatus` reads it. With PubMed's and Europe PMC's
+  // `Retracted Publication` type, it is how a paper another source listed is
+  // found to be retracted.
   'is_retracted',
   'open_access',
   // The ids that decide which door a card's author link opens: with one, the

@@ -16,6 +16,14 @@ export function isProtocolBookSeries(journal: { issn?: string; essn?: string; nl
     || PROTOCOL_SERIES_NLM_IDS.has(String(journal?.nlmId || '').trim());
 }
 
+// MEDLINE types the retracted article itself `Retracted Publication` (D016441),
+// and the notice that retracts it `Retraction of Publication`. esummary's
+// `pubtype` and Europe PMC's `pubTypeList` both list the type by that name,
+// read here whatever its case or surrounding spaces.
+export function isRetractedPublication(types: string | readonly string[] | undefined) {
+  return [types ?? []].flat().some(type => /^retracted publication$/i.test(String(type).trim()));
+}
+
 export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**

@@ -5,12 +5,9 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Interac
 import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendation-engine.ts';
 import type { FeedSnapshot } from './feed-snapshot.ts';
+import type { LibraryEntry } from './library-entry.ts';
 import type { MarkWriteOptions } from './write-mark.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
-export interface LibraryEntry {
-  paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
-  note?: string; tags?: string[]; updatedAt?: string | number | null;
-}
 export interface RecommendationProfileSnapshot extends RecommendationContext {
   userId: string | null; ready: boolean; userPreferences: string[]; followedAuthors: string[];
   followedEntities: FollowEntity[]; notInterestedIds: string[]; readPaperIds: string[];
@@ -95,9 +92,9 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
-import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -137,7 +134,7 @@ import {
   preserveFeedAbstracts,
 } from '../utils/feed-enrichment.ts';
 import { settleWithin } from '../utils/async-timing.ts';
-import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
+import { classifyFeedPublications, dropUnreachedPublications, withLateEuropePmcAnswer, withLateOpenAlexAnswer } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
@@ -145,7 +142,6 @@ import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusReque
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
-import { mergeEuropePmcEnrichment } from '../services/europe-pmc-records.ts';
 import { recoverFeedAbstracts } from '../services/feed-abstract-service.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feed-abstract-wait.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
@@ -473,7 +469,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const libraryCopyFor = useCallback((paper: Partial<Paper>) => {
     const id = interactionIdFor(paper);
     if (!id) return null;
-    const copy = libraryPapers[id] || personalLibrary[id]?.paper;
+    const copy = libraryCopyOf(personalLibrary, libraryPapers, id);
     return copy ? { id, paper: copy } : null;
   }, [interactionIdFor, libraryPapers, personalLibrary]);
 
@@ -563,13 +559,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         };
       });
 
-      setPersonalLibrary(current => ({ ...library, ...current }));
+      // Existing entries win: a mark made in this session wrote them. A
+      // retraction the stored copy records stands (ENG-84).
+      setPersonalLibrary(current => libraryAfterLoad(current, library, papers));
       // Existing entries win, exactly as above: a paper already in hand came
       // from a screen that fetched it deliberately and may be richer.
-      setLibraryPapers(current => ({ ...papers, ...current }));
-      // Existing entries win, exactly as above: a paper already in hand came
-      // from a screen that fetched it deliberately.
-      setLibraryPapers(current => ({ ...papers, ...current }));
+      setLibraryPapers(current => loadedAfterLoad(current, papers));
       // A cache-served answer is worth showing but not worth latching: with
       // the backend unreachable, getDocs resolves against the in-memory cache
       // (empty on a fresh page) instead of rejecting. Marking that 'ready'
@@ -708,12 +703,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const keepLateTopicsRef = useRef(keepLateTopics);
   useEffect(() => { keepLateTopicsRef.current = keepLateTopics; }, [keepLateTopics]);
 
-  // Requests that answer after cards are shown, from a fresh page or a
-  // restored snapshot, change those cards in place, and the feed cache and
-  // snapshot with them, while the account stays the same. Only the cards in
-  // `waiting` say their abstract is loading, so only they can receive one,
-  // until their requests settle. A confirmed book leaves only if the reader
-  // has not reached it. A null request has nothing left to answer.
+  // Requests that answer after the cards of a restored snapshot are shown
+  // change those cards in place, and the feed cache and snapshot with them,
+  // while the account stays the same. Only the cards in `waiting` say their
+  // abstract is loading, so only they can receive one, until their requests
+  // settle. A confirmed book, or a card a late OpenAlex or Europe PMC answer
+  // calls retracted, leaves only if the reader has not reached it. A null
+  // request has nothing left to answer.
   const followShownPapers = useCallback(({ mode, sessionId, signature, waiting, openAlex, iCite, europePmc, recovery, publications }: {
     mode: string; sessionId: number; signature: string; waiting: ReadonlySet<string>;
     openAlex: ReturnType<typeof enrichPapersBatch> | null;
@@ -741,12 +737,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
-      const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
-      update(enrich);
+      update(current => withLateOpenAlexAnswer(current, records, loading, visiblePaperIdRef.current));
       // Out here, not in the update: React may run a state updater twice.
       if (feedSessionId.current !== sessionId) return;
       const shown = papersRef.current;
-      keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
+      keepLateTopicsRef.current(cardsGivenTopic(shown, mergeOpenAlexEnrichment(shown, records)));
     });
     void iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;
@@ -755,7 +750,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
-      update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
+      update(current => withLateEuropePmcAnswer(current, records, loading, visiblePaperIdRef.current));
     });
     void recovery?.then((records) => {
       if (records.length === 0) return;
@@ -1827,6 +1822,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
     };
 
+    const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
+    if (userId && storedPaper) {
+      setPersonalLibrary(current => libraryWithRetractionOf(current, paper.id, storedPaper));
+      setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
+    }
     await writeMark({
       show: () => {
         showLiked(!isCurrentlyLiked);
@@ -1854,7 +1854,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
           // kicker from. Written on like only; an unlike changes the flag.
-          paper: isCurrentlyLiked ? undefined : copyForMergeWrite(serializeLibraryPaper(paper)),
+          paper: storedPaper && copyForMergeWrite(storedPaper),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
@@ -1955,14 +1955,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setReadPaperIds((ids) => new Set(ids).add(paper.id));
     const readAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
-      };
-
-      return next;
-    });
+    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { readAt }, libraryPapers[paper.id]));
 
     // The card stays where it is: the reader marked it read, they did not ask
     // for it to vanish. `readPaperIdsRef` keeps it out of the next load.
@@ -1990,7 +1983,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving read status:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid, markChangeLog]);
+  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid, markChangeLog]);
 
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
@@ -2181,6 +2174,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     reRankFeed(paperId);
 
     if (userId) {
+      const storedPaper = paper && serializeLibraryPaper(paper);
+      if (storedPaper) {
+        setPersonalLibrary(current => libraryWithRetractionOf(current, paperId, storedPaper));
+        setLibraryPapers(current => loadedWithRetractionOf(current, paperId, storedPaper));
+      }
       try {
         const ref = interactionDocRef(userId, paperId);
         const interactionData: InteractionDocumentData & { deviceType: string } = {
@@ -2196,8 +2194,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        await setDoc(ref, paper
-          ? { ...interactionData, paper: copyForMergeWrite(serializeLibraryPaper(paper)) }
+        await setDoc(ref, storedPaper
+          ? { ...interactionData, paper: copyForMergeWrite(storedPaper) }
           : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
@@ -2285,18 +2283,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const nextValue = value ?? !previous?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
+    const change = readLaterChange(paper.id, previous, {
+      copy: storedPaper, readLater: nextValue, updatedAt, late: Boolean(options?.afterWrite), loaded: libraryPapers[paper.id],
+    });
 
     await writeMark({
       show: () => {
-        setPersonalLibrary((current) => ({
-          ...current,
-          [paper.id]: {
-            ...current[paper.id],
-            paperId: paper.id,
-            ...readLaterStamp(current[paper.id], previous, { paper: storedPaper, updatedAt }, { late: Boolean(options?.afterWrite) }),
-            readLater: nextValue,
-          },
-        }));
+        setPersonalLibrary(change.show);
         recordProfileEvent({
           paperId: paper.id,
           kind: 'readLater',
@@ -2306,7 +2299,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         });
       },
       undo: options?.throwOnError ? () => {
-        setPersonalLibrary((current) => restoreReadLater(current, paper.id, previous, { paper: storedPaper, updatedAt }));
+        setPersonalLibrary(change.undo);
         recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
       } : undefined,
       write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
@@ -2330,7 +2323,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       isOn: () => Boolean(personalLibraryRef.current[paper.id]?.readLater),
     });
     return nextValue;
-  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid, markChangeLog]);
+  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, user?.uid, markChangeLog]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
@@ -2340,21 +2333,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
 
-    setPersonalLibrary((current) => {
-      const next = {
-        ...current,
-        [paper.id]: {
-          ...current[paper.id],
-          paperId: paper.id,
-          paper: storedPaper,
-          note: note.trim(),
-          tags: normalizedTags,
-          updatedAt,
-        },
-      };
-
-      return next;
-    });
+    setPersonalLibrary(current => withLibraryCopy(current, paper.id, storedPaper, { note: note.trim(), tags: normalizedTags, updatedAt }, libraryPapers[paper.id]));
 
     try {
       recordProfileEvent({
@@ -2375,7 +2354,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } catch (err) {
       console.error('Error saving reading metadata:', err);
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, libraryPapers, recordProfileEvent, user?.uid]);
 
   const getRecommendationProfileSnapshot = useCallback(() => ({
     userId: user?.uid || null,
