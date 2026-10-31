@@ -176,6 +176,32 @@ test('a whole paragraph with a spaced font command still marks after it is saved
   }
 });
 
+// Font commands that paint nothing sit beside the words a reader sees. A quote
+// that took them along passed the 400 characters a quote is stored at, and the
+// cut left only them: the highlight was saved and never painted.
+test('a selection beside font commands that paint nothing still marks after it is saved', () => {
+  const empty = '\\emph{}'.repeat(60);
+  for (const [paragraph, words] of [
+    [`prefix ${empty} \\textbf{selected words} suffix`, 'selected words'],
+    [`prefix \\textbf{${empty} selected words} suffix`, 'selected words'],
+    [`prefix \\textbf{${empty}selected words${empty}} suffix`, 'selected words'],
+    [`prefix \\textbf{selected words} ${empty} suffix`, 'selected words'],
+    // The keyboard marks a whole paragraph.
+    [`${empty} selected words and more`, 'selected words and more'],
+    [`selected words and more ${empty}`, 'selected words and more'],
+  ]) {
+    const start = normalizeLatexText(paragraph).indexOf(words);
+    const anchor = buildRangeAnchor(paragraph, start, start + words.length);
+    const stored = normalizeUserHighlight({ ...SPAN, quote: anchor?.quote });
+    assert.equal(stored?.quote, anchor?.quote, paragraph);
+    assert.deepEqual(
+      resolveHighlightRanges(paragraph, [{ quote: stored?.quote, source: 'user' }]).map(range => [range.start, range.end]),
+      [[start, start + words.length]],
+      paragraph,
+    );
+  }
+});
+
 // The id is a fingerprint of the quote, so selecting again a passage saved on
 // main must store the quote main stored, or it writes a second document.
 test('selecting again a passage saved with a font command keeps its id', () => {

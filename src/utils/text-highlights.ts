@@ -278,31 +278,25 @@ const QUOTE_TRIES = 8;
  * across a wrapper keeps the brace between, which still marks it.
  *
  * Between two painted characters the saved text holds only what unwrapping
- * removed: font command openers, their closing braces and spaces. A slice that
- * starts before a closer it does not open, or ends after an opener it does not
- * close, keeps that brace however it is unwrapped, so those are never tried.
- * The rest are tried widest first, and each try normalizes the whole slice:
+ * removed: font command openers, their closing braces and spaces. Walking out
+ * from the selection, a slice may start at each opener met before the first
+ * closer, and end after each closer met before the first opener. A slice past
+ * that brace carries a brace cut from its partner, or a wrapper that paints
+ * nothing such as `\emph{}`: sixty of those filled the 400 characters a quote
+ * is stored at and left no words to mark. The slices are tried widest first, and each try normalizes the whole slice:
  * past `QUOTE_TRIES` the bare slice is kept, so a text that makes many of them
  * fail cannot stall the reader's selection handler.
  */
 function savedQuote({ text: saved, source }: ReturnType<typeof savedHighlightSpace>, from: number, to: number, words: string) {
   const start = source[from];
   const end = source[to - 1] + 1;
-  // Walking outward from the selection, `open` counts the braces passed that
-  // face the selection less those that face away. A slice may start or end
-  // only where it is at its highest yet: there, every brace facing away has a
-  // partner facing the selection inside the slice.
   const firsts = [start];
-  for (let index = start - 1, open = 0, most = 0; index >= (from > 0 ? source[from - 1] + 1 : 0); index -= 1) {
-    open += saved[index] === '{' ? 1 : saved[index] === '}' ? -1 : 0;
-    if (saved[index] === '\\' && open >= most) firsts.push(index);
-    most = Math.max(most, open);
+  for (let index = start - 1; index >= (from > 0 ? source[from - 1] + 1 : 0) && saved[index] !== '}'; index -= 1) {
+    if (saved[index] === '\\') firsts.push(index);
   }
   const lasts = [end];
-  for (let index = end, open = 0, most = 0; index < (to < source.length ? source[to] : saved.length); index += 1) {
-    open += saved[index] === '}' ? 1 : saved[index] === '{' ? -1 : 0;
-    if (saved[index] === '}' && open >= most) lasts.push(index + 1);
-    most = Math.max(most, open);
+  for (let index = end; index < (to < source.length ? source[to] : saved.length) && saved[index] !== '{'; index += 1) {
+    if (saved[index] === '}') lasts.push(index + 1);
   }
   firsts.reverse();
   lasts.reverse();
