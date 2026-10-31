@@ -516,7 +516,9 @@ test('an account\'s notable and recent counts, its lean, and what each like or s
   assert.deepEqual(temporalOf(reloaded.profile), { notable: counts(4, 4), recent: counts(6, 5), lean: 0.75 });
 });
 
-test('each account\'s counts and lean are stored in its own aggregate', async () => {
+// The loader's half of keeping accounts apart. FeedProvider's reset of the
+// counts and the lean on an account change is not under test.
+test('a new account loads with no counts or lean, and its like leaves another account\'s stored counts and lean as they were', async () => {
   const accountA = engagedProfile(9, 2);
   const storeA = createFirestoreStub({ aggregate: serializeInteractionProfile(accountA) });
   const storeB = createFirestoreStub();
