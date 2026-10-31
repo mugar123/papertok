@@ -168,6 +168,7 @@ import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts
 import { getCitationGraphDoi, hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
 import { resolveWithin } from '../../utils/async-timing.ts';
+import { fullTextQuery, getFullText } from '../../services/full-text-service.ts';
 import {
   isTrustedInlinePdfUrl,
   openExternalUrl,
@@ -251,6 +252,9 @@ const LIBRARY_CHECKING_MIN_MS = 1_000;
 // what the record offers: under the browser's ~5 s of user activation, after
 // which the new tab would be blocked.
 const LIBRARY_PRESS_WAIT_MS = 3_000;
+// How long a press waits to learn whether a paper the viewer would not open
+// has its full text in Europe PMC. Past it, the paper opens as it always did.
+const FULL_TEXT_PRESS_WAIT_MS = 1_500;
 
 // Read once at module load, not per render: every card in the feed was
 // hitting localStorage on its own render just to show a panel almost nobody
@@ -1544,6 +1548,20 @@ const PaperCard = memo(function PaperCard({
       },
       external: (url) => openExternalUrl(url),
     });
+
+    // Only arXiv opens in the viewer by its PDF. Any other paper may still have
+    // its text in Europe PMC, which the viewer shows in place of the PDF.
+    const opensInViewer = openTargetsForPaper(paper, resolvedOpenCopy, libraryAccess)[0]?.mode === 'inline';
+    if (!opensInViewer && libraryAccess?.status !== 'entitled' && fullTextQuery(paper)) {
+      setIsResolvingAccess(true);
+      // A slow lookup keeps running past the wait, so the next press finds it cached.
+      const fullText = await resolveWithin(getFullText(paper), FULL_TEXT_PRESS_WAIT_MS, null);
+      setIsResolvingAccess(false);
+      if (fullText) {
+        void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) });
+        return;
+      }
+    }
 
     if (openBestTarget(resolvedOpenCopy)) return;
 

@@ -2,12 +2,16 @@ import type { Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, FilePdf, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
-import Petri from '../onboarding/petri.tsx';
+import { Button } from '../ui/button.tsx';
 import './pdf-viewer.css';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
+import { getFullText } from '../../services/full-text-service.ts';
+import type { FullText } from '../../utils/full-text.ts';
+import FullTextArticle from './full-text-article.tsx';
+import ViewerLoading from './viewer-loading.tsx';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -26,6 +30,20 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
+  // `undefined` while the Worker is asked for the paper's text, `null` when no
+  // provider publishes it as text: then the viewer is the PDF viewer it was.
+  const [fullText, setFullText] = useState<FullText | null | undefined>(undefined);
+  const [view, setView] = useState<'text' | 'pdf'>('text');
+  const showsText = Boolean(fullText) && view === 'text';
+  const showsPdf = fullText === null || view === 'pdf';
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getFullText(paper, controller.signal).then(doc => {
+      if (!controller.signal.aborted) setFullText(doc);
+    });
+    return () => controller.abort();
+  }, [paper]);
 
   // Que exista un PDF y que se pueda enmarcar son dos preguntas distintas, y
   // fundirlas hacía que el visor negara un PDF que tenía delante. `fullTextUrl`
@@ -44,11 +62,17 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const coarsePointer = useMemo(() => {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
-  const canEmbed = Boolean(pdfUrl) && !coarsePointer;
-  const relayUrl = coarsePointer ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
+  const canEmbed = Boolean(pdfUrl) && !coarsePointer && showsPdf;
+  const relayUrl = coarsePointer && showsPdf ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
   const [relayFailed, setRelayFailed] = useState(false);
   const drawsPages = Boolean(relayUrl) && !relayFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
+  // A PDF opened again starts loading again: the iframe is remounted.
+  const showPdf = () => {
+    setIframeLoaded(false);
+    setShowFallback(false);
+    setView('pdf');
+  };
 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef<number | null>(null);
@@ -82,7 +106,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     || fullTextUrl
     || safeDoiUrl(paper.doi)
     || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
-  const shouldShowFallback = !pdfUrl || showFallback;
+  const shouldShowFallback = showsPdf && (!pdfUrl || showFallback);
 
   // The machine voice under the title: the same honest identity the cards
   // print. Nothing is invented — a paper with neither an
@@ -91,7 +115,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     ? `arxiv:${paper.arxivId}`
     : paper.doi ? `doi:${paper.doi}` : '';
   const identityLine = paperIdentity
-    ? `${paperIdentity}${pdfUrl ? ' · PDF' : ''}`
+    ? `${paperIdentity}${showsText ? ' · Full text' : pdfUrl ? ' · PDF' : ''}`
     : '';
 
   // Fallback timeout
@@ -116,14 +140,14 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
         className="pdf-overlay"
         overlayClassName="pdf-scrim"
         showClose={false}
-        closeLabel={'Close PDF'}
-        aria-label={'PDF viewer'}
+        closeLabel={'Close paper'}
+        aria-label={'Paper viewer'}
       >
         <div className="pdf-viewer">
           {/* Top bar */}
-          <div className="pdf-topbar glass-strong">
-            <DialogClose className="pdf-close-btn" aria-label={'Close PDF'} title={'Close'}>
-              <X size={20} aria-hidden="true" />
+          <div className="pdf-topbar">
+            <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
+              <X size={18} aria-hidden="true" />
             </DialogClose>
 
             <div className="pdf-heading">
@@ -131,77 +155,85 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               {identityLine && <span className="pdf-identity">{identityLine}</span>}
             </div>
 
-            {externalUrl && <a
-              href={externalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pdf-external-btn"
-            >
-              <ArrowSquareOut size={16} aria-hidden="true" />
-              <span>{'New tab'}</span>
-            </a>}
+            {fullText && (
+              <Button size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
+                {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
+              </Button>
+            )}
+
+            {externalUrl && (
+              <Button variant="outline" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
+                <ArrowSquareOut size={18} aria-hidden="true" />
+              </Button>
+            )}
           </div>
 
-          {/* Loading indicator */}
-          {canEmbed && !iframeLoaded && !showFallback && (
-            <div className="pdf-loading" role="status">
-              <Petri pose="download" className="petri-loader" />
-              <p>{'Loading PDF...'}</p>
-            </div>
-          )}
+          <div className="pdf-stage">
+            {fullText === undefined && (
+              <ViewerLoading label={'Loading paper...'} />
+            )}
 
-          {/* Touch: the pages, drawn here */}
-          {drawsPages && (
-            <Suspense fallback={(
-              <div className="pdf-loading" role="status">
-                <Petri pose="download" className="petri-loader" />
-                <p>{'Loading PDF...'}</p>
+            {fullText && showsText && (
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text">
+                <FullTextArticle doc={fullText} />
               </div>
-            )}>
-              <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} />
-            </Suspense>
-          )}
+            )}
 
-          {/* Touch hand-off: a PDF exists but cannot be drawn here, so the
-              browser's own viewer, the one that can page it, gets it. */}
-          {coarsePointer && !drawsPages && fullTextUrl && (
-            <div className="pdf-fallback pdf-handoff" role="status">
-              <p>{relayFailed
-                ? 'The PDF could not be loaded in the app.'
-                : 'This PDF is hosted somewhere PaperTok cannot display it on a phone.'}</p>
-              <a href={fullTextUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
-                {'Open the full PDF →'}
-                <span className="visually-hidden"> (opens in a new tab)</span>
-              </a>
-            </div>
-          )}
+            {/* Over the iframe, which takes its place while it loads unseen. */}
+            {canEmbed && !iframeLoaded && !showFallback && (
+              <ViewerLoading label={'Loading PDF...'} />
+            )}
 
-          {/* Fallback message. On touch it still owns the no-PDF case — the
-              hand-off card above only ever replaces it when there IS a PDF to
-              hand off. */}
-          {shouldShowFallback && !(coarsePointer && fullTextUrl) && !iframeLoaded && (
-            <div className="pdf-fallback">
-              <p>{!fullTextUrl
-                ? ('No open-access PDF is available.')
-                : !pdfUrl
-                  ? ('This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.')
-                  : ('The PDF could not be loaded in the app.')}</p>
-              {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
-                {fullTextUrl
-                  ? ('Open the full PDF →')
-                  : ('Open original source in a new tab →')}
-              </a>}
-            </div>
-          )}
+            {/* Touch: the pages, drawn here */}
+            {drawsPages && (
+              <Suspense fallback={(
+                <ViewerLoading label={'Loading PDF...'} />
+              )}>
+                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} />
+              </Suspense>
+            )}
 
-          {/* PDF iframe */}
-          {canEmbed && <iframe
-            src={pdfUrl}
-            className={`pdf-iframe ${iframeLoaded ? 'pdf-iframe--loaded' : ''}`}
-            title={`PDF: ${paper.title}`}
-            referrerPolicy="no-referrer"
-            onLoad={() => setIframeLoaded(true)}
-          />}
+            {/* Touch hand-off: a PDF exists but cannot be drawn here, so the
+                browser's own viewer, the one that can page it, gets it. */}
+            {coarsePointer && showsPdf && !drawsPages && fullTextUrl && (
+              <div className="pdf-fallback pdf-handoff" role="status">
+                <p>{relayFailed
+                  ? 'The PDF could not be loaded in the app.'
+                  : 'This PDF is hosted somewhere PaperTok cannot display it on a phone.'}</p>
+                <a href={fullTextUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
+                  {'Open the full PDF →'}
+                  <span className="visually-hidden"> (opens in a new tab)</span>
+                </a>
+              </div>
+            )}
+
+            {/* Fallback message. On touch it still owns the no-PDF case — the
+                hand-off card above only ever replaces it when there IS a PDF to
+                hand off. */}
+            {shouldShowFallback && !(coarsePointer && fullTextUrl) && !iframeLoaded && (
+              <div className="pdf-fallback">
+                <p>{!fullTextUrl
+                  ? ('No open-access PDF is available.')
+                  : !pdfUrl
+                    ? ('This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.')
+                    : ('The PDF could not be loaded in the app.')}</p>
+                {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
+                  {fullTextUrl
+                    ? ('Open the full PDF →')
+                    : ('Open original source in a new tab →')}
+                </a>}
+              </div>
+            )}
+
+            {/* PDF iframe */}
+            {canEmbed && <iframe
+              src={pdfUrl}
+              className={`pdf-iframe ${iframeLoaded ? 'pdf-iframe--loaded' : ''}`}
+              title={`PDF: ${paper.title}`}
+              referrerPolicy="no-referrer"
+              onLoad={() => setIframeLoaded(true)}
+            />}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

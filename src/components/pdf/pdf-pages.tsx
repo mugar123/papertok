@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 // The legacy build carries its own polyfills for about 60 KB more.
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-import Petri from '../onboarding/petri.tsx';
+import ViewerLoading from './viewer-loading.tsx';
 import './pdf-pages.css';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -82,10 +82,7 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
   return (
     <div ref={setScroller} className="pdf-pages" tabIndex={0} role="document" aria-label={`PDF: ${title}`} aria-busy={!doc}>
       {!doc && (
-        <div className="pdf-loading" role="status">
-          <Petri pose="download" className="petri-loader" />
-          <p>{'Loading PDF...'}</p>
-        </div>
+        <ViewerLoading label={'Loading PDF...'} />
       )}
       {pages}
       <p className="visually-hidden" role="status">

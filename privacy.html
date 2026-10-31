@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 28 October 2026.</p>
+      <p class="lp-updated">Last updated 29 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -289,12 +289,13 @@
       <p>
         Those queries <strong>do not leave from your browser</strong>: they go through an
         intermediate server on Cloudflare, so those repositories never receive your IP
-        address. That server counts requests to respect each source's limits. For a
+        address from a search or lookup (figures and PDFs are the exception, described
+        below). That server counts requests to respect each source's limits. For a
         signed-in reader it also counts them per account, under a hashed account identifier
         it keeps for up to three days.
       </p>
       <p>
-        When the in-app PDF reader requests a document, or a public request looks up
+        When the in-app reader requests a paper's text or its PDF, or a public request looks up
         papers, paper figures, open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
@@ -303,6 +304,12 @@
         your account or the paper you requested. The identifier changes each minute
         and is not sent to analytics. People sharing a public IP, such as a campus
         network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute.
+      </p>
+      <p>
+        The text of a paper comes through that server too, but its figures do not: your
+        browser loads each figure, and a PDF shown in the reader on a computer, directly
+        from the repository that hosts it (arXiv, PubMed Central or Europe PMC), which
+        receives your IP address as with any image on the web.
       </p>
       <p>
         These PDF counters are stored in Cloudflare Durable Objects. Their automatic

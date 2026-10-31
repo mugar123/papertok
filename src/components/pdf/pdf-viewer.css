@@ -12,12 +12,9 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  /* No `backdrop-filter`: this overlay fades its own opacity in/out
-     (`fadeIn`/`fadeOut`), and animating opacity over a blurred
-     layer forces the blur to be re-resolved every frame — the worst case
-     for a mobile GPU. The dark rgba veil is what actually reads as the
-     backdrop; its 8px blur added nothing visible under it. */
-  background: rgba(17, 19, 24, 0.85);
+  /* An opaque page, the same ground every route paints, so the paper opens
+     the way a list or a person does (page-transition.css). */
+  background: var(--bg-primary);
 }
 
 /* The veil is the popup itself, so the primitive's scrim draws nothing. */
@@ -33,13 +30,19 @@
 
 /* `data-open` / `data-closed` are the primitive's: it holds the popup in the
    document until the closing animation has finished, and only then tells
-   app.tsx to unmount the viewer. */
+   app.tsx to unmount the viewer. The paper arrives and leaves as a detail
+   page does, on the same keyframes and clocks as `enter` and `leave` in
+   page-transition.css (280ms in, 240ms out). */
 .pdf-overlay[data-open] {
-  animation: fadeIn 280ms var(--ease-out);
+  animation:
+    pageEnterTravel 280ms var(--ease-out-cubic) both,
+    pageCover calc(280ms * 0.36) linear both;
 }
 
 .pdf-overlay[data-closed] {
-  animation: fadeOut 180ms var(--ease-out) forwards;
+  animation:
+    pageLeaveTravel 240ms var(--ease-out-cubic) both,
+    pageFadeOut calc(240ms * 0.45) linear both;
   pointer-events: none;
 }
 
@@ -50,36 +53,13 @@
   flex-direction: column;
 }
 
-.pdf-overlay[data-open] .pdf-viewer {
-  animation: pdfViewerIn 280ms var(--ease-out);
-}
-
-.pdf-overlay[data-closed] .pdf-viewer {
-  animation: fadeOut 180ms var(--ease-out) forwards;
-}
-
-/* On a touch screen the viewer leaves the way it came: back down the screen.
-   On the same strong ease-out as every exit (it used to mirror the
-   arrival on an ease-in, slow to start at the one moment the reader wants it
-   gone). Veil and sheet share one length, so the primitive, which waits for the
-   popup's own animation, never unmounts the sheet mid-slide. */
-@media (pointer: coarse) {
-  .pdf-overlay[data-closed] {
-    animation: fadeOut 220ms var(--ease-out) forwards;
-  }
-
-  .pdf-overlay[data-closed] .pdf-viewer {
-    animation: pdfViewerSlideOut 220ms var(--ease-out) forwards;
-  }
-}
-
 .pdf-topbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-height: 60px;
   padding: var(--space-2) var(--space-4);
-  background: var(--bg-glass-strong);
+  background: var(--bg-primary);
   border-bottom: 1px solid var(--border-subtle);
   z-index: 1;
   flex-shrink: 0;
@@ -87,32 +67,6 @@
 
 /* The two controls share one anatomy: the square bordered button the rest of
    the app settled on — no more ghost circle beside a blue pill. */
-.pdf-close-btn,
-.pdf-external-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  flex-shrink: 0;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
-
-.pdf-close-btn {
-  width: 40px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .pdf-close-btn:hover,
-  .pdf-external-btn:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-    background: var(--bg-secondary);
-  }
-}
 
 .pdf-heading {
   display: flex;
@@ -145,14 +99,6 @@
   white-space: nowrap;
 }
 
-.pdf-external-btn {
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-decoration: none;
-  white-space: nowrap;
-}
 
 .pdf-iframe {
   flex: 1;
@@ -167,34 +113,38 @@
   opacity: 1;
 }
 
+/* Everything under the header: the text, the PDF, and the states between. */
+.pdf-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Petri and a line, centred on the page itself rather than on a card, over
+   whatever is still unseen beneath (the iframe loads in its place). */
 .pdf-loading {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3);
+  background: var(--bg-primary);
   color: var(--text-secondary);
-  /* On a card, like the fallback below: until the PDF paints, the page
-     behind the scrim shows through and the caption read over its text. */
-  padding: var(--space-5) var(--space-8);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-lg);
   font-size: var(--fs-sm);
 }
 
-/* The PDF is already on its way: Petri is simply there, with no rise. */
+/* The paper is already on its way: Petri is simply there, with no rise. */
 .pdf-loading .petri .onboarding-petri-body {
   animation: none;
 }
 
-/* A card, not a caption: this message floats over the darkened page behind
-   the overlay, and without its own surface it read as broken text bleeding
-   through (seen on a real iPhone, 2026-08-29). */
+/* A card, not a caption: without its own surface the message read as stray
+   text in the middle of the viewer (seen on a real iPhone, 2026-08-29). */
 .pdf-fallback {
   position: absolute;
   top: 50%;
@@ -228,58 +178,32 @@
   text-decoration: none;
 }
 
-@media (max-width: 480px) {
-  /* Icon-only on a phone, and both controls grow to the 44px floor. */
-  .pdf-external-btn span {
-    display: none;
+/* A finger gets the 44px target the compact desktop buttons do not need. */
+@media (pointer: coarse) {
+  .pdf-topbar > :is(button, a) {
+    min-width: 44px;
+    min-height: 44px;
   }
+}
 
+@media (max-width: 480px) {
   .pdf-topbar {
     padding-right: var(--space-3);
     padding-left: var(--space-3);
   }
-
-  .pdf-close-btn,
-  .pdf-external-btn {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-  }
 }
 
-@keyframes pdfViewerIn {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes pdfViewerSlideOut {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
-}
-
-/* With no animation to wait for, the primitive unmounts the viewer at once. */
+/* As a page does: the fades stay, the travel goes (page-transition.css). */
 @media (prefers-reduced-motion: reduce) {
-  .pdf-overlay[data-open],
-  .pdf-overlay[data-closed],
-  .pdf-overlay[data-open] .pdf-viewer,
-  .pdf-overlay[data-closed] .pdf-viewer {
-    animation: none;
+  .pdf-overlay[data-open] {
+    animation: pageCover 120ms linear both;
+  }
+
+  .pdf-overlay[data-closed] {
+    animation: pageFadeOut 120ms linear both;
   }
 
   .pdf-iframe {
-    transition: none;
-  }
-
-  .pdf-close-btn,
-  .pdf-external-btn {
     transition: none;
   }
 }
