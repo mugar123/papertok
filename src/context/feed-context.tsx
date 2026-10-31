@@ -1935,7 +1935,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // successor. A late Crossref answer reads this ref to keep the reader's card.
     if (readerCardId === paper.id) visiblePaperIdRef.current = successorId;
     setPapers((prev) => withoutDismissedCard(prev, paper.id, readerCardId));
-    recordProfileEvent({
+    const recorded = recordProfileEvent({
       paperId: paper.id,
       kind: 'notInterested',
       category: paper.primaryCategory,
@@ -1945,17 +1945,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
-        await setDoc(ref, definedFields({
+        await refusing(setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: abstractExcerpt(paper) || undefined,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }), { merge: true });
+        }), { merge: true }), recorded);
       } catch (err) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, refusing, user?.uid]);
 
   // Takes a "Not interested" back. With `atIndex`, the paper returns to this
   // list there, at the card the reader is on, so it comes back where they let
@@ -1976,7 +1976,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // As in markNotInterested: the swap fires no scroll event.
       visiblePaperIdRef.current = paperInput.id;
     }
-    recordProfileEvent({
+    const recorded = recordProfileEvent({
       paperId: paper.id,
       kind: 'undoNotInterested',
       category: paper.primaryCategory,
@@ -1984,12 +1984,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId) {
       try {
-        await updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() });
+        await refusing(updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() }), recorded);
       } catch (err) {
         console.error('Error undoing not interested:', err);
       }
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, refusing, user?.uid]);
 
   const markAsRead = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -2207,7 +2207,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
     countEngagement(typeof paperOrIdInput === 'string' ? paperOrIdInput : paperOrIdInput.id, { saves: 1 });
-    recordProfileEvent({
+    const recorded = recordProfileEvent({
       paperId,
       kind: 'save',
       category: paper?.primaryCategory,
@@ -2237,9 +2237,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        await setDoc(ref, storedPaper
+        await refusing(setDoc(ref, storedPaper
           ? { ...interactionData, paper: copyForMergeWrite(storedPaper) }
-          : interactionData, { merge: true });
+          : interactionData, { merge: true }), recorded);
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
         if (options?.throwOnError) throw err;
@@ -2252,7 +2252,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = written && papersRef.current.find(card => card.id === written.id);
       if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, refusing, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
 
   /**
    * The way back from markSaved: the paper has left every list and Read later,
@@ -2275,8 +2275,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     nextSaved.delete(paperId);
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
-    // Gives back exactly what markSaved lent.
-    recordProfileEvent({
+    // Gives back exactly what markSaved lent. A quick save takes a refused
+    // save back through here, and its refused write must not replay this
+    // unsave over a save storage keeps from an earlier session.
+    const recorded = recordProfileEvent({
       paperId,
       kind: 'unsave',
       category: paper?.primaryCategory,
@@ -2285,16 +2287,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId) {
       try {
-        await setDoc(interactionDocRef(userId, paperId), {
+        await refusing(setDoc(interactionDocRef(userId, paperId), {
           saved: false,
           timestamp: new Date().toISOString(),
-        }, { merge: true });
+        }, { merge: true }), recorded);
       } catch (err) {
         console.error('Error removing the saved mark:', err);
         if (options?.throwOnError) throw err;
       }
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, refusing, user?.uid]);
 
   const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;

@@ -46,9 +46,12 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
  * Marks the held `event` of a change Firestore refused, which storage never
  * had: it is not replayed. It stays held for an undo that follows to name as
  * `undoes`. Without that undo, nothing else takes it back: the list picker
- * keeps a refused Read later change on screen, and a change refused while a
+ * keeps a refused Read later change on screen, a change refused while a
  * newer one to the same mark stands is not undone, such as a like and the
- * unlike after it, both refused, on a paper liked in an earlier session.
+ * unlike after it, both refused, on a paper liked in an earlier session, and
+ * a save or dismissal has no undo of its own. A quick save takes a refused
+ * save back with an unsave that writes `saved: false`; that unsave names no
+ * `undoes`, so it is replayed when storage accepts it and refused with it.
  */
 export function refuseHeldEvent(held: HeldProfileEvents | null, event: InteractionEvent) {
   const entry = held?.events.find((candidate) => candidate.event === event);

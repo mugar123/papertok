@@ -200,6 +200,8 @@ function signedInFeed(userId = 'reader') {
     liked: new Set<string>(),
     readLater: new Set<string>(),
     read: new Set<string>(),
+    saved: new Set<string>(),
+    dismissed: new Set<string>(),
     changes: markChanges(),
   };
   const record = (event: InteractionEvent, undoes?: InteractionEvent | null) => {
@@ -239,8 +241,38 @@ function signedInFeed(userId = 'reader') {
       isOn: () => feed[set].has(paperId),
     });
   };
+  // FeedProvider's markSaved, unmarkSaved, markNotInterested and
+  // undoNotInterested: the screen changes, the event is recorded, and the
+  // write follows. A refused write throws only when `throwOnError` asks.
+  const setMark = async (set: 'saved' | 'dismissed', paperId: string, on: boolean, kind: string, write: () => Promise<void>, throwOnError = false) => {
+    if (feed[set].has(paperId) === on) return;
+    feed[set] = new Set(feed[set]);
+    if (on) feed[set].add(paperId);
+    else feed[set].delete(paperId);
+    const recorded = record({ ...likeOf(paperId), kind });
+    try {
+      await refusing(write, recorded);
+    } catch (error) {
+      if (throwOnError) throw error;
+    }
+  };
+  const unsave = (paperId: string, write: () => Promise<void>, throwOnError = false) => setMark('saved', paperId, false, 'unsave', write, throwOnError);
   return {
     feed,
+    // useQuickSave's save (markThenConfirm): a refused save is taken back by
+    // an unsave, which writes `saved: false` of its own.
+    async quickSave(paperId: string, write: () => Promise<void>, rollback: () => Promise<void>) {
+      const alreadySaved = feed.saved.has(paperId);
+      try {
+        await setMark('saved', paperId, true, 'save', write, true);
+      } catch {
+        if (!alreadySaved) await unsave(paperId, rollback);
+      }
+    },
+    save: (paperId: string, write: () => Promise<void>) => setMark('saved', paperId, true, 'save', write),
+    unsave,
+    dismiss: (paperId: string, write: () => Promise<void>) => setMark('dismissed', paperId, true, 'notInterested', write),
+    undoDismiss: (paperId: string, write: () => Promise<void>) => setMark('dismissed', paperId, false, 'undoNotInterested', write),
     like: (paperId: string, write: () => Promise<void>) => toggle('liked', paperId, (on) => likeOf(paperId, on ? 'like' : 'unlike'), write, true),
     // The quick save takes a refused change back; the list picker keeps it.
     readLater: (paperId: string, write: () => Promise<void>, undoable = true) => toggle('readLater', paperId, (value) => ({ paperId, kind: 'readLater', value }), write, undoable),
@@ -269,6 +301,8 @@ function signedInFeed(userId = 'reader') {
       feed.changes.screenReplaced(starts);
       feed.liked = new Set(curatedIds(profile, 'liked'));
       feed.read = new Set(curatedIds(profile, 'read'));
+      feed.saved = new Set(curatedIds(profile, 'saved'));
+      feed.dismissed = new Set(curatedIds(profile, 'notInterested'));
       feed.readLater = new Set();
     },
     readLibrary(readLater: string[]) {
@@ -423,4 +457,57 @@ test('a Reading history removal refused before the profile arrives leaves the pa
 
   assert.deepEqual(curatedIds(reader.feed.profile, 'read'), curatedIds(stored(), 'read'));
   assert.ok(reader.feed.read.has('first'));
+});
+
+const refused = async () => { throw new Error('permission-denied'); };
+const accepted = async () => {};
+
+// Until the profile loads, a paper saved in an earlier session shows unsaved.
+// The quick save's write is refused, so it takes the save back with an
+// unsave, whose write is refused too: storage keeps `saved: true`.
+test('a quick save refused while the profile loads, and its refused rollback, leave a save stored in an earlier session', async () => {
+  const stored = () => storedProfileWith({ ...likeOf('saved'), kind: 'save' });
+  const reader = signedInFeed();
+  await reader.quickSave('saved', refused, refused);
+  assert.ok(!reader.feed.saved.has('saved'));
+  reader.load(stored());
+
+  assert.ok(reader.feed.saved.has('saved'), 'the Save button shows the stored save');
+  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
+});
+
+// The rollback's `saved: false` is accepted, so storage no longer holds the
+// save and neither does the profile.
+test('a quick save refused while the profile loads, and its accepted rollback, take back a save stored in an earlier session', async () => {
+  const reader = signedInFeed();
+  await reader.quickSave('saved', refused, accepted);
+  reader.load(storedProfileWith({ ...likeOf('saved'), kind: 'save' }));
+
+  assert.ok(!reader.feed.saved.has('saved'));
+  assert.deepEqual(curatedIds(reader.feed.profile, 'saved'), []);
+  assert.equal(readProfileSignals(reader.feed.profile, NOW).temporal.notable.engaged, 0);
+});
+
+test('a save or a dismissal refused while the profile loads, on a paper storage never marked so, is not replayed', async () => {
+  const reader = signedInFeed();
+  await reader.save('new', refused);
+  await reader.dismiss('other', refused);
+  reader.load(storedProfile());
+
+  assert.deepEqual([curatedIds(reader.feed.profile, 'saved'), curatedIds(reader.feed.profile, 'notInterested')], [[], []]);
+  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(storedProfile())));
+});
+
+// Until the profile loads, a paper dismissed in an earlier session shows
+// without the dismissal. The reader dismisses it and takes that back, and the
+// write of the take-back is refused: storage keeps the dismissal.
+test('a dismissal taken back while the profile loads, refused, leaves a dismissal stored in an earlier session', async () => {
+  const stored = () => storedProfileWith({ paperId: 'dismissed', kind: 'notInterested', category: 'cs.LG' });
+  const reader = signedInFeed();
+  await reader.dismiss('dismissed', accepted);
+  await reader.undoDismiss('dismissed', refused);
+  reader.load(stored());
+
+  assert.ok(reader.feed.dismissed.has('dismissed'));
+  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
 });
