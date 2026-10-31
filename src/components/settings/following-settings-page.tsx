@@ -21,7 +21,8 @@ import { openingFollowType } from './opening-follow-type.ts';
 import type { FollowRefusal } from '../following/follow-refused-toast.ts';
 import { followRefusal, sayFollowRefused } from '../following/follow-refused-toast.ts';
 import type { ActionStart } from '../ui/toast.ts';
-import { actionStart, sameAccount } from '../ui/toast.ts';
+import { sameAccount } from '../ui/toast.ts';
+import { followsListPress } from './follows-list-press.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -83,7 +84,9 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const [actionError, setActionError] = useState('');
   const [unfollowing, setUnfollowing] = useState<FollowEntity | null>(null);
   const [unfollowOpen, setUnfollowOpen] = useState(false);
-  const [released, setReleased] = useState(false);
+  // When Unfollow was pressed in the question, which lets go of the balloon.
+  const [confirmedAt, setConfirmedAt] = useState<ActionStart | null>(null);
+  const released = confirmedAt !== null;
   const releaseTimer = useRef<number | undefined>(undefined);
   const reduceMotion = useReducedMotion();
   // Undo runs renders later, when this render's toggleFollow and isFollowing
@@ -102,9 +105,7 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     inView.current = false;
   }, []);
 
-  // `actionStart()` at a press, leaving out the open sheet's own layer, which
-  // leaves with it.
-  const pressStart = () => actionStart({ leaving: sheetOpen !== undefined && inView.current ? 1 : 0 });
+  const pressStart = (press: 'unfollow' | 'undo') => followsListPress({ press, inOpenSheet: sheetOpen !== undefined && inView.current });
   const sayRefused = (refused: FollowRefusal, startedAt: ActionStart) => {
     sayFollowRefused(refused, { inView: inView.current, showInLine: ({ message }) => setActionError(message), startedAt });
   };
@@ -122,10 +123,9 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     [activeType, followedByType, locale],
   );
 
-  const handleUnfollow = async (entity: FollowEntity) => {
+  const handleUnfollow = async (entity: FollowEntity, startedAt: ActionStart) => {
     setActionError('');
     const displayName = getFollowDisplayName(entity);
-    const startedAt = pressStart();
     try {
       await latest.current.toggleFollow(entity);
     } catch {
@@ -146,7 +146,7 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
           // it outside its focus trap. The toast outlives the list, though,
           // so an Undo pressed after it closed is answered in a toast.
           setActionError('');
-          const undoStartedAt = pressStart();
+          const undoStartedAt = pressStart('undo');
           latest.current.toggleFollow(entity).catch((error: unknown) => {
             sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
           });
@@ -161,13 +161,13 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   };
   const confirmUnfollow = () => {
     if (released) return;
-    setReleased(true);
+    setConfirmedAt(pressStart('unfollow'));
     releaseTimer.current = window.setTimeout(() => setUnfollowOpen(false), reduceMotion ? 0 : RELEASE_MS);
   };
   const finishUnfollow = (isOpen: boolean) => {
     if (isOpen) return;
-    if (released && unfollowing) void handleUnfollow(unfollowing);
-    setReleased(false);
+    if (confirmedAt && unfollowing) void handleUnfollow(unfollowing, confirmedAt);
+    setConfirmedAt(null);
     setUnfollowing(null);
   };
 
