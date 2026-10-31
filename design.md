@@ -471,8 +471,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   focus is in the toasts, as from "Add to list", keeps focus as they leave
   and returns it on close to the control used before the toasts. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do
-  neither; a menu drawn as a dialog or drawer (the paper's More menu, the rail
-  menu, and the account menu on a phone) counts as an overlay.
+  neither. A menu drawn as a dialog or drawer counts as an overlay: the
+  paper's More menu at every width, and the rail menus (`feed/rail-menu.tsx`)
+  and the account menu only on a phone, where they open as drawers.
 
 ### The Action Rail (signature)
 The card's right-hand column: Like, Save, Connections, Similar papers and More
