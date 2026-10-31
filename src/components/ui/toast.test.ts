@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { dropHeldErrors, openOverlayCount, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
+import { actionStart, forgetAccountErrors, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -201,10 +201,10 @@ test('opening an overlay puts away the toasts that stay until closed, keeping th
 // overlay, opened: its refusal waits for the overlays opened since to leave.
 test('an error of an action started behind overlays opened since appears once they have left', () => {
   const closeSheet = openOverlay();
-  const overlaysAtStart = openOverlayCount();
+  const startedAt = actionStart();
   const closePalette = openOverlay();
   const closeConfirmation = openOverlay();
-  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
   assert.ok(!onScreen(error), 'nothing sits over the overlays opened after the press');
   closeConfirmation();
   assert.ok(!onScreen(error), 'the palette is still open');
@@ -226,20 +226,41 @@ test('an error of an action taken in the open overlay appears at once', () => {
 
 test('an error of an action whose overlay has closed since appears at once', () => {
   const closePalette = openOverlay();
-  const overlaysAtStart = openOverlayCount();
+  const startedAt = actionStart();
   closePalette();
-  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
   assert.ok(onScreen(error), 'the error is on screen');
   toast.dismiss();
 });
 
 // Signed out from the account menu while a Follow's refusal waited behind it.
 test('an error still waiting when the account changes is never shown', () => {
-  const overlaysAtStart = openOverlayCount();
+  const startedAt = actionStart();
   const closeAccountMenu = openOverlay();
-  const error = toastError('Could not follow Nature. Try again.', { overlaysAtStart });
-  dropHeldErrors();
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
+  forgetAccountErrors();
   closeAccountMenu();
+  assert.ok(!onScreen(error), 'the reader signed in next does not see it');
+});
+
+// Signed out, here or in another tab, while a Follow's write was still under
+// way: its refusal settles when someone else, or nobody, is signed in.
+test('an error of an action started before the account changed is never shown', () => {
+  const startedAt = actionStart();
+  forgetAccountErrors();
+  const error = toastError('Could not follow Nature. Try again.', { startedAt });
+  assert.ok(!onScreen(error), 'the reader now does not see it');
+  const startedBehindPalette = actionStart();
+  const closePalette = openOverlay();
+  forgetAccountErrors();
+  const held = toastError('Could not follow Nature. Try again.', { startedAt: startedBehindPalette });
+  closePalette();
+  assert.ok(!onScreen(held), 'nor once the overlay opened since has left');
+});
+
+test('an error on screen when the account changes is put away', () => {
+  const error = toastError('Could not follow Nature. Try again.');
+  forgetAccountErrors();
   assert.ok(!onScreen(error), 'the reader signed in next does not see it');
 });
 

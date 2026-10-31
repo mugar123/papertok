@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
 import { followName, followRefusal, sayFollowRefused, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
-import { openOverlayCount, trackModalOverlay } from '../ui/toast.ts';
+import { actionStart, forgetAccountErrors, trackModalOverlay } from '../ui/toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
 /** The toast `id` put on screen, as the Toaster would render it. */
@@ -124,7 +124,7 @@ test('a refusal in the palette or the Follows list, while it is on screen, goes 
   const closePalette = openOverlay();
   const lines: string[] = [];
   sayFollowRefused({ message: 'Could not follow Ada Lovelace. Try again.' }, {
-    inView: true, showInLine: refused => lines.push(refused.message), overlaysAtStart: openOverlayCount() - 1,
+    inView: true, showInLine: refused => lines.push(refused.message), startedAt: actionStart({ leaving: 1 }),
   });
   assert.deepEqual(lines, ['Could not follow Ada Lovelace. Try again.']);
   assert.equal(newToasts(before).length, 0, 'no toast was raised');
@@ -137,12 +137,12 @@ test('a refusal in the palette or the Follows list, while it is on screen, goes 
 test('a refusal settling after the list closed waits for an overlay opened since, then shows in a toast with its action', () => {
   const before = new Set(toast.getToasts().map(entry => entry.id));
   const closePalette = openOverlay();
-  const overlaysAtStart = openOverlayCount() - 1;
+  const startedAt = actionStart({ leaving: 1 });
   closePalette();
   const closeDrawer = openOverlay();
   let reloaded = 0;
   sayFollowRefused({ message: 'Your follows could not be loaded, so Ada Lovelace was not followed. Reload the page to try again.', action: { label: 'Reload', onClick: () => { reloaded += 1; } } }, {
-    inView: false, showInLine: () => assert.fail('the line is not on screen'), overlaysAtStart,
+    inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt,
   });
   assert.equal(newToasts(before).length, 0, 'nothing sits over the drawer');
   closeDrawer();
@@ -159,11 +159,30 @@ test('a refusal settling after the list closed waits for an overlay opened since
 test('a refusal settling after the list closed, with nothing opened since, shows at once', () => {
   const before = new Set(toast.getToasts().map(entry => entry.id));
   const closeSheet = openOverlay();
-  const overlaysAtStart = openOverlayCount() - 1;
+  const startedAt = actionStart({ leaving: 1 });
   closeSheet();
-  sayFollowRefused({ message: 'Could not follow Nature. Try again.' }, { inView: false, showInLine: () => assert.fail('the line is not on screen'), overlaysAtStart });
+  sayFollowRefused({ message: 'Could not follow Nature. Try again.' }, { inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt });
   assert.deepEqual(newToasts(before).map(id => shown(id).title), ['Could not follow Nature. Try again.']);
   toast.dismiss();
+});
+
+// Signed out in another tab while a Follow pressed in the palette, on the
+// Search page or in the Explorer was under way: its refusal settles for
+// whoever reads now, in the palette still open or in a toast.
+test('a refusal settling after the account changed is said neither in the line nor in a toast', (t) => {
+  t.mock.method(console, 'error', () => {});
+  const before = new Set(toast.getToasts().map(entry => entry.id));
+  const closePalette = openOverlay();
+  const inPalette = actionStart({ leaving: 1 });
+  forgetAccountErrors();
+  const refused = { message: 'Could not follow Ada Lovelace. Try again.' };
+  sayFollowRefused(refused, { inView: true, showInLine: () => assert.fail('the reader now did not press it'), startedAt: inPalette });
+  closePalette();
+  sayFollowRefused(refused, { inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt: inPalette });
+  const onPage = actionStart();
+  forgetAccountErrors();
+  toastFollowRefused(new Error('PERMISSION_DENIED'), { name: 'Econometrica', following: false, startedAt: onPage });
+  assert.equal(newToasts(before).length, 0, 'no toast was raised');
 });
 
 test('a press that went through says nothing', async () => {

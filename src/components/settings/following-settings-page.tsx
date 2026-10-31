@@ -20,7 +20,8 @@ import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
 import { openingFollowType } from './opening-follow-type.ts';
 import type { FollowRefusal } from '../following/follow-refused-toast.ts';
 import { followRefusal, sayFollowRefused } from '../following/follow-refused-toast.ts';
-import { openOverlayCount } from '../ui/toast.ts';
+import type { ActionStart } from '../ui/toast.ts';
+import { actionStart, sameAccount } from '../ui/toast.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -101,11 +102,11 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     inView.current = false;
   }, []);
 
-  // `openOverlayCount()` at a press, less the open sheet's own layer, which
+  // `actionStart()` at a press, leaving out the open sheet's own layer, which
   // leaves with it.
-  const overlaysUnderList = () => Math.max(0, openOverlayCount() - (sheetOpen !== undefined && inView.current ? 1 : 0));
-  const sayRefused = (refused: FollowRefusal, overlaysAtStart: number) => {
-    sayFollowRefused(refused, { inView: inView.current, showInLine: ({ message }) => setActionError(message), overlaysAtStart });
+  const pressStart = () => actionStart({ leaving: sheetOpen !== undefined && inView.current ? 1 : 0 });
+  const sayRefused = (refused: FollowRefusal, startedAt: ActionStart) => {
+    sayFollowRefused(refused, { inView: inView.current, showInLine: ({ message }) => setActionError(message), startedAt });
   };
 
   const { state: locationState } = useLocation();
@@ -124,13 +125,15 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const handleUnfollow = async (entity: FollowEntity) => {
     setActionError('');
     const displayName = getFollowDisplayName(entity);
-    const overlaysAtStart = overlaysUnderList();
+    const startedAt = pressStart();
     try {
       await latest.current.toggleFollow(entity);
     } catch {
-      sayRefused({ message: `Could not unfollow ${displayName}.` }, overlaysAtStart);
+      sayRefused({ message: `Could not unfollow ${displayName}.` }, startedAt);
       return;
     }
+    // Its Undo, pressed by whoever signed in since, would follow in their account.
+    if (!sameAccount(startedAt)) return;
     toast(`Unfollowed ${displayName}`, {
       action: {
         label: 'Undo',
@@ -143,9 +146,9 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
           // it outside its focus trap. The toast outlives the list, though,
           // so an Undo pressed after it closed is answered in a toast.
           setActionError('');
-          const undoOverlaysAtStart = overlaysUnderList();
+          const undoStartedAt = pressStart();
           latest.current.toggleFollow(entity).catch((error: unknown) => {
-            sayRefused(followRefusal(error, { name: displayName, following: false }), undoOverlaysAtStart);
+            sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
           });
         },
       },

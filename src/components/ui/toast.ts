@@ -2,38 +2,62 @@ import { toast, type ExternalToast } from 'sonner';
 
 /** How many modal overlays are on screen (`trackModalOverlay`). */
 let openModalOverlays = 0;
+/** Counts the account changes (`forgetAccountErrors`). */
+let account = 0;
 /** Errors waiting for the overlays opened after their action started to leave. */
 let heldErrors: Array<{ overlaysAtStart: number; show: () => void }> = [];
 let heldCount = 0;
 
-/** How many modal overlays are open: a page notes it as an action starts, for `toastError`. */
-export function openOverlayCount() {
-  return openModalOverlays;
+/** When an action whose error can come late started (`actionStart`). */
+export type ActionStart = { overlays: number; account: number };
+
+/**
+ * Noted as an action starts, for `toastError`: how many modal overlays are
+ * open, less `leaving`, the overlays that leave with the press (the palette or
+ * sheet it was made in, the question it answered), and which account made it.
+ */
+export function actionStart({ leaving = 0 } = {}): ActionStart {
+  return { overlays: Math.max(0, openModalOverlays - leaving), account };
+}
+
+/** Whether the account that started an action is still the one signed in. */
+export function sameAccount(startedAt: ActionStart) {
+  return startedAt.account === account;
 }
 
 /**
- * An error toast that stays until it is closed. `overlaysAtStart` is
- * `openOverlayCount()` when the action that failed started. When an overlay
- * has opened over that action since, such as the search palette over a page
- * whose Follow settles late, the error waits for it to leave: on a phone it
- * would sit over the overlay, outside its focus trap, where Escape closes the
- * overlay and leaves the toast. Left out, the error belongs to what is on top
- * now, such as an action inside the open dialog, and appears at once, since it
- * is the reader's only answer to that action. It is announced when it
- * appears. The id is returned either way.
+ * An error toast that stays until it is closed. `startedAt` is
+ * `actionStart()` when the action that failed started. An error of an action
+ * started before the account changed is never shown: the reader now is
+ * someone else, or signed out. When an overlay has opened over that action
+ * since, such as the search palette over a page whose Follow settles late, the
+ * error waits for it to leave: on a phone it would sit over the overlay,
+ * outside its focus trap, where Escape closes the overlay and leaves the
+ * toast. Left out, the error belongs to what is on top now, such as an action
+ * inside the open dialog, and appears at once, since it is the reader's only
+ * answer to that action. It is announced when it appears. The id is returned
+ * either way.
  */
-export function toastError(title: Parameters<typeof toast.error>[0], { overlaysAtStart = openModalOverlays, ...options }: ExternalToast & { overlaysAtStart?: number } = {}) {
+export function toastError(title: Parameters<typeof toast.error>[0], { startedAt = actionStart(), ...options }: ExternalToast & { startedAt?: ActionStart } = {}) {
   const errorOptions = { duration: Infinity, closeButton: true, ...options };
-  if (openModalOverlays <= overlaysAtStart) return toast.error(title, errorOptions);
+  const ownAccount = sameAccount(startedAt);
+  if (ownAccount && openModalOverlays <= startedAt.overlays) return toast.error(title, errorOptions);
   heldCount += 1;
   const id = options.id ?? `held-error-${heldCount}`;
-  heldErrors.push({ overlaysAtStart, show: () => { toast.error(title, { ...errorOptions, id }); } });
+  if (ownAccount) heldErrors.push({ overlaysAtStart: startedAt.overlays, show: () => { toast.error(title, { ...errorOptions, id }); } });
   return id;
 }
 
-/** Forgets the errors still waiting: they belong to the account that raised them. */
-export function dropHeldErrors() {
+/**
+ * The account changed, by signing out or in, here or in another tab: the
+ * errors of what the account before did are not this reader's. Puts away
+ * those on screen, forgets those waiting for an overlay, and keeps
+ * `toastError` from showing those of actions still under way.
+ */
+export function forgetAccountErrors() {
+  account += 1;
   heldErrors = [];
+  dismissPersistentToasts();
 }
 
 /**
@@ -102,7 +126,7 @@ function returnFocusFromToasts(doc: Document) {
  * the screen and trap focus, and an error toast over one sits outside the
  * trap, where Escape closes the overlay and leaves the toast. So opening one
  * puts away the errors raised before it, and `toastError` holds an error
- * whose caller noted `overlaysAtStart` before it opened (the Follow presses)
+ * whose caller noted `actionStart()` before it opened (the Follow presses)
  * until it leaves. Popovers, tooltips, selects
  * and dropdown menus are anchored to their control and never cover the
  * screen, so they do neither; a menu drawn as a dialog or drawer, such as the

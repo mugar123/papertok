@@ -1,5 +1,6 @@
 import type { FollowInput } from '../../utils/following.ts';
-import { toastError } from '../ui/toast.ts';
+import type { ActionStart } from '../ui/toast.ts';
+import { sameAccount, toastError } from '../ui/toast.ts';
 import { createFollowEntity, FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 
 type RefusalContext = {
@@ -82,17 +83,18 @@ export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, 
  * in the list's own line while it is on screen. A press can settle after the
  * reader closed it, and a line no longer rendered is neither seen nor
  * announced, so the refusal then becomes an error toast. That toast waits for
- * any overlay opened since the press, as a page's Follow does.
- * `overlaysAtStart` is `openOverlayCount()` at the press, less the list's own
- * layer when it is one, since that layer leaves with it.
+ * any overlay opened since the press, as a page's Follow does. `startedAt` is
+ * `actionStart()` at the press, leaving out the list's own layer when it is
+ * one, since that layer leaves with it. A refusal settling after the account
+ * changed is said nowhere: it is not the reader's now.
  */
-export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, overlaysAtStart }: {
+export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, startedAt }: {
   inView: boolean;
   showInLine: (refused: FollowRefusal) => void;
-  overlaysAtStart: number;
+  startedAt: ActionStart;
 }) {
-  if (inView) showInLine(refused);
-  else toastError(refused.message, { action: refused.action, overlaysAtStart });
+  if (!inView) toastError(refused.message, { action: refused.action, startedAt });
+  else if (sameAccount(startedAt)) showInLine(refused);
 }
 
 /**
@@ -102,7 +104,7 @@ export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, o
  * 25-word message with it before a keyboard or screen-reader user could get
  * there (WCAG 2.2.1).
  */
-export function toastFollowRefused(error: unknown, context: RefusalContext & { overlaysAtStart?: number }) {
+export function toastFollowRefused(error: unknown, context: RefusalContext & { startedAt?: ActionStart }) {
   const { message, action } = followRefusal(error, context);
-  return toastError(message, { action, overlaysAtStart: context.overlaysAtStart });
+  return toastError(message, { action, startedAt: context.startedAt });
 }
