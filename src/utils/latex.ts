@@ -268,14 +268,46 @@ function unwrapEnsureMath(match: string, expression: string, offset: number, sou
 }
 
 // One brace level deep is as far as OpenAlex's `\ensuremath` arguments go
-// (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came.
-const ENSUREMATH = /\\ensuremath\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
-// `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one.
-const IFMMODE = /\\ifmmode\s*([\s\S]*?)(?:\\else\s*([\s\S]*?))?\\fi(?:\{\})?/g;
+// (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came. A backslash
+// takes the one character after it, in the argument and in its inner group
+// alike, so every character has a single reading and an unclosed argument fails
+// in linear time. Reading `\ab` as a macro or as `\a` and `b` backtracked
+// exponentially. `\}` is an escaped brace wherever it appears, so it never
+// closes the argument or its group.
+const ENSUREMATH = /\\ensuremath\{((?:\\[\s\S]|[^{}\\]|\{(?:\\[\s\S]|[^{}\\])*\})*)\}/g;
+/**
+ * `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one. A ends at
+ * the first `\else` or `\fi` and the conditional at the first `\fi`, so a scan
+ * that resumes after each conditional runs in linear time. As a lazy
+ * regex, a start with no `\fi` after it tried every later `\else` as its branch
+ * and rescanned the rest of the text from each: cubic in unclosed conditionals.
+ * `replaceMathBranch` receives A and the character after the conditional.
+ */
+function replaceIfmmode(value: string, replaceMathBranch: (mathBranch: string, nextCharacter: string | undefined) => string) {
+  let output = '';
+  let cursor = 0;
+
+  while (cursor < value.length) {
+    const start = value.indexOf('\\ifmmode', cursor);
+    if (start === -1) break;
+    const fi = value.indexOf('\\fi', start + '\\ifmmode'.length);
+    // No later `\ifmmode` can close either.
+    if (fi === -1) break;
+    const body = value.slice(start + '\\ifmmode'.length, fi);
+    const elseIndex = body.indexOf('\\else');
+    const mathBranch = elseIndex === -1 ? body : body.slice(0, elseIndex);
+    const end = value.startsWith('{}', fi + '\\fi'.length) ? fi + '\\fi{}'.length : fi + '\\fi'.length;
+    output += value.slice(cursor, start) + replaceMathBranch(mathBranch, value[end]);
+    cursor = end;
+  }
+
+  return output + value.slice(cursor);
+}
+
 // The argument may carry one brace level (`{\ensuremath{\gamma}}`): in prose
 // it is matched BEFORE the generic `\ensuremath` pass, so that pass cannot
-// have flattened it yet.
-const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})+)\}/g;
+// have flattened it yet. Its argument reads a backslash as ENSUREMATH does.
+const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[\s\S]|[^{}\\]|\{(?:\\[\s\S]|[^{}\\])*\})+)\}/g;
 
 /**
  * Text-only macros with no maths spelling: the character is the whole answer.
@@ -492,12 +524,12 @@ function transformByMode(text: string, transformProse: (text: string) => string,
 }
 
 function normalizeMathRun(value: string) {
-  return value
-    .replace(ENSUREMATH, unwrapEnsureMath)
-    .replace(STACKREL_TILDE, '\\tilde{$1}')
-    .replace(IFMMODE, (match, mathBranch, textBranch, offset, source) => (
-      commandSeparator(mathBranch.trim(), source[offset + match.length])
-    ));
+  return replaceIfmmode(
+    value
+      .replace(ENSUREMATH, unwrapEnsureMath)
+      .replace(STACKREL_TILDE, '\\tilde{$1}'),
+    (mathBranch, nextCharacter) => commandSeparator(mathBranch.trim(), nextCharacter),
+  );
 }
 
 /**
@@ -507,10 +539,10 @@ function normalizeMathRun(value: string) {
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
 function normalizeProseMacros(value: string) {
-  return value
+  const unwrapped = value
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
-    .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
-    .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
+    .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`);
+  return replaceIfmmode(unwrapped, (mathBranch) => `\\(${mathBranch.trim()}\\)`)
     .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
 }
 
