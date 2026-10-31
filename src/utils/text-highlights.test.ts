@@ -311,6 +311,29 @@ test('a selection whose words an earlier formula also holds marks the selected w
   }
 });
 
+// Each occurrence of a quote is checked against the formulas it touches.
+// Walking all of the paragraph's formulas for each one made a paragraph eight
+// times as long take forty to fifty times as long to resolve.
+test('a quote only formulas hold is dropped in about eight times as long from a paragraph eight times as long', () => {
+  const quote = 'agent harness';
+  const fastest = (text: string) => {
+    let best = Infinity;
+    for (let run = 0; run < 7; run += 1) {
+      const started = performance.now();
+      resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  for (const formula of ['$q = \\text{agent harness}$', '\\[\\text{agent harness}\\]']) {
+    const paragraph = (count: number) => `We fit ${formula} here. `.repeat(count);
+    assert.deepEqual(resolveHighlightRanges(paragraph(4000), [{ quote, source: 'user' }]), [], formula);
+    const once = fastest(paragraph(500));
+    const eightfold = fastest(paragraph(4000));
+    assert.ok(eightfold < 20 * once, `${formula}: ${once.toFixed(1)} ms, eight times as long ${eightfold.toFixed(1)} ms`);
+  }
+});
+
 test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);
