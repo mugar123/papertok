@@ -15,6 +15,8 @@ import {
   passageQuote,
   passageSegments,
 } from './user-highlight-service.ts';
+import { buildRangeAnchor, resolveHighlightRanges } from '../utils/text-highlights.ts';
+import { normalizeLatexText } from '../utils/latex.ts';
 
 /**
  * Stand-ins for the Firestore builders. They record what the service asked for,
@@ -123,6 +125,61 @@ test('a passage across paragraphs keeps where it ends', () => {
   assert.equal(backwards && 'endParagraphIndex' in backwards, false);
   const noEndQuote = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3 });
   assert.equal(noEndQuote && 'endParagraphIndex' in noEndQuote, false);
+});
+
+// A font command the paragraph keeps (its removal would change a formula) must
+// stay in the stored quote: unwrapped on its own, the quote no longer occurs.
+test('a selection over a font command the paragraph keeps still marks after it is saved', () => {
+  for (const paragraph of [
+    'cost $5 and \\textbf{$10} rebate for every buyer',
+    'intro \\[ \\textbf{x \\] rest} tail of it',
+    'cost $ \\textbf{b $ c} end of the sentence here',
+    'a \\textbf{bold} word, cost $5 and \\textbf{$10} rebate for every buyer',
+  ]) {
+    const normalized = normalizeLatexText(paragraph);
+    const start = normalized.indexOf('\\textbf{');
+    assert.notEqual(start, -1, paragraph);
+    const anchor = buildRangeAnchor(paragraph, start, normalized.length);
+    const stored = normalizeUserHighlight({ ...SPAN, quote: anchor?.quote });
+    assert.equal(stored?.quote, anchor?.quote, paragraph);
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: stored?.quote, source: 'user' }]) {
+      const ranges = resolveHighlightRanges(paragraph, [highlight]);
+      assert.deepEqual(ranges.map(range => [range.start, range.end]), [[start, normalized.length]], paragraph);
+    }
+  }
+  // The same passage as a quote saved before this change.
+  const ranges = resolveHighlightRanges('cost $5 and \\textbf{$10} rebate for every buyer', [{ quote: '\\textbf{$10} rebate for every', source: 'user' }]);
+  assert.equal(ranges.length, 1);
+});
+
+// Unwrapping a font command with a space inside its braces next to a space
+// outside left two in the paragraph, and the stored quote, which collapses
+// them, then matched nothing: the keyboard marks the whole paragraph.
+test('a whole paragraph with a spaced font command still marks after it is saved', () => {
+  for (const paragraph of [
+    '\\textbf{Keywords:} \\emph{ deep learning}, robotics and control',
+    'We compare the \\textit{in vivo } and in vitro results here',
+    'an empty \\emph{} wrapper between spaces in a sentence',
+    'a \\textbf{ \\emph{ nested } } word inside a sentence',
+  ]) {
+    const normalized = normalizeLatexText(paragraph);
+    const anchor = buildRangeAnchor(paragraph, 0, normalized.length);
+    const stored = normalizeUserHighlight({ ...SPAN, quote: anchor?.quote });
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: stored?.quote, source: 'user' }]) {
+      const ranges = resolveHighlightRanges(paragraph, [highlight]);
+      assert.deepEqual(ranges.map(range => [range.start, range.end]), [[0, normalized.length]], paragraph);
+    }
+  }
+});
+
+// The id is a fingerprint of the quote, so selecting again a passage saved on
+// main must store the quote main stored, or it writes a second document.
+test('selecting again a passage saved with a font command keeps its id', () => {
+  const paragraph = 'a \\textbf{HERMES} harness for agents';
+  const saved = normalizeUserHighlight({ ...SPAN, quote: '\\textbf{HERMES} harness' });
+  const start = normalizeLatexText(paragraph).indexOf('HERMES');
+  const again = normalizeUserHighlight({ ...SPAN, quote: buildRangeAnchor(paragraph, start, start + 'HERMES harness'.length)?.quote });
+  assert.equal(buildHighlightId(again!), buildHighlightId(saved!));
 });
 
 test('a passage inside one paragraph keeps the id it always had', () => {

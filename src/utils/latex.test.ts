@@ -132,6 +132,166 @@ test('text-only symbol macros paint as their character', () => {
   assert.equal(normalizeLatexText('a 3.2 \\AA{} bond, \\textcopyright 2020'), 'a 3.2 Å bond, © 2020');
 });
 
+// Providers relay the abstract as the authors typed it, font commands included.
+test('text-mode font commands paint as their plain text', () => {
+  assert.equal(
+    normalizeLatexText('a \\textbf{HERMES}, a \\textbf{H}arness (\\emph{Dev-Primitives}) and \\textbf{\\emph{nested}} text'),
+    'a HERMES, a Harness (Dev-Primitives) and nested text',
+  );
+});
+
+// The wrapper goes after the symbol and formula macros inside it are read, so
+// letters glued to its closing brace cannot hide a macro.
+test('a font command around a text symbol or a macro formula paints both', () => {
+  assert.equal(normalizeLatexText('\\textbf{\\AA}ngstrom and 5 \\textbf{\\textmu}m'), 'Ångstrom and 5 µm');
+  assert.equal(
+    normalizeLatexText('the \\textbf{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}} decays'),
+    'the \\(\\tilde{\\gamma}\\) decays',
+  );
+  assert.equal(normalizeLatexText('\\emph{\\ensuremath{\\sigma}}ma'), '\\(\\sigma\\)ma');
+});
+
+test('an escaped brace never closes a font command argument or its inner group', () => {
+  assert.equal(normalizeLatexText('a \\textbf{x {y\\} z} w'), 'a \\textbf{x {y\\} z} w');
+  const unclosed = `\\textbf{${'{\\ab '.repeat(5000)}x`;
+  const started = performance.now();
+  assert.equal(normalizeLatexText(unclosed), unclosed);
+  assert.ok(performance.now() - started < 200);
+});
+
+test('a font command around an unpaired formula delimiter stays as written', () => {
+  assert.equal(normalizeLatexText('cost $ \\textbf{b $ c} end'), 'cost $ \\textbf{b $ c} end');
+  assert.equal(normalizeLatexText('cost \\( \\textbf{b \\) c} end'), 'cost \\( \\textbf{b \\) c} end');
+  assert.ok(splitLatexText(normalizeLatexText('cost $ \\textbf{b $ c} end')).every(chunk => chunk.type === 'text'));
+});
+
+// The braces hide the closer from the delimiter walk, so the opener before
+// them is prose; without them the walk would read a formula.
+test('a font command shielding a display or environment closer stays as written', () => {
+  for (const text of [
+    'intro \\[ \\textbf{x \\] rest} tail',
+    'intro \\begin{equation} \\emph{x \\end{equation} rest} tail',
+    'intro $$ \\textbf{x $$ rest} tail',
+    'intro \\begin{align} \\emph{x \\end{align} rest} tail',
+    'intro \\begin{eqnarray} \\emph{x \\end{eqnarray} rest} tail',
+    'intro \\begin{math} \\emph{x \\end{math} rest} tail',
+  ]) {
+    assert.equal(normalizeLatexText(text), text);
+    assert.ok(splitLatexText(text).every(chunk => chunk.type === 'text'));
+  }
+  assert.equal(normalizeLatexText('\\textbf{bold} then \\[ x \\] and \\emph{more}'), 'bold then \\[ x \\] and more');
+});
+
+// Without the wrapper the text would open a formula that closes after `$y$`,
+// so the walk is compared across the whole text, not one prose run.
+test('a font command whose removal opens a formula closing past a later one stays as written', () => {
+  for (const text of [
+    'a \\begin{\\textbf{equation}} b $y$ c \\end{equation} d',
+    'a \\textbf{\\begin}{equation} b $y$ c \\end{equation} d',
+    'a \\\\textbf{(} b $y$ c \\) d',
+  ]) {
+    assert.equal(normalizeLatexText(text), text);
+    assert.deepEqual(splitLatexText(text).filter(chunk => chunk.type === 'math').map(chunk => chunk.raw), ['$y$']);
+  }
+});
+
+// `\\` is a line break, so the word after it is prose, not a font command.
+test('a font command name after an escaped backslash stays as written', () => {
+  assert.equal(normalizeLatexText('line one \\\\textbf{Keywords}: a, b'), 'line one \\\\textbf{Keywords}: a, b');
+  assert.equal(normalizeLatexText('a \\\\emph{x} b'), 'a \\\\emph{x} b');
+});
+
+// Each wrapper used to walk every formula of the whole text again.
+test('a long text with many font commands and formulas normalizes at once', () => {
+  for (const [unit, painted] of [
+    ['\\textbf{a} $x$ ', 'a $x$ '],
+    ['We study \\textbf{model i} with $x_i^2$ and \\emph{robust} fits. ', 'We study model i with $x_i^2$ and robust fits. '],
+    ['$\\textbf{E}_i$ and \\emph{b} ', '$\\textbf{E}_i$ and b '],
+    ['\\emph{nested \\textbf{x}} $y$ ', 'nested x $y$ '],
+  ]) {
+    const started = performance.now();
+    const normalized = normalizeLatexText(unit.repeat(1000));
+    const elapsed = performance.now() - started;
+    assert.equal(normalized, painted.repeat(1000).trim());
+    assert.ok(elapsed < 250, `${unit} took ${elapsed.toFixed(1)} ms`);
+  }
+  const kept = '\\textbf{b $ c} '.repeat(1000);
+  const started = performance.now();
+  assert.equal(normalizeLatexText(kept), kept.trim());
+  assert.ok(performance.now() - started < 250);
+});
+
+// Whitespace is collapsed before font commands are unwrapped, so a removal
+// must not join a space inside the braces to one outside them.
+test('a font command with a space at the edge of its argument leaves one space', () => {
+  for (const [text, painted] of [
+    ['\\textbf{Keywords:} \\emph{ deep learning}, robotics', 'Keywords: deep learning, robotics'],
+    ['the \\textit{in vivo } and in vitro', 'the in vivo and in vitro'],
+    ['an empty \\emph{} wrapper', 'an empty wrapper'],
+    ['a \\textbf{ \\emph{ nested } } word', 'a nested word'],
+    ['\\emph{ leading} and \\textsc{trailing }', 'leading and trailing'],
+    ['a \\emph{x} \\textbf{ y}', 'a x y'],
+    // `\ ` is a control space: the space dropped is the one after the wrapper.
+    ['a \\emph{x\\ } b', 'a x\\ b'],
+  ]) {
+    assert.equal(normalizeLatexText(text), painted, text);
+  }
+});
+
+// The walk searched every delimiter the text lacks to its end once per formula,
+// and each level of nesting took one more pass over the text, so four times
+// the text took sixteen times as long.
+test('normalizing a text four times as long takes about four times as long', () => {
+  const fastest = (text: string) => {
+    let best = Infinity;
+    for (let run = 0; run < 3; run += 1) {
+      const started = performance.now();
+      normalizeLatexText(text);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  const nested = (depth: number, inner: string) => `${`\\textbf{a ${inner}`.repeat(depth)}x${'}'.repeat(depth)}`;
+  for (const [name, build, size] of [
+    ['wrapped formulas', (count: number) => 'a \\textbf{the $x$ value} b '.repeat(count), 1000],
+    ['macro formulas', (count: number) => 'the \\ensuremath{\\sigma} rises while \\textit{the $g$ term} grows '.repeat(count), 300],
+    ['nested wrappers', (count: number) => nested(count, ''), 2000],
+    ['nested wrappers with formulas', (count: number) => nested(count, '$x$ '), 1000],
+  ] as const) {
+    const once = fastest(build(size));
+    const fourfold = fastest(build(4 * size));
+    assert.ok(fourfold < 10 * once, `${name}: ${once.toFixed(1)} ms, four times as long ${fourfold.toFixed(1)} ms`);
+  }
+});
+
+// Each wrapper around a formula is checked against the whole text; the checks
+// share a budget a long abstract does not exhaust.
+test('an abstract with dozens of font commands around formulas unwraps every one', () => {
+  const text = 'while \\textit{the $g$ term} grows, \\textbf{term $x_i$ here} falls. '.repeat(25);
+  assert.equal(normalizeLatexText(text), 'while the $g$ term grows, term $x_i$ here falls. '.repeat(25).trim());
+});
+
+test('a font command around a formula paints its words and the formula', () => {
+  assert.equal(normalizeLatexText('\\textbf{the $x$ value} rises'), 'the $x$ value rises');
+});
+
+test('a font command inside a formula is left to KaTeX', () => {
+  assert.equal(normalizeLatexText('$x_{\\textbf{b}}$ and \\textbf{bold}'), '$x_{\\textbf{b}}$ and bold');
+});
+
+// An unclosed wrapper is left as written, and quickly: 18 macros after one took
+// seconds while a backslash could start a macro or stand alone.
+test('a font command left unclosed stays as written, at once however many macros follow it', () => {
+  const unclosed = `\\textbf{${'\\ab '.repeat(18)}x`;
+  const started = performance.now();
+  const normalized = normalizeLatexText(unclosed);
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 100, `took ${elapsed.toFixed(1)} ms`);
+  assert.equal(normalized, unclosed);
+  // An escaped brace does not close it.
+  assert.equal(normalizeLatexText('a \\textbf{b\\} c'), 'a \\textbf{b\\} c');
+});
+
 test('renders the quasiparticle abstract with no raw macro left on screen', async () => {
   await loadKatex();
   const normalized = normalizeLatexText(QUASIPARTICLE_ABSTRACT);
