@@ -68,7 +68,11 @@ const PRIOR_ENGAGEMENTS = 5;
  * page draws again, so a share the counts make unlikely still comes up now
  * and then, as in exploration (pickExplorationCategories). The draw is kept
  * between one in NOTABLE_EVERY and one in NOTABLE_EVERY_MIN, so neither kind
- * of card leaves the feed.
+ * of card leaves the feed. Because the draw only moves away from that floor,
+ * equal rates average about one place in 13 over many pages, not one in
+ * NOTABLE_EVERY. A reader who engages with neither kind keeps near the prior:
+ * about one in 10, a little more than a new account's one in 11: fewer
+ * notable cards were shown, so no engagement lowers their drawn rate less.
  */
 export function sampleNotableEvery({ notable, recent }: Pick<TemporalSignal, 'notable' | 'recent'>, random: () => number = Math.random) {
   const rate = (notable.engaged + recent.engaged + 1) / (notable.shown + recent.shown + 10);
