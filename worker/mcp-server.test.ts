@@ -1190,6 +1190,34 @@ test('one OpenAlex work has one id, whichever tool and identifier found it', asy
   });
 });
 
+test("a paper both sources found is listed with arXiv's categories, get_paper answers with OpenAlex's, and both tools say so", async () => {
+  const conceptual = { ...OPENALEX_WORK, concepts: [{ id: 'https://openalex.org/C1', display_name: 'Graphene', level: 2, score: 0.9 }] };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [conceptual] });
+    if (url.startsWith('https://api.openalex.org/works/')) return Response.json(conceptual);
+    if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_PREPRINT_ENTRY));
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    type Relayed = { id: string; categories?: string[] };
+    const env = routeEnv();
+    const searched = await callTool(env, 'search_papers', { query: 'graphene sheets under strain' });
+    const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
+    assert.deepEqual([listed.id, listed.categories], ['openalex:W4400000001', ['cond-mat.mtrl-sci']]);
+    for (const id of [listed.id, '10.1234/example.2026.1']) {
+      const { answer } = await callTool(env, 'get_paper', { id });
+      const paper = answer.result?.structuredContent?.paper as Relayed;
+      assert.deepEqual([paper.id, paper.categories], ['openalex:W4400000001', ['Graphene']], id);
+    }
+    // A model that compares the two answers reads why they differ.
+    const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
+    for (const name of ['search_papers', 'get_paper']) {
+      const description = String(tools?.find(tool => tool.name === name)?.description);
+      assert.match(description, /concept names/, name);
+      assert.match(description, /arXiv categories/, name);
+    }
+  });
+});
+
 test('get_paper does not present another work as a DOI the one-work list did not match', async () => {
   await withUpstream(url => {
     // OpenAlex reads `,` in the filter as another clause and answers with whatever matched.
