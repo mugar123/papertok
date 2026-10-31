@@ -9,12 +9,15 @@ import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 const SECRET = 'test-only-pdf-rate-limit-key-32-bytes';
 
 // A request from outside the Worker, an agent's included, takes only even
-// seats of the arXiv beat, and an agent never waits for one. Every test starts
-// at the start of an even three-second period, so arXiv's seat is free
-// whatever the time of day.
+// seats of the arXiv beat, and an agent never waits for one. A reader in the
+// first two seconds of an even three-second period can take no seat but that
+// period's, so an agent takes it only after them. Every test starts two
+// seconds into an even period, so arXiv's seat is an agent's whatever the time
+// of day.
 const EVEN_ARXIV_PERIOD = Date.parse('2026-10-24T12:00:00.000Z');
+const AGENT_ARXIV_SEAT = EVEN_ARXIV_PERIOD + 2_000;
 let pinnedClock: ReturnType<typeof mock.method> | undefined;
-beforeEach(() => { pinnedClock = mock.method(Date, 'now', () => EVEN_ARXIV_PERIOD); });
+beforeEach(() => { pinnedClock = mock.method(Date, 'now', () => AGENT_ARXIV_SEAT); });
 afterEach(() => { pinnedClock?.mock.restore(); });
 const routeEnv = (extra: Partial<WorkerEnv> = {}): WorkerEnv => ({
   REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
@@ -934,8 +937,9 @@ test("a tool takes arXiv's seat only when no reader has booked it, and books non
       const refused = await callTool(env, 'get_paper', { id: '2603.09999' });
       assert.equal(refused.answer.result?.isError, true);
       assert.equal(refused.answer.result?.structuredContent?.code, 'PROVIDER_RATE_LIMITED');
-      // The next public seat starts 3,001 ms away.
-      assert.equal(refused.answer.result?.structuredContent?.retryAfterSeconds, 4);
+      // The next public seat starts 3,001 ms away, and a tool may take it two
+      // seconds later.
+      assert.equal(refused.answer.result?.structuredContent?.retryAfterSeconds, 6);
       const searched = await callTool(env, 'search_papers', { query: 'graphene strain' });
       const unavailable = searched.answer.result?.structuredContent?.unavailable as Array<{ source: string; code: string }>;
       assert.deepEqual(unavailable.map(entry => [entry.source, entry.code]), [['arxiv', 'PROVIDER_RATE_LIMITED']]);
@@ -963,7 +967,9 @@ test("a tool takes only a public seat of arXiv's beat, as a reader's request doe
     }, async calls => {
       const searched = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
       assert.equal(searched.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
-      assert.equal(searched.answer.result?.structuredContent?.retryAfterSeconds, 3);
+      // The next public period starts in three seconds, and a tool may take
+      // its seat two seconds into it.
+      assert.equal(searched.answer.result?.structuredContent?.retryAfterSeconds, 5);
       assert.deepEqual(calls, []);
     });
   } finally {
@@ -971,8 +977,54 @@ test("a tool takes only a public seat of arXiv's beat, as a reader's request doe
   }
 });
 
+test("a tool leaves arXiv's seat to a reader who could take no other, in search_papers and get_paper", async () => {
+  // A tenth of a second into a public period. A reader arriving within its
+  // first two seconds cannot wait for the next public seat, six seconds after
+  // this one started, so this period's seat is theirs.
+  let frozen = EVEN_ARXIV_PERIOD + 100;
+  const clock = mock.method(Date, 'now', () => frozen);
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+      if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_LAB_PREPRINT] });
+      throw new Error(`unexpected upstream ${url}`);
+    }, async calls => {
+      const env = routeEnv();
+      const arxivCalls = () => calls.filter(url => url.startsWith('https://export.arxiv.org/')).length;
+      const searched = await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
+      assert.equal(searched.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+      // The tool may take this period's seat 1.9 s from now.
+      assert.equal(searched.answer.result?.structuredContent?.retryAfterSeconds, 2);
+      const looked = await callTool(env, 'get_paper', { id: '2603.01234' });
+      assert.equal((looked.answer.result?.structuredContent?.paper as { id?: string }).id, 'openalex:W4400000123', 'get_paper answers from OpenAlex');
+      assert.equal(arxivCalls(), 0);
+
+      frozen = EVEN_ARXIV_PERIOD + 500;
+      const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?search_query=strain', {
+        headers: { 'cf-connecting-ip': '203.0.113.5' },
+      }), env);
+      assert.equal(reader.status, 200, 'the reader gets the seat');
+      assert.equal(arxivCalls(), 1);
+    });
+    // A reader at the last moment that still needs this seat.
+    await withUpstream(() => new Response(arxivFeed(ARXIV_LAB_ENTRY)), async calls => {
+      const env = routeEnv();
+      frozen = EVEN_ARXIV_PERIOD + 100;
+      await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
+      frozen = EVEN_ARXIV_PERIOD + 1_999;
+      const reader = await reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?search_query=strain', {
+        headers: { 'cf-connecting-ip': '203.0.113.5' },
+      }), env);
+      assert.equal(reader.status, 200, 'the reader gets the seat');
+      assert.equal(calls.length, 1);
+    });
+  } finally {
+    clock.mock.restore();
+  }
+});
+
 test("a tool refused arXiv's seat is told to wait until the next seat it can take", async () => {
-  let frozen = EVEN_ARXIV_PERIOD + 1;
+  let frozen = AGENT_ARXIV_SEAT;
   const clock = mock.method(Date, 'now', () => frozen);
   try {
     await withUpstream(url => {
@@ -984,7 +1036,8 @@ test("a tool refused arXiv's seat is told to wait until the next seat it can tak
       assert.equal((await search('graphene strain')).answer.result?.isError, undefined, 'a free seat is taken');
 
       // This public period's seat is taken, and the period after it is not
-      // public: the next seat starts 5,999 ms away.
+      // public: the next seat starts 4,000 ms away, and a tool may take it
+      // 6,000 ms from now.
       const refused = await search('strained graphene');
       assert.equal(refused.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
       const wait = refused.answer.result?.structuredContent?.retryAfterSeconds as number;

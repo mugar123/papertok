@@ -1141,18 +1141,20 @@ points:
   path (`doiPathId`). A lookup by id is a free entity lookup.
 - `handleAgentArxiv` takes the beat's seat only for the current three-second
   period, never one ahead, and like any request from outside the Worker only a
-  public (even) seat. Readers book seats up to four seconds ahead, so an
-  agent gets only a seat no reader booked, and a search's own arXiv miss takes
-  the seat of its period. An odd period is never an agent's, so even on an
-  idle Worker every agent arXiv miss in an odd period is refused: about half
-  of uncached arXiv lookups, which a search lists under `unavailable` and
-  `get_paper` answers from OpenAlex for one billed unit. That answer is the
-  OpenAlex record: id `openalex:W…` and concept names in `categories`, where
-  arXiv's answer has the arXiv id and arXiv categories. A refused seat is
-  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of
-  the next public seat (1 to 6 seconds), under `unavailable` in a search;
-  `get_paper` then asks OpenAlex, and logs arXiv's refusal with
-  `source: 'arxiv'` when OpenAlex has the paper.
+  public (even) seat. Readers book seats up to four seconds ahead, and a
+  reader in the first two seconds of a public period can wait for no seat but
+  that period's, so an agent takes a public seat only from two seconds into
+  its period: it gets only a seat no reader booked or could still need, and a
+  search's own arXiv miss takes the seat of its period. An agent may ask in
+  one second of every six, so even on an idle Worker about five in six
+  uncached arXiv lookups are refused, which a search lists under
+  `unavailable` and `get_paper` answers from OpenAlex for one billed unit.
+  That answer is the OpenAlex record: id `openalex:W…` and concept names in
+  `categories`, where arXiv's answer has the arXiv id and arXiv categories. A
+  refused seat is `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to
+  the next moment an agent may take a seat (1 to 6 seconds), under
+  `unavailable` in a search; `get_paper` then asks OpenAlex, and logs arXiv's
+  refusal with `source: 'arxiv'` when OpenAlex has the paper.
 
 Arguments are validated before any reservation; `sources` is read in any case
 (`arXiv`, `OpenAlex`). Each `tools/call` then

@@ -29,12 +29,19 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // allowance, can still hold every seat. Spacing towards arXiv is unchanged:
 // still one call every three seconds.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
-// Whole seconds from `now` to the start of the next public seat after the
-// current period: 1 to 6.
-function nextPublicSeatSeconds(now: number) {
-  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS) + 1;
-  while (!PUBLIC_SEAT(slot)) slot += 1;
-  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000));
+// A reader in a public period's first two seconds can wait for no seat but
+// that period's: the next public one starts more than ARXIV_PACE_MAX_WAIT_MS
+// away. An agent (`handleAgentArxiv`) may take a public period's seat only
+// from this far into the period, when no reader still to come could have
+// taken it.
+const ARXIV_AGENT_SEAT_OFFSET_MS = 2 * ARXIV_PACE_PERIOD_MS - ARXIV_PACE_MAX_WAIT_MS;
+const AGENT_SEAT = (slot: number) => PUBLIC_SEAT(slot) && Date.now() - slot * ARXIV_PACE_PERIOD_MS >= ARXIV_AGENT_SEAT_OFFSET_MS;
+// Whole seconds from `now` to the next moment an agent may take a seat, after
+// the one it was just refused: 1 to 6.
+function nextAgentSeatSeconds(now: number) {
+  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS);
+  while (!PUBLIC_SEAT(slot) || slot * ARXIV_PACE_PERIOD_MS + ARXIV_AGENT_SEAT_OFFSET_MS <= now) slot += 1;
+  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS + ARXIV_AGENT_SEAT_OFFSET_MS - now) / 1000));
 }
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
@@ -67,7 +74,7 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 export function handleArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, accepts: PUBLIC_SEAT });
 }
 
 // The route as the paper harvest asks it in-process: no caller to count.
@@ -77,19 +84,25 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
 
 /**
  * The route as the MCP server asks it in-process for an AI client: the
- * caller's allowance is counted, but a miss takes only the seat of the period
- * the beat is in, never one ahead. Readers book the seats ahead of them, so an
- * agent gets a seat no reader booked and gives way to readers (ENG-91 puts
- * agents in the lowest budget tier). An agent is a caller from outside the
- * Worker, so that seat must also be a public one.
+ * caller's allowance is counted, and a miss takes only the seat of the period
+ * the beat is in, never one ahead, and only once the period is
+ * ARXIV_AGENT_SEAT_OFFSET_MS old. Readers book the seats ahead of them, and a
+ * reader who comes later in the period would have had no other seat to take,
+ * so an agent gets only a seat no reader can use and gives way to readers
+ * (ENG-91 puts agents in the lowest budget tier). An agent is a caller from
+ * outside the Worker, so that seat must also be a public one.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0, accepts: AGENT_SEAT });
 }
 
 // `perCaller` is true for a request from outside the Worker: it spends its
-// address's allowance and takes only public seats.
-async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
+// address's allowance, and `accepts` keeps it to public seats.
+async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs, accepts }: {
+  perCaller: boolean;
+  maxWaitMs: number;
+  accepts?: (slot: number) => boolean;
+}) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -135,7 +148,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs,
-      accepts: perCaller ? PUBLIC_SEAT : undefined,
+      accepts,
     });
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.
@@ -143,14 +156,13 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
         await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
       }
       // After the window it was refused within, which is at least this period.
-      // A caller that looks less than a period ahead is told when the next
-      // seat it can take starts instead: from a public period, the period
-      // after it is not one, and a retry there would be refused again.
+      // An agent, which looks at no seat ahead, is told when it may next take
+      // one instead: a retry before then would be refused again.
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
-        'retry-after': perCaller && maxWaitMs < ARXIV_PACE_PERIOD_MS
-          ? nextPublicSeatSeconds(Date.now())
+        'retry-after': accepts === AGENT_SEAT
+          ? nextAgentSeatSeconds(Date.now())
           : paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }

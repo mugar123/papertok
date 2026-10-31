@@ -406,8 +406,9 @@ function openAlexPaper(work: OpenAlexWork) {
   return { paper: publicPaper({ ...paper, id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
 }
 
-// arXiv refuses an agent whenever the beat's current seat is taken
-// (`handleAgentArxiv`), by a search's own arXiv miss too. OpenAlex indexes the
+// arXiv refuses an agent whenever the beat's current seat is taken, by a
+// search's own arXiv miss too, or is one a reader may still need
+// (`handleAgentArxiv`). OpenAlex indexes the
 // same preprints, so a refusal or failure asks it for the work at the arXiv
 // landing page, as the app's paper page does (`fetchPaperByArxivIdViaOpenAlex`):
 // one billed unit, in the agent tier. arXiv's answer that it has no such
