@@ -65,12 +65,25 @@ function byLayer(a: HighlightRange, b: HighlightRange) {
  * Whether `buildHighlightPlan` paints any of `start`..`end`: it marks prose,
  * and a formula only when the range covers it whole. A quote can also occur
  * inside a formula, and resolving it there drew no mark at all.
+ *
+ * Every occurrence of a quote is checked, so the formulas the range touches
+ * are found by bisecting the spans, which are in order and disjoint: walking
+ * all of them per occurrence took a paragraph of 3,000 formulas holding the
+ * quote ten times as long to resolve.
  */
 function drawsMark(formulas: [number, number][], start: number, end: number) {
+  let low = 0;
+  let high = formulas.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (formulas[middle][1] <= start) low = middle + 1;
+    else high = middle;
+  }
   let inFormulas = 0;
-  for (const [from, to] of formulas) {
+  for (let index = low; index < formulas.length && formulas[index][0] < end; index += 1) {
+    const [from, to] = formulas[index];
     if (start <= from && to <= end) return true;
-    inFormulas += Math.max(0, Math.min(end, to) - Math.max(start, from));
+    inFormulas += Math.min(end, to) - Math.max(start, from);
   }
   return inFormulas < end - start;
 }
