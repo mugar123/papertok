@@ -186,9 +186,8 @@ test('an unclosed \\ensuremath or \\stackrel tilde keeps its argument as written
   }
 });
 
-// `\}` is an escaped brace, so none of these arguments closes. When a start
-// could read through the starts after it, each one rescanned the rest of the
-// text and 8000 of them took seconds.
+// `\}` is an escaped brace, so none of these arguments closes, and no start may
+// read through the starts after it.
 test('\\ensuremath starts whose argument never closes do not rescan one another', () => {
   const unit = '\\ensuremath{a\\}';
   const count = 8000;

@@ -262,9 +262,8 @@ function unwrapEnsureMath(match: string, expression: string, offset: number, sou
 // takes the one character after it, in the argument and in its inner group
 // alike, so every character has a single reading and an unclosed argument fails
 // in linear time. Reading `\ab` as a macro or as `\a` and `b` backtracked
-// exponentially; reading `\}` as an escape in the argument but as a closing
-// brace in the group let each start run past the next one and rescan the rest
-// of the text.
+// exponentially. `\}` is an escaped brace wherever it appears, so it never
+// closes the argument or its group.
 const ENSUREMATH = /\\ensuremath\{((?:\\[\s\S]|[^{}\\]|\{(?:\\[\s\S]|[^{}\\])*\})*)\}/g;
 /**
  * `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one. A ends at
