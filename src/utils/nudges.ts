@@ -237,6 +237,41 @@ export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolea
 }
 
 /**
+ * One visit's notices, as NudgeHost keeps them: the notice picked (`null` for
+ * none), whether the visit's choice has been made, whether the reader hid the
+ * privacy notice for this visit, and whether the minute of reading has passed.
+ */
+export interface VisitNotices { picked: string | null; choiceMade: boolean; privacyHidden: boolean; dwellDone: boolean }
+
+export const VISIT_START: VisitNotices = { picked: null, choiceMade: false, privacyHidden: false, dwellDone: false };
+
+/**
+ * The visit with its notice chosen once that is due (visitChoiceDue), or
+ * `visit` itself while it is not, or was already made: one choice per visit, so
+ * a re-render, a navigation or the email health answer landing cannot start a
+ * second one. A privacy notice hidden this visit is no longer a candidate.
+ */
+export function chooseVisitNotice(visit: VisitNotices, { privacyOwed, eligible, dismissed, random }: { privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
+  const owed = privacyOwed && !visit.privacyHidden;
+  if (visit.choiceMade || !visitChoiceDue({ privacyOwed: owed, dwellDone: visit.dwellDone })) return visit;
+  return { ...visit, choiceMade: true, picked: pickVisitNotice({ privacyOwed: owed, eligible, dismissed, random }) };
+}
+
+/**
+ * The visit after the reader answers the privacy notice. Got it spends the
+ * visit's one notice, so a nudge waits for the next visit. Hide for now (or
+ * Escape, a press outside, the X) puts the notice away for this visit and opens
+ * the choice again with the minute of reading started over: a nudge such as
+ * email being down may then follow a minute later, so a reader who keeps
+ * hiding the notice is still told.
+ */
+export function answerPrivacyNotice(visit: VisitNotices, answer: 'got-it' | 'hide'): VisitNotices {
+  if (visit.picked !== PRIVACY_NOTICE_ID) return visit;
+  if (answer === 'got-it') return { ...visit, picked: null };
+  return { picked: null, choiceMade: false, privacyHidden: true, dwellDone: false };
+}
+
+/**
  * What, if anything, is wrong with email — as reported by the service itself.
  *
  * `code` is the discriminant, not `configured`: the context's initial state is

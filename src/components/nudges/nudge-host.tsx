@@ -9,18 +9,20 @@ import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal
 import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
+  VISIT_START,
+  answerPrivacyNotice,
+  chooseVisitNotice,
   emailNudgeProblem,
   isNudgePath,
   modalIsOpen,
   noticeOnScreen,
-  pickVisitNotice,
   privacyDialogOpen,
   privacyOwedFor,
   readDismissedNudges,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
-  visitChoiceDue,
   visitReaderReady,
+  type VisitNotices,
 } from '../../utils/nudges.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PrivacyNotice from './privacy-notice.tsx';
@@ -29,18 +31,20 @@ import PrivacyNotice from './privacy-notice.tsx';
 //
 // The rules it keeps, in order of how badly each one hurts when broken:
 //   · Once per device, forever. A nudge that comes back is not a nudge.
-//   · One per visit, and never two. The corner belongs to the reader.
+//   · One per visit, and never two at once. The corner belongs to the reader.
+//     (A privacy notice hidden for the visit gives its turn back; see below.)
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
 // Guests are out entirely: they already have one thing being asked of them.
 //
 // A privacy policy change takes the visit's turn before any nudge. Only
 // signed-in accounts are told, in a dialog that opens once the feed shows its
-// first cards, never over its loading or error screen, and returns on later visits until the reader chooses Got it; utils/nudges.ts
-// decides who is owed it. While it is owed it is the visit's one notice, so
-// Hide for now (or Escape, the X) leaves the visit with nothing: the email
-// nudge waits for a visit after Got it, by the one-per-visit rule above.
-// Whatever was picked is shown on the feed only and
+// first cards, never over its loading or error screen, and returns on later
+// visits until the reader chooses Got it; utils/nudges.ts decides who is owed
+// it. Got it spends the visit's turn. Hide for now (or Escape, a press outside,
+// the X) hands it back, so a nudge may follow after another minute of reading:
+// a reader who keeps hiding the notice is not kept from hearing that email is
+// down (answerPrivacyNotice). Whatever was picked is shown on the feed only and
 // comes back when the reader returns to it. A change of account remounts this
 // component, which clears what was picked for the previous reader.
 
@@ -80,21 +84,19 @@ export default function NudgeHost() {
   const navigate = useNavigate();
 
   const [dismissed, setDismissed] = useState(() => readDismissedNudges());
-  const [dwellDone, setDwellDone] = useState(false);
-  // `null` until one is picked.
-  const [picked, setPicked] = useState<string | null>(null);
-  // One per visit: flipped the moment the choice is made, so a re-render, a
-  // navigation or the health request landing cannot start a second one. State
-  // and not a ref, because this is read during render — the same shape (and
-  // the same reason) as the guest interests sheet.
-  const [choiceMade, setChoiceMade] = useState(false);
+  // What this visit picked, whether its choice is made and its minute of
+  // reading has passed (utils/nudges.ts). State and not a ref, because the
+  // choice is read during render — the same shape (and the same reason) as the
+  // guest interests sheet.
+  const [visit, setVisit] = useState<VisitNotices>(VISIT_START);
+  const { picked, dwellDone } = visit;
 
   const signedIn = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
 
   useEffect(() => {
     if (!signedIn || dwellDone) return undefined;
-    const timer = window.setTimeout(() => setDwellDone(true), NUDGE_DWELL_MS);
+    const timer = window.setTimeout(() => setVisit(current => ({ ...current, dwellDone: true })), NUDGE_DWELL_MS);
     return () => window.clearTimeout(timer);
   }, [signedIn, dwellDone]);
 
@@ -109,19 +111,18 @@ export default function NudgeHost() {
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
   // linter says so, twice. Same shape the guest interests sheet uses.
-  if (signedIn && !choiceMade && isNudgePath(location.pathname) && visitChoiceDue({ privacyOwed, dwellDone })) {
-    setChoiceMade(true);
-    const id = pickVisitNotice({
+  if (signedIn && isNudgePath(location.pathname)) {
+    const chosen = chooseVisitNotice(visit, {
       privacyOwed,
       eligible: emailProblem ? ['email-down'] : [],
       dismissed,
     });
-    if (id) setPicked(id);
+    if (chosen !== visit) setVisit(chosen);
   }
 
   const close = useCallback((id: string) => {
     setDismissed(rememberNudgeDismissal(id));
-    setPicked(null);
+    setVisit(current => ({ ...current, picked: null }));
   }, []);
 
   const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname, privacyOwed });
@@ -143,12 +144,12 @@ export default function NudgeHost() {
   // so it returns next time. Back is not routed here: like the app's other
   // dialogs (lists, email updates, the search palette), this one pushes no
   // history entry, so Back goes where it would without it.
-  const hidePrivacy = useCallback(() => setPicked(null), []);
+  const hidePrivacy = useCallback(() => setVisit(current => answerPrivacyNotice(current, 'hide')), []);
 
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
     if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
-    setPicked(null);
+    setVisit(current => answerPrivacyNotice(current, 'got-it'));
   }, [uid]);
 
   const handleSettings = useCallback(() => {

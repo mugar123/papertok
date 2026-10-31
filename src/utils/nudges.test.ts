@@ -5,6 +5,9 @@ import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
+  VISIT_START,
+  answerPrivacyNotice,
+  chooseVisitNotice,
   emailNudgeProblem,
   forgetPrivacyNotice,
   noticeOnScreen,
@@ -236,7 +239,7 @@ test('a privacy change owed to the reader takes the visit before any nudge', () 
   assert.equal(
     pickVisitNotice({ privacyOwed: true, eligible: ['email-down'], dismissed: [] }),
     PRIVACY_NOTICE_ID,
-    'the email nudge waits for a later visit',
+    'the email nudge waits until the notice is answered',
   );
   assert.equal(pickVisitNotice({ privacyOwed: true }), PRIVACY_NOTICE_ID, 'also when no nudge is pending');
   assert.equal(pickVisitNotice({ privacyOwed: false, eligible: ['email-down'], dismissed: [] }), 'email-down');
@@ -250,6 +253,34 @@ test('a privacy change owed to the reader is chosen on arrival, a nudge only aft
   assert.equal(visitChoiceDue({ privacyOwed: true, dwellDone: true }), true);
   assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: false }), false, 'the email nudge waits');
   assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: true }), true);
+});
+
+test('after Hide for now the visit may still show a nudge, a minute of reading later; after Got it the nudge waits for the next visit', () => {
+  const facts = { privacyOwed: true, eligible: ['email-down'], dismissed: [] };
+  const arrived = chooseVisitNotice(VISIT_START, facts);
+  assert.equal(arrived.picked, PRIVACY_NOTICE_ID, 'the notice owed is chosen on arrival');
+  assert.equal(chooseVisitNotice({ ...arrived, dwellDone: true }, facts).picked, PRIVACY_NOTICE_ID, 'while it is on screen the minute passing changes nothing');
+
+  // Hide for now, Escape, a press outside and the X all reach onHide (privacy-notice.tsx).
+  for (const dwellDone of [false, true]) {
+    const hidden = answerPrivacyNotice({ ...arrived, dwellDone }, 'hide');
+    assert.equal(hidden.picked, null, 'hidden for this visit');
+    assert.equal(chooseVisitNotice(hidden, facts), hidden, `the minute of reading starts again (it had${dwellDone ? '' : ' not'} passed)`);
+    const later = chooseVisitNotice({ ...hidden, dwellDone: true }, facts);
+    assert.equal(later.picked, 'email-down', 'the email nudge may follow in the same visit');
+    assert.equal(noticeOnScreen({ picked: later.picked, signedIn: true, pathname: '/feed', privacyOwed: true }), 'email-down', 'shown although the notice is still owed');
+    assert.equal(chooseVisitNotice({ ...later, picked: null }, facts).picked, null, 'once: after that nudge is dismissed the visit has nothing more');
+    assert.equal(answerPrivacyNotice(later, 'hide'), later, 'a late close of the dialog does not take the nudge away');
+  }
+  const hidden = answerPrivacyNotice(arrived, 'hide');
+  assert.equal(chooseVisitNotice({ ...hidden, dwellDone: true }, { ...facts, eligible: [] }).picked, null, 'nothing pending: the notice does not come back this visit');
+  assert.equal(chooseVisitNotice({ ...hidden, dwellDone: true }, { ...facts, dismissed: ['email-down'] }).picked, null, 'a dismissed nudge stays dismissed');
+
+  const acknowledged = answerPrivacyNotice({ ...arrived, dwellDone: true }, 'got-it');
+  assert.equal(acknowledged.picked, null, 'Got it puts it away');
+  assert.equal(chooseVisitNotice(acknowledged, { ...facts, privacyOwed: false }), acknowledged, 'and the email nudge waits for the next visit');
+  const next = chooseVisitNotice({ ...VISIT_START, dwellDone: true }, { ...facts, privacyOwed: false });
+  assert.equal(next.picked, 'email-down', 'which picks it after its minute of reading');
 });
 
 test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
@@ -386,7 +417,7 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   // A visit's arrival on /feed, with its cards and no other dialog open, from the parts NudgeHost calls in this order.
   const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
-    const picked = visitChoiceDue({ privacyOwed, dwellDone: false }) ? pickVisitNotice({ privacyOwed, eligible: ['email-down'] }) : null;
+    const { picked } = chooseVisitNotice(VISIT_START, { privacyOwed, eligible: ['email-down'] });
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
     return privacyDialogOpen({ shown, cardsShown: true, modalOpen: false, wasOpen: false });
   };
