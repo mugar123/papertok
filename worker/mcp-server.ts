@@ -29,8 +29,8 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  * browser. The caller's `CF-Connecting-IP` travels with each ask, so those
  * allowances count this caller. ENG-91 puts agents in the lowest budget tier:
  * a billed OpenAlex miss spends `exploration` (`handleAgentOpenAlex`), and an
- * arXiv miss takes no seat a reader booked, and only the last second of a
- * public period's (`handleAgentArxiv`). The
+ * arXiv miss takes only the current period's public seat, and none a reader
+ * booked (`handleAgentArxiv`). The
  * citation graph waits for phase 2: the browser's needs an account, and these
  * callers have none.
  */
@@ -73,15 +73,12 @@ const INSTRUCTIONS = 'Read-only access to scholarly papers as PaperTok normalize
 const READ_ONLY = Object.freeze({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true });
 const PAPER_ID_SCHEMA = { type: 'string', description: 'A DOI (10.xxxx/...), arXiv id (2401.01234), OpenAlex work id (W123...) or PubMed id (pmid:123). URLs and doi:/arxiv: prefixes are accepted.' };
 const DOI_SCHEMA = { type: 'string', description: 'The DOI, with or without https://doi.org/.' };
-// An agent's arXiv slot is open for one second (`handleAgentArxiv`). Both tools
-// can return the refusal.
-const ARXIV_RETRY_NOTE = 'That retryAfterSeconds is when the next slot opens, rounded up to a whole second; the slot closes within a second after that, so a retry that comes later is refused again.';
 
 const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI, arXiv id, or an identical title with a shared first-author name. A paper has its openalex:W… id when OpenAlex found it, else its arXiv id, and arXiv categories when arXiv found it, else OpenAlex concept names, or topic names for a work without concepts. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable". arXiv is asked only when PaperTok's arXiv pacing has a free slot for AI clients (about one try in six); otherwise it is listed there as PROVIDER_RATE_LIMITED with retryAfterSeconds, while arXiv itself may be idle. ${ARXIV_RETRY_NOTE}`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI, arXiv id, or an identical title with a shared first-author name. A paper has its openalex:W… id when OpenAlex found it, else its arXiv id, and arXiv categories when arXiv found it, else OpenAlex concept names, or topic names for a work without concepts. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable". arXiv is asked only when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two); otherwise it is listed there as PROVIDER_RATE_LIMITED with retryAfterSeconds, while arXiv itself may be idle.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -98,7 +95,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in six) and arXiv answers, otherwise on OpenAlex; any other id is looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. ${ARXIV_RETRY_NOTE} An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two) and arXiv answers, otherwise on OpenAlex; any other id is looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -418,9 +415,9 @@ function openAlexPaper(work: OpenAlexWork) {
 }
 
 // arXiv refuses an agent whenever the beat's current seat is taken, by a
-// search's own arXiv miss too, and whenever the beat is not in a public
-// period's last second (`handleAgentArxiv`): about five tries in six. OpenAlex indexes the
-// same preprints, so a refusal or failure asks it for the work at the arXiv
+// search's own arXiv miss too, or is not a public one (`handleAgentArxiv`):
+// about one try in two on an idle Worker. OpenAlex indexes the same
+// preprints, so a refusal or failure asks it for the work at the arXiv
 // landing page, as the app's paper page does (`fetchPaperByArxivIdViaOpenAlex`):
 // one billed unit, in the agent tier. arXiv's answer that it has no such
 // paper stands.

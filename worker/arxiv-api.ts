@@ -28,26 +28,14 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // through POST /store/papers, so one account, within its per-minute feed
 // allowance, can still hold every seat. Spacing towards arXiv is unchanged:
 // one call per three-second period. A seat taken late in its period goes out
-// then, so it and the next period's seat can be less than a second apart; an
-// agent's seat (AGENT_SEAT) always goes out in its period's last second.
+// then, so it and the next period's seat can be less than a second apart.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
-// A reader in a public period's first two seconds can wait for no seat but
-// that period's: the next public one starts more than ARXIV_PACE_MAX_WAIT_MS
-// away. An agent (`handleAgentArxiv`) may take a public period's seat only
-// from this far into the period, so a lone reader is never refused because of
-// it. Any public seat an agent takes is still one seat fewer for readers: a
-// reader who comes later in that period books the next public seat, and a
-// second reader within the next four seconds then finds none and is refused.
-const ARXIV_AGENT_SEAT_OFFSET_MS = 2 * ARXIV_PACE_PERIOD_MS - ARXIV_PACE_MAX_WAIT_MS;
-const AGENT_SEAT = (slot: number) => PUBLIC_SEAT(slot) && Date.now() - slot * ARXIV_PACE_PERIOD_MS >= ARXIV_AGENT_SEAT_OFFSET_MS;
-// Whole seconds from `now` to the next moment an agent may take a seat, after
-// the one it was just refused: 1 to 6. Rounded up, so a retry after exactly
-// this wait comes inside the seat's one second; a later one is refused again,
-// which the tool descriptions say.
-function nextAgentSeatSeconds(now: number) {
-  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS);
-  while (!PUBLIC_SEAT(slot) || slot * ARXIV_PACE_PERIOD_MS + ARXIV_AGENT_SEAT_OFFSET_MS <= now) slot += 1;
-  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS + ARXIV_AGENT_SEAT_OFFSET_MS - now) / 1000));
+// Whole seconds from `now` to the start of the next public seat after the
+// current period: 1 to 6.
+function nextPublicSeatSeconds(now: number) {
+  let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS) + 1;
+  while (!PUBLIC_SEAT(slot)) slot += 1;
+  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000));
 }
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
@@ -80,7 +68,7 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 export function handleArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, accepts: PUBLIC_SEAT });
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
 }
 
 // The route as the paper harvest asks it in-process: no caller to count.
@@ -90,28 +78,22 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
 
 /**
  * The route as the MCP server asks it in-process for an AI client: the
- * caller's allowance is counted, and a miss takes only the seat of the period
- * the beat is in, never one ahead, and only once the period is
- * ARXIV_AGENT_SEAT_OFFSET_MS old. Readers book the seats ahead of them, so an
- * agent never takes a seat a reader has booked, and a reader in the period's
- * first two seconds, who could wait for no other seat, finds it free (ENG-91
- * puts agents in the lowest budget tier). Two readers after it can still find
- * one seat fewer (ARXIV_AGENT_SEAT_OFFSET_MS). An agent is a caller from
- * outside the Worker, so that seat must also be a public one. It may ask in
- * one second of every six, so even on an idle Worker about five in six
- * uncached agent lookups are refused.
+ * caller's allowance is counted, but a miss takes only the seat of the period
+ * the beat is in, never one ahead. Readers book the seats ahead of them, so an
+ * agent never takes a seat a reader booked (ENG-91 puts agents in the lowest
+ * budget tier). It can still take the seat of a reader who arrives after it in
+ * the period's first two seconds: the next public seat is then more than
+ * ARXIV_PACE_MAX_WAIT_MS away, so that reader is refused. An agent
+ * is a caller from outside the Worker, so its seat must also be a public one,
+ * and even on an idle Worker about half of uncached agent lookups are refused.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0, accepts: AGENT_SEAT });
+  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
 }
 
 // `perCaller` is true for a request from outside the Worker: it spends its
-// address's allowance, and `accepts` keeps it to public seats.
-async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs, accepts }: {
-  perCaller: boolean;
-  maxWaitMs: number;
-  accepts?: (slot: number) => boolean;
-}) {
+// address's allowance and takes only public seats.
+async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -157,7 +139,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs,
-      accepts,
+      accepts: perCaller ? PUBLIC_SEAT : undefined,
     });
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.
@@ -165,13 +147,14 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
         await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, caller.reservation).catch(() => undefined);
       }
       // After the window it was refused within, which is at least this period.
-      // An agent, which looks at no seat ahead, is told when it may next take
-      // one instead: a retry before then would be refused again.
+      // A caller that looks less than a period ahead is told when the next
+      // seat it can take starts instead: from a public period, the period
+      // after it is not one, and a retry there would be refused again.
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
-        'retry-after': accepts === AGENT_SEAT
-          ? nextAgentSeatSeconds(Date.now())
+        'retry-after': perCaller && maxWaitMs < ARXIV_PACE_PERIOD_MS
+          ? nextPublicSeatSeconds(Date.now())
           : paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }

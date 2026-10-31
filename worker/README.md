@@ -1157,7 +1157,7 @@ SDK is not used, so the package lock is unchanged.
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
 | `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title with a shared first-author name) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts, which `get_paper` keeps in `topics` only. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about five tries in six) or arXiv fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or arXiv fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
@@ -1214,26 +1214,23 @@ points:
   path (`doiPathId`). A lookup by id is a free entity lookup.
 - `handleAgentArxiv` takes the beat's seat only for the current three-second
   period, never one ahead, and like any request from outside the Worker only a
-  public (even) seat. Readers book seats up to four seconds ahead, and a
-  reader in the first two seconds of a public period can wait for no seat but
-  that period's, so an agent takes a public seat only from two seconds into
-  its period: it never takes a seat a reader booked, and a lone reader is never
-  refused because of it, but two readers arriving within about four seconds
-  after an agent's call can find one seat fewer, and the second is refused. A
-  search's own arXiv miss takes the seat of its period. An agent's call always
-  goes out in its period's last second, so it and the next period's call (a
-  Worker-only seat, such as the harvest's) can be less than a second apart. An agent may ask in
-  one second of every six, so even on an idle Worker about five in six
-  uncached arXiv lookups are refused, which a search lists under
-  `unavailable` and `get_paper` answers from OpenAlex for one billed unit.
-  That answer is the OpenAlex record: id `openalex:W…` and concept names in
-  `categories`, where arXiv's answer has the arXiv id and arXiv categories. A
-  refused seat is `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to
-  the next moment an agent may take a seat (1 to 6 seconds, rounded up). That
-  seat closes within a second after the wait, so a client whose retry comes
-  later is refused again; both tool descriptions say so. The refusal is under
-  `unavailable` in a search; `get_paper` then asks OpenAlex, and logs arXiv's
-  refusal with `source: 'arxiv'` when OpenAlex has the paper.
+  public (even) seat. Readers book seats up to four seconds ahead, so an agent
+  never takes a seat a reader booked, and a search's own arXiv miss takes the
+  seat of its period. An agent can still take the seat of a reader who
+  arrives after it in the period's first two seconds: the next public seat is
+  then more than four seconds away, so that reader is refused. An agent's call
+  goes out at once, so, like a reader's call that takes its period's seat
+  late, it and the next period's call can be less than a second apart. An
+  odd period is never an agent's, so even on an idle Worker every agent arXiv
+  miss in an odd period is refused: about half of uncached arXiv lookups,
+  which a search lists under `unavailable` and `get_paper` answers from
+  OpenAlex for one billed unit. That answer is the OpenAlex record: id
+  `openalex:W…` and concept names in `categories`, where arXiv's answer has
+  the arXiv id and arXiv categories. A refused seat is
+  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of the
+  next public seat (1 to 6 seconds, rounded up), under `unavailable` in a
+  search; `get_paper` then asks OpenAlex, and logs arXiv's refusal with
+  `source: 'arxiv'` when OpenAlex has the paper.
 
 Arguments are validated before any reservation; `sources` is read in any case
 (`arXiv`, `OpenAlex`). Each `tools/call` then
