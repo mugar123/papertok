@@ -285,8 +285,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, so the write-back waits for it. The events recorded
-  // before then are not skipped: they are held (heldProfileEvents). The
-  // interaction documents are still the source of truth either way.
+  // before then are held (heldProfileEvents) and added to the profile once it
+  // arrives, before its first write-back, so what a reader does while it loads
+  // still teaches the feed. The interaction documents are still the source of
+  // truth either way.
   const interactionProfileHydrated = useRef(false);
   // What the account recorded before its profile loaded, for the profile that
   // arrives to record again (replayHeldEvents).
