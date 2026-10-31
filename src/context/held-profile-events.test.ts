@@ -280,6 +280,10 @@ function signedInFeed(userId = 'reader') {
         await setMark('saved', paperId, true, 'save', restore, false, { ...card, restores: true });
       }
     },
+    // A recent For You card the reader passes.
+    pass(paperId: string) {
+      record({ paperId, kind: 'skip', notable: false });
+    },
     save: (paperId: string, write: () => Promise<void>) => setMark('saved', paperId, true, 'save', write),
     unsave,
     dismiss: (paperId: string, write: () => Promise<void>) => setMark('dismissed', paperId, true, 'notInterested', write),
@@ -641,4 +645,51 @@ test('an unlike tapped while the profile loads and refused after it arrives leav
 
   assert.ok(reader.feed.liked.has('liked'));
   assert.deepEqual(readProfileSignals(reader.feed.profile, NOW).temporal, readProfileSignals(stored(), NOW).temporal);
+});
+
+// The outside verifier's case on PR #419 at 16770562. Until the profile loads,
+// a paper liked in an earlier session shows unliked. The reader taps Like,
+// Firestore refuses it and the screen takes it back, then the reader passes a
+// card, all before the profile arrives. The like and its undo were both
+// replayed on the profile that arrived, and the undo removed the stored like
+// from the aggregate written back, while the interaction document kept it.
+for (const [card, fields] of [
+  ['a notable For You card', { notable: true, published: null }],
+  ['a recent For You card', RECENT_FOR_YOU],
+  ['a card off For You', { notable: undefined, published: TWO_YEARS_AGO }],
+] as const) {
+  test(`a Like of ${card} refused and taken back while the profile loads leaves the stored like in the profile written back and read again`, async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const stored = () => storedProfileWith({ ...likeOf('liked'), ...fields });
+    const reader = signedInFeed();
+    await reader.like('liked', refused, fields);
+    assert.ok(!reader.feed.liked.has('liked'), 'the refusal takes the like back on screen');
+    reader.pass('next');
+    reader.load(stored());
+    assert.equal(reader.feed.flushes, 1, 'the passed card is written back');
+
+    const reloaded = deserializeInteractionProfile(serializeInteractionProfile(reader.feed.profile))!;
+    assert.deepEqual(curatedIds(reloaded, 'liked'), ['liked']);
+    const before = readProfileSignals(stored(), NOW);
+    const after = readProfileSignals(reloaded, NOW);
+    assert.deepEqual(
+      [after.temporal.notable.engaged, after.temporal.recent.engaged, after.temporal.lean, after.conceptAffinities.C1],
+      [before.temporal.notable.engaged, before.temporal.recent.engaged, before.temporal.lean, before.conceptAffinities.C1],
+    );
+  });
+}
+
+// The same case for the quick save's Read later, which takes a refused change
+// back on screen too.
+test('a quick save to Read later refused and taken back while the profile loads leaves the stored mark in the profile written back and read again', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const stored = () => storedProfileWith({ paperId: 'later', kind: 'readLater', value: true });
+  const reader = signedInFeed();
+  await reader.readLater('later', refused);
+  assert.ok(!reader.feed.readLater.has('later'), 'the refusal takes the mark back on screen');
+  reader.pass('next');
+  reader.load(stored());
+
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(reader.feed.profile))!;
+  assert.deepEqual(curatedIds(reloaded, 'readLater'), ['later']);
 });
