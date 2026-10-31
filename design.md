@@ -466,7 +466,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   leave, appear at once. Signing out, or into another
   account, puts away the error toasts on screen and those with an action,
   such as an Undo, whose action would act for the reader now, and the
-  refusal of a press made before it that settles later is not shown. An overlay opened while
+  palette's and the Follows list's refusal line; the refusal of a press made
+  before it that settles later is not shown. An overlay opened while
   focus is in the toasts, as from "Add to list", keeps focus as they leave
   and returns it on close to the control used before the toasts. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do

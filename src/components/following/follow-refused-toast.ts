@@ -97,6 +97,18 @@ export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, s
   else if (sameAccount(startedAt)) showInLine(refused);
 }
 
+/** A refusal said in a line, and the account (`uid`) whose press it answers. */
+export type RefusalLine<Refused> = { uid: string | undefined; refused: Refused };
+
+/**
+ * What a refusal line shows to `uid`, who is signed in now: nothing once the
+ * account has changed since it was said, as the error toasts on screen are
+ * put away then (`forgetAccountToasts`).
+ */
+export function refusalShownTo<Refused>(line: RefusalLine<Refused> | null, uid: string | undefined) {
+  return line && line.uid === uid ? line.refused : null;
+}
+
 /**
  * `followRefusal` in a toast that stays until it is closed: the toast region
  * comes before the page in the tab order, so Tab from the button never

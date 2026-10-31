@@ -2,7 +2,7 @@ import type { Action, ToastT } from 'sonner';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { followName, followRefusal, sayFollowRefused, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
+import { followName, followRefusal, refusalShownTo, sayFollowRefused, toastFollowRefused, toggleFollowOrRefusal } from './follow-refused-toast.ts';
 import { actionStart, forgetAccountToasts, trackModalOverlay } from '../ui/toast.ts';
 import { FollowsUnavailableError, JournalFollowLimitError } from '../../utils/following.ts';
 
@@ -184,6 +184,16 @@ test('a refusal settling after the account changed is said neither in the line n
   forgetAccountToasts(null);
   toastFollowRefused(new Error('PERMISSION_DENIED'), { name: 'Econometrica', following: false, startedAt: onPage });
   assert.equal(newToasts(before).length, 0, 'no toast was raised');
+});
+
+// A refused Follow's line is on screen in the palette, or on the Follows
+// page, when reader A signs out, or B signs in, in another tab.
+test('a refusal line said to one account is not shown once another, or nobody, is signed in', () => {
+  const line = { uid: 'reader-a', refused: { message: 'Could not follow Ada Lovelace. Try again.' } };
+  assert.equal(refusalShownTo(line, 'reader-a'), line.refused, 'reader A still sees it');
+  assert.equal(refusalShownTo(line, 'reader-b'), null, 'reader B does not');
+  assert.equal(refusalShownTo(line, undefined), null, 'nor does anyone signed out');
+  assert.equal(refusalShownTo(null, undefined), null, 'no line shows nothing');
 });
 
 test('a press that went through says nothing', async () => {

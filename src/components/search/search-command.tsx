@@ -30,8 +30,8 @@ import { Button } from '../ui/button.tsx';
 import { useEntitySearch } from '../../hooks/use-entity-search.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
-import type { FollowRefusal } from '../following/follow-refused-toast.ts';
-import { sayFollowRefused, toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
+import type { FollowRefusal, RefusalLine } from '../following/follow-refused-toast.ts';
+import { refusalShownTo, sayFollowRefused, toggleFollowOrRefusal } from '../following/follow-refused-toast.ts';
 import { actionStart } from '../ui/toast.ts';
 import { searchPaperDestination } from '../../utils/search-destinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorer-handover.ts';
@@ -135,7 +135,9 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   // palette, not in a toast: on a phone the palette is the whole screen and a
   // toast at the top covers its first row's Follow, outside the focus trap,
   // where Escape closes the palette and leaves the toast (followRefusal).
-  const [refusal, setRefusal] = useState<FollowRefusal | null>(null);
+  // Kept with the account that pressed, and hidden once another is signed in.
+  const [refusalLine, setRefusalLine] = useState<RefusalLine<FollowRefusal> | null>(null);
+  const refusal = refusalShownTo(refusalLine, uid);
   // A Follow can settle after the palette has closed, where its line is gone;
   // that refusal goes to a toast instead.
   const openNow = useRef(open);
@@ -166,7 +168,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   useLayoutEffect(() => {
     if (open) {
       reset();
-      setRefusal(null);
+      setRefusalLine(null);
       setLeavingBySelect(false);
       setActiveSection('all');
       setSelectedValue('');
@@ -207,13 +209,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     event.preventDefault();
     event.stopPropagation();
     setPendingEntity(entity.id);
-    setRefusal(null);
+    setRefusalLine(null);
     // The palette's own layer is counted while it is open and leaves with it.
     const startedAt = actionStart({ leaving: 1 });
     const refused = await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow });
-    if (refused) sayFollowRefused(refused, { inView: openNow.current, showInLine: setRefusal, startedAt });
+    if (refused) sayFollowRefused(refused, { inView: openNow.current, showInLine: shown => setRefusalLine({ uid, refused: shown }), startedAt });
     setPendingEntity(null);
-  }, [isFollowing, toggleFollow]);
+  }, [isFollowing, toggleFollow, uid]);
 
   // Type positions stay fixed while the result groups retain relevance ordering.
   const orderedSections = SECTIONS;
@@ -245,7 +247,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
   const changeQuery = (value: string, typed = false) => {
     typedQuery.current = typed;
-    setRefusal(null);
+    setRefusalLine(null);
     setSelectedValue('');
     setManualSelection(false);
     selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;

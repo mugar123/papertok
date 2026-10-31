@@ -14,12 +14,13 @@ import {
   User,
   UserMinus,
 } from '@phosphor-icons/react';
+import { useAuth } from '../../context/auth-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getFollowedEntityPath } from '../../utils/following-navigation.ts';
 import { openingFollowType } from './opening-follow-type.ts';
-import type { FollowRefusal } from '../following/follow-refused-toast.ts';
-import { followRefusal, sayFollowRefused } from '../following/follow-refused-toast.ts';
+import type { FollowRefusal, RefusalLine } from '../following/follow-refused-toast.ts';
+import { followRefusal, refusalShownTo, sayFollowRefused } from '../following/follow-refused-toast.ts';
 import type { ActionStart } from '../ui/toast.ts';
 import { sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
@@ -81,7 +82,11 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const following = useFollowing();
   const { followedByType } = following;
   const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [actionError, setActionError] = useState('');
+  const uid = useAuth().user?.uid;
+  // Kept with the account that pressed, and hidden once another is signed in.
+  const [errorLine, setErrorLine] = useState<RefusalLine<string> | null>(null);
+  const actionError = refusalShownTo(errorLine, uid) ?? '';
+  const setActionError = (message: string) => setErrorLine(message ? { uid, refused: message } : null);
   const [unfollowing, setUnfollowing] = useState<FollowEntity | null>(null);
   const [unfollowOpen, setUnfollowOpen] = useState(false);
   // When Unfollow was pressed in the question, which lets go of the balloon.
