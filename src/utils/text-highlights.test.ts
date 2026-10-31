@@ -295,6 +295,22 @@ test('a selection over a font command marks that mention wherever else the parag
   }
 });
 
+// The first occurrence of plain words can also lie inside a formula, where a
+// range that does not cover the formula whole draws nothing.
+test('a selection whose words an earlier formula also holds marks the selected words', () => {
+  for (const formula of ['$q = \\text{agent harness}$', '\\[\\text{agent harness}\\]', '\\begin{equation}\\text{agent harness}\\end{equation}']) {
+    const text = `Later ${formula} holds; the agent harness works.`;
+    const start = normalizeLatexText(text).lastIndexOf('agent harness');
+    const end = start + 'agent harness'.length;
+    const anchor = buildRangeAnchor(text, start, end);
+    assert.equal(anchor?.quote, 'agent harness');
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }, { quote: anchor?.quote, source: 'ai' }]) {
+      const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+      assert.deepEqual(marked.map(item => [item.start, item.end]), [[start, end]], formula);
+    }
+  }
+});
+
 test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);
