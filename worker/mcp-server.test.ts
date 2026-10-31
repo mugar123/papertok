@@ -1088,6 +1088,43 @@ test("a tool refused arXiv's seat is told to wait until the next seat it can tak
   }
 });
 
+test("an agent's arXiv seat is open for a second after the wait it is told, and both tools say a later retry is refused", async () => {
+  // A second and a half into an odd period. The next seat an agent may take
+  // opens 3.5 s later, two seconds into the next public period, and closes a
+  // second after that.
+  const refusedAt = EVEN_ARXIV_PERIOD + 4_500;
+  let frozen = refusedAt;
+  const clock = mock.method(Date, 'now', () => frozen);
+  try {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+      // OpenAlex has no record of the preprint, so get_paper returns arXiv's refusal.
+      if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [] });
+      throw new Error(`unexpected upstream ${url}`);
+    }, async () => {
+      const env = routeEnv();
+      const searched = await callTool(env, 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
+      const looked = await callTool(env, 'get_paper', { id: '2603.01234' });
+      for (const [name, { answer }] of [['search_papers', searched], ['get_paper', looked]] as const) {
+        assert.equal(answer.result?.structuredContent?.retryAfterSeconds, 4, name);
+      }
+      // Separate environments, so each retry finds the seat free.
+      for (const [lateMs, refused] of [[0, undefined], [600, true]] as const) {
+        frozen = refusedAt + 4_000 + lateMs;
+        const retried = await callTool(routeEnv(), 'get_paper', { id: '2603.01234' });
+        assert.equal(retried.answer.result?.isError, refused, `a retry ${lateMs} ms after the wait`);
+      }
+      const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
+      for (const name of ['search_papers', 'get_paper']) {
+        const description = String(tools?.find(tool => tool.name === name)?.description);
+        assert.match(description, /retryAfterSeconds is when the next slot opens, rounded up .* a retry that comes later is refused again/, name);
+      }
+    });
+  } finally {
+    clock.mock.restore();
+  }
+});
+
 test('a tool failure leaves a log line with the tool and code, never the arguments', async () => {
   const warn = mock.method(console, 'warn', () => {});
   try {

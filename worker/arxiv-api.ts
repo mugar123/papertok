@@ -41,7 +41,9 @@ const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 const ARXIV_AGENT_SEAT_OFFSET_MS = 2 * ARXIV_PACE_PERIOD_MS - ARXIV_PACE_MAX_WAIT_MS;
 const AGENT_SEAT = (slot: number) => PUBLIC_SEAT(slot) && Date.now() - slot * ARXIV_PACE_PERIOD_MS >= ARXIV_AGENT_SEAT_OFFSET_MS;
 // Whole seconds from `now` to the next moment an agent may take a seat, after
-// the one it was just refused: 1 to 6.
+// the one it was just refused: 1 to 6. Rounded up, so a retry after exactly
+// this wait comes inside the seat's one second; a later one is refused again,
+// which the tool descriptions say.
 function nextAgentSeatSeconds(now: number) {
   let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS);
   while (!PUBLIC_SEAT(slot) || slot * ARXIV_PACE_PERIOD_MS + ARXIV_AGENT_SEAT_OFFSET_MS <= now) slot += 1;

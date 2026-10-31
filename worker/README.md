@@ -1228,7 +1228,9 @@ points:
   That answer is the OpenAlex record: id `openalex:W…` and concept names in
   `categories`, where arXiv's answer has the arXiv id and arXiv categories. A
   refused seat is `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to
-  the next moment an agent may take a seat (1 to 6 seconds), under
+  the next moment an agent may take a seat (1 to 6 seconds, rounded up). That
+  seat closes within a second after the wait, so a client whose retry comes
+  later is refused again; both tool descriptions say so. The refusal is under
   `unavailable` in a search; `get_paper` then asks OpenAlex, and logs arXiv's
   refusal with `source: 'arxiv'` when OpenAlex has the paper.
 
