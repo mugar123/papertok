@@ -58,16 +58,19 @@ export function refuseHeldEvent(held: HeldProfileEvents | null, event: Interacti
 /**
  * Records `held` on the profile of `userId` that just arrived, in the order
  * and at the times they happened, and says whether it recorded any. The
- * stored aggregate cannot hold them already: the feed writes the profile back
- * only once it has loaded. A profile rebuilt from the interaction documents
- * can already hold the document of an event made while they were read. Its
- * curated id and document count are added once either way, and the rebuild
- * has no lean or engagement counts to count twice, but its category, concept,
- * author and session impacts, its exposure and its dwell count twice. A For
- * You card the rebuild lists as viewed adds no shown when replayed, while a
- * like of it still adds engaged. Both are bounded by the events of that wait.
- * A refused change's event is left out, and so is a toggle the profile
- * already holds (holdsAlready).
+ * stored aggregate cannot hold these events: the feed writes the profile back
+ * only once it has loaded. It can hold a mark one of them sets again, from an
+ * earlier session: such a like, save or dismissal is left out (holdsAlready).
+ * So is a refused change's event.
+ *
+ * A profile rebuilt from the interaction documents can already hold the
+ * document of an event made while they were read. A like, save or dismissal
+ * it holds is then left out, with its engagement count and lean step, which
+ * the rebuild starts from zero anyway. Another event adds its curated id and
+ * document count once, but the category, concept, author and session impacts,
+ * exposure and dwell of a view, a skip or a PDF open count twice; a For You
+ * card the rebuild lists as viewed adds no shown. Both are bounded by the
+ * events of that wait.
  */
 export function replayHeldEvents(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
   if (held?.userId !== userId) return false;
