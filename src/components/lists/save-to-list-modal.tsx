@@ -581,7 +581,8 @@ export default function SaveToListModal({
         if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
         if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
         if (savesPaper && !alreadySaved) await unmarkSaved(paper);
-        if (unsavesPaper) await markSaved(paper, { surface });
+        // Puts back what the unsave took from the counts (`restores`).
+        if (unsavesPaper) await markSaved(paper, { surface, restores: true });
         return true;
       };
       const destinations = [

@@ -45,8 +45,9 @@ export interface FeedContextValue {
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   /**
    * `restores`: the save puts back a removal that did not stand, such as the
-   * quick save's when its unsave is refused, and restores exactly what that
-   * unsave took from the counts, whichever surface it reports.
+   * quick save's when its unsave is refused or the reader taps Undo, and
+   * restores exactly what that unsave took from the counts, whichever surface
+   * it reports.
    */
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
   unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;

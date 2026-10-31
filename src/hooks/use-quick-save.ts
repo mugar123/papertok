@@ -48,7 +48,9 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
     [],
   );
 
-  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean, saveSurface: string) => {
+  // `restores` on the Undo of a removal: the save puts back what the removal
+  // took from the counts, not a new save from the card Undo was tapped on.
+  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean, saveSurface: string, restores = false) => {
     if (auth.currentUser?.uid !== user?.uid) return;
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
@@ -59,7 +61,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
       issued: user
         ? setDoc(savedPaperDocRef(user.uid, paper.id), copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())), { merge: true })
         : null,
-      mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface }),
+      mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface, restores }),
       unmark: async () => {
         if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper);
       },
@@ -141,7 +143,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
       toast('Removed from your saved papers', {
         action: {
           label: 'Undo',
-          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater, saveSurface)).catch(() => toast.error('Could not save this paper')); },
+          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater, saveSurface, true)).catch(() => toast.error('Could not save this paper')); },
         },
       });
     });

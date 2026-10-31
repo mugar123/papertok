@@ -74,8 +74,8 @@ export interface InteractionEvent {
   // The card's area (areaKeyForPaper), for a card whose category is no leaf.
   area?: string | null;
   // On a like or a save that puts back an unlike or unsave that did not
-  // stand, such as one Firestore refused: it restores exactly what that took,
-  // whichever card it was tapped on.
+  // stand, such as one Firestore refused or one the reader took back with
+  // Undo: it restores exactly what that took, whichever card it was tapped on.
   restores?: boolean;
 }
 export interface ProfileSignals {
