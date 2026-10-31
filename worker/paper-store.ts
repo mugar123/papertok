@@ -2107,8 +2107,8 @@ export const FEED_LAST_PAGE = FEED_MAX_PAGE;
 
 // D1 held the feed's requests 16-33 s before running anything 8 times from
 // 2026-10-28 to 30, 6 of them after it had run nothing for 30 minutes or more.
-// A read every minute leaves it no such idle (worker/README.md, the paper
-// store's ping).
+// One query a minute reaches D1, to test whether idle causes the holds
+// (worker/README.md, the paper store's ping).
 export const PAPER_STORE_PING_CRON = '* * * * *';
 // A ping is one round trip to WEUR; one past this was held, and its line says
 // for how long.
