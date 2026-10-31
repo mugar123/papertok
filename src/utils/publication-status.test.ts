@@ -12,6 +12,7 @@ import { arxivPaper } from '../services/arxiv-records.ts';
 import { slimWorksPage } from '../services/open-alex-service.ts';
 import { SemanticScholarAdapter } from '../services/adapters/semantic-scholar-adapter.ts';
 import { OPENALEX_ENRICHMENT_SELECT, OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
+import { reviewTagForPaper } from './paper-status.ts';
 
 // Chapters and accepted papers labelled «Preprint» (audit 2026-09-23, issue
 // 12a): of 31 recent chapters in the guest's six computing categories, 23
@@ -244,8 +245,10 @@ const RETRACTED_WORK: OpenAlexWork = {
   ],
 };
 
-test('a work OpenAlex marks retracted is retracted on every surface, and a record without the mark is not', () => {
-  assert.equal(slimWorksPage({ results: [RETRACTED_WORK] }).papers[0].publicationStatus, 'retracted', 'OpenAlex search and explorer');
+test('a work OpenAlex marks retracted is retracted in every OpenAlex mapper, and a record without the mark is not', () => {
+  const searched = slimWorksPage({ results: [RETRACTED_WORK] }).papers[0];
+  assert.equal(searched.publicationStatus, 'retracted', 'OpenAlex search and explorer');
+  assert.equal(reviewTagForPaper(searched)?.label, 'Retracted', 'the status chip search and the explorer show');
   assert.equal(mapOpenAlexWork(RETRACTED_WORK)?.publicationStatus, 'retracted', 'OpenAlex lanes');
   assert.equal(mapOpenAlexEnrichmentWork(RETRACTED_WORK)?.enrichment.publicationStatus, 'retracted', 'OpenAlex enrichment');
   // What a page of search or lane results and an enrichment answer hold: only

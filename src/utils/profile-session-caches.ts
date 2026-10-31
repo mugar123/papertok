@@ -1,6 +1,7 @@
 import type { OwnList } from './own-lists.ts';
 import type { Paper } from '../models/paper.ts';
 
+import { withRetractionOf } from '../models/paper.ts';
 import { createSessionCache } from './session-cache.ts';
 
 /**
@@ -87,10 +88,15 @@ export function readListPapers(uid: string) {
  *
  * Merged rather than replaced: a list is opened one at a time, and replacing
  * would throw away the previous list's papers on every visit — which is the
- * re-fetching this cache exists to stop.
+ * re-fetching this cache exists to stop. A newer copy of a paper replaces
+ * the older one but keeps its retraction (`withRetractionOf`).
  */
 export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>) {
   if (!uid || !papers || typeof papers !== 'object') return;
-  const known = listPapersCache.get(uid);
-  listPapersCache.set(uid, known ? { ...known, ...papers } : { ...papers });
+  const known = listPapersCache.get(uid) ?? {};
+  const next = { ...known };
+  Object.entries(papers).forEach(([paperId, paper]) => {
+    next[paperId] = withRetractionOf(paper, known[paperId]);
+  });
+  listPapersCache.set(uid, next);
 }

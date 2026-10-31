@@ -48,6 +48,10 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     journal: paper.journal || paper.venue || '',
     pdfUrl: paper.pdfUrl || paper.openAccessPdfUrl || '',
     landingPageUrl: paper.landingPageUrl || paper.url || '',
+    // A list shows the retraction the card showed (ENG-84). Only a retraction
+    // is kept: no provider confirms the opposite, and a merge write keeps one
+    // an earlier copy stored.
+    ...(paper.publicationStatus === 'retracted' && { publicationStatus: 'retracted' as const }),
   };
 }
 
