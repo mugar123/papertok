@@ -3,13 +3,15 @@ import type { OpenAlexLocation } from '../src/services/adapters/open-alex-types.
 import type { KeptRanking, RankingCache } from './paper-store.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
+  notableSince, readFeedPage, readNotableCandidates, readVector, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { FeedTimings } from './feed-timings.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { mapAdsPaper } from '../src/services/domain-source-records.ts';
@@ -17,7 +19,8 @@ import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
-import { notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
+import { mergeFeedAbstracts, notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
+import { sourceAttribution } from '../src/utils/source-attribution.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -196,6 +199,43 @@ test('a funding note stored as the abstract is replaced when its source lists th
   await ingestPapers(env, [{ paper: listed, lanes: ['area:physics'] }], { now: NOW });
   assert.equal(stored().abstract, 'No abstract available.');
   assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the paper is embedded again, by its title');
+});
+
+// ENG-109: a card credits Semantic Scholar for the abstract recovered from it.
+// The row's own source listing the paper with an abstract replaces that text,
+// and the credit goes with it.
+test("an abstract recovered from Semantic Scholar keeps its credit while the row's source lists the paper without one, and loses it to that source's text", async () => {
+  const { env, db } = corpus();
+  const work = { id: 'https://openalex.org/W4410000009', doi: 'https://doi.org/10.5555/recovered', title: 'A journal article OpenAlex lists without its abstract', type: 'article', publication_date: '2026-10-20' };
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
+  const [withAbstract] = mergeFeedAbstracts([stored()], [{ doi: '10.5555/recovered', abstract: recovered, sources: { primary: 'semanticscholar', enrichedBy: [] } }]);
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(withAbstract));
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  assert.deepEqual([stored().abstract, stored().abstractSource], [recovered, 'semanticscholar']);
+  assert.deepEqual(sourceAttribution(stored()), { label: 'Abstract:', name: 'Semantic Scholar', href: 'https://www.semanticscholar.org/?utm_source=api' });
+  const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
+  await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
+  assert.deepEqual([stored().abstract, stored().abstractSource], ['OpenAlex now lists the abstract its publisher deposited for this article.', undefined]);
+  assert.equal(sourceAttribution(stored()), null, 'the card credits Semantic Scholar for nothing it shows');
+});
+
+// A row recovered before ENG-109 names Semantic Scholar only among the sources
+// merged in, and its card says "With data from Semantic Scholar" for the
+// recovered text. That text replaced, the card credits no one.
+test('a row recovered before its source was recorded credits Semantic Scholar until its own source lists an abstract', async () => {
+  const { env, db } = corpus();
+  const work = { id: 'https://openalex.org/W4410000010', doi: 'https://doi.org/10.5555/recovered-earlier', title: 'A journal article recovered before the field existed', type: 'article', publication_date: '2026-10-20' };
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(work)!, lanes: ['econ.TH'] }], { now: NOW });
+  const earlier = PaperBuilder.merge(stored(), { abstract: 'The abstract Semantic Scholar held for this journal article, in full.' }, 'semanticscholar');
+  db.prepare('UPDATE works SET paper = ?').run(JSON.stringify(earlier));
+  assert.equal(sourceAttribution(stored())?.label, 'With data from');
+  const listedWithAbstract = mapOpenAlexWork({ ...work, abstract_inverted_index: { OpenAlex: [0], now: [1], 'lists the abstract its publisher deposited for this article.': [2] } })!;
+  await ingestPapers(env, [{ paper: listedWithAbstract, lanes: ['econ.TH'] }], { now: NOW });
+  assert.equal(stored().abstract, 'OpenAlex now lists the abstract its publisher deposited for this article.');
+  assert.equal(sourceAttribution(stored()), null);
 });
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
@@ -1363,6 +1403,140 @@ test('a notable of the current year is not read until that year is over', async 
   assert.deepEqual((await notableRead(store, ['notable:cs.LG'], Date.parse('2027-01-02T12:00:00Z'))).map(candidate => candidate.id), ['openalex:W2026999'], 'the last completed year');
 });
 
+// A notable lane is read in two round trips: its rows, then the stored row of
+// each of the day's slice. An enrichment batch rewrites its papers, which takes
+// a retracted one or an erratum out of every lane, and only then marks them
+// enriched (`enrichPending`); a page that reads in between must not offer them.
+test('a notable paper the enrichment takes out of its lane between the two reads of the lane is not offered', async t => {
+  const { env, db } = corpus();
+  const adsListed = mapAdsPaper({
+    bibcode: '2018Natur.556...74Z', title: ['Quantized Majorana conductance'], author: ['Zhang, Hao'],
+    abstract: 'A synthetic abstract about Majorana zero modes in hybrid nanowires.', year: '2018', pubdate: '2018-04-00',
+    identifier: ['arXiv:1710.10701'], arxiv_class: ['cond-mat.mes-hall'], citation_count: 1500, doctype: 'article',
+  }, ['cs.LG'])!;
+  const listed = [...NOTABLE, adsListed];
+  await ingestPapers(env, listed.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: LISTED_UNTIL });
+  const stored = (paper: Paper) => {
+    const row = db.prepare("SELECT id, paper FROM works WHERE paper ->> '$.id' = ?").get(paper.id) as { id: number; paper: string };
+    return { id: row.id, before: JSON.parse(row.paper) as Paper };
+  };
+  const binding = env.PAPER_STORE!;
+  const batch = binding.batch.bind(binding);
+  let reads = 0;
+  t.mock.method(binding, 'batch', async <T>(statements: D1PreparedStatement[]) => {
+    const answered = await batch<T>(statements);
+    reads += 1;
+    if (reads === 1) {
+      // The lane's rows are read. The enrichment finds the ADS paper retracted
+      // and the paper OpenAlex listed last an erratum, then marks the batch done.
+      const retracted = stored(adsListed);
+      const erratum = stored(NOTABLE[2]);
+      await rewriteWorks(env, [
+        { ...retracted, after: { ...retracted.before, publicationStatus: 'retracted' } },
+        { ...erratum, after: { ...erratum.before, publicationType: 'erratum' } },
+      ], NOW);
+      db.prepare('UPDATE works SET enriched_at = ?').run(new Date(NOW).toISOString());
+    }
+    return answered;
+  });
+  const read = await notableRead({ env, db }, ['notable:cs.LG'], NOW);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'notable:cs.LG'").length, 2, 'the enrichment ran between the reads and took two papers out of the lane');
+  assert.deepEqual(read.map(candidate => candidate.id), [NOTABLE[0].id, NOTABLE[1].id]);
+});
+
+// The statement each notable lane was read with before ENG-150, which numbered
+// the years in SQL with window functions: kept here only as the oracle that the
+// read in index order must match.
+const WINDOW_FUNCTION_NOTABLE_READ = `SELECT work_id, published,
+      CASE WHEN in_slice THEN EXISTS (SELECT 1 FROM works w WHERE w.id = s.work_id
+        AND (w.enriched_at IS NOT NULL OR w.paper ->> '$.adsBibcode' IS NULL)) ELSE 0 END AS offered FROM (
+      SELECT work_id, published, ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+      SELECT work_id, published,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
+             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
+      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
+    )) s ORDER BY published DESC, work_id`;
+
+test('a notable lane read in index order offers the same candidates, in the same order, as the window functions did on every day', async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until, enriched_at) VALUES (?, ?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  // Rows per year: a year before the window, an empty one, one shorter than
+  // the slice, one of the slice, one past it, a listing, a listing with its
+  // drop-outs, two listings, and the current year's. Most of a year shares a
+  // few dates, as OpenAlex's 1 January does, so the work id breaks the ties;
+  // ids are out of date order.
+  const perYear: Array<[number, number]> = [[2015, 7], [2016, 0], [2017, 1], [2018, 24], [2019, 25], [2020, 26], [2021, 100], [2022, 110], [2023, 200], [2024, 3], [2025, 57], [2026, 4]];
+  let number = 0;
+  const lanes = { lg: 'notable:cs.LG', cv: 'notable:cs.CV' };
+  db.exec('BEGIN');
+  for (const [year, count] of perYear) {
+    for (let rank = 0; rank < count; rank += 1) {
+      number += 1;
+      const id = 1 + ((number * 7_919) % 100_003);
+      const day = [0, 0, 0, 31, 59, 180, 364][rank % 7];
+      const published = new Date(Date.UTC(year, 0, 1 + day, rank % 5 === 0 ? 0 : 12)).toISOString();
+      // Every fourth is a paper ADS listed: half of those enriched since.
+      const fromAds = number % 4 === 0;
+      const paper = { id: `openalex:W${id}`, title: `Highly cited study ${id}`, ...(fromAds ? { adsBibcode: `${year}Natur.${id}` } : {}) };
+      // A lane row whose stored row is gone is not offered.
+      if (number % 37 !== 0) insertWork.run(id, JSON.stringify(paper), published, '2027-03-01T00:00:00.000Z', fromAds && number % 8 === 0 ? '2026-10-01T00:00:00.000Z' : null);
+      insertLane.run(lanes.lg, id, published);
+      // A third of them are listed in cs.CV too, and cs.CV has its own.
+      if (number % 3 === 0) insertLane.run(lanes.cv, id, published);
+    }
+  }
+  for (let rank = 0; rank < 40; rank += 1) {
+    const id = 200_000 + ((rank * 13) % 40);
+    const published = new Date(Date.UTC(2019 + (rank % 3), 5, 1)).toISOString();
+    insertWork.run(id, JSON.stringify({ id: `openalex:W${id}`, title: `Vision study ${id}` }), published, '2027-03-01T00:00:00.000Z', null);
+    insertLane.run(lanes.cv, id, published);
+  }
+  db.exec('COMMIT');
+
+  // The window functions' rows of each lane, and the candidates the lanes
+  // give: their offered rows in turns, a work listed by two lanes once, at its
+  // first turn, with both lanes and its newest date.
+  const oracle = (lane: string, now: number) => db.prepare(WINDOW_FUNCTION_NOTABLE_READ)
+    .all(Math.floor(now / DAY) * 25, 25, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`) as Array<{ work_id: number; published: string; offered: number }>;
+  const inTurns = (asked: string[], perLane: Array<Array<{ work_id: number; published: string }>>) => {
+    const byWork = new Map<number, { workId: number; published: string; lanes: string[] }>();
+    for (let position = 0; position < Math.max(...perLane.map(rows => rows.length)); position += 1) {
+      perLane.forEach((rows, index) => {
+        const row = rows[position];
+        if (!row) return;
+        const candidate = byWork.get(row.work_id);
+        if (!candidate) byWork.set(row.work_id, { workId: row.work_id, published: row.published, lanes: [asked[index]] });
+        else {
+          candidate.lanes.push(asked[index]);
+          if (row.published > candidate.published) candidate.published = row.published;
+        }
+      });
+    }
+    return [...byWork.values()];
+  };
+  // Ten days in a row, the slices of a year of 200 wrapping around, and a day
+  // in January, when the window moves on by a year.
+  const days = [...Array.from({ length: 10 }, (_, day) => NOW + day * DAY), Date.parse('2027-01-02T12:00:00Z')];
+  for (const now of days) {
+    for (const asked of [[lanes.lg], [lanes.cv], [lanes.lg, lanes.cv], [lanes.cv, lanes.lg, 'notable:cs.AI']]) {
+      const expected = asked.map(lane => oracle(lane, now));
+      const read = await readNotableCandidates(env.PAPER_STORE!, asked, now);
+      const label = `${asked.join(', ')} on ${new Date(now).toISOString().slice(0, 10)}`;
+      assert.deepEqual(read.candidates, inTurns(asked, expected.map(rows => rows.filter(row => row.offered))), label);
+      assert.deepEqual([...read.inLanes].sort((a, b) => a - b), [...new Set(expected.flat().map(row => row.work_id))].sort((a, b) => a - b), label);
+    }
+  }
+  // The data reaches every case: of cs.LG's 546 rows in the window on the
+  // first day, the day's slice holds 178 (25 of a year, or a shorter year
+  // whole), and some of those are not offered: a paper ADS listed and not yet
+  // enriched, or a row whose stored row is gone.
+  const today = oracle(lanes.lg, NOW);
+  const offered = today.filter(row => row.offered).length;
+  assert.equal(today.length, 546);
+  assert.ok(offered > 0 && offered < 178, `${offered} of the slice's 178 offered`);
+});
+
 test("a notable paper one of the reader's own lanes also holds comes as a notable card on the day of its slice, and as no rank on the other days", async () => {
   const { env } = corpus();
   await ingestPapers(env, recentPapers(5), { now: NOW });
@@ -1447,6 +1621,181 @@ test("with twelve categories asked, a notable lane holding more than its listing
   const unseenListing = listing.slice(0, 60).map(paper => paper.id);
   assert.equal(offered.length, 3, 'the three asked for');
   assert.ok(offered.every(id => unseenListing.includes(id)), `${offered} are papers of the listing the reader has not seen`);
+});
+
+// Two papers of each year of the window in each of two leaves' notable lanes,
+// the second one newer; the id is the year, the leaf (1 or 2) and the rank.
+// The leaves are asked in this order, not in name order.
+const LEAVES = ['cs.LG', 'cs.CV'];
+const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
+async function notableLeavesCorpus() {
+  const store = corpus();
+  await ingestPapers(store.env, recentPapers(60), { now: NOW });
+  const listed = LEAVES.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
+    paper: notableWork(`W${year}${leafIndex + 1}${rank}`, `Highly cited study ${rank} of ${year} in ${leaf}`, `${year}-0${3 + rank}-01`, 5000, true),
+    lanes: [`notable:${leaf}`],
+  }))));
+  await ingestPapers(store.env, listed, { now: NOW, keepUntil: LISTED_UNTIL });
+  return store;
+}
+
+test("a reader without likes gets the notable years in turns, newest first, and the asked leaves in turns, while their own papers stay newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const notable: Array<{ id: string; year: number | null | undefined; leaves: string[] | undefined }> = [];
+  for (let page = 0; page < 4; page += 1) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, page, pageSize: 15, seen: feedSeenFilter(shown), notable: 5 }), { now: NOW });
+    assert.deepEqual(answer.filter(paper => !paper._notable).map(paper => paper.id), recentIds(15 * page, 15 * (page + 1)), `page ${page}: the ranks stay newest first`);
+    for (const paper of answer.filter(card => card._notable)) notable.push({ id: paper.id, year: paper.year, leaves: paper._fetchedFor });
+    shown.push(...answer.map(paper => paper.id));
+  }
+  // One paper of each year, newest first, then each year again; a year's
+  // leaves take turns, and so do consecutive cards. Each comes with its
+  // lane's newest paper of the year first.
+  const expected = Array.from({ length: 20 }, (_, card) => {
+    const year = WINDOW_YEARS[card % 10];
+    const leaf = (card % 10 + Math.floor(card / 10)) % 2;
+    return { id: `openalex:W${year}${leaf + 1}1`, year, leaves: [LEAVES[leaf]] };
+  });
+  assert.deepEqual(notable, expected);
+});
+
+// On every fresh load (a reload, a refresh, the next session) the app excludes
+// the latest cards it showed, notable ones included: they count as turns already passed, so the
+// years' turns go on rather than starting again from the first (ENG-166 review).
+test('a fresh load that excludes the notable cards shown before continues the years in turns', async () => {
+  const { env } = await notableLeavesCorpus();
+  const shown: string[] = [];
+  const excludedIds: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (let load = 0; load < 3; load += 1) {
+    // The third load rejects the cards of the second instead.
+    const negativeIds = load === 2 ? excludedIds.splice(2) : [];
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter(shown), excludedIds, negativeIds, notable: 2 }), { now: NOW });
+    const cards = answer.filter(paper => paper._notable);
+    years.push(cards.map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
+    excludedIds.push(...negativeIds, ...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
+// The app asks for the reader's established interests in its ranking of them
+// (selected ones and the affinities it learned), then the ones added since.
+test('the notable leaves take their turns in the order the request asks them in', async () => {
+  const { env } = await notableLeavesCorpus();
+  for (const categories of [LEAVES, [...LEAVES].reverse()]) {
+    const answer = await readFeedPage(env, parseFeedRequest({ categories, pageSize: 15, seen: feedSeenFilter([]), notable: 3 }), { now: NOW });
+    assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper._fetchedFor), [[categories[0]], [categories[1]], [categories[0]]], `asked ${categories}`);
+  }
+});
+
+test('a notable paper several asked leaves list takes its turn with the first of them the request asks', async () => {
+  const { env } = await notableLeavesCorpus();
+  // cs.LG holds one more 2025 paper, so cs.CV's lane reaches the shared one first.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025901', 'Highly cited study of 2025 in cs.LG only', '2025-06-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025902', 'Highly cited study of 2025 in both leaves', '2025-03-15', 5000, true), lanes: ['notable:cs.LG', 'notable:cs.CV'] },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.slice(1).flatMap(year => [0, 1].map(rank => `openalex:W${year}${leaf + 1}${rank}`)));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  // 2025's turns: cs.LG's papers newest first, then cs.CV's, the shared one with cs.LG's.
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025901', 'W202521', 'W202511', 'W202520', 'W2025902'].map(id => `openalex:${id}`));
+});
+
+test("a notable paper another asked leaf reaches first still waits for its turn among the first leaf's papers of its year, newest first", async () => {
+  const { env } = await notableLeavesCorpus();
+  // cs.CV's lane reaches the shared paper first, cs.LG's after two newer ones.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025903', 'Highly cited study A of 2025 in cs.LG only', '2025-09-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025904', 'Highly cited study B of 2025 in cs.LG only', '2025-08-01', 5000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2025905', 'Highly cited study of 2025 in both leaves', '2025-07-01', 5000, true), lanes: ['notable:cs.LG', 'notable:cs.CV'] },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.slice(1).flatMap(year => [0, 1].map(rank => `openalex:W${year}${leaf + 1}${rank}`)));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W2025903', 'W202521', 'W2025904', 'W202520', 'W2025905'].map(id => `openalex:${id}`));
+});
+
+test('with a like, the notable cards follow the closest papers, whatever their year or leaf', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Closest first, in an order neither the years nor the leaves give; their
+  // likeness to each other stays under the diversity pass's threshold.
+  const closest = ['W201811', 'W202420', 'W201610', 'W202511', 'W202120'];
+  closest.forEach((id, index) => {
+    const values = [0.8 - index * 0.15, 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - values[0] ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
+});
+
+test('with a like, the notable papers it cannot tell apart stay newest first rather than taking the years in turns', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // Only one notable paper has a vector; the others tie.
+  insert.run(idOf('openalex:W201811'), vector([0.8, 0.6, 0, 0, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.year), [2018, 2025, 2025, 2025, 2025]);
+});
+
+test('with a like, the diversity pass orders near copies of the notable papers as it does the page, ties newest first', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // A 2025 paper and a 2019 one are one vector, as close to the like as each
+  // other: the 2025 one comes first, though without likes the years' turns
+  // offer the 2019 one first. 2024's is closer to the like than 2016's but
+  // also closer to them, so the diversity pass puts 2016's next and 2019's last.
+  const copy = [0.9, 0.436, 0, 0, 0, 0];
+  insert.run(idOf('openalex:W202510'), vector(copy));
+  insert.run(idOf('openalex:W201911'), vector(copy));
+  insert.run(idOf('openalex:W202420'), vector([0.88, 0.2, 0.43, 0, 0, 0]));
+  insert.run(idOf('openalex:W201610'), vector([0.85, 0, 0, 0.527, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
+});
+
+// A rejection says nothing about the years the reader wants: "Not interested"
+// on a card with a vector left every notable card of the newest year (ENG-166 review).
+test('with only rejections, the notable papers take the years in turns, the near copies of the rejected papers last, the nearest last of all', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('2610.00058'), vector([0, 1, 0, 0, 0, 0]));
+  // Five papers are offered, in the years' turns: one of 2025, 2024, 2023 and
+  // 2022, then 2025's other one. The first is a copy of the first rejection,
+  // the third a near copy of the second, the fourth far from both.
+  const offered = ['W202511', 'W202421', 'W202311', 'W202221', 'W202510'];
+  insert.run(idOf('openalex:W202511'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202311'), vector([0, 0.9, 0.436, 0, 0, 0]));
+  insert.run(idOf('openalex:W202221'), vector([0, 0, 1, 0, 0, 0]));
+  const excludedIds = LEAVES.flatMap((_, leaf) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => `W${year}${leaf + 1}${rank}`)))
+    .filter(id => !offered.includes(id)).map(id => `openalex:${id}`);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W202421', 'W202221', 'W202510', 'W202311', 'W202511'].map(id => `openalex:${id}`));
+  // With every notable paper offered, the near copies wait behind all others.
+  const all = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, negativeIds: ['2610.00059', '2610.00058'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.deepEqual(all.filter(paper => paper._notable).map(paper => paper.year), [2024, 2022, 2021, 2020, 2019]);
+});
+
+test('a reader without likes or rejections reads no vectors for the notable papers', async t => {
+  const { env } = await notableLeavesCorpus();
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
+  assert.equal(answer.filter(paper => paper._notable).length, 5);
+  assert.deepEqual(trips.flat().filter(sql => sql.includes('work_vectors')), [], 'the years in turns need no vector');
 });
 
 // ─── A reload in one request ───
@@ -1905,4 +2254,485 @@ test('a refresh whose OpenAlex answer changes nothing the row stores does not re
   };
   assert.equal(await enrich(), 1);
   assert.equal(await enrich(), 0);
+});
+
+// ─── Cold first page (ENG-116 Phase 1a): the same ranking for less D1 and CPU ───
+
+// D1 answers `hex(embedding)` as text: two characters a byte, 128-255 for the
+// negative components, as the BLOB's unsigned bytes were.
+test('a vector D1 answers as hex reads back as the stored int8 components', () => {
+  assert.deepEqual([...readVector('007F80FF')], [0, 127, -128, -1]);
+  assert.deepEqual([...readVector('007f80ff')], [0, 127, -128, -1]);
+  const stored = quantize(Array.from({ length: 256 }, (_, index) => Math.sin(index * 1.7) - 0.2));
+  assert.ok(stored.some(value => value < 0) && stored.some(value => value > 0));
+  assert.deepEqual([...readVector(Buffer.from(stored.buffer).toString('hex').toUpperCase())], [...stored]);
+  assert.deepEqual([...readVector('')], []);
+});
+
+// A deterministic generator, so a failure names the fixture that broke.
+function seeded(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+// The ranking as origin/main f8bbd22d wrote it, copied as the oracle: each
+// candidate normalized where it is ranked, and a diversity pass that compares
+// every remaining candidate with each one it selects.
+function rankedOnMain<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now, order = 'recent', negatives = [] }: { now: number; order?: 'recent' | 'relevance'; negatives?: Int8Array[] }) {
+  const unit = (vector: Int8Array) => {
+    const norm = Math.hypot(...vector) || 1;
+    return Float64Array.from(vector, value => value / norm);
+  };
+  const cosine = (a: Float64Array, b: Float64Array) => {
+    let dot = 0;
+    for (let index = 0; index < Math.min(a.length, b.length); index += 1) dot += a[index] * b[index];
+    return Math.max(-1, Math.min(1, dot));
+  };
+  const weight = { recent: 0.15, relevance: 0 }[order];
+  const likedVectors = positives.map(unit);
+  const rejectedVectors = negatives.map(unit);
+  const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / 86_400_000 / 7);
+  const ranked = rows
+    .map(row => {
+      const embedding = row.embedding ? unit(row.embedding) : null;
+      const similarity = positives.length && embedding ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
+      const rejectedSimilarity = embedding ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
+      const negative = Math.max(0, (rejectedSimilarity - 0.75) / (1 - 0.75));
+      const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
+      return { row, embedding, score: similarity - 0.5 * negative + weight * recency(row.published), semanticScore };
+    })
+    .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
+  if (!positives.length && !negatives.length) return ranked;
+  const pool = ranked.slice(0, 500).map(candidate => ({ candidate, redundancy: 0 }));
+  const selected: typeof ranked = [];
+  while (pool.length && selected.length < 150) {
+    let best = 0;
+    for (let index = 1; index < pool.length; index += 1) {
+      if (pool[index].candidate.score - 0.3 * pool[index].redundancy > pool[best].candidate.score - 0.3 * pool[best].redundancy) best = index;
+    }
+    const [{ candidate }] = pool.splice(best, 1);
+    selected.push(candidate);
+    if (candidate.embedding) {
+      for (const entry of pool) {
+        if (entry.candidate.embedding) entry.redundancy = Math.max(entry.redundancy, Math.max(0, (cosine(candidate.embedding, entry.candidate.embedding) - 0.75) / 0.25));
+      }
+    }
+  }
+  const chosen = new Set(selected);
+  return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
+}
+
+// Clustered vectors, so near copies, rejections and the diversity pass all
+// matter: `spread` is how far a vector strays from its cluster's centre.
+function clusteredVectors(random: () => number, clusters: number, dimensions = 32) {
+  const centres = Array.from({ length: clusters }, () => Array.from({ length: dimensions }, () => random() - 0.5));
+  return (cluster: number, spread: number) => quantize(centres[cluster % clusters].map(value => value + (random() - 0.5) * spread));
+}
+
+test('the ranking orders, scores and diversifies every candidate as main did, ties and missing vectors included', () => {
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  let compared = 0;
+  for (let fixture = 0; fixture < 40; fixture += 1) {
+    const random = seeded(fixture + 1);
+    const vector = clusteredVectors(random, 1 + Math.floor(random() * 12));
+    const size = [1, 2, 20, 149, 150, 151, 499, 500, 501, 900, 1_400][fixture % 11];
+    const rows: Array<{ id: number; embedding: Int8Array | null; published: string }> = [];
+    for (let id = 0; id < size; id += 1) {
+      const previous = rows.at(-1);
+      // Forced ties: a copy of the previous row's vector and date, the same
+      // date with another vector, rows without a vector.
+      const tie = previous !== undefined && random() < 0.15;
+      const embedding = random() < 0.08 ? null : tie && random() < 0.6 ? previous.embedding : vector(Math.floor(random() * 50), random() * 1.5);
+      const published = tie ? previous.published : new Date(now - Math.floor(random() * 90) * 86_400_000 - Math.floor(random() * 4) * 3_600_000).toISOString();
+      rows.push({ id, embedding, published });
+    }
+    const likes = Array.from({ length: fixture % 4 }, () => vector(Math.floor(random() * 50), random()));
+    const negatives = Array.from({ length: (fixture >> 2) % 3 }, () => vector(Math.floor(random() * 50), random()));
+    for (const order of ['recent', 'relevance'] as const) {
+      const expected = rankedOnMain(rows, likes, { now, order, negatives }).map(({ row, score, semanticScore }) => [row.id, score, semanticScore]);
+      const actual = rankBySimilarity(rows, likes, { now, order, negatives }).map(({ row, score, semanticScore }) => [row.id, score, semanticScore]);
+      assert.deepEqual(actual, expected, `fixture ${fixture}, ${order}: ${likes.length} likes, ${negatives.length} rejections, ${size} rows`);
+      compared += 1;
+    }
+  }
+  assert.equal(compared, 80);
+});
+
+// A corpus of 1,700 candidates in three categories, 60 notable papers, likes
+// and rejections, each work's vector from its cluster: the pages, scores and
+// kept orders below are what origin/main f8bbd22d served from it, before
+// vectors came as hex and the diversity pass ran lazily. That change had to
+// keep them; a change meant to rank differently computes them again.
+function coldPageCorpus() {
+  const { env, db } = corpus();
+  const random = seeded(116);
+  const vector = clusteredVectors(random, 12);
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  let workId = 0;
+  let previous: Int8Array | null = null;
+  const add = (lanes: string[], published: string, embedding: Int8Array | null) => {
+    workId += 1;
+    const id = `2610.${String(workId).padStart(5, '0')}`;
+    insertWork.run(workId, JSON.stringify({ id, arxivId: id, title: `Paper ${workId}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertKey.run(`arxiv:${id}`, workId);
+    lanes.forEach(lane => insertLane.run(lane, workId, published));
+    if (embedding) insertVector.run(workId, Buffer.from(embedding.buffer));
+    previous = embedding ?? previous;
+    return id;
+  };
+  db.exec('BEGIN');
+  // Two papers a date, a copy of the previous vector now and then, and some
+  // papers not yet embedded.
+  for (let index = 0; index < 1_400; index += 1) {
+    const lanes = index % 3 === 0 ? ['cs.LG', 'cs.CL'] : index % 2 ? ['cs.LG'] : ['cs.CL'];
+    const embedding = index % 11 === 10 ? null : index % 7 === 6 && previous ? previous : vector(index % 12, random() * 1.2);
+    add(lanes, new Date(NOW - Math.floor(index / 2) * 1_800_000).toISOString(), embedding);
+  }
+  for (let index = 0; index < 300; index += 1) add(['econ.GN'], new Date(NOW - index * 3_000_000 - 900_000).toISOString(), vector(5 + (index % 4), random() * 1.2));
+  for (let index = 0; index < 60; index += 1) add(['notable:cs.LG'], `${2016 + (index % 10)}-0${1 + (index % 9)}-1${index % 10}T00:00:00.000Z`, vector(index % 12, random() * 1.2));
+  const old = new Date(NOW - 60 * 86_400_000).toISOString();
+  const likes = [add([], old, vector(0, 0.3)), add([], old, vector(3, 0.6)), add([], old, vector(6, 0.3))];
+  const rejections = [add([], old, vector(1, 0.3)), add([], old, vector(3, 0.4)), add([], old, vector(7, 0.5))];
+  db.exec('COMMIT');
+  return { env, db, likes, rejections };
+}
+
+// What a request serves and what it keeps for the pages after it, as one
+// digest of every rank and score: the kept order holds every candidate. With
+// `decided`, of the kept order only its first `decided` ranks, without whether
+// it is final: an exploration page without likes decides no more of it.
+async function servedAndKept(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0], { decided }: { decided?: number } = {}) {
+  const kept: KeptRanking[] = [];
+  const cache: RankingCache = { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } };
+  const page = await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache });
+  const ranking = kept.map(({ ranks, notable, final }) => ({
+    ...(decided === undefined ? { final } : {}),
+    ranks: ranks.slice(0, decided).map(rank => rank && [rank.workId, rank.semanticScore ?? null]),
+    notable: notable.map(rank => [rank.workId, rank.semanticScore ?? null]),
+  }));
+  return {
+    ids: page.map(paper => paper.id),
+    digest: createHash('sha256').update(JSON.stringify({ page: page.map(paper => [paper.id, paper._semanticScore ?? null, paper._notable === true]), ranking })).digest('hex'),
+  };
+}
+
+test('a first page serves the papers, scores and kept order it did before the hex vectors and lazy diversity pass: likes in groups with rejections and notable papers', async () => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const served = await servedAndKept(env, {
+    groups: [
+      { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: likes.slice(0, 2), weight: 1 },
+      { categories: ['econ.GN'], exampleCategories: ['econ.GN'], positiveIds: likes.slice(2), weight: 2 },
+    ],
+    negativeIds: rejections,
+    seen: feedSeenFilter([]),
+    notable: 3,
+    pageSize: 15,
+  });
+  assert.deepEqual(served, {
+    ids: [
+      '2610.01454', '2610.00013', '2610.01462', '2610.01478', '2610.00268', '2610.01482', '2610.01430', '2610.00424',
+      '2610.01466', '2610.01450', '2610.00073', '2610.01410', '2610.01654', '2610.00037', '2610.01402',
+      // The notable cards.
+      '2610.01713', '2610.01755', '2610.01740',
+    ],
+    digest: '70caa410ab647533619e96048ccae4516c6fe79eec95bb9e2396ffa801ea6f45',
+  });
+});
+
+test('a first page that skips seen papers serves what it did before the hex vectors and lazy diversity pass, ranked by relevance with one like', async () => {
+  const { env, likes } = coldPageCorpus();
+  const served = await servedAndKept(env, {
+    categories: ['cs.LG', 'cs.CL', 'econ.GN'],
+    positiveIds: likes.slice(0, 1),
+    order: 'relevance',
+    seen: feedSeenFilter(Array.from({ length: 40 }, (_, index) => `2610.${String(2 + index * 3).padStart(5, '0')}`)),
+    skipsSeen: true,
+    notable: 2,
+  });
+  assert.deepEqual(served, {
+    ids: [
+      '2610.00985', '2610.00757', '2610.00793', '2610.00901', '2610.01009', '2610.01213', '2610.00325', '2610.00625',
+      '2610.00577', '2610.01357', '2610.01249', '2610.00229', '2610.00157', '2610.00073', '2610.00481',
+      '2610.01713', '2610.01701',
+    ],
+    digest: '65c7d179e4fcdbbc91603708cb7de39633965cbdebac67ce9706ac74006f8caa',
+  });
+});
+
+// Of the kept order, the diversity pool's 500 ranks: the ranks past it are
+// what the page did not read (below).
+test('an exploration page, with rejections and no likes, serves what it did before the hex vectors and lazy diversity pass', async () => {
+  const { env, rejections } = coldPageCorpus();
+  const served = await servedAndKept(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 }, { decided: 500 });
+  assert.deepEqual(served, {
+    ids: ['2610.00027', '2610.00031', '2610.00032', '2610.00033', '2610.00034'],
+    digest: '4198875ee8401c7a897410b303d75982b44b15a8b5f428e844c948ba49a1517b',
+  });
+});
+
+// A paper of cs.LG is ranked by both groups, and the second like by both: the
+// request normalizes each once and both groups read the same vector.
+test('groups that share a lane and a like serve what they did before the hex vectors and lazy diversity pass', async () => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const served = await servedAndKept(env, {
+    groups: [
+      { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: likes.slice(0, 2), weight: 1 },
+      { categories: ['cs.LG', 'econ.GN'], exampleCategories: ['cs.LG', 'econ.GN'], positiveIds: likes.slice(1), weight: 1 },
+    ],
+    negativeIds: rejections.slice(0, 1),
+    pageSize: 15,
+  });
+  assert.deepEqual(served, {
+    ids: [
+      '2610.00013', '2610.01454', '2610.00004', '2610.00208', '2610.00073', '2610.01462', '2610.00037', '2610.01478',
+      '2610.00025', '2610.00127', '2610.00229', '2610.01482', '2610.00289', '2610.00268', '2610.00001',
+    ],
+    digest: '4b92422998b2e6c427fc8a593ee76cc5b5462af168b5afedbf423b4a304f6410',
+  });
+});
+
+test('a page without likes or rejections serves what it did before the hex vectors and lazy diversity pass, newest first', async () => {
+  const { env } = coldPageCorpus();
+  const served = await servedAndKept(env, { categories: ['cs.LG', 'econ.GN'], pageSize: 15 });
+  assert.deepEqual(served, {
+    ids: [
+      '2610.00001', '2610.00002', '2610.01401', '2610.00004', '2610.00006', '2610.01402', '2610.00007', '2610.00008',
+      '2610.01403', '2610.00010', '2610.00012', '2610.01404', '2610.00013', '2610.00014', '2610.00016',
+    ],
+    digest: '16f2e9a1614dcf5531cd85694b0144aef833b5811e50b11a5c5e00d42b4323de',
+  });
+});
+
+test('a page that ranks by vectors asks D1 for them as hex text', async t => {
+  const { env, likes } = coldPageCorpus();
+  const binding = env.PAPER_STORE!;
+  const answers: unknown[] = [];
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+    const results = await batch(statements);
+    statements.forEach((sent, index) => {
+      if (/\bwork_vectors\b/.test((sent as unknown as { sql: string }).sql)) answers.push(...results[index].results.map(row => (row as { embedding: unknown }).embedding));
+    });
+    return results;
+  });
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], positiveIds: likes.slice(0, 1) }), { now: NOW });
+  assert.ok(answers.length > 500, `${answers.length} vectors read`);
+  for (const answer of answers) assert.match(String(answer), /^[0-9A-F]{64}$/, 'each vector is its 32 bytes as hex');
+});
+
+// ─── Pages without likes (ENG-116): the vectors their ranks need, newest first ───
+
+// A ranking cache that keeps each order as JSON, as the Worker's does.
+function jsonRankingCache(): RankingCache {
+  const kept = new Map<string, string>();
+  const put: RankingCache['put'] = async (key, ranking) => { kept.set(key, JSON.stringify(ranking)); };
+  return {
+    get: async key => {
+      const json = kept.get(key);
+      return json === undefined ? null : JSON.parse(json) as KeptRanking;
+    },
+    put,
+    update: put,
+  };
+}
+
+// The ids each page serves, asked by number in turn with one cache, as the
+// app pages, and asked again alone from an empty cache, which must serve the same.
+async function pagesByNumber(env: Parameters<typeof readFeedPage>[0], body: Parameters<typeof parseFeedRequest>[0], pages: number[]) {
+  const cache = jsonRankingCache();
+  const served: string[][] = [];
+  for (const page of pages) {
+    const ids = (await readFeedPage(env, parseFeedRequest({ ...body, page }), { now: NOW, cache })).map(paper => paper.id);
+    const alone = (await readFeedPage(env, parseFeedRequest({ ...body, page }), { now: NOW, cache: jsonRankingCache() })).map(paper => paper.id);
+    assert.deepEqual(alone, ids, `page ${page}, asked alone`);
+    served.push(ids);
+  }
+  return served;
+}
+
+// The rows of `work_vectors` D1 answers a request with.
+function vectorRowsRead(t: TestContext, binding: D1Database) {
+  let rows = 0;
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+    const results = await batch(statements);
+    statements.forEach((sent, index) => {
+      if (/\bwork_vectors\b/.test((sent as unknown as { sql: string }).sql)) rows += results[index].results.length;
+    });
+    return results;
+  });
+  return () => rows;
+}
+
+const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+// Pages of 30 through the diversity pool's 500 ranks and two far past it,
+// and exploration's own: pages of 2 within its first 30 ranks. The digests are
+// what 65a9b5c5 served, reading every candidate's vector.
+test('pages without likes serve what a read of every vector did, across lanes, interest groups, orders and pages', async () => {
+  const { env, rejections } = coldPageCorpus();
+  const groups = [
+    { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: [], weight: 1 },
+    { categories: ['cs.LG', 'econ.GN'], exampleCategories: ['cs.LG', 'econ.GN'], positiveIds: [], weight: 2 },
+  ];
+  const deep = [...Array.from({ length: 18 }, (_, page) => page), 30, 46];
+  const served = {
+    rejections: await pagesByNumber(env, { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, pageSize: 30 }, deep),
+    byRelevance: await pagesByNumber(env, { categories: ['cs.LG', 'econ.GN'], negativeIds: rejections.slice(1), order: 'relevance', pageSize: 30 }, deep),
+    groups: await pagesByNumber(env, { groups, negativeIds: rejections, pageSize: 30 }, deep),
+    noSignal: await pagesByNumber(env, { groups, pageSize: 30 }, deep),
+    exploration: await pagesByNumber(env, { categories: ['cs.CL', 'econ.GN'], negativeIds: rejections, pageSize: 2 }, Array.from({ length: 15 }, (_, page) => page)),
+  };
+  assert.equal(served.rejections[0].length, 30);
+  assert.equal(served.exploration[14].length, 2);
+  assert.deepEqual(Object.fromEntries(Object.entries(served).map(([name, pages]) => [name, sha(pages)])), {
+    rejections: '3d86ed5c8b122616d27fdc80e15f136f5e3bca7c7842805e6d7f1904140b15c3',
+    byRelevance: 'a12ef1b863a294127f79295311f2df64c2c0b29dc6a4e23fb6c527e013b1c0f8',
+    groups: '4ccc59148db408ad5a5e2c3592c3cbab441e630ffa35b92d2fd7e04a4331cc2e',
+    noSignal: '2fc3b6bde0726b46d0a6c38e1f544993cd079582037b89d66ebbc57461c73f22',
+    exploration: '7eced58ca13cfc196f5570b9b9c2274980a925d40acb32deb197ebc0998302fe',
+  });
+});
+
+// cs.LG and cs.CL hold 1,400 candidates, of which 1,273 have a vector (one in
+// eleven is not embedded). The page's 5 papers and the diversity pool's 500
+// ranks are decided by the 600 newest, 546 of them embedded, and the 3
+// rejections' own vectors. Ranks past them are not, so the order kept is not
+// final: it says it decided 500 ranks, and a page past them ranks again.
+test('a page without likes reads the vectors of its newest candidates only, and keeps its order as decided through the diversity pool', async t => {
+  const { env, rejections } = coldPageCorpus();
+  const rows = vectorRowsRead(t, env.PAPER_STORE!);
+  const kept: KeptRanking[] = [];
+  const cache: RankingCache = { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } };
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, page: 3, pageSize: 5 }), { now: NOW, cache });
+  assert.equal(rows(), 546 + 3);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].final, false);
+  assert.equal(kept[0].decided, 500);
+});
+
+// The slow-request line (`FeedTimings`) of a page without likes: each round
+// trip for candidate vectors takes 400 ms here, and every round is in the
+// `vectors` step and counted, so a line shows a page that needed more than one.
+test('a slow page without likes times every round of its vector reads as vectors, and counts the rounds', async t => {
+  const { env, rejections } = coldPageCorpus();
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  const binding = env.PAPER_STORE!;
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+    const results = await batch(statements);
+    if (statements.some(sent => /\bwork_vectors\b/.test((sent as unknown as { sql: string }).sql))) t.mock.timers.tick(400);
+    return results;
+  });
+  const line = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+    const timings = new FeedTimings();
+    await readFeedPage(env, parseFeedRequest(body), { now: NOW, timings });
+    const logged = t.mock.method(console, 'log', () => undefined);
+    timings.logIfSlow('/store/papers', 2_000, { status: 200 });
+    logged.mock.restore();
+    const { steps, counts } = JSON.parse(String(logged.mock.calls[0].arguments[0]));
+    return { vectors: steps.vectors, wave1: steps.wave1, rounds: counts.vectorRounds, read: counts.vectors };
+  };
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections };
+  // The newest 600 decide the page and the diversity pool.
+  assert.deepEqual(await line({ ...body, page: 3, pageSize: 5 }), { vectors: 400, wave1: 400, rounds: 1, read: 546 });
+  // Ranks 930 to 960: the newest 1,030 do not decide them, and a second round reads the rest.
+  assert.deepEqual(await line({ ...body, page: 31, pageSize: 30 }), { vectors: 800, wave1: 400, rounds: 2, read: 1_273 });
+  // A like reads every candidate's vector in one round.
+  assert.deepEqual(await line({ ...body, positiveIds: rejections.slice(0, 1), negativeIds: rejections.slice(1), page: 31, pageSize: 30 }), { vectors: 400, wave1: 400, rounds: 1, read: 1_273 });
+  // Without a like or a rejection, no candidate vector is read.
+  assert.deepEqual(await line({ categories: ['cs.LG', 'cs.CL'], page: 3, pageSize: 5 }), { vectors: 0, wave1: 0, rounds: undefined, read: 0 });
+});
+
+// Exploration asks a random page of 5 within its first 30 ranks, under one
+// key through a session: a later page within the ranks the first decided is
+// served from the order it kept, reading no lane or vector, as main served it
+// from a final order. A page past them ranks again.
+test('a later page without likes, within the ranks the first decided, is served from the kept order without reading lanes or vectors', async t => {
+  const { env, rejections } = coldPageCorpus();
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const corpusReads = () => trips.flat().filter(sql => /\bwork_(lanes|vectors)\b/.test(sql)).length;
+  const cache = jsonRankingCache();
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, pageSize: 5 };
+  const page = async (number: number, from = cache) => (await readFeedPage(env, parseFeedRequest({ ...body, page: number }), { now: NOW, cache: from })).map(paper => paper.id);
+  const alone = async (number: number) => page(number, jsonRankingCache());
+  const expected = { 2: await alone(2), 4: await alone(4), 1: await alone(1), 100: await alone(100) };
+  assert.deepEqual(await page(3), await alone(3));
+  for (const number of [2, 4, 1] as const) {
+    const before = corpusReads();
+    assert.deepEqual(await page(number), expected[number], `page ${number}`);
+    assert.equal(corpusReads(), before, `page ${number} reads no lane or vector`);
+  }
+  // Ranks 500 to 505: past the 500 the first page decided.
+  const before = corpusReads();
+  assert.deepEqual(await page(100), expected[100]);
+  assert.ok(corpusReads() > before, 'a page past the decided ranks ranks again');
+});
+
+// Candidates on a few dates, so the newest 600 end inside a run of ties, many
+// of them near a rejection, so the rounds go on: the ranks a page decides are
+// those a page that skips seen papers ranks, which reads every vector.
+test('the ranks a page without likes decides are the ones a read of every vector gives, ties at the edge of a round included', async () => {
+  for (const seed of [1, 2, 3]) {
+    const { env, db } = corpus();
+    const random = seeded(seed);
+    const vector = clusteredVectors(random, 6);
+    const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+    const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+    const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+    const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+    const add = (workId: number, lanes: string[], published: string, embedding: Int8Array | null) => {
+      const id = `2610.${String(workId).padStart(5, '0')}`;
+      insertWork.run(workId, JSON.stringify({ id, arxivId: id, title: `Paper ${workId}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+      insertKey.run(`arxiv:${id}`, workId);
+      lanes.forEach(lane => insertLane.run(lane, workId, published));
+      if (embedding) insertVector.run(workId, Buffer.from(embedding.buffer));
+      return id;
+    };
+    db.exec('BEGIN');
+    for (let workId = 1; workId <= 1_600; workId += 1) {
+      const lanes = [['cs.LG'], ['cs.CL'], ['cs.LG', 'cs.CL'], ['econ.GN']][Math.floor(random() * 4)];
+      // A cluster of the rejections' for one in three.
+      const embedding = random() < 0.1 ? null : vector(random() < 0.35 ? 0 : 1 + Math.floor(random() * 5), random() * 0.8);
+      add(workId, lanes, new Date(NOW - Math.floor(random() * 12) * 86_400_000).toISOString(), embedding);
+    }
+    const old = new Date(NOW - 60 * 86_400_000).toISOString();
+    const rejections = [add(1_601, [], old, vector(0, 0.2)), add(1_602, [], old, vector(0, 0.4))];
+    db.exec('COMMIT');
+    const groups = [
+      { categories: ['cs.LG', 'cs.CL'], exampleCategories: ['cs.LG', 'cs.CL'], positiveIds: [], weight: 1 },
+      { categories: ['cs.CL', 'econ.GN'], exampleCategories: ['cs.CL', 'econ.GN'], positiveIds: [], weight: 3 },
+    ];
+    for (const order of ['recent', 'relevance'] as const) {
+      const keptBy = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+        const kept: KeptRanking[] = [];
+        await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache: { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } } });
+        return kept[0].ranks.map(rank => rank && [rank.workId, rank.semanticScore]);
+      };
+      const everyVector = await keptBy({ groups, negativeIds: rejections, order, seen: feedSeenFilter([]), skipsSeen: true, pageSize: 30 });
+      for (const page of [0, 3, 20]) {
+        const decided = Math.max(500, (page + 1) * 30);
+        assert.deepEqual((await keptBy({ groups, negativeIds: rejections, order, page, pageSize: 30 })).slice(0, decided), everyVector.slice(0, decided), `seed ${seed}, ${order}, page ${page}`);
+      }
+    }
+  }
+});
+
+// A like ranks every candidate by its closeness, and a page that skips seen
+// papers can walk past any rank: both read every candidate's vector, as before.
+test('a page with likes, or one that skips seen papers, reads every candidate vector as before', async t => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const rows = vectorRowsRead(t, env.PAPER_STORE!);
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], positiveIds: likes.slice(0, 1), negativeIds: rejections, pageSize: 5 }), { now: NOW });
+  assert.equal(rows(), 1_273 + 1 + 3);
+  await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, seen: feedSeenFilter([]), skipsSeen: true, pageSize: 5 }), { now: NOW });
+  assert.equal(rows(), 2 * (1_273 + 3) + 1);
 });

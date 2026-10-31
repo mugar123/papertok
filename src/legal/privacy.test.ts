@@ -77,11 +77,19 @@ test('the page says papers you liked, saved or opened reach the catalogue and Wo
   assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
 });
 
+test('the page says analytics records opening a paper\'s connections or similar papers and what is done in the connections map', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // connections_open, similar_open and connections_interact in analytics-service.ts.
+  assert.match(html, /also record when you open a paper's connections or its similar papers, and what you do in the connections map, such as switching to the list or centring the graph on another paper/);
+});
+
 test('the page says what the server keeps of the feed order ranked for a reader, where, for how long, and, up top too, that deleting the account leaves it to expire', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/paper-feed.ts `rankingCache`: a walk's order lasts WALK_KEPT_MS from its last page.
   assert.match(html, /keeps the order it ranked for you, and how far down it you got, for up to 2 hours after your last page/);
-  assert.match(html, /cache of the Cloudflare data center that answered you/);
+  // wrangler.toml `[placement] region` places the fetch handler, and so this cache write, near
+  // Frankfurt; Cloudflare picks the data center and may change it, so the page names no fixed city.
+  assert.match(html, /kept in the cache of the Cloudflare data center where that server runs \(placed near Frankfurt; Cloudflare may move it to a nearby data center\)/);
   assert.match(html, /Deleting your account does not remove it sooner/);
   const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
   assert.match(summary, /delete your account, and everything in it, [^<]*The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page/);

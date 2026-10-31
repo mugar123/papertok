@@ -68,6 +68,25 @@ test('deduplicates provider records by title and first author when their ids dif
   assert.deepEqual(merged[0]._followedEntityMatches!.map(match => (match as Exclude<typeof match, string>).type), ['author', 'institution']);
 });
 
+// ENG-109: the card credits the source of the abstract it shows.
+test('the abstract a merged update keeps brings its credit, and no other', () => {
+  const record = (id: string, abstract: string, abstractSource?: 'crossref' | 'semanticscholar') => ({
+    id, doi: '10.1000/credited', title: 'A credited paper', published: '2026-07-01', abstract, ...(abstractSource && { abstractSource }),
+  }) as import('../models/paper.ts').Paper;
+  const recovered = record('openalex:W1', 'The longer abstract Semantic Scholar holds for this paper.', 'semanticscholar');
+  const own = record('repository:1', 'A shorter own abstract.');
+  for (const records of [[recovered, own], [own, recovered]]) {
+    const [merged] = mergeFollowingUpdatePapers(records);
+    assert.deepEqual([merged.abstract, merged.abstractSource], [recovered.abstract, 'semanticscholar'], records[0].id);
+  }
+  const longerOwn = record('repository:2', 'A longer abstract the repository lists for this paper, in full.');
+  const shorter = record('openalex:W2', 'A recovered abstract.', 'crossref');
+  for (const records of [[shorter, longerOwn], [longerOwn, shorter]]) {
+    const [merged] = mergeFollowingUpdatePapers(records);
+    assert.deepEqual([merged.abstract, merged.abstractSource], [longerOwn.abstract, undefined], records[0].id);
+  }
+});
+
 test('keeps identical titles from different first authors separate', () => {
   const merged = mergeFollowingUpdatePapers(([
     { id: 'one', title: 'Introduction', authors: [{ name: 'Ada Lovelace' }] },

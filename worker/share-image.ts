@@ -1,27 +1,28 @@
-import type { ShareCard } from './share-card.ts';
+import type { PaperShareCard, ShareCard } from './share-card.ts';
 import type { ShareDependencies, ShareRoute } from './share-pages.ts';
 import type { WorkerGlobals } from './env.ts';
 
 import { DEFAULT_PUBLIC_ORIGIN, getShareImage } from '../src/utils/public-navigation.ts';
-import { entityShareCard, matchShareRoute, readRecord } from './share-pages.ts';
+import { entityShareCard, matchShareRoute, paperShareCard, readRecord } from './share-pages.ts';
 
 /**
- * GET or HEAD `/share/image/entity/:type/:id`: the PNG a shared profile's
- * preview shows (worker/share-card.ts). A crawler reads the page first, so the
- * entity's record is usually already kept in this data centre; the card asks
- * for it the same way, through `readRecord`, and spends a lookup only when it
- * is not.
+ * GET or HEAD `/share/image/entity/:type/:id` or `/share/image/paper/:key`:
+ * the PNG a shared profile's or paper's preview shows (worker/share-card.ts).
+ * A crawler reads the page first, so the record is usually already kept in
+ * this data centre; the card asks for it the same way, through `readRecord`,
+ * and spends a lookup only when it is not.
  *
- * An entity the card cannot be drawn for (missing, failed to load, a name
- * the fonts cannot draw, a renderer error) answers its type's static image by
- * redirect, kept five minutes like the card itself, so a preview always has a
- * picture and a failure is not drawn again on every request. An address with
- * no looked-up entity behind it, a page found by a name alone among them, has
- * no card at all: 404.
+ * An entity or a paper the card cannot be drawn for (missing, failed to load,
+ * a name or title the fonts cannot draw, a renderer error) answers its static
+ * image by redirect, kept five minutes like the card itself, so a preview
+ * always has a picture and a failure is not drawn again on every request. An
+ * address with no looked-up entity behind it, a page found by a name alone
+ * among them, has no card at all: 404.
  */
 
 export interface ShareImageDependencies extends ShareDependencies {
   renderCard?: (card: ShareCard, photo: string | null) => Promise<Uint8Array>;
+  renderPaperCard?: (card: PaperShareCard) => Promise<Uint8Array>;
   loadPhoto?: (url: string) => Promise<string | null>;
 }
 
@@ -41,17 +42,20 @@ const PHOTO_TYPES = new Set(['image/png', 'image/jpeg']);
 const WIKIMEDIA_USER_AGENT = 'PaperTok/1.0 (https://papertok.app; mailto:app@papertok.io)';
 
 type EntityRoute = Extract<ShareRoute, { kind: 'entity' }>;
+type PaperRoute = Extract<ShareRoute, { kind: 'paper' }>;
 
 // Cards being drawn in this isolate: a fan-out of crawlers for one link draws once.
 const drawsInFlight = new Map<string, Promise<Response>>();
 
-/** The entity route a card address stands for, or null: only a looked-up entity has a card. */
-export function matchShareImageRoute(url: URL): EntityRoute | null {
+/** The route a card address stands for, or null: only a paper or a looked-up entity has a card. */
+export function matchShareImageRoute(url: URL): EntityRoute | PaperRoute | null {
   if (!url.pathname.startsWith('/share/image/')) return null;
   const inner = new URL(url);
   inner.pathname = `/share/${url.pathname.slice('/share/image/'.length)}`;
   const route = matchShareRoute(inner);
-  return route && !route.invalid && route.kind === 'entity' && route.lookup ? route : null;
+  if (!route || route.invalid) return null;
+  if (route.kind === 'paper') return route;
+  return route.kind === 'entity' && route.lookup ? route : null;
 }
 
 function isWikimedia(url: URL) {
@@ -142,7 +146,22 @@ function fallback(type: string) {
   return answer(null, 302, { location: `${DEFAULT_PUBLIC_ORIGIN}${getShareImage(type).path}` }, FALLBACK_SECONDS);
 }
 
-async function drawCard(route: EntityRoute, deps: ShareImageDependencies) {
+async function drawPaperCard(route: PaperRoute, deps: ShareImageDependencies) {
+  const outcome = await readRecord(route, deps);
+  const paper = outcome.found ? outcome.record?.paper : null;
+  const card = paper ? paperShareCard(paper) : null;
+  if (!card) return fallback('paper');
+  try {
+    const png = await deps.renderPaperCard!(card);
+    return answer(png, 200, { 'content-type': 'image/png', 'x-content-type-options': 'nosniff' }, CARD_SECONDS);
+  } catch (error) {
+    console.warn('Paper card could not be drawn', (error as Error)?.message || error);
+    return fallback('paper');
+  }
+}
+
+async function drawCard(route: EntityRoute | PaperRoute, deps: ShareImageDependencies) {
+  if (route.kind === 'paper') return drawPaperCard(route, deps);
   const { renderCard, loadPhoto } = deps;
   const outcome = await readRecord(route, deps);
   const entity = outcome.found ? outcome.record?.entity : null;
