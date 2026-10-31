@@ -7,9 +7,9 @@ import { useEffect, useRef } from 'react';
  * Back while one is open therefore does not close it; it leaves PaperTok
  * entirely, straight to whatever the visitor had open before (the tester's
  * report). The router cannot help on its own, whichever router it is: it reads
- * the URL, and none of these six overlays (PaperCard's reader, the Similar
- * layer, App's, EntityExplorer's and SearchPage's independently-mounted
- * PDF viewers, and NudgeHost's privacy-change dialog) change it. Nothing below reads a URL either — the entry is cloned from
+ * the URL, and none of these five overlays (PaperCard's reader, the Similar
+ * layer, and App's, EntityExplorer's and SearchPage's independently-mounted
+ * PDF viewers) change it. Nothing below reads a URL either — the entry is cloned from
  * `history.state` and pushed at `location.href`, whatever that happens to be —
  * which is why the move off HashRouter (2026-09-18) went through this file
  * without a line changing.
@@ -57,13 +57,6 @@ import { useEffect, useRef } from 'react';
  * to an overlay above it. Without that check one Back press closed the reader
  * and the layer under it, and closing the reader with its X — a `history.back()`
  * of its own — closed the layer too.
- *
- * The privacy-change dialog (`privacy`, nudge-host.tsx) is the one owner the
- * reader did not open: it arms as the reader arrives on /feed, so its entry is
- * pushed without a reader action, and Back then hides it for the visit instead
- * of leaving the feed. It opens only while no other modal is open, but once
- * open it stays armed under any modal opened over it, so it stacks below that
- * one's tag the same way the Similar layer does.
  *
  * Beyond that, `onPop` does not ask whose entry was popped. No two owners of
  * the SAME tag can be open at once through the UI to begin with: PaperReader

@@ -4,7 +4,6 @@ import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
-import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
@@ -38,7 +37,7 @@ import PrivacyNotice from './privacy-notice.tsx';
 // signed-in accounts are told, in a dialog that opens on arrival at the feed and
 // returns on later visits until the reader chooses Got it; utils/nudges.ts
 // decides who is owed it. While it is owed it is the visit's one notice, so
-// Hide for now (or Escape, Back, the X) leaves the visit with nothing: the email
+// Hide for now (or Escape, the X) leaves the visit with nothing: the email
 // nudge waits for a visit after Got it, by the one-per-visit rule above.
 // Whatever was picked is shown on the feed only and
 // comes back when the reader returns to it. A change of account remounts this
@@ -138,11 +137,10 @@ export default function NudgeHost() {
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
 
   // Hide for now puts it away for this visit and does not count as reading it,
-  // so it returns next time.
+  // so it returns next time. Back is not routed here: like the app's other
+  // dialogs (lists, email updates, the search palette), this one pushes no
+  // history entry, so Back goes where it would without it.
   const hidePrivacy = useCallback(() => setPicked(null), []);
-  // Back does the same instead of leaving the feed (use-overlay-history.ts):
-  // the dialog opens unasked, and on a phone Back is how a reader dismisses it.
-  useOverlayHistory(dialogOpen, hidePrivacy, 'privacy');
 
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
