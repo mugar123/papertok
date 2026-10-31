@@ -196,7 +196,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     if (refusal && document.activeElement instanceof HTMLElement) document.activeElement.scrollIntoView({ block: 'nearest' });
   }, [refusal]);
 
-  const go =useCallback((path: string, state: object | null = null) => {
+  const go = useCallback((path: string, state: object | null = null) => {
     setLeavingBySelect(true);
     onOpenChange(false);
     // Router state, when there is any: the public paper page paints a paper
