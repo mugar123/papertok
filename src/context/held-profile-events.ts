@@ -66,13 +66,34 @@ export function refuseHeldEvent(held: HeldProfileEvents | null, event: Interacti
  * author and session impacts, its exposure and its dwell count twice. A For
  * You card the rebuild lists as viewed adds no shown when replayed, while a
  * like of it still adds engaged. Both are bounded by the events of that wait.
- * A refused change's event is left out.
+ * A refused change's event is left out, and so is a toggle the profile
+ * already holds (holdsAlready).
  */
 export function replayHeldEvents(held: HeldProfileEvents | null, userId: string, profile: InteractionProfile) {
   if (held?.userId !== userId) return false;
-  const stored = held.events.filter(({ refused }) => !refused);
-  stored.forEach(({ event, at }) => recordInteractionEvent(profile, event, at));
-  return stored.length > 0;
+  let recorded = false;
+  held.events.forEach(({ event, at, refused }) => {
+    if (refused || holdsAlready(profile, event)) return;
+    recordInteractionEvent(profile, event, at);
+    recorded = true;
+  });
+  return recorded;
+}
+
+// The curated set each toggle puts its paper in (true) or takes it out of.
+const TOGGLES = new Map<string, [CuratedSetName, boolean]>([
+  ['like', ['liked', true]], ['unlike', ['liked', false]],
+  ['save', ['saved', true]], ['unsave', ['saved', false]],
+  ['notInterested', ['notInterested', true]], ['undoNotInterested', ['notInterested', false]],
+]);
+
+// Until the profile loads, a paper liked, saved or dismissed in an earlier
+// session shows without its mark, and a tap on it toggles a mark storage
+// already has. Replayed, its impact on the paper's category, concepts and
+// authors would count twice.
+function holdsAlready(profile: InteractionProfile, { kind, paperId }: InteractionEvent) {
+  const toggle = TOGGLES.get(kind);
+  return toggle !== undefined && curatedIds(profile, toggle[0]).includes(paperId) === toggle[1];
 }
 
 // The mark an event of a like, read or Read later change moves, and the

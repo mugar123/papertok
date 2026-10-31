@@ -295,6 +295,29 @@ test('a like tapped while the profile loads and refused after it arrives leaves 
   assert.deepEqual(curatedIds(reader.feed.profile, 'liked'), ['liked']);
   const after = readProfileSignals(reader.feed.profile, NOW).temporal;
   assert.deepEqual([after.notable.engaged, after.lean], [before.notable.engaged, before.lean]);
+  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(storedProfileWith(likeOf('liked')))));
+});
+
+// Until the profile loads, these papers show without the mark storage gives
+// them, and the reader taps it on again; Firestore accepts each write.
+test('a like, a save or a dismissal made while the profile loads, of a paper it already holds so, counts once', () => {
+  const marks: InteractionEvent[] = [
+    likeOf('liked'),
+    { ...likeOf('saved'), kind: 'save' },
+    { paperId: 'dismissed', kind: 'notInterested', category: 'cs.LG', concepts: [{ id: 'C2', score: 0.8 }] },
+  ];
+  const stored = () => {
+    const profile = createEmptyInteractionProfile();
+    marks.forEach((event) => recordInteractionEvent(profile, event, NOW - 86_400_000));
+    return deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  };
+  const provisional = createEmptyInteractionProfile();
+  let held: HeldProfileEvents | null = null;
+  marks.forEach((event, index) => { held = recordWhileLoading(held, 'reader', provisional, { ...event }, NOW + index); });
+
+  const profile = stored();
+  assert.equal(replayHeldEvents(held, 'reader', profile), false);
+  assert.equal(JSON.stringify(serializeInteractionProfile(profile)), JSON.stringify(serializeInteractionProfile(stored())));
 });
 
 test('a like tapped while the profile loads and refused after it arrives is taken back when storage never had it', async (t) => {
