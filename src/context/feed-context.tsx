@@ -50,7 +50,12 @@ export interface FeedContextValue {
    * it reports.
    */
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
-  unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  /**
+   * `takesBack`: the unsave takes back the paper's last save, after a refused
+   * write or on an Undo. It changes nothing when that save was made while the
+   * profile loaded, on a paper the profile already held saved (savedBeforeTap).
+   */
+  unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; takesBack?: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
@@ -148,7 +153,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, type HeldProfileEvents } from './held-profile-events.ts';
+import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, savedBeforeTap, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -293,6 +298,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the account recorded before its profile loaded, for the profile that
   // arrives to record again (adoptHeldEvents).
   const heldProfileEvents = useRef<HeldProfileEvents | null>(null);
+  // The event of each paper's last save (markSaved), for the unsave that
+  // takes that save back (unmarkSaved's `takesBack`).
+  const lastSaveEvents = useRef(new Map<string, InteractionEvent>());
   // The account whose profile is currently reflected in the state above.
   const loadedProfileUserId = useRef<string | null>(null);
   // Bumped every time a profile is applied. Consumers of the reading library
@@ -997,6 +1005,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setSavedPaperIds(new Set<string>());
       setReadPaperIds(new Set<string>());
       setPersonalLibrary({});
+      lastSaveEvents.current.clear();
       interactionProfile.current = createEmptyInteractionProfile();
       profileSignals.current = readProfileSignals(null);
       engagementWindow.current = emptyEngagementWindow();
@@ -2224,6 +2233,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput, options?.surface),
       restores: options?.restores,
     }, paper);
+    if (recorded) lastSaveEvents.current.set(paperId, recorded);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);
 
@@ -2272,12 +2282,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    * merges over it. The interaction keeps `saved: false` rather than losing
    * the field, the same flag a rebuild of the aggregate reads.
    */
-  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
+  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; takesBack?: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
+    if (options?.takesBack && savedBeforeTap(lastSaveEvents.current.get(paperId))) return;
 
     const paper = typeof paperOrId === 'object'
       ? paperOrId

@@ -20,6 +20,9 @@ const MAX_HELD_EVENTS = 500;
 
 // The events held that no loaded profile has recorded (replayHeldEvents).
 const unrecorded = new WeakSet<InteractionEvent>();
+// The held saves the replay left out because the profile that arrived already
+// held the paper saved (savedBeforeTap).
+const savedAlready = new WeakSet<InteractionEvent>();
 
 /**
  * `held` with `event` of `userId` added. Events of another account are
@@ -68,7 +71,8 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
  * removal or a Read later change takes back what the replay recorded, when
  * that undo runs; a replayed save, unsave, dismissal or dismissal undo stays
  * in the profile, as any such change refused after the load does, unless its
- * caller makes the opposite change.
+ * caller makes the opposite change. A save the replay left out, as the
+ * profile held it already, needs no opposite change (savedBeforeTap).
  */
 export function refuseHeldEvent(held: HeldProfileEvents | null, event: InteractionEvent) {
   const entry = held?.events.find((candidate) => candidate.event === event);
@@ -80,8 +84,9 @@ export function refuseHeldEvent(held: HeldProfileEvents | null, event: Interacti
  * and at the times they happened, and says whether it recorded any. The
  * stored aggregate cannot hold these events: the feed writes the profile back
  * only once it has loaded. It can hold a mark one of them sets again, from an
- * earlier session: such a like, save or dismissal is left out (holdsAlready).
- * So is a refused change's event.
+ * earlier session: such a like, save or dismissal is left out (holdsAlready),
+ * and such a save is remembered for savedBeforeTap. A refused change's event
+ * is left out too.
  *
  * A profile rebuilt from the interaction documents can already hold the
  * document of an event made while they were read. A like, save or dismissal
@@ -96,12 +101,29 @@ export function replayHeldEvents(held: HeldProfileEvents | null, userId: string,
   if (held?.userId !== userId) return false;
   let recorded = false;
   held.events.forEach(({ event, at, refused }) => {
-    if (refused || holdsAlready(profile, event)) return;
+    if (refused) return;
+    if (holdsAlready(profile, event)) {
+      if (event.kind === 'save') savedAlready.add(event);
+      return;
+    }
     recordInteractionEvent(profile, event, at);
     unrecorded.delete(event);
     recorded = true;
   });
   return recorded;
+}
+
+/**
+ * Whether `save`, the event of a save made while the profile loaded, met a
+ * save that the profile, when it arrived, already held from an earlier
+ * session (replayHeldEvents). Storage had that save before the tap, and the
+ * lists or Read later that held the paper still do. The unsave that takes
+ * this save back, after a refused write or on the list picker's Undo, must
+ * then change nothing: its `saved: false` and its profile event would remove
+ * the earlier save.
+ */
+export function savedBeforeTap(save: InteractionEvent | null | undefined) {
+  return Boolean(save && savedAlready.has(save));
 }
 
 // The curated set each toggle puts its paper in (true) or takes it out of.
