@@ -63,11 +63,12 @@ export function holdProfileEvent(held: HeldProfileEvents | null, userId: string,
  * a save or dismissal has no undo of its own. A quick save takes a refused
  * save back with an unsave that writes `saved: false`; that unsave names no
  * `undoes`, so it is replayed when storage accepts it and refused with it.
- * A refusal that lands once the profile has arrived finds nothing held: the
- * replay has recorded the event. The undo of a like, an unlike, a Reading
- * history removal or a Read later change takes it back when it runs; a save,
- * an unsave, a dismissal or its undo stays in the profile, as any such change
- * refused after the load does, unless its caller makes the opposite change.
+ * A refusal that lands once the profile has arrived finds nothing held, as
+ * the replay has run. The undo of a like, an unlike, a Reading history
+ * removal or a Read later change takes back what the replay recorded, when
+ * that undo runs; a replayed save, unsave, dismissal or dismissal undo stays
+ * in the profile, as any such change refused after the load does, unless its
+ * caller makes the opposite change.
  */
 export function refuseHeldEvent(held: HeldProfileEvents | null, event: InteractionEvent) {
   const entry = held?.events.find((candidate) => candidate.event === event);
