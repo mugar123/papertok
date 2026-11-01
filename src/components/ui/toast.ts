@@ -6,8 +6,8 @@ const overlayPortals = new Set<HTMLElement>();
 let signedIn: string | null | undefined;
 /** Counts the account changes (`forgetAccountToasts`). */
 let account = 0;
-/** Errors waiting for the overlays opened after their action started to leave. */
-let heldErrors: Array<{ overlaysAtStart: number; show: () => void }> = [];
+/** Errors and refusal lines waiting for the overlays opened after their action started to leave. */
+let held: Array<{ overlaysAtStart: number; show: () => void }> = [];
 let heldCount = 0;
 
 /** When an action whose error can come late started (`actionStart`). */
@@ -47,6 +47,21 @@ export function sameAccount(startedAt: ActionStart) {
 }
 
 /**
+ * Calls `show` once no overlay opened after the action of `startedAt` is
+ * open: at once when none is, or else as the last of them leaves. Never for
+ * an action started before the account changed. `inOverlay` says `show` draws
+ * inside an overlay that `startedAt` left out because the press leaves with
+ * it, such as the search palette or the Follows sheet whose refusal line it
+ * writes: while that overlay is open it holds nothing back.
+ */
+export function afterOverlaysSince(startedAt: ActionStart, show: () => void, { inOverlay = false } = {}) {
+  if (!sameAccount(startedAt)) return;
+  const overlaysAtStart = startedAt.overlays + Number(inOverlay);
+  if (openOverlays() <= overlaysAtStart) show();
+  else held.push({ overlaysAtStart, show });
+}
+
+/**
  * An error toast that stays until it is closed. `startedAt` is
  * `actionStart()` when the action that failed started. An error of an action
  * started before the account changed is never shown: the reader now is
@@ -62,11 +77,10 @@ export function sameAccount(startedAt: ActionStart) {
  */
 export function toastError(title: Parameters<typeof toast.error>[0], { startedAt = actionStart(), ...options }: ExternalToast & { startedAt?: ActionStart } = {}) {
   const errorOptions = { duration: Infinity, closeButton: true, ...options };
-  const ownAccount = sameAccount(startedAt);
-  if (ownAccount && openOverlays() <= startedAt.overlays) return toast.error(title, errorOptions);
+  if (sameAccount(startedAt) && openOverlays() <= startedAt.overlays) return toast.error(title, errorOptions);
   heldCount += 1;
   const id = options.id ?? `held-error-${heldCount}`;
-  if (ownAccount) heldErrors.push({ overlaysAtStart: startedAt.overlays, show: () => { toast.error(title, { ...errorOptions, id }); } });
+  afterOverlaysSince(startedAt, () => { toast.error(title, { ...errorOptions, id }); });
   return id;
 }
 
@@ -75,16 +89,16 @@ export function toastError(title: Parameters<typeof toast.error>[0], { startedAt
  * says so. When the account changed, by signing out or in, here or in another
  * tab, the errors of what the account before did are not this reader's, and
  * an Undo or other action on a toast would act for the reader now: puts away
- * the error toasts and those with an action, forgets the errors waiting for
- * an overlay, and keeps `toastError` from showing those of actions still
- * under way. The same account again, as when the profile load is tried
- * again, keeps them.
+ * the error toasts and those with an action, forgets the errors and refusal
+ * lines waiting for an overlay, and keeps `toastError` from showing those of
+ * actions still under way. The same account again, as when the profile load
+ * is tried again, keeps them.
  */
 export function forgetAccountToasts(uid: string | null) {
   if (uid === signedIn) return;
   signedIn = uid;
   account += 1;
-  heldErrors = [];
+  held = [];
   for (const shown of toast.getToasts()) {
     if (('duration' in shown && shown.duration === Infinity) || ('action' in shown && shown.action)) toast.dismiss(shown.id);
   }
@@ -155,9 +169,9 @@ function returnFocusFromToasts(doc: Document) {
  * once its leave has played. On a phone, or at 400% zoom, these overlays cover
  * the screen and trap focus, and an error toast over one sits outside the
  * trap, where Escape closes the overlay and leaves the toast. So opening one
- * puts away the errors raised before it, and `toastError` holds an error
- * whose caller noted `actionStart()` before it opened (the Follow presses)
- * until it leaves. Popovers, tooltips, selects
+ * puts away the errors raised before it, and `afterOverlaysSince` holds an
+ * error or refusal line whose caller noted `actionStart()` before it opened
+ * (the Follow presses) until it leaves. Popovers, tooltips, selects
  * and dropdown menus are anchored to their control and never cover the
  * screen, so they do neither; a menu drawn as a dialog or drawer, such as the
  * paper's More menu or a menu on a phone, counts as an overlay.
@@ -170,8 +184,8 @@ export function trackModalOverlay(portal: HTMLElement | null) {
   return () => {
     overlayPortals.delete(portal);
     const open = openOverlays();
-    const due = heldErrors.filter(held => held.overlaysAtStart >= open);
-    heldErrors = heldErrors.filter(held => held.overlaysAtStart < open);
-    for (const held of due) held.show();
+    const due = held.filter(waiting => waiting.overlaysAtStart >= open);
+    held = held.filter(waiting => waiting.overlaysAtStart < open);
+    for (const waiting of due) waiting.show();
   };
 }

@@ -1,7 +1,7 @@
 import type { FollowEntity } from '../../utils/following.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { EASE_OUT } from '../../utils/motion-curves.ts';
 import {
@@ -97,13 +97,15 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   // Undo runs renders later, when this render's toggleFollow and isFollowing
   // close over follows that no longer hold.
   const latest = useRef(following);
-  // Whether the list, and so its status line, is on screen: the page while it
-  // is mounted, the phone sheet while it is open. A write can settle after
-  // the reader has left either.
+  // Whether the list, and so its status line, is on screen: the page until
+  // the route leaves it (it stays mounted through its exit transition), the
+  // phone sheet while it is open. A write can settle after the reader has
+  // left either.
+  const present = useIsPresent();
   const inView = useRef(false);
   useEffect(() => {
     latest.current = following;
-    inView.current = sheetOpen ?? true;
+    inView.current = (sheetOpen ?? true) && present;
   });
   useEffect(() => () => {
     clearTimeout(releaseTimer.current);
@@ -112,7 +114,12 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
 
   const pressStart = (press: 'unfollow' | 'undo') => followsListPress({ press, inOpenSheet: sheetOpen !== undefined && inView.current });
   const sayRefused = (refused: FollowRefusal, startedAt: ActionStart) => {
-    sayFollowRefused(refused, { inView: inView.current, showInLine: ({ message }) => setActionError(message), startedAt });
+    sayFollowRefused(refused, {
+      inView: () => inView.current,
+      inOverlay: sheetOpen !== undefined,
+      showInLine: ({ message }) => setActionError(message),
+      startedAt,
+    });
   };
 
   const { state: locationState } = useLocation();

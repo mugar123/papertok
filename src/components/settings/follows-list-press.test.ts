@@ -33,7 +33,7 @@ function openOverlay() {
  */
 function refusedAfterLeaving(startedAt: ReturnType<typeof followsListPress>) {
   const before = new Set(toast.getToasts().map(entry => entry.id));
-  sayFollowRefused({ message: 'Could not unfollow Nature.' }, { inView: false, showInLine: () => assert.fail('the list is not on screen'), startedAt });
+  sayFollowRefused({ message: 'Could not unfollow Nature.' }, { inView: () => false, showInLine: () => assert.fail('the list is not on screen'), startedAt });
   return () => toast.getToasts()
     .filter((entry): entry is ToastT => !before.has(entry.id) && !('dismiss' in entry && entry.dismiss))
     .map(entry => entry.title);
@@ -93,6 +93,114 @@ test('a question cancelled, or left after the account changed, writes no unfollo
   assert.equal(unfollowOnLeave({ confirmedAt: null, unfollowing: 'Nature' }), null, 'cancelled');
   forgetAccountToasts('reader-b');
   assert.equal(unfollowOnLeave({ confirmedAt, unfollowing: 'Nature' }), null, 'reader B would unfollow Nature');
+});
+
+/**
+ * The refusal of the write a press started, settling while the list is on
+ * screen: the Follows page, or the phone sheet (`inSheet`). `inView` says
+ * whether it still is when the refusal is said. Returns what it has written
+ * in the list's line and put in toasts so far.
+ */
+function refusedInView(startedAt: ReturnType<typeof followsListPress>, message: string, { inView = () => true, inSheet = false }: { inView?: () => boolean; inSheet?: boolean } = {}) {
+  const before = new Set(toast.getToasts().map(entry => entry.id));
+  const lines: string[] = [];
+  sayFollowRefused({ message }, { inView, inOverlay: inSheet, showInLine: refused => lines.push(refused.message), startedAt });
+  return () => ({
+    lines: [...lines],
+    toasts: toast.getToasts()
+      .filter((entry): entry is ToastT => !before.has(entry.id) && !('dismiss' in entry && entry.dismiss))
+      .map(entry => entry.title),
+  });
+}
+
+// ENG-123, browser check at 343f4f0c: Unfollow pressed in the question on the
+// Follows page; the reader opens the search palette, during the question's
+// leave (a tap on a phone) or right after it, and the page stays mounted under
+// it. The line was written at once under the palette, and nothing was said
+// when the palette closed.
+for (const opened of ['as the question leaves', 'after the question left']) {
+  test(`an Unfollow refused under a palette opened ${opened} goes to the Follows line once the palette closes`, () => {
+    const closeQuestion = openOverlay();
+    const confirmedAt = followsListPress({ press: 'unfollow', inOpenSheet: false });
+    closeQuestion.startLeaving();
+    let closePalette = opened === 'as the question leaves' ? openOverlay() : null;
+    closeQuestion();
+    closePalette ??= openOverlay();
+    const unfollow = unfollowOnLeave({ confirmedAt, unfollowing: 'Cell' });
+    assert.ok(unfollow, 'the confirmed unfollow is written');
+    const said = refusedInView(unfollow.startedAt, 'Could not unfollow Cell.');
+    assert.deepEqual(said(), { lines: [], toasts: [] }, 'nothing is written under the palette');
+    closePalette();
+    assert.deepEqual(said(), { lines: ['Could not unfollow Cell.'], toasts: [] }, 'the line is written, and so announced, once the palette left');
+  });
+}
+
+// On a phone the list is a sheet and the question stacks on it; the sheet
+// stays open under the palette, and its line is where the refusal goes.
+test('an Unfollow pressed in the phone sheet, refused under a palette opened since, goes to the sheet\'s line once the palette closes', () => {
+  const closeSheet = openOverlay();
+  const closeQuestion = openOverlay();
+  const confirmedAt = followsListPress({ press: 'unfollow', inOpenSheet: true });
+  closeQuestion.startLeaving();
+  const closePalette = openOverlay();
+  closeQuestion();
+  const said = refusedInView(confirmedAt, 'Could not unfollow Cell.', { inSheet: true });
+  assert.deepEqual(said(), { lines: [], toasts: [] }, 'nothing is written under the palette');
+  closePalette();
+  assert.deepEqual(said(), { lines: ['Could not unfollow Cell.'], toasts: [] }, 'the sheet\'s line once the palette left');
+  closeSheet();
+});
+
+// Undo pressed on its toast while the Follows page is on screen, then the
+// palette opened before the follow was refused.
+test('an Undo refused under a palette opened since goes to the Follows line once the palette closes', () => {
+  const startedAt = followsListPress({ press: 'undo', inOpenSheet: false });
+  const closePalette = openOverlay();
+  const said = refusedInView(startedAt, 'Could not follow Cell. Try again.');
+  assert.deepEqual(said(), { lines: [], toasts: [] }, 'nothing is written under the palette');
+  closePalette();
+  assert.deepEqual(said(), { lines: ['Could not follow Cell. Try again.'], toasts: [] });
+});
+
+// Presses whose list is on top when they are refused: nothing to wait for.
+test('a refusal with no overlay opened since the press goes to the line at once, on the page and in the open sheet', () => {
+  const closeQuestion = openOverlay();
+  const onPage = followsListPress({ press: 'unfollow', inOpenSheet: false });
+  closeQuestion();
+  assert.deepEqual(refusedInView(onPage, 'Could not unfollow Cell.')(), { lines: ['Could not unfollow Cell.'], toasts: [] }, 'Unfollow on the page');
+  const closeSheet = openOverlay();
+  const closeSheetQuestion = openOverlay();
+  const inSheet = followsListPress({ press: 'unfollow', inOpenSheet: true });
+  closeSheetQuestion();
+  assert.deepEqual(refusedInView(inSheet, 'Could not unfollow Cell.', { inSheet: true })(), { lines: ['Could not unfollow Cell.'], toasts: [] }, 'Unfollow in the sheet');
+  const undoInSheet = followsListPress({ press: 'undo', inOpenSheet: true });
+  assert.deepEqual(refusedInView(undoInSheet, 'Could not follow Cell. Try again.', { inSheet: true })(), { lines: ['Could not follow Cell. Try again.'], toasts: [] }, 'Undo with the sheet open');
+  closeSheet();
+});
+
+// The reader picks a result in the palette: the route leaves the Follows page
+// as the palette plays its leave, and a line written then is never seen.
+test('a refusal held under the palette goes to a toast when the reader left the list before it closed', () => {
+  const closeQuestion = openOverlay();
+  const startedAt = followsListPress({ press: 'unfollow', inOpenSheet: false });
+  closeQuestion();
+  const closePalette = openOverlay();
+  let onPage = true;
+  const said = refusedInView(startedAt, 'Could not unfollow Cell.', { inView: () => onPage });
+  onPage = false;
+  closePalette();
+  assert.deepEqual(said(), { lines: [], toasts: ['Could not unfollow Cell.'] });
+  toast.dismiss();
+});
+
+test('a refusal held under the palette is said nowhere once the account changed', () => {
+  forgetAccountToasts('reader-c');
+  const startedAt = followsListPress({ press: 'undo', inOpenSheet: false });
+  const closePalette = openOverlay();
+  const said = refusedInView(startedAt, 'Could not follow Cell. Try again.');
+  forgetAccountToasts('reader-d');
+  closePalette();
+  assert.deepEqual(said(), { lines: [], toasts: [] }, 'reader D did not press it');
 });
 
 // The Undo toast outlives the phone sheet: pressed while the sheet plays its

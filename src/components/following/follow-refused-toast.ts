@@ -1,6 +1,6 @@
 import type { FollowInput } from '../../utils/following.ts';
 import type { ActionStart } from '../ui/toast.ts';
-import { sameAccount, toastError } from '../ui/toast.ts';
+import { afterOverlaysSince, toastError } from '../ui/toast.ts';
 import { createFollowEntity, FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 
 type RefusalContext = {
@@ -80,21 +80,29 @@ export async function toggleFollowOrRefusal(entity: FollowInput, { isFollowing, 
 
 /**
  * Says a refusal of a press made in the search palette or the Follows list:
- * in the list's own line while it is on screen. A press can settle after the
- * reader closed it, and a line no longer rendered is neither seen nor
- * announced, so the refusal then becomes an error toast. That toast waits for
- * any overlay opened since the press, as a page's Follow does. `startedAt` is
- * `actionStart()` at the press, leaving out the list's own layer when it is
- * one, since that layer leaves with it. A refusal settling after the account
- * changed is said nowhere: it is not the reader's now.
+ * in the list's own line while it is on screen (`inView`). A press can settle
+ * after the reader closed or left it, and a line no longer rendered is
+ * neither seen nor announced, so the refusal then becomes an error toast.
+ * Either waits for any overlay opened since the press, as a page's Follow
+ * does: the line under one would be written unseen, and not said again when
+ * it closes. `inView` is read again then, since the reader may have left the
+ * list meanwhile. `startedAt` is `actionStart()` at the press, leaving out the
+ * list's own layer when it is one (`inOverlay`: the palette, the phone
+ * sheet), since that layer leaves with it. A refusal settling after the
+ * account changed is said nowhere: it is not the reader's now.
  */
-export function sayFollowRefused(refused: FollowRefusal, { inView, showInLine, startedAt }: {
-  inView: boolean;
+export function sayFollowRefused(refused: FollowRefusal, { inView, inOverlay = false, showInLine, startedAt }: {
+  inView: () => boolean;
+  inOverlay?: boolean;
   showInLine: (refused: FollowRefusal) => void;
   startedAt: ActionStart;
 }) {
-  if (!inView) toastError(refused.message, { action: refused.action, startedAt });
-  else if (sameAccount(startedAt)) showInLine(refused);
+  const say = () => {
+    if (inView()) showInLine(refused);
+    else toastError(refused.message, { action: refused.action, startedAt });
+  };
+  if (inView()) afterOverlaysSince(startedAt, say, { inOverlay });
+  else say();
 }
 
 /** A refusal said in a line, and the account (`uid`) whose press it answers. */

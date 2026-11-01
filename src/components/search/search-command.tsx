@@ -213,7 +213,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     // The palette's own layer is counted while it is open and leaves with it.
     const startedAt = actionStart({ leaving: 1 });
     const refused = await toggleFollowOrRefusal(entity, { isFollowing, toggleFollow });
-    if (refused) sayFollowRefused(refused, { inView: openNow.current, showInLine: shown => setRefusalLine({ uid, refused: shown }), startedAt });
+    if (refused) sayFollowRefused(refused, { inView: () => openNow.current, inOverlay: true, showInLine: shown => setRefusalLine({ uid, refused: shown }), startedAt });
     setPendingEntity(null);
   }, [isFollowing, toggleFollow, uid]);
 

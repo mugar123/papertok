@@ -125,7 +125,7 @@ test('a refusal in the palette or the Follows list, while it is on screen, goes 
   const closePalette = openOverlay();
   const lines: string[] = [];
   sayFollowRefused({ message: 'Could not follow Ada Lovelace. Try again.' }, {
-    inView: true, showInLine: refused => lines.push(refused.message), startedAt: actionStart({ leaving: 1 }),
+    inView: () => true, inOverlay: true, showInLine: refused => lines.push(refused.message), startedAt: actionStart({ leaving: 1 }),
   });
   assert.deepEqual(lines, ['Could not follow Ada Lovelace. Try again.']);
   assert.equal(newToasts(before).length, 0, 'no toast was raised');
@@ -143,7 +143,7 @@ test('a refusal settling after the list closed waits for an overlay opened since
   const closeDrawer = openOverlay();
   let reloaded = 0;
   sayFollowRefused({ message: 'Your follows could not be loaded, so Ada Lovelace was not followed. Reload the page to try again.', action: { label: 'Reload', onClick: () => { reloaded += 1; } } }, {
-    inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt,
+    inView: () => false, showInLine: () => assert.fail('the line is not on screen'), startedAt,
   });
   assert.equal(newToasts(before).length, 0, 'nothing sits over the drawer');
   closeDrawer();
@@ -162,7 +162,7 @@ test('a refusal settling after the list closed, with nothing opened since, shows
   const closeSheet = openOverlay();
   const startedAt = actionStart({ leaving: 1 });
   closeSheet();
-  sayFollowRefused({ message: 'Could not follow Nature. Try again.' }, { inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt });
+  sayFollowRefused({ message: 'Could not follow Nature. Try again.' }, { inView: () => false, showInLine: () => assert.fail('the line is not on screen'), startedAt });
   assert.deepEqual(newToasts(before).map(id => shown(id).title), ['Could not follow Nature. Try again.']);
   toast.dismiss();
 });
@@ -177,9 +177,9 @@ test('a refusal settling after the account changed is said neither in the line n
   const inPalette = actionStart({ leaving: 1 });
   forgetAccountToasts('reader-a');
   const refused = { message: 'Could not follow Ada Lovelace. Try again.' };
-  sayFollowRefused(refused, { inView: true, showInLine: () => assert.fail('the reader now did not press it'), startedAt: inPalette });
+  sayFollowRefused(refused, { inView: () => true, inOverlay: true, showInLine: () => assert.fail('the reader now did not press it'), startedAt: inPalette });
   closePalette();
-  sayFollowRefused(refused, { inView: false, showInLine: () => assert.fail('the line is not on screen'), startedAt: inPalette });
+  sayFollowRefused(refused, { inView: () => false, showInLine: () => assert.fail('the line is not on screen'), startedAt: inPalette });
   const onPage = actionStart();
   forgetAccountToasts(null);
   toastFollowRefused(new Error('PERMISSION_DENIED'), { name: 'Econometrica', following: false, startedAt: onPage });
