@@ -1153,3 +1153,27 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
   assert.equal(storage.getItem('papertok_analytics_day_7_return_sent'), null);
 });
+
+test('feed timing fields contain bounded measurements and deployment identifiers, never content', () => {
+  const params = {
+    load_type: 'initial', attempt: 'original', first_screen: true, duration_ms: 2175.8,
+    result: 'success', degraded: false, client_release: '046af7e9a49ddab9114e7055c51d00316091c4bf',
+    worker_version: 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57',
+    paper_id: 'W123', interests: ['oncology'], user_id: 'private', message: 'secret',
+  };
+  assert.deepEqual(sanitizeProductEventParams('feed_load_result', params), {
+    load_type: 'initial', attempt: 'original', first_screen: true, duration_ms: 2176,
+    result: 'success', degraded: false, client_release: '046af7e9a49ddab9114e7055c51d00316091c4bf',
+    worker_version: 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57',
+  });
+  assert.deepEqual(sanitizeProductEventParams('feed_load_result', {
+    load_type: 'private text', attempt: 'user@example.com', result: 'private error', duration_ms: NaN,
+    client_release: 'user@example.com', worker_version: 'private release tag', error_code: 'private details',
+  }), { error_code: 'other' });
+  assert.equal(sanitizeProductEventParams('feed_load_result', { duration_ms: 9_000_000 }).duration_ms, 3_600_000);
+  for (const event of ['feed_load_started', 'feed_load_result']) {
+    const capture = postHogCapture(event, params);
+    assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED)?.event, event);
+    assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+  }
+});

@@ -288,3 +288,19 @@ for (const path of ['/recommendations', '/store/feed', '/lists/attribute']) {
     assert.equal(response.status, 404);
   });
 }
+
+test('a handled feed refusal exposes only its version id to allowed browser origins', async () => {
+  const metadata = { id: 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57', tag: 'private-tag', timestamp: '2026-10-31T14:31:34Z' };
+  const env = { CF_VERSION_METADATA: metadata, FIREBASE_WEB_API_KEY: 'test' };
+  const response = await worker.fetch(request('/store/papers', 'POST'), env);
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get('x-papertok-worker-version'), 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57');
+  assert.equal(response.headers.get('access-control-expose-headers'), 'retry-after, x-papertok-worker-version');
+  assert.deepEqual(await response.json(), { code: 'AUTH_REQUIRED' });
+  const old = await worker.fetch(request('/store/papers', 'POST'), { FIREBASE_WEB_API_KEY: 'test' });
+  assert.equal(old.headers.get('x-papertok-worker-version'), null);
+  const disallowed = await worker.fetch(request('/store/papers', 'POST', 'https://other.example'), env);
+  assert.equal(disallowed.status, 403);
+  assert.equal(disallowed.headers.get('access-control-allow-origin'), null);
+  assert.equal(disallowed.headers.get('access-control-expose-headers'), null);
+});
