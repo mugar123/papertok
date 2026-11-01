@@ -4698,3 +4698,40 @@ test('share image lookups spend the same per-IP allowance as share pages', async
     assert.equal(lookups, 21, 'another IP retains its share allowance');
   });
 });
+
+// The reader's full text: the app's own route, not a public relay.
+const FULL_TEXT_URL = 'https://papertok-report-api.example/resources/full-text';
+const fullText = (query: string, upstream: typeof fetch, origin = 'https://papertok.app') => withWorkerFetchMock(
+  upstream,
+  () => reportApi.fetch(new Request(`${FULL_TEXT_URL}?${query}`, { headers: { ...(origin ? { origin } : {}), ...CALLER } }), {
+    PDF_RATE_LIMIT_SECRET: CALLER_SECRET,
+    REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }),
+  }),
+);
+
+test('full text refuses a caller without an allowed Origin and an unusable identifier, asking no provider', async () => {
+  const fetched: string[] = [];
+  const upstream = (async (input: RequestInfo | URL) => { fetched.push(String(input)); return new Response(''); }) as typeof fetch;
+
+  assert.equal((await fullText('arxiv_id=1706.03762', upstream, '')).status, 403);
+  assert.equal((await fullText('arxiv_id=1706.03762', upstream, 'https://elsewhere.example')).status, 403);
+  assert.equal((await fullText('arxiv_id=..%2Fadmin&doi=nope', upstream)).status, 400);
+  assert.deepEqual(fetched, []);
+});
+
+test('full text answers with arXiv\'s HTML for a month, with nothing for an hour, and after an outage for two minutes', async () => {
+  const converted = await fullText('arxiv_id=2601.00011', (async () => new Response('<article class="ltx_document"></article>')));
+  assert.equal(converted.status, 200);
+  assert.equal(converted.headers.get('access-control-allow-origin'), 'https://papertok.app');
+  assert.match(converted.headers.get('cache-control') || '', /s-maxage=2592000/);
+  assert.equal((await converted.json<{ source: string }>()).source, 'arxiv');
+
+  const missing = await fullText('arxiv_id=2601.00012', (async () => new Response('', { status: 404 })));
+  assert.equal(missing.status, 200);
+  assert.match(missing.headers.get('cache-control') || '', /s-maxage=3600/);
+  assert.equal((await missing.json<{ document: string | null }>()).document, null);
+
+  const outage = await fullText('arxiv_id=2601.00013', (async () => new Response('', { status: 503 })));
+  assert.equal(outage.status, 200);
+  assert.match(outage.headers.get('cache-control') || '', /s-maxage=120\b/);
+});

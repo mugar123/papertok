@@ -380,7 +380,7 @@ The native workers.dev route is disabled and the frontend accepts only the custo
 domain in production. Publish a bundle configured with that domain before deploying
 this setting; see [Production Worker hostname](#production-worker-hostname).
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
@@ -428,6 +428,24 @@ Everyone behind one NAT shares those 20. A refused miss is a
 429 `PROVIDER_RATE_LIMITED`, and a missing ledger, caller address or `PDF_RATE_LIMIT_SECRET`
 closes the route with a 503; either way the card shows no figures and asks again the next
 time it appears.
+
+`/resources/full-text?arxiv_id=&pmcid=&doi=` returns the source document of a paper's full
+text for the in-app reader, which parses it in the browser (`src/utils/full-text.ts`). Any
+one identifier is enough; an unusable one is dropped, and none usable is a 400. An arXiv
+id asks arxiv.org/html, then ar5iv, and only a page containing a LaTeXML document counts.
+Without one, `pmcid` (a `PMC` or `PPR` id) or the DOI, resolved through Europe PMC's search
+and only when it lists the article as open access, asks Europe PMC for its JATS XML. The
+answer is `{ source, format, url, fullTextId?, license?, document }`, with `format`
+`latexml` or `jats`, or `document: null` when no provider publishes the paper as text,
+which the reader takes as the cue to show the PDF. A provider that fails (a network error,
+a status other than 404 or 410, or the deadline) adds `unavailable: true`. The document is
+capped at 8 MB, and the whole lookup has 9 seconds, under the reader's 10-second wait. The
+route requires an allowed `Origin`. A document is kept at the edge for 30 days, an empty
+answer for an hour and an `unavailable` one for two minutes. Misses share an app-wide ceiling,
+`FULL_TEXT_GLOBAL_MINUTE_LIMIT` (60 a minute), and each address may send 20 of them a minute
+(see [Public lookup caller limits](#public-lookup-caller-limits)). Figures in the document
+are loaded by the browser straight from arXiv, PubMed Central's CDN or Europe PMC. This is a
+**new** route: deploy the Worker before the frontend.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). A private list's `publicShareId` still catches a share published after the last public-lists stage (the final sweep once Auth is deleted), but that share is deleted only when its `publicListOwners` record names the account; a list pointing at another reader's share leaves that share in place. That final sweep also purges the newsletter again, because a digest turned on in another tab passes Identity Toolkit until the Auth delete returns. The two cleanups after the Auth delete run independently, and a failure in either is logged without failing the request: the account is already gone, so a retry could only be refused. A failed newsletter purge is tried once more a second later before it is logged: Workers KV refuses a second write to one key within a second, and the purge before the Auth delete, or a digest saved meanwhile, often wrote those keys within that second. The log names the failed cleanup and the error's code, or its type when it has none (a Workers KV error logs only `Error`), but no account, subscription or share, so what that cleanup missed (a late share, or a digest subscription that keeps sending) cannot be traced from it. KV is eventually consistent, so that purge can also read the subscription as it was before a digest saved meanwhile: it still deletes the subscription, but the new subscription's unsubscribe index (its token, naming the deleted uid) can stay behind. The private user tree includes the saved plain-words summaries (`summaries`) and their history rows (`summaryHistory`); the sweep reads document names only, 80 per request, so a page of summaries is not downloaded just to be deleted. Replies other accounts wrote under a deleted comment stay. Every request also needs a recent sign-in: when the verified token's `auth_time` is missing or more than 240 s old, the route answers 401 `AUTH_RECENT_LOGIN_REQUIRED` before it deletes anything. Identity Toolkit refuses to delete the Auth account for a sign-in that is not recent (`CREDENTIAL_TOO_OLD_LOGIN_AGAIN`), and Auth is the last stage, so without this check that refusal arrived after the data was gone. Firebase does not document its window; it is commonly reported as five minutes. The settings dialog signs the user in again with a popup just before the first request. A deletion that runs past the window stops with the same 401 while `users/{uid}`, the newsletter and Auth are still there, and the next request after a new sign-in continues it. This is a **new** route: deploy the Worker before the frontend.
 
@@ -1147,7 +1165,7 @@ seconds for a project lane.
 
 ## Public lookup caller limits
 
-Public cache misses on `/arxiv`, `/oa`, `/resources/figures`, billed
+Public cache misses on `/arxiv`, `/oa`, `/resources/figures`, `/resources/full-text`, billed
 `/openalex/*` requests and `/share/*` lookups reuse the PDF relay’s
 `CF-Connecting-IP` normalization and
 `PDF_RATE_LIMIT_SECRET`. The HMAC includes the route namespace and UTC minute;
@@ -1160,17 +1178,18 @@ existing secret before deploying these routes. Local requests need a test
 | `/arxiv` | 5 cache misses | The one-call-per-three-seconds beat, of which these requests take only every other seat (10 a minute, app-wide) |
 | `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
 | `/resources/figures` | 20 cache misses | The route's own 60/minute ceiling (`FIGURES_GLOBAL_MINUTE_LIMIT`) |
+| `/resources/full-text` | 20 cache misses | The route's own 60/minute ceiling (`FULL_TEXT_GLOBAL_MINUTE_LIMIT`) |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
 
 OpenAlex and share attach the caller as the existing reservation’s second
 subject, so a refused caller spends no shared quota. Their minute-specific
-identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA and
-figures each take a caller-only reservation, with cleanup scheduled one minute
+identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA,
+figures and full text each take a caller-only reservation, with cleanup scheduled one minute
 after the window ends. arXiv gives that unit back when pacing refuses a seat.
-Figures takes the caller's unit before its minute ceiling: a caller past its 20
+Figures and full text take the caller's unit before their minute ceiling: a caller past its 20
 spends none of the 60, and a miss the ceiling refuses gives the unit back.
-arXiv's existing ledger-outage behavior remains unpaced service; OA, figures,
+arXiv's existing ledger-outage behavior remains unpaced service; OA, figures, full text,
 OpenAlex and share do not call their providers if the quota ledger is
 unavailable. Missing caller identity or secret refuses lookup when a caller
 reservation is required. A share refusal serves the generic page; other

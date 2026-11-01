@@ -215,6 +215,7 @@ const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT = 60;
+const DEFAULT_FULL_TEXT_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> = Object.freeze({
   // Each miss spends three E-utilities calls, six if every one is refused once
   // and retried -- what NCBI actually refuses is per-second bursts, which no
@@ -234,6 +235,9 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   // another route. Missing figures are cosmetic, so a spent minute (or a
   // missing ledger) leaves cards without them.
   '/resources/figures': { namespace: 'figures', variable: 'FIGURES_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_FIGURES_GLOBAL_MINUTE_LIMIT },
+  // Each full-text miss fetches at most arxiv.org/html, ar5iv and two Europe
+  // PMC calls. Nothing is billed; the ceiling bounds what PaperTok sends them.
+  '/resources/full-text': { namespace: 'full-text', variable: 'FULL_TEXT_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_FULL_TEXT_GLOBAL_MINUTE_LIMIT },
 });
 
 // The key is built from the values the handler is about to send upstream, never

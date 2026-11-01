@@ -118,7 +118,7 @@ test('the page names the public pages a shared link opens as places for the Priv
 test('the page says figure lookups count against the caller address like the other public lookups', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
-  assert.match(html, /a public request looks up papers, paper figures, open-access links or a shared page, that server uses the IP address/);
+  assert.match(html, /When the in-app reader requests a paper's text or its PDF, or a public request looks up\s+papers, paper figures, open-access links or a shared page, that server uses the IP address/);
   // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
 });
