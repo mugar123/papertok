@@ -200,13 +200,23 @@ function isEscaped(text: string, index: number) {
   return backslashCount % 2 === 1;
 }
 
-function findNextDelimiter(text: string, startIndex: number) {
+/**
+ * `next` keeps each delimiter's next opener for one walk, whose `startIndex`
+ * only moves forward, so a delimiter is searched for again only once the walk
+ * has passed it. Searched afresh for every formula, a delimiter the text lacks
+ * was looked for to the end of the text each time.
+ */
+function findNextDelimiter(text: string, startIndex: number, next: number[]) {
   let nextMatch: { index: number; delimiter: typeof LATEX_DELIMITERS[number] } | null = null;
 
-  for (const delimiter of LATEX_DELIMITERS) {
-    let index = text.indexOf(delimiter.left, startIndex);
-    while (index !== -1 && isEscaped(text, index)) {
-      index = text.indexOf(delimiter.left, index + delimiter.left.length);
+  for (const [position, delimiter] of LATEX_DELIMITERS.entries()) {
+    let index: number | undefined = next[position];
+    if (index === undefined || (index !== -1 && index < startIndex)) {
+      index = text.indexOf(delimiter.left, startIndex);
+      while (index !== -1 && isEscaped(text, index)) {
+        index = text.indexOf(delimiter.left, index + delimiter.left.length);
+      }
+      next[position] = index;
     }
 
     if (
@@ -323,6 +333,162 @@ const TEXT_SYMBOLS: Record<string, string> = {
 };
 const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![a-zA-Z])(?:\\{\\})?`, 'g');
 
+// Authors bold and italicize in the abstract (`\textbf{H}arness`, `\emph{…}`)
+// and providers relay the source as written. The card paints plain prose, so
+// only the wrapper goes. One brace level of argument, as ENSUREMATH; the caller
+// repeats the pass to unwrap nesting. A backslash takes the one character after
+// it, so every character has a single reading and an unclosed wrapper fails in
+// linear time; reading `\ab` as a macro or as `\a` and `b` backtracked
+// exponentially.
+const FONT_COMMANDS = 'textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph';
+const TEXT_FORMATTING = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{((?:\\\\[\\s\\S]|[^{}\\\\]|\\{(?:\\\\[\\s\\S]|[^{}\\\\])*\\})*)\\}`, 'g');
+
+/** Where the delimiter walk reads a formula in `text`, delimiters included, in order. */
+function formulaSpans(text: string) {
+  const spans: [number, number][] = [];
+  const next: number[] = [];
+  for (let cursor = 0; cursor < text.length;) {
+    const match = findNextDelimiter(text, cursor, next);
+    if (!match) break;
+    const contentEnd = findDelimiterEnd(text, match.delimiter, match.index + match.delimiter.left.length);
+    if (contentEnd === -1) break;
+    cursor = contentEnd + match.delimiter.right.length;
+    spans.push([match.index, cursor]);
+  }
+  return spans;
+}
+
+/** The formulas the delimiter walk reads in `text`. Normalized text holds no newline. */
+function formulaWalk(text: string, spans = formulaSpans(text)) {
+  return spans.map(([start, end]) => text.slice(start, end)).join('\n');
+}
+
+const DELIMITER_STRINGS = [...new Set(LATEX_DELIMITERS.flatMap(delimiter => [delimiter.left, delimiter.right]))];
+const LONGEST_DELIMITER = Math.max(...DELIMITER_STRINGS.map(delimiter => delimiter.length));
+// Anything an argument could hold that is, or starts, a delimiter.
+const DELIMITER_PART = /\$|\\[()[\]]|\\(?:begin|end)(?![a-zA-Z])/;
+// Characters the whole-text checks may walk, per text: hundreds of checks in
+// an abstract, a few in a text a hundred times longer. Past it wrappers stay.
+const WALK_BUDGET = 500_000;
+// One pass per level of nesting; deeper wrappers stay as written.
+const NESTING_PASSES = 8;
+
+/** Whether a delimiter reads across where `before` meets `argument` or `argument` meets `after`. */
+function joinsDelimiter(before: string, argument: string, after: string) {
+  const window = before + argument + after;
+  const seams = [before.length, before.length + argument.length];
+  return DELIMITER_STRINGS.some(delimiter => {
+    for (let index = window.indexOf(delimiter); index !== -1; index = window.indexOf(delimiter, index + 1)) {
+      if (seams.some(seam => index < seam && index + delimiter.length > seam)) return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Removing a wrapper must leave the formula walk reading what it read with
+ * the wrapper: its braces hide a closer from `findDelimiterEnd`, and its
+ * argument can hold any delimiter (`intro \[ \textbf{x \] rest} tail` is
+ * prose). A wrapper whose removal changes the walk stays as written; so does a
+ * wrapper inside a formula, which belongs to KaTeX, and one whose backslash is
+ * escaped (`\\textbf` is a line break and a word).
+ *
+ * A wrapper in prose whose argument holds no delimiter and whose removal joins
+ * none with the text around it cannot change the walk: its braces pair, and no
+ * closer sits between them. The rest are checked against the walk of the whole
+ * text, not one prose run, because removing one can assemble an opener
+ * (`\begin{\textbf{equation}}`) whose closer sits past a later formula. Those
+ * checks share `WALK_BUDGET` so a long text cannot take seconds, and a wrapper
+ * refused once is not checked again while its argument is unchanged.
+ *
+ * Each pass unwraps the outermost wrappers it can, so nested ones take a pass
+ * per level, up to `NESTING_PASSES`. `source` maps every character of the
+ * result to its index in `value`, which is what `savedHighlightSpace` aligns
+ * highlights with.
+ */
+function unwrapTextFormatting(value: string) {
+  let formulas: string | undefined;
+  let text = value;
+  // By UTF-16 unit, not code point: `Array.from(value)` is shorter by one
+  // for every character outside the BMP.
+  let source = Array.from({ length: value.length }, (_, index) => index);
+  let walked = 0;
+  // The argument each refused wrapper had, by where its backslash came from.
+  const refused = new Map<number, string>();
+  for (let pass = 0, changed = true; changed && pass < NESTING_PASSES; pass += 1) {
+    changed = false;
+    // The walk is the costly part, so a text with no wrapper left skips it.
+    let spans: [number, number][] | undefined;
+    const output: string[] = [];
+    const outputSource: number[] = [];
+    // The last characters of what is already written, enough to read a
+    // delimiter or an escape across the next seam.
+    let tail = '';
+    let cursor = 0;
+    let span = 0;
+    let match;
+    const keep = (from: number, to: number) => {
+      const piece = text.slice(from, to);
+      output.push(piece);
+      for (let index = from; index < to; index += 1) outputSource.push(source[index]);
+      tail = (tail + piece.slice(-2 * LONGEST_DELIMITER)).slice(-2 * LONGEST_DELIMITER);
+    };
+    TEXT_FORMATTING.lastIndex = 0;
+    while ((match = TEXT_FORMATTING.exec(text)) !== null) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const argument = match[1];
+      if (!spans) {
+        spans = formulaSpans(text);
+        // Unwrapping keeps the walk, so the first one stands for every pass.
+        formulas ??= formulaWalk(text, spans);
+      }
+      while (span < spans.length && spans[span][1] <= start) span += 1;
+      const before = (start - cursor < 2 * LONGEST_DELIMITER ? tail : '')
+        + text.slice(Math.max(cursor, start - 2 * LONGEST_DELIMITER), start);
+      // A run of backslashes filling `before` may go on past it: keep.
+      const backslashes = /\\*$/.exec(before)![0].length;
+      const counted = backslashes < before.length || outputSource.length + start - cursor === before.length;
+      let unwraps = backslashes % 2 === 0 && counted
+        && !(span < spans.length && spans[span][0] <= start);
+      if (unwraps && (DELIMITER_PART.test(argument) || joinsDelimiter(
+        before.slice(-LONGEST_DELIMITER), argument, text.slice(end, end + LONGEST_DELIMITER),
+      ))) {
+        if (refused.get(source[start]) === argument) {
+          unwraps = false;
+        } else {
+          walked += outputSource.length + start - cursor + argument.length + text.length - end;
+          unwraps = walked <= WALK_BUDGET
+            && formulaWalk(output.join('') + text.slice(cursor, start) + argument + text.slice(end)) === formulas;
+          if (!unwraps) refused.set(source[start], argument);
+        }
+      }
+      if (!unwraps) {
+        TEXT_FORMATTING.lastIndex = start + 1;
+        continue;
+      }
+      keep(cursor, start);
+      // Whitespace was collapsed before unwrapping, so a removal must not join
+      // two runs: the argument's edge against the space around the wrapper, or
+      // the spaces either side of an empty one. The space that stays is the
+      // one written first, so a control space (`\ `) keeps its own.
+      let from = end - 1 - argument.length;
+      if (/\s$/.test(tail)) while (from < end - 1 && /\s/.test(text[from])) from += 1;
+      keep(from, end - 1);
+      cursor = end;
+      if (/\s$/.test(tail)) while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+      changed = true;
+    }
+    keep(cursor, text.length);
+    text = output.join('');
+    source = outputSource;
+  }
+  // An argument's edge space at either end of the text is left over too.
+  const first = text.length - text.trimStart().length;
+  const last = text.trimEnd().length;
+  return { text: text.slice(first, last), source: source.slice(first, last) };
+}
+
 /**
  * Applies one transform to the prose and another inside every formula, using
  * the same delimiter walk `splitLatexText` does, so "inside a formula" means
@@ -331,9 +497,10 @@ const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![
 function transformByMode(text: string, transformProse: (text: string) => string, transformMath: (text: string) => string) {
   let output = '';
   let cursor = 0;
+  const next: number[] = [];
 
   while (cursor < text.length) {
-    const match = findNextDelimiter(text, cursor);
+    const match = findNextDelimiter(text, cursor, next);
     if (!match) {
       output += transformProse(text.slice(cursor));
       break;
@@ -371,7 +538,7 @@ function normalizeMathRun(value: string) {
  * around them: the macro IS the formula. Each becomes its own inline formula,
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
-function normalizeProseRun(value: string) {
+function normalizeProseMacros(value: string) {
   const unwrapped = value
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`);
@@ -380,10 +547,92 @@ function normalizeProseRun(value: string) {
 }
 
 export function normalizeLatexText(text: unknown) {
+  return unwrapTextFormatting(normalizeSavedLatexText(text)).text;
+}
+
+/** `normalizeLatexText` as it was before font commands were unwrapped. */
+export function normalizeSavedLatexText(text: unknown) {
   if (!text) return '';
 
-  return transformByMode(normalizeScientificMarkup(text), normalizeProseRun, normalizeMathRun)
+  return transformByMode(normalizeScientificMarkup(text), normalizeProseMacros, normalizeMathRun)
     .replace(/(^|[^\\])%/g, '$1\\%');
+}
+
+/**
+ * The text highlight quotes are cut from: `normalizeLatexText` before font
+ * commands are unwrapped. Quotes saved before the unwrapping hold wrappers, or
+ * start or end inside one (`HERMES}, a harness`), and an unwrapped mention
+ * reads exactly like a plain one with the same words, so this stays the one
+ * space quotes live in. `current` is the painted text, `source` the index in
+ * `text` of each of its characters, and `toCurrent` maps an offset in `text`
+ * onto `current`: the number of characters before it that unwrapping kept.
+ * `formulas` are the spans of `current` that `splitLatexText` hands to KaTeX.
+ */
+export function savedHighlightSpace(text: unknown) {
+  const saved = normalizeSavedLatexText(text);
+  const { text: current, source } = unwrapTextFormatting(saved);
+  const offsets = new Array<number>(saved.length + 1);
+  let kept = 0;
+  for (let index = 0; index <= saved.length; index += 1) {
+    while (kept < source.length && source[kept] < index) kept += 1;
+    offsets[index] = kept;
+  }
+  return { text: saved, current, source, formulas: formulaSpans(current), toCurrent: (offset: number) => offsets[offset] };
+}
+
+const FONT_OPENER = new RegExp(`\\\\(?:${FONT_COMMANDS})\\{`, 'y');
+const FONT_COMMAND_NAMES = FONT_COMMANDS.split('|');
+
+/**
+ * The words a stored quote paints. A quote is a slice of the saved text, so a
+ * selection that starts inside a font command keeps the brace that closes it
+ * (`HERMES}, a harness`) and one that ends inside keeps the command that opens
+ * it (`a \textbf{harn`), as does a quote cut at the storage limit, which may
+ * stop inside the command's name. The card paints none of those, so the
+ * margin and the copied note drop them. A `}` is a leftover when no brace
+ * before it is open, and a font command's `{` when no `}` after it closes it;
+ * any other brace, escaped or paired, is the text's own. The quote alone does
+ * not say which wrappers its paragraph keeps as written, so every complete
+ * one unwraps here. What is stored stays as it is: the highlight finds its
+ * words again through it.
+ */
+export function paintedQuote(quote: unknown) {
+  const text = normalizeLatexText(quote);
+  const cuts: [number, number][] = [];
+  // Each open brace: where its font command starts and ends, or null for a plain one.
+  const open: ([number, number] | null)[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\\') {
+      FONT_OPENER.lastIndex = index;
+      const opener = FONT_OPENER.exec(text);
+      if (opener) {
+        open.push([index, index + opener[0].length]);
+        index += opener[0].length - 1;
+      } else {
+        index += 1;
+      }
+    } else if (text[index] === '{') {
+      open.push(null);
+    } else if (text[index] === '}' && open.pop() === undefined) {
+      cuts.push([index, index + 1]);
+    }
+  }
+  for (const opener of open) if (opener) cuts.push(opener);
+  cuts.sort((a, b) => a[0] - b[0]);
+  const name = /\\([a-zA-Z]*)$/.exec(text);
+  if (name && !isEscaped(text, name.index) && FONT_COMMAND_NAMES.some(command => command.startsWith(name[1]))) {
+    cuts.push([name.index, text.length]);
+  }
+
+  let painted = '';
+  let cursor = 0;
+  for (const [from, to] of cuts) {
+    painted += text.slice(cursor, from);
+    cursor = to;
+    // Whitespace was collapsed before, so a removal must not leave two spaces.
+    if (!painted || /\s$/.test(painted)) while (/\s/.test(text[cursor] ?? '')) cursor += 1;
+  }
+  return (painted + text.slice(cursor)).trim();
 }
 
 /**
@@ -414,9 +663,10 @@ export function splitLatexText(text: unknown) {
   const normalized = normalizeLatexText(text);
   const chunks: LatexChunk[] = [];
   let cursor = 0;
+  const next: number[] = [];
 
   while (cursor < normalized.length) {
-    const match = findNextDelimiter(normalized, cursor);
+    const match = findNextDelimiter(normalized, cursor, next);
     if (!match) {
       chunks.push({ type: 'text', value: normalized.slice(cursor) });
       break;
