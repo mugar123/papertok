@@ -7,6 +7,8 @@ import './privacy-notice.css';
 
 const COPY = {
   title: 'Privacy policy updated',
+  // The bullets are a selection (privacyPolicy.ts); the policy says the rest.
+  summary: 'The main changes:',
   policy: 'Read the policy',
   newTab: ' (opens in a new tab)',
   done: 'Got it',
@@ -35,8 +37,11 @@ export default function PrivacyNotice({ open, onAcknowledge, onHide }: { open: b
           <ShieldCheck size={20} aria-hidden="true" />
           {COPY.title}
         </DialogTitle>
-        <DialogDescription render={<ul />} className="privacy-notice-summary">
-          {PRIVACY_POLICY_CHANGE.map(change => <li key={change}>{change}</li>)}
+        <DialogDescription render={<div />} className="privacy-notice-summary">
+          <p>{COPY.summary}</p>
+          <ul>
+            {PRIVACY_POLICY_CHANGE.map(change => <li key={change}>{change}</li>)}
+          </ul>
         </DialogDescription>
         <p className="privacy-notice-policy">
           <a href="/privacy.html" target="_blank" rel="noopener noreferrer">
