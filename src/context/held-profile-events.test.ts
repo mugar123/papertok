@@ -11,7 +11,7 @@ import {
   viewedIds,
 } from '../utils/interaction-profile.ts';
 import { corpusOrder } from './feed-temporal-lean.ts';
-import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, replayHeldEvents, savedBeforeTap, type HeldProfileEvents } from './held-profile-events.ts';
+import { adoptHeldEvents, heldRefused, holdProfileEvent, refuseHeldEvent, replayHeldEvents, saveLeftOut, type HeldProfileEvents } from './held-profile-events.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, writeMark } from './write-mark.ts';
 
@@ -246,17 +246,21 @@ function signedInFeed(userId = 'reader') {
   // FeedProvider's markSaved, unmarkSaved, markNotInterested and
   // undoNotInterested: the screen changes, the event is recorded, and the
   // write follows. A refused write throws only when `throwOnError` asks. An
-  // unsave that `takesBack` the paper's last save changes nothing when that
-  // save met a save the profile held already.
+  // unsave that `takesBack` the paper's last save changes nothing when the
+  // replay left that save out, and only takes a save refused while the
+  // profile loads off the screen.
   const lastSaveEvents = new Map<string, InteractionEvent>();
   const setMark = async (set: 'saved' | 'dismissed', paperId: string, on: boolean, kind: string, write: () => Promise<void>, throwOnError = false, fields: Partial<InteractionEvent> = {}, takesBack = false) => {
     if (feed[set].has(paperId) === on) return;
-    if (takesBack && savedBeforeTap(lastSaveEvents.get(paperId))) return;
+    const lastSave = takesBack ? lastSaveEvents.get(paperId) : undefined;
+    if (saveLeftOut(lastSave)) return;
+    const refusedSave = heldRefused(feed.held, lastSave) ? lastSave : null;
     feed[set] = new Set(feed[set]);
     if (on) feed[set].add(paperId);
     else feed[set].delete(paperId);
-    const recorded = record({ ...likeOf(paperId), kind, ...fields });
+    const recorded = record({ ...likeOf(paperId), kind, ...fields }, refusedSave);
     if (kind === 'save') lastSaveEvents.set(paperId, recorded);
+    if (refusedSave) return;
     try {
       await refusing(write, recorded);
     } catch (error) {
@@ -267,8 +271,8 @@ function signedInFeed(userId = 'reader') {
   return {
     feed,
     // useQuickSave's save (markThenConfirm): when its write, or the Read later
-    // or list write after it (`confirm`), is refused, it is taken back by an
-    // unsave, which writes `saved: false` of its own.
+    // or list write after it (`confirm`), is refused, an unsave that
+    // `takesBack` the save follows, writing `saved: false` of its own.
     async quickSave(paperId: string, write: () => Promise<void>, rollback: () => Promise<void>, confirm: () => Promise<void> = async () => {}) {
       const alreadySaved = feed.saved.has(paperId);
       try {
@@ -499,37 +503,73 @@ test('a Reading history removal refused before the profile arrives leaves the pa
 const refused = async () => { throw new Error('permission-denied'); };
 const accepted = async () => {};
 
-// Until the profile loads, a paper saved in an earlier session shows unsaved.
-// The quick save's write is refused, so it takes the save back with an
-// unsave, whose write is refused too: storage keeps `saved: true`.
-test('a quick save refused while the profile loads, and its refused rollback, leave a save stored in an earlier session', async () => {
-  const stored = () => storedProfileWith({ ...likeOf('saved'), kind: 'save' });
-  const reader = signedInFeed();
-  await reader.quickSave('saved', refused, refused);
-  assert.ok(!reader.feed.saved.has('saved'));
-  reader.load(stored());
-
-  assert.ok(reader.feed.saved.has('saved'), 'the Save button shows the stored save');
-  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
-});
-
-// The rollback's `saved: false` is accepted, so storage no longer holds the
-// save and neither does the profile.
-test('a quick save refused while the profile loads, and its accepted rollback, take back a save stored in an earlier session', async () => {
-  const reader = signedInFeed();
-  await reader.quickSave('saved', refused, accepted);
-  reader.load(storedProfileWith({ ...likeOf('saved'), kind: 'save' }));
-
-  assert.ok(!reader.feed.saved.has('saved'));
-  assert.deepEqual(curatedIds(reader.feed.profile, 'saved'), []);
-  assert.equal(readProfileSignals(reader.feed.profile, NOW).temporal.notable.engaged, 0);
-});
-
-// A write the test refuses, counting how often it is sent.
-function refusedWrite() {
+// A write the test accepts or refuses, counting how often it is sent.
+function countedWrite(accept = false) {
   const sent = { count: 0 };
-  return { sent, write: async () => { sent.count += 1; throw new Error('permission-denied'); } };
+  return {
+    sent,
+    write: async () => {
+      sent.count += 1;
+      if (!accept) throw new Error('permission-denied');
+    },
+  };
 }
+const refusedWrite = () => countedWrite(false);
+
+// Until the profile loads, a paper saved in an earlier session shows unsaved.
+// The quick save's write is refused, so it takes the save back off the
+// screen. Storage never had this save, and still holds the earlier one: the
+// rollback sends no `saved: false`, which Firestore might accept.
+for (const accept of [false, true]) {
+  test(`a quick save refused while the profile loads leaves a save stored in an earlier session, with a rollback write that would be ${accept ? 'accepted' : 'refused'}`, async () => {
+    const stored = () => storedProfileWith({ ...likeOf('saved'), kind: 'save' });
+    const reader = signedInFeed();
+    const rollback = countedWrite(accept);
+    await reader.quickSave('saved', refused, rollback.write);
+    assert.ok(!reader.feed.saved.has('saved'), 'the refusal takes the save back on screen');
+    reader.load(stored());
+
+    assert.ok(reader.feed.saved.has('saved'), 'the Save button shows the stored save');
+    assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
+    assert.equal(rollback.sent.count, 0, 'storage keeps `saved: true`');
+  });
+}
+
+// The list picker keeps a save Firestore refused on screen, and the reader
+// takes it back with Undo, before or after the profile arrives.
+for (const undone of ['before', 'after'] as const) {
+  test(`the list picker's Undo, ${undone} the profile arrives, of a save refused while it loads leaves a save stored in an earlier session`, async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const stored = () => storedProfileWith({ ...likeOf('saved'), kind: 'save' });
+    const reader = signedInFeed();
+    await reader.save('saved', refused);
+    const undo = countedWrite(true);
+    if (undone === 'before') {
+      await reader.undoSave('saved', undo.write);
+      assert.ok(!reader.feed.saved.has('saved'), 'Undo takes the save off the screen');
+    }
+    reader.load(stored());
+    if (undone === 'after') await reader.undoSave('saved', undo.write);
+
+    assert.ok(reader.feed.saved.has('saved'));
+    assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(stored())));
+    assert.equal(undo.sent.count, 0, 'storage keeps `saved: true`');
+  });
+}
+
+// The same refusal on a paper storage never saved: the rollback takes the
+// save off the screen, and nothing of it reaches the profile.
+test('a quick save refused while the profile loads, on a paper storage never saved, is taken back and not replayed', async () => {
+  const reader = signedInFeed();
+  const rollback = countedWrite(true);
+  await reader.quickSave('new', refused, rollback.write);
+  assert.ok(!reader.feed.saved.has('new'));
+  reader.load(storedProfile());
+
+  assert.ok(!reader.feed.saved.has('new'));
+  assert.equal(JSON.stringify(serializeInteractionProfile(reader.feed.profile)), JSON.stringify(serializeInteractionProfile(storedProfile())));
+  assert.equal(rollback.sent.count, 0);
+});
 
 // Until the profile loads, a paper saved in an earlier session shows unsaved.
 // The reader quick-saves it, the profile arrives while a write of the save

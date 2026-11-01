@@ -52,8 +52,9 @@ export interface FeedContextValue {
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
   /**
    * `takesBack`: the unsave takes back the paper's last save, after a refused
-   * write or on an Undo. It changes nothing when that save was made while the
-   * profile loaded, on a paper the profile already held saved (savedBeforeTap).
+   * write or on an Undo. When that save was made while the profile loaded and
+   * left storage as it was, the unsave writes nothing (saveLeftOut,
+   * heldRefused).
    */
   unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; takesBack?: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
@@ -153,7 +154,7 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { adoptHeldEvents, holdProfileEvent, refuseHeldEvent, savedBeforeTap, type HeldProfileEvents } from './held-profile-events.ts';
+import { adoptHeldEvents, heldRefused, holdProfileEvent, refuseHeldEvent, saveLeftOut, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -2288,7 +2289,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
-    if (options?.takesBack && savedBeforeTap(lastSaveEvents.current.get(paperId))) return;
+    // A save made while the profile loaded can leave storage as it was, and
+    // may hold a save from an earlier session (saveLeftOut, heldRefused).
+    const lastSave = options?.takesBack ? lastSaveEvents.current.get(paperId) : undefined;
+    if (saveLeftOut(lastSave)) return;
+    const refusedSave = heldRefused(heldProfileEvents.current, lastSave) ? lastSave : null;
 
     const paper = typeof paperOrId === 'object'
       ? paperOrId
@@ -2297,17 +2302,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     nextSaved.delete(paperId);
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
-    // Gives back exactly what markSaved lent. A quick save takes a refused
-    // save back through here, and its refused write must not replay this
-    // unsave over a save storage keeps from an earlier session.
+    // Gives back exactly what markSaved lent. A refused save it takes back
+    // while the profile loads is named as `undoes`, so that neither is
+    // replayed over a save storage keeps from an earlier session.
     const recorded = recordProfileEvent({
       paperId,
       kind: 'unsave',
       category: paper?.primaryCategory,
-    }, paper);
+    }, paper, refusedSave);
     reRankFeed(paperId);
 
-    if (userId) {
+    if (userId && !refusedSave) {
       try {
         await refusing(setDoc(interactionDocRef(userId, paperId), {
           saved: false,
