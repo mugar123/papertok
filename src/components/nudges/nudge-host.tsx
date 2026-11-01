@@ -46,8 +46,10 @@ import PrivacyNotice from './privacy-notice.tsx';
 // the X) hands it back, so a nudge may follow after another minute of reading:
 // a reader who keeps hiding the notice is not kept from hearing that email is
 // down (answerPrivacyNotice). Whatever was picked is shown on the feed only and
-// comes back when the reader returns to it. A change of account remounts this
-// component, which clears what was picked for the previous reader.
+// comes back when the reader returns to it. The notice takes the turn on
+// arrival, before the cards: a visit whose feed never shows any (an error, an
+// empty feed) shows neither the dialog nor a nudge. A change of account
+// remounts this component, which clears what was picked for the previous reader.
 
 const COPY = {
   en: {
@@ -146,7 +148,11 @@ export default function NudgeHost() {
   // Hide for now puts it away for this visit and does not count as reading it,
   // so it returns next time. Back is not routed here: like the app's other
   // dialogs (lists, email updates, the search palette), this one pushes no
-  // history entry, so Back goes where it would without it.
+  // history entry, so Back goes where it would without it. Unlike them it opens
+  // unasked, so on a cold start at /feed Back leaves PaperTok (an installed app
+  // closes) instead of closing the dialog; the notice then returns on the next
+  // visit, as after Hide for now. Only the full-screen reader, PDF viewer and
+  // Similar layer borrow an entry (use-overlay-history.ts).
   const hidePrivacy = useCallback(() => setVisit(current => answerPrivacyNotice(current, 'hide')), []);
 
   const uid = user?.uid;
