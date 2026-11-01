@@ -182,10 +182,12 @@ test("every clause of the in-app summary is the page's own words", () => {
   for (const [claim, why] of unsaid) assert.doesNotMatch(summary, claim, why);
 });
 
-test('the page lists the notice key among what the browser keeps, and says only Got it is remembered', () => {
+test('the page lists the notice key among what the browser keeps and what removes it, and says only Got it is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
   assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
+  // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
+  assert.match(storage, /Clearing the site's data removes it, and so does deleting the account from Settings in this browser/);
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
   assert.match(changes, /When you choose Got it, this browser remembers that version/);
   assert.match(changes, /Choosing Hide for now only hides it for that visit/);
