@@ -183,6 +183,7 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: BASE_PATH,
+    define: { 'import.meta.env.VITE_APP_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? null) },
     plugins: [
       {
         name: 'startup-guard',

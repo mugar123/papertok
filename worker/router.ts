@@ -420,6 +420,12 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     const { response, code } = await answerCorpusFeed(request, env, origin, context, timings);
     request.signal.removeEventListener('abort', abandoned);
     timings.logIfSlow(route, Date.now() - started, { status: response.status, code });
+    if (env.CF_VERSION_METADATA?.id) {
+      response.headers.set('x-papertok-worker-version', env.CF_VERSION_METADATA.id);
+      if (response.headers.has('access-control-allow-origin')) {
+        response.headers.set('access-control-expose-headers', 'retry-after, x-papertok-worker-version');
+      }
+    }
     return response;
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
