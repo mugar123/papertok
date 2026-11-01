@@ -69,12 +69,12 @@ const PRIOR_ENGAGEMENTS = 5;
  * and then, as in exploration (pickExplorationCategories). The draw is kept
  * between one in NOTABLE_EVERY and one in NOTABLE_EVERY_MIN, so neither kind
  * of card leaves the feed. Because the draw only moves away from that floor,
- * equal rates average about one place in 13 to 14 over many pages, not one in
- * NOTABLE_EVERY: nearer 14 the larger the counts and the rates, and halving
- * keeps the counts under 2,000 cards shown. A reader who engages with neither
- * kind keeps near the prior: about one in 10, a little more than a new
- * account's one in 11: fewer notable cards were shown, so no engagement lowers
- * their drawn rate less.
+ * equal rates average more than one place in NOTABLE_EVERY over many pages,
+ * even at 1,999 cards shown, the most halving keeps: about one in 13 at a
+ * rate of 2%, one in 14 at 10 to 20% and one in 14.5 when every card is
+ * engaged with. A reader who engages with neither kind keeps near the prior:
+ * about one in 10, a little more than a new account's one in 11: fewer
+ * notable cards were shown, so no engagement lowers their drawn rate less.
  */
 export function sampleNotableEvery({ notable, recent }: Pick<TemporalSignal, 'notable' | 'recent'>, random: () => number = Math.random) {
   const rate = (notable.engaged + recent.engaged + 1) / (notable.shown + recent.shown + 10);
