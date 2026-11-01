@@ -19,6 +19,7 @@ import {
   privacyDialogOpen,
   privacyOwedFor,
   readDismissedNudges,
+  readingMinutePassed,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
   visitReaderReady,
@@ -89,16 +90,18 @@ export default function NudgeHost() {
   // choice is read during render — the same shape (and the same reason) as the
   // guest interests sheet.
   const [visit, setVisit] = useState<VisitNotices>(VISIT_START);
-  const { picked, dwellDone } = visit;
+  const { picked, dwellDone, readingMinute } = visit;
 
   const signedIn = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
 
+  // Hide for now starts the minute over (readingMinute), so it restarts here
+  // even when the first minute had not passed yet.
   useEffect(() => {
     if (!signedIn || dwellDone) return undefined;
-    const timer = window.setTimeout(() => setVisit(current => ({ ...current, dwellDone: true })), NUDGE_DWELL_MS);
+    const timer = window.setTimeout(() => setVisit(current => readingMinutePassed(current, readingMinute)), NUDGE_DWELL_MS);
     return () => window.clearTimeout(timer);
-  }, [signedIn, dwellDone]);
+  }, [signedIn, dwellDone, readingMinute]);
 
   // Read again on every render and whenever another tab writes storage, so Got
   // it chosen in another tab puts the notice away here as well.

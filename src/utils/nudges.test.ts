@@ -18,6 +18,7 @@ import {
   privacyOwedFor,
   readDismissedNudges,
   readPrivacyNoticeAck,
+  readingMinutePassed,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
   visitChoiceDue,
@@ -281,6 +282,25 @@ test('after Hide for now the visit may still show a nudge, a minute of reading l
   assert.equal(chooseVisitNotice(acknowledged, { ...facts, privacyOwed: false }), acknowledged, 'and the email nudge waits for the next visit');
   const next = chooseVisitNotice({ ...VISIT_START, dwellDone: true }, { ...facts, privacyOwed: false });
   assert.equal(next.picked, 'email-down', 'which picks it after its minute of reading');
+});
+
+test('a nudge after Hide for now waits a whole minute from the hide, also when the first minute had not passed', () => {
+  const facts = { privacyOwed: true, eligible: ['email-down'], dismissed: [] };
+  // The reader arrives at T0 and NudgeHost starts the timer of the minute running then.
+  const arrived = chooseVisitNotice(VISIT_START, facts);
+  const minuteAtArrival = arrived.readingMinute;
+  // Hide for now at T0+50s; the timer from arrival ends at T0+60s, 10 s after the hide.
+  const hidden = answerPrivacyNotice(arrived, 'hide');
+  const tenSecondsLater = readingMinutePassed(hidden, minuteAtArrival);
+  assert.equal(tenSecondsLater.dwellDone, false, 'the minute from arrival does not end the one the hide started');
+  assert.equal(chooseVisitNotice(tenSecondsLater, facts).picked, null, 'so no nudge 10 s after the hide');
+  const minuteAfterHide = readingMinutePassed(tenSecondsLater, hidden.readingMinute);
+  assert.equal(chooseVisitNotice(minuteAfterHide, facts).picked, 'email-down', 'a minute after the hide, the email nudge');
+
+  // Hidden after the first minute was up: the minute starts over as well.
+  const late = answerPrivacyNotice(readingMinutePassed(arrived, minuteAtArrival), 'hide');
+  assert.equal(chooseVisitNotice(late, facts).picked, null, 'nothing straight after the hide');
+  assert.equal(chooseVisitNotice(readingMinutePassed(late, late.readingMinute), facts).picked, 'email-down');
 });
 
 test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {

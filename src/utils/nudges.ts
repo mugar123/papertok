@@ -239,11 +239,24 @@ export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolea
 /**
  * One visit's notices, as NudgeHost keeps them: the notice picked (`null` for
  * none), whether the visit's choice has been made, whether the reader hid the
- * privacy notice for this visit, and whether the minute of reading has passed.
+ * privacy notice for this visit, whether the minute of reading has passed, and
+ * which minute of reading that is, counted from 0 (Hide for now starts another).
  */
-export interface VisitNotices { picked: string | null; choiceMade: boolean; privacyHidden: boolean; dwellDone: boolean }
+export interface VisitNotices { picked: string | null; choiceMade: boolean; privacyHidden: boolean; dwellDone: boolean; readingMinute: number }
 
-export const VISIT_START: VisitNotices = { picked: null, choiceMade: false, privacyHidden: false, dwellDone: false };
+export const VISIT_START: VisitNotices = { picked: null, choiceMade: false, privacyHidden: false, dwellDone: false, readingMinute: 0 };
+
+/**
+ * The visit once minute `readingMinute` of reading has passed (NudgeHost's
+ * timer). A timer started for an earlier minute ends nothing: the minute was
+ * started over by Hide for now, and the nudge it lets follow waits a whole
+ * minute from the hide, also when the reader hid the notice before the first
+ * minute was up.
+ */
+export function readingMinutePassed(visit: VisitNotices, readingMinute: number): VisitNotices {
+  if (visit.readingMinute !== readingMinute || visit.dwellDone) return visit;
+  return { ...visit, dwellDone: true };
+}
 
 /**
  * The visit with its notice chosen once that is due (visitChoiceDue), or
@@ -268,7 +281,7 @@ export function chooseVisitNotice(visit: VisitNotices, { privacyOwed, eligible, 
 export function answerPrivacyNotice(visit: VisitNotices, answer: 'got-it' | 'hide'): VisitNotices {
   if (visit.picked !== PRIVACY_NOTICE_ID) return visit;
   if (answer === 'got-it') return { ...visit, picked: null };
-  return { picked: null, choiceMade: false, privacyHidden: true, dwellDone: false };
+  return { picked: null, choiceMade: false, privacyHidden: true, dwellDone: false, readingMinute: visit.readingMinute + 1 };
 }
 
 /**
