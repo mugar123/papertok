@@ -34,6 +34,10 @@ const unrecorded = new WeakSet<InteractionEvent>();
  * undo would remove it. When `undoes` was held and dropped before any profile
  * recorded it, by a sign-out or past MAX_HELD_EVENTS, `event` is dropped too,
  * for the same reason. When `undoes` was never held, `event` is held.
+ * FeedProvider marks `undoes` refused (refuseHeldEvent) before its undo
+ * comes, which alone keeps it out of the replay; taking it out here as well
+ * cancels the pair whatever that order, and frees its place among the
+ * MAX_HELD_EVENTS.
  */
 export function holdProfileEvent(held: HeldProfileEvents | null, userId: string, event: InteractionEvent, at = Date.now(), undoes?: InteractionEvent | null): HeldProfileEvents {
   const kept = held?.userId === userId ? held : { userId, events: [] };
