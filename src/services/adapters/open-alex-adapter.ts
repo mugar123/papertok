@@ -5,27 +5,9 @@ import type { OpenAlexRequestError } from '../open-alex-client.ts';
 
 import { getCategoryArea } from '../../data/category-taxonomy.ts';
 import { openAlexFetch } from '../open-alex-client.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../../utils/open-alex-work.ts';
+import { OPENALEX_PUBLISHED_TYPES, OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../../utils/open-alex-work.ts';
 import { normalizeSearchText } from '../../utils/search-relevance.ts';
 import { openAlexTypeaheadExpression } from '../open-alex-search-query.ts';
-
-// OpenAlex work types, in OpenAlex's current vocabulary. The filter used to ask
-// for `proceedings-article`, Crossref's name for a conference paper, which
-// OpenAlex no longer uses: `type:proceedings-article` matches zero works
-// (probed 2026-09-22 through the Worker relay; `conference-paper` matched 16.2
-// million). So the filter that meant "articles and conference papers" had been
-// silently returning journal articles alone -- "Segment Anything" (ICCV 2023)
-// and every other NeurIPS/CVPR/ICCV paper was invisible to the feed and to the
-// search. `scripts/diagnostics/search-coverage-check.mjs` re-runs the probe.
-export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper', 'review']);
-
-// What a paper SEARCH accepts. A reader looking up a specific paper expects the
-// arXiv preprint when that is the record OpenAlex carries -- FC-CLIP's most
-// cited record is the preprint (W4385645314) -- and a survey when the title is
-// a survey. Category discovery also includes economics and finance preprints,
-// whose working papers may have no arXiv copy. Queries without those categories
-// keep the narrower list; datasets, theses, and paratext are still left out here.
-export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint']);
 
 export class OpenAlexAdapter {
   declare name: string;

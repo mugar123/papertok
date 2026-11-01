@@ -1,4 +1,3 @@
-import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from './adapters/open-alex-types.ts';
 import type { OpenAlexJsonOptions } from './open-alex-client.ts';
 import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
@@ -27,12 +26,10 @@ import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
-import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
-import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER } from '../utils/publication-status.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
-import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
+import { normalizeDoi as normalizePublicDoi } from '../utils/public-navigation.ts';
 import { withEnforcedDeadline, withRequestDeadline } from '../utils/request-deadline.ts';
 import {
   applyInstitutionWorksFallback,
@@ -40,8 +37,7 @@ import {
   getRecentImpactConfig,
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
-import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1628,61 +1624,6 @@ export function slimAuthorsPage(data: OpenAlexPage<OpenAlexAuthor>) {
   return { authors, total: data?.meta?.count || 0 };
 }
 
-function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
-  // OpenAlex dates a work as a calendar day. The year is read from that text:
-  // as a Date it is midnight UTC, still the previous year west of Greenwich on
-  // 1 January, which is where OpenAlex files a work known only by its year.
-  const date = work.publication_date || '';
-  const published = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
-
-  const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
-  const institutions = [...new Map((work.authorships || [])
-    .flatMap(authorship => authorship.institutions || [])
-    .filter(Boolean)
-    .map(institution => [institution.id || institution.ror || institution.display_name, {
-      id: institution.id,
-      ror: institution.ror,
-      displayName: institution.display_name,
-    }])).values()];
-  const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
-  const openAlexId = work.id!.split('/').pop()!;
-  
-  return PaperBuilder.create({
-    id: openAlexId,
-    sources: { primary: 'openalex', enrichedBy: [] },
-    title: work.title || 'No Title',
-    abstract: usableOpenAlexAbstract(work),
-    authors,
-    institutions,
-    year: Number(published.slice(0, 4)) || undefined,
-    published,
-    publicationType: work.type || work.primary_location?.source?.type || 'journal',
-    publicationStatus: openAlexPublicationStatus(work),
-    peerReviewed: openAlexPeerReviewed(work),
-    workingPaper: openAlexIsWorkingPaper(work) || undefined,
-    openAccess: work.open_access?.is_oa,
-    pdfUrl: work.open_access?.oa_url,
-    landingPageUrl: work.primary_location?.landing_page_url || work.id,
-    doi: work.doi,
-    arxivId: getArxivIdFromWork(work) || undefined,
-    pmid: normalizePmid(work.ids?.pmid) || undefined,
-    journal: work.primary_location?.source?.display_name,
-    publisher: work.primary_location?.source?.host_organization_name,
-    citationCount: work.cited_by_count || 0,
-    citationCountKnown: Number.isFinite(work.cited_by_count),
-    concepts: work.concepts || [],
-    categories: categories,
-    keywords: categories,
-    // The work's branch of science, kept because `categories` above is a list
-    // of concept names — "Toric code", "The Imaginary" — and a concept is not a
-    // field. Without this the Explorer's rows had nothing to take a field
-    // colour from and every one of them rendered in the brand ink, while the
-    // same paper in the feed, which arrives with an arXiv category, rendered in
-    // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
-    primaryTopic: work.primary_topic || null,
-  });
-}
-
 /**
  * One work fetched from OpenAlex by its arXiv id, as a full paper — abstract
  * included, which the enrichment path deliberately leaves out. This is the
@@ -1707,20 +1648,6 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeout
     console.warn('OpenAlex arXiv fallback failed', error);
     return null;
   }
-}
-
-// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
-// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
-// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
-// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
-// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
-// sent: the URL parser resolves it first, into another path. A DOI the relay
-// would refuse, or the parser rewrite, has no path id ('').
-function doiPathId(doi: string) {
-  const id = `doi:${encodeURIComponent(doi)
-    .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%2F/gi, '/')}`;
-  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 /**

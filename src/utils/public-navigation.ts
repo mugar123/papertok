@@ -255,7 +255,7 @@ export function normalizePmid(value: unknown) {
  * `pmid:…`, and the Liked tab has nothing else to go on for it. Without an
  * identity for those ids, every such row was a label instead of a link.
  */
-function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): string {
+export function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): string {
   if (typeOrPaper && typeof typeOrPaper === 'object') {
     const doi = normalizeDoi(typeOrPaper.doi || typeOrPaper.externalIds?.DOI);
     if (doi) return `doi:${doi}`;

@@ -13,6 +13,7 @@ Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker
 - `arxiv-api.ts` and `share-route.ts` keep the arXiv beat through `upstream-pace.ts` (a request the router hands to `/arxiv` takes only every other seat), and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
 - `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
 - The paper corpus (see [Paper store](#paper-store)): `paper-store.ts` owns its rows, lanes, vectors and ranking; `paper-sources.ts` harvests each source by calling the provider handlers above in-process; `paper-enrichment.ts` enriches stored papers; `paper-harvest.ts` runs them as a Workflow; `paper-feed.ts` owns the reader routes.
+- `mcp-server.ts` owns the public MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process.
 - Existing feature modules own AI, accounts, institutions, notifications, lists and ledgers.
 
 Provider modules use the shared runtime and HTTP helpers. `http.ts` imports nothing; `provider-runtime.ts` imports `http.ts`, the request-quota ledger and `upstream-pace.ts`. Neither imports the router or a provider module. OpenAlex relay, graph and share requests reserve against the same budget in `provider-runtime.ts`.
@@ -380,7 +381,7 @@ The native workers.dev route is disabled and the frontend accepts only the custo
 domain in production. Publish a bundle configured with that domain before deploying
 this setting; see [Production Worker hostname](#production-worker-hostname).
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
@@ -1162,16 +1163,17 @@ existing secret before deploying these routes. Local requests need a test
 | `/resources/figures` | 20 cache misses | The route's own 60/minute ceiling (`FIGURES_GLOBAL_MINUTE_LIMIT`) |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
+| `/mcp` | 30 tool calls, cache hits included | The limits above of the routes its tools call (see [MCP server](#mcp-server)) |
 
 OpenAlex and share attach the caller as the existing reservation’s second
 subject, so a refused caller spends no shared quota. Their minute-specific
-identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA and
-figures each take a caller-only reservation, with cleanup scheduled one minute
-after the window ends. arXiv gives that unit back when pacing refuses a seat.
-Figures takes the caller's unit before its minute ceiling: a caller past its 20
-spends none of the 60, and a miss the ceiling refuses gives the unit back.
-arXiv's existing ledger-outage behavior remains unpaced service; OA, figures,
-OpenAlex and share do not call their providers if the quota ledger is
+identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA,
+figures and MCP each take a caller-only reservation, with cleanup scheduled one
+minute after the window ends. arXiv gives that unit back when pacing refuses a
+seat. Figures takes the caller's unit before its minute ceiling: a caller past
+its 20 spends none of the 60, and a miss the ceiling refuses gives the unit
+back. arXiv's existing ledger-outage behavior remains unpaced service; OA,
+figures, OpenAlex and share do not call their providers if the quota ledger is
 unavailable. Missing caller identity or secret refuses lookup when a caller
 reservation is required. A share refusal serves the generic page; other
 refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
@@ -1179,5 +1181,133 @@ refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
 Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
 caller allowance. In-process paper harvesting uses its existing provider
 budgets and pacing without a visitor IP. The public router cannot select those
-harvest entry points. Test these paths with `node --test worker/index.test.ts
+harvest entry points, nor the agent entry points the MCP server calls. Test these paths with `node --test worker/index.test.ts
 worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.test.ts`.
+
+## MCP server
+
+`POST /mcp` is a public, read-only [Model Context Protocol](https://modelcontextprotocol.io)
+server with no account (ENG-91, phase 1). `mcp-server.ts` implements the
+Streamable HTTP transport without sessions or server-sent events: each POST
+carries one JSON-RPC message and receives one `application/json` answer.
+Notifications receive `202`; a message without a string `method` receives
+`400` with `-32600`, as the server sends no requests a client could answer. GET
+and other methods except the router's CORS
+preflight receive `405`, batches
+receive `-32600` (a deviation from `2025-03-26`, the version assumed when a client
+sends no `MCP-Protocol-Version`, whose transport requires batches; the two later
+versions dropped them), and bodies above 16 KB receive `413`. It negotiates protocol
+versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A browser `Origin`
+outside the allowlist receives `403`; remote clients send none. The official
+SDK is not used, so the package lock is unchanged.
+
+| Tool | Route asked in-process | Result |
+| --- | --- | --- |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title with a shared first-author name) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts, which `get_paper` keeps in `topics` only. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or arXiv fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; an arXiv answer without the paper is `NOT_FOUND` |
+| `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
+
+ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
+The citation graph waits for phase 2: the browser's `/citation-graph` requires a
+Firebase identity and charges each reader's share of the credential-backed
+providers' minute allowance, and MCP callers have no account yet. Figures are
+not in this phase either. `/resources/figures` is public with a per-IP
+allowance of 20 misses a minute, but it does not take the arXiv beat's seat:
+each miss fetches arXiv's HTML rendering and ar5iv's at once. Offering it to
+agents waits for phase 2, with the citation graph (ENG-91).
+
+Tools return the existing `Paper` shape without the provider's `raw` record,
+the `summary` that repeats the abstract, the feed's internal fields (the
+adapter's `provider` label among them) and `sourceType`, which
+`mapOpenAlexWork` writes as `journal` for every work that is not a conference
+paper, a repository preprint included. `get_paper` gives an OpenAlex work a
+`journal` and `publisher` only when its primary source is a venue (a
+`journal`, `conference` or `book series`), so a preprint on arXiv or SSRN,
+the arXiv fallback's record included, names no repository as its journal, as
+a search's record of it names none. They come with
+bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
+institutions, 5 concepts, 5 names in `categories` (an OpenAlex record's concept
+names, or in a search its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`
+where they differ from it, and 3 topics. A search also cuts each abstract at the
+last space within 1,500 characters and ends it with `…`; `get_paper` sends the
+whole abstract (up to the 6,000 characters `usableOpenAlexAbstract` accepts). A
+paper's `omitted` counts the entries each cut list left out and, for the
+abstract, the characters (`{ abstract: 4300, authors: 1900 }`). A search then
+sends its papers in rank order while they fit in 36,000 bytes of JSON and counts
+the rest in the result's `omitted.papers`: ten papers of 2,000-author
+collaborations with near-maximum abstracts come to five papers and about 33 KB. A field the source never gave stays
+absent rather than carrying `PaperBuilder.create`'s default: no placeholder
+abstract or title, no author name the OpenAlex mappers wrote for one OpenAlex
+did not give (`Unknown`, `Unknown Author`: the author keeps its id, or is left
+out when OpenAlex gave nothing of it), no `null` author field such as the
+affiliation of an author without an institution, no empty list or string, no `referenceCount: 0` or `has*:
+false` (no record a tool reads carries them), no `citationCount` unless
+`citationCountKnown` is true, no `peerReviewed: false` on a preprint record,
+whose `publicationStatus` already says preprint, and no `peerReviewed: true`
+that rests on nothing but the DOI an arXiv record lists (`restsOnArxivDoi`),
+which can be a repository's. A client
+reads a tool result up to a ceiling (Claude Code's default is about 25,000
+tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
+caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
+keys, arXiv beat and per-IP miss limits as the browser (see
+[Public lookup caller limits](#public-lookup-caller-limits)). ENG-91 puts
+agents in the lowest budget tier, so the tools call the relays' agent entry
+points:
+
+- `handleAgentOpenAlex` bills every OpenAlex miss in the `exploration` tier: a
+  search's ten units, and the one unit of each one-work list `get_paper` asks
+  for, which a reader opening a paper spends in `essential`: the arXiv
+  fallback, and the `filter=doi:` list for a DOI the relay cannot carry in its
+  path (`doiPathId`). A lookup by id is a free entity lookup.
+- `handleAgentArxiv` takes the beat's seat only for the current three-second
+  period, never one ahead, and like any request from outside the Worker only a
+  public (even) seat. Readers book seats up to four seconds ahead, so an agent
+  never takes a seat a reader booked, and a search's own arXiv miss takes the
+  seat of its period. An agent can still take the seat of a reader who
+  arrives after it in the period's first two seconds: the next public seat is
+  then more than four seconds away, so that reader is refused. An agent's call
+  goes out at once, so, like a reader's call that takes its period's seat
+  late, it and the next period's call can be less than a second apart. An
+  odd period is never an agent's, so even on an idle Worker every agent arXiv
+  miss in an odd period is refused: about half of uncached arXiv lookups,
+  which a search lists under `unavailable` and `get_paper` answers from
+  OpenAlex for one billed unit. That answer is the OpenAlex record: id
+  `openalex:W…` and concept names in `categories`, where arXiv's answer has
+  the arXiv id and arXiv categories. A refused seat is
+  `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of the
+  next public seat (1 to 6 seconds, rounded up), under `unavailable` in a
+  search; `get_paper` then asks OpenAlex, and logs arXiv's refusal with
+  `source: 'arxiv'` when OpenAlex has the paper.
+
+Arguments are validated before any reservation; `sources` is read in any case
+(`arXiv`, `OpenAlex`). Each `tools/call` then
+reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
+`reserveCallerMinute`; cache hits count too. A refusal, a missing
+`PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
+`isError: true` and a `code` (`PROVIDER_RATE_LIMITED` with
+`retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED` for a missing secret or
+ledger binding, `QUOTA_LEDGER_UNAVAILABLE` with `retryAfterSeconds` when the
+ledger did not answer (logged as a 503), `NOT_FOUND`,
+`INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
+`UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
+failed, with `retryAfterSeconds` when every one was only rate limited), so the
+client model can read them. An exception inside a tool call is
+answered with `-32603` and the request's `id`, status 500. These answers are HTTP
+200, so `callTool` writes the Workers Logs line itself for a rate limit or a 5xx-class
+code, as `{route: '/mcp', tool, code, status}`, and reports the 5xx-class failures
+to PostHog as the routes report theirs. A search writes that line for each
+source that failed, with its `source`, whether or not the other source answered,
+and none for `SOURCES_UNAVAILABLE` itself, so a search its sources only rate
+limited is a 429 and never a server error. `get_paper` writes one with a
+`source` for each failure its answer does not carry: arXiv's when the OpenAlex
+fallback found the paper, OpenAlex's when the fallback failed and the answer is
+arXiv's error. The server sends no search text, paper
+id or other argument to logs or analytics.
+
+To connect from Claude, add a custom connector with the URL
+`https://api.papertok.app/mcp` in claude.ai (Settings, Connectors). In Claude
+Code, run `claude mcp add --transport http papertok https://api.papertok.app/mcp`.
+No authentication is configured. claude.ai calls a custom connector from
+Anthropic's servers rather than the reader's device, so its users share the
+per-IP allowances of those addresses; Claude Code calls from the reader's own
+address. Test with `node --test worker/mcp-server.test.ts`.
