@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import type { InteractionEvent, TemporalSignal } from '../utils/interaction-profile.ts';
+import type { InteractionEvent, KindCounts, TemporalSignal } from '../utils/interaction-profile.ts';
 import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { NOTABLE_EVERY } from '../utils/feed-enrichment.ts';
 import { paperAffinitySignals, sampleGamma } from '../utils/recommendation-engine.ts';
@@ -56,30 +56,47 @@ const NOTABLE_EVERY_MIN = 3;
 // about one notable place in eleven cards on average (ENG-166, decision 7),
 // and a few dozen cards of each kind outweigh it.
 const PRIOR_ENGAGEMENTS = 5;
+// How many notable cards shown halve a page's chance to explore. A new account
+// explores on every page; one shown a hundred notable cards on one in 21.
+const EXPLORING_NOTABLE_SHOWN = 5;
 
 /**
  * One notable place in how many cards, for one page (ENG-166). Each kind of
  * For You card has an engagement rate per card shown: the likes, saves and
- * opened PDFs it got over the times it was shown. Each page draws a rate for
- * each kind from its Gamma posterior, whose prior is the account's rate over
- * both kinds, so a kind shown less is not taken for one liked less. Equal
- * drawn rates give today's one place in NOTABLE_EVERY; a notable rate k times
- * the recent one gives k notable cards for every NOTABLE_EVERY - 1 others. Each
- * page draws again, so a share the counts make unlikely still comes up now
- * and then, as in exploration (pickExplorationCategories). The draw is kept
- * between one in NOTABLE_EVERY and one in NOTABLE_EVERY_MIN, so neither kind
- * of card leaves the feed. Because the draw only moves away from that floor,
- * equal rates average more than one place in NOTABLE_EVERY over many pages,
- * even at 1,999 cards shown, the most halving keeps: about one in 13 at a
- * rate of 2%, one in 14 at 10 to 20% and one in 14.5 when every card is
- * engaged with. A reader who engages with neither kind keeps near the prior:
- * about one in 10, a little more than a new account's one in 11: fewer
- * notable cards were shown, so no engagement lowers their drawn rate less.
+ * opened PDFs it got over the times it was shown, with a Gamma posterior
+ * whose prior is the account's rate over both kinds, so a kind shown less is
+ * not taken for one liked less. A notable rate k times the recent one gives k
+ * notable cards for every NOTABLE_EVERY - 1 others, kept between one place in
+ * NOTABLE_EVERY and one in NOTABLE_EVERY_MIN so neither kind of card leaves
+ * the feed.
+ *
+ * Most pages take the spacing the posteriors expect, clamped to those bounds,
+ * and round it up or down at random so that its share averages the expected
+ * one. Equal rates, or no engagement with either kind, expect one place in
+ * NOTABLE_EVERY or more, so they average one in NOTABLE_EVERY: today's share.
+ * The other pages explore, as exploration does (pickExplorationCategories):
+ * they draw a rate for each kind from its posterior, so a share the counts make
+ * unlikely still comes up now and then. A draw only moves away from the floor,
+ * so exploring adds notable places: a new account, which explores on every
+ * page, averages about one in 11 (ENG-166, decision 7), and the exploring
+ * pages grow rarer as notable cards are shown (EXPLORING_NOTABLE_SHOWN).
  */
 export function sampleNotableEvery({ notable, recent }: Pick<TemporalSignal, 'notable' | 'recent'>, random: () => number = Math.random) {
   const rate = (notable.engaged + recent.engaged + 1) / (notable.shown + recent.shown + 10);
   const priorShown = PRIOR_ENGAGEMENTS / rate;
-  const draw = ({ shown, engaged }: TemporalSignal['notable']) => sampleGamma(PRIOR_ENGAGEMENTS + engaged, random) / (priorShown + shown);
-  const odds = draw(notable) / draw(recent) / (NOTABLE_EVERY - 1);
-  return Math.min(NOTABLE_EVERY, Math.max(NOTABLE_EVERY_MIN, Math.round((1 + odds) / odds)));
+  const shape = ({ engaged }: KindCounts) => PRIOR_ENGAGEMENTS + engaged;
+  const scale = ({ shown }: KindCounts) => priorShown + shown;
+  const bounded = (every: number) => Math.min(NOTABLE_EVERY, Math.max(NOTABLE_EVERY_MIN, every));
+  if (random() < EXPLORING_NOTABLE_SHOWN / (EXPLORING_NOTABLE_SHOWN + notable.shown)) {
+    const draw = (kind: KindCounts) => sampleGamma(shape(kind), random) / scale(kind);
+    return bounded(Math.round(1 + (NOTABLE_EVERY - 1) * draw(recent) / draw(notable)));
+  }
+  // The mean of the recent draw over the notable one: a Gamma's mean over the
+  // mean of an inverse Gamma (shape above 1, as PRIOR_ENGAGEMENTS keeps it).
+  const expected = bounded(1 + (NOTABLE_EVERY - 1) * (shape(recent) / scale(recent)) * (scale(notable) / (shape(notable) - 1)));
+  const closer = Math.floor(expected);
+  const wider = Math.ceil(expected);
+  if (closer === wider) return closer;
+  // Rounded to `closer` this often, the page's share averages 1 / expected.
+  return random() < (1 / expected - 1 / wider) / (1 / closer - 1 / wider) ? closer : wider;
 }

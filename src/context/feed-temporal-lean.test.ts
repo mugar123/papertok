@@ -160,11 +160,10 @@ test('a page\'s share of notable places stays between one in fifteen and one in 
   }
 });
 
-// ENG-166, decisions 1 and 7.
-// A reader as taken with either kind averages about one in 13 to 14, not the
-// one in fifteen of before: each page's draw can only move above that floor
-// (sampleNotableEvery).
-test('a new account explores about one notable place in eleven, and a reader as taken with either kind per card stays between one in fifteen and one in twelve and a half however many of each were shown', () => {
+// ENG-166, decisions 1 and 7, and the parameters of 2026-10-28: a reader who
+// engages with both kinds at the same rate per card shown settles at one in
+// fifteen, and a new account starts around one in eleven.
+test('a new account explores about one notable place in eleven, and a reader as taken with either kind per card averages one in fifteen however many of each were shown', () => {
   const none = mean(sampledShares(createEmptyInteractionProfile()));
   assert.ok(none > 0.085 && none < 0.1, `share without engagement: ${none}`);
   // One card in five liked of each kind: recent cards shown 14 times as often
@@ -173,9 +172,22 @@ test('a new account explores about one notable place in eleven, and a reader as 
   const twoToOne = mean(sampledShares(profileWith({ shown: 100, engaged: 20 }, { shown: 200, engaged: 40 })));
   const longUse = mean(sampledShares(profileWith({ shown: 100, engaged: 10 }, { shown: 1400, engaged: 140 })));
   for (const share of [fourteenToOne, twoToOne, longUse]) {
-    assert.ok(share >= 1 / 15 && share < 0.08, `share of an indifferent reader: ${share}`);
+    assert.ok(share >= 1 / 15 && share < 1 / 14.5, `share of an indifferent reader: ${share}`);
   }
-  assert.ok(Math.abs(fourteenToOne - twoToOne) < 0.006, `${fourteenToOne} against ${twoToOne}`);
+});
+
+// The share above, at the most cards halving keeps (1,999, one in fifteen of
+// them notable), for rates from 2% to every card, and for a reader who
+// engages with neither kind.
+test('equal rates at the most cards halving keeps, and no engagement at all, average one notable place in fifteen', () => {
+  for (const rate of [0.02, 0.1, 0.2, 1]) {
+    const notable = { shown: 133, engaged: Math.round(133 * rate) };
+    const recent = { shown: 1866, engaged: Math.round(1866 * rate) };
+    const share = mean(sampledShares(profileWith(notable, recent), 20000));
+    assert.ok(share >= 1 / 15 && share < 1 / 14.8, `rate ${rate}: one in ${1 / share}`);
+  }
+  const unengaged = mean(sampledShares(profileWith({ shown: 100, engaged: 0 }, { shown: 1400, engaged: 0 }), 20000));
+  assert.ok(unengaged >= 1 / 15 && unengaged < 1 / 14.5, `no engagement: one in ${1 / unengaged}`);
 });
 
 test('the share follows how much more each notable card is engaged with than each recent one', () => {
@@ -193,10 +205,12 @@ test('the share follows how much more each notable card is engaged with than eac
 
 // The share sets how many notable cards the reader is shown next, which must
 // not feed itself: a reader who engages equally keeps averaging about one in
-// 13 to 14 page after page, below one in twelve and a half, and one who
-// prefers notable cards by half keeps about 1.5 in 15.5.
+// 15 page after page, and one who prefers notable cards by half keeps more
+// than one in 13. That is fewer than the 1.5 in 15.5 their rates give: with a
+// few hundred notable cards as the evidence, the posterior still leans toward
+// the account's rate over both kinds, and the expected spacing is cautious.
 test('page after page, a reader\'s share stays where their per-card rates put it rather than drifting with what it showed', () => {
-  for (const [ratio, low, high] of [[1, 1 / 15, 0.08], [1.5, 0.08, 0.11]] as const) {
+  for (const [ratio, low, high] of [[1, 1 / 15, 1 / 14], [1.5, 1 / 13, 0.11]] as const) {
     const profile = createEmptyInteractionProfile();
     const random = seededRandom(7);
     const shares: number[] = [];
