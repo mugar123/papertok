@@ -73,6 +73,16 @@ test('a page sends only the follows the Worker reads: the first twenty with a la
   assert.deepEqual(body.follows.map(follow => follow.canonicalId), authors.slice(0, 20).map(follow => follow.canonicalId));
 });
 
+// ENG-123: journals are counted apart from the 20 other follows, up to 10.
+test('a page sends up to ten followed journals beside the twenty other follows', async () => {
+  const { asked, options } = harness(answered([]));
+  const journals: FollowEntity[] = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const authors: FollowEntity[] = Array.from({ length: 22 }, (_, index) => ({ type: 'author', canonicalId: `A${5000 + index}`, displayName: `Author ${index}` }));
+  await fetchCorpusPage({ categories: [], follows: [...journals, ...authors], page: 0, pageSize: 6 }, options);
+  const body = asked[0].body as { follows: Array<{ canonicalId: string }> };
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), [...journals.slice(0, 10), ...authors.slice(0, 20)].map(follow => follow.canonicalId));
+});
+
 test('a page asked by interest groups sends them with their categories and examples as the flat request', async () => {
   const { asked, options } = harness(answered([]));
   const groups = [

@@ -56,7 +56,7 @@ import {
 } from '../../utils/profile-session-caches.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
 import './save-to-list-modal.css';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { viewMorph } from '../../utils/view-morph.ts';
 import { EASE_IN_OUT, animateSize } from '../../utils/motion-curves.ts';
 

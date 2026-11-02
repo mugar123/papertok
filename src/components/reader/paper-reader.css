@@ -68,6 +68,24 @@ button.rd-tag {
   cursor: pointer;
 }
 
+/* The journal's name, a link to its page in the Explorer (ENG-123). It wraps,
+   so a long name stays inside a 320px screen, the underline marks it as a
+   link without relying on colour, and 24px is the smallest target WCAG 2.5.8
+   allows. */
+.rd-tag--link {
+  min-height: 24px;
+  white-space: normal;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-tag--link:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
 .rd-uses {
   font-variant-numeric: tabular-nums;
   user-select: none;

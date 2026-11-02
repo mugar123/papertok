@@ -17,7 +17,7 @@ import { CATEGORIES } from '../../data/categories.ts';
 import ThemeToggle from '../layout/theme-toggle.tsx';
 import ProgressDots from './progress-dots.tsx';
 import { Button } from '../ui/button.tsx';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import './guest-welcome.css';
 
 // The welcome's page and its two pickers, shared by every flow drawn in the

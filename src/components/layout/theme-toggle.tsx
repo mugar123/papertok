@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { useTheme } from '../../context/theme-context.tsx';
 import './theme-toggle.css';
 

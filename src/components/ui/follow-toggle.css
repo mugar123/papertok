@@ -34,14 +34,15 @@
   }
 }
 
-/* Press feedback: the catalog's squeeze, cheap on a 32px box. */
-.follow-toggle:active:not(:disabled) {
+/* Press feedback: the catalog's squeeze, cheap on a 32px box. A pending
+   toggle ignores presses, so it does not squeeze. */
+.follow-toggle:active:not(:disabled, [aria-disabled='true']) {
   scale: var(--press-scale);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* The press stays as a colour change; the squeeze is movement and goes. */
-  .follow-toggle:active:not(:disabled) {
+  .follow-toggle:active:not(:disabled, [aria-disabled='true']) {
     scale: none;
   }
 }
