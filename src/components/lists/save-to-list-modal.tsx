@@ -580,7 +580,7 @@ export default function SaveToListModal({
         await writeListMembership({ uid, paper, lists: toRemove.map(listById), added: true, language });
         if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
         if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
-        if (savesPaper && !alreadySaved) await unmarkSaved(paper, { takesBack: true });
+        if (savesPaper && !alreadySaved) await unmarkSaved(paper);
         // Puts back what the unsave took from the counts (`restores`).
         if (unsavesPaper) await markSaved(paper, { surface, restores: true });
         return true;

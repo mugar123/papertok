@@ -50,13 +50,7 @@ export interface FeedContextValue {
    * it reports.
    */
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
-  /**
-   * `takesBack`: the unsave takes back the paper's last save, after a refused
-   * write or on an Undo. When that save was made while the profile loaded and
-   * left storage as it was, the unsave writes nothing (saveLeftOut,
-   * heldRefused).
-   */
-  unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; takesBack?: boolean }) => Promise<void>;
+  unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
@@ -109,7 +103,7 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
+import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -155,7 +149,6 @@ import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
 import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen, type FeedPlan } from './feed-corpus-requests.ts';
-import { adoptHeldEvents, heldRefused, holdProfileEvent, refuseHeldEvent, saveLeftOut, type HeldProfileEvents } from './held-profile-events.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
@@ -291,18 +284,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const [markChangeLog] = useState(markChanges);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
-  // recommendations, so the write-back waits for it. The events recorded
-  // before then are held (heldProfileEvents) and added to the profile once it
-  // arrives, before its first write-back, so what a reader does while it loads
-  // still teaches the feed. The interaction documents are still the source of
-  // truth either way.
+  // recommendations, which is worse than skipping a session's deltas: the
+  // interaction documents are still the source of truth either way.
   const interactionProfileHydrated = useRef(false);
-  // What the account recorded before its profile loaded, for the profile that
-  // arrives to record again (adoptHeldEvents).
-  const heldProfileEvents = useRef<HeldProfileEvents | null>(null);
-  // The event of each paper's last save (markSaved), for the unsave that
-  // takes that save back (unmarkSaved's `takesBack`).
-  const lastSaveEvents = useRef(new Map<string, InteractionEvent>());
   // The account whose profile is currently reflected in the state above.
   const loadedProfileUserId = useRef<string | null>(null);
   // Bumped every time a profile is applied. Consumers of the reading library
@@ -413,35 +397,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // The paper, when there is one, lends the event its OpenAlex concepts and
   // authors, its area and its date (profileEvent). Called before the re-rank
   // it feeds, so that re-rank sees it. A guest's events only move the guest's
-  // lean. Returns the event recorded, for the undo of a refused change to name
-  // as `undoes` (holdProfileEvent).
-  const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null, undoes?: InteractionEvent | null) => {
+  // lean.
+  const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
     if (!userId) {
       guestLean.current = leanAfterEvent(guestLean.current, profileEvent(event, paper));
-      return null;
+      return;
     }
-    const recorded = profileEvent(event, paper);
-    recordInteractionEvent(interactionProfile.current, recorded);
+    recordInteractionEvent(interactionProfile.current, profileEvent(event, paper));
     profileSignals.current = readProfileSignals(interactionProfile.current);
-    if (!interactionProfileHydrated.current) {
-      heldProfileEvents.current = holdProfileEvent(heldProfileEvents.current, userId, recorded, Date.now(), undoes);
-      return recorded;
-    }
+    if (!interactionProfileHydrated.current) return;
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
-    return recorded;
   }, [user?.uid]);
-
-  // A mark's write: when Firestore refuses it, the event its change held for
-  // the profile still loading is not replayed (refuseHeldEvent).
-  const refusing = useCallback(async (write: Promise<void>, held: InteractionEvent | null) => {
-    try {
-      await write;
-    } catch (error) {
-      if (held) refuseHeldEvent(heldProfileEvents.current, held);
-      throw error;
-    }
-  }, []);
 
   // The late-enrichment merges each call this once more (OpenAlex, then
   // iCite) after the feed has already rendered, just to persist the enriched
@@ -991,7 +958,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     sessionSeenPapers.current = seenPapersForAccount(userId);
     notableAfterRef.current = null;
     guestLean.current = 0;
-    if (heldProfileEvents.current?.userId !== userId) heldProfileEvents.current = null;
     feedExcludedIds.current = [];
     feedPlan.current = null;
 
@@ -1007,7 +973,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setSavedPaperIds(new Set<string>());
       setReadPaperIds(new Set<string>());
       setPersonalLibrary({});
-      lastSaveEvents.current.clear();
       interactionProfile.current = createEmptyInteractionProfile();
       profileSignals.current = readProfileSignals(null);
       engagementWindow.current = emptyEngagementWindow();
@@ -1051,21 +1016,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
           );
         }
-        // Decided now, before the events recorded while it loaded add entries
-        // of their own.
-        const needsLearnedSeed = lacksLearnedAffinities(profile);
-        const positiveIds = needsLearnedSeed
-          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
-          : [];
-        // The reader may have liked, viewed or saved papers while it loaded:
-        // they moved the provisional profile this one replaces, and are
-        // recorded again on it. The sets and the library below put every
-        // mark back where the profile has it.
-        adoptHeldEvents(heldProfileEvents.current, userId, profile, {
-          changes: markChangeLog,
-          flush: () => scheduleInteractionProfileFlush(userId, profile),
-        });
-        heldProfileEvents.current = null;
         interactionProfile.current = profile;
         carryViewedPapers(profile);
         // A profile that genuinely came back — including a legitimately empty one
@@ -1081,6 +1031,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const saved = orderedSet('saved');
         const read = orderedSet('read');
 
+        // These sets and the library put every mark back where the profile
+        // has it, so a move an answer sent before is no longer on screen.
+        markChangeLog.screenReplaced();
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1104,7 +1057,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // cards. The sample comes from the aggregate's own order (newest first):
         // `liked`/`saved` above are Sets sorted by id for the lists, and cutting
         // those to 24 kept the alphabetically-first likes forever (audit
-        // 2026-09-02, A3). The seed and its sample are decided above.
+        // 2026-09-02, A3).
+        // Decided now, before the reader's first event adds entries of its own.
+        const needsLearnedSeed = lacksLearnedAffinities(profile);
+        const positiveIds = needsLearnedSeed
+          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
+          : [];
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn: () => void) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn: () => void) => setTimeout(fn, 0);
@@ -1884,25 +1842,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     // By updater: a refusal that lands after another like changed must move
     // only this paper back, not restore the set as it was when this call began.
-    // `undoes` is the refused change's event: the like that takes back a
+    // `restores` on the undo of a refused change: the like that takes back a
     // refused unlike restores what that unlike took from the counts.
-    const showLiked = (liked: boolean, undoes?: InteractionEvent | null) => {
-      const recorded = recordProfileEvent({
+    const showLiked = (liked: boolean, restores = false) => {
+      recordProfileEvent({
         paperId: paper.id,
         kind: liked ? 'like' : 'unlike',
         category: paper.primaryCategory,
         notable,
-        restores: Boolean(undoes),
-      }, paper, undoes);
+        restores,
+      }, paper);
       setLikedPaperIds((ids) => {
         const next = new Set(ids);
         if (liked) next.add(paper.id);
         else next.delete(paper.id);
         return next;
       });
-      return recorded;
     };
-    let shown: InteractionEvent | null = null;
 
     const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
     if (userId && storedPaper) {
@@ -1911,23 +1867,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     await writeMark({
       show: () => {
-        shown = showLiked(!isCurrentlyLiked);
+        showLiked(!isCurrentlyLiked);
         reRankFeed(paper.id);
       },
-      undo: () => showLiked(isCurrentlyLiked, shown),
+      undo: () => showLiked(isCurrentlyLiked, true),
       failure: 'Error saving like:',
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: markKey(userId, 'like', paper.id),
+      markKey: `${userId}:like:${paper.id}`,
       from: isCurrentlyLiked,
       to: !isCurrentlyLiked,
       isOn: () => likedPaperIdsRef.current.has(paper.id),
       write: async () => {
         if (!userId) return;
         const ref = interactionDocRef(userId, paper.id);
-        await refusing(setDoc(ref, definedFields({
+        await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
@@ -1939,13 +1895,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           paper: storedPaper && copyForMergeWrite(storedPaper),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }), { merge: true }), shown);
+        }), { merge: true });
         void trackEvent('like_change', {
           action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
         });
       },
     });
-  }, [withInteractionId, recordProfileEvent, refusing, countEngagement, feedCardNotable, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, feedCardNotable, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent, markChangeLog]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1968,7 +1924,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // successor. A late Crossref answer reads this ref to keep the reader's card.
     if (readerCardId === paper.id) visiblePaperIdRef.current = successorId;
     setPapers((prev) => withoutDismissedCard(prev, paper.id, readerCardId));
-    const recorded = recordProfileEvent({
+    recordProfileEvent({
       paperId: paper.id,
       kind: 'notInterested',
       category: paper.primaryCategory,
@@ -1978,17 +1934,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
-        await refusing(setDoc(ref, definedFields({
+        await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: abstractExcerpt(paper) || undefined,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }), { merge: true }), recorded);
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [withInteractionId, reRankFeed, recordProfileEvent, refusing, user?.uid]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
   // Takes a "Not interested" back. With `atIndex`, the paper returns to this
   // list there, at the card the reader is on, so it comes back where they let
@@ -2009,7 +1965,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // As in markNotInterested: the swap fires no scroll event.
       visiblePaperIdRef.current = paperInput.id;
     }
-    const recorded = recordProfileEvent({
+    recordProfileEvent({
       paperId: paper.id,
       kind: 'undoNotInterested',
       category: paper.primaryCategory,
@@ -2017,12 +1973,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId) {
       try {
-        await refusing(updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() }), recorded);
+        await updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() });
       } catch (err) {
         console.error('Error undoing not interested:', err);
       }
     }
-  }, [withInteractionId, recordProfileEvent, refusing, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
 
   const markAsRead = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -2031,7 +1987,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A Reading history removal answered after this must leave the mark on,
     // and this mark stays even if its own write is refused. A tap before React
     // draws a refused unmark's undo finds the read already told.
-    const moves = markChangeLog.stand(markKey(userId, 'read', paper.id), true, readPaperIdsRef.current.has(paper.id));
+    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
     // Built from the queued state, not the ref: an answered Reading history
     // removal may have queued its move before React drew it.
     setReadPaperIds((ids) => new Set(ids).add(paper.id));
@@ -2240,14 +2196,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
     countEngagement(typeof paperOrIdInput === 'string' ? paperOrIdInput : paperOrIdInput.id, { saves: 1 });
-    const recorded = recordProfileEvent({
+    recordProfileEvent({
       paperId,
       kind: 'save',
       category: paper?.primaryCategory,
       notable: feedCardNotable(typeof paperOrIdInput === 'string' ? { id: paperOrIdInput } : paperOrIdInput, options?.surface),
       restores: options?.restores,
     }, paper);
-    if (recorded) lastSaveEvents.current.set(paperId, recorded);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);
 
@@ -2272,9 +2227,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).
-        await refusing(setDoc(ref, storedPaper
+        await setDoc(ref, storedPaper
           ? { ...interactionData, paper: copyForMergeWrite(storedPaper) }
-          : interactionData, { merge: true }), recorded);
+          : interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
         if (options?.throwOnError) throw err;
@@ -2287,7 +2242,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = written && papersRef.current.find(card => card.id === written.id);
       if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, refusing, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
 
   /**
    * The way back from markSaved: the paper has left every list and Read later,
@@ -2296,17 +2251,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    * merges over it. The interaction keeps `saved: false` rather than losing
    * the field, the same flag a rebuild of the aggregate reads.
    */
-  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; takesBack?: boolean }) => {
+  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
-    // A save made while the profile loaded can leave storage as it was, and
-    // may hold a save from an earlier session (saveLeftOut, heldRefused).
-    const lastSave = options?.takesBack ? lastSaveEvents.current.get(paperId) : undefined;
-    if (saveLeftOut(lastSave)) return;
-    const refusedSave = heldRefused(heldProfileEvents.current, lastSave) ? lastSave : null;
 
     const paper = typeof paperOrId === 'object'
       ? paperOrId
@@ -2315,50 +2265,47 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     nextSaved.delete(paperId);
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
-    // Gives back exactly what markSaved lent. A refused save it takes back
-    // while the profile loads is named as `undoes`, so that neither is
-    // replayed over a save storage keeps from an earlier session.
-    const recorded = recordProfileEvent({
+    // Gives back exactly what markSaved lent.
+    recordProfileEvent({
       paperId,
       kind: 'unsave',
       category: paper?.primaryCategory,
-    }, paper, refusedSave);
+    }, paper);
     reRankFeed(paperId);
 
-    if (userId && !refusedSave) {
+    if (userId) {
       try {
-        await refusing(setDoc(interactionDocRef(userId, paperId), {
+        await setDoc(interactionDocRef(userId, paperId), {
           saved: false,
           timestamp: new Date().toISOString(),
-        }, { merge: true }), recorded);
+        }, { merge: true });
       } catch (err) {
         console.error('Error removing the saved mark:', err);
         if (options?.throwOnError) throw err;
       }
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, refusing, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
 
   const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;
     if (!userId) return;
-    let unmarked: InteractionEvent | null = null;
     await unmarkRead(paperId, {
       setReadIds: setReadPaperIds,
       setLibrary: setPersonalLibrary,
-      write: () => refusing(updateDoc(interactionDocRef(userId, paperId), {
+      write: () => updateDoc(interactionDocRef(userId, paperId), {
         read: deleteField(),
         readAt: deleteField(),
-      }), unmarked),
-      onUnmarked: () => { unmarked = recordProfileEvent({ paperId, kind: 'unread' }); },
-      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }, null, unmarked),
+      }),
+      onUnmarked: () => recordProfileEvent({ paperId, kind: 'unread' }),
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
       throwOnError: options?.throwOnError,
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: markKey(userId, 'read', paperId),
+      markKey: `${userId}:read:${paperId}`,
       isRead: () => readPaperIdsRef.current.has(paperId),
     });
-  }, [recordProfileEvent, refusing, user?.uid, markChangeLog]);
+  }, [recordProfileEvent, user?.uid, markChangeLog]);
 
   const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
@@ -2372,12 +2319,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const change = readLaterChange(paper.id, previous, {
       copy: storedPaper, readLater: nextValue, updatedAt, late: Boolean(options?.afterWrite), loaded: libraryPapers[paper.id],
     });
-    let shown: InteractionEvent | null = null;
 
     await writeMark({
       show: () => {
         setPersonalLibrary(change.show);
-        shown = recordProfileEvent({
+        recordProfileEvent({
           paperId: paper.id,
           kind: 'readLater',
           value: nextValue,
@@ -2387,22 +2333,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       },
       undo: options?.throwOnError ? () => {
         setPersonalLibrary(change.undo);
-        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) }, null, shown);
+        recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
       } : undefined,
-      write: () => refusing(setDoc(interactionDocRef(userId, paper.id), definedFields({
+      write: () => setDoc(interactionDocRef(userId, paper.id), definedFields({
         readLater: nextValue,
         paper: copyForMergeWrite(storedPaper),
         paperTitle: paper.title,
         paperAuthors: paper.authors?.slice(0, 3) || [],
         paperCategory: paper.primaryCategory || '',
         libraryUpdatedAt: updatedAt,
-      }), { merge: true }), shown),
+      }), { merge: true }),
       failure: 'Error updating read later:',
       afterWrite: options?.afterWrite,
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: markKey(userId, 'readLater', paper.id),
+      markKey: `${userId}:readLater:${paper.id}`,
       // A removal from Read later (`afterWrite`) starts from a saved paper,
       // not from whatever the screen showed when it was asked for.
       from: markStartsOn(options, Boolean(previous?.readLater)),
@@ -2410,7 +2356,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       isOn: () => Boolean(personalLibraryRef.current[paper.id]?.readLater),
     });
     return nextValue;
-  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, refusing, user?.uid, markChangeLog]);
+  }, [withInteractionId, personalLibrary, libraryPapers, recordProfileEvent, user?.uid, markChangeLog]);
 
   const saveReadingMetadata = useCallback(async (paperInput: Paper, { note = '', tags = [] }: { note?: string; tags?: string[] }) => {
     const paper = withInteractionId(paperInput);
