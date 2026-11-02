@@ -28,6 +28,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase.ts';
+import { paintedQuote } from '../utils/latex.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH, normalizeHighlightQuote } from '../utils/text-highlights.ts';
 
 /**
@@ -236,9 +237,13 @@ export function indexHighlightsByParagraph(
   return index;
 }
 
-/** A passage as one line of text: its start, and where it ends when it spans paragraphs. */
+/**
+ * A passage as one line of text, in the words the paper paints: its start, and
+ * where it ends when it spans paragraphs. Each end is read alone, because a
+ * brace or command a selection cut belongs to the paragraph it was cut in.
+ */
 export function passageQuote({ quote, endQuote }: Pick<UserHighlight, 'quote' | 'endQuote'>) {
-  return endQuote ? `${quote} … ${endQuote}` : quote;
+  return endQuote ? `${paintedQuote(quote)} … ${paintedQuote(endQuote)}` : paintedQuote(quote);
 }
 
 /**

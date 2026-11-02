@@ -7,6 +7,7 @@ import {
   resolveHighlightRanges,
   segmentTextChunk,
 } from './text-highlights.ts';
+import { normalizeLatexText, normalizeSavedLatexText } from './latex.ts';
 
 test('resolves a quote to a range in normalized space', () => {
   const text = 'The model reduced error by 12%.';
@@ -118,6 +119,219 @@ test('builds an anchor from offsets when the selected string cannot be trusted',
   const ranges = resolveHighlightRanges(text, [anchor!]);
   assert.equal(ranges.length, 1);
   assert.equal(ranges[0].start, start);
+});
+
+// Quotes saved while font commands still showed in the normalized text keep
+// their wrapper fragments; they mark the same words in the unwrapped text.
+test('a quote saved before font commands were unwrapped still marks its words', () => {
+  const text = 'a \\textbf{HERMES} harness and \\emph{nested \\textbf{x}} prose with $y$ after';
+  assert.equal(normalizeLatexText(text), 'a HERMES harness and nested x prose with $y$ after');
+  const cases: [string, string][] = [
+    ['HERMES} harness and', 'HERMES harness and'],
+    ['a \\textbf{HERMES', 'a HERMES'],
+    ['harness and \\emph{nested \\textbf{x', 'harness and nested x'],
+    ['x}} prose with $y$', 'x prose with $y$'],
+  ];
+  const normalized = normalizeLatexText(text);
+  for (const [quote, words] of cases) {
+    const ranges = resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+    assert.equal(ranges.length, 1, quote);
+    assert.equal(normalized.slice(ranges[0].start, ranges[0].end), words);
+  }
+});
+
+// `\textbf{HERMES}` was long enough to save; its unwrapped words are not.
+test('a saved quote of one wrapper whose words fall under the minimum still marks them', () => {
+  const text = 'the \\textbf{HERMES} system and more words';
+  const ranges = resolveHighlightRanges(text, [{ quote: '\\textbf{HERMES}', source: 'user' }]);
+  assert.equal(ranges.length, 1);
+  assert.equal(normalizeLatexText(text).slice(ranges[0].start, ranges[0].end), 'HERMES');
+  assert.deepEqual(resolveHighlightRanges('the HERMES system', [{ quote: 'HERMES', source: 'user' }]), []);
+});
+
+// The saved quote carries the wrapper, so it belongs to the wrapped mention,
+// not to an earlier plain one with the same words.
+test('a saved quote with a whole font command marks the wrapped mention', () => {
+  const text = 'the HERMES harness runs first; then \\textbf{HERMES} harness runs again';
+  const normalized = normalizeLatexText(text);
+  const start = normalized.lastIndexOf('HERMES harness runs');
+  const [range] = resolveHighlightRanges(text, [{ quote: '\\textbf{HERMES} harness runs', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [start, start + 'HERMES harness runs'.length]);
+});
+
+// Unwrapped, the first mention reads like the plain one a reader marked on
+// main, so a quote is searched in the text it was cut from first.
+test('a quote saved before font commands were unwrapped keeps the mention it marked', () => {
+  const text = 'the \\textbf{alpha beta} gamma shows up and later alpha beta gamma again';
+  const plain = { quote: 'alpha beta gamma', source: 'user', id: 'plain' };
+  const wrapped = { quote: '\\textbf{alpha beta} gamma', source: 'user', id: 'wrapped' };
+  for (const order of [[plain, wrapped], [wrapped, plain]]) {
+    const ranges = resolveHighlightRanges(text, order);
+    assert.deepEqual(ranges.map(range => [range.id, range.start, range.end]), [['wrapped', 4, 20], ['plain', 40, 56]]);
+  }
+  const [range] = resolveHighlightRanges('We call it the \\textbf{HERMES harness}. Later, the HERMES harness runs fast.', [{ quote: 'the HERMES harness', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [38, 56]);
+});
+
+// A selection is stored as the slice of that text it covers, wrappers whole
+// where it covers them whole, so it marks the mention that was selected.
+test('a selection over unwrapped words marks the mention that was selected', () => {
+  const text = 'the \\textbf{alpha beta} gamma shows up and later alpha beta gamma again';
+  for (const [start, end, quote] of [
+    [4, 20, '\\textbf{alpha beta} gamma'],
+    [40, 56, 'alpha beta gamma'],
+    [10, 20, 'beta} gamma'],
+  ] as const) {
+    const anchor = buildRangeAnchor(text, start, end);
+    assert.equal(anchor?.quote, quote);
+    for (const highlight of [{ quote, pending: true }, { quote, source: 'user' }]) {
+      const ranges = resolveHighlightRanges(text, [highlight]);
+      assert.deepEqual(ranges.map(range => [range.start, range.end]), [[start, end]], quote);
+    }
+  }
+  const nested = 'a \\textbf{\\emph{HERMES}} harness for agents';
+  assert.equal(buildRangeAnchor(nested, 2, 16)?.quote, '\\textbf{\\emph{HERMES}} harness');
+});
+
+// Each slice that might read as the selection is normalized whole, and every
+// start was tried against every end: with 160 empty wrappers either side, a
+// selection held the reader's selection handler for seconds.
+test('a selection between many removed font commands anchors at once', () => {
+  const empty = '\\emph{}'.repeat(160);
+  for (const [text, quote] of [
+    [`\\textbf{prefix ${empty}} \\textbf{selected words}\\textbf{${empty} suffix}`, '\\textbf{selected words}'],
+    // Cut across a wrapper at either end, no slice reads as the selected words.
+    [`\\textbf{prefix ${empty}selected} words${empty} suffix`, 'selected} words'],
+    [`prefix ${empty} selected \\textbf{words${empty} suffix}`, 'selected \\textbf{words'],
+  ]) {
+    const start = normalizeLatexText(text).indexOf('selected words');
+    const started = performance.now();
+    const anchor = buildRangeAnchor(text, start, start + 'selected words'.length);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 500, `took ${elapsed.toFixed(1)} ms`);
+    assert.equal(anchor?.quote, quote);
+    const [range] = resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+    assert.deepEqual([range.start, range.end], [start, start + 'selected words'.length], quote);
+  }
+});
+
+// A closing brace glued to the wrapper's own closer belongs to the text.
+test('a saved quote ending on a font command closer maps onto the wrapped words alone', () => {
+  const text = 'x\\emph{ab}} and the rest of it';
+  const [range] = resolveHighlightRanges(text, [{ quote: 'x\\emph{ab}', source: 'user' }]);
+  assert.equal(normalizeLatexText(text).slice(range.start, range.end), 'xab');
+});
+
+// Math alphanumerics and emoji take two UTF-16 units; the offsets are in units.
+test('characters outside the BMP before a quote do not shift where it marks', () => {
+  for (const text of [
+    'The 𝒜 operator yields robust estimates',
+    'We study 𝑥 and 😀 with \\textbf{HERMES}, a harness for agents',
+    'We study 𝑥 with \\textbf{HERMES}, a harness for agents',
+  ]) {
+    const normalized = normalizeLatexText(text);
+    const whole = buildRangeAnchor(text, 0, normalized.length);
+    assert.equal(whole?.quote, normalizeSavedLatexText(text), text);
+    const tail = normalized.slice(-16);
+    const anchor = buildRangeAnchor(text, normalized.length - 16, normalized.length);
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }]) {
+      const [range] = resolveHighlightRanges(text, [highlight]);
+      assert.equal(normalized.slice(range.start, range.end), tail, text);
+    }
+  }
+  const text = 'We study 𝑥 with \\textbf{HERMES}, a harness for agents';
+  const [range] = resolveHighlightRanges(text, [{ quote: 'harness for agents', source: 'user' }]);
+  assert.equal(normalizeLatexText(text).slice(range.start, range.end), 'harness for agents');
+});
+
+// A quote that starts on a brace can also match a wrapper's brace earlier on.
+test('a quote cut at a plain brace marks the words it was selected on', () => {
+  const text = 'The \\textbf{set} is good and the set {S} is good.';
+  const normalized = normalizeLatexText(text);
+  assert.equal(normalized, 'The set is good and the set {S} is good.');
+  const start = normalized.indexOf('} is good');
+  const anchor = buildRangeAnchor(text, start, normalized.length);
+  assert.equal(anchor?.quote, '} is good.');
+  const [range] = resolveHighlightRanges(text, [{ quote: '} is good', source: 'user' }]);
+  assert.deepEqual([range.start, range.end], [start, start + '} is good'.length]);
+  // A wrapper the paragraph keeps as written still resolves by its own words.
+  const kept = 'intro \\[ \\textbf{x \\] rest} tail and more words';
+  const [rest] = resolveHighlightRanges(kept, [{ quote: 'x \\] rest} tail', source: 'user' }]);
+  assert.ok(rest);
+});
+
+// Selecting a bold mention stores its font command, which a formula later in
+// the paragraph holds as written. Resolved inside that formula, the highlight
+// covered part of it and drew no mark.
+test('a selection over a font command marks that mention, not the same command inside a formula', () => {
+  const text = 'The \\textbf{agent harness} works; later $q = \\textbf{agent harness}$ holds.';
+  const anchor = buildRangeAnchor(text, 4, 17);
+  assert.equal(anchor?.quote, '\\textbf{agent harness}');
+  for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }, { quote: anchor?.quote, source: 'ai' }]) {
+    assert.deepEqual(resolveHighlightRanges(text, [highlight]).map(range => [range.start, range.end]), [[4, 17]]);
+    const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+    assert.deepEqual(marked.map(item => [item.type, item.value]), [['mark', 'agent harness']]);
+  }
+});
+
+// Every kind of formula holds the command as written, before the mention or
+// after it, and so does prose where the command's backslash is escaped.
+test('a selection over a font command marks that mention wherever else the paragraph keeps the command as written', () => {
+  for (const command of ['textbf', 'emph']) {
+    const wrapped = `\\${command}{agent harness}`;
+    for (const kept of ['$q = W$', '$$q = W$$', '\\(q = W\\)', '\\[q = W\\]', '\\begin{equation}q = W\\end{equation}', '\\W']) {
+      const elsewhere = kept.replace('W', wrapped);
+      for (const text of [`The ${wrapped} works; later ${elsewhere} holds.`, `Later ${elsewhere} holds; the ${wrapped} works.`]) {
+        const start = normalizeLatexText(text).indexOf(' agent harness') + 1;
+        const end = start + 'agent harness'.length;
+        const anchor = buildRangeAnchor(text, start, end);
+        assert.equal(anchor?.quote, wrapped, text);
+        for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }]) {
+          const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+          assert.deepEqual(marked.map(item => [item.start, item.end]), [[start, end]], text);
+        }
+      }
+    }
+  }
+});
+
+// The first occurrence of plain words can also lie inside a formula, where a
+// range that does not cover the formula whole draws nothing.
+test('a selection whose words an earlier formula also holds marks the selected words', () => {
+  for (const formula of ['$q = \\text{agent harness}$', '\\[\\text{agent harness}\\]', '\\begin{equation}\\text{agent harness}\\end{equation}']) {
+    const text = `Later ${formula} holds; the agent harness works.`;
+    const start = normalizeLatexText(text).lastIndexOf('agent harness');
+    const end = start + 'agent harness'.length;
+    const anchor = buildRangeAnchor(text, start, end);
+    assert.equal(anchor?.quote, 'agent harness');
+    for (const highlight of [{ quote: anchor?.quote, pending: true }, { quote: anchor?.quote, source: 'user' }, { quote: anchor?.quote, source: 'ai' }]) {
+      const marked = buildHighlightPlan(text, [highlight]).filter(item => item.kind);
+      assert.deepEqual(marked.map(item => [item.start, item.end]), [[start, end]], formula);
+    }
+  }
+});
+
+// Each occurrence of a quote is checked against the formulas it touches.
+// Walking all of the paragraph's formulas for each one made a paragraph eight
+// times as long take forty to fifty times as long to resolve.
+test('a quote only formulas hold is dropped in about eight times as long from a paragraph eight times as long', () => {
+  const quote = 'agent harness';
+  const fastest = (text: string) => {
+    let best = Infinity;
+    for (let run = 0; run < 7; run += 1) {
+      const started = performance.now();
+      resolveHighlightRanges(text, [{ quote, source: 'user' }]);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  for (const formula of ['$q = \\text{agent harness}$', '\\[\\text{agent harness}\\]']) {
+    const paragraph = (count: number) => `We fit ${formula} here. `.repeat(count);
+    assert.deepEqual(resolveHighlightRanges(paragraph(4000), [{ quote, source: 'user' }]), [], formula);
+    const once = fastest(paragraph(500));
+    const eightfold = fastest(paragraph(4000));
+    assert.ok(eightfold < 20 * once, `${formula}: ${once.toFixed(1)} ms, eight times as long ${eightfold.toFixed(1)} ms`);
+  }
 });
 
 test('a range too short to anchor is refused like any other', () => {

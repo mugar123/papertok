@@ -5,7 +5,7 @@ type TextSegment = { type: 'text'; value: string; start: number; end: number; ki
 export type HighlightMath = Omit<HighlightRange, 'kind' | 'source'> & { type: 'math'; value: string; raw: string; display: boolean; kind: string | null; source: string | null; under: string[] };
 export type HighlightChunk = TextSegment | HighlightMath;
 
-import { normalizeLatexText, splitLatexText } from './latex.ts';
+import { normalizeLatexText, normalizeSavedLatexText, paintedQuote, savedHighlightSpace, splitLatexText } from './latex.ts';
 
 /**
  * Resolving highlights onto rendered scientific text.
@@ -14,8 +14,9 @@ import { normalizeLatexText, splitLatexText } from './latex.ts';
  *
  * 1. `splitLatexText` runs its input through `normalizeLatexText` first, which
  *    strips markup, collapses whitespace and escapes `%`. Offsets in the raw
- *    string therefore do not survive. Everything here works in *normalized*
- *    space, and quotes are normalized the same way before being searched.
+ *    string therefore do not survive. Ranges are in *normalized* space, and
+ *    quotes are cut from that text before its font commands are unwrapped
+ *    (`savedHighlightSpace`) and found there again.
  *
  * 2. A highlight must never cross *into* a maths chunk. Wrapping part of a
  *    `$...$` expression in a `<mark>` would hand KaTeX a broken fragment, so
@@ -32,8 +33,13 @@ import { normalizeLatexText, splitLatexText } from './latex.ts';
 /** Shorter than this and a quote matches the wrong place too easily. */
 const MIN_QUOTE_LENGTH = 8;
 
+/**
+ * A quote keeps its font commands: it lives in `savedHighlightSpace`, and
+ * whether a wrapper unwraps depends on the formulas around it in the
+ * paragraph, which a quote on its own does not have.
+ */
 export function normalizeHighlightQuote(quote: unknown) {
-  return normalizeLatexText(quote);
+  return normalizeSavedLatexText(quote);
 }
 
 /**
@@ -56,19 +62,45 @@ function byLayer(a: HighlightRange, b: HighlightRange) {
 }
 
 /**
+ * Whether `buildHighlightPlan` paints any of `start`..`end`: it marks prose,
+ * and a formula only when the range covers it whole. A quote can also occur
+ * inside a formula, and resolving it there drew no mark at all.
+ *
+ * Every occurrence of a quote is checked, so the formulas the range touches
+ * are found by bisecting the spans, which are in order and disjoint: walking
+ * all of them per occurrence took a paragraph of 3,000 formulas holding the
+ * quote ten times as long to resolve.
+ */
+function drawsMark(formulas: [number, number][], start: number, end: number) {
+  let low = 0;
+  let high = formulas.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (formulas[middle][1] <= start) low = middle + 1;
+    else high = middle;
+  }
+  let inFormulas = 0;
+  for (let index = low; index < formulas.length && formulas[index][0] < end; index += 1) {
+    const [from, to] = formulas[index];
+    if (start <= from && to <= end) return true;
+    inFormulas += Math.min(end, to) - Math.max(start, from);
+  }
+  return inFormulas < end - start;
+}
+
+/**
  * Maps quotes onto character ranges of the normalized text.
  *
  * A quote the model mangled simply fails to match and is dropped: a missing
  * highlight is invisible, whereas a mis-placed one is a lie about the text.
  */
 export function resolveHighlightRanges(text: unknown, highlights: HighlightInput[] = []) {
-  const normalized = normalizeLatexText(text);
-  if (!normalized) return [];
+  const space = savedHighlightSpace(text);
+  if (!space.current) return [];
 
   const ranges: HighlightRange[] = [];
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
-    if (quote.length < MIN_QUOTE_LENGTH) continue;
     const source = highlight?.source || 'ai';
     const pending = Boolean(highlight?.pending);
 
@@ -80,24 +112,44 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
     // away the moment the reader's selection touched it (2026-09-17). A
     // pending selection sits on anything, its own saved mark included.
     const claimed = (range: HighlightRange) => !pending && !range.pending && range.source === source;
-    let searchFrom = 0;
-    let start = -1;
-    for (;;) {
-      const candidate = normalized.indexOf(quote, searchFrom);
-      if (candidate === -1) break;
-      const end = candidate + quote.length;
-      const overlaps = ranges.some(range => claimed(range) && candidate < range.end && end > range.start);
-      if (!overlaps) {
-        start = candidate;
-        break;
+    const findFree = (
+      haystack: string,
+      needle: string,
+      toCurrent = (offset: number) => offset,
+      accepts?: (start: number, end: number) => boolean,
+    ) => {
+      for (let candidate = haystack.indexOf(needle); candidate !== -1; candidate = haystack.indexOf(needle, candidate + 1)) {
+        const start = toCurrent(candidate);
+        const end = toCurrent(candidate + needle.length);
+        if (end > start && (!accepts || accepts(start, end)) && drawsMark(space.formulas, start, end) && !ranges.some(range => claimed(range) && start < range.end && end > range.start)) return { start, end };
       }
-      searchFrom = candidate + 1;
-    }
-    if (start === -1) continue;
+      return null;
+    };
+    if (quote.length < MIN_QUOTE_LENGTH) continue;
+    // Found in the text it was cut from, where main found it too. A quote not
+    // cut from it, such as one the model wrote or a selection read off the
+    // screen, may only occur in the painted text. The first occurrence that
+    // paints the quote as it reads on its own wins: selecting bold `agent
+    // harness` stores `\textbf{agent harness}`, which a formula or an escaped
+    // `\\textbf` elsewhere in the paragraph shows as written, and preferring
+    // that spelling marked the other mention or nothing (2026-10-31). Next is
+    // one that paints the quote as written, which is how a wrapper the
+    // paragraph keeps resolves; then one that paints its words without the
+    // cut brackets, because a quote that starts or ends on a brace can also
+    // match a wrapper's brace earlier in the paragraph.
+    const words = paintedQuote(quote);
+    const paints = (text: string) => (start: number, end: number) => space.current.slice(start, end).trim() === text;
+    const found = findFree(space.text, quote, space.toCurrent, paints(normalizeLatexText(quote)))
+      ?? findFree(space.text, quote, space.toCurrent, paints(quote))
+      ?? findFree(space.text, quote, space.toCurrent, paints(words))
+      ?? findFree(space.text, quote, space.toCurrent)
+      ?? (space.text === space.current ? null : findFree(space.current, quote));
+    if (!found) continue;
+    const { start, end } = found;
 
     ranges.push({
       start,
-      end: start + quote.length,
+      end,
       kind: highlight?.kind || 'finding',
       source,
       id: highlight?.id || null,
@@ -237,13 +289,58 @@ export function buildSelectionAnchor(selectedText: string) {
  * `resolveHighlightRanges` can find again on the next render.
  */
 export function buildRangeAnchor(text: unknown, start: number, end: number) {
-  const normalized = normalizeLatexText(text);
-  if (!normalized) return null;
-  const from = Math.max(0, Math.min(start, end));
-  const to = Math.min(normalized.length, Math.max(start, end));
-  const quote = normalized.slice(from, to).trim();
-  if (quote.length < MIN_QUOTE_LENGTH) return null;
-  return { quote, kind: 'user' };
+  const space = savedHighlightSpace(text);
+  let from = Math.max(0, Math.min(start, end));
+  let to = Math.min(space.current.length, Math.max(start, end));
+  while (from < to && /\s/.test(space.current[from])) from += 1;
+  while (to > from && /\s/.test(space.current[to - 1])) to -= 1;
+  const words = space.current.slice(from, to);
+  if (words.length < MIN_QUOTE_LENGTH) return null;
+  return { quote: savedQuote(space, from, to, words), kind: 'user' };
+}
+
+/** Slices `savedQuote` normalizes for one selection before it keeps the bare one. */
+const QUOTE_TRIES = 8;
+
+/**
+ * The painted characters `from`..`to` as the slice of the saved space they
+ * came from. Font commands the selection covers whole come with it, so it reads
+ * as the selected words and selecting `HERMES harness` stores the
+ * `\textbf{HERMES} harness` a reader selected on main. A selection that cuts
+ * across a wrapper keeps the brace between, which still marks it.
+ *
+ * Between two painted characters the saved text holds only what unwrapping
+ * removed: font command openers, their closing braces and spaces. Walking out
+ * from the selection, a slice may start at each opener met before the first
+ * closer, and end after each closer met before the first opener. A slice past
+ * that brace carries a brace cut from its partner, or a wrapper that paints
+ * nothing such as `\emph{}`: sixty of those filled the 400 characters a quote
+ * is stored at and left no words to mark. The slices are tried widest first, and each try normalizes the whole slice:
+ * past `QUOTE_TRIES` the bare slice is kept, so a text that makes many of them
+ * fail cannot stall the reader's selection handler.
+ */
+function savedQuote({ text: saved, source }: ReturnType<typeof savedHighlightSpace>, from: number, to: number, words: string) {
+  const start = source[from];
+  const end = source[to - 1] + 1;
+  const firsts = [start];
+  for (let index = start - 1; index >= (from > 0 ? source[from - 1] + 1 : 0) && saved[index] !== '}'; index -= 1) {
+    if (saved[index] === '\\') firsts.push(index);
+  }
+  const lasts = [end];
+  for (let index = end; index < (to < source.length ? source[to] : saved.length) && saved[index] !== '{'; index += 1) {
+    if (saved[index] === '}') lasts.push(index + 1);
+  }
+  firsts.reverse();
+  lasts.reverse();
+  let tries = 0;
+  for (const first of firsts) {
+    for (const last of lasts) {
+      const quote = saved.slice(first, last);
+      if (normalizeLatexText(quote) === words) return quote;
+      if (++tries === QUOTE_TRIES) return saved.slice(start, end);
+    }
+  }
+  return saved.slice(start, end);
 }
 
 export const HIGHLIGHT_MIN_QUOTE_LENGTH = MIN_QUOTE_LENGTH;
