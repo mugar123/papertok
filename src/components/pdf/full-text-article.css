@@ -7,6 +7,27 @@
 }
 .ft-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
+/* How far through the paper the reader is, along the top of the text. Without
+   scroll-driven animations there is no bar. */
+.ft-progress { display: none; }
+@supports (animation-timeline: scroll()) {
+  .ft-progress {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 3px;
+    margin-bottom: -3px;
+    background: var(--accent-primary);
+    transform-origin: 0 50%;
+    animation: ftProgress linear both;
+    animation-timeline: scroll();
+  }
+}
+@keyframes ftProgress {
+  from { transform: scaleX(0); }
+}
+
 .ft-article {
   /* Wider on a large screen, with the type growing alongside so lines stay readable. */
   max-width: clamp(680px, 38vw, 820px);
@@ -58,28 +79,68 @@
 .ft-list { padding-left: var(--space-6); }
 
 .ft-article a { color: var(--text-primary); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+/* A link within the paper (a citation, "Figure 2", an equation) is told apart by its colour. */
+.ft-article a[href^="#"]:not(.ft-margin-note) { text-decoration-line: underline; text-decoration-color: color-mix(in srgb, var(--accent-secondary) 45%, transparent); text-decoration-thickness: 1.5px; }
+@media (hover: hover) and (pointer: fine) {
+  .ft-article a[href^="#"]:hover { text-decoration-color: var(--accent-secondary); }
+}
 .ft-article a:focus-visible,
 .ft-article [tabindex]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .ft-article code { font: 0.9em var(--font-mono); }
 
+/* A wide formula scrolls across; the padding holds what hangs below or above
+   it (a subscript in a denominator), which would otherwise be cut and scroll
+   up and down as well. */
 .ft-equation {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-2);
+  padding-block: var(--space-2);
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .ft-equation .ft-math, .ft-equation .ft-formula-image, .ft-equation .ft-tex { flex: 1; text-align: center; }
+/* A browser does not break MathML across lines as KaTeX's markup breaks, so a
+   long inline formula scrolls on its own rather than widening the page. */
+:not(.ft-equation) > .ft-math:has(> math) {
+  display: inline-block;
+  max-width: 100%;
+  padding-block: 0.15em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
 .ft-formula-image { display: inline-block; max-height: 2.4em; vertical-align: middle; }
 .ft-equation .ft-formula-image { max-height: none; max-width: 100%; }
+/* Shown with a mouse once the formula is pointed at; always there for a finger. */
+.ft-copy { flex-shrink: 0; color: var(--text-tertiary); }
+.ft-copy[data-copied] { color: var(--accent-success); }
+@media (hover: hover) and (pointer: fine) {
+  .ft-copy { opacity: 0; transition: opacity 150ms ease; }
+  .ft-equation:hover .ft-copy, .ft-copy:focus-visible, .ft-copy[data-copied] { opacity: 1; }
+}
+@media (pointer: coarse) {
+  .ft-copy { min-width: 44px; min-height: 44px; }
+}
 .ft-tex { font: 0.85em var(--font-mono); color: var(--text-secondary); overflow-wrap: anywhere; }
 
 .ft-figure, .ft-table { margin: var(--space-6) 0; }
+.ft-figure-zoom {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.ft-figure-zoom[data-zoomed] img { opacity: 0; transition: opacity 150ms var(--ease-out); }
+.ft-figure-zoom:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-md); }
 .ft-figure img {
   display: block;
   max-width: 100%;
   height: auto;
-  margin: 0 auto var(--space-3);
   padding: var(--space-3);
   background: var(--bg-figure-plate);
   border: 1px solid var(--border-subtle);
@@ -89,20 +150,21 @@
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* A wide table takes the width it needs beyond the 680px text column, up to
-   1040px, centred on it; a long one scrolls inside with its header row kept. */
-.ft-table figcaption { margin-bottom: var(--space-3); }
+   1040px, centred on it; a long one scrolls inside with its header row kept.
+   Centred by the grid, not an offset, which the page would count as overflow
+   and scroll sideways on a phone. */
+.ft-table { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: unsafe center; }
+.ft-table figcaption { justify-self: stretch; margin-bottom: var(--space-3); }
 .ft-table-scroll {
-  position: relative;
-  left: 50%;
   width: max-content;
   min-width: 100%;
   max-width: min(1040px, calc(100vw - 2 * var(--space-4)));
   max-height: 70vh;
   overflow: auto;
-  translate: -50% 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
@@ -157,18 +219,54 @@
 .ft-references ol {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-4) var(--space-6);
-  margin: 0;
+  gap: 0 var(--space-3);
+  margin: 0 calc(-1 * var(--space-3));
   padding: 0;
   list-style: none;
 }
-.ft-references li { display: grid; align-content: start; gap: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+.ft-references li {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  transition: background-color 150ms ease;
+}
+/* The title's link covers the card; the identifier links stay above it. */
+.ft-article .ft-ref-card-link { color: inherit; text-decoration: none; }
+.ft-ref-card-link::after { content: ''; position: absolute; inset: 0; }
+.ft-references .ft-ref-links a { position: relative; z-index: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .ft-references li:has(.ft-ref-card-link):hover { background: var(--bg-sunken); }
+  .ft-references li:has(.ft-ref-card-link):hover .ft-ref-title { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+}
 
 .ft-notes ol { margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-secondary); }
 .ft-notes li { display: grid; grid-template-columns: 3ch 1fr; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
 
 /* Where a citation or note mark lands: `jumpTo` focuses it without a fragment. */
 .ft-references li:focus, .ft-notes li:focus { background: var(--bg-sunken); }
+/* It shines once as it lands, so the eye finds it. */
+.ft-article [data-landed] { position: relative; }
+.ft-article [data-landed]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  background:
+    linear-gradient(105deg, transparent 32%, color-mix(in srgb, var(--accent-secondary) 15%, transparent) 50%, transparent 68%) 100% 0 / 300% 100% no-repeat,
+    color-mix(in srgb, var(--accent-secondary) 5%, transparent);
+  animation: ftLanded 900ms var(--ease-in-out) both;
+}
+@keyframes ftLanded {
+  60% { opacity: 1; }
+  to { background-position: 0 0, 0 0; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-article [data-landed]::before { background: color-mix(in srgb, var(--accent-secondary) 7%, transparent); animation: fadeOut 900ms var(--ease-out) both; }
+}
 
 /* A citation's reference on a screen with no margin, above the viewer (pdf-viewer.css). */
 .ft-ref-sheet-backdrop { z-index: 12110; }
@@ -176,3 +274,60 @@
 .ft-ref-sheet-body { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-6) var(--space-6); overflow-y: auto; }
 .ft-ref-sheet .ft-ref-title { font-size: 1.15rem; }
 .ft-ref-sheet .ft-ref-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: var(--fs-xs); }
+
+/* A figure at the size of the screen, above the viewer (pdf-viewer.css). */
+.ft-zoom-scrim { z-index: 12110; }
+.ft-zoom.ft-zoom {
+  z-index: 12111;
+  width: min(96vw, 1400px);
+  max-width: none;
+  max-height: 94dvh;
+  overflow-y: auto;
+  padding: var(--space-10) var(--space-5) var(--space-5);
+}
+@keyframes ftZoomIn {
+  from { opacity: 0; transform: translate(var(--zoom-x, 0px), var(--zoom-y, 0px)) scale(var(--zoom-scale, 0.97)); }
+}
+/* On the way back only the image stays: the panel and its caption fade while it
+   lands on the figure in the text. */
+@keyframes ftZoomOut {
+  to {
+    transform: translate(var(--zoom-x, 0px), var(--zoom-y, 0px)) scale(var(--zoom-scale, 0.97));
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+/* Reduced motion keeps the dialog's own fade (ui/dialog.tsx). */
+@media (prefers-reduced-motion: no-preference) {
+  .ft-zoom.ft-zoom[data-open] { animation: ftZoomIn 260ms var(--ease-out); }
+  .ft-zoom.ft-zoom[data-closed] { animation: ftZoomOut 240ms var(--ease-out) both; }
+  .ft-zoom[data-closed] figcaption,
+  .ft-zoom[data-closed] > [data-slot="dialog-close"] { animation: fadeOut 120ms var(--ease-out) both; }
+}
+.ft-zoom figure { margin: 0; display: grid; gap: var(--space-3); }
+.ft-zoom img {
+  display: block;
+  max-width: 100%;
+  max-height: 78dvh;
+  margin-inline: auto;
+  padding: var(--space-3);
+  background: var(--bg-figure-plate);
+  border-radius: var(--radius-md);
+}
+/* A phone gives the figure the whole screen, fitted to its width, with the
+   caption below it; a pinch enlarges it further. */
+@media (max-width: 767px) {
+  .ft-zoom.ft-zoom {
+    display: grid;
+    align-content: center;
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    padding: var(--space-12) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+  }
+  .ft-zoom img { width: 100%; max-height: 70dvh; object-fit: contain; }
+}
+.ft-zoom figcaption { max-width: 72ch; margin-inline: auto; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-secondary); }

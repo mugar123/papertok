@@ -108,16 +108,6 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
   const shouldShowFallback = showsPdf && (!pdfUrl || showFallback);
 
-  // The machine voice under the title: the same honest identity the cards
-  // print. Nothing is invented — a paper with neither an
-  // arXiv id nor a DOI simply has no identity line.
-  const paperIdentity = paper.arxivId
-    ? `arxiv:${paper.arxivId}`
-    : paper.doi ? `doi:${paper.doi}` : '';
-  const identityLine = paperIdentity
-    ? `${paperIdentity}${showsText ? ' · Full text' : pdfUrl ? ' · PDF' : ''}`
-    : '';
-
   // Fallback timeout
   useEffect(() => {
     if (!canEmbed) return undefined;
@@ -150,22 +140,21 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <X size={18} aria-hidden="true" />
             </DialogClose>
 
-            <div className="pdf-heading">
-              <h3 className="pdf-title">{paper.title}</h3>
-              {identityLine && <span className="pdf-identity">{identityLine}</span>}
+            <h3 className="pdf-title">{paper.title}</h3>
+
+            <div className="pdf-actions">
+              {fullText && (
+                <Button size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
+                  {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
+                </Button>
+              )}
+
+              {externalUrl && (
+                <Button variant="outline" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
+                  <ArrowSquareOut size={18} aria-hidden="true" />
+                </Button>
+              )}
             </div>
-
-            {fullText && (
-              <Button size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
-                {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
-              </Button>
-            )}
-
-            {externalUrl && (
-              <Button variant="outline" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
-                <ArrowSquareOut size={18} aria-hidden="true" />
-              </Button>
-            )}
           </div>
 
           <div className="pdf-stage">
@@ -175,6 +164,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
 
             {fullText && showsText && (
               <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text">
+                <div className="ft-progress" aria-hidden="true" />
                 <FullTextArticle doc={fullText} />
               </div>
             )}
