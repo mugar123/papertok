@@ -1071,6 +1071,34 @@ test('a like that restores an unlike which took nothing back adds nothing, and o
   assert.deepEqual(temporalOf(halved), { notable: { shown: 100, engaged: 0.5 }, recent: { shown: 900, engaged: 0 }, lean: 0 });
 });
 
+// What a restore puts back keeps the halving it was first counted at, so a
+// later unlike or unsave takes back the halved amount, not a whole engagement.
+// A second notable engagement keeps the count above zero, where the floor at
+// zero would hide a removal that takes too much.
+test('a like or save restored after a halving is taken back at its halved worth by the next removal, before and after storage', () => {
+  for (const [add, remove] of [['like', 'unlike'], ['save', 'unsave']] as const) {
+    for (const removedAfterHalving of [false, true]) {
+      const profile = createEmptyInteractionProfile();
+      recordInteractionEvent(profile, { paperId: 'kept', kind: add, category: 'cs.LG', notable: true, published: null }, NOW);
+      recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', notable: true, published: null }, NOW);
+      if (!removedAfterHalving) recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+      for (let index = 0; index < 2000; index += 1) {
+        recordInteractionEvent(profile, { paperId: `card-${index}`, kind: 'skip', category: 'cs.LG', notable: index % 10 === 0 }, NOW);
+      }
+      if (removedAfterHalving) recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+      recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', published: '2018-01-01T00:00:00.000Z', restores: true }, NOW);
+      const label = `a ${add} ${removedAfterHalving ? 'removed after' : 'removed before'} the halving`;
+      assert.equal(temporalOf(profile).notable.engaged, 1, `${label}, restored`);
+
+      const stored = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+      for (const [where, restored] of [['in place', profile], ['after storage', stored]] as const) {
+        recordInteractionEvent(restored, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+        assert.equal(temporalOf(restored).notable.engaged, 0.5, `${label}, removed again ${where}`);
+      }
+    }
+  }
+});
+
 test('a paper liked, saved or opened again counts once for each, and a card viewed again is shown once', () => {
   const profile = createEmptyInteractionProfile();
   const card = { paperId: 'card', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' };
