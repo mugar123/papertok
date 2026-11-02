@@ -341,3 +341,27 @@ test('an answer without a papers list is an invalid response, not an empty page'
   const { options } = harness(answered([]));
   assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { papers: [], skipsSeen: false });
 });
+
+test('the main response reports its Worker version before parsing success or refusal', async () => {
+  for (const status of [200, 429, 503]) {
+    const versions: Array<string | null> = [];
+    const { options } = harness(async () => new Response(JSON.stringify(status === 200 ? { papers: [STORED] } : { code: 'RATE_LIMITED' }), {
+      status, headers: { 'x-papertok-worker-version': 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57' },
+    }));
+    const promise = fetchCorpusPage({ page: 0, pageSize: 15 }, { ...options, onVersion: version => { versions.push(version); } });
+    if (status === 200) assert.deepEqual((await promise).papers, [STORED]);
+    else await assert.rejects(promise, { status });
+    assert.deepEqual(versions, ['bc13c637-c9af-4b4e-92a2-c4b3e9380a57']);
+  }
+});
+
+test('an older Worker leaves the version unknown and a connection failure reports none', async () => {
+  const versions: Array<string | null> = [];
+  const old = harness(answered([STORED]));
+  await fetchCorpusPage({ page: 0, pageSize: 15 }, { ...old.options, onVersion: version => { versions.push(version); } });
+  assert.deepEqual(versions, [null]);
+  const failedVersions: Array<string | null> = [];
+  const broken = harness(async () => { throw new TypeError('offline'); });
+  await assert.rejects(fetchCorpusPage({ page: 0, pageSize: 15 }, { ...broken.options, onVersion: version => { failedVersions.push(version); } }), { code: 'STORE_UNREACHABLE' });
+  assert.deepEqual(failedVersions, []);
+});

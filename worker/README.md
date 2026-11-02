@@ -43,6 +43,53 @@ no person profile and no GeoIP lookup. Backend reporting does not depend on the
 browser's analytics choice. PostHog sends no alerts until they are set up in its
 error tracking settings; this repository does not configure them.
 
+## Feed load analytics
+
+With browser usage analytics enabled, the For You feed sends `feed_load_started`
+and `feed_load_result` for each accepted `loadPapers` attempt. Calls refused by the
+in-flight or profile-readiness guards send nothing. Restoring a saved feed is not
+an attempt. Following, Similar papers and the guest demo are not covered.
+
+- `load_type`: `initial` for the cold preferences load, `refresh` for replacing
+  loads (including Try again, mode, follow or interest changes), `load_more` for
+  additional pages. Retries and skipped-page continuations keep that load type.
+- `attempt`: `original`, `automatic_retry`, or `continuation` when a page had no
+  showable paper. A short page's subsequent fill is a new `load_more` attempt.
+- `first_screen`: whether this attempt uses the empty-list first-screen policy;
+  a first-screen timeout's automatic retry uses the shorter deadline.
+- `duration_ms`: monotonic elapsed time from the accepted attempt before requests
+  start until its page is prepared, fails, continues to another page, or is
+  superseded. It includes token acquisition, optional-source waits and ranking;
+  it excludes profile bootstrap, retry pauses, React painting and the refresh
+  spinner's minimum delay. Time spent with the tab in the background is included.
+- `result`: `success`, `empty`, `error`, `continued`, or `superseded`. An empty
+  first page is `empty`, with `reason: empty`. A successful or empty attempt has
+  `degraded: true` if the main source failed but another source or carried page
+  allowed the load to finish. Failures reuse `app_error`'s allowlisted `reason`,
+  `status` and `error_code`; no error message is sent.
+- `client_release`: Vercel's `VERCEL_GIT_COMMIT_SHA`, embedded by Vite. It is absent
+  when that build variable is unavailable, including normal local development.
+- `worker_version`: the main `/store/papers` response's
+  `x-papertok-worker-version` header, including HTTP refusals. It is Cloudflare's
+  version UUID, not the web commit. Older Workers, token failures and requests
+  that time out before headers leave it absent; it is never copied from another
+  attempt or inferred from the web release.
+
+The Worker exposes that header to allowed browser origins on handled POST
+`/store/papers` responses. No request or response body changes, extra provider
+calls or migrations are needed. Either deployment order works; the server
+version appears only when both sides support the header.
+
+Use result events for attempt duration percentiles, split by load type, attempt,
+result and release. For an attempt error rate, divide `error` results by
+`success` + `empty` + `error`; report empty, continued and superseded counts
+separately. This measures attempts, not the chance that a reader eventually sees
+cards after retries. Do not add legacy `app_error` events to this numerator.
+Start and result events have no shared attempt identifier. A closed tab can
+leave only a start; an account change discards late results so they cannot be
+attributed to the next account. Reporting is best effort and obeys the existing
+analytics preference; these events are not a complete server request log.
+
 ## Local testing
 
 From the repository root, install dependencies with `npm ci`. Run the Worker with `npx wrangler dev --local --port 8787`; university verification also needs `--local-upstream localhost:8787` (see `POST /institution/verification` below). Local provider credentials belong in the untracked root `.dev.vars` file; never put them in `VITE_*` variables. Local mode emulates KV and Durable Objects, but provider requests still reach live services and can consume quota. The email sender comes from `RESEND_FROM_EMAIL` in `wrangler.toml`, so a real `RESEND_API_KEY` in `.dev.vars` is enough for a local Worker to send real email from the production address against the real Resend quota; set `RESEND_FROM_EMAIL` in `.dev.vars` to use another sender. `--local` also turns off remote bindings, so the Workers AI binding cannot reach Cloudflare: the PDF-to-text conversion for NaN rewrites fails, and NaN is handed the PDF itself (about 45 s to the first token). To test the conversion, run `npx wrangler login` and then `npx wrangler dev --port 8787` without `--local`. Wrangler then runs the AI binding on the Cloudflare account and warns that this may incur usage charges.

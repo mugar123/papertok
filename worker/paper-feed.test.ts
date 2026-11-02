@@ -1724,3 +1724,33 @@ test('a page is served when the quota ledger throws, and the line it logs names 
   assert.equal(warned.mock.calls.length, 1);
   assert.doesNotMatch(warned.mock.calls.flatMap(call => call.arguments).join(' '), /reader-1/);
 });
+
+test('a successful feed response exposes the version of the Worker that served it', async t => {
+  const previousFetch = globalThis.fetch;
+  const previousCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = async input => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname === 'identitytoolkit.googleapis.com') return Response.json({ users: [{ localId: 'feed-version-test' }] });
+    throw new Error(`unexpected request to ${url.hostname}`);
+  };
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+    if (previousCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = previousCaches;
+  });
+  const { env, db } = store();
+  t.after(() => db.close());
+  env.FIREBASE_WEB_API_KEY = 'test';
+  env.CF_VERSION_METADATA = { id: 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57', tag: '', timestamp: '2026-10-31T14:31:34Z' };
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  const response = await handleRequest(new Request('https://api.papertok.app/store/papers', {
+    method: 'POST', headers: { origin: 'https://papertok.app', authorization: `Bearer ${fakeIdToken({ uid: 'feed-version-test' })}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ids: ['2610.11111'] }),
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-papertok-worker-version'), 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57');
+  assert.equal(response.headers.get('access-control-expose-headers'), 'retry-after, x-papertok-worker-version');
+  const body = await response.json<{ papers: Array<{ id: string }> }>();
+  assert.deepEqual(body.papers.map(paper => paper.id), ['2610.11111']);
+});

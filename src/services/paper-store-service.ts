@@ -67,6 +67,7 @@ export interface CorpusPageRequest {
 }
 
 interface StoreOptions {
+  onVersion?: (version: string | null) => void;
   fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
@@ -78,12 +79,13 @@ function markUnreachable(error: unknown): never {
   throw error;
 }
 
-async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
+async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase, onVersion }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   }, timeoutMs).catch(markUnreachable);
+  onVersion?.(response.headers.get('x-papertok-worker-version'));
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.
