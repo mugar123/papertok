@@ -54,6 +54,33 @@ test('leaving the viewport while hidden flushes once and does not resume off scr
   assert.deepEqual(v.reported, [2]);
 });
 
+test('time under a covering dialog adds no reading time, and the stretch goes on once it closes', () => {
+  const v = view();
+  v.tracker.setInView(true);
+  v.advance(2000);
+  v.tracker.setCovered(true);
+  v.advance(30_000);
+  assert.deepEqual(v.reported, [], 'covering does not end the stretch');
+  v.tracker.setCovered(false);
+  v.advance(1000);
+  v.tracker.setInView(false);
+  assert.deepEqual(v.reported, [3]);
+});
+
+test('a card that comes into view while covered starts timing once uncovered', () => {
+  const v = view();
+  v.tracker.setCovered(true);
+  v.tracker.setInView(true);
+  v.advance(10_000);
+  v.hide(true);
+  v.hide(false);
+  v.advance(5000);
+  v.tracker.setCovered(false);
+  v.advance(1500);
+  v.tracker.stop();
+  assert.deepEqual(v.reported, [1.5]);
+});
+
 test('returning to a card starts a separate interval and repeated observations do not reset it', () => {
   const v = view();
   v.tracker.setInView(true);

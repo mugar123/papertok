@@ -16,6 +16,7 @@ import {
   isNudgePath,
   modalIsOpen,
   noticeOnScreen,
+  privacyDialogCover,
   privacyDialogOpen,
   privacyOwedFor,
   readDismissedNudges,
@@ -145,6 +146,12 @@ export default function NudgeHost() {
   const modalOpen = useSyncExternalStore(subscribe, () => waiting && modalIsOpen(document), () => false);
   const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
+
+  // The cards under the open dialog stop counting their time on screen.
+  useEffect(() => {
+    privacyDialogCover.set(dialogOpen);
+    return () => privacyDialogCover.set(false);
+  }, [dialogOpen]);
 
   // Hide for now puts it away for this visit and does not count as reading it,
   // so it returns next time. Back is not routed here: like the app's other

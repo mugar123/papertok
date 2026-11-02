@@ -1,11 +1,13 @@
 // Report one visible interval per viewport visit, combining foreground time
-// across tab switches. Each instance belongs to one paper's effect lifetime.
+// across tab switches and covered stretches. Each instance belongs to one
+// paper's effect lifetime.
 export function trackVisibleTime(
   visibility: Pick<Document, 'hidden'> & Pick<EventTarget, 'addEventListener' | 'removeEventListener'>,
   report: (seconds: number) => void,
   now = () => performance.now(),
 ) {
   let inView = false;
+  let covered = false;
   let startedAt: number | null = null;
   let elapsed = 0;
 
@@ -14,7 +16,7 @@ export function trackVisibleTime(
     startedAt = null;
   };
   const update = () => {
-    if (inView && !visibility.hidden) startedAt ??= now();
+    if (inView && !covered && !visibility.hidden) startedAt ??= now();
     else pause();
   };
   const flush = () => {
@@ -30,6 +32,12 @@ export function trackVisibleTime(
       inView = value;
       update();
       if (!inView) flush();
+    },
+    // Paused like a hidden tab while something the card does not own covers
+    // it; the stretch on screen goes on when it is uncovered.
+    setCovered(value: boolean) {
+      covered = value;
+      update();
     },
     stop() {
       visibility.removeEventListener('visibilitychange', update);

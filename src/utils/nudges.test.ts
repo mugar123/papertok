@@ -13,6 +13,7 @@ import {
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
+  privacyDialogCover,
   privacyDialogOpen,
   privacyNoticeOwed,
   privacyOwedFor,
@@ -314,6 +315,18 @@ test('the privacy notice is shown only to a signed-in reader on the feed, and re
   }
   assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+test('the cards hear when the privacy dialog opens over them and closes, once per change', () => {
+  const heard: boolean[] = [];
+  const unsubscribe = privacyDialogCover.subscribe(() => heard.push(privacyDialogCover.get()));
+  privacyDialogCover.set(true);
+  privacyDialogCover.set(true);
+  privacyDialogCover.set(false);
+  unsubscribe();
+  privacyDialogCover.set(true);
+  privacyDialogCover.set(false);
+  assert.deepEqual(heard, [true, false]);
 });
 
 test('the email nudge, once picked, stays on every route until it is dismissed', () => {
