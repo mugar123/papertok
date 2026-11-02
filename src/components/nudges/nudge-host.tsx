@@ -45,8 +45,9 @@ import PrivacyNotice from './privacy-notice.tsx';
 // it. Got it spends the visit's turn. Hide for now (or Escape, a press outside,
 // the X) hands it back, so a nudge may follow after another minute of reading:
 // a reader who keeps hiding the notice is not kept from hearing that email is
-// down (answerPrivacyNotice). Whatever was picked is shown on the feed only and
-// comes back when the reader returns to it. The notice takes the turn on
+// down (answerPrivacyNotice). Both are picked on the feed. The dialog is shown
+// on the feed only and comes back when the reader returns to it; a nudge stays
+// on every route until it is dismissed (noticeOnScreen). The notice takes the turn on
 // arrival, before the cards: a visit whose feed never shows any (an error, an
 // empty feed) shows neither the dialog nor a nudge. A change of account
 // remounts this component, which clears what was picked for the previous reader.

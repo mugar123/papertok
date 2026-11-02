@@ -303,20 +303,23 @@ test('a nudge after Hide for now waits a whole minute from the hide, also when t
   assert.equal(chooseVisitNotice(readingMinutePassed(late, late.readingMinute), facts).picked, 'email-down');
 });
 
-test('the notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
+test('the privacy notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
   const on = (picked: string | null, signedIn: boolean, pathname: string) => noticeOnScreen({ picked, signedIn, pathname, privacyOwed: true });
   assert.equal(on(PRIVACY_NOTICE_ID, true, '/feed'), PRIVACY_NOTICE_ID);
-  assert.equal(on('email-down', true, '/feed'), 'email-down');
   for (const pathname of ['/feed/', '/feed//', '/Feed', '/FEED', '/Feed/']) {
     assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), PRIVACY_NOTICE_ID, `the feed route also matches ${pathname}`);
-    assert.equal(on('email-down', true, pathname), 'email-down', `the email nudge too on ${pathname}`);
   }
   for (const pathname of ['/search', '/lists', '/explore', '/settings', '/paper/abc', '/feed/x', '/']) {
     assert.equal(on(PRIVACY_NOTICE_ID, true, pathname), null, `a paper may be open as a modal on ${pathname}`);
-    assert.equal(on('email-down', true, pathname), null, `the email nudge too on ${pathname}`);
   }
   assert.equal(on(PRIVACY_NOTICE_ID, false, '/feed'), null, 'signed out');
   assert.equal(on(null, true, '/feed'), null, 'nothing picked');
+});
+
+test('the email nudge, once picked, stays on every route until it is dismissed', () => {
+  for (const pathname of ['/feed', '/search', '/lists', '/settings', '/paper/abc', '/']) {
+    assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: true, pathname, privacyOwed: true }), 'email-down', pathname);
+  }
 });
 
 test('nothing is picked or opened while the profile could not be loaded, and it is once a retry loads it', () => {
@@ -329,7 +332,6 @@ test('nothing is picked or opened while the profile could not be loaded, and it 
   assert.equal(ready({ onboardingComplete: false }), false, 'not onboarded');
   assert.equal(ready({ user: null }), false, 'signed out');
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
-  assert.equal(noticeOnScreen({ picked: 'email-down', signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: false }), null, 'the email nudge too');
   // Off screen the dialog closes, and it opens again when Try again brings the feed back.
   assert.equal(privacyDialogOpen({ shown: false, cardsShown: true, modalOpen: false, wasOpen: true }), false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed', privacyOwed: true }), PRIVACY_NOTICE_ID);

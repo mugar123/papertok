@@ -162,7 +162,7 @@ export function privacyOwedFor({ user, signedIn, version, effectiveAt, storage }
   });
 }
 
-/** The only route a nudge is picked on and shown on. */
+/** The only route a notice is picked on, and the privacy dialog shown on. */
 const NUDGE_PATH = '/feed';
 
 /**
@@ -199,15 +199,17 @@ export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { s
 export const PRIVACY_NOTICE_ID = 'privacy-change';
 
 /**
- * The picked notice, while it may be on screen: for a signed-in reader, on the
- * feed. Elsewhere a paper may be open as a modal, which the email nudge's panel
- * would sit over. Either comes back when the reader returns to the feed. The
- * privacy notice also goes once it is no longer owed (`privacyOwed`, read from
- * storage on every render): Got it chosen in another tab settles it here too.
+ * The picked notice, while it may be on screen. A nudge, once picked on the
+ * feed, stays on every route until it is dismissed, as it did before the
+ * privacy notice existed. The privacy dialog is shown only to a signed-in reader
+ * on the feed, since elsewhere a paper may be open as a modal, and comes back
+ * when the reader returns to the feed. It also goes once it is no longer owed
+ * (`privacyOwed`, read from storage on every render): Got it chosen in another
+ * tab settles it here too.
  */
 export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean }) {
-  if (!signedIn || !isNudgePath(pathname)) return null;
-  return picked === PRIVACY_NOTICE_ID && !privacyOwed ? null : picked;
+  if (picked !== PRIVACY_NOTICE_ID) return picked;
+  return signedIn && isNudgePath(pathname) && privacyOwed ? picked : null;
 }
 
 /** One of the pending ones, at random, or nothing at all. */
