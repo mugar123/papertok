@@ -33,7 +33,7 @@ export interface FeedContextValue {
    * screen, from a caller that emptied or filled the list just before, which
    * this render's `papers` does not show yet (waitsAsFirstScreen).
    */
-  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { loadType?: FeedLoadType; attempt?: FeedLoadAttempt; keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -87,6 +87,7 @@ import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
+import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-load-telemetry.ts';
 import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
@@ -1155,7 +1156,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false, listShown }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { loadType = reset ? 'refresh' : 'load_more', attempt = 'original', keepThroughVisible = false, seenFallback, relaxExclusions = false, retriesTimeout = false, listShown }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1169,7 +1170,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions, retriesTimeout }],
+        args: [reset, mode, pageOverride, { loadType, attempt, keepThroughVisible, seenFallback, relaxExclusions, retriesTimeout, listShown }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1217,7 +1218,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     );
 
     // Whether this load's store requests wait the first screen's deadline.
-    let firstScreen = false;
+    const firstScreen = waitsAsFirstScreen({ reset, hasPapers: papers.length > 0, listShown, retriesTimeout });
+    const telemetry = startFeedLoad({
+      loadType, attempt, firstScreen, track: trackEvent,
+      isCurrentAccount: () => feedSessionId.current === activeSessionId && activeUserId.current === user?.uid && auth.currentUser?.uid === user?.uid,
+    });
+    let degraded = false;
     try {
       // Inside the try, so a throw still releases feedLoadInFlight.
       const corpusPlan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
@@ -1247,7 +1253,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // to the session's while the requests run, and a paper the Worker sent
         // as unseen does not then say that the reader has seen their ranking.
         const seenSent = new Set(feedSeenIds(sessionSeenPapers.current, workerSkipsSeen.current));
-        firstScreen = waitsAsFirstScreen({ reset, hasPapers: papers.length > 0, listShown, retriesTimeout });
         const shared = { page: currentPage, order: queryMode, negativeIds, excludedIds, seen: seenSent, firstScreen };
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
@@ -1322,7 +1327,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // exploration cards (two on the first screen, up to ten after it);
             // and the spares. A page has one place at least.
             notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
-          }).then(answer => {
+          }, { onVersion: telemetry.recordWorkerVersion }).then(answer => {
             rankingSeen = hasSeenRanking(answer, seenSent);
             workerSkipsSeen.current = answer.skipsSeen;
             return answer.papers;
@@ -1334,7 +1339,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           firstScreen,
         );
         const mainFailure = 'error' in main ? main : null;
-        if (mainFailure) console.error('Error fetching main papers:', mainFailure.error);
+        if (mainFailure) {
+          degraded = true;
+          console.error('Error fetching main papers:', mainFailure.error);
+        }
         const mainPapers = 'value' in main ? main.value : [];
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
@@ -1401,17 +1409,19 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           excludedCount: activeMode === 'top' || activeMode === null ? excludedIds.length : 0,
         });
         if (plan.kind === 'relax-exclusions') {
-          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true, retriesTimeout, listShown });
+          telemetry.finish({ result: 'continued' });
+          return loadPapersRef.current?.(reset, activeMode, plan.page, { loadType, attempt: 'continuation', keepThroughVisible, relaxExclusions: true, retriesTimeout, listShown });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw emptyFirstPageError();
         }
         if (plan.kind === 'next-page') {
+          telemetry.finish({ result: 'continued' });
           const nextPageToFetch = plan.page;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout, listShown });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { loadType, attempt: 'continuation', keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions, retriesTimeout, listShown });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1491,6 +1501,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
       setPage(nextPage);
       setHasMore(nextHasMore);
+      telemetry.finish({ result: filtered.length + notableCards.length > 0 ? 'success' : 'empty', degraded });
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
 
       // A short first screen should fill itself even before the reader reaches
@@ -1510,6 +1521,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     } catch (failure) {
       if (requestId === feedRequestId.current) {
+        telemetry.finish({ result: 'error', error: failure });
         const { error: shownError, autoRetry } = feedLoadOutcome(failure);
         setError(shownError);
         // One event per failed attempt, sent where the load runs: a remounted
@@ -1535,12 +1547,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           setTimeout(() => {
             setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible, retriesTimeout: retry.retriesTimeout });
+              void loadPapersRef.current?.(true, activeMode, undefined, { loadType, attempt: 'automatic_retry', keepThroughVisible, retriesTimeout: retry.retriesTimeout });
             }
           }, retry.pauseMs);
         }
       }
     } finally {
+      telemetry.finish({ result: 'superseded' });
       if (requestId === feedRequestId.current) {
         feedLoadInFlight.current = false;
         setLoading(false);
@@ -1549,7 +1562,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent,
+    calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
   ]);
 
   // The account and interests whose snapshot is on screen. Both effects below
@@ -1654,7 +1667,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-      void loadPapers(true, null, undefined, { listShown: Boolean(snapshot?.papers?.length) });
+      void loadPapers(true, null, undefined, { loadType: plan.coldMount ? 'initial' : 'refresh', listShown: Boolean(snapshot?.papers?.length) });
     });
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 

@@ -131,6 +131,9 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
   app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
+  feed_load_type: new Set(['initial', 'refresh', 'load_more']),
+  feed_load_attempt: new Set(['original', 'automatic_retry', 'continuation']),
+  feed_load_result: new Set(['success', 'empty', 'error', 'continued', 'superseded']),
   feed_failure_reason: new Set(['timeout', 'network', 'session', 'auth', 'rate_limited', 'rejected', 'server', 'invalid_response', 'empty', 'unexpected']),
   // The codes /store/papers answers with (worker/router.ts, worker/paper-store.ts,
   // worker/firebase-auth.ts) and the client's own; any other becomes 'other'.
@@ -151,12 +154,16 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
 });
 
+const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
+
 const PAPER_DETAIL = { paper_id: 'identifier' };
 
 // The registry of product events: an event name the app emits must be a key
 // here. `trackProductEvent` only accepts these keys, so an unregistered name
 // fails the type check instead of being silently dropped.
 const EVENT_PARAMETER_SCHEMAS = Object.freeze({
+  feed_load_started: FEED_LOAD_DIMENSIONS,
+  feed_load_result: { ...FEED_LOAD_DIMENSIONS, duration_ms: 'duration', result: 'feed_load_result', degraded: 'boolean', worker_version: 'worker_version', reason: 'feed_failure_reason', status: 'boundedNumber', error_code: 'feed_error' },
   // Sent once per browser session, so `activation_age` turns it into a
   // retention curve without an identifier: unset before activation, then how
   // long ago this browser activated.
@@ -387,6 +394,8 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     if (type === 'boundedNumber' && Number.isFinite(value)) {
       safeParams[key] = Math.min(1000, Math.max(0, Math.round(value as number)));
     }
+    if (type === 'release' && typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value)) safeParams[key] = value.toLowerCase();
+    if (type === 'worker_version' && typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)) safeParams[key] = value.toLowerCase();
     if (type === 'duration' && Number.isFinite(value)) safeParams[key] = Math.min(3_600_000, Math.max(0, Math.round(value as number)));
     if ((type === 'rewrite_error' || type === 'auth_error' || type === 'feed_error') && typeof value === 'string') {
       safeParams[key] = CATEGORIES[type].has(value) ? value : 'other';
