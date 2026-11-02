@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
-import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
+import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,

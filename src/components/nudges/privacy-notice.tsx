@@ -2,12 +2,12 @@ import { useRef } from 'react';
 import { ShieldCheck } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
-import { PRIVACY_POLICY_CHANGE } from '../../legal/privacyPolicy.ts';
+import { PRIVACY_POLICY_CHANGE } from '../../legal/privacy-policy.ts';
 import './privacy-notice.css';
 
 const COPY = {
   title: 'Privacy policy updated',
-  // The bullets are a selection (privacyPolicy.ts); the policy says the rest.
+  // The bullets are a selection (privacy-policy.ts); the policy says the rest.
   summary: 'The main changes:',
   policy: 'Read the policy',
   newTab: ' (opens in a new tab)',

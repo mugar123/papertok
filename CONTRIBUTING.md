@@ -128,7 +128,7 @@ a session can finish, lints the files changed on the branch and in the working t
   policy text is live in production, never before: a later instant only tells a few new accounts
   too, an earlier one skips accounts that read the old page) and the summary (at most three short
   bullets with the main changes; the page keeps the full list), with the page sentences behind
-  each of its clauses, in `src/legal/privacyPolicy.ts`. The
+  each of its clauses, in `src/legal/privacy-policy.ts`. The
   app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
   on each visit until the account chooses Got it; Hide for now, or closing the dialog any other
   way, only hides it for that visit. Guests and accounts created at or after that time do not

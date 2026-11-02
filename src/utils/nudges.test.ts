@@ -25,7 +25,7 @@ import {
   visitReaderReady,
 } from './nudges.ts';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, getFeedDisplayState } from './feed-loading-state.ts';
-import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacyPolicy.ts';
+import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacy-policy.ts';
 
 const fakeStorage = (seed: Record<string, string> = {}) => {
   const map = new Map(Object.entries(seed));
