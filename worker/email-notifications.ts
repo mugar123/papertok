@@ -150,7 +150,7 @@ const EXPLORATION_PAPER_MIN_SCORE = 70;
 const EXPLORATION_MIN_CITATIONS = 3;
 const MAX_ARXIV_DIGEST_CATEGORIES = 24;
 const MAX_ARXIV_DIGEST_RESULTS = 40;
-// A reader who follows nothing the digest covers gets the week's most cited
+// A reader who follows nothing the digest covers gets the week's notable
 // papers of the leaves they chose, read from the paper store (ENG-163).
 const MAX_DIGEST_INTERESTS = 24;
 const INTEREST_DIGEST_DAYS = 7;
@@ -1793,7 +1793,7 @@ const EMAIL_COPY = {
   paperCount: (count: number) => (count === 1 ? '1 new paper' : `${count} new papers`),
   emptyHeadline: 'Your email is ready',
   introduction: 'Welcome to your weekly selection of papers we think you might find interesting.',
-  interestsIntroduction: 'You do not follow a topic, author, institution or project yet, so these are the most cited new papers this week in the subjects you chose.',
+  interestsIntroduction: 'You do not follow a topic, author, institution or project yet, so these are notable new papers this week in the subjects you chose.',
   fromInterests: 'From your interests',
   outsideFollows: 'Outside your follows',
   alsoInEdition: 'More to read',

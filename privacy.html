@@ -234,12 +234,12 @@
       <p>
         If you turn them on, PaperTok emails you what is new from the authors, topics,
         institutions and projects you follow, or, while you follow none of them, the
-        most cited new papers in the subjects you chose. For that
+        notable new papers in the subjects you chose. For that
         it stores your email address, your sending preferences, what you follow, the
         identifiers of the subjects you chose and an unsubscribe
         identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
         an edition, PaperTok also stores its selected papers, abstracts and reasons
-        they matched your follows. That selection is removed after delivery, a
+        they matched your follows or subjects. That selection is removed after delivery, a
         change to your follows or a later edition that is processed; otherwise its delivery record
         expires after 120 days. <strong>Resend</strong> sends
         the emails. To limit test emails, Cloudflare counts them under a hashed account

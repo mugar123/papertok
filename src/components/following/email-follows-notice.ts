@@ -14,7 +14,7 @@ export function emailFollowsNotice(follows: readonly Partial<FollowEntity>[], di
   if (hasInterests) {
     return {
       heading: 'Your email covers your interests',
-      body: 'Until you follow a topic, author, institution or project, the weekly email brings the most cited new papers in the subjects you chose.',
+      body: 'Until you follow a topic, author, institution or project, the weekly email brings notable new papers in the subjects you chose.',
     };
   }
   if (follows.length) {
