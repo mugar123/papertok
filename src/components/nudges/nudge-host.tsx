@@ -16,6 +16,7 @@ import {
   feedCardsStay,
   modalIsOpen,
   noticeOnScreen,
+  privacyCardsCover,
   privacyDialogOpen,
   privacyOwedFor,
   readDismissedNudges,
@@ -159,8 +160,7 @@ export default function NudgeHost() {
   // are not taken for leaving ones.
   const cardsStay = feedCardsStay({ readerReady, pathname: location.pathname });
   useLayoutEffect(() => {
-    if (dialogOpen) setCardsCovered(true);
-    else setCardsCovered(false, { leaving: !cardsStay });
+    setCardsCovered(...privacyCardsCover({ dialogOpen, cardsStay }));
   }, [dialogOpen, cardsStay]);
   // Unmounted with the whole account's tree, its cards included.
   useLayoutEffect(() => () => setCardsCovered(false, { leaving: true }), []);

@@ -224,6 +224,15 @@ export function feedCardsStay({ readerReady, pathname }: { readerReady: boolean;
   return readerReady && isFeedPath(pathname);
 }
 
+/**
+ * The arguments NudgeHost passes to setCardsCovered (visible-time.ts): the cards
+ * are covered while the dialog is open. Once it closes they count again if they
+ * stay (feedCardsStay), and otherwise leave paused with the feed.
+ */
+export function privacyCardsCover({ dialogOpen, cardsStay }: { dialogOpen: boolean; cardsStay: boolean }): [covered: boolean, options: { leaving: boolean }] {
+  return [dialogOpen, { leaving: !dialogOpen && !cardsStay }];
+}
+
 export const PRIVACY_NOTICE_ID = 'privacy-change';
 
 /**

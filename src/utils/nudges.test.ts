@@ -14,6 +14,7 @@ import {
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
+  privacyCardsCover,
   privacyDialogOpen,
   privacyNoticeOwed,
   privacyOwedFor,
@@ -26,6 +27,7 @@ import {
   visitChoiceGates,
   visitReaderReady,
 } from './nudges.ts';
+import { setCardsCovered, trackVisibleTime } from './visible-time.ts';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, getFeedDisplayState } from './feed-loading-state.ts';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacy-policy.ts';
 
@@ -479,6 +481,34 @@ test('the cards under the privacy dialog stay when it is answered, and leave wit
   for (const [over, why] of [[{ user: null }, 'signed out'], [{ profileLoadError: 'PROFILE_LOAD_FAILED' }, 'the profile retry screen'], [{ loading: true }, 'auth answering again'], [{ onboardingComplete: false }, 'sent to the onboarding']] as const) {
     const readerReady = visitReaderReady({ user, loading: false, onboardingComplete: true, profileLoadError: null, ...over });
     assert.equal(feedCardsStay({ readerReady, pathname: '/feed' }), false, why);
+  }
+});
+
+test('a card under the privacy dialog counts again when it is answered, and reports nothing while a feed that closed it leaves', (t) => {
+  t.after(() => setCardsCovered(false));
+  // One card read for 2 s, then NudgeHost's cover as the dialog opens and closes, then 300 ms more.
+  const readThenClose = (closedOn: { readerReady: boolean; pathname: string }) => {
+    let time = 0;
+    const reported: number[] = [];
+    const card = trackVisibleTime(Object.assign(new EventTarget(), { hidden: false }), seconds => reported.push(seconds), () => time);
+    card.setInView(true);
+    time += 2000;
+    setCardsCovered(...privacyCardsCover({ dialogOpen: true, cardsStay: feedCardsStay({ readerReady: true, pathname: '/feed' }) }));
+    time += 20_000;
+    setCardsCovered(...privacyCardsCover({ dialogOpen: false, cardsStay: feedCardsStay(closedOn) }));
+    time += 300;
+    card.stop();
+    setCardsCovered(false);
+    return reported;
+  };
+  for (const pathname of ['/feed', '/Feed', '/feed/']) {
+    assert.deepEqual(readThenClose({ readerReady: true, pathname }), [2.3], `answered on ${pathname}, here or in another tab`);
+  }
+  for (const [closedOn, why] of [
+    [{ readerReady: true, pathname: '/settings' }, 'the reader went to another route'],
+    [{ readerReady: false, pathname: '/feed' }, 'signed out or sent to the profile retry screen'],
+  ] as const) {
+    assert.deepEqual(readThenClose(closedOn), [2], `${why}: no skip or dwell for the 300 ms exit`);
   }
 });
 
