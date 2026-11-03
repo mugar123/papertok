@@ -65,13 +65,13 @@ const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
 
 // Unlike the nudges above, kept per reader: each account that signs in on this
 // device has to be told separately. It is not swept at sign-out, so signing in
-// again does not repeat a notice already dismissed. Deleting the account does
-// remove it (forgetPrivacyNotice).
+// again does not repeat a notice already acknowledged with Got it. Deleting the
+// account does remove it (forgetPrivacyNotice).
 function privacyNoticeKey(uid: string) {
   return `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}`;
 }
 
-/** The policy version this reader last dismissed on this device, if any. */
+/** The policy version this reader last acknowledged with Got it on this device, if any. */
 export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null) {
   try {
     return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
@@ -107,8 +107,9 @@ function policyVersionCovers(acknowledged: string | null, version: string) {
 }
 
 /**
- * Keeps the newest version dismissed: another tab still running an older
- * bundle must not write its version over a newer one this reader dismissed.
+ * Keeps the newest version acknowledged with Got it: another tab still running
+ * an older bundle must not write its version over a newer one this reader
+ * acknowledged.
  */
 export function rememberPrivacyNotice(uid: string, version: string, storage?: NudgeStorage | null) {
   try {
@@ -121,8 +122,8 @@ export function rememberPrivacyNotice(uid: string, version: string, storage?: Nu
 }
 
 /**
- * Whether a reader still has to hear about policy `version`; dismissing it or a
- * later version settles that. Only signed-in
+ * Whether a reader still has to hear about policy `version`; acknowledging it
+ * or a later version with Got it settles that. Only signed-in
  * accounts are told: a guest has no creation date, so a first-time visitor
  * could not be told apart from someone who read the old policy. An account
  * created at or after `effectiveAt` (an ISO instant: when the change went
