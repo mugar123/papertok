@@ -221,7 +221,10 @@ const SLOW_LIKE = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`;
 
 test('a liked paper arXiv answers after 2 s is still filed by the lookup after the page, while an inline lookup keeps its 2 s', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // 1 s into a period that is not public, so the Worker's lookups take a seat
+  // at once, whatever the wall clock says.
+  const period = ARXIV_PACE_PERIOD_MS;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: (2 * Math.floor(Date.now() / (2 * period)) + 1) * period + 1_000 });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
