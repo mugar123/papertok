@@ -3885,6 +3885,27 @@ test('an arXiv call a share page could not seat gives its hourly unit back', asy
   assert.equal(urls.some(url => url.includes('export.arxiv.org')), false, 'no seat, no call');
 });
 
+// A share page takes arXiv's beat as `/arxiv` does, so a call it makes late in
+// its period keeps the next seat empty too (outside review of PR #400).
+test("the Worker's next arXiv lookup goes out three seconds or more after a share page's late call", async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:02.900Z') });
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding });
+  const sent: number[] = [];
+  await withWorkerFetchMock(async url => {
+    const address = String(url);
+    if (address === 'https://papertok.app/index.html') return new Response(APP_SHELL, { status: 200, headers: { 'content-type': 'text/html' } });
+    if (address.startsWith('https://api.openalex.org/works')) return Response.json({ results: [] });
+    if (!address.startsWith('https://export.arxiv.org/api/query')) throw new Error(`unexpected upstream ${address}`);
+    sent.push(Date.now());
+    return new Response(LIKED_ARXIV_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+  }, async () => {
+    await settledOnMockClock(t, reportApi.fetch(crawlerRequest(`/share/paper/${encodePaperKey('arxiv', '2610.01234')}`), env));
+    await settledOnMockClock(t, fetchArxivPapers(env, ['2610.01234']));
+  });
+  assert.equal(sent.length, 2, 'the share page and the lookup both reached arXiv');
+  assert.ok(sent[1] - sent[0] >= 3_000, `${sent[1] - sent[0]} ms between the calls`);
+});
+
 test('a list page reads the public document anonymously, as a visitor would', async () => {
   const urls: { address: string; authorization: string|null; }[] = [];
   const shareId = '0123456789abcdef0123456789abcdef';
