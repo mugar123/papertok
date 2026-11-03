@@ -15,7 +15,8 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from '../../src/services/adapters/open-alex-adapter.ts';
+import { OpenAlexAdapter } from '../../src/services/adapters/open-alex-adapter.ts';
+import { OPENALEX_SEARCH_TYPES } from '../../src/utils/open-alex-work.ts';
 import { identifyOpenAlexUrl } from '../../src/services/open-alex-client.ts';
 import { PaperBuilder } from '../../src/services/paper-builder.ts';
 import { rankPaperSearchResults } from '../../src/utils/search-relevance.ts';

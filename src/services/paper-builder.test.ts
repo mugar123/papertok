@@ -2,7 +2,7 @@ import type { Paper, PaperAuthor } from '../models/paper.ts';
 import type { OpenAlexLocation, OpenAlexWork } from './adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBuilder } from './paper-builder.ts';
+import { PaperBuilder, isPlaceholderAuthorName } from './paper-builder.ts';
 import { mapCrossrefInstitutionWork } from './crossref-institution-service.ts';
 import { mapAdsPaper } from './domain-source-records.ts';
 import { slimWorksPage } from './open-alex-service.ts';
@@ -2095,6 +2095,83 @@ test('initials never bridge: "J. Smith" and "Smith J." meet on the surname, not 
   ]);
   assert.equal(out.length, 2);
   assert.ok(out.some(paper => paper.id === 'c'));
+});
+
+// A placeholder the OpenAlex mappers write for a missing name is no author:
+// two works "by Unknown" under one title merged, and the first DOI was shown
+// with the second's citations (outside review of PR #400).
+test('a placeholder for a missing author name joins no two works, on a short title or a long one', () => {
+  for (const [title, name] of [
+    ['Introduction', 'Unknown'],
+    ['Introduction', 'Unknown Author'],
+    ['A Comprehensive Survey of Graph Neural Networks', 'unknown'],
+    ['A Comprehensive Survey of Graph Neural Networks', ' UNKNOWN AUTHOR '],
+  ]) {
+    const out = PaperBuilder.deduplicate([
+      { id: 'openalex:W1', title, authors: [{ name }], citationCount: 0, provider: 'openalex' },
+      { id: 'openalex:W2', title, authors: [{ name }], citationCount: 222, provider: 'openalex' },
+    ]);
+    assert.deepEqual(out.map(paper => [paper.id, paper.citationCount]), [['openalex:W1', 0], ['openalex:W2', 222]], `${title} by ${name}`);
+  }
+  assert.equal(isPlaceholderAuthorName('Ana Unknown'), false);
+});
+
+test('a title too short to be a fingerprint does not join two works under two publishers\' DOIs', () => {
+  const smiths = PaperBuilder.deduplicate([
+    { id: 'a', doi: '10.1234/a', title: 'Introduction', authors: [{ name: 'Ana Smith' }], citationCount: 3, provider: 'openalex' },
+    { id: 'b', doi: 'https://doi.org/10.5678/B', title: 'Introduction', authors: [{ name: 'John Smith' }], citationCount: 40, provider: 'crossref' },
+    // A third record of the second work, known by its DOI and the title.
+    { id: 'c', doi: '10.5678/b', title: 'Introduction', authors: [{ name: 'J. Smith' }], provider: 'openalex' },
+  ]);
+  assert.deepEqual(smiths.map(paper => [paper.doi?.toLowerCase(), paper.citationCount]), [['10.1234/a', 3], ['10.5678/b', 40]]);
+
+  // The same title and surname still join a record without a DOI, a preprint
+  // under arXiv's own DOI, and one under the same DOI.
+  const versions = PaperBuilder.deduplicate([
+    { id: 'openalex:W1', doi: '10.1109/iccv.2017.322', title: 'Mask R-CNN', authors: [{ name: 'Kaiming He' }], provider: 'openalex' },
+    { id: 'openalex:W2', doi: '10.48550/arxiv.1703.06870', title: 'Mask R-CNN', authors: [{ name: 'Kaiming He' }], provider: 'openalex' },
+    { id: 'crossref:x', title: 'Mask R-CNN', authors: [{ name: 'K. He' }, { name: 'Georgia Gkioxari' }], provider: 'crossref' },
+  ]);
+  assert.equal(versions.length, 1);
+});
+
+// A title key carries one token of the first author's name, so on a long
+// title two people who share a surname or a given name met, and the first DOI
+// showed the other work's citations (outside review of PR #400).
+test('one long title by two people is two works, whatever DOIs the records carry', () => {
+  const work = (id: string, title: string, name: string, doi: string | undefined, citationCount: number) => (
+    { id, doi, title, authors: [{ name }], citationCount, provider: 'openalex' }
+  );
+  for (const [title, first, second] of [
+    ['Editorial: looking back and looking forward', 'Maria Garcia', 'Jose Garcia'],
+    ['Introduction to the special issue', 'Wei Zhang', 'Wei Li'],
+    ['Introduction to the special issue', 'Zhang Wei', 'Li, Wei'],
+  ]) {
+    for (const [firstDoi, secondDoi] of [
+      ['10.1001/ed.1', '10.1002/ed.2'],
+      ['10.48550/arxiv.2001.00001', '10.1002/ed.2'],
+      ['10.2139/ssrn.400001', '10.1002/ed.2'],
+      ['10.1001/ed.1', undefined],
+      [undefined, undefined],
+    ]) {
+      const rows = PaperBuilder.deduplicate([
+        work('openalex:W1', title, first, firstDoi, 0),
+        work('openalex:W2', title, second, secondDoi, 57),
+      ]);
+      assert.deepEqual(rows.map(row => [row.id, row.doi, row.citationCount, (row.authors[0] as PaperAuthor).name]), [
+        ['openalex:W1', firstDoi, 0, first],
+        ['openalex:W2', secondDoi, 57, second],
+      ], `${title}: ${first} (${firstDoi}), ${second} (${secondDoi})`);
+    }
+  }
+
+  // One person under two DOIs, as a working paper and its journal version
+  // name them, is still one work.
+  const [row, ...rest] = PaperBuilder.deduplicate([
+    work('openalex:W1', 'Editorial: looking back and looking forward', 'Maria Garcia', '10.3386/w1', 0),
+    work('pmid:1', 'Editorial: looking back and looking forward', 'Garcia M', '10.1002/ed.2', 57),
+  ]);
+  assert.deepEqual([row.doi, rest.length], ['10.3386/w1', 0]);
 });
 
 test('authors given as plain strings still take part in the heuristic keys', () => {

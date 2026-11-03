@@ -9,6 +9,7 @@ and configuration details.
 ```mermaid
 flowchart TD
     Reader["Reader / browser"]
+    Agents["MCP clients · AI assistants"]
     Web["Vercel · React app"]
     Auth["Firebase Auth"]
     Firestore[("Firestore")]
@@ -25,6 +26,7 @@ flowchart TD
     Web -->|"SDK / REST"| Rules
     Rules --> Firestore
     Web -->|"ID token on protected routes"| Worker
+    Agents -->|"POST /mcp · public, read-only"| Worker
     Worker -->|"Verify identity"| Auth
     Worker -->|"Privileged operations"| Firestore
     Worker --> Providers
@@ -37,7 +39,7 @@ flowchart TD
     classDef server fill:#f0fdfa,stroke:#0f766e,color:#134e4a
     classDef storage fill:#f5f3ff,stroke:#7c3aed,color:#4c1d95
     classDef external fill:#fff7ed,stroke:#c2410c,color:#7c2d12
-    class Reader,Web client
+    class Reader,Agents,Web client
     class Worker,Egress,Rules server
     class Firestore,State,Corpus storage
     class Auth,Providers,Scopus external
@@ -78,6 +80,9 @@ flowchart TD
   [worker/index.ts](worker/index.ts) handles requests and schedules;
   [router.ts](worker/router.ts) dispatches HTTP routes.
   Route and handler checks enforce methods, origins and identity as applicable.
+  [mcp-server.ts](worker/mcp-server.ts) serves `/mcp`, a public, read-only MCP
+  server whose tools call the provider routes in-process
+  ([contract](worker/README.md#mcp-server)).
 - [provider-runtime.ts](worker/provider-runtime.ts) owns shared provider
   caching, deadlines and quota reservations. Durable Objects own atomic quotas,
   email delivery reservations and rewrite sessions. KV holds notification state,
@@ -176,8 +181,13 @@ has seen their whole ranking.
 [FeedContext](src/context/feed-context.tsx) combines their semantic signal
 with the [recommendation engine](src/utils/recommendation-engine.ts), manages
 interactions and preserves the unread queue.
-[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives one card in
-fifteen to an unseen notable paper the corpus adds after a page; the
+[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives an unseen
+notable paper the corpus adds after a page one card in so many: each page
+draws that share, between one in fifteen and one in three, from how the
+account engages with For You's notable and other cards
+([feed-temporal-lean.ts](src/context/feed-temporal-lean.ts)). The corpus
+sends five notable papers at most, so a full page holds about one in five at
+most on the first page and one in seven on a later one. The
 [paper-store contract](worker/README.md#paper-store) says how they are chosen
 and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.

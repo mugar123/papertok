@@ -726,9 +726,9 @@ function standardNormal(random: () => number) {
 }
 
 // Marsaglia and Tsang, valid for shape >= 1, which is all a Beta with a uniform
-// prior ever needs. Almost every first try is accepted; the cap only stops a
+// prior and the notable share's posteriors (sampleNotableEvery) ever need. Almost every first try is accepted; the cap only stops a
 // degenerate random source from spinning forever.
-function sampleGamma(shape: number, random: () => number) {
+export function sampleGamma(shape: number, random: () => number) {
   const d = shape - 1 / 3;
   const c = 1 / Math.sqrt(9 * d);
   for (let attempt = 0; attempt < 64; attempt += 1) {
