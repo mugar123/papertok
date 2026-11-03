@@ -190,6 +190,30 @@ test('initialize with an unknown version answers with one the server speaks', as
   });
 });
 
+// 2025-03-26's transport requires JSON-RPC batches, which the server refuses,
+// so it never agrees to that version (outside review of PR #400).
+test('initialize does not agree to 2025-03-26, and a request that names it is refused', async () => {
+  await withUpstream(NO_UPSTREAM, async calls => {
+    for (const [asked, agreed] of [['2025-03-26', '2025-11-25'], ['2025-06-18', '2025-06-18'], ['2025-11-25', '2025-11-25']]) {
+      const { answer } = await rpc(routeEnv(), {
+        jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: asked, capabilities: {}, clientInfo: { name: 'test', version: '0' } },
+      });
+      assert.equal(answer.result?.protocolVersion, agreed, asked);
+    }
+    const ping = { jsonrpc: '2.0', id: 2, method: 'ping' };
+    const old = await rpc(routeEnv(), ping, { headers: { 'mcp-protocol-version': '2025-03-26' } });
+    assert.equal(old.response.status, 400);
+    assert.equal(old.answer.error?.code, -32600);
+    const oldBatch = await rpc(routeEnv(), [ping], { headers: { 'mcp-protocol-version': '2025-03-26' } });
+    assert.equal(oldBatch.response.status, 400);
+    for (const headers of [{ 'mcp-protocol-version': '2025-06-18' }, { 'mcp-protocol-version': '2025-11-25' }, {}]) {
+      const { response, answer } = await rpc(routeEnv(), ping, { headers });
+      assert.deepEqual([response.status, answer.result], [200, {}], JSON.stringify(headers));
+    }
+    assert.deepEqual(calls, []);
+  });
+});
+
 test('a notification is accepted with 202 and no body', async () => {
   await withUpstream(NO_UPSTREAM, async () => {
     const response = await reportApi.fetch(post({ jsonrpc: '2.0', method: 'notifications/initialized' }), routeEnv());

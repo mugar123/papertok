@@ -1194,10 +1194,14 @@ Notifications receive `202`; a message without a string `method` receives
 `400` with `-32600`, as the server sends no requests a client could answer. GET
 and other methods except the router's CORS
 preflight receive `405`, batches
-receive `-32600` (a deviation from `2025-03-26`, the version assumed when a client
-sends no `MCP-Protocol-Version`, whose transport requires batches; the two later
-versions dropped them), and bodies above 16 KB receive `413`. It negotiates protocol
-versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A browser `Origin`
+receive `-32600`, and bodies above 16 KB receive `413`. It negotiates protocol
+versions `2025-11-25` and `2025-06-18`. It does not speak `2025-03-26`, whose
+transport requires batches (the two later versions dropped them): `initialize`
+answers a client that asks for it with `2025-11-25`, and a request whose
+`MCP-Protocol-Version` names it receives `400`. A request without the header,
+`initialize` among them, is served; without sessions the server cannot tell
+which version it was negotiated under, so it does not assume `2025-03-26` as
+the transport suggests. A browser `Origin`
 outside the allowlist receives `403`; remote clients send none. The official
 SDK is not used, so the package lock is unchanged.
 

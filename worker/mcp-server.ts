@@ -36,10 +36,10 @@ import { arxivRecordPaper, parseArxivAtom } from './paper-sources.ts';
  */
 export const MCP_PATH = '/mcp';
 
-// Newest first: an unknown version asked for in `initialize` gets the first.
-const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
-// When a client sends no `MCP-Protocol-Version`, the transport says to assume this one.
-const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
+// Newest first: a version not listed asked for in `initialize` gets the first.
+// 2025-03-26 is not listed: its transport requires JSON-RPC batches, which
+// this server refuses, and the two later versions dropped them.
+const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18'];
 const MAX_BODY_BYTES = 16 * 1024;
 // Tool calls one address may make in a UTC minute, cache hits included. The
 // routes behind them keep their own per-address limits on misses.
@@ -587,8 +587,12 @@ export async function handleMcpRequest(request: Request, env: WorkerEnv) {
   if (request.method !== 'POST') {
     return new Response(null, { status: 405, headers: { allow: 'POST', 'cache-control': 'no-store' } });
   }
-  const version = request.headers.get('mcp-protocol-version') || DEFAULT_PROTOCOL_VERSION;
-  if (!PROTOCOL_VERSIONS.includes(version)) return rpcError(null, -32600, 'Unsupported MCP-Protocol-Version', 400);
+  // `initialize` carries no header; a client sends it on the requests after.
+  // Without sessions the server cannot tell which version a request without
+  // it was negotiated under, so it serves one as a listed version instead of
+  // assuming 2025-03-26, as the transport suggests, and refusing it.
+  const version = request.headers.get('mcp-protocol-version');
+  if (version && !PROTOCOL_VERSIONS.includes(version)) return rpcError(null, -32600, 'Unsupported MCP-Protocol-Version', 400);
 
   let message: unknown;
   try {
