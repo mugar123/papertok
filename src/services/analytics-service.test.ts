@@ -756,6 +756,10 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   assert.deepEqual(sanitizeProductEventParams('follow_change', {
     action: 'add', entity_type: 'author', entity_id: 'A123', entity_name: 'Author Name',
   }), { action: 'add', entity_type: 'author', entity_id: 'A123' });
+  // ENG-123: a journal follow keeps its type, as the app sends it with no id.
+  assert.deepEqual(sanitizeProductEventParams('follow_change', {
+    action: 'add', entity_type: 'journal', surface: 'other', entity_name: 'American Economic Review',
+  }), { action: 'add', entity_type: 'journal', surface: 'other' });
 });
 
 test('a feed load error says why it failed with fixed labels only', () => {

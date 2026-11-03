@@ -289,6 +289,33 @@ test('a journal article joined to its working paper by title alone is not tagged
   }
 });
 
+// ENG-123: `venueId` is the OpenAlex id of the journal a record names, and
+// travels as the journal's name does: a row fills it from the first record
+// that has one, keeps its own, and a working paper that keeps its own `false`
+// takes neither the article's journal nor its id.
+test("a row keeps the OpenAlex id of its journal as it keeps the journal's name", () => {
+  const preprint = PaperBuilder.create({ id: '2610.11111', arxivId: '2610.11111', sources: { primary: 'arxiv', enrichedBy: [] }, title: 'Monetary policy and the term structure' });
+  assert.equal(preprint.venueId, undefined);
+  const article = PaperBuilder.create({
+    id: 'openalex:W7000000001', sources: { primary: 'openalex', enrichedBy: [] }, title: 'Monetary policy and the term structure',
+    journal: 'American Economic Review', venueId: 'S23254222', publicationType: 'article', publicationStatus: 'published',
+  });
+  assert.equal(article.venueId, 'S23254222');
+  assert.equal(PaperBuilder.merge(preprint, article, 'openalex').venueId, 'S23254222');
+  assert.equal(PaperBuilder.merge({ ...preprint, venueId: 'S1' }, article, 'openalex').venueId, 'S1');
+
+  const workingPaper = {
+    id: 'openalex:W200', sources: { primary: 'openalex', enrichedBy: [] }, doi: '10.5089/9798229063456.001',
+    title: 'Monetary policy and bank lending in small open economies', authors: [{ name: 'Ana Economist' }],
+    publicationType: 'article', publicationStatus: 'published' as const, peerReviewed: false, workingPaper: true, provider: 'openalex',
+  };
+  const [row] = PaperBuilder.deduplicate([workingPaper, {
+    ...workingPaper, id: 'openalex:W201', doi: '10.1016/j.jinteco.2026.103900', peerReviewed: true, workingPaper: undefined,
+    journal: 'Journal of International Economics', venueId: 'S99999999',
+  }]);
+  assert.deepEqual([row.id, row.journal, row.venueId], ['openalex:W200', undefined, undefined]);
+});
+
 test('a working paper joined to a different article by title alone does not unreview the article', () => {
   // Synthetic records: an IMF working paper shaped as OpenAlex search returns
   // it, and its journal version shaped as PubMed returns it and mapped by the

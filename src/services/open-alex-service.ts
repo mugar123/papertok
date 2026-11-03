@@ -30,6 +30,7 @@ import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
 import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
 import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
+import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../utils/following.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
 import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
@@ -41,7 +42,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
 import { PaperBuilder } from './paper-builder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork, openAlexJournalId } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1395,7 +1396,7 @@ const ENTITY_SCREEN_BUDGET_MS = 7000;
 
 /**
  * Fetch works for a specific entity
- * type: 'institution', 'concept', 'author'
+ * type: 'institution', 'concept', 'topic', 'source', 'journal' (a followed journal's own articles), 'author'
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
  * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
@@ -1423,12 +1424,19 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
     filterKey = 'topics.id';
   } else if (type === 'source') {
     filterKey = 'locations.source.id';
+  } else if (type === 'journal') {
+    // A followed journal's updates (ENG-123): the works it published, not
+    // its copies in repositories, as its lane in the corpus lists them.
+    filterKey = 'primary_location.source.id';
   } else {
     filterKey = 'author.id';
   }
   
   const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
   let filterParams = `${filterKey}:${filterId}`;
+  // Its articles and reviews, not its errata and paratext, and none dated
+  // after today, which would sort first: as worker/paper-sources.ts lists the lane.
+  if (type === 'journal') filterParams += `,${FOLLOWED_JOURNAL_TYPE_FILTER},to_publication_date:${new Date().toISOString().slice(0, 10)}`;
   
   // Advanced Filters. The Explorer still drops what `openAlexPeerReviewed`
   // does not call reviewed. Asking OpenAlex to leave out what it can name
@@ -1667,6 +1675,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     arxivId: getArxivIdFromWork(work) || undefined,
     pmid: normalizePmid(work.ids?.pmid) || undefined,
     journal: work.primary_location?.source?.display_name,
+    venueId: openAlexJournalId(work),
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
     citationCountKnown: Number.isFinite(work.cited_by_count),

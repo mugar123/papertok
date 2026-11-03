@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  FollowsUnavailableError,
+  JournalFollowLimitError,
   createFollowEntity,
   createFollowKey,
+  followChangeEvent,
   followsEntity,
   migrateLegacyAuthors,
   normalizeFollowId,
+  planFollowToggle,
 } from './following.ts';
 import { getProjectDisplayName } from './entity-metadata.ts';
+import { ANALYTICS_CONSENT, sanitizeProductEventParams } from '../services/analytics-service.ts';
 
 test('normalizes provider URLs into stable ids', () => {
   assert.equal(normalizeFollowId('https://openalex.org/A123'), 'A123');
@@ -177,6 +182,90 @@ test('a nameless entity is no follow, and a shared placeholder name would have b
     true,
     'two different projects under one placeholder name are indistinguishable',
   );
+});
+
+// ENG-123: a journal is followed by its OpenAlex source id. Its ISSN-L rides
+// along for display; a name or an ISSN alone is no journal to follow.
+test('a journal is followed by its OpenAlex source id, never by its name or ISSN', () => {
+  assert.deepEqual(createFollowEntity({
+    type: 'journal',
+    id: 'https://openalex.org/S23254222',
+    displayName: 'American Economic Review',
+    source: 'openalex',
+    externalIds: { issnl: '0002-8282' },
+  }), {
+    type: 'journal',
+    canonicalId: 'S23254222',
+    displayName: 'American Economic Review',
+    source: 'openalex',
+    externalIds: { issnl: '0002-8282' },
+    metadata: {},
+  });
+  assert.equal(createFollowKey('journal', 'S23254222'), 'journal_S23254222');
+  assert.equal(createFollowEntity({ type: 'journal', displayName: 'American Economic Review' }), null);
+  assert.equal(createFollowEntity({ type: 'journal', id: '0002-8282', displayName: 'American Economic Review' }), null);
+
+  // OpenAlex lists distinct sources under one name; only the id tells them apart.
+  const followed = [{ type: 'journal' as const, canonicalId: 'S23254222', displayName: 'Economic Review' }];
+  assert.equal(followsEntity(followed, { type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), true);
+  assert.equal(followsEntity(followed, { type: 'journal', id: 'S99999999', displayName: 'Economic Review' }), false);
+});
+
+// D3 (Pablo, 2026-10-25): ten journals at most. A press of Follow plans the
+// list the provider shows and writes; an eleventh journal is refused before
+// anything is written, and unfollowing one, or following anything else, never is.
+test('a reader who follows ten journals cannot follow an eleventh, and can still unfollow one', () => {
+  const listed = { list: 'listed' as const };
+  const journals = Array.from({ length: 10 }, (_, index) => createFollowEntity({ type: 'journal', id: `S${1000 + index}`, displayName: `Journal ${index}` })!);
+  const another = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
+
+  assert.equal(planFollowToggle(journals.slice(0, 9), another, listed).next.at(-1)?.canonicalId, 'S23254222');
+  assert.throws(() => planFollowToggle(journals, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 10);
+  // Two devices following at once can store an eleventh; the refusal counts it.
+  const eleven = [...journals, createFollowEntity({ type: 'journal', id: 'S2000', displayName: 'Journal 10' })!];
+  assert.throws(() => planFollowToggle(eleven, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 11);
+  const unfollow = planFollowToggle(journals, journals[3], listed);
+  assert.equal(unfollow.existing, journals[3]);
+  assert.deepEqual(unfollow.next.map(follow => follow.canonicalId), ['S1000', 'S1001', 'S1002', 'S1004', 'S1005', 'S1006', 'S1007', 'S1008', 'S1009']);
+  assert.equal(planFollowToggle(journals, author, listed).next.length, 11);
+});
+
+// The journals are counted in the list Firestore sent. Before its first
+// snapshot the list is empty, and after a snapshot error it holds only the
+// legacy authors, so either would let an eleventh journal through.
+test('a journal is not followed while the follow list has not arrived', () => {
+  const unlisted = { list: 'waiting' as const };
+  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  assert.throws(() => planFollowToggle([], journal, unlisted), FollowsUnavailableError);
+  assert.throws(() => planFollowToggle(migrateLegacyAuthors(['Ada Lovelace']), journal, { list: 'failed' }), FollowsUnavailableError);
+  // Any other follow is written as before the list arrives.
+  const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
+  assert.deepEqual(planFollowToggle([], author, unlisted).next, [author]);
+});
+
+// The listener is still attached while the app waits for its first snapshot,
+// so trying again can succeed. A snapshot error ends it for the session: the
+// refusal says so, and the Explorer asks for a reload, not a second try.
+test('a journal refused after the follow list failed to load is not retryable; one refused while it loads is', () => {
+  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+  const refusal = (list: 'waiting' | 'failed') => {
+    try { planFollowToggle([], journal, { list }); } catch (error) { return error as FollowsUnavailableError; }
+    return null;
+  };
+  assert.equal(refusal('waiting')?.retryable, true);
+  assert.equal(refusal('failed')?.retryable, false);
+});
+
+// Pablo, 2026-10-26: `follow_change` may say a journal was followed, never
+// which one. Detailed analytics keeps an author's id; it gets no journal's.
+test('a journal follow reaches analytics as its type alone, even with detailed analytics on', () => {
+  const journal = createFollowEntity({ type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review' })!;
+  const author = createFollowEntity({ type: 'author', id: 'https://openalex.org/A5023888391', displayName: 'Wei Zhang' })!;
+  const detailed = (params: Record<string, unknown>) => sanitizeProductEventParams('follow_change', params, ANALYTICS_CONSENT.ENABLED);
+  assert.deepEqual(detailed(followChangeEvent(journal, false)), { entity_type: 'journal', action: 'add', surface: 'other' });
+  assert.deepEqual(detailed(followChangeEvent(journal, true)), { entity_type: 'journal', action: 'remove', surface: 'other' });
+  assert.deepEqual(detailed(followChangeEvent(author, false)), { entity_type: 'author', action: 'add', surface: 'other', entity_id: 'A5023888391' });
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {

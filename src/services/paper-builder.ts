@@ -158,6 +158,11 @@ export class PaperBuilder {
       huggingFaceUrl: data.huggingFaceUrl || undefined,
       huggingFaceUpvotes: data.huggingFaceUpvotes ?? undefined,
       journal: data.journal || undefined,
+      venueId: data.venueId || undefined,
+      // OpenAlex's name for that journal, which the reader links (ENG-123).
+      // Without the id it is another provider's venue, such as Semantic
+      // Scholar's, and names nothing the reader can open.
+      sourceName: data.venueId && data.sourceName ? data.sourceName : undefined,
       conference: data.conference || undefined,
       year: data.year || undefined,
       publisher: data.publisher || undefined,
@@ -356,13 +361,18 @@ export class PaperBuilder {
 
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
     // A working paper that keeps its `false` takes neither the other record's
-    // journal nor its publisher: like that record's DOI, they would put the
-    // journal version's venue on the unreviewed working paper. Nor does a row
+    // journal (its name or its OpenAlex id) nor its publisher: like that
+    // record's DOI, they would put the journal version's venue on the
+    // unreviewed working paper. Nor does a row
     // take the series and institution of a working paper it is not. A `false`
     // from a record that is no working paper (a non-refereed NASA ADS one)
     // still comes with the same work's venue.
     const takesVenue = !keepsOwnFalse && !otherWorkingPaper;
     if (!merged.journal && enrichmentData.journal && takesVenue) merged.journal = enrichmentData.journal;
+    if (!merged.venueId && enrichmentData.venueId && takesVenue) merged.venueId = enrichmentData.venueId;
+    // OpenAlex's name for the journal comes only with the same journal's id.
+    if (!merged.sourceName && enrichmentData.sourceName && enrichmentData.venueId
+      && merged.venueId === enrichmentData.venueId) merged.sourceName = enrichmentData.sourceName;
     if (!merged.publisher && enrichmentData.publisher && takesVenue) merged.publisher = enrichmentData.publisher;
     if (!merged.conference && enrichmentData.conference) merged.conference = enrichmentData.conference;
     if (!merged.pmid && enrichmentData.pmid) merged.pmid = enrichmentData.pmid;

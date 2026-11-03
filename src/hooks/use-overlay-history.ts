@@ -64,10 +64,11 @@ import { useEffect, useRef } from 'react';
  * `<PDFViewer>` mounts that all share `pdf` — App's own, EntityExplorer's,
  * SearchPage's — are each a modal Base UI Dialog, and a modal dialog makes the
  * rest of the page — including whatever would open a second one — inert while
- * it is open (confirmed by reading each: PaperReader has no PDF affordance and
- * no `navigate()` of its own; the layer re-anchors itself rather than opening
- * a second one). So the only real question left is "did Back just undo my own
- * push", and treating any other pop while armed as "close me" resolves toward
+ * it is open (confirmed by reading each: PaperReader has no PDF affordance,
+ * and its one link, the journal's name, closes the reader on the click that
+ * navigates, as the Similar layer's links do (below); the layer re-anchors
+ * itself rather than opening a second one). So the only real question left
+ * is "did Back just undo my own push", and treating any other pop while armed as "close me" resolves toward
  * the overlay closing rather than staying open over a URL that no longer
  * backs it — the failure direction this hook has to prefer, per "never trap
  * the user".
@@ -114,9 +115,10 @@ import { useEffect, useRef } from 'react';
  * click-driven way to reach another route; the one navigation left, the Back
  * button, is exactly what this hook already intercepts. The exception is a
  * modal whose own content links elsewhere — the Similar layer is a feed of
- * cards with topic and author links — and it closes itself the moment the
- * route changes under it, so its disarm finds the new route's entry on top
- * and steps back over nothing. The gap that `inert`
+ * cards with topic and author links, and PaperReader links the journal's
+ * name to its Explorer page (paper-reader.tsx) — and it closes itself the
+ * moment the route changes under it, so its disarm finds the new route's
+ * entry on top and steps back over nothing. The gap that `inert`
  * does NOT cover is a keydown bound on `window` — focus is trapped inside
  * the dialog, but the event still bubbles to `window` — which is precisely
  * why `search-shortcut.ts` refuses the bare `/` shortcut whenever any
