@@ -107,7 +107,7 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { loadedMarkValue, markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { saveRollbacks } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
@@ -1042,14 +1042,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // These sets and the library put every mark back where the profile
         // has it, so a move an answer sent before is no longer on screen. A
         // write still waiting that is refused puts back what the profile holds.
-        const loadedMarks = { like: liked, read };
-        markChangeLog.screenReplaced((key) => {
-          for (const [kind, ids] of Object.entries(loadedMarks)) {
-            const prefix = `${userId}:${kind}:`;
-            if (key.startsWith(prefix)) return ids.has(key.slice(prefix.length));
-          }
-          return undefined;
-        });
+        markChangeLog.screenReplaced(loadedMarkValue(userId, { like: liked, read }));
         saveRollback.screenReplaced(saved);
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
@@ -1894,7 +1887,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:like:${paper.id}`,
+      markKey: markKey(userId, 'like', paper.id),
       from: isCurrentlyLiked,
       to: !isCurrentlyLiked,
       isOn: () => likedPaperIdsRef.current.has(paper.id),
@@ -2322,7 +2315,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:read:${paperId}`,
+      markKey: markKey(userId, 'read', paperId),
       isRead: () => readPaperIdsRef.current.has(paperId),
     });
   }, [recordProfileEvent, user?.uid, markChangeLog]);
@@ -2368,7 +2361,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       throwOnError: options?.throwOnError,
       stillSignedIn: () => auth.currentUser?.uid === userId,
       changes: markChangeLog,
-      markKey: `${userId}:readLater:${paper.id}`,
+      markKey: markKey(userId, 'readLater', paper.id),
       // A removal from Read later (`afterWrite`) starts from a saved paper,
       // not from whatever the screen showed when it was asked for.
       from: markStartsOn(options, Boolean(previous?.readLater)),

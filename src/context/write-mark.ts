@@ -16,6 +16,29 @@ export function markStartsOn(options: Pick<MarkWriteOptions, 'afterWrite'> | und
   return Boolean(options?.afterWrite) || isOn;
 }
 
+const MARK_KINDS = ['like', 'read', 'readLater'] as const;
+type MarkKind = typeof MARK_KINDS[number];
+
+/** The key `markChanges` follows one mark of one paper for one account by. */
+export function markKey(userId: string | undefined, kind: MarkKind, paperId: string) {
+  return `${userId}:${kind}:${paperId}`;
+}
+
+/**
+ * For `screenReplaced`: a mark's value in the sets a profile loaded for
+ * `userId`, for the kinds of mark `loaded` gives the ids of.
+ */
+export function loadedMarkValue(userId: string, loaded: Partial<Record<MarkKind, ReadonlySet<string>>>) {
+  return (key: string) => {
+    for (const kind of MARK_KINDS) {
+      const prefix = markKey(userId, kind, '');
+      const ids = loaded[kind];
+      if (ids && key.startsWith(prefix)) return ids.has(key.slice(prefix.length));
+    }
+    return undefined;
+  };
+}
+
 interface MarkChange {
   to: boolean;
   /** Whether the screen should show this change's value now. */

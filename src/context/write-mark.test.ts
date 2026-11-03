@@ -1,7 +1,7 @@
 import type { InteractionEvent, InteractionProfile, StoredInteractionProfile } from '../utils/interaction-profile.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { loadedMarkValue, markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 import {
   createEmptyInteractionProfile, curatedIds, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile,
@@ -90,6 +90,20 @@ test('a like refused after the profile loaded keeps the like the profile holds',
   assert.deepEqual(told, ['like']);
 });
 
+// What FeedContext hands screenReplaced once a profile loads: each like and
+// read mark of the account takes the value the profile holds, and a mark the
+// load does not set (Read later, another account's) keeps what it started from.
+test('a profile load gives each of the account\'s like and read marks the value it holds, and no other mark one', () => {
+  const loaded = loadedMarkValue('u1', { like: new Set(['p1', 'openalex:W2']), read: new Set(['p3']) });
+  assert.equal(loaded(markKey('u1', 'like', 'p1')), true);
+  assert.equal(loaded(markKey('u1', 'like', 'openalex:W2')), true);
+  assert.equal(loaded(markKey('u1', 'like', 'p3')), false);
+  assert.equal(loaded(markKey('u1', 'read', 'p3')), true);
+  assert.equal(loaded(markKey('u1', 'read', 'p1')), false);
+  assert.equal(loaded(markKey('u1', 'readLater', 'p3')), undefined);
+  assert.equal(loaded(markKey('u2', 'like', 'p1')), undefined);
+});
+
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 
 // One paper's heart on the reading profile, wired as FeedContext wires it: a
@@ -117,7 +131,7 @@ function heartOnProfile(profile: InteractionProfile, card: Partial<InteractionEv
       failure: 'refused',
       stillSignedIn: () => true,
       changes,
-      markKey: 'u1:like:p1',
+      markKey: markKey('u1', 'like', 'p1'),
       from: wasLiked,
       to: !wasLiked,
       isOn: () => account.liked,
@@ -125,8 +139,9 @@ function heartOnProfile(profile: InteractionProfile, card: Partial<InteractionEv
   };
   const load = (stored: StoredInteractionProfile) => {
     account.profile = deserializeInteractionProfile(stored)!;
-    account.liked = curatedIds(account.profile, 'liked').includes('p1');
-    changes.screenReplaced((key) => (key === 'u1:like:p1' ? account.liked : undefined));
+    const liked = new Set(curatedIds(account.profile, 'liked'));
+    account.liked = liked.has('p1');
+    changes.screenReplaced(loadedMarkValue('u1', { like: liked, read: new Set() }));
   };
   return { account, answers, press, load };
 }
