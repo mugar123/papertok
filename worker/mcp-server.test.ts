@@ -206,7 +206,8 @@ test('initialize does not agree to 2025-03-26, and a request that names it is re
     assert.equal(old.answer.error?.code, -32600);
     const oldBatch = await rpc(routeEnv(), [ping], { headers: { 'mcp-protocol-version': '2025-03-26' } });
     assert.equal(oldBatch.response.status, 400);
-    for (const headers of [{ 'mcp-protocol-version': '2025-06-18' }, { 'mcp-protocol-version': '2025-11-25' }, {}]) {
+    const served: Array<Record<string, string>> = [{ 'mcp-protocol-version': '2025-06-18' }, { 'mcp-protocol-version': '2025-11-25' }, {}];
+    for (const headers of served) {
       const { response, answer } = await rpc(routeEnv(), ping, { headers });
       assert.deepEqual([response.status, answer.result], [200, {}], JSON.stringify(headers));
     }
