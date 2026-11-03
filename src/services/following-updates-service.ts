@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import type { FollowEntity } from '../utils/following.ts';
+import { MAX_FOLLOWED_JOURNALS, type FollowEntity } from '../utils/following.ts';
 import type { fetchTopicPapers } from './topic-retrieval-service.ts';
 type TopicRetriever = (...args: Parameters<typeof fetchTopicPapers>) => Promise<Pick<Awaited<ReturnType<typeof fetchTopicPapers>>, 'papers' | 'allFailed'>>;
 interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntities: number; failedEntities: number; }
@@ -111,6 +111,13 @@ async function fetchInstitutionUpdates(follow: FollowEntity) {
   return result.papers || [];
 }
 
+// A followed journal's newest articles (ENG-123, D7): fetched live like the
+// other follows, though the journal's lane in the corpus holds them too.
+async function fetchJournalUpdates(follow: FollowEntity) {
+  const result = await getWorksByEntity('journal', follow.canonicalId, 'publication_date:desc', 1);
+  return result.papers || [];
+}
+
 async function fetchProjectUpdates(follow: FollowEntity) {
   // A bare grant code answers for every funder that ever used it
   // (code 100010 is three projects), and that is the shape of every
@@ -133,6 +140,7 @@ async function fetchUpdatesForFollow(follow: FollowEntity, options: FollowingOpt
   if (follow.type === 'author') return fetchAuthorUpdates(follow);
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
   if (follow.type === 'project') return fetchProjectUpdates(follow);
+  if (follow.type === 'journal') return fetchJournalUpdates(follow);
   return [];
 }
 
@@ -145,7 +153,7 @@ function resolvesThroughOpenAlex(follow: FollowEntity) {
   const id = cleanOpenAlexId(follow?.canonicalId);
   if (follow?.type === 'author') return /^A\d+$/i.test(id);
   if (follow?.type === 'topic') return /^[TC]\d+$/i.test(id);
-  return follow?.type === 'institution';
+  return follow?.type === 'institution' || follow?.type === 'journal';
 }
 
 export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
@@ -166,7 +174,16 @@ export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
  * used to wait for the last. The final value is the last delivery.
  */
 export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [], options: FollowingOptions = {}): Promise<FollowingResult> {
-  const follows = orderFollowsForRefresh(followedEntities.slice(0, MAX_FOLLOWS_PER_REFRESH));
+  // Journals are counted apart, as a page of the corpus counts them
+  // (`servedFollows`): the list arrives in document-id order, where
+  // `journal_…` sorts before `topic_…`, so one cap for both would let ten
+  // journals push a heavy follower's topics off the page.
+  const isJournal = (follow: FollowEntity) => follow.type === 'journal';
+  const refreshed = new Set([
+    ...followedEntities.filter(follow => !isJournal(follow)).slice(0, MAX_FOLLOWS_PER_REFRESH),
+    ...followedEntities.filter(isJournal).slice(0, MAX_FOLLOWED_JOURNALS),
+  ]);
+  const follows = orderFollowsForRefresh(followedEntities.filter(follow => refreshed.has(follow)));
   const fetchOne = options.fetchUpdatesForFollow || fetchUpdatesForFollow;
   const deadlineMs = Number.isFinite(options.entityTimeoutMs) ? options.entityTimeoutMs : ENTITY_DEADLINE_MS;
   const limit = options.limit || 60;

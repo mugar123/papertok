@@ -23,6 +23,7 @@ import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-
 import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
+import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../src/utils/following.ts';
 import { handleHarvestArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
@@ -506,7 +507,7 @@ export function notableListedYear(page: number, now = Date.now()): number {
 }
 
 // Followed OpenAlex entities, by the filter that names their works.
-const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
+const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id', source: 'primary_location.source.id' };
 
 async function openAireProjectDois(lane: string) {
   // An OpenAIRE project id holds `::` itself; a funder, when stored, comes first.
@@ -751,7 +752,12 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const part = newFollow ? 'new' : 'nightly';
       if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, part });
+      const until = `to_publication_date:${day(new Date().toISOString())}`;
+      // A followed journal (ENG-123, D4): its articles and reviews, without
+      // its errata and paratext, 100 a page for the same list call. In the 90
+      // days to 2026-10-25 PLOS ONE published 39 articles a day and Nature 12.
+      if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},${FOLLOWED_JOURNAL_TYPE_FILTER},${until}`, { page, lane, perPage: 100, part });
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},${until}`, { page, lane, perPage: 50, part });
     },
   },
   openaire: {
@@ -842,7 +848,7 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
 const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
   [/^author-name:/, 'arxiv-search'],
   [/^project:/, 'openaire'],
-  [/^(author|institution|topic|concept|query):/, 'openalex-follows'],
+  [/^(author|institution|topic|concept|source|query):/, 'openalex-follows'],
 ];
 
 /** The sources followed lanes are harvested from, as `lane_state` names them. */

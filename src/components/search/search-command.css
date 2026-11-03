@@ -66,8 +66,18 @@
   cursor: default;
 }
 
+/* A pending Follow keeps focus (toggle.ts): its contents dim, not the
+   button, so the focus ring keeps its full contrast. */
+.sc-follow[aria-disabled='true'] {
+  cursor: default;
+}
+
+.sc-follow[aria-disabled='true'] > * {
+  opacity: 0.6;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .sc-follow:not(:disabled):hover {
+  .sc-follow:not(:disabled, [aria-disabled='true']):hover {
     border-color: var(--border-ink);
     color: var(--text-primary);
   }
@@ -88,6 +98,17 @@
   border-bottom: 1px solid var(--tint-amber-line);
   background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
+}
+
+/* A refused Follow (search-command.tsx), above the list rather than inside
+   its padding, so it needs none of the warning's negative margin. */
+.sc-refusal {
+  margin: 0;
+}
+
+.sc-refusal > [role='status'] {
+  flex: 1;
+  min-width: 0;
 }
 
 /* The way out on a phone (search-command.tsx). Off everywhere else: on a wide

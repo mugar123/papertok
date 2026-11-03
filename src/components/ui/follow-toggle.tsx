@@ -5,7 +5,7 @@ import { useReducedMotion } from 'framer-motion';
 import { UserCircleMinus, UserCirclePlus } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
 import { pulseIcon } from '../../utils/motion-curves.ts';
-import { Toggle } from './toggle.tsx';
+import { Toggle } from './toggle.ts';
 import './follow-toggle.css';
 
 type FollowToggleProps = StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string };

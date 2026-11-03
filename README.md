@@ -13,7 +13,7 @@ scroll, and the feed learns from what you read, like, save, skip and follow.
 ## Features
 
 - **Personalized feed** from arXiv, OpenAlex, PubMed, OpenReview, Hugging Face and more.
-- **Follow** authors, topics, institutions and projects.
+- **Follow** authors, topics, institutions, projects and journals (up to 10, from a journal's page, which its name opens in Read in plain words).
 - **Search** papers, authors, topics, institutions and projects with `/`.
 - **Similar papers** from the card’s action rail.
 - **Read in plain words**: AI rewrites at Beginner, University or Researcher level when
@@ -23,7 +23,7 @@ scroll, and the feed learns from what you read, like, save, skip and follow.
 - **Citation map**: see what a paper cites and what cites it.
 - **Clear labels** for preprints, working papers and open access.
 - **Library** of colored lists you can share.
-- **Weekly email update**: an opt-in reading list prepared on Mondays with new papers from what you follow. Delivery can be delayed by sending limits.
+- **Weekly email update**: an opt-in reading list prepared on Mondays with new papers from the authors, topics, institutions and projects you follow (not journals yet). Delivery can be delayed by sending limits.
 - **Installable** on your home screen, with dark mode.
 
 ## Run locally

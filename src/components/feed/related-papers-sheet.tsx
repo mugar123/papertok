@@ -27,7 +27,7 @@ import {
   stepRelatedPaperTrail,
 } from '../../utils/related-paper-transition.ts';
 import ScientificText from '../scientific-text.ts';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';

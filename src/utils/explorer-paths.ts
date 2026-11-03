@@ -3,6 +3,7 @@ type AuthorInput = string | (Partial<PaperAuthor> & { openAlexId?: string }) | n
 export interface PaperReference { type: string; value: string; }
 
 import { getPublicEntityPath } from './public-navigation.ts';
+import { UNNAMED_SOURCE } from './open-alex-work.ts';
 
 /**
  * Where an author on a card opens, and why it matters which door.
@@ -118,4 +119,23 @@ export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | 
   }
   if (!name) return '';
   return withQuery(`/explorer/author/${encodeURIComponent(name)}`, paperQuery(reference));
+}
+
+/**
+ * The journal that published a paper, as the reader links it to the
+ * journal's page in the Explorer, where it can be followed (ENG-123): a
+ * journal OpenAlex identifies (`venueId`). It is named as OpenAlex names it
+ * where the paper kept that name (`sourceName`, which `PaperBuilder` keeps
+ * only beside the same `venueId`: an OpenAlex lane, search or Explorer result,
+ * and the corpus row built from one), else by the paper's own `journal`,
+ * which can be another provider's, such as arXiv's journal reference
+ * ("Phys. Rev. Lett. 130, 041801 (2023)"). So the page is opened by id
+ * alone, without a `?name=` for its masthead to show before the source loads.
+ */
+export function journalExplorerLink(paper: Partial<Paper> | null | undefined) {
+  const id = String(paper?.venueId || '').trim();
+  const openAlexName = paper?.sourceName === UNNAMED_SOURCE ? '' : paper?.sourceName;
+  const name = String(openAlexName || paper?.journal || '').trim();
+  if (!/^S\d+$/.test(id) || !name) return null;
+  return { name, path: `/explorer/source/${id}` };
 }
