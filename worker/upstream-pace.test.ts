@@ -1,4 +1,5 @@
 import type { TestNamespace } from './test-types.ts';
+import type { WorkerEnv } from './env.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { QuotaReading } from './request-quota-ledger.ts';
@@ -194,7 +195,7 @@ test('a spaced beat holds the next slot with a late one and gives up a slot the 
 test('a spaced beat refuses a caller that comes in the first two seconds after a late call, and seats one that comes later', async () => {
   const period = 3_000;
   const evenStart = 1_000_000 * period;
-  const callAt = async (ledger: Env['REQUEST_QUOTA_LEDGER'], at: number, accepts?: (slot: number) => boolean) => {
+  const callAt = async (ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], at: number, accepts?: (slot: number) => boolean) => {
     let clock = at;
     const seat = await awaitUpstreamSlot(ledger, {
       namespace: 'arxiv', periodMs: period, maxWaitMs: 4_000, spaced: true, accepts, now: () => clock, sleep: async ms => { clock += ms; },

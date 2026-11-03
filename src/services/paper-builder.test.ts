@@ -2158,7 +2158,7 @@ test('one long title by two people is two works, whatever DOIs the records carry
         work('openalex:W1', title, first, firstDoi, 0),
         work('openalex:W2', title, second, secondDoi, 57),
       ]);
-      assert.deepEqual(rows.map(row => [row.id, row.doi, row.citationCount, row.authors[0].name]), [
+      assert.deepEqual(rows.map(row => [row.id, row.doi, row.citationCount, (row.authors[0] as PaperAuthor).name]), [
         ['openalex:W1', firstDoi, 0, first],
         ['openalex:W2', secondDoi, 57, second],
       ], `${title}: ${first} (${firstDoi}), ${second} (${secondDoi})`);
