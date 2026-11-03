@@ -19,3 +19,17 @@ export interface DigestShutoffState {
 export function digestShutoffDue({ enabled, followsConfirmed, hasDigestFollows, attempted }: DigestShutoffState) {
   return enabled && followsConfirmed && !hasDigestFollows && !attempted;
 }
+
+/**
+ * Whether the "email updates turned off" notice shows: this account's digest
+ * was shut off by the app, and it is still off with nothing followed. Keyed by
+ * account so another sign-in on the same provider never sees it.
+ */
+export function digestShutoffNoticeShown({ turnedOffFor, userId, enabled, hasDigestFollows }: {
+  turnedOffFor: string | null;
+  userId: string | null;
+  enabled: boolean;
+  hasDigestFollows: boolean;
+}) {
+  return userId !== null && turnedOffFor === userId && !enabled && !hasDigestFollows;
+}

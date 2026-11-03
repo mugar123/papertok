@@ -28,6 +28,7 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
+import { digestShutoffNoticeShown } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 import { digestShutoffDue } from '../utils/digest-shutoff.ts';
 
@@ -53,7 +54,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [digestTurnedOff, setDigestTurnedOff] = useState(false);
+  const [digestTurnedOffFor, setDigestTurnedOffFor] = useState<string | null>(null);
   const [health, setHealth] = useState<Awaited<ReturnType<typeof getEmailNotificationHealth>>>({
     configured: false,
     available: false,
@@ -260,6 +261,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (hasFollows) {
       shutoffAttemptedFor.current = null;
+      setDigestTurnedOffFor(null);
       return;
     }
     if (!userId || loading || loadedForUser.current !== userId) return;
@@ -273,7 +275,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     saveEmailNotificationPreferences({ ...preferences, enabled: false, language }, followedEntities, items)
       .then(saved => {
         applySavedPreferences(saved, true);
-        setDigestTurnedOff(true);
+        setDigestTurnedOffFor(userId);
       })
       .catch(shutoffError => console.warn('Could not turn the digest off after the last follow was removed', shutoffError));
   }, [applySavedPreferences, followedEntities, followsConfirmed, hasFollows, items, language, loading, preferences, userId]);
@@ -292,10 +294,15 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     health,
     notificationDataReady,
     hasFollows,
-    digestTurnedOff: digestTurnedOff && !localizedPreferences.enabled,
+    digestTurnedOff: digestShutoffNoticeShown({
+      turnedOffFor: digestTurnedOffFor,
+      userId,
+      enabled: localizedPreferences.enabled,
+      hasDigestFollows: hasFollows,
+    }),
     savePreferences,
     sendTest,
-  }), [digestTurnedOff, error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing]);
+  }), [digestTurnedOffFor, userId, error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }
