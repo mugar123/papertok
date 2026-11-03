@@ -72,7 +72,8 @@ export function feedLoadOutcome(error: unknown) {
 
 // The pause before the automatic retry, which gives a transient failure (a
 // dropped connection, a Worker or source that failed for a moment) time to clear.
-const AUTO_RETRY_PAUSE_MS = 2_500;
+// A failed next page's first retry waits it too (next-page-sentinel.ts).
+export const AUTO_RETRY_PAUSE_MS = 2_500;
 
 /**
  * When the automatic retry of a failed load runs, and whether its requests
