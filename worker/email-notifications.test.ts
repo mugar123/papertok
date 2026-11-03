@@ -39,6 +39,7 @@ const {
   isSubscriptionDue,
   isSubscriptionCalendarDue,
   saveSubscription,
+  loadSubscriptionWithState,
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
@@ -162,15 +163,9 @@ function emailEnvironment(kv: KVNamespace): WorkerEnv {
   };
 }
 
-async function storedSubscriptionWithState(kv: KVNamespace, subscriptionKey: string) {
-  const subscription = await kv.get<Subscription>(subscriptionKey, 'json');
-  if (!subscription) return null;
-  const uid = subscriptionKey.replace(/^notification:subscription:/, '');
-  const stateKey = subscription.stateId
-    ? `${deliveryStatePrefix}${uid}:${subscription.stateId}`
-    : `${deliveryStatePrefix}${uid}`;
-  const state = await kv.get<Subscription>(stateKey, 'json');
-  return { ...subscription, ...(state || {}) };
+// What the sender reads: the record, its sync refresh and its delivery state.
+function storedSubscriptionWithState(kv: KVNamespace, subscriptionKey: string) {
+  return loadSubscriptionWithState({ NOTIFICATION_STORE: kv }, subscriptionKey);
 }
 
 test('sanitizes notification preferences and followed entities', () => {
@@ -1373,6 +1368,65 @@ test('an unsubscribe that lands while a sync is in flight stays unsubscribed', a
   assert.equal(kv.values.size, 0, 'the sync brought back the subscription or its token');
 });
 
+const SYNC_WITH_NEW_FOLLOW = {
+  sync: true, enabled: true, maxPapers: 5,
+  follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')], previewItems: [],
+};
+
+async function unsubscribeWithLink(env: { NOTIFICATION_STORE: KVNamespace }, token: string | undefined) {
+  const page = await handleEmailUnsubscribe(new Request(
+    `https://example.com/notifications/unsubscribe?token=${token}`,
+    { method: 'POST' },
+  ), env);
+  assert.equal(page.status, 200);
+}
+
+test('an unsubscribe that lands after the sync last read the subscription still wins', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
+  const stored = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  const basePut = kv.put.bind(kv);
+  let interleaved = false;
+  kv.put = async (key, value, options) => {
+    if (!interleaved) {
+      interleaved = true;
+      await unsubscribeWithLink(env, stored?.unsubscribeToken);
+    }
+    return basePut(key, value, options);
+  };
+
+  await saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), env, SYNC_READER);
+
+  assert.ok(interleaved);
+  assert.equal(await storedSubscriptionWithState(kv, SYNC_READER_KEY), null);
+  assert.equal(kv.values.size, 0, 'the sync left the subscription, its refresh or its token');
+});
+
+// Another location can read a copy of the record up to a minute old, so the
+// sync there can neither see the unsubscribe nor clean up after it.
+test('a sync in a location that still sees the deleted subscription cannot bring it back', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
+  const cached = kv.values.get(SYNC_READER_KEY)!;
+  const stale = {
+    ...kv,
+    get: (async (key: string, type?: string) => {
+      if (key !== SYNC_READER_KEY) return type === 'json' ? kv.get(key, 'json') : kv.get(key);
+      return type === 'json' ? JSON.parse(cached) : cached;
+    }) as typeof kv.get,
+  } as KVNamespace;
+  await unsubscribeWithLink(env, (JSON.parse(cached) as Subscription).unsubscribeToken);
+
+  await saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), { NOTIFICATION_STORE: stale }, SYNC_READER);
+
+  assert.equal(await storedSubscriptionWithState(kv, SYNC_READER_KEY), null, 'the sender sees a subscription');
+  // Subscribing again starts a record the stale refresh does not apply to.
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow('A3', 'Other author')], previewItems: [] }), env, SYNC_READER);
+  assert.deepEqual((await storedSubscriptionWithState(kv, SYNC_READER_KEY))?.follows?.map(follow => follow.canonicalId), ['A3']);
+});
+
 test('a background sync refreshes follows and previews and keeps the stored settings', async () => {
   const kv = createMemoryKv();
   const env = { NOTIFICATION_STORE: kv };
@@ -1397,7 +1451,7 @@ test('a background sync refreshes follows and previews and keeps the stored sett
 
   assert.equal(saved.enabled, true);
   assert.equal(saved.maxPapers, 10);
-  const after = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  const after = await storedSubscriptionWithState(kv, SYNC_READER_KEY);
   assert.ok(after);
   assert.equal(after.maxPapers, 10);
   assert.deepEqual(after.follows?.map(follow => follow.canonicalId), ['A1', 'A2']);
@@ -1406,6 +1460,10 @@ test('a background sync refreshes follows and previews and keeps the stored sett
   assert.equal(after.unsubscribeToken, before.unsubscribeToken);
   assert.equal(after.stateId, before.stateId);
   assert.equal(await kv.get(`notification:unsubscribe:${before.unsubscribeToken}`), SYNC_READER.uid);
+
+  // Deleting the account erases the refresh with the subscription.
+  await purgeEmailSubscription(env, SYNC_READER.uid);
+  assert.equal(kv.values.size, 0);
 });
 
 test('a background sync writes nothing unless follows, previews, name or address changed', async () => {
@@ -1434,7 +1492,7 @@ test('a background sync writes nothing unless follows, previews, name or address
     env,
     { ...SYNC_READER, displayName: 'Reader Renamed' },
   );
-  assert.equal((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.displayName, 'Reader Renamed');
+  assert.equal((await storedSubscriptionWithState(kv, SYNC_READER_KEY))?.displayName, 'Reader Renamed');
 });
 
 test('a background sync restores an unsubscribe link whose first write failed', async () => {
@@ -4315,7 +4373,7 @@ test('a save that omits interests keeps the stored ones, and only an explicit li
 
   // An older client, or one whose profile is not confirmed yet, sends no field.
   await saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
-  assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, ['cs.LG']);
+  assert.deepEqual((await storedSubscriptionWithState(kv, SYNC_READER_KEY))?.interests, ['cs.LG']);
   await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], previewItems: [] }), env, SYNC_READER);
   assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, ['cs.LG']);
 

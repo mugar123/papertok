@@ -97,6 +97,7 @@ import { readLeafHighlights } from './paper-store.ts';
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
 const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
+const SYNC_PREFIX = 'notification:sync:';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
@@ -917,12 +918,42 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
   return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows, ...(interests.length ? [interests] : [])]);
 }
 
+function syncKey(subscriptionKey: string) {
+  return `${SYNC_PREFIX}${subscriptionKey.slice(SUBSCRIPTION_PREFIX.length)}`;
+}
+
+type SyncRefresh = Pick<Subscription, 'email' | 'displayName' | 'follows' | 'previewItems' | 'interests' | 'unsubscribeToken'> & {
+  generation?: string; baseUpdatedAt?: string;
+};
+
+/**
+ * A background sync writes its refresh beside the subscription, never over it:
+ * KV keeps the last write and a location can read a copy up to a minute old,
+ * so a sync that rewrote the record could bring back one that an unsubscribe
+ * had just deleted. The refresh counts only for the record it was read from,
+ * so it is ignored once that record is deleted, replaced or saved again.
+ */
 async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
-  if (!subscription) return null;
-  const stateKey = deliveryStateKey(key, subscription);
-  const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
-  return { subscription, state, stateKey };
+  const stored = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+  if (!stored) return null;
+  const stateKey = deliveryStateKey(key, stored);
+  const [state, refresh] = await Promise.all([
+    env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json'),
+    env.NOTIFICATION_STORE!.get<SyncRefresh>(syncKey(key), 'json'),
+  ]);
+  const current = refresh
+    && refresh.generation === subscriptionGeneration(stored)
+    && refresh.baseUpdatedAt === stored.updatedAt;
+  const subscription: Subscription = current ? {
+    ...stored,
+    email: refresh.email,
+    displayName: refresh.displayName,
+    follows: refresh.follows,
+    previewItems: refresh.previewItems,
+    interests: refresh.interests,
+    unsubscribeToken: refresh.unsubscribeToken,
+  } : stored;
+  return { subscription, stored, state, stateKey };
 }
 
 async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
@@ -961,6 +992,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   await Promise.all([
     env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
+    env.NOTIFICATION_STORE.delete(`${SYNC_PREFIX}${uid}`),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription)),
     subscription?.unsubscribeToken
       ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
@@ -977,8 +1009,8 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
-  keys.add(key).add(deliveryStateKey(uid, subscription || { uid }));
+  const subscription = (await loadSubscriptionRecord(env, key))?.subscription;
+  keys.add(key).add(syncKey(key)).add(deliveryStateKey(uid, subscription || { uid }));
   if (subscription?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`);
   await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
   return { purged: true };
@@ -993,8 +1025,8 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   const preferences = sanitizePreferences(body);
   // `sync` marks the app's background refresh of follows and previews. The tab
   // that sends it may have loaded before the reader unsubscribed or changed the
-  // digest elsewhere, so a sync never creates or re-enables a subscription and
-  // keeps the stored settings.
+  // digest elsewhere, so a sync never writes the subscription record: it keeps
+  // the stored settings and stores its refresh beside them (loadSubscriptionRecord).
   const sync = body.sync === true;
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const existingRecord = await loadSubscriptionRecord(env, key);
@@ -1035,20 +1067,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     follows,
     interests,
   });
-  // KV has no transactions, so a sync re-reads the record right before it
-  // writes and gives up if anything was written since it first read it. An
-  // unsubscribe, or a save from another tab, that landed in between wins; the
-  // next sync starts from what it left.
-  const syncSuperseded = async () => {
-    const current = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
-    return !current?.enabled
-      || subscriptionGeneration(current) !== subscriptionGeneration(existingRaw!)
-      || current.updatedAt !== existingRaw!.updatedAt;
-  };
   // A subscriber's app syncs on every open, usually with nothing new, and each
   // write costs two KV puts. The token index is still checked: a save whose
   // index put failed leaves an enabled subscription whose unsubscribe link
-  // answers 400, and this sync may be the only retry that save gets.
+  // answers 400, and this sync may be the only retry that save gets. An index
+  // left after an unsubscribe opens the invalid-link page, which removes it.
   if (
     sync
     && existingRaw?.unsubscribeToken
@@ -1060,8 +1083,34 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     && !selectionChanged
   ) {
     if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
-      if (await syncSuperseded()) return publicSubscription(await loadSubscriptionWithState(env, key), identity.email);
       await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+    }
+    return publicSubscription(existing, identity.email);
+  }
+  if (sync) {
+    const refresh: SyncRefresh = {
+      generation: subscriptionGeneration(existingRecord!.stored),
+      baseUpdatedAt: existingRecord!.stored.updatedAt,
+      email: identity.email,
+      displayName: identity.displayName,
+      follows,
+      previewItems,
+      interests,
+      unsubscribeToken,
+    };
+    await Promise.all([
+      env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(refresh), { expirationTtl: DELIVERY_STATE_TTL_SECONDS }),
+      env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
+    ]);
+    // An unsubscribe that landed meanwhile already won; this only removes what
+    // the sync wrote, where this location can see the deletion. The record key
+    // is not deleted, so a subscription saved again since then keeps it.
+    if (!await env.NOTIFICATION_STORE.get(key)) {
+      await Promise.all([env.NOTIFICATION_STORE.delete(syncKey(key)), env.NOTIFICATION_STORE.delete(unsubscribeKey)]);
+      return publicSubscription(null, identity.email);
+    }
+    if (selectionChanged) {
+      await updateDeliveryState(env, key, existingRaw, () => ({ heldDigest: null }));
     }
     return publicSubscription(existing, identity.email);
   }
@@ -1071,7 +1120,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     : (existingRaw || {});
   const subscription = {
     ...persistedBase,
-    ...(sync ? {} : preferences),
+    ...preferences,
     uid: identity.uid,
     email: identity.email,
     displayName: identity.displayName,
@@ -1083,7 +1132,6 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
-  if (sync && await syncSuperseded()) return publicSubscription(await loadSubscriptionWithState(env, key), identity.email);
   await Promise.all([
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
     env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
@@ -3185,6 +3233,7 @@ export const emailNotificationInternals = {
   fetchOpenAlexUpdates,
   fetchOpenAlexDigestPayload,
   saveSubscription,
+  loadSubscriptionWithState,
   mergePapers,
   arxivCategoriesForFollow,
   parseArxivDigestFeed,
