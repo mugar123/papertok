@@ -193,6 +193,9 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       });
     } catch (refreshError) {
       if (activeUserIdRef.current !== userId) return;
+      // The items, the cache and `lastUpdatedAt` stay as they were: a refresh
+      // in which every follow failed rejects (fetchFollowingUpdates), and the
+      // cards it would have replaced are still the newest answer (ENG-176).
       console.error('Error loading followed updates', refreshError);
       setError(refreshError);
     } finally {
