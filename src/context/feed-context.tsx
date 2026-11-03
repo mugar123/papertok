@@ -50,7 +50,11 @@ export interface FeedContextValue {
    * it reports.
    */
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
-  unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  /**
+   * `rollback`: takes back a markSaved that did not stand, such as a refused
+   * save, and puts back what a profile loaded since then holds.
+   */
+  unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; rollback?: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
@@ -104,6 +108,7 @@ import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { saveRollbacks } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -282,6 +287,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Follows each pending change to a paper's like, read or Read later mark, so
   // every write's answer leaves the mark as Firestore will hold it (see writeMark).
   const [markChangeLog] = useState(markChanges);
+  // What a refused save, or the list picker's Undo, puts back (see saveRollbacks).
+  const [saveRollback] = useState(saveRollbacks);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -968,6 +975,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // A write still waiting may answer after the same account signs back
       // in: what it sent to the screen is gone with these sets.
       markChangeLog.screenReplaced();
+      saveRollback.screenReplaced(new Set<string>());
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -1042,6 +1050,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           }
           return undefined;
         });
+        saveRollback.screenReplaced(saved);
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -1175,7 +1184,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog]);
+  }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog, saveRollback]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -2190,6 +2199,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
+    saveRollback.marked(paperId);
 
     const paper = typeof paperOrId === 'object'
       ? paperOrId
@@ -2251,7 +2261,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = written && papersRef.current.find(card => card.id === written.id);
       if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, feedCardNotable, traverseAndExpandNetwork, user?.uid, saveRollback]);
 
   /**
    * The way back from markSaved: the paper has left every list and Read later,
@@ -2260,12 +2270,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    * merges over it. The interaction keeps `saved: false` rather than losing
    * the field, the same flag a rebuild of the aggregate reads.
    */
-  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
+  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError?: boolean; rollback?: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
+    if (!saveRollback.comesOff(paperId, Boolean(options?.rollback))) return;
 
     const paper = typeof paperOrId === 'object'
       ? paperOrId
@@ -2293,7 +2304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (options?.throwOnError) throw err;
       }
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid, saveRollback]);
 
   const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
     const userId = user?.uid;

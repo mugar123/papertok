@@ -63,7 +63,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
         : null,
       mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface, restores }),
       unmark: async () => {
-        if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper);
+        if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper, { rollback: true });
       },
       confirm: async () => {
         if (auth.currentUser?.uid !== user?.uid) return;
