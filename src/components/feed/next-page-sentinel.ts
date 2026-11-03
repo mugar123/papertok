@@ -30,7 +30,9 @@ export interface NextPageRetries { failedAt: number | null; used: number }
  * the page arrive. Without a failure, every report in range asks.
  */
 export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries, page }: {
-  failed: boolean; hasMore: boolean; loading: boolean; loadMore: () => void; retries: NextPageRetries;
+  failed: boolean; hasMore: boolean; loading: boolean; retries: NextPageRetries;
+  /** Asks for the next page; `automatic_retry` when the pause, not the reader, asks. */
+  loadMore: (attempt?: 'automatic_retry') => void;
   page: Pick<Document, 'hidden'> & Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }) {
   if (failed) {
@@ -41,10 +43,10 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
   }
   let waiting = failed;
   let inRange = false;
-  const ask = (automatic = false) => {
+  const ask = (attempt?: 'automatic_retry') => {
     if (!inRange || waiting || !hasMore || loading) return;
-    if (automatic) retries.used += 1;
-    loadMore();
+    if (attempt) retries.used += 1;
+    loadMore(attempt);
   };
   const due = () => {
     if (page.hidden) {
@@ -52,7 +54,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
       return;
     }
     waiting = false;
-    ask(true);
+    ask('automatic_retry');
   };
   const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
   const retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - Date.now()));

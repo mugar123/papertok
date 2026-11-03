@@ -55,6 +55,9 @@ an attempt. Following, Similar papers and the guest demo are not covered.
   additional pages. Retries and skipped-page continuations keep that load type.
 - `attempt`: `original`, `automatic_retry`, or `continuation` when a page had no
   showable paper. A short page's subsequent fill is a new `load_more` attempt.
+  `automatic_retry` marks the automatic retry of a failed `initial` or `refresh`
+  load and each paused retry of a failed next page; a next page the reader asks
+  for again by scrolling back to the end is `original`.
 - `first_screen`: whether this attempt uses the empty-list first-screen policy;
   a first-screen timeout's automatic retry uses the shorter deadline.
 - `duration_ms`: monotonic elapsed time from the accepted attempt before requests

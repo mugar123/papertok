@@ -13,7 +13,7 @@ test.afterEach(() => mock.timers.reset());
  */
 function feedEnd({ inRange = true, failing = false } = {}) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const feed = { requests: [] as number[], loading: false, error: null as string | null, inRange, failing };
+  const feed = { requests: [] as number[], attempts: [] as string[], loading: false, error: null as string | null, inRange, failing };
   const retries: NextPageRetries = { failedAt: null, used: 0 };
   const page = Object.assign(new EventTarget(), { hidden: false });
   let sentinel: ReturnType<typeof createNextPageSentinel> | null = null;
@@ -23,8 +23,10 @@ function feedEnd({ inRange = true, failing = false } = {}) {
       failed: Boolean(feed.error),
       hasMore: true,
       loading: feed.loading,
-      loadMore: () => {
+      loadMore: (attempt) => {
         feed.requests.push(Date.now());
+        // What the load reports as its attempt; loadPapers defaults it to `original`.
+        feed.attempts.push(attempt ?? 'original');
         feed.loading = true;
         feed.error = null;
         observe();
@@ -133,6 +135,18 @@ test('a hidden tab sends no automatic retry; shown again, it asks at once if the
   assert.equal(end.feed.requests.length, 2, 'shown again before its 5 s pause was over');
   end.wait(1);
   assert.equal(end.feed.requests.length, 3);
+});
+
+test('the retries a pause makes count as automatic retries; the reader\'s retry and a new page count as original attempts', () => {
+  const end = feedEnd({ failing: true });
+  end.wait(2_500);
+  end.scroll(false);
+  end.scroll(true);
+  end.settle();
+  end.feed.failing = false;
+  end.wait(5_000);
+  end.scroll(true);
+  assert.deepEqual(end.feed.attempts, ['original', 'automatic_retry', 'original', 'automatic_retry', 'original']);
 });
 
 test('a reader who scrolls back toward the end asks for the failed page again at once', () => {
