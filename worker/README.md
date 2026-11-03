@@ -425,11 +425,16 @@ and two can. Everyone behind one address, such as a university NAT, shares those
 minute.
 
 Every arXiv call the Worker sends goes out at least 3 s after the one before it, whichever
-caller sent either: `/arxiv`, the harvest and liked-paper lookups, share pages, MCP agents and
-the email digest all take their seat through `takeArxivSeat` (`worker/arxiv-api.ts`). The
+caller sent either: `/arxiv`, the harvest and liked-paper lookups, share pages, MCP agents,
+the email digest and the nightly OAI-PMH harvest (`harvestArxivPage`, whose host arXiv's
+limit also covers) all take their seat through `takeArxivSeat` (`worker/arxiv-api.ts`). The
 ledger gives each seat, on its own clock, a send time and a window in which the call may go
 out: up to 250 ms after the send time, or after the ledger's answer when the send time has
-already come, for the answer's way back to the Worker or a timer that fires late. It keeps
+already come, for the answer's way back to the Worker or a timer that fires late. The Worker
+reads those times as offsets from the ledger's clock when it answered, counting the send time
+from the answer's arrival and the window's end from the request's departure, so a Worker clock
+that runs ahead of or behind the ledger's cannot shorten the 3 s; a round trip longer than the
+window leaves no moment that is surely inside it, and the call does not go out. It keeps
 every window at least 3 s from every other one, before or after it, so a seat booked ahead
 does not push back an earlier seat reserved later; a window next to a seat booked ahead is
 cut short instead. A caller that is past its window once it may send, because the ledger's
@@ -449,7 +454,11 @@ once its period has begun, and only to send at once, so they never hold a send t
 arriving later would need; a reader who arrives after one of their calls went out has 4 s to
 wait for the 3 s after it. Refused because a call went out less than 3 s earlier, they wait
 for the 3 s within the same period if the seat is an odd one, and otherwise try only the odd
-seats, since before ENG-184 they would have taken the seat they lost. On a seat that is not
+seats, since before ENG-184 they would have taken the seat they lost; so do the Worker's
+lookups whose seat came back too late to use, so that a late retry does not take a reader's
+seat. The OAI-PMH harvest takes only odd seats, and only to send at once; refused, its
+Workflow sleeps until the next odd seat, and a fourth wait in a row ends the set as arXiv's
+own 503s do. On a seat that is not
 public they send only in its first 2.5 s, so that their window ends 250 ms before the next
 public seat starts: sent later, they pushed the next reader to the end of their period, and
 the reader after that one, who would have waited 4 s before ENG-184, was refused. In

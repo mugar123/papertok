@@ -30,7 +30,7 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // requests from outside the Worker may not take.
 //
 // The guarantee towards arXiv (ENG-184): every call the Worker sends to
-// export.arxiv.org goes out at least ARXIV_PACE_PERIOD_MS after the one before
+// export.arxiv.org or to its OAI-PMH endpoint goes out at least ARXIV_PACE_PERIOD_MS after the one before
 // it, whichever caller sent either, as measured on the request ledger's clock.
 // The ledger gives each seat a send time and a window after it, up to 250 ms
 // (PACE_ANSWER_ALLOWANCE_MS) for the answer's way back or a late timer, and
@@ -43,7 +43,7 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // wait past its bound for is refused like a taken seat, so the next seat in
 // reach is tried instead.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
-type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest' | 'test-email';
+type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest' | 'test-email' | 'harvest';
 // The Worker's own calls and the digest give way to readers (ENG-184 review):
 // they take a seat only once its period has begun, and only to send at once,
 // so they never hold a send time ahead that a reader arriving later would
@@ -82,6 +82,11 @@ const ARXIV_SEATS: Record<ArxivCaller, {
   // The same query for a test email, whose sender waits on the request: no
   // longer than a reader.
   'test-email': { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, givesWay: true, accepts: OWN_SEAT },
+  // The OAI-PMH harvest (`harvestArxivPage`): arXiv's limit covers it too. It
+  // takes a seat of its own only to send at once, waiting no longer than the
+  // 250 ms an answer may take; refused, its Workflow sleeps until the next one
+  // (`nextOwnSeatSeconds`) rather than holding a step.
+  harvest: { maxWaitMs: PACE_ANSWER_ALLOWANCE_MS, givesWay: true, accepts: OWN_SEAT },
 };
 
 /**
@@ -104,13 +109,15 @@ export async function takeArxivSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], c
   }
   return seat;
 }
-// Whole seconds from `now` to the start of the next public seat after the
-// current period: 1 to 6.
-function nextPublicSeatSeconds(now: number) {
+// Whole seconds from `now` to the start of the next seat `accepts` takes after
+// the current period: 1 to 6.
+function nextSeatSeconds(now: number, accepts: (slot: number) => boolean) {
   let slot = Math.floor(now / ARXIV_PACE_PERIOD_MS) + 1;
-  while (!PUBLIC_SEAT(slot)) slot += 1;
-  return String(Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000));
+  while (!accepts(slot)) slot += 1;
+  return Math.ceil((slot * ARXIV_PACE_PERIOD_MS - now) / 1000);
 }
+const nextPublicSeatSeconds = (now: number) => String(nextSeatSeconds(now, PUBLIC_SEAT));
+export const nextOwnSeatSeconds = (now: number) => nextSeatSeconds(now, OWN_SEAT);
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds

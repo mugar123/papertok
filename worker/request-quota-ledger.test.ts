@@ -558,7 +558,7 @@ test('paced slots get send times a spacing apart in whatever order they are rese
   const booked = await reserve('a'.repeat(64), { from: 12_000, by: 13_500 });
   assert.deepEqual([booked.sendAt, booked.sendBy], [12_000, 12_250]);
   assert.deepEqual(await reserve('b'.repeat(64), { from: 9_000, by: 13_500 }), {
-    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1, sendAt: 15_250,
+    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1, sendAt: 15_250, present: 9_500,
   });
   assert.equal((await reserve('c'.repeat(64), { from: 9_000, by: 15_250 })).sendAt, 15_250);
 

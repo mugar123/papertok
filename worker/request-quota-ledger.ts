@@ -72,6 +72,8 @@ export interface QuotaReading {
   // must not send at all.
   sendAt?: number;
   sendBy?: number;
+  // The ledger's clock when it answered a paced reservation.
+  present?: number;
 }
 
 const LEDGER_ACTIONS = new Set<unknown>(['reserve', 'release', 'peek', 'observe']);
@@ -311,15 +313,18 @@ export class RequestQuotaLedger {
       // Read here, inside the transaction that records it, so slots reserved in
       // any order still get windows `spacingMs` apart. A window that ended
       // more than `spacingMs` ago can no longer constrain one, so it is dropped.
-      let paced: { sendAt: number; sendBy: number } | undefined;
+      // `present` goes back with the times, so the caller can read them as
+      // offsets from the moment the ledger answered rather than against a clock
+      // of its own that may run ahead of this one.
+      let paced: { sendAt: number; sendBy: number; present: number } | undefined;
       let sends: PacedSend[] = [];
       if (pace) {
         const present = Date.now();
         sends = storedSends(sendsValue, present - pace.spacingMs);
-        paced = pacedSend(sends, Math.max(pace.from, present), present, pace.spacingMs);
+        paced = { ...pacedSend(sends, Math.max(pace.from, present), present, pace.spacingMs), present };
         // A refusal says when the slot could have gone out.
         if (paced.sendAt > present ? paced.sendAt > pace.by || pace.immediate : pace.immediate && present > pace.by) {
-          return { accepted: false, scope: 'pace', subjectUsage, globalUsage, sendAt: paced.sendAt };
+          return { accepted: false, scope: 'pace', subjectUsage, globalUsage, sendAt: paced.sendAt, present };
         }
         sends = [...sends, [paced.sendAt, paced.sendBy] as PacedSend].sort((a, b) => a[0] - b[0]);
       }

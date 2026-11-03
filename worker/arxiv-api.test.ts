@@ -6,7 +6,7 @@ import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, takeArxivSeat } from './a
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { awaitUpstreamSlot } from './upstream-pace.ts';
 
-type Caller = 'reader' | 'agent' | 'worker' | 'digest';
+type Caller = 'reader' | 'agent' | 'worker' | 'digest' | 'harvest';
 interface Arrival { at: number; caller: Caller }
 interface Outcome { arrival: Arrival; sentAt?: number }
 
@@ -17,30 +17,45 @@ const START = Date.UTC(2026, 10, 3);
 
 // The request ledger as a Durable Object behaves: one request at a time, each
 // a round trip away on the simulated clock. `answerMs` is how long its answer
-// takes to come back.
-function ledgerBinding(answerMs = ROUND_TRIP_MS / 2) {
+// takes to come back, or how long each answer in turn does (then half a round
+// trip). `skewMs` is how far each caller's Worker clock runs behind the
+// ledger's: the times it sends are read, and the times it is told are given,
+// on the ledger's clock.
+function ledgerBinding(answerMs: number | number[] = ROUND_TRIP_MS / 2, skewMs: Partial<Record<Caller, number>> = {}) {
   const binding = inMemoryQuotaLedger().binding!;
   let queue: Promise<unknown> = Promise.resolve();
-  return {
-    idFromName: (name: string) => binding.idFromName(name),
-    get: (id: DurableObjectId) => ({
-      fetch: async (url: string, init?: RequestInit) => {
-        await new Promise(resolve => setTimeout(resolve, ROUND_TRIP_MS / 2));
-        const answer = queue.then(() => binding.get(id).fetch(url, init));
-        queue = answer.catch(() => undefined);
-        const response = await answer;
-        await new Promise(resolve => setTimeout(resolve, answerMs));
-        return response;
-      },
-    }),
-  } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+  let calls = 0;
+  return (caller: Caller) => {
+    const skew = skewMs[caller] ?? 0;
+    return {
+      idFromName: (name: string) => binding.idFromName(name),
+      get: (id: DurableObjectId) => ({
+        fetch: async (url: string, init?: RequestInit) => {
+          const delay = typeof answerMs === 'number' ? answerMs : answerMs[calls] ?? ROUND_TRIP_MS / 2;
+          calls += 1;
+          await new Promise(resolve => setTimeout(resolve, ROUND_TRIP_MS / 2));
+          const body = JSON.parse(String(init?.body)) as { pace?: { from: number; by: number } };
+          if (body.pace) body.pace = { ...body.pace, from: body.pace.from - skew, by: body.pace.by - skew };
+          const answer = queue.then(() => binding.get(id).fetch(url, { ...init, body: JSON.stringify(body) }));
+          queue = answer.catch(() => undefined);
+          const reading = await (await answer).json<Record<string, unknown>>();
+          for (const key of ['sendAt', 'sendBy', 'present']) {
+            const time = reading[key];
+            if (typeof time === 'number') reading[key] = time + skew;
+          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return new Response(JSON.stringify(reading));
+        },
+      }),
+    } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+  };
 }
 
 // How main seated the same callers: the same seats and waits, no spacing, and
-// the digest's query sent at once outside the beat.
+// the digest's query and the OAI-PMH harvest sent at once outside the beat.
 const PUBLIC = (slot: number) => slot % 2 === 0;
 function mainSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: Caller) {
-  if (caller === 'digest') return Promise.resolve({ accepted: true });
+  if (caller === 'digest' || caller === 'harvest') return Promise.resolve({ accepted: true });
   return awaitUpstreamSlot(ledger, {
     namespace: 'arxiv',
     periodMs: ARXIV_PACE_PERIOD_MS,
@@ -97,13 +112,14 @@ async function play(
   clock: Clock,
   arrivals: Arrival[],
   seat: (ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: Caller) => Promise<{ accepted: boolean; code?: string }>,
-  answerMs?: number,
+  answerMs?: number | number[],
+  skewMs?: Partial<Record<Caller, number>>,
 ) {
   clock.restart();
-  const ledger = ledgerBinding(answerMs);
+  const ledger = ledgerBinding(answerMs, skewMs);
   const outcomes: Outcome[] = [];
   const pending = arrivals.map(arrival => clock.arrive(arrival.at, async () => {
-    const taken = await seat(ledger, arrival.caller);
+    const taken = await seat(ledger(arrival.caller), arrival.caller);
     assert.equal(taken.code, undefined);
     outcomes.push({ arrival, sentAt: taken.accepted ? Date.now() : undefined });
   }));
@@ -240,14 +256,59 @@ test('a digest query or a Worker lookup sent late in its period does not get a l
 test('a slow ledger answer never lets two arXiv calls go out less than three seconds apart', async t => {
   const clock = simulatedClock(t);
   const arrivals: Arrival[] = [{ at: 2_000, caller: 'reader' }, { at: 2_900, caller: 'worker' }, { at: 5_400, caller: 'reader' }];
-  for (const answerMs of [300, 545, 1_200]) {
+  // A call goes out only when the round trip fits in its 250 ms window: the
+  // ledger's times are read from it, so a slower answer leaves the clock of the
+  // ledger too uncertain to keep the gap, and nothing goes out.
+  for (const answerMs of [200, 300, 545, 1_200]) {
     const outcomes = await play(clock, arrivals, takeArxivSeat, answerMs);
-    assert.ok(sendTimes(outcomes).length > 0, `${answerMs} ms`);
+    if (answerMs < 240) assert.ok(sendTimes(outcomes).length > 0, `${answerMs} ms`);
     if (sendTimes(outcomes).length > 1) assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS, `${answerMs} ms: ${shortestGap(outcomes)} ms`);
   }
   for (let seed = 1; seed <= 20; seed += 1) {
     const outcomes = await play(clock, arrivalsFrom(seed, 60_000, { reader: 2_500, worker: 3_000, agent: 6_000, digest: 9_000 }), takeArxivSeat, 400);
     if (sendTimes(outcomes).length > 1) assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS, `seed ${seed}: ${shortestGap(outcomes)} ms`);
+  }
+});
+
+// The outside verifier's skewed clocks on #443: a Worker lookup sends late in
+// its window, and the reader after it runs on a Worker whose clock is 30 ms
+// ahead of the ledger's. Read on that clock, the reader's send time came 30 ms
+// early.
+test('a Worker clock off the ledger\'s does not let two arXiv calls go out less than three seconds apart', async t => {
+  const clock = simulatedClock(t);
+  const arrivals: Arrival[] = [{ at: 5_000, caller: 'worker' }, { at: 5_100, caller: 'reader' }];
+  for (const skew of [-30, 30]) {
+    const outcomes = await play(clock, arrivals, takeArxivSeat, [240], { reader: skew });
+    assert.equal(sendTimes(outcomes).length, 2, `${skew} ms`);
+    assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS, `${skew} ms: ${shortestGap(outcomes)} ms`);
+  }
+});
+
+// The outside verifier's latencies on #443: a Worker lookup's seat comes back
+// too late to use, and its retry, in the next (public) period, took the seat of
+// a reader who arrived after it; the reader was refused.
+test('a Worker lookup whose seat came back too late does not retry on a reader\'s seat', async t => {
+  const clock = simulatedClock(t);
+  const arrivals: Arrival[] = [{ at: 4_000, caller: 'worker' }, { at: 7_400, caller: 'reader' }];
+  const outcomes = await play(clock, arrivals, takeArxivSeat, [3_300]);
+  assert.deepEqual(refusedReaders(outcomes), []);
+  assert.deepEqual(sendTimes(outcomes).length, 1);
+});
+
+// arXiv's limit covers its OAI-PMH endpoint too.
+test('an OAI-PMH page next to an arXiv API call keeps three seconds from it and from readers', async t => {
+  const clock = simulatedClock(t);
+  const nextToReader: Arrival[] = [{ at: 2_900, caller: 'reader' }, { at: 3_000, caller: 'harvest' }];
+  assert.ok(shortestGap(await play(clock, nextToReader, mainSeat)) < 200, 'main sends the harvest outside the beat');
+  // Refused at 3 s, the harvest's Workflow asks again at its next seat, 9 s.
+  for (const arrivals of [
+    [...nextToReader, { at: 9_000, caller: 'harvest' }],
+    [{ at: 3_100, caller: 'harvest' }, { at: 3_200, caller: 'reader' }, { at: 3_300, caller: 'worker' }],
+  ] as Arrival[][]) {
+    const outcomes = await play(clock, arrivals, takeArxivSeat);
+    assert.ok(sendTimes(outcomes).length >= 2);
+    assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
+    assert.deepEqual(refusedReaders(outcomes), []);
   }
 });
 
@@ -260,7 +321,7 @@ test('a ledger that answers with an error lets no arXiv call go out', async t =>
     get: () => ({ fetch: async () => new Response('unavailable', { status: 503 }) }),
   } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
   // An agent waits for no seat ahead, so here it never reaches the ledger.
-  for (const caller of ['reader', 'worker', 'digest', 'test-email'] as const) {
+  for (const caller of ['reader', 'worker', 'digest', 'test-email', 'harvest'] as const) {
     assert.deepEqual(await takeArxivSeat(failing, caller), { accepted: false, code: undefined }, caller);
   }
 });
@@ -273,6 +334,7 @@ const WAIT_BOUND_MS: Record<Caller, number> = {
   agent: 0,
   worker: ARXIV_PACE_MAX_WAIT_MS,
   digest: 8 * ARXIV_PACE_PERIOD_MS,
+  harvest: 250,
 };
 
 test('no two arXiv calls go out less than three seconds apart, from any mix of callers', async t => {
