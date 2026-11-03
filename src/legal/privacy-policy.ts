@@ -34,24 +34,30 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03';
  * Whenever a change to the page needs announcing, bump the page's date,
  * PRIVACY_POLICY_VERSION and this instant together.
  *
- * The page's 3 November text adds followed journals (#399), the feed
- * diagnostics (#434) and what it says about this notice: how Got it is stored
- * and the Changes promise (ENG-14). Everything the summary below announces was
- * live before this instant: the Vercel status of #434's merge commit reports
- * success at 2026-11-01T12:32:49Z, and #399's at 2026-11-03T00:15:25Z. Only
- * what the page says about this notice ships with it. Pablo chose on 2026-11-03
- * to set this instant to the time of the commit that set it, rounded up to the
- * next quarter hour, rather than after the merge. An account created between
- * this instant and the deploy is not told: it signed up under a page, still
- * dated 28 October, that already said everything the summary announces.
+ * The page's 3 November text adds, since 28 October, the feed diagnostics
+ * (#434), followed journals (#399), the per-account counts of highly cited and
+ * recent papers and the lean to recent or older papers (#419), the MCP
+ * server's request counters (#400), and what it says about this notice: how
+ * Got it is stored and the Changes promise (ENG-14). Everything the summary
+ * below announces was live before this instant. The Vercel status of each
+ * merge commit behind a bullet reports success at: #434 2026-11-01T12:32:49Z,
+ * #419 2026-11-03T06:34:59Z; the earlier bullets' text was live before
+ * 28 October. #399 and #400 are left to the page (#400's counters, live at
+ * 2026-11-03T06:41:47Z, concern only AI assistants calling the MCP server).
+ * Re-check this list whenever a bullet changes. Only what the page says about
+ * this notice ships with it. Pablo chose on 2026-11-03 to set this instant to
+ * the time of the commit that set it, rounded up to the next quarter hour,
+ * rather than after the merge. An account created between this instant and
+ * the deploy is not told: it signed up under a page, still dated 28 October,
+ * that already said everything the summary announces.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T06:45:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T07:00:00Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'Usage analytics, run by PostHog, now connects your visits across days and records the papers you view, like or save and how the feed loads, linked to your account when you sign in. Turn it off in Settings.',
-  'Each request for more papers sends the server your interests, what you follow (journals too) and identifiers of up to 24 papers you liked, saved or read at length, to rank the page.',
-  'The server keeps the order it ranked for you near Frankfurt for up to 2 hours after your last page, even if you delete your account.',
+  'PostHog analytics now connects your visits across days and records the papers you view, like or save and how the feed loads, linked to your account when you sign in. Turn it off in Settings.',
+  'Your account now counts highly cited and recent papers you were shown, their likes, saves and PDF opens, and whether you lean to recent or older papers.',
+  'To rank your feed, the server gets your interests, what you follow and up to 24 papers you liked, saved or read at length, and keeps its order near Frankfurt for up to 2 hours.',
 ];
 
 /**
@@ -67,25 +73,26 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   // An account from before 15 October read a page with Vercel Web Analytics and no PostHog.
   lead: 'PostHog',
   clauses: [
-    ['run by PostHog', /PaperTok uses <strong>PostHog<\/strong>/],
+    ['PostHog analytics', /PaperTok uses <strong>PostHog<\/strong>/],
     ['connects your visits across days', /PostHog keeps a random identifier in a first-party cookie and local storage on papertok\.app\. This identifier connects activity from the same browser across days/],
     ['records the papers you view, like or save', /Product events record the papers you view, open, like, save, highlight or annotate by their identifier/],
     // The feed diagnostics (#434).
     ['how the feed loads', /Feed diagnostics record load starts, duration, result, initial loads versus refreshes or additional pages, automatic retries/],
     ['linked to your account when you sign in', /When you sign in, PaperTok links that activity to your account identifier/],
     ['Turn it off in Settings', /turn off both services in <strong>Settings → Privacy<\/strong>/],
+    // What the account keeps to set the share of highly cited papers and the lean (#419).
+    ['Your account now counts highly cited and recent papers you were shown', /Your account also counts, for the highly cited papers and for the recent papers in your feed, how many you were shown/],
+    ['their likes, saves and PDF opens', /how many likes, saves and PDF opens they got/],
+    ['whether you lean to recent or older papers', /a number for how much you lean to recent or older papers/],
     // What a request for more papers carries, per the page's feed paragraph.
-    ['Each request for more papers sends the server your interests', /Each request for more papers sends it your interests/],
+    ['To rank your feed', /They are used to choose and rank that page/],
+    ['the server gets your interests', /Each request for more papers sends it your interests/],
     ['what you follow', /the subjects you removed, what you follow, the identifiers of up to 24 papers you liked, saved or read at length/],
-    // Followed journals build the feed like other follows (#399).
-    ['(journals too)', /Authors, institutions, topics and journals you follow<\/td> <td>Your use of the app<\/td> <td>Building your feed/],
-    ['identifiers of up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
-    ['to rank the page', /They are used to choose and rank that page/],
+    ['up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
     // What the server keeps of a ranked feed, and where (#347, #416).
-    ['The server keeps the order it ranked for you', /the server keeps the order it ranked for you/],
+    ['keeps its order', /the server keeps the order it ranked for you/],
     ['near Frankfurt', /placed near Frankfurt/],
-    ['for up to 2 hours after your last page', /for up to 2 hours after your last page/],
-    ['even if you delete your account', /Deleting your account does not remove it sooner; it expires on its own/],
+    ['for up to 2 hours', /for up to 2 hours after your last page/],
   ],
   unsaid: [[/on by default/, 'anonymous analytics was already on by default on 20 October']],
 };
