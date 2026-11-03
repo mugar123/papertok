@@ -512,9 +512,14 @@
   /* Unlike `.feed-empty`, the veil cannot grow with its copy. Copy taller
      than the screen (320px with 200% text) starts at the top and scrolls
      with the page, instead of being centred past the top edge, under the
-     navigation bar, where no scroll reaches it (ENG-178). */
-  justify-content: safe center;
+     navigation bar, where no scroll reaches it (ENG-178). The auto margins
+     below centre the copy while it fits and fall to 0 once it does not.
+     `justify-content: safe center` says the same, but a browser without the
+     `safe` keyword (Safari before 17.6) drops the whole declaration. */
+  justify-content: flex-start;
 }
+.feed-empty--veil > :first-child { margin-top: auto; }
+.feed-empty--veil > :last-child { margin-bottom: auto; }
 
 .petri.feed-error-petri .onboarding-petri-body {
   animation: none;
