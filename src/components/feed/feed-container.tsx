@@ -732,7 +732,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
-    const sentinel = createNextPageSentinel({ failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current });
+    const sentinel = createNextPageSentinel({
+      failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current, page: document,
+    });
     const observer = new IntersectionObserver(
       (entries) => sentinel.report(entries[0].isIntersecting),
       {

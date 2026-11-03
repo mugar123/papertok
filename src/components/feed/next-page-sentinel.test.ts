@@ -15,6 +15,7 @@ function feedEnd({ inRange = true, failing = false } = {}) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const feed = { requests: [] as number[], loading: false, error: null as string | null, inRange, failing };
   const retries: NextPageRetries = { failedAt: null, used: 0 };
+  const page = Object.assign(new EventTarget(), { hidden: false });
   let sentinel: ReturnType<typeof createNextPageSentinel> | null = null;
   const observe = () => {
     sentinel?.stop();
@@ -29,8 +30,14 @@ function feedEnd({ inRange = true, failing = false } = {}) {
         observe();
       },
       retries,
+      page,
     });
     sentinel.report(feed.inRange);
+  };
+  // The reader switches to another tab or app, or comes back.
+  const setHidden = (hidden: boolean) => {
+    page.hidden = hidden;
+    page.dispatchEvent(new Event('visibilitychange'));
   };
   const settle = () => {
     feed.loading = false;
@@ -63,7 +70,7 @@ function feedEnd({ inRange = true, failing = false } = {}) {
   };
   const gaps = () => feed.requests.slice(1).map((at, index) => at - feed.requests[index]);
   observe();
-  return { feed, settle, scroll, rerender, wait, gaps };
+  return { feed, settle, scroll, rerender, setHidden, wait, gaps };
 }
 
 test('a failed next page is not asked for again each time its load ends while the reader stays near the end', () => {
@@ -108,6 +115,24 @@ test('the pause counts from the failure, not from the last change to the list', 
   }
   end.wait(2_100);
   assert.deepEqual(end.feed.requests, [0, 2_500]);
+});
+
+test('a hidden tab sends no automatic retry; shown again, it asks at once if the pause is over and waits out the rest if not', () => {
+  const end = feedEnd({ failing: true });
+  end.settle();
+  end.setHidden(true);
+  end.wait(60 * 60_000);
+  assert.equal(end.feed.requests.length, 1, 'an hour in the background');
+  end.setHidden(false);
+  assert.equal(end.feed.requests.length, 2, 'the retry that fell due while hidden');
+  end.settle();
+  end.setHidden(true);
+  end.wait(1_000);
+  end.setHidden(false);
+  end.wait(3_999);
+  assert.equal(end.feed.requests.length, 2, 'shown again before its 5 s pause was over');
+  end.wait(1);
+  assert.equal(end.feed.requests.length, 3);
 });
 
 test('a reader who scrolls back toward the end asks for the failed page again at once', () => {

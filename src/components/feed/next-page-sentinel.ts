@@ -24,11 +24,14 @@ export interface NextPageRetries { failedAt: number | null; used: number }
  * failure, and is then asked for once. The pause is the feed's retry pause,
  * doubled for each automatic retry already used, up to NEXT_PAGE_RETRY_CAP_MS,
  * so an outage gets fewer requests the longer it lasts. A page that lands
- * starts the pauses again from the shortest. Without a failure, every report
- * in range asks.
+ * starts the pauses again from the shortest. A hidden page sends nothing: a
+ * retry that falls due while it is hidden waits until it is shown, since the
+ * observer does not report while the page is hidden and the reader cannot see
+ * the page arrive. Without a failure, every report in range asks.
  */
-export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries }: {
+export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries, page }: {
   failed: boolean; hasMore: boolean; loading: boolean; loadMore: () => void; retries: NextPageRetries;
+  page: Pick<Document, 'hidden'> & Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }) {
   if (failed) {
     retries.failedAt ??= Date.now();
@@ -43,11 +46,16 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     if (automatic) retries.used += 1;
     loadMore();
   };
-  const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
-  const retry = retries.failedAt === null ? null : setTimeout(() => {
+  const due = () => {
+    if (page.hidden) {
+      page.addEventListener('visibilitychange', due, { once: true });
+      return;
+    }
     waiting = false;
     ask(true);
-  }, Math.max(0, retries.failedAt + pause - Date.now()));
+  };
+  const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
+  const retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - Date.now()));
   return {
     /** The observer's report: whether the sentinel is in range now. */
     report(isIntersecting: boolean) {
@@ -57,6 +65,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     },
     stop() {
       if (retry !== null) clearTimeout(retry);
+      page.removeEventListener('visibilitychange', due);
     },
   };
 }
