@@ -3,10 +3,33 @@ import assert from 'node:assert/strict';
 import {
   compactSeenIds,
   getFollowingUpdatePaperKey,
+  getFollowingSignature,
+  isCurrentFollowingRequest,
   isFollowingCacheFresh,
   isRecentFollowingUpdate,
+  keepPapersOfFollows,
   mergeFollowingUpdatePapers,
 } from './following-updates.ts';
+import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+
+const authorA = { type: 'author', canonicalId: 'A1' } as PaperFollowMatch;
+const topicT = { type: 'topic', canonicalId: 'T1' } as PaperFollowMatch;
+const paperOf = (id: string, matches: PaperFollowMatch[]) => ({ id, title: id, _followedEntityMatches: matches }) as Paper;
+
+test('an unfollow takes off at once the cards only that follow brought in (ENG-110)', () => {
+  const papers = [paperOf('author-only', [authorA]), paperOf('both', [authorA, topicT]), paperOf('topic-only', [topicT])];
+  assert.deepEqual(keepPapersOfFollows(papers, [authorA, topicT]).map(paper => paper.id), ['author-only', 'both', 'topic-only']);
+  assert.deepEqual(keepPapersOfFollows(papers, [topicT]).map(paper => paper.id), ['both', 'topic-only']);
+  assert.deepEqual(keepPapersOfFollows(papers, []), []);
+});
+
+test('a response for follows the reader has since changed is not delivered (ENG-110)', () => {
+  const started = { userId: 'u1', signature: getFollowingSignature([authorA, topicT]) };
+  assert.equal(isCurrentFollowingRequest(started, started), true);
+  assert.equal(isCurrentFollowingRequest({ userId: 'u1', signature: getFollowingSignature([topicT]) }, started), false, 'unfollowed');
+  assert.equal(isCurrentFollowingRequest({ ...started, userId: 'u2' }, started), false, 'other account');
+  assert.equal(isCurrentFollowingRequest({ userId: null, signature: '' }, started), false, 'signed out');
+});
 
 test('a stored result in which some follows failed is not fresh, so the next load asks again (ENG-110)', () => {
   const now = Date.parse('2026-11-03T12:00:00Z');
