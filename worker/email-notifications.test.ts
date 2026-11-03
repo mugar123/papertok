@@ -3165,6 +3165,7 @@ test('escapes paper metadata in email HTML', () => {
   }], 'https://example.com/unsubscribe', true);
   assert.equal(digest.html.includes('<script>alert(1)</script>'), false);
   assert.equal(digest.html.includes('<script'), false);
+  assert.equal(digest.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), true);
   assert.equal(digest.html.includes('<img src=x'), false);
   assert.equal(digest.html.includes('<Nico>'), false);
 });
@@ -3359,6 +3360,20 @@ test('the digest shows LaTeX font wrappers and escaped percents as plain prose',
   const preheader = renderDigest({}, [frontPagePaper({ title: '\\textbf{Bold} 5\\% result' })], UNSUBSCRIBE_URL, false, ON_A_MONDAY)
     .html.match(/mso-hide:all">([^<]*)</)![1];
   assert.equal(preheader.endsWith('Bold 5% result'), true);
+});
+
+test('the digest keeps comparisons and escapes markup in titles and excerpts', () => {
+  const digest = renderDigest({}, [frontPagePaper({
+    title: 'Why a<b>c and p<q and r>s <script>x</script>',
+    abstract: 'We show a<b>c, p<q and r>s and <script>x</script> hold.',
+  })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  assert.equal(digest.html.includes('a&lt;b&gt;c'), true);
+  assert.equal(digest.html.includes('p&lt;q and r&gt;s'), true);
+  assert.equal(digest.html.includes('<script'), false);
+  assert.equal(digest.html.includes('&lt;script&gt;x&lt;/script&gt;'), true);
+  assert.equal(digest.text.includes('Why a<b>c and p<q and r>s'), true);
+  assert.equal(digest.text.includes('We show a<b>c, p<q and r>s'), true);
 });
 
 test('a lead without an abstract goes straight from headline to byline', () => {

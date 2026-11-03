@@ -1,7 +1,7 @@
 import { captureEmailSendLimit, captureWorkerException } from './error-tracking.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import { displayProse, normalizeLatexText } from '../src/utils/latex.ts';
-import type { Paper,PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
+import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
@@ -307,7 +307,13 @@ function findEmailLatexDelimiter(text: string, startIndex: number): { index: num
 function splitEmailScientificText(value: unknown) {
   // Rendered text only: font wrappers are unwrapped and `\%` becomes `%` in
   // prose before any cut, so a wrapper is never split open.
-  const text = cleanText(normalizeLatexText(value), 5_000);
+  // The normalizer also strips anything shaped like an HTML tag, which would
+  // eat comparisons such as `a<b>c`, so angle brackets are held back from it.
+  const text = cleanText(
+    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, ''))
+      .replace(//g, '<').replace(//g, '>'),
+    5_000,
+  );
   const chunks = [];
   let cursor = 0;
   while (cursor < text.length) {
