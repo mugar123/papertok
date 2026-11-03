@@ -164,7 +164,7 @@ export function usePassageAnnotations({
 
   const highlight = useCallback(async () => {
     const saved = await store({ kind: 'user' });
-    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId, paper_title: paper?.title });
+    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId });
     setPending(null);
     return saved;
   }, [level, paper?.title, paperId, store, trackEvent]);
@@ -175,7 +175,7 @@ export function usePassageAnnotations({
     setBusy('saving');
     try {
       const saved = await store({ kind: 'user', note });
-      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId, paper_title: paper?.title });
+      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId });
       setPending(null);
       return saved;
     } finally {
@@ -196,7 +196,7 @@ export function usePassageAnnotations({
     setPending(null);
     setBusy('asking');
     setError(null);
-    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai', paper_id: paperId, paper_title: paper?.title });
+    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai', paper_id: paperId });
 
     try {
       const answer = await annotatePassage(paper, {

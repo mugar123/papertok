@@ -320,8 +320,8 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
-    isRead: readPaperIds.has(paper.id),
-  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+    isRead: readPaperIds.has(interactionIdFor(paper)!),
+  }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
   const clearResults = useCallback(() => {
     setPaperResults([]);
     setAuthorResults([]);

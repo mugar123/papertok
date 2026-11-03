@@ -15,7 +15,7 @@ export interface PaperCardProps {
   onLike?: (paper: Paper, surface?: string) => void | Promise<void>;
   onNotInterested?: (paper: Paper) => void | Promise<void>;
   onMarkAsRead?: (paper: Paper) => void | Promise<void>;
-  onUnmarkAsRead?: (paperId: string) => void | Promise<void>;
+  onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
   onOpenPdf?: (paper: Paper, surface?: string) => void | Promise<void>;
@@ -632,7 +632,7 @@ const PaperCard = memo(function PaperCard({
       if (seconds >= 1.0) void trackViewTime(paper, seconds, analyticsSurface);
       else if (seconds > 0.1) void trackSkip(paper, analyticsSurface);
       if (seconds > 0.1) {
-        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id });
       }
     };
     const visibleTime = trackVisibleTime(document, reportViewTime);
@@ -645,7 +645,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
+            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id });
           }
         }
         visibleTime.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
@@ -1258,7 +1258,7 @@ const PaperCard = memo(function PaperCard({
       return;
     }
     if (isRead) {
-      void onUnmarkAsRead(paper.id);
+      void onUnmarkAsRead(paper);
       return;
     }
     void onMarkAsRead(paper);
@@ -1542,7 +1542,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
+    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
