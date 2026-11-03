@@ -1,7 +1,12 @@
+import type { InteractionEvent, InteractionProfile, StoredInteractionProfile } from '../utils/interaction-profile.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { markChanges, markStartsOn, writeMark } from './write-mark.ts';
+import { loadedMarkValue, markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
+import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
+import {
+  createEmptyInteractionProfile, curatedIds, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile,
+} from '../utils/interaction-profile.ts';
 
 const silenced = async (run: () => Promise<unknown>) => {
   const original = console.error;
@@ -63,6 +68,217 @@ test('with afterWrite an accepted change shows once the write is in, and only fo
   await writeMark({ ...like, failure: 'refused', afterWrite: true, stillSignedIn: () => true, write: async () => {} });
   assert.equal(like.screen.liked, false);
 });
+
+// A Like tapped before the profile arrived, on a paper the profile already
+// likes, is refused once the profile has loaded: the like the profile holds
+// stays, and the reading profile hears no unlike.
+test('a like refused after the profile loaded keeps the like the profile holds', async () => {
+  const like = likeOnScreen(false);
+  const told: string[] = [];
+  let refuse = () => {};
+  const pressed = silenced(() => writeMark({
+    ...like,
+    show: () => { like.show(); told.push('like'); },
+    undo: () => { like.undo(); told.push('unlike'); },
+    failure: 'refused', stillSignedIn: () => true,
+    write: () => new Promise<void>((_, reject) => { refuse = () => reject(new Error('permission-denied')); }),
+  }));
+  like.screen.liked = true;
+  like.changes.screenReplaced((key) => (key === like.markKey ? true : undefined));
+  refuse();
+  await pressed;
+  assert.equal(like.screen.liked, true);
+  assert.deepEqual(told, ['like']);
+});
+
+// What FeedContext hands screenReplaced once a profile loads: each like and
+// read mark of the account takes the value the profile holds, and a mark the
+// load does not set (Read later, another account's) keeps what it started from.
+test('a profile load gives each of the account\'s like and read marks the value it holds, and no other mark one', () => {
+  const loaded = loadedMarkValue('u1', { like: new Set(['p1', 'openalex:W2']), read: new Set(['p3']) });
+  assert.equal(loaded(markKey('u1', 'like', 'p1')), true);
+  assert.equal(loaded(markKey('u1', 'like', 'openalex:W2')), true);
+  assert.equal(loaded(markKey('u1', 'like', 'p3')), false);
+  assert.equal(loaded(markKey('u1', 'read', 'p3')), true);
+  assert.equal(loaded(markKey('u1', 'read', 'p1')), false);
+  assert.equal(loaded(markKey('u1', 'readLater', 'p3')), undefined);
+  assert.equal(loaded(markKey('u2', 'like', 'p1')), undefined);
+});
+
+const NOW = Date.parse('2026-08-19T12:00:00.000Z');
+
+// One paper's heart on the reading profile, wired as FeedContext wires it: a
+// press tells the profile the like or unlike of `card`, as one that restores
+// when it takes back a press still waiting, and the undo of a refused change
+// tells it one that restores. `load` is the account's profile arriving from
+// storage while writes wait, read from the stored aggregate unless `source`
+// says it was rebuilt from the interaction documents: the heart shows what it
+// holds, and the take-backs hear of it, as FeedContext's
+// applyInteractionProfile sets them. `signOut` clears the heart as
+// FeedContext does when the account leaves.
+function heartOnProfile(profile: InteractionProfile, card: Partial<InteractionEvent>) {
+  const changes = markChanges();
+  const saves = saveRollbacks();
+  const account = { profile, liked: curatedIds(profile, 'liked').includes('p1') };
+  const answers: Array<{ accept: () => void; refuse: () => void }> = [];
+  const press = () => {
+    const wasLiked = account.liked;
+    const showLiked = (liked: boolean, restores = false) => {
+      recordInteractionEvent(account.profile, { ...card, paperId: 'p1', kind: liked ? 'like' : 'unlike', category: 'cs.LG', restores }, NOW);
+      account.liked = liked;
+    };
+    return writeMark({
+      show: (takesBack) => showLiked(!wasLiked, takesBack),
+      undo: () => showLiked(wasLiked, true),
+      write: () => new Promise<void>((accept, refuse) => {
+        answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
+      }),
+      failure: 'refused',
+      stillSignedIn: () => true,
+      changes,
+      markKey: markKey('u1', 'like', 'p1'),
+      from: wasLiked,
+      to: !wasLiked,
+      isOn: () => account.liked,
+    });
+  };
+  const load = (stored: StoredInteractionProfile, source: { rebuilt: boolean; reusedRebuild?: boolean } = { rebuilt: false }) => {
+    account.profile = deserializeInteractionProfile(stored)!;
+    const liked = new Set(curatedIds(account.profile, 'liked'));
+    account.liked = liked.has('p1');
+    takeBacksOnProfile({ marks: changes, saves }, 'u1', { liked, read: new Set(), saved: new Set() }, source);
+  };
+  const signOut = () => {
+    changes.screenReplaced();
+    saves.screenReplaced();
+    account.profile = createEmptyInteractionProfile();
+    account.liked = false;
+  };
+  return { account, answers, press, load, signOut };
+}
+
+// The profile and what it stores, whether the paper is a favorite and the
+// counts and lean its like added.
+function favoriteIn(profile: InteractionProfile) {
+  const stored = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  return [profile, stored].map((each) => ({
+    liked: curatedIds(each, 'liked').includes('p1'),
+    temporal: readProfileSignals(each, NOW).temporal,
+  }));
+}
+
+// The verifier's P2 on PR #419: the paper is liked in storage on a notable card
+// and shows unliked while the profile loads. A Like pressed then is answered
+// after the profile arrived, or pressed again first (an unlike, then).
+const answeredAfterLoad = [
+  ['r', 'refused once the profile arrived'],
+  ['a', 'accepted once the profile arrived'],
+  ['rr', 'refused, with an unlike pressed once the profile arrived and refused too'],
+] as const;
+for (const [answers, label] of answeredAfterLoad) {
+  test(`a like pressed while the profile loads, ${label}, keeps the favorite and its notable weight, also once stored`, async () => {
+    const stored = createEmptyInteractionProfile();
+    recordInteractionEvent(stored, { paperId: 'p1', kind: 'like', category: 'cs.LG', notable: true }, NOW);
+    const heart = heartOnProfile(createEmptyInteractionProfile(), { notable: true });
+    const presses = [heart.press()];
+    heart.load(serializeInteractionProfile(stored));
+    if (answers.length > 1) presses.push(heart.press());
+    heart.answers.forEach((answer, index) => {
+      if (answers[index] === 'a') answer.accept();
+      else answer.refuse();
+    });
+    await silenced(() => Promise.all(presses));
+    assert.equal(heart.account.liked, true);
+    assert.deepEqual(favoriteIn(heart.account.profile), favoriteIn(stored));
+    assert.equal(favoriteIn(heart.account.profile)[1].temporal.notable.engaged, 1);
+  });
+}
+
+// A profile rebuilt from the interaction documents may hold the like itself:
+// `getDocs` shows the write still waiting. It cannot say whether the paper
+// was a favorite before the press, so a refusal takes the like back.
+const rebuilds = [
+  ['rebuilt from the interaction documents', { rebuilt: true }],
+  ['rebuilt earlier in the session', { rebuilt: false, reusedRebuild: true }],
+] as const;
+for (const [rebuiltLabel, source] of rebuilds) {
+  test(`a like pressed while the profile loads, refused once a profile ${rebuiltLabel} showing the like arrived, takes the like back`, async () => {
+    const showing = createEmptyInteractionProfile();
+    recordInteractionEvent(showing, { paperId: 'p1', kind: 'like', category: 'cs.LG', notable: true }, NOW);
+    const heart = heartOnProfile(createEmptyInteractionProfile(), { notable: true });
+    const pressed = heart.press();
+    heart.load(serializeInteractionProfile(showing), source);
+    heart.answers[0].refuse();
+    await silenced(() => pressed);
+    assert.equal(heart.account.liked, false);
+    assert.deepEqual(favoriteIn(heart.account.profile), favoriteIn(createEmptyInteractionProfile()));
+  });
+}
+
+// The like still waits when the reader signs out and back in. Signing out
+// stored the profile with the like in it, so the profile that then arrives
+// holds the like: a refusal still takes it back.
+test('a like still waiting across a sign-out and back in, refused once the profile arrives holding it, takes the like back', async () => {
+  const heart = heartOnProfile(createEmptyInteractionProfile(), { notable: true });
+  heart.load(serializeInteractionProfile(createEmptyInteractionProfile()));
+  const pressed = heart.press();
+  const storedOnSignOut = serializeInteractionProfile(heart.account.profile);
+  heart.signOut();
+  heart.load(storedOnSignOut);
+  heart.answers[0].refuse();
+  await silenced(() => pressed);
+  assert.equal(heart.account.liked, false);
+  assert.deepEqual(favoriteIn(heart.account.profile), favoriteIn(createEmptyInteractionProfile()));
+});
+
+// A like pressed once the reader has signed back in, while that profile
+// loads, is a new change: the profile that arrives says what storage held.
+test('a like pressed after signing back in, while the profile loads, on a favorite in storage, keeps the favorite when refused', async () => {
+  const stored = createEmptyInteractionProfile();
+  recordInteractionEvent(stored, { paperId: 'p1', kind: 'like', category: 'cs.LG', notable: true }, NOW);
+  const heart = heartOnProfile(createEmptyInteractionProfile(), { notable: true });
+  heart.load(serializeInteractionProfile(createEmptyInteractionProfile()));
+  heart.signOut();
+  const pressed = heart.press();
+  heart.load(serializeInteractionProfile(stored));
+  heart.answers[0].refuse();
+  await silenced(() => pressed);
+  assert.equal(heart.account.liked, true);
+  assert.deepEqual(favoriteIn(heart.account.profile), favoriteIn(stored));
+});
+
+// The verifier's second case on PR #419: a favorite counted before a halving
+// weighs 0.5. Unliked and liked again (and unliked once more) before the first
+// press is answered, it ends as the last accepted press leaves Firestore: a
+// favorite with the weight and lean it had, or not a favorite.
+const cards = [
+  ['a notable card', { notable: true }],
+  ['an old paper on a recent card', { notable: false, published: '2018-01-01T00:00:00.000Z' }],
+] as const;
+for (const [cardLabel, card] of cards) {
+  for (const pattern of ['rr', 'ar', 'ra', 'aa', 'rrr', 'arr', 'rar', 'aar', 'rra', 'ara', 'raa', 'aaa']) {
+    test(`a favorite on ${cardLabel} pressed ${pattern.length} times before the first press is answered, answered ${pattern}, keeps its weight or none`, async () => {
+      const profile = createEmptyInteractionProfile();
+      recordInteractionEvent(profile, { ...card, paperId: 'p1', kind: 'like', category: 'cs.LG' }, NOW);
+      for (let index = 0; index < 2000; index += 1) {
+        recordInteractionEvent(profile, { paperId: `card-${index}`, kind: 'skip', category: 'cs.LG', notable: index % 10 === 0 }, NOW);
+      }
+      const unliked = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+      recordInteractionEvent(unliked, { paperId: 'p1', kind: 'unlike', category: 'cs.LG' }, NOW);
+      const favorite = favoriteIn(profile);
+      const heart = heartOnProfile(profile, card);
+      const presses = [...pattern].map(() => heart.press());
+      heart.answers.forEach((answer, index) => {
+        if (pattern[index] === 'a') answer.accept();
+        else answer.refuse();
+      });
+      await silenced(() => Promise.all(presses));
+      const held = [false, true, false].findLast((_, index) => pattern[index] === 'a') ?? true;
+      assert.equal(heart.account.liked, held);
+      assert.deepEqual(favoriteIn(heart.account.profile), held ? favorite : favoriteIn(unliked));
+    });
+  }
+}
 
 // A liked paper's heart the way FeedContext toggles it: each press starts a
 // change from the like the screen shows, flips it and tells the reading

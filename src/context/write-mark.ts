@@ -16,6 +16,29 @@ export function markStartsOn(options: Pick<MarkWriteOptions, 'afterWrite'> | und
   return Boolean(options?.afterWrite) || isOn;
 }
 
+const MARK_KINDS = ['like', 'read', 'readLater'] as const;
+type MarkKind = typeof MARK_KINDS[number];
+
+/** The key `markChanges` follows one mark of one paper for one account by. */
+export function markKey(userId: string | undefined, kind: MarkKind, paperId: string) {
+  return `${userId}:${kind}:${paperId}`;
+}
+
+/**
+ * For `screenReplaced`: a mark's value in the sets a profile loaded for
+ * `userId`, for the kinds of mark `loaded` gives the ids of.
+ */
+export function loadedMarkValue(userId: string, loaded: Partial<Record<MarkKind, ReadonlySet<string>>>) {
+  return (key: string) => {
+    for (const kind of MARK_KINDS) {
+      const prefix = markKey(userId, kind, '');
+      const ids = loaded[kind];
+      if (ids && key.startsWith(prefix)) return ids.has(key.slice(prefix.length));
+    }
+    return undefined;
+  };
+}
+
 interface MarkChange {
   to: boolean;
   /** Whether the screen should show this change's value now. */
@@ -90,6 +113,8 @@ export function markChanges() {
      * screen this value is on.
      */
     sent?: { value: boolean; read: boolean; spent?: boolean };
+    /** Whether a reset (`screenReplaced`) has passed since these changes started. */
+    reset?: true;
   }
   const marks = new Map<string, Mark>();
   const shouldShow = (mark: Mark) => (
@@ -185,16 +210,37 @@ export function markChanges() {
      * Every mark on screen was set anew, as a profile load sets them: what
      * earlier changes sent to the screen no longer describes it. Changes
      * still waiting stay followed, as their answers have yet to land.
+     * `loaded` gives a mark's value in what was loaded, when it holds one:
+     * a refusal then puts back that value, not the screen from before the
+     * load (a Like tapped before the profile arrived, on a paper the profile
+     * already liked, must not take the like away when refused). Only the
+     * first reset after a mark's changes started may set that value: a
+     * profile loaded at a later one, such as after signing out and back in,
+     * may hold the changes themselves, which this session wrote into it.
      */
-    screenReplaced() {
+    screenReplaced(loaded?: (key: string) => boolean | undefined) {
       for (const [key, mark] of marks) {
-        if (mark.changes.some((change) => change.pending)) delete mark.sent;
-        else marks.delete(key);
+        if (mark.changes.some((change) => change.pending)) {
+          delete mark.sent;
+          if (!mark.reset) mark.startedFrom = loaded?.(key) ?? mark.startedFrom;
+          mark.reset = true;
+        } else {
+          marks.delete(key);
+        }
       }
     },
     unshownChange(key: string, to: boolean) {
       const newest = marks.get(key)?.changes.at(-1);
       return newest?.pending && newest.to === to ? newest.answered : null;
+    },
+    /**
+     * Whether a change to `to` takes back the newest change to the mark, one
+     * to the other value that the screen shows while its write still waits:
+     * the reader pressed again before the first press was answered.
+     */
+    takesBack(key: string, to: boolean) {
+      const newest = marks.get(key)?.changes.at(-1);
+      return Boolean(newest?.pending && newest.stands && newest.to !== to);
     },
   };
 }
@@ -221,6 +267,11 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * standing allow. Each actual move runs `show` or `undo` once, so the reading
  * profile hears of each change on screen once. Without `undo`, a refused
  * change keeps what it showed, as the feed's toggles always have.
+ * `show` hears whether the change takes back one still waiting
+ * (`markChanges().takesBack`): a Like pressed again while its unlike waits
+ * is told as putting back what the unlike took, as the undo of a refused
+ * unlike is, so that when both writes are refused the favorite keeps the
+ * weight it had rather than counting as a new like.
  * `throwOnError` rejects with the error instead of only logging it, unless
  * the mark ends where the change was going all the same, because another
  * change to the same value has been accepted or still stands, or the screen
@@ -243,7 +294,7 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * callers only log a refusal, and the Lists page needs `afterWrite`.
  */
 export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, changes, markKey, from, to, isOn }: {
-  show: () => void;
+  show: (takesBack: boolean) => void;
   undo?: () => void;
   write: () => Promise<void>;
   /** Logged with the error when the write is refused. */
@@ -272,8 +323,9 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // a refusal cannot put back a value the screen no longer holds.
   const spends = !afterWrite && from !== to && showsNow === to;
   const shown = !afterWrite && !spends;
+  const takesBack = shown && changes.takesBack(markKey, to);
   const answer = changes.start(markKey, { isOn: isOn(), to, shown, spends, keptIfRefused: !undo });
-  if (shown) show();
+  if (shown) show(takesBack);
   let refusal: { error: unknown } | null = null;
   try {
     await write();
@@ -289,7 +341,7 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   const { value, changed, onScreen, moved } = answer(!refusal, isOn());
   if (changed && stillSignedIn() && onScreen !== value) {
     if (value === to) {
-      show();
+      show(false);
       moved();
     } else if (value === from && undo) {
       undo();

@@ -1,5 +1,5 @@
 import { PaperBuilder } from './paper-builder.ts';
-import { arxivCommentSaysPublished } from '../utils/publication-status.ts';
+import { arxivCommentSaysPublished, arxivDoiSaysPublished } from '../utils/publication-status.ts';
 
 // arXiv's categories and records as the app's papers, for the browser's arXiv
 // lookups and the Worker's paper store alike.
@@ -21,7 +21,7 @@ export function arxivPaper({ arxivId, title, abstract, authors, doi, journalRef,
   arxivId: string; title: string; abstract: string; authors: string[]; doi: string; journalRef: string; comment: string;
   published: string; allCategories: string[]; primaryCategory: string; pdfUrl?: string;
 }) {
-  const isPublishedInArxiv = !!(doi || journalRef || arxivCommentSaysPublished(comment));
+  const isPublishedInArxiv = arxivDoiSaysPublished(doi) || !!journalRef || arxivCommentSaysPublished(comment);
   return PaperBuilder.create({
     id: arxivId,
     arxivId,

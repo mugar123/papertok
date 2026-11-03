@@ -1056,8 +1056,8 @@ async function workingPaperRowWith(t: import('node:test').TestContext, paper: Pa
     .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
 }
 
-// An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
-// on a comment saying it was published. Only OpenAlex's journal article makes
+// An arXiv eprint reads reviewed on a publisher's DOI it lists, or on a
+// comment saying it was published, and a preprint under arXiv's own DOI. Only OpenAlex's journal article makes
 // OpenAlex's working-paper row the journal's; an eprint naming its journal and
 // the journal's DOI does not either (ENG-145). `merge` keeps the working
 // paper's `false`.
