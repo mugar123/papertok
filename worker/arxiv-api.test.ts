@@ -184,9 +184,34 @@ test('the digest takes a seat of its own on the beat and keeps three seconds fro
   const outcomes = await play(clock, arrivals, takeArxivSeat);
   assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
   assert.deepEqual(refusedReaders(outcomes), []);
-  // One digest query takes the odd seat at 3 s; the other's next seat (9 s)
-  // is more than its six-second wait away, so it is refused and falls back.
-  assert.equal(outcomes.filter(outcome => outcome.arrival.caller === 'digest' && outcome.sentAt !== undefined).length, 1);
+  // One digest query takes the odd seat at 3 s, the other the next one.
+  assert.equal(outcomes.filter(outcome => outcome.arrival.caller === 'digest' && outcome.sentAt !== undefined).length, 2);
+});
+
+test('every arXiv query of a schedule batch of three subscribers gets a seat, so none falls back to OpenAlex', async t => {
+  const clock = simulatedClock(t);
+  // The schedule asks for three subscribers at once, so their queries arrive
+  // together; batches follow each other. Both parities of the period.
+  for (const start of [0, 1_000, 3_500, 5_900]) {
+    const arrivals: Arrival[] = [0, 0, 0, 20_000, 20_000, 20_000].map(at => ({ at: start + at, caller: 'digest' }));
+    const outcomes = await play(clock, arrivals, takeArxivSeat);
+    assert.deepEqual(outcomes.filter(outcome => outcome.sentAt === undefined), [], `batch at ${start} ms`);
+    assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
+  }
+});
+
+test('a reader is not refused because a Worker lookup took the seat before theirs late', async t => {
+  const clock = simulatedClock(t);
+  // An agent sends late in a public period; a Worker lookup arrives right
+  // after it, and a reader at the start of the next (odd) period. Main sends
+  // the lookup at 3 s and the reader at 6 s. Booked behind the agent, the
+  // lookup used to take a send time after 6 s, and the reader, whose wait
+  // ends at 7 s, was refused.
+  const arrivals: Arrival[] = [{ at: 2_900, caller: 'agent' }, { at: 2_950, caller: 'worker' }, { at: 3_000, caller: 'reader' }];
+  assert.deepEqual(refusedReaders(await play(clock, arrivals, mainSeat)), []);
+  const outcomes = await play(clock, arrivals, takeArxivSeat);
+  assert.deepEqual(refusedReaders(outcomes), []);
+  assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
 });
 
 
@@ -197,7 +222,7 @@ const WAIT_BOUND_MS: Record<Caller, number> = {
   reader: ARXIV_PACE_MAX_WAIT_MS,
   agent: 0,
   worker: ARXIV_PACE_MAX_WAIT_MS,
-  digest: 2 * ARXIV_PACE_PERIOD_MS,
+  digest: 8 * ARXIV_PACE_PERIOD_MS,
 };
 
 test('no two arXiv calls go out less than three seconds apart, from any mix of callers', async t => {
@@ -219,28 +244,27 @@ test('no two arXiv calls go out less than three seconds apart, from any mix of c
   }
 });
 
-// Spacing calls cannot serve every reader main served: when a Worker call has
-// already taken a send time, a reader who would have gone out within three
-// seconds of it waits, and past four seconds is refused. It also frees seats
-// main spent on crowded calls, and over a minute of mixed traffic readers are
-// refused no more often in total.
-test('over mixed traffic readers are refused no more often than on main', async t => {
+// The Worker's lookups and the digest give way to readers, so spacing the calls
+// refuses no reader that main answered; those callers take the cost instead.
+test('over mixed traffic no reader is refused whom main answered', async t => {
   const clock = simulatedClock(t);
   const loads: Array<Partial<Record<Caller, number>>> = [
     { reader: 3_000, worker: 6_000, agent: 12_000 },
     { reader: 4_000, worker: 4_000, agent: 6_000 },
     { reader: 10_000, worker: 4_000, agent: 10_000 },
     { reader: 20_000, worker: 20_000, agent: 20_000 },
+    { reader: 4_000, worker: 6_000, digest: 6_000 },
+    { reader: 10_000, worker: 10_000, digest: 4_000 },
   ];
   for (const load of loads) {
     let main = 0;
-    let spaced = 0;
     for (let seed = 1; seed <= 50; seed += 1) {
       const arrivals = arrivalsFrom(seed, 60_000, load);
-      main += refusedReaders(await play(clock, arrivals, mainSeat)).length;
-      spaced += refusedReaders(await play(clock, arrivals, takeArxivSeat)).length;
+      const refusedOnMain = refusedReaders(await play(clock, arrivals, mainSeat));
+      main += refusedOnMain.length;
+      const newlyRefused = refusedReaders(await play(clock, arrivals, takeArxivSeat)).filter(at => !refusedOnMain.includes(at));
+      assert.deepEqual(newlyRefused, [], `${JSON.stringify(load)} seed ${seed}`);
     }
     assert.ok(main > 0, 'the load refuses some readers on main');
-    assert.ok(spaced <= main, `${JSON.stringify(load)}: ${spaced} readers refused, ${main} on main`);
   }
 });

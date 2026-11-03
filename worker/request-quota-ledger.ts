@@ -29,12 +29,16 @@ export interface QuotaRequest {
   pace?: QuotaPace;
 }
 
-// The send time is the latest of `from`, the ledger's clock and `spacingMs`
-// after the last send time this object recorded. It may fall after `by` only
-// when it is the ledger's present moment (no wait at all).
+// The send time is the earliest moment from `from` and the ledger's clock on
+// that keeps `spacingMs` from every send time this object recorded, before it
+// or after it: a slot booked ahead does not push back a slot before it that is
+// reserved later. It may fall after `by` only when it is the ledger's present
+// moment (no wait at all). With `immediate`, only the present moment is
+// accepted.
 export interface QuotaPace {
   from: number;
   by: number;
+  immediate?: boolean;
   spacingMs: number;
 }
 
@@ -75,7 +79,7 @@ const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 // every name in one value, so the number of names is bounded here too.
 const TALLY_NAME = /^[a-z]{1,16}\.[a-z]{1,16}$/;
 const MAX_TALLY_NAMES = 16;
-const PACE_LAST_SEND_KEY = 'pace:lastSend';
+const PACE_SENDS_KEY = 'pace:sends';
 // How long a paced reservation's answer may take to reach the Worker. The
 // ledger is placed beside the Worker (LEDGER_LOCATION_HINT), so its answers
 // take milliseconds; an answer slower than this lets the next call go out
@@ -118,11 +122,27 @@ function optionalRemaining(value: unknown) {
 
 function optionalPace(value: unknown): QuotaPace | undefined | null {
   if (value === undefined) return undefined;
-  const { from, by, spacingMs } = (value ?? {}) as Partial<Record<keyof QuotaPace, unknown>>;
+  const { from, by, immediate, spacingMs } = (value ?? {}) as Partial<Record<keyof QuotaPace, unknown>>;
   return Number.isSafeInteger(from) && Number.isSafeInteger(by)
+    && (immediate === undefined || typeof immediate === 'boolean')
     && Number.isInteger(spacingMs) && (spacingMs as number) > 0 && (spacingMs as number) <= 60_000
-    ? { from: from as number, by: by as number, spacingMs: spacingMs as number }
+    ? { from: from as number, by: by as number, immediate: immediate === true, spacingMs: spacingMs as number }
     : null;
+}
+
+// The earliest send time from `earliest` on that keeps `spacingMs` from every
+// recorded one. A call whose send time has come by the time the answer reaches
+// it sends on arrival, so its send is taken as no earlier than `arrival`; the
+// result also gives that recorded value. The earliest such time is `earliest`
+// itself or `spacingMs` after a recorded send.
+function pacedSend(sends: number[], earliest: number, arrival: number, spacingMs: number) {
+  const candidates = [earliest, ...sends.map(send => send + spacingMs).filter(time => time > earliest)].sort((a, b) => a - b);
+  for (const sendAt of candidates) {
+    const recorded = Math.max(sendAt, arrival);
+    if (sends.every(send => sendAt >= send + spacingMs || recorded <= send - spacingMs)) return { sendAt, recorded };
+  }
+  // The last candidate is after every recorded send, so the loop returns.
+  throw new Error('unreachable');
 }
 
 function storedTally(value: unknown): QuotaTally {
@@ -188,13 +208,13 @@ export class RequestQuotaLedger {
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
       const partStorageKey = `subject:${partKey}`;
-      const [subjectValue, globalValue, observedValue, tallyValue, partValue, lastSendValue] = await Promise.all([
+      const [subjectValue, globalValue, observedValue, tallyValue, partValue, sendsValue] = await Promise.all([
         transaction.get(subjectStorageKey),
         transaction.get('global'),
         transaction.get('observed'),
         transaction.get('tally'),
         partKey ? transaction.get(partStorageKey) : undefined,
-        pace ? transaction.get(PACE_LAST_SEND_KEY) : undefined,
+        pace ? transaction.get(PACE_SENDS_KEY) : undefined,
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
@@ -274,21 +294,23 @@ export class RequestQuotaLedger {
         return { accepted: false, scope, subjectUsage, globalUsage };
       }
 
-      // Read here, inside the transaction that records it, so two slots
-      // reserved in any order still get send times `spacingMs` apart: each new
-      // one goes after the latest recorded, whichever slot that was for.
+      // Read here, inside the transaction that records it, so slots reserved in
+      // any order still get send times `spacingMs` apart. A send time older
+      // than `spacingMs` can no longer constrain one, so it is dropped.
       let sendAt: number | undefined;
+      let sends: number[] = [];
       if (pace) {
         const present = Date.now();
-        const lastSend = Number(lastSendValue);
-        sendAt = Math.max(pace.from, present, Number.isFinite(lastSend) ? lastSend + pace.spacingMs : -Infinity);
-        if (sendAt > pace.by && sendAt > present) {
-          return { accepted: false, scope: 'pace', subjectUsage, globalUsage };
+        sends = (Array.isArray(sendsValue) ? sendsValue as unknown[] : [])
+          .filter((send): send is number => Number.isFinite(send) && (send as number) > present - pace.spacingMs);
+        const paced = pacedSend(sends, Math.max(pace.from, present), present + PACE_ANSWER_ALLOWANCE_MS, pace.spacingMs);
+        // A refusal says when the slot could have gone out.
+        if (paced.sendAt > present && (paced.sendAt > pace.by || pace.immediate)) {
+          return { accepted: false, scope: 'pace', subjectUsage, globalUsage, sendAt: paced.sendAt };
         }
+        sendAt = paced.sendAt;
+        sends = [...sends, paced.recorded].sort((a, b) => a - b);
       }
-      // A caller whose send time has come by the time this answer reaches it
-      // sends on arrival, so what is recorded is no earlier than that arrival.
-      const recordedSend = sendAt === undefined ? undefined : Math.max(sendAt, Date.now() + PACE_ANSWER_ALLOWANCE_MS);
 
       const nextSubjectUsage = subjectUsage + amount;
       const nextGlobalUsage = globalUsage + globalAmount;
@@ -298,7 +320,7 @@ export class RequestQuotaLedger {
         transaction.put('global', nextGlobalUsage),
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
-        recordedSend === undefined ? undefined : transaction.put(PACE_LAST_SEND_KEY, recordedSend),
+        sendAt === undefined ? undefined : transaction.put(PACE_SENDS_KEY, sends),
       ]);
       return {
         accepted: true,
@@ -315,13 +337,13 @@ export class RequestQuotaLedger {
     return json(result);
   }
 
-  // The last send time outlives the retention sweep: cleared, the next slot
-  // could go out less than `spacingMs` after a call sent just before it.
+  // The send times outlive the retention sweep: cleared, the next slot could
+  // go out less than `spacingMs` from a call sent or booked beside it.
   async alarm() {
-    const lastSend = await this.state.storage.transaction(async transaction => transaction.get(PACE_LAST_SEND_KEY));
+    const sends = await this.state.storage.transaction(async transaction => transaction.get(PACE_SENDS_KEY));
     await this.state.storage.deleteAll();
-    if (lastSend !== undefined) {
-      await this.state.storage.transaction(async transaction => { await transaction.put(PACE_LAST_SEND_KEY, lastSend); });
+    if (sends !== undefined) {
+      await this.state.storage.transaction(async transaction => { await transaction.put(PACE_SENDS_KEY, sends); });
     }
   }
 }

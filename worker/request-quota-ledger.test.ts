@@ -547,7 +547,7 @@ test('paced slots get send times a spacing apart in whatever order they are rese
   t.mock.timers.enable({ apis: ['Date'], now: 9_500 });
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
-  const reserve = (subjectKey: string, pace: { from: number; by: number }) => ledger.fetch(new Request('https://internal', {
+  const reserve = (subjectKey: string, pace: { from: number; by: number; immediate?: boolean }) => ledger.fetch(new Request('https://internal', {
     method: 'POST',
     body: JSON.stringify({ action: 'reserve', subjectKey, subjectLimit: 1, globalLimit: 100, pace: { ...pace, spacingMs: 3_000 } }),
   })).then(response => response.json<QuotaReading>());
@@ -556,15 +556,36 @@ test('paced slots get send times a spacing apart in whatever order they are rese
   // out 2.5 s before it and has to wait until 3 s after it.
   assert.equal((await reserve('a'.repeat(64), { from: 12_000, by: 13_500 })).sendAt, 12_000);
   assert.deepEqual(await reserve('b'.repeat(64), { from: 9_000, by: 13_500 }), {
-    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1,
+    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1, sendAt: 15_000,
   });
   assert.equal((await reserve('c'.repeat(64), { from: 9_000, by: 15_000 })).sendAt, 15_000);
 
   await ledger.alarm();
-  assert.deepEqual([...harness.values.keys()], ['pace:lastSend']);
+  assert.deepEqual([...harness.values.keys()], ['pace:sends']);
   // A slot whose send time has come goes out on the answer, which is counted
   // as up to 250 ms later.
   t.mock.timers.setTime(18_000);
   assert.equal((await reserve('d'.repeat(64), { from: 18_000, by: 18_000 })).sendAt, 18_000);
-  assert.equal(harness.values.get('pace:lastSend'), 18_250);
+  // The send at 15 s can no longer constrain one, so it is dropped.
+  assert.deepEqual(harness.values.get('pace:sends'), [18_250]);
+});
+
+test('a paced slot booked ahead does not push back an earlier slot reserved after it, and an immediate one never waits', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const reserve = (subjectKey: string, pace: { from: number; by: number; immediate?: boolean }) => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reserve', subjectKey, subjectLimit: 1, globalLimit: 100, pace: { ...pace, spacingMs: 3_000 } }),
+  })).then(response => response.json<QuotaReading>());
+
+  assert.equal((await reserve('a'.repeat(64), { from: 9_000, by: 9_000 })).sendAt, 9_000);
+  // 3 s before the seat booked at 9 s is still free.
+  assert.equal((await reserve('b'.repeat(64), { from: 6_000, by: 6_000 })).sendAt, 6_000);
+  // Now is 1 s: an immediate slot goes out now, or not at all.
+  assert.equal((await reserve('c'.repeat(64), { from: 1_000, by: 5_000, immediate: true })).sendAt, 1_000);
+  const refused = await reserve('d'.repeat(64), { from: 1_000, by: 20_000, immediate: true });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'pace');
+  assert.equal(refused.sendAt, 12_000);
 });

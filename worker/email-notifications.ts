@@ -793,7 +793,7 @@ function parseArxivDigestFeed(xml: unknown, follows: Follow[] = []) {
 // (`takeArxivSeat`). No seat within its wait ends the query without a call,
 // and the digest falls back to OpenAlex as for an arXiv outage. A missing
 // ledger, or one that answers with an error, lets the call go unpaced.
-async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceReport?: SourceReport | null) {
+async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceReport: SourceReport | null | undefined, caller: 'digest' | 'test-email') {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),
   )].slice(0, MAX_ARXIV_DIGEST_CATEGORIES);
@@ -817,7 +817,7 @@ async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceR
       report: sourceReport,
       timeoutMs: 8_000,
       beforeAttempt: async () => {
-        const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, 'digest');
+        const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, caller);
         if (!seat.accepted && !seat.code) {
           throw new DigestSourceError('arxiv', 'EMAIL_SOURCE_ARXIV_RATE_LIMITED', 'No arXiv seat for the digest');
         }
@@ -1446,7 +1446,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
     try {
       return {
-        papers: await fetchArxivTopicUpdates(arxivFollows, env, sourceReport),
+        papers: await fetchArxivTopicUpdates(arxivFollows, env, sourceReport, test ? 'test-email' : 'digest'),
         requiredFailed: 0,
       };
     } catch (error) {

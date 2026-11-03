@@ -530,8 +530,10 @@ test('uses at most one strong exploration paper when followed selection is empty
   }
 });
 
-test('a digest that finds no arXiv seat of its own does not call arXiv and reads the topic from OpenAlex', async () => {
+test('a digest that finds no arXiv seat of its own does not call arXiv and reads the topic from OpenAlex', async t => {
   const now = Date.parse('2026-08-09T07:00:00Z');
+  // The digest waits for its seats on the clock; this one runs faster.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now });
   const hosts: string[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -547,7 +549,14 @@ test('a digest that finds no arXiv seat of its own does not call arXiv and reads
   } as unknown as WorkerEnv;
   const arxivTopic = { type: 'topic' as const, canonicalId: 'quant-ph', displayName: 'Quantum Physics', externalIds: {}, metadata: { categoryIds: ['quant-ph'] } };
   try {
-    const result = await collectDigestPapers(digestSubscription({ follows: [arxivTopic] }), env, { now });
+    let settled = false;
+    const pending = collectDigestPapers(digestSubscription({ follows: [arxivTopic] }), env, { now })
+      .finally(() => { settled = true; });
+    while (!settled) {
+      await new Promise(resolve => setImmediate(resolve));
+      t.mock.timers.tick(500);
+    }
+    const result = await pending;
     assert.equal(result.sourceReport.failureCodes.EMAIL_SOURCE_ARXIV_RATE_LIMITED, 1);
     assert.deepEqual([...new Set(hosts)], ['api.openalex.org']);
   } finally {
@@ -3860,11 +3869,11 @@ function testEmailHarness(t: TestContext) {
   };
   const calls = { sources: 0, openAlex: 0, resend: 0 };
   let uid = 'tester';
-  // 2.9 s into an odd three-second period, which is a seat the digest's arXiv
-  // query may take: it takes it at once, and another query in the same instant
-  // finds its next seat more than its wait away and falls back to OpenAlex
-  // rather than sleeping for it in real time.
-  let clock = Date.UTC(2026, 9, 26, 9, 0, 35, 900);
+  // The start of an odd three-second period, which is a seat a test email's
+  // arXiv query may take: it takes it at once, and another query in the same
+  // instant finds its next seat (6 s on) more than its wait away and falls
+  // back to OpenAlex rather than sleeping for it in real time.
+  let clock = Date.UTC(2026, 9, 26, 9, 0, 33);
   const globals = globalThis as TestGlobals;
   if (!globals.caches) {
     // The shared verifier remembers an identity in the Workers cache, which Node

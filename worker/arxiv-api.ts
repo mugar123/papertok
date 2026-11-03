@@ -32,8 +32,8 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // The guarantee towards arXiv (ENG-184): every call the Worker sends to
 // export.arxiv.org goes out at least ARXIV_PACE_PERIOD_MS after the one before
 // it, whichever caller sent either, as measured on the request ledger's clock.
-// The ledger records each seat's send time, and a seat's call waits until
-// three seconds after the latest one recorded. A call that goes out on the
+// The ledger records each seat's send time, and gives a seat the earliest send
+// time three seconds from every one recorded, before or after it. A call that goes out on the
 // ledger's answer is recorded 250 ms after it was given, for the answer's way
 // back; a slower answer shortens the gap by the difference. A caller sends
 // only after its seat is confirmed, except when the ledger is missing or
@@ -41,15 +41,35 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // caller would have to wait past its bound for is refused like a taken seat,
 // so the next seat in reach is tried instead.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
-type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest';
-const ARXIV_SEATS: Record<ArxivCaller, { maxWaitMs: number; accepts?: (slot: number) => boolean }> = {
+type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest' | 'test-email';
+// The Worker's own calls and the digest give way to readers (ENG-184 review):
+// they take a seat only once its period has begun, and only to send at once,
+// so they never hold a send time ahead that a reader arriving later would
+// need. A reader who arrives after such a call went out has at least
+// ARXIV_PACE_MAX_WAIT_MS of wait for the three seconds after it. Pushed off a
+// seat by spacing, they do not move into a reader's seat: before ENG-184 they
+// would have taken the seat they were pushed off.
+const OWN_SEAT = (slot: number) => !PUBLIC_SEAT(slot);
+// The digest's wait covers one seat for each query of a schedule batch
+// (SCHEDULE_PAGE_SIZE, 3 subscribers at once, in `email-notifications.ts`),
+// two periods apart, and one more for a seat the Worker's lookups take.
+const DIGEST_MAX_WAIT_MS = (3 + 1) * 2 * ARXIV_PACE_PERIOD_MS;
+const ARXIV_SEATS: Record<ArxivCaller, {
+  maxWaitMs: number;
+  givesWay?: boolean;
+  accepts?: (slot: number) => boolean;
+  acceptsAfterSpacing?: (slot: number) => boolean;
+}> = {
   reader: { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, accepts: PUBLIC_SEAT },
   // See `handleAgentArxiv`.
   agent: { maxWaitMs: 0, accepts: PUBLIC_SEAT },
-  worker: { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS },
-  // A cron, so it can wait for the next seat of its own, which is at most two
-  // periods away; it never takes a seat a reader could have had.
-  digest: { maxWaitMs: 2 * ARXIV_PACE_PERIOD_MS, accepts: slot => !PUBLIC_SEAT(slot) },
+  worker: { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, givesWay: true, acceptsAfterSpacing: OWN_SEAT },
+  // A cron, so it can wait for a seat of its own, which never is one a reader
+  // could have had.
+  digest: { maxWaitMs: DIGEST_MAX_WAIT_MS, givesWay: true, accepts: OWN_SEAT },
+  // The same query for a test email, whose sender waits on the request: no
+  // longer than a reader.
+  'test-email': { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, givesWay: true, accepts: OWN_SEAT },
 };
 
 /**
