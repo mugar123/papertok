@@ -78,7 +78,8 @@ export interface InteractionEvent {
   area?: string | null;
   // On a like or a save that puts back an unlike or unsave that did not
   // stand, such as one Firestore refused or one the reader took back with
-  // Undo: it restores exactly what that took, whichever card it was tapped on.
+  // Undo, or by pressing again before it was answered: it restores exactly
+  // what that took, whichever card it was tapped on.
   restores?: boolean;
 }
 export interface ProfileSignals {

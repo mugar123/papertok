@@ -1850,8 +1850,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     // By updater: a refusal that lands after another like changed must move
     // only this paper back, not restore the set as it was when this call began.
-    // `restores` on the undo of a refused change: the like that takes back a
-    // refused unlike restores what that unlike took from the counts.
+    // `restores` on the undo of a refused change, and on a press that takes
+    // back one still waiting: the like that takes back an unlike restores what
+    // that unlike took from the counts.
     const showLiked = (liked: boolean, restores = false) => {
       recordProfileEvent({
         paperId: paper.id,
@@ -1874,8 +1875,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
     }
     await writeMark({
-      show: () => {
-        showLiked(!isCurrentlyLiked);
+      show: (takesBack) => {
+        showLiked(!isCurrentlyLiked, takesBack);
         reRankFeed(paper.id);
       },
       undo: () => showLiked(isCurrentlyLiked, true),

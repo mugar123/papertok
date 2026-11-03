@@ -204,6 +204,15 @@ export function markChanges() {
       const newest = marks.get(key)?.changes.at(-1);
       return newest?.pending && newest.to === to ? newest.answered : null;
     },
+    /**
+     * Whether a change to `to` takes back the newest change to the mark, one
+     * to the other value that the screen shows while its write still waits:
+     * the reader pressed again before the first press was answered.
+     */
+    takesBack(key: string, to: boolean) {
+      const newest = marks.get(key)?.changes.at(-1);
+      return Boolean(newest?.pending && newest.stands && newest.to !== to);
+    },
   };
 }
 
@@ -229,6 +238,11 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * standing allow. Each actual move runs `show` or `undo` once, so the reading
  * profile hears of each change on screen once. Without `undo`, a refused
  * change keeps what it showed, as the feed's toggles always have.
+ * `show` hears whether the change takes back one still waiting
+ * (`markChanges().takesBack`): a Like pressed again while its unlike waits
+ * is told as putting back what the unlike took, as the undo of a refused
+ * unlike is, so that when both writes are refused the favorite keeps the
+ * weight it had rather than counting as a new like.
  * `throwOnError` rejects with the error instead of only logging it, unless
  * the mark ends where the change was going all the same, because another
  * change to the same value has been accepted or still stands, or the screen
@@ -251,7 +265,7 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * callers only log a refusal, and the Lists page needs `afterWrite`.
  */
 export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, changes, markKey, from, to, isOn }: {
-  show: () => void;
+  show: (takesBack: boolean) => void;
   undo?: () => void;
   write: () => Promise<void>;
   /** Logged with the error when the write is refused. */
@@ -280,8 +294,9 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   // a refusal cannot put back a value the screen no longer holds.
   const spends = !afterWrite && from !== to && showsNow === to;
   const shown = !afterWrite && !spends;
+  const takesBack = shown && changes.takesBack(markKey, to);
   const answer = changes.start(markKey, { isOn: isOn(), to, shown, spends, keptIfRefused: !undo });
-  if (shown) show();
+  if (shown) show(takesBack);
   let refusal: { error: unknown } | null = null;
   try {
     await write();
@@ -297,7 +312,7 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
   const { value, changed, onScreen, moved } = answer(!refusal, isOn());
   if (changed && stillSignedIn() && onScreen !== value) {
     if (value === to) {
-      show();
+      show(false);
       moved();
     } else if (value === from && undo) {
       undo();

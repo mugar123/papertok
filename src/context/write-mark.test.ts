@@ -93,10 +93,11 @@ test('a like refused after the profile loaded keeps the like the profile holds',
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 
 // One paper's heart on the reading profile, wired as FeedContext wires it: a
-// press tells the profile the like or unlike of `card`, and the undo of a
-// refused change tells it a like or unlike that restores. `load` is the
-// account's profile arriving from storage while writes wait: the heart shows
-// what it holds, as FeedContext's applyInteractionProfile sets it.
+// press tells the profile the like or unlike of `card`, as one that restores
+// when it takes back a press still waiting, and the undo of a refused change
+// tells it one that restores. `load` is the account's profile arriving from
+// storage while writes wait: the heart shows what it holds, as FeedContext's
+// applyInteractionProfile sets it.
 function heartOnProfile(profile: InteractionProfile, card: Partial<InteractionEvent>) {
   const changes = markChanges();
   const account = { profile, liked: curatedIds(profile, 'liked').includes('p1') };
@@ -108,7 +109,7 @@ function heartOnProfile(profile: InteractionProfile, card: Partial<InteractionEv
       account.liked = liked;
     };
     return writeMark({
-      show: () => showLiked(!wasLiked),
+      show: (takesBack) => showLiked(!wasLiked, takesBack),
       undo: () => showLiked(wasLiked, true),
       write: () => new Promise<void>((accept, refuse) => {
         answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
@@ -165,6 +166,39 @@ for (const [answers, label] of answeredAfterLoad) {
     assert.deepEqual(favoriteIn(heart.account.profile), favoriteIn(stored));
     assert.equal(favoriteIn(heart.account.profile)[1].temporal.notable.engaged, 1);
   });
+}
+
+// The verifier's second case on PR #419: a favorite counted before a halving
+// weighs 0.5. Unliked and liked again (and unliked once more) before the first
+// press is answered, it ends as the last accepted press leaves Firestore: a
+// favorite with the weight and lean it had, or not a favorite.
+const cards = [
+  ['a notable card', { notable: true }],
+  ['an old paper on a recent card', { notable: false, published: '2018-01-01T00:00:00.000Z' }],
+] as const;
+for (const [cardLabel, card] of cards) {
+  for (const pattern of ['rr', 'ar', 'ra', 'aa', 'rrr', 'arr', 'rar', 'aar', 'rra', 'ara', 'raa', 'aaa']) {
+    test(`a favorite on ${cardLabel} pressed ${pattern.length} times before the first press is answered, answered ${pattern}, keeps its weight or none`, async () => {
+      const profile = createEmptyInteractionProfile();
+      recordInteractionEvent(profile, { ...card, paperId: 'p1', kind: 'like', category: 'cs.LG' }, NOW);
+      for (let index = 0; index < 2000; index += 1) {
+        recordInteractionEvent(profile, { paperId: `card-${index}`, kind: 'skip', category: 'cs.LG', notable: index % 10 === 0 }, NOW);
+      }
+      const unliked = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+      recordInteractionEvent(unliked, { paperId: 'p1', kind: 'unlike', category: 'cs.LG' }, NOW);
+      const favorite = favoriteIn(profile);
+      const heart = heartOnProfile(profile, card);
+      const presses = [...pattern].map(() => heart.press());
+      heart.answers.forEach((answer, index) => {
+        if (pattern[index] === 'a') answer.accept();
+        else answer.refuse();
+      });
+      await silenced(() => Promise.all(presses));
+      const held = [false, true, false].findLast((_, index) => pattern[index] === 'a') ?? true;
+      assert.equal(heart.account.liked, held);
+      assert.deepEqual(favoriteIn(heart.account.profile), held ? favorite : favoriteIn(unliked));
+    });
+  }
 }
 
 // A liked paper's heart the way FeedContext toggles it: each press starts a
