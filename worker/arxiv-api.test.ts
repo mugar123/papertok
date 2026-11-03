@@ -16,8 +16,9 @@ const STEP_MS = 10;
 const START = Date.UTC(2026, 10, 3);
 
 // The request ledger as a Durable Object behaves: one request at a time, each
-// a round trip away on the simulated clock.
-function ledgerBinding() {
+// a round trip away on the simulated clock. `answerMs` is how long its answer
+// takes to come back.
+function ledgerBinding(answerMs = ROUND_TRIP_MS / 2) {
   const binding = inMemoryQuotaLedger().binding!;
   let queue: Promise<unknown> = Promise.resolve();
   return {
@@ -28,7 +29,7 @@ function ledgerBinding() {
         const answer = queue.then(() => binding.get(id).fetch(url, init));
         queue = answer.catch(() => undefined);
         const response = await answer;
-        await new Promise(resolve => setTimeout(resolve, ROUND_TRIP_MS / 2));
+        await new Promise(resolve => setTimeout(resolve, answerMs));
         return response;
       },
     }),
@@ -96,9 +97,10 @@ async function play(
   clock: Clock,
   arrivals: Arrival[],
   seat: (ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: Caller) => Promise<{ accepted: boolean; code?: string }>,
+  answerMs?: number,
 ) {
   clock.restart();
-  const ledger = ledgerBinding();
+  const ledger = ledgerBinding(answerMs);
   const outcomes: Outcome[] = [];
   const pending = arrivals.map(arrival => clock.arrive(arrival.at, async () => {
     const taken = await seat(ledger, arrival.caller);
@@ -214,6 +216,54 @@ test('a reader is not refused because a Worker lookup took the seat before their
   assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
 });
 
+// The outside verifier's case on #443: a digest query sent late in a period
+// that is not public pushed the next reader to the end of their period, and the
+// reader after them, who waits 3.9 s on main, was refused.
+test('a digest query or a Worker lookup sent late in its period does not get a later reader refused', async t => {
+  const clock = simulatedClock(t);
+  for (const caller of ['digest', 'worker'] as const) {
+    const arrivals: Arrival[] = [
+      { at: 0, caller: 'reader' },
+      { at: 5_900, caller },
+      { at: 6_000, caller: 'reader' },
+      { at: 8_100, caller: 'reader' },
+    ];
+    assert.deepEqual(refusedReaders(await play(clock, arrivals, mainSeat)), []);
+    const outcomes = await play(clock, arrivals, takeArxivSeat);
+    assert.deepEqual(refusedReaders(outcomes), [], caller);
+    assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS);
+  }
+});
+
+// The outside verifier's slow coordinator: an answer that comes back after the
+// call's window has closed no longer lets the call go out late.
+test('a slow ledger answer never lets two arXiv calls go out less than three seconds apart', async t => {
+  const clock = simulatedClock(t);
+  const arrivals: Arrival[] = [{ at: 2_000, caller: 'reader' }, { at: 2_900, caller: 'worker' }, { at: 5_400, caller: 'reader' }];
+  for (const answerMs of [300, 545, 1_200]) {
+    const outcomes = await play(clock, arrivals, takeArxivSeat, answerMs);
+    assert.ok(sendTimes(outcomes).length > 0, `${answerMs} ms`);
+    if (sendTimes(outcomes).length > 1) assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS, `${answerMs} ms: ${shortestGap(outcomes)} ms`);
+  }
+  for (let seed = 1; seed <= 20; seed += 1) {
+    const outcomes = await play(clock, arrivalsFrom(seed, 60_000, { reader: 2_500, worker: 3_000, agent: 6_000, digest: 9_000 }), takeArxivSeat, 400);
+    if (sendTimes(outcomes).length > 1) assert.ok(shortestGap(outcomes) >= ARXIV_PACE_PERIOD_MS, `seed ${seed}: ${shortestGap(outcomes)} ms`);
+  }
+});
+
+// The verifier saw a ledger that answers 503 let every caller send at once.
+test('a ledger that answers with an error lets no arXiv call go out', async t => {
+  // The start of a period that is not public: no caller waits for a seat.
+  t.mock.timers.enable({ apis: ['Date'], now: START + ARXIV_PACE_PERIOD_MS });
+  const failing = {
+    idFromName: () => ({}),
+    get: () => ({ fetch: async () => new Response('unavailable', { status: 503 }) }),
+  } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+  // An agent waits for no seat ahead, so here it never reaches the ledger.
+  for (const caller of ['reader', 'worker', 'digest', 'test-email'] as const) {
+    assert.deepEqual(await takeArxivSeat(failing, caller), { accepted: false, code: undefined }, caller);
+  }
+});
 
 // How long each caller may wait for its call, from its arrival. An agent never
 // waits for a seat ahead; a call that goes out on the ledger's answer, without
@@ -255,6 +305,10 @@ test('over mixed traffic no reader is refused whom main answered', async t => {
     { reader: 20_000, worker: 20_000, agent: 20_000 },
     { reader: 4_000, worker: 6_000, digest: 6_000 },
     { reader: 10_000, worker: 10_000, digest: 4_000 },
+    // Dense enough that a Worker lookup or a digest query often arrives late in
+    // a period that is not public.
+    { reader: 2_000, digest: 2_000 },
+    { reader: 2_500, worker: 2_500 },
   ];
   for (const load of loads) {
     let main = 0;

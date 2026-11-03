@@ -4,7 +4,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 import { reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { canonicalCacheKey, fetchWithDeadline, serveCached } from './provider-runtime.ts';
-import { releaseRequestQuota } from './request-quota-ledger.ts';
+import { PACE_ANSWER_ALLOWANCE_MS, releaseRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, paceRetryAfterSeconds } from './upstream-pace.ts';
 
 export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
@@ -32,14 +32,16 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // The guarantee towards arXiv (ENG-184): every call the Worker sends to
 // export.arxiv.org goes out at least ARXIV_PACE_PERIOD_MS after the one before
 // it, whichever caller sent either, as measured on the request ledger's clock.
-// The ledger records each seat's send time, and gives a seat the earliest send
-// time three seconds from every one recorded, before or after it. A call that goes out on the
-// ledger's answer is recorded 250 ms after it was given, for the answer's way
-// back; a slower answer shortens the gap by the difference. A caller sends
-// only after its seat is confirmed, except when the ledger is missing or
-// answers with an error: then it sends unpaced, as before. A send time the
-// caller would have to wait past its bound for is refused like a taken seat,
-// so the next seat in reach is tried instead.
+// The ledger gives each seat a send time and a window after it, up to 250 ms
+// (PACE_ANSWER_ALLOWANCE_MS) for the answer's way back or a late timer, and
+// keeps every window three seconds from every other one, before or after it.
+// A caller that cannot send within its window, because the answer or its timer
+// came late, does not send on that seat. A caller sends only after its seat is
+// confirmed. When the ledger answers with an error it does not send at all, and
+// its caller falls back as for a refused seat; only a Worker without a ledger
+// binding (local runs) sends unpaced. A send time the caller would have to
+// wait past its bound for is refused like a taken seat, so the next seat in
+// reach is tried instead.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest' | 'test-email';
 // The Worker's own calls and the digest give way to readers (ENG-184 review):
@@ -50,6 +52,16 @@ type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest' | 'test-email';
 // seat by spacing, they do not move into a reader's seat: before ENG-184 they
 // would have taken the seat they were pushed off.
 const OWN_SEAT = (slot: number) => !PUBLIC_SEAT(slot);
+// On a seat that is not public they send only early enough that their window
+// ends 250 ms before the next public seat starts. A reader who arrives after
+// such a call then sends within 3.25 s, and their own window, even at its
+// latest, ends by the end of their period, so the reader on the public seat
+// after them is not pushed back. Sent any later, a Worker lookup or the digest
+// pushed a reader to the end of their period, and the next reader, who would
+// have waited 4 s on main, was refused (outside review of #443).
+const GIVES_WAY_BY = (slot: number) => (PUBLIC_SEAT(slot)
+  ? Infinity
+  : (slot + 1) * ARXIV_PACE_PERIOD_MS - 2 * PACE_ANSWER_ALLOWANCE_MS);
 // The digest's wait covers one seat for each query of a schedule batch
 // (SCHEDULE_PAGE_SIZE, 3 subscribers at once, in `email-notifications.ts`),
 // two periods apart, and one more for a seat the Worker's lookups take.
@@ -76,13 +88,21 @@ const ARXIV_SEATS: Record<ArxivCaller, {
  * Takes a seat on the arXiv beat for one call, and waits until that call may
  * go out. Every caller that sends to export.arxiv.org goes through here.
  */
-export function takeArxivSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: ArxivCaller) {
-  return awaitUpstreamSlot(ledger, {
+export async function takeArxivSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: ArxivCaller) {
+  const seat = await awaitUpstreamSlot(ledger, {
     namespace: 'arxiv',
     periodMs: ARXIV_PACE_PERIOD_MS,
     spacingMs: ARXIV_PACE_PERIOD_MS,
+    givesWayBy: GIVES_WAY_BY,
     ...ARXIV_SEATS[caller],
   });
+  // A ledger that answers with an error cannot space the call, so it is
+  // refused like a taken seat.
+  if (seat.code === 'QUOTA_LEDGER_UNAVAILABLE') {
+    console.warn('arXiv beat unavailable; not sending');
+    return { accepted: false, code: undefined };
+  }
+  return seat;
 }
 // Whole seconds from `now` to the start of the next public seat after the
 // current period: 1 to 6.
@@ -211,7 +231,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, callerKind: 'reader'
           : paceRetryAfterSeconds(Math.max(maxWaitMs, ARXIV_PACE_PERIOD_MS)),
       });
     }
-    if (seat.code) console.warn(`arXiv beat unavailable (${seat.code}); sending unpaced`);
+    if (seat.code) console.warn(`arXiv beat not configured (${seat.code}); sending unpaced`);
   }
 
   const response = await fetchWithDeadline(upstreamUrl.toString(), {

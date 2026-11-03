@@ -552,22 +552,25 @@ test('paced slots get send times a spacing apart in whatever order they are rese
     body: JSON.stringify({ action: 'reserve', subjectKey, subjectLimit: 1, globalLimit: 100, pace: { ...pace, spacingMs: 3_000 } }),
   })).then(response => response.json<QuotaReading>());
 
-  // The seat at 12 s is booked first; the seat at 9 s, taken late, may not go
-  // out 2.5 s before it and has to wait until 3 s after it.
-  assert.equal((await reserve('a'.repeat(64), { from: 12_000, by: 13_500 })).sendAt, 12_000);
+  // The seat at 12 s is booked first, to go out by 12.25 s; the seat at 9 s,
+  // taken late, may not go out 2.5 s before it and has to wait until 3 s after
+  // its window.
+  const booked = await reserve('a'.repeat(64), { from: 12_000, by: 13_500 });
+  assert.deepEqual([booked.sendAt, booked.sendBy], [12_000, 12_250]);
   assert.deepEqual(await reserve('b'.repeat(64), { from: 9_000, by: 13_500 }), {
-    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1, sendAt: 15_000,
+    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1, sendAt: 15_250,
   });
-  assert.equal((await reserve('c'.repeat(64), { from: 9_000, by: 15_000 })).sendAt, 15_000);
+  assert.equal((await reserve('c'.repeat(64), { from: 9_000, by: 15_250 })).sendAt, 15_250);
 
   await ledger.alarm();
   assert.deepEqual([...harness.values.keys()], ['pace:sends']);
-  // A slot whose send time has come goes out on the answer, which is counted
-  // as up to 250 ms later.
-  t.mock.timers.setTime(18_000);
-  assert.equal((await reserve('d'.repeat(64), { from: 18_000, by: 18_000 })).sendAt, 18_000);
-  // The send at 15 s can no longer constrain one, so it is dropped.
-  assert.deepEqual(harness.values.get('pace:sends'), [18_250]);
+  // A slot whose send time has come goes out on the answer, which may come
+  // up to 250 ms later.
+  t.mock.timers.setTime(18_500);
+  const now = await reserve('d'.repeat(64), { from: 18_000, by: 18_500 });
+  assert.deepEqual([now.sendAt, now.sendBy], [18_500, 18_750]);
+  // The window that ended at 15.5 s can no longer constrain one, so it is dropped.
+  assert.deepEqual(harness.values.get('pace:sends'), [[18_500, 18_750]]);
 });
 
 test('a paced slot booked ahead does not push back an earlier slot reserved after it, and an immediate one never waits', async t => {
@@ -580,12 +583,28 @@ test('a paced slot booked ahead does not push back an earlier slot reserved afte
   })).then(response => response.json<QuotaReading>());
 
   assert.equal((await reserve('a'.repeat(64), { from: 9_000, by: 9_000 })).sendAt, 9_000);
-  // 3 s before the seat booked at 9 s is still free.
-  assert.equal((await reserve('b'.repeat(64), { from: 6_000, by: 6_000 })).sendAt, 6_000);
+  // 3 s before the seat booked at 9 s is still free, and its window is cut
+  // short so that it ends 3 s before that seat.
+  const before = await reserve('b'.repeat(64), { from: 6_000, by: 6_000 });
+  assert.deepEqual([before.sendAt, before.sendBy], [6_000, 6_000]);
   // Now is 1 s: an immediate slot goes out now, or not at all.
   assert.equal((await reserve('c'.repeat(64), { from: 1_000, by: 5_000, immediate: true })).sendAt, 1_000);
   const refused = await reserve('d'.repeat(64), { from: 1_000, by: 20_000, immediate: true });
   assert.equal(refused.accepted, false);
   assert.equal(refused.scope, 'pace');
-  assert.equal(refused.sendAt, 12_000);
+  assert.equal(refused.sendAt, 12_250);
+});
+
+test('an immediate paced slot is refused once the ledger\'s clock is past its bound', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 5_600 });
+  const ledger = new RequestQuotaLedger({ storage: storageHarness().storage });
+  const reserve = (subjectKey: string, by: number) => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reserve', subjectKey, subjectLimit: 1, globalLimit: 100, pace: { from: 3_000, by, immediate: true, spacingMs: 3_000 } }),
+  })).then(response => response.json<QuotaReading>());
+
+  const late = await reserve('a'.repeat(64), 5_500);
+  assert.equal(late.accepted, false);
+  assert.equal(late.scope, 'pace');
+  assert.equal((await reserve('b'.repeat(64), 5_600)).sendAt, 5_600);
 });

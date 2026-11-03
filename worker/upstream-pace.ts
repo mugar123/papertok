@@ -50,23 +50,26 @@ const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolv
 // One call per period does not by itself keep calls a period apart: a slot
 // taken late in its period sends at once, and the next period's call can follow
 // it within milliseconds. `spacingMs` closes that gap. The ledger then records
-// when each slot's call goes out, and gives the slot it reserves a send time no
-// earlier than `spacingMs` after the latest one it recorded, measured on the
-// ledger's own clock. The send time can fall in a later period than the slot;
-// one the caller would have to wait past `maxWaitMs` for is refused like a
-// taken slot, and nothing is recorded for it.
+// a window for each slot's call, from its send time to the latest moment it may
+// go out (`sendBy`), and keeps every window `spacingMs` from the others,
+// measured on the ledger's own clock. A caller that is past `sendBy` once it may
+// send does not send on that slot. The send time can fall in a later period
+// than the slot; one the caller would have to wait past `maxWaitMs` for is
+// refused like a taken slot, and nothing is recorded for it.
 //
 // `givesWay` makes a caller give way to callers who arrive after it. It
 // reserves a slot only once the slot has begun, and only to send at once: it
 // never holds a send time ahead, which a caller arriving later could need.
 // Once refused for spacing, it takes only the slots `acceptsAfterSpacing`
-// accepts.
+// accepts. `givesWayBy` is the latest moment it may send on a slot, so that its
+// call does not push back callers on later slots.
 export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
   spacingMs,
   givesWay = false,
+  givesWayBy,
   accepts = () => true,
   acceptsAfterSpacing,
   now = Date.now,
@@ -77,6 +80,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
   maxWaitMs?: number;
   spacingMs?: number;
   givesWay?: boolean;
+  givesWayBy?: (slot: number) => number;
   accepts?: (slot: number) => boolean;
   acceptsAfterSpacing?: (slot: number) => boolean;
   now?: () => number;
@@ -99,6 +103,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
     }
     // Without a ledger the reservation answers at once that calls go unpaced.
     if (givesWay && ledger && slot * periodMs > now()) await sleep(slot * periodMs - now());
+    const by = Math.min(started + maxWaitMs, givesWay && givesWayBy ? givesWayBy(slot) : Infinity);
     const reservation = await reserveRequestQuota(ledger, {
       periodKey: `${namespace}:pace`,
       subject: `${namespace}:slot:${slot}`,
@@ -107,7 +112,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
       ...(spacingMs ? {
         pace: {
           from: slot * periodMs,
-          by: started + maxWaitMs,
+          by,
           ...(givesWay ? { immediate: true } : {}),
           spacingMs,
         },
@@ -127,8 +132,10 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
     if (reservation.accepted && Math.floor(now() / periodMs) <= slot) {
       const waitMs = Math.max(0, (reservation.sendAt ?? slot * periodMs) - now());
       if (waitMs > 0) await sleep(waitMs);
-      return { accepted: true, slot, waitedMs: waitMs };
-    }
+      // Past the window the ledger kept clear for it, from a slow answer or a
+      // late timer, the call could go out less than `spacingMs` from another,
+      // so it does not go out on this slot.
+      if (reservation.sendBy === undefined || now() <= reservation.sendBy) return { accepted: true, slot, waitedMs: waitMs };    }
     // A caller that gives way and was refused for spacing may wait, holding
     // nothing, for the moment the ledger named if it is still in this slot's
     // period and the slot is one it may take after spacing, and ask for the
@@ -136,7 +143,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
     if (reservation.scope === 'pace' && acceptsAfterSpacing) accepting = acceptsAfterSpacing;
     const retryAt = reservation.scope === 'pace' ? reservation.sendAt : undefined;
     if (givesWay && retryAt !== undefined && retriedSlot !== slot && accepting(slot) && Math.floor(retryAt / periodMs) === slot
-      && retryAt - started <= maxWaitMs && retryAt > now()) {
+      && retryAt <= by && retryAt > now()) {
       retriedSlot = slot;
       await sleep(retryAt - now());
       continue;

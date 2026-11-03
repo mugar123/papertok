@@ -30,11 +30,11 @@ export interface QuotaRequest {
 }
 
 // The send time is the earliest moment from `from` and the ledger's clock on
-// that keeps `spacingMs` from every send time this object recorded, before it
-// or after it: a slot booked ahead does not push back a slot before it that is
+// that keeps `spacingMs` from every call this object recorded, before it or
+// after it: a slot booked ahead does not push back a slot before it that is
 // reserved later. It may fall after `by` only when it is the ledger's present
 // moment (no wait at all). With `immediate`, only the present moment is
-// accepted.
+// accepted, and only up to `by`.
 export interface QuotaPace {
   from: number;
   by: number;
@@ -67,8 +67,11 @@ export interface QuotaReading {
   remaining?: number;
   observed?: QuotaObservation;
   tally?: QuotaTally;
-  // A paced reservation's send time, on the ledger's clock.
+  // A paced reservation's send time, on the ledger's clock, and the latest
+  // moment its call may still go out. A caller that cannot send by `sendBy`
+  // must not send at all.
   sendAt?: number;
+  sendBy?: number;
 }
 
 const LEDGER_ACTIONS = new Set<unknown>(['reserve', 'release', 'peek', 'observe']);
@@ -80,11 +83,15 @@ const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 const TALLY_NAME = /^[a-z]{1,16}\.[a-z]{1,16}$/;
 const MAX_TALLY_NAMES = 16;
 const PACE_SENDS_KEY = 'pace:sends';
-// How long a paced reservation's answer may take to reach the Worker. The
-// ledger is placed beside the Worker (LEDGER_LOCATION_HINT), so its answers
-// take milliseconds; an answer slower than this lets the next call go out
-// that much less than `spacingMs` after it.
-const PACE_ANSWER_ALLOWANCE_MS = 250;
+// How late after its send time, or after the answer left the ledger when that
+// time had come, a paced call may still go out: the answer's way back, or a
+// timer firing late. The ledger is placed beside the Worker
+// (LEDGER_LOCATION_HINT), so its answers take milliseconds. The ledger keeps
+// every call's whole window `spacingMs` from the others, and a caller past its
+// window does not send (`upstream-pace.ts`).
+export const PACE_ANSWER_ALLOWANCE_MS = 250;
+// A recorded call goes out at some moment from its start to its end.
+type PacedSend = [start: number, end: number];
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -130,18 +137,25 @@ function optionalPace(value: unknown): QuotaPace | undefined | null {
     : null;
 }
 
-// The earliest send time from `earliest` on that keeps `spacingMs` from every
-// recorded one. A call whose send time has come by the time the answer reaches
-// it sends on arrival, so its send is taken as no earlier than `arrival`; the
-// result also gives that recorded value. The earliest such time is `earliest`
-// itself or `spacingMs` after a recorded send.
-function pacedSend(sends: number[], earliest: number, arrival: number, spacingMs: number) {
-  const candidates = [earliest, ...sends.map(send => send + spacingMs).filter(time => time > earliest)].sort((a, b) => a - b);
+function storedSends(value: unknown, after: number) {
+  return (Array.isArray(value) ? value as unknown[] : []).filter((send): send is PacedSend => Array.isArray(send)
+    && Number.isFinite(send[0]) && Number.isFinite(send[1]) && send[0] <= send[1] && send[1] > after);
+}
+
+// The earliest window from `earliest` on that keeps `spacingMs` from every
+// recorded one. The call goes out at `sendAt`, or on the answer's arrival when
+// that time has come by then, so the window runs from `sendAt` to
+// PACE_ANSWER_ALLOWANCE_MS after the later of `sendAt` and `present`, cut
+// short by a call recorded after it. The earliest start is `earliest` itself
+// or `spacingMs` after a recorded window's end.
+function pacedSend(sends: PacedSend[], earliest: number, present: number, spacingMs: number) {
+  const candidates = [earliest, ...sends.map(([, end]) => end + spacingMs).filter(time => time > earliest)].sort((a, b) => a - b);
   for (const sendAt of candidates) {
-    const recorded = Math.max(sendAt, arrival);
-    if (sends.every(send => sendAt >= send + spacingMs || recorded <= send - spacingMs)) return { sendAt, recorded };
+    const after = sends.filter(([, end]) => sendAt < end + spacingMs);
+    const sendBy = Math.min(Math.max(sendAt, present) + PACE_ANSWER_ALLOWANCE_MS, ...after.map(([start]) => start - spacingMs));
+    if (sendBy >= Math.max(sendAt, present)) return { sendAt, sendBy };
   }
-  // The last candidate is after every recorded send, so the loop returns.
+  // The last candidate is after every recorded window, so the loop returns.
   throw new Error('unreachable');
 }
 
@@ -295,21 +309,19 @@ export class RequestQuotaLedger {
       }
 
       // Read here, inside the transaction that records it, so slots reserved in
-      // any order still get send times `spacingMs` apart. A send time older
-      // than `spacingMs` can no longer constrain one, so it is dropped.
-      let sendAt: number | undefined;
-      let sends: number[] = [];
+      // any order still get windows `spacingMs` apart. A window that ended
+      // more than `spacingMs` ago can no longer constrain one, so it is dropped.
+      let paced: { sendAt: number; sendBy: number } | undefined;
+      let sends: PacedSend[] = [];
       if (pace) {
         const present = Date.now();
-        sends = (Array.isArray(sendsValue) ? sendsValue as unknown[] : [])
-          .filter((send): send is number => Number.isFinite(send) && (send as number) > present - pace.spacingMs);
-        const paced = pacedSend(sends, Math.max(pace.from, present), present + PACE_ANSWER_ALLOWANCE_MS, pace.spacingMs);
+        sends = storedSends(sendsValue, present - pace.spacingMs);
+        paced = pacedSend(sends, Math.max(pace.from, present), present, pace.spacingMs);
         // A refusal says when the slot could have gone out.
-        if (paced.sendAt > present && (paced.sendAt > pace.by || pace.immediate)) {
+        if (paced.sendAt > present ? paced.sendAt > pace.by || pace.immediate : pace.immediate && present > pace.by) {
           return { accepted: false, scope: 'pace', subjectUsage, globalUsage, sendAt: paced.sendAt };
         }
-        sendAt = paced.sendAt;
-        sends = [...sends, paced.recorded].sort((a, b) => a - b);
+        sends = [...sends, [paced.sendAt, paced.sendBy] as PacedSend].sort((a, b) => a[0] - b[0]);
       }
 
       const nextSubjectUsage = subjectUsage + amount;
@@ -320,14 +332,14 @@ export class RequestQuotaLedger {
         transaction.put('global', nextGlobalUsage),
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
-        sendAt === undefined ? undefined : transaction.put(PACE_SENDS_KEY, sends),
+        paced ? transaction.put(PACE_SENDS_KEY, sends) : undefined,
       ]);
       return {
         accepted: true,
         subjectUsage: nextSubjectUsage,
         globalUsage: nextGlobalUsage,
         remaining: Math.max(0, subjectLimit - nextSubjectUsage),
-        ...(sendAt === undefined ? {} : { sendAt }),
+        ...paced,
       };
     });
 

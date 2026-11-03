@@ -791,8 +791,9 @@ function parseArxivDigestFeed(xml: unknown, follows: Follow[] = []) {
 
 // Each attempt, the retry too, takes a seat on the Worker's arXiv beat first
 // (`takeArxivSeat`). No seat within its wait ends the query without a call,
-// and the digest falls back to OpenAlex as for an arXiv outage. A missing
-// ledger, or one that answers with an error, lets the call go unpaced.
+// and the digest falls back to OpenAlex as for an arXiv outage, as it does
+// when the ledger answers with an error. Only a missing ledger binding lets
+// the call go unpaced.
 async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceReport: SourceReport | null | undefined, caller: 'digest' | 'test-email') {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),

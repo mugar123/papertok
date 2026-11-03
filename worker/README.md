@@ -392,8 +392,8 @@ Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
 request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMITED`
-(`retry-after: 4`) when none is free. A missing ledger, or one that answers with an error,
-lets the request go to arXiv unpaced. A request from
+(`retry-after: 4`) when none is free, or when the ledger answers with an error. Only a
+Worker with no ledger binding (a local run) sends to arXiv unpaced. A request from
 outside the Worker, signed in or not, first spends a miss of its address's allowance (5 a
 minute, see [Public lookup caller limits](#public-lookup-caller-limits)) and may then take
 only every other seat, 10 misses a minute for the whole app, so cache-busting queries cannot
@@ -427,17 +427,21 @@ minute.
 Every arXiv call the Worker sends goes out at least 3 s after the one before it, whichever
 caller sent either: `/arxiv`, the harvest and liked-paper lookups, share pages, MCP agents and
 the email digest all take their seat through `takeArxivSeat` (`worker/arxiv-api.ts`). The
-ledger records when each seat's call goes out, on its own clock, and gives a seat the
-earliest send time that is at least 3 s from every send time it recorded, before or after it,
-so a seat booked ahead does not push back an earlier seat reserved later. A call that goes
-out as soon as the ledger answers is recorded 250 ms later than the ledger's clock, to cover
-the answer's way back to the Worker; an answer slower than that shortens the gap by the
-difference. A reader's send time can fall after its seat's period starts, or in the next
+ledger gives each seat, on its own clock, a send time and a window in which the call may go
+out: up to 250 ms after the send time, or after the ledger's answer when the send time has
+already come, for the answer's way back to the Worker or a timer that fires late. It keeps
+every window at least 3 s from every other one, before or after it, so a seat booked ahead
+does not push back an earlier seat reserved later; a window next to a seat booked ahead is
+cut short instead. A caller that is past its window once it may send, because the ledger's
+answer or its own timer came late, does not send on that seat and tries the next one within
+its bound. A reader's send time can fall after its seat's period starts, or in the next
 period. A caller whose send time is further away than its wait bound (4 s for readers and the
 Worker's own lookups, none for an MCP agent) is refused as if the seat were taken, and tries
-the next seat within its bound. A missing ledger, or one that answers with an error, still
-lets calls go unpaced. Before ENG-184, a seat taken late in its period sent at once and the
-next period's seat could follow within 0.1 s.
+the next seat within its bound. When the ledger answers with an error, no arXiv call goes
+out: `/arxiv` answers 429, share pages and the Worker's lookups fail as for a taken seat, and
+the digest falls back to OpenAlex. Before ENG-184, a seat taken late in its period sent at
+once and the next period's seat could follow within 0.1 s, and a ledger error let every call
+go out unpaced.
 
 The Worker's own lookups (harvest, liked papers, share pages) and the digest give way to
 readers, so spacing refuses no reader that was answered before ENG-184. They take a seat only
@@ -445,11 +449,15 @@ once its period has begun, and only to send at once, so they never hold a send t
 arriving later would need; a reader who arrives after one of their calls went out has 4 s to
 wait for the 3 s after it. Refused because a call went out less than 3 s earlier, they wait
 for the 3 s within the same period if the seat is an odd one, and otherwise try only the odd
-seats, since before ENG-184 they would have taken the seat they lost. In simulated minutes of
-readers, Worker lookups, agents and digest queries (`worker/arxiv-api.test.ts`), no reader is
-refused who was answered before, and fewer readers are refused in total. Worker lookups take
-the cost: with one call of each kind every 20 s, 7 % of them are refused (none before); in
-mixes near the beat's capacity, 47-87 % instead of 4-24 %.
+seats, since before ENG-184 they would have taken the seat they lost. On a seat that is not
+public they send only in its first 2.5 s, so that their window ends 250 ms before the next
+public seat starts: sent later, they pushed the next reader to the end of their period, and
+the reader after that one, who would have waited 4 s before ENG-184, was refused. In
+simulated minutes of readers, Worker lookups, agents and digest queries
+(`worker/arxiv-api.test.ts`), no reader is refused who was answered before, and fewer readers
+are refused in total. Worker lookups take the cost: with one call of each kind every 20 s,
+30 % of them are refused (none before); in mixes near the beat's capacity, 50-87 % instead of
+4-24 %.
 
 The weekly digest asks arXiv for each subscriber's arXiv categories (`fetchArxivTopicUpdates`,
 `worker/email-notifications.ts`). It takes only the seats `/arxiv` requests may not take, one
@@ -462,7 +470,7 @@ back to OpenAlex: one OpenAlex call per arXiv follow of that subscriber, shared 
 who follow the same one in that run. For an arXiv category that is a `search` call, $0.001;
 the scheduled run does not count it in the shared OpenAlex ledger, so it spends the key's
 daily allowance that readers' ceiling reads back. Before ENG-184 this fallback happened only
-when arXiv failed. In the simulated mixes above, 23-29 % of digest queries fell back; a run
+when arXiv failed. In the simulated mixes above, 27-31 % of digest queries fell back; a run
 in which every subscriber falls back costs $0.001 per arXiv follow. At one query every 6 s, a
 run reaches at most about 90-120 subscribers with arXiv follows within its 12-minute budget
 (no batch starts in the last 3 minutes); the rest continue in the next run.
@@ -1221,7 +1229,7 @@ figures and MCP each take a caller-only reservation, with cleanup scheduled one
 minute after the window ends. arXiv gives that unit back when pacing refuses a
 seat. Figures takes the caller's unit before its minute ceiling: a caller past
 its 20 spends none of the 60, and a miss the ceiling refuses gives the unit
-back. arXiv's existing ledger-outage behavior remains unpaced service; OA,
+back. arXiv makes no call while the ledger answers with errors (ENG-184); OA,
 figures, OpenAlex and share do not call their providers if the quota ledger is
 unavailable. Missing caller identity or secret refuses lookup when a caller
 reservation is required. A share refusal serves the generic page; other

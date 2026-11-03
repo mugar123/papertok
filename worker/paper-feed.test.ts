@@ -331,8 +331,12 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     await new Promise(resolve => setImmediate(resolve));
   }
   await flush();
-  t.mock.timers.tick(seatAsked - cacheReadMs - searchesAsk);
-  await flush();
+  // In steps, so the second search wakes for its seat when it begins, as on
+  // the real clock: a caller woken past its longest wait does not send.
+  for (let elapsed = 0; elapsed < seatAsked - cacheReadMs - searchesAsk; elapsed += 100) {
+    t.mock.timers.tick(100);
+    await flush();
+  }
 
   const afterAnswer: Array<Promise<unknown>> = [];
   const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });
