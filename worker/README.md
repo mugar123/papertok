@@ -10,7 +10,7 @@ Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
 - `http.ts` owns JSON responses, allowed Origins and CORS headers.
 - `provider-runtime.ts` owns canonical cache keys, provider quota reservations and refunds, the shared OpenAlex budget with its tiers, the harvest's share, observed ceiling and report, the Semantic Scholar beat, the default upstream deadlines and `fetchWithDeadline`.
-- `arxiv-api.ts` and `share-route.ts` keep the arXiv beat through `upstream-pace.ts` (a request the router hands to `/arxiv` takes only every other seat), and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
+- `arxiv-api.ts` owns the arXiv beat (`takeArxivSeat`, kept through `upstream-pace.ts`), which `share-route.ts` and the email digest also take (a request the router hands to `/arxiv` takes only every other seat, the digest only the others), and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
 - `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
 - The paper corpus (see [Paper store](#paper-store)): `paper-store.ts` owns its rows, lanes, vectors and ranking; `paper-sources.ts` harvests each source by calling the provider handlers above in-process; `paper-enrichment.ts` enriches stored papers; `paper-harvest.ts` runs them as a Workflow; `paper-feed.ts` owns the reader routes.
 - `mcp-server.ts` owns the public MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process.
@@ -417,6 +417,33 @@ can keep every seat taken. Anonymous readers still share their half with whoever
 asking: an address's allowance is half of that half, so one address cannot take all of it
 and two can. Everyone behind one address, such as a university NAT, shares those 5 misses a
 minute.
+
+Every arXiv call the Worker sends goes out at least 3 s after the one before it, whichever
+caller sent either: `/arxiv`, the harvest and liked-paper lookups, share pages, MCP agents and
+the email digest all take their seat through `takeArxivSeat` (`worker/arxiv-api.ts`). The
+ledger records when each seat's call goes out, on its own clock, and gives the next seat a
+send time no earlier than 3 s after the latest one, in whatever order seats are reserved. A
+call that goes out as soon as the ledger answers is recorded 250 ms later than the ledger's
+clock, to cover the answer's way back to the Worker; an answer slower than that shortens the
+gap by the difference. The send time can fall after its seat's period starts, or in the next
+period. A caller whose send time is further away than its wait bound (4 s for readers and the
+Worker's own lookups, none for an MCP agent, 6 s for the digest) is refused as if the seat were
+taken, and tries the next seat within its bound. A missing ledger, or one that answers with an
+error, still lets calls go unpaced. Before ENG-184, a seat taken late in its period sent at
+once and the next period's seat could follow within 0.1 s. Readers lose nothing on average: in
+simulated mixes of readers, Worker lookups and agents, they are refused no more often than
+before in total, because crowded calls no longer take seats. But a reader whose seat comes
+right after a Worker call booked behind a late one can now be refused (about 2-4 % of reader
+misses in those mixes) where before it was answered 0.1-1 s after that call. Workers and agents
+take the rest of the cost: 10-25 % more of their calls are refused in the same mixes.
+
+The weekly digest asks arXiv for each subscriber's arXiv categories (`fetchArxivTopicUpdates`,
+`worker/email-notifications.ts`). It takes only the seats `/arxiv` requests may not take, so
+it never holds a reader's seat, and waits up to 6 s for one. Every attempt takes a seat, the
+retry too. A query with no seat in reach makes no call and falls back to OpenAlex, as for an
+arXiv outage: one OpenAlex search per arXiv category followed, shared by subscribers who follow
+the same one in that run. While the digest runs, it holds seats the Worker's own lookups would
+otherwise take, so those move to the seats readers use.
 
 `/resources/figures?arxiv_id=` returns up to six figures of an arXiv paper, read from
 arxiv.org/html and ar5iv, which are asked at the same time. A result with figures is kept at
@@ -1272,10 +1299,9 @@ points:
   never takes a seat a reader booked, and a search's own arXiv miss takes the
   seat of its period. An agent can still take the seat of a reader who
   arrives after it in the period's first two seconds: the next public seat is
-  then more than four seconds away, so that reader is refused. An agent's call
-  goes out at once, so, like a reader's call that takes its period's seat
-  late, it and the next period's call can be less than a second apart
-  (ENG-184 tracks keeping three seconds between every arXiv call). An
+  then more than four seconds away, so that reader is refused. An agent does
+  not wait for its call to be spaced either: when the last arXiv call went out
+  less than three seconds earlier, the lookup is refused. An
   odd period is never an agent's, so even on an idle Worker every agent arXiv
   miss in an odd period is refused: about half of uncached arXiv lookups,
   which a search lists under `unavailable` and `get_paper` answers from

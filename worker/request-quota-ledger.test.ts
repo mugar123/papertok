@@ -542,3 +542,29 @@ test('a malformed percent, tally, remaining or part is refused, not ignored', as
   }
   assert.equal(harness.values.size, 0, 'nothing was written');
 });
+
+test('paced slots get send times a spacing apart in whatever order they are reserved, and keep the last one past the retention sweep', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 9_500 });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const reserve = (subjectKey: string, pace: { from: number; by: number }) => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reserve', subjectKey, subjectLimit: 1, globalLimit: 100, pace: { ...pace, spacingMs: 3_000 } }),
+  })).then(response => response.json<QuotaReading>());
+
+  // The seat at 12 s is booked first; the seat at 9 s, taken late, may not go
+  // out 2.5 s before it and has to wait until 3 s after it.
+  assert.equal((await reserve('a'.repeat(64), { from: 12_000, by: 13_500 })).sendAt, 12_000);
+  assert.deepEqual(await reserve('b'.repeat(64), { from: 9_000, by: 13_500 }), {
+    accepted: false, scope: 'pace', subjectUsage: 0, globalUsage: 1,
+  });
+  assert.equal((await reserve('c'.repeat(64), { from: 9_000, by: 15_000 })).sendAt, 15_000);
+
+  await ledger.alarm();
+  assert.deepEqual([...harness.values.keys()], ['pace:lastSend']);
+  // A slot whose send time has come goes out on the answer, which is counted
+  // as up to 250 ms later.
+  t.mock.timers.setTime(18_000);
+  assert.equal((await reserve('d'.repeat(64), { from: 18_000, by: 18_000 })).sendAt, 18_000);
+  assert.equal(harness.values.get('pace:lastSend'), 18_250);
+});

@@ -271,11 +271,16 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   // seat on arXiv's beat, then up to ARXIV_UPSTREAM_TIMEOUT_MS for arXiv. Here
   // the cache read takes 0.3 s (in production, that read and the beat's
   // ledger round trips), the seat comes 0.1 s inside the longest wait, and
-  // arXiv answers 0.1 s inside its deadline.
+  // arXiv answers 0.1 s inside its deadline. The two searches ahead of it ask
+  // 0.1 s into a period: the first goes out then, and the ledger counts it as
+  // sent 0.25 s later, for its answer's way back. Each later call keeps three
+  // seconds after the one before, so the lookup's goes out two periods and
+  // 0.35 s after that period began.
   const cacheReadMs = 300;
   const period = ARXIV_PACE_PERIOD_MS;
-  const seatAsked = Math.floor(Date.now() / period) * period + 2 * period - ARXIV_PACE_MAX_WAIT_MS + 100;
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: seatAsked - 2 * cacheReadMs });
+  const searchesAsk = Math.floor(Date.now() / period) * period + period + 100;
+  const seatAsked = searchesAsk + 2 * period + 250 - ARXIV_PACE_MAX_WAIT_MS + 100;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: searchesAsk - cacheReadMs });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
@@ -323,6 +328,8 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     if (turn > 10_000) throw new Error('the first search never reached arXiv');
     await new Promise(resolve => setImmediate(resolve));
   }
+  await flush();
+  t.mock.timers.tick(seatAsked - cacheReadMs - searchesAsk);
   await flush();
 
   const afterAnswer: Array<Promise<unknown>> = [];

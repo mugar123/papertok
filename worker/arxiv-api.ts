@@ -26,11 +26,44 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
 // and share pages. A signed-in reader chooses the ids those lookups ask for
 // through POST /store/papers, so one account, within its per-minute feed
-// allowance, can still hold every seat. Spacing towards arXiv is unchanged:
-// one call per three-second period. A seat taken late in its period goes out
-// then, so it and the next period's seat can be less than a second apart;
-// ENG-184 keeps three seconds between every arXiv call.
+// allowance, can still hold every seat. The email digest takes only the seats
+// requests from outside the Worker may not take.
+//
+// The guarantee towards arXiv (ENG-184): every call the Worker sends to
+// export.arxiv.org goes out at least ARXIV_PACE_PERIOD_MS after the one before
+// it, whichever caller sent either, as measured on the request ledger's clock.
+// The ledger records each seat's send time, and a seat's call waits until
+// three seconds after the latest one recorded. A call that goes out on the
+// ledger's answer is recorded 250 ms after it was given, for the answer's way
+// back; a slower answer shortens the gap by the difference. A caller sends
+// only after its seat is confirmed, except when the ledger is missing or
+// answers with an error: then it sends unpaced, as before. A send time the
+// caller would have to wait past its bound for is refused like a taken seat,
+// so the next seat in reach is tried instead.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
+type ArxivCaller = 'reader' | 'agent' | 'worker' | 'digest';
+const ARXIV_SEATS: Record<ArxivCaller, { maxWaitMs: number; accepts?: (slot: number) => boolean }> = {
+  reader: { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS, accepts: PUBLIC_SEAT },
+  // See `handleAgentArxiv`.
+  agent: { maxWaitMs: 0, accepts: PUBLIC_SEAT },
+  worker: { maxWaitMs: ARXIV_PACE_MAX_WAIT_MS },
+  // A cron, so it can wait for the next seat of its own, which is at most two
+  // periods away; it never takes a seat a reader could have had.
+  digest: { maxWaitMs: 2 * ARXIV_PACE_PERIOD_MS, accepts: slot => !PUBLIC_SEAT(slot) },
+};
+
+/**
+ * Takes a seat on the arXiv beat for one call, and waits until that call may
+ * go out. Every caller that sends to export.arxiv.org goes through here.
+ */
+export function takeArxivSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: ArxivCaller) {
+  return awaitUpstreamSlot(ledger, {
+    namespace: 'arxiv',
+    periodMs: ARXIV_PACE_PERIOD_MS,
+    spacingMs: ARXIV_PACE_PERIOD_MS,
+    ...ARXIV_SEATS[caller],
+  });
+}
 // Whole seconds from `now` to the start of the next public seat after the
 // current period: 1 to 6.
 function nextPublicSeatSeconds(now: number) {
@@ -69,12 +102,12 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 export function handleArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
+  return relayArxiv(request, env, 'reader');
 }
 
 // The route as the paper harvest asks it in-process: no caller to count.
 export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: false, maxWaitMs: ARXIV_PACE_MAX_WAIT_MS });
+  return relayArxiv(request, env, 'worker');
 }
 
 /**
@@ -87,14 +120,18 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
  * ARXIV_PACE_MAX_WAIT_MS away, so that reader is refused. An agent
  * is a caller from outside the Worker, so its seat must also be a public one,
  * and even on an idle Worker about half of uncached agent lookups are refused.
+ * An agent does not wait for its call to be spaced either: when the last arXiv
+ * call went out less than three seconds ago, its lookup is refused.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
-  return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
+  return relayArxiv(request, env, 'agent');
 }
 
-// `perCaller` is true for a request from outside the Worker: it spends its
+// A request from outside the Worker (a reader or an agent) spends its
 // address's allowance and takes only public seats.
-async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWaitMs }: { perCaller: boolean; maxWaitMs: number }) {
+async function relayArxiv(request: Request, env: WorkerEnv, callerKind: 'reader' | 'agent' | 'worker') {
+  const perCaller = callerKind !== 'worker';
+  const { maxWaitMs } = ARXIV_SEATS[callerKind];
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -136,12 +173,7 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
       });
     }
     if (caller?.reading.code) console.warn(`arXiv caller allowance unavailable (${caller.reading.code}); not counted`);
-    const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
-      namespace: 'arxiv',
-      periodMs: ARXIV_PACE_PERIOD_MS,
-      maxWaitMs,
-      accepts: perCaller ? PUBLIC_SEAT : undefined,
-    });
+    const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, callerKind);
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.
       if (caller?.reading.accepted && caller.reservation) {

@@ -46,10 +46,20 @@ const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolv
 // `accepts` limits a caller to some of the slots: one it does not accept is
 // passed over without asking the ledger, and stays free for a caller that
 // accepts it. The beat itself is unchanged, still one call per period.
+//
+// One call per period does not by itself keep calls a period apart: a slot
+// taken late in its period sends at once, and the next period's call can follow
+// it within milliseconds. `spacingMs` closes that gap. The ledger then records
+// when each slot's call goes out, and gives the slot it reserves a send time no
+// earlier than `spacingMs` after the latest one it recorded, measured on the
+// ledger's own clock. The send time can fall in a later period than the slot;
+// one the caller would have to wait past `maxWaitMs` for is refused like a
+// taken slot, and nothing is recorded for it.
 export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
+  spacingMs,
   accepts = () => true,
   now = Date.now,
   sleep = realSleep,
@@ -57,6 +67,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
   namespace?: string;
   periodMs?: number;
   maxWaitMs?: number;
+  spacingMs?: number;
   accepts?: (slot: number) => boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -79,6 +90,9 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
       subject: `${namespace}:slot:${slot}`,
       subjectLimit: 1,
       globalLimit: PACE_GLOBAL_LIMIT,
+      ...(spacingMs ? {
+        pace: { from: slot * periodMs, by: started + maxWaitMs, spacingMs },
+      } : {}),
     });
     if (!reservation.accepted && reservation.code) return { accepted: false, code: reservation.code };
     // The reservation round trip just spent is exactly what can burn the
@@ -92,7 +106,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
     // reservation call would not catch this -- it is the call's own latency
     // that does the damage, and it hasn't happened yet at that point.)
     if (reservation.accepted && Math.floor(now() / periodMs) <= slot) {
-      const waitMs = Math.max(0, slot * periodMs - now());
+      const waitMs = Math.max(0, (reservation.sendAt ?? slot * periodMs) - now());
       if (waitMs > 0) await sleep(waitMs);
       return { accepted: true, slot, waitedMs: waitMs };
     }

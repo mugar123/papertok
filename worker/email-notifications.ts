@@ -87,6 +87,7 @@ import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { openAlexCostFor } from './openalex-api.ts';
 import { reserveOpenAlexBudget } from './provider-runtime.ts';
+import { takeArxivSeat } from './arxiv-api.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -788,7 +789,11 @@ function parseArxivDigestFeed(xml: unknown, follows: Follow[] = []) {
   }).filter(Boolean);
 }
 
-async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceReport | null) {
+// Each attempt, the retry too, takes a seat on the Worker's arXiv beat first
+// (`takeArxivSeat`). No seat within its wait ends the query without a call,
+// and the digest falls back to OpenAlex as for an arXiv outage. A missing
+// ledger, or one that answers with an error, lets the call go unpaced.
+async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceReport?: SourceReport | null) {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),
   )].slice(0, MAX_ARXIV_DIGEST_CATEGORIES);
@@ -811,6 +816,12 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
       source: 'arxiv',
       report: sourceReport,
       timeoutMs: 8_000,
+      beforeAttempt: async () => {
+        const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, 'digest');
+        if (!seat.accepted && !seat.code) {
+          throw new DigestSourceError('arxiv', 'EMAIL_SOURCE_ARXIV_RATE_LIMITED', 'No arXiv seat for the digest');
+        }
+      },
     });
     return parseArxivDigestFeed(await response.text(), follows);
   });
@@ -1435,7 +1446,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
     try {
       return {
-        papers: await fetchArxivTopicUpdates(arxivFollows, sourceReport),
+        papers: await fetchArxivTopicUpdates(arxivFollows, env, sourceReport),
         requiredFailed: 0,
       };
     } catch (error) {
