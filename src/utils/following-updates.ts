@@ -131,9 +131,50 @@ export function getFollowingUpdatesStorageKey(userId: unknown) {
   return `papertok_following_updates_${String(userId || 'anonymous').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
+/**
+ * Whether the stored Following result can stand in for a refresh: saved for
+ * the same follows within `ttlMs`, with every follow answered. A result in
+ * which some follows failed is still shown, but the next load asks again
+ * instead of keeping the gap for the whole window (ENG-110).
+ */
+export function isFollowingCacheFresh(
+  stored: { signature?: string; savedAt?: string; meta?: { failedEntities?: number } },
+  signature: string,
+  ttlMs: number,
+  now = Date.now(),
+) {
+  if (stored.signature !== signature || (stored.meta?.failedEntities ?? 0) > 0) return false;
+  return now - Date.parse(stored.savedAt || '') < ttlMs;
+}
+
+function getFollowKey(follow: Pick<PaperFollowMatch, 'type' | 'canonicalId'>) {
+  return `${follow.type}:${follow.canonicalId}`;
+}
+
 export function getFollowingSignature(follows: PaperFollowMatch[] = []) {
-  return follows
-    .map(follow => `${follow.type}:${follow.canonicalId}`)
-    .sort()
-    .join('|');
+  return follows.map(getFollowKey).sort().join('|');
+}
+
+/**
+ * The papers that match one of `follows`. An unfollow takes off the cards it
+ * alone brought in at once, instead of when the next refresh answers (ENG-110).
+ */
+export function keepPapersOfFollows(papers: Paper[], follows: PaperFollowMatch[]) {
+  const followed = new Set(follows.map(getFollowKey));
+  return papers.filter(paper => paper._followedEntityMatches?.some(match => (
+    typeof match === 'object' && followed.has(getFollowKey(match))
+  )));
+}
+
+/**
+ * Whether a Following request still answers for the account and the follows
+ * on screen. A response that arrives after the reader switched accounts or
+ * changed their follows is dropped: it would put back the papers of a follow
+ * just removed and store them as the cache of the old follows (ENG-110).
+ */
+export function isCurrentFollowingRequest(
+  current: { userId: string | null; signature: string },
+  request: { userId: string | null; signature: string },
+) {
+  return current.userId === request.userId && current.signature === request.signature;
 }

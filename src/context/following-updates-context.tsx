@@ -25,6 +25,9 @@ import {
   getFollowingSignature,
   getFollowingUpdatePaperKey,
   getFollowingUpdatesStorageKey,
+  isCurrentFollowingRequest,
+  isFollowingCacheFresh,
+  keepPapersOfFollows,
 } from '../utils/following-updates.ts';
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -71,15 +74,16 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const [meta, setMeta] = useState({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const initializedForUser = useRef<string | null>(null);
-  const activeUserIdRef = useRef(userId);
   const signature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
+  // The account and follows a response must still belong to when it lands.
+  const activeRequestRef = useRef({ userId, signature });
 
   useLayoutEffect(() => {
-    activeUserIdRef.current = userId;
+    activeRequestRef.current = { userId, signature };
     return () => {
-      if (activeUserIdRef.current === userId) activeUserIdRef.current = null;
+      if (activeRequestRef.current.userId === userId) activeRequestRef.current = { userId: null, signature: '' };
     };
-  }, [userId]);
+  }, [signature, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +140,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   // in ~300 ms. `loading` stays up until the last delivery, which is also the
   // one that writes the cache and sets `lastUpdatedAt`.
   const applyProgress = useCallback((partial: FollowingResult) => {
-    if (activeUserIdRef.current !== userId) return;
+    if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
     if (!partial?.papers?.length) return;
     setItems(partial.papers);
     setMeta({
@@ -144,7 +148,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       totalEntities: partial.totalEntities,
       failedEntities: partial.failedEntities,
     });
-  }, [userId]);
+  }, [signature, userId]);
 
   const refresh = useCallback(async ({ silent = false } = {}) => {
     if (!userId || followsLoading) return;
@@ -173,7 +177,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
 
     try {
       const result = await request;
-      if (activeUserIdRef.current !== userId) return;
+      if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
       const savedAt = new Date().toISOString();
       setItems(result.papers);
       setMeta({
@@ -195,14 +199,17 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
         savedAt,
       });
     } catch (refreshError) {
-      if (activeUserIdRef.current !== userId) return;
+      if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
       // The items, the cache and `lastUpdatedAt` stay as they were: a refresh
       // in which every follow failed rejects (fetchFollowingUpdates), and the
       // cards it would have replaced are still the newest answer (ENG-176).
       console.error('Error loading followed updates', refreshError);
       setError(refreshError);
     } finally {
-      if (activeUserIdRef.current === userId) {
+      // By account only: the refresh for the follows that replaced these one
+      // may never start (a fresh cache, or no follow left), and the spinner
+      // must not stay up for it.
+      if (activeRequestRef.current.userId === userId) {
         setLoading(false);
         setRefreshing(false);
       }
@@ -213,10 +220,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const refreshSilently = useEffectEvent(() => refresh({ silent: true }));
   useEffect(() => {
     if (!userId || followsLoading) return undefined;
-    const local = readLocalState(userId);
-    const cacheIsFresh = local.signature === signature
-      && Date.now() - Date.parse((local.savedAt || 0) as string) < CACHE_TTL_MS;
-    if (cacheIsFresh) return undefined;
+    if (isFollowingCacheFresh(readLocalState(userId), signature, CACHE_TTL_MS)) return undefined;
     const refreshTimeout = setTimeout(refreshSilently, 0);
     return () => clearTimeout(refreshTimeout);
   }, [followsLoading, signature, userId]);
@@ -336,8 +340,10 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     pendingSeenRef.current.add(key);
   }, [scheduleSeenPersist]);
 
+  // The cards of a follow just removed leave with it, before any refresh.
+  const shownItems = useMemo(() => keepPapersOfFollows(items, followedEntities), [followedEntities, items]);
   const value = useMemo(() => ({
-    items,
+    items: shownItems,
     seenIds,
     loading,
     refreshing,
@@ -346,7 +352,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     lastUpdatedAt,
     refresh,
     markSeen,
-  }), [error, items, lastUpdatedAt, loading, markSeen, meta, refreshing, refresh, seenIds]);
+  }), [error, shownItems, lastUpdatedAt, loading, markSeen, meta, refreshing, refresh, seenIds]);
 
   return <FollowingUpdatesContext.Provider value={value}>{children}</FollowingUpdatesContext.Provider>;
 }
