@@ -185,11 +185,19 @@ export function markChanges() {
      * Every mark on screen was set anew, as a profile load sets them: what
      * earlier changes sent to the screen no longer describes it. Changes
      * still waiting stay followed, as their answers have yet to land.
+     * `loaded` gives a mark's value in what was loaded, when it holds one:
+     * a refusal then puts back that value, not the screen from before the
+     * load (a Like tapped before the profile arrived, on a paper the profile
+     * already liked, must not take the like away when refused).
      */
-    screenReplaced() {
+    screenReplaced(loaded?: (key: string) => boolean | undefined) {
       for (const [key, mark] of marks) {
-        if (mark.changes.some((change) => change.pending)) delete mark.sent;
-        else marks.delete(key);
+        if (mark.changes.some((change) => change.pending)) {
+          delete mark.sent;
+          mark.startedFrom = loaded?.(key) ?? mark.startedFrom;
+        } else {
+          marks.delete(key);
+        }
       }
     },
     unshownChange(key: string, to: boolean) {

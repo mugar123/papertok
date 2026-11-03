@@ -64,6 +64,28 @@ test('with afterWrite an accepted change shows once the write is in, and only fo
   assert.equal(like.screen.liked, false);
 });
 
+// A Like tapped before the profile arrived, on a paper the profile already
+// likes, is refused once the profile has loaded: the like the profile holds
+// stays, and the reading profile hears no unlike.
+test('a like refused after the profile loaded keeps the like the profile holds', async () => {
+  const like = likeOnScreen(false);
+  const told: string[] = [];
+  let refuse = () => {};
+  const pressed = silenced(() => writeMark({
+    ...like,
+    show: () => { like.show(); told.push('like'); },
+    undo: () => { like.undo(); told.push('unlike'); },
+    failure: 'refused', stillSignedIn: () => true,
+    write: () => new Promise<void>((_, reject) => { refuse = () => reject(new Error('permission-denied')); }),
+  }));
+  like.screen.liked = true;
+  like.changes.screenReplaced((key) => (key === like.markKey ? true : undefined));
+  refuse();
+  await pressed;
+  assert.equal(like.screen.liked, true);
+  assert.deepEqual(told, ['like']);
+});
+
 // A liked paper's heart the way FeedContext toggles it: each press starts a
 // change from the like the screen shows, flips it and tells the reading
 // profile. A removal (`afterWrite`) starts from a liked paper. The test answers

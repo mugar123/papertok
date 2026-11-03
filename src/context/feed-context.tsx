@@ -1032,8 +1032,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const read = orderedSet('read');
 
         // These sets and the library put every mark back where the profile
-        // has it, so a move an answer sent before is no longer on screen.
-        markChangeLog.screenReplaced();
+        // has it, so a move an answer sent before is no longer on screen. A
+        // write still waiting that is refused puts back what the profile holds.
+        const loadedMarks = { like: liked, read };
+        markChangeLog.screenReplaced((key) => {
+          for (const [kind, ids] of Object.entries(loadedMarks)) {
+            const prefix = `${userId}:${kind}:`;
+            if (key.startsWith(prefix)) return ids.has(key.slice(prefix.length));
+          }
+          return undefined;
+        });
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
