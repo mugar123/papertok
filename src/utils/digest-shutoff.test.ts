@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestShutoffDue, digestShutoffNoticeShown } from './digest-shutoff.ts';
+import { digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 
-const base = { enabled: true, confirmed: true, digestCovered: false, attempted: false };
+const base = { enabled: true, followsConfirmed: true, interestsConfirmed: true, digestCovered: false, attempted: false };
 
 test('a digest left with no follow it covers and no chosen categories is turned off, once', () => {
   assert.equal(digestShutoffDue(base), true);
@@ -10,7 +10,17 @@ test('a digest left with no follow it covers and no chosen categories is turned 
 });
 
 test('an unconfirmed read (failed, cached or mid-write) never turns the digest off', () => {
-  assert.equal(digestShutoffDue({ ...base, confirmed: false }), false);
+  assert.equal(digestShutoffDue({ ...base, followsConfirmed: false }), false);
+});
+
+test('a cached profile with no chosen categories, before the server copy arrives, never turns the digest off', () => {
+  assert.equal(digestShutoffDue({ ...base, interestsConfirmed: false }), false);
+});
+
+test('a cached empty follow list never lets the sync replace the follows the Worker stores', () => {
+  assert.equal(digestSyncAllowed({ hasFollows: false, followsConfirmed: false }), false);
+  assert.equal(digestSyncAllowed({ hasFollows: false, followsConfirmed: true }), true);
+  assert.equal(digestSyncAllowed({ hasFollows: true, followsConfirmed: false }), true);
 });
 
 test('a digest that is off, or one with follows or chosen categories to cover, is left alone', () => {

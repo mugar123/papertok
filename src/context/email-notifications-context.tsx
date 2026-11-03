@@ -30,7 +30,7 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
-import { digestShutoffDue, digestShutoffNoticeShown } from '../utils/digest-shutoff.ts';
+import { digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 
@@ -48,7 +48,7 @@ const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
 };
 
 export function EmailNotificationsProvider({ children }: PropsWithChildren) {
-  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences, profileLoadError } = useAuth();
+  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences, profileLoadError, profileFromServer } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
@@ -194,9 +194,9 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   }, [applySavedPreferences, digestCovered, followedEntities, interests, items, language, notificationDataReady, preferences]);
 
   // A yes from the guest welcome, carried out here, to the address the account
-  // signs in with: the subscription starts once there is something to cover,
-  // the categories chosen at onboarding or the first follow other than a
-  // journal (the Worker refuses an empty subscription). Once per
+  // signs in with: the subscription starts with the first follow other than a
+  // journal, as the welcome promised when the reader said yes, even though a
+  // digest turned on in Settings can run on chosen categories alone. Once per
   // session; a failure keeps the flag and the next session tries again. Once
   // it exists — or the reader already turned email on themselves — the flag is
   // spent, so a later unsubscribe in Settings is never undone.
@@ -219,7 +219,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         .catch(settleError => console.warn('Could not settle the email digest opt-in', settleError));
       return undefined;
     }
-    if (!digestCovered || emailServiceDown) return undefined;
+    if (!hasFollows || emailServiceDown) return undefined;
     // A beat after the follow lands, like the digest sync below, so a burst
     // of follows becomes one subscription carrying all of them.
     const optInTimeout = setTimeout(() => {
@@ -229,7 +229,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         .catch(optInError => console.warn('Could not start the email digest the reader opted into', optInError));
     }, 1200);
     return () => clearTimeout(optInTimeout);
-  }, [digestCovered, emailDigestPending, emailServiceDown, error, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
+  }, [emailDigestPending, emailServiceDown, error, hasFollows, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
 
   useEffect(() => {
     if (
@@ -239,6 +239,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       || followsError
       || updatesLoading
       || !digestCovered
+      || !digestSyncAllowed({ hasFollows, followsConfirmed })
       || loadedForUser.current !== userId
     ) return undefined;
     let cancelled = false;
@@ -265,7 +266,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(syncTimeout);
     };
-  }, [digestCovered, followSignature, followedEntities, followsError, followsLoading, interests, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
+  }, [digestCovered, followSignature, followedEntities, followsConfirmed, followsError, followsLoading, hasFollows, interests, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
 
   // Nothing left for the digest to cover with the digest on: no follow it
   // lists and no chosen category. The Worker refuses an empty subscription and
@@ -273,7 +274,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // synced (ENG-163). Turn it off through the same save the toggle uses, once,
   // and only when the follows and the profile are the server's own answer.
   const shutoffAttemptedFor = useRef<string | null>(null);
-  const interestsConfirmed = Array.isArray(userPreferences) && !profileLoadError;
+  const interestsConfirmed = profileFromServer && !profileLoadError;
   useEffect(() => {
     if (digestCovered) {
       shutoffAttemptedFor.current = null;
@@ -282,7 +283,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     if (!userId || loading || loadedForUser.current !== userId) return;
     if (!digestShutoffDue({
       enabled: preferences.enabled,
-      confirmed: followsConfirmed && interestsConfirmed,
+      followsConfirmed,
+      interestsConfirmed,
       digestCovered,
       attempted: shutoffAttemptedFor.current === userId,
     })) return;

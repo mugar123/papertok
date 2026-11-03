@@ -33,6 +33,8 @@ export interface AuthContextValue {
   readingPreferences: ReadingPreferences;
   emailDigestPending: boolean;
   profileLoadError: string | null;
+  /** The profile in hand, interests included, came from the server this session, not only from the device's cache. */
+  profileFromServer: boolean;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
   /** A redirect sign-in came back without a session: the sign-in dialog opens again. */
@@ -121,6 +123,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // on then and settles this flag.
   const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+  const [profileFromServer, setProfileFromServer] = useState(false);
   // Which doors this account has (F5). Kept in state rather than read from
   // `user.providerData` at render time because linking does not always
   // re-emit an auth state change, and a settings row that still says
@@ -175,6 +178,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       forgetAccountToasts(currentUser?.uid ?? null);
       setLoading(true);
       setProfileLoadError(null);
+      setProfileFromServer(false);
       setUser(currentUser);
       setFollowedAuthors([]);
       setDeselectedPreferences([]);
@@ -233,6 +237,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // remembered onboarding only decided the paint while this read was
         // in flight; it does not get to overrule a missing document.
         const applyRemote = (snapshot: DocumentSnapshot<StoredProfile>) => {
+          // getDoc falls back to the cache when offline; only the server's
+          // copy confirms the interests (the digest shutoff waits on it).
+          if (isCurrent()) setProfileFromServer(!snapshot.metadata.fromCache);
           if (!applyProfile(snapshot)) {
             setOnboardingComplete(false);
             saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
@@ -512,6 +519,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     readingPreferences,
     emailDigestPending,
     profileLoadError,
+    profileFromServer,
     signInProviders,
     institution,
     reopenSignIn,
@@ -531,7 +539,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     retryProfileLoad,
   }), [
     addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
-    linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
+    linkSignInMethod, loading, onboardingComplete, profileFromServer, profileLoadError, readingPreferences,
     reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,

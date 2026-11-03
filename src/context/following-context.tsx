@@ -126,11 +126,16 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       setError(new FollowsUnavailableError());
     }, FIRST_SNAPSHOT_GRACE_MS);
 
-    const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
+    // Metadata changes included: when the server's answer matches the cache,
+    // only `fromCache` changes, and without them `confirmed` would never turn
+    // true. Such a snapshot keeps the same list, so consumers keyed on it do
+    // not rerun.
+    const unsubscribe = onSnapshot(followsCollection, { includeMetadataChanges: true }, (snapshot) => {
       window.clearTimeout(loadingTimeout);
+      const metadataOnly = followList.current === 'listed' && snapshot.docChanges().length === 0;
       followList.current = 'listed';
       setSnapshotFromServer(!snapshot.metadata.fromCache);
-      setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
+      if (!metadataOnly) setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
       // Whatever went wrong before, this is the server's own answer.
       setError(null);
       setLoading(false);

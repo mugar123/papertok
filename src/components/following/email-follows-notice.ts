@@ -10,8 +10,9 @@ import { hasDigestFollows } from '../../services/email-notification-service.ts';
  */
 export function emailFollowsNotice(follows: readonly Partial<FollowEntity>[], digestPending: boolean, hasInterests = false) {
   if (hasDigestFollows(follows)) return null;
-  // ENG-163: the reader's chosen categories fill the email until then.
-  if (hasInterests) {
+  // ENG-163: the reader's chosen categories fill the email until then. A yes
+  // from the welcome still waits for the first follow, as the welcome said.
+  if (hasInterests && !digestPending) {
     return {
       heading: 'Your email covers your interests',
       body: 'Until you follow a topic, author, institution or project, the weekly email brings notable new papers in the subjects you chose.',

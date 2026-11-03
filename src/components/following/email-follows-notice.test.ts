@@ -25,6 +25,13 @@ test('the email settings say nothing is followed only when nothing is', () => {
 // ENG-163: with no digest follow, the reader's chosen categories fill the email.
 test('the email settings tell a reader with chosen categories and no digest follow that the email covers their interests', () => {
   assert.equal(emailFollowsNotice([], false, true)?.heading, 'Your email covers your interests');
-  assert.equal(emailFollowsNotice([journal], true, true)?.heading, 'Your email covers your interests');
+  assert.equal(emailFollowsNotice([journal], false, true)?.heading, 'Your email covers your interests');
   assert.equal(emailFollowsNotice([author], false, true), null);
+});
+
+// The welcome promised a yes starts with the first follow, so a pending yes
+// is still told that, chosen categories or not.
+test('the email settings tell a reader who asked for the digest when they joined that it starts with the first follow', () => {
+  assert.match(emailFollowsNotice([], true, true)!.body, /starts on its own with your first follow/);
+  assert.equal(emailFollowsNotice([journal], true, true)?.heading, 'Journals are not in the email yet');
 });
