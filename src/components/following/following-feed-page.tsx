@@ -11,6 +11,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
 import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/following-order-storage.ts';
 import {
+  followingFeedError,
   followingFirstLoadPending,
   mergeOrderedPapers,
   orderFollowingFeedPapers,
@@ -62,7 +63,7 @@ lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const navigate = useNavigate();
-  const { followedEntities } = useFollowing();
+  const { followedEntities, error: followsError } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
   // effect for free because that same call drops the paper from the list it
   // renders. This page renders its own, so it has to read the set itself.
@@ -104,6 +105,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
   );
 
   const hasFollows = followedEntities.length > 0;
+  const loadError = followingFeedError({ updatesError: error, followsError, hasFollows });
 
   const emptyState = useMemo(() => hasFollows ? (
     <EmptyState
@@ -145,17 +147,17 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     // The first wait is For You's discovery screen, not a skeleton card: the
     // container reads this instead of guessing from `loading`, which is false
     // for the tick before the first refresh starts.
-    initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error }),
+    initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error: loadError }),
     // Over cards too: the cards stay, and the container still needs to know
     // a refresh failed so it does not say the papers were updated (ENG-176).
-    error: error ? 'FOLLOWING_LOAD_FAILED' : null,
+    error: loadError,
     hasMore: false,
     loadMore: () => false,
     refresh,
     isRefreshing: refreshing,
     emptyState,
     onPaperViewed: markSeen,
-  }), [shownPapers, items, loading, lastUpdatedAt, error, refresh, refreshing, emptyState, markSeen]);
+  }), [shownPapers, items, loading, lastUpdatedAt, loadError, refresh, refreshing, emptyState, markSeen]);
 
   return (
     <FeedContainer
