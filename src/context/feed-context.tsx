@@ -2310,7 +2310,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid;
     if (!userId) return;
     // A card names its paper by its own id; the read mark lives under the interaction id.
-    const paperId = (typeof paperOrId === 'string' ? paperOrId : withInteractionId(paperOrId).id)!;
+    const paperId = typeof paperOrId === 'string' ? paperOrId : withInteractionId(paperOrId).id;
     await unmarkRead(paperId, {
       setReadIds: setReadPaperIds,
       setLibrary: setPersonalLibrary,
