@@ -26,17 +26,10 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
 // and share pages. A signed-in reader chooses the ids those lookups ask for
 // through POST /store/papers, so one account, within its per-minute feed
-// allowance, can still hold every seat. Every call on this beat (the relay's
-// and share pages'; the email digest asks arXiv outside it) keeps three
-// seconds after it (`spaced`): a seat taken once its period has begun goes out
-// at once and holds the next period's seat empty, so it cannot be taken while
-// that seat is booked. A seat taken ahead goes out at its start, three
-// seconds or more after the call before. The empty seat costs refusals: a
-// caller that arrives less than two seconds into the period of a late call,
-// the Worker's own included, finds the seat after the empty one more than
-// ARXIV_PACE_MAX_WAIT_MS away, and after a late call in an odd period a
-// caller from outside the Worker finds no public seat until two seconds into
-// the period after it.
+// allowance, can still hold every seat. Spacing towards arXiv is unchanged:
+// one call per three-second period. A seat taken late in its period goes out
+// then, so it and the next period's seat can be less than a second apart;
+// ENG-184 keeps three seconds between every arXiv call.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // Whole seconds from `now` to the start of the next public seat after the
 // current period: 1 to 6.
@@ -94,10 +87,6 @@ export function handleHarvestArxiv(request: Request, env: WorkerEnv) {
  * ARXIV_PACE_MAX_WAIT_MS away, so that reader is refused. An agent
  * is a caller from outside the Worker, so its seat must also be a public one,
  * and even on an idle Worker about half of uncached agent lookups are refused.
- * Its call goes out once the period has begun, so it also holds the next,
- * odd period's seat empty, which no reader can book; a Worker's own caller
- * that booked that seat first refuses the agent, and one that comes after
- * the agent in the period's first two seconds is refused.
  */
 export function handleAgentArxiv(request: Request, env: WorkerEnv) {
   return relayArxiv(request, env, { perCaller: true, maxWaitMs: 0 });
@@ -152,7 +141,6 @@ async function relayArxiv(request: Request, env: WorkerEnv, { perCaller, maxWait
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs,
       accepts: perCaller ? PUBLIC_SEAT : undefined,
-      spaced: true,
     });
     if (!seat.accepted && !seat.code) {
       // No seat, no call: the caller's unit goes back.

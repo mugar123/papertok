@@ -221,10 +221,7 @@ const SLOW_LIKE = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`;
 
 test('a liked paper arXiv answers after 2 s is still filed by the lookup after the page, while an inline lookup keeps its 2 s', async t => {
-  // A second into an arXiv period, so the lookup takes the current seat. On
-  // the real clock, a ledger round trip that crossed into the next period
-  // moved the lookup two seats on, to a wait these mocked timers never ran.
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Math.floor(Date.now() / ARXIV_PACE_PERIOD_MS) * ARXIV_PACE_PERIOD_MS + 1_000 });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
@@ -317,10 +314,8 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const { env, db } = store();
   Object.assign(env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
-  // Two in-process arXiv searches. The first takes this period's seat once
-  // the period has begun: it goes to arXiv at once and holds the next
-  // period's seat empty. The second would wait more than four seconds for the
-  // seat after that one, and is refused.
+  // Two in-process arXiv searches take this period's seat and the next one:
+  // the first goes to arXiv, the second waits for its seat.
   const searches = ['all:attention', 'all:sparsity'].map(query => handleHarvestArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
   await flush();
   t.mock.timers.tick(cacheReadMs);
@@ -334,8 +329,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });
   await handleCorpusFeed(request, env, { uid: 'reader-1' }, work => { afterAnswer.push(work); });
   await run(Promise.all([...afterAnswer, ...searches]), 15_000);
-  assert.deepEqual((await Promise.all(searches)).map(response => response.status), [200, 429]);
-  assert.equal(arxivAsked, 2);
+  assert.equal(arxivAsked, 3);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM work_keys WHERE key = 'arxiv:2610.55555'").get()?.n, 1);
 });
 
