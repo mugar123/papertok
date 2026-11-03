@@ -167,6 +167,23 @@ export function keepPapersOfFollows(papers: Paper[], follows: PaperFollowMatch[]
 }
 
 /**
+ * The papers that `follows` brought in, credited to those follows only: what
+ * a refresh keeps from the previous answer for the follows that have not
+ * answered it. A partial refresh replaced the cards with the papers of the
+ * follows that answered, and the known papers of the one that failed were
+ * gone until a refresh in which it answered (ENG-110).
+ */
+export function papersCarriedFor(papers: Paper[], follows: PaperFollowMatch[]) {
+  const carried = new Set(follows.map(getFollowKey));
+  return papers.flatMap((paper) => {
+    const matches = (paper._followedEntityMatches || []).filter(match => (
+      typeof match === 'object' && carried.has(getFollowKey(match))
+    ));
+    return matches.length ? [{ ...paper, _followedEntityMatches: matches }] : [];
+  });
+}
+
+/**
  * Whether a Following request still answers for the account and the follows
  * on screen. A response that arrives after the reader switched accounts or
  * changed their follows is dropped: it would put back the papers of a follow

@@ -172,6 +172,16 @@ export function followingFeedError({ updatesError = null, followsError = null, h
 }
 
 /**
+ * Try again on the Following feed. When the follow list is what failed, the
+ * papers alone were refreshed and the list stayed unread, so the error came
+ * back however often the reader pressed it: the list is read again too.
+ */
+export function retryFollowingFeed({ followsError, retryFollows, refresh }: { followsError: unknown; retryFollows: () => void; refresh: () => Promise<void> }) {
+  if (followsError) retryFollows();
+  return refresh();
+}
+
+/**
  * The order the Following feed resumes with.
  *
  * Each visit used to rank from scratch, and each visit had a different

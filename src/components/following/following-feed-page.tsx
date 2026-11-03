@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Checks, MagnifyingGlass } from '@phosphor-icons/react';
 import Petri from '../onboarding/petri.tsx';
@@ -17,6 +17,7 @@ import {
   orderFollowingFeedPapers,
   orderKeysOf,
   resumeOrderedPapers,
+  retryFollowingFeed,
   withoutNotInterested,
 } from '../../utils/following-feed.ts';
 import './following-feed-page.css';
@@ -63,7 +64,7 @@ lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const navigate = useNavigate();
-  const { followedEntities, error: followsError } = useFollowing();
+  const { followedEntities, error: followsError, retry: retryFollows } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
   // effect for free because that same call drops the paper from the list it
   // renders. This page renders its own, so it has to read the set itself.
@@ -106,6 +107,10 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
 
   const hasFollows = followedEntities.length > 0;
   const loadError = followingFeedError({ updatesError: error, followsError, hasFollows });
+  const retryFeed = useCallback(
+    () => retryFollowingFeed({ followsError, retryFollows, refresh }),
+    [followsError, refresh, retryFollows],
+  );
 
   const emptyState = useMemo(() => hasFollows ? (
     <EmptyState
@@ -153,11 +158,11 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     error: loadError,
     hasMore: false,
     loadMore: () => false,
-    refresh,
+    refresh: retryFeed,
     isRefreshing: refreshing,
     emptyState,
     onPaperViewed: markSeen,
-  }), [shownPapers, items, loading, lastUpdatedAt, loadError, refresh, refreshing, emptyState, markSeen]);
+  }), [shownPapers, items, loading, lastUpdatedAt, loadError, retryFeed, refreshing, emptyState, markSeen]);
 
   return (
     <FeedContainer

@@ -1,4 +1,5 @@
 import type { PaperFollowMatch } from '../models/paper.ts';
+import { queryIsAuthoritative } from './cache-authority.ts';
 export type FollowMetadata = { labelEn?: string; query?: string; categoryIds?: string[]; source?: string; funder?: string; arxivId?: string; localizedNames?: Record<string, string>; }
 export type FollowEntity = Omit<PaperFollowMatch, 'metadata'> & { metadata?: FollowMetadata; categoryIds?: string[]; followKey?: string };
 export type FollowInput = Omit<Partial<FollowEntity>, 'type'> & { type?: PaperFollowMatch['type'] | 'concept'; id?: string; display_name?: string; name?: string };
@@ -157,6 +158,26 @@ export class FollowsUnavailableError extends Error {
  * snapshot arrived, `failed` after a snapshot error ended the listener.
  */
 export type FollowListState = 'waiting' | 'listed' | 'failed';
+
+/**
+ * What the follows listener does with a snapshot. Firestore answers a list it
+ * has not reached the server for with an empty snapshot from its cache, and
+ * the listener took that as the account following nothing: the Following page
+ * said "You're not following anything yet" to an account that follows fifty.
+ * Before the list is known an empty cached answer is `wait`: the grace timer
+ * still runs, and the server's own answer (a metadata change when it holds the
+ * same documents) comes next. Follows the cache does hold are a `list`. Once
+ * listed, a snapshot that changed only metadata is a `confirm`: the documents
+ * on screen are the same, and replacing them would hand every consumer a new
+ * array for the same follows.
+ */
+export function followSnapshotAction(
+  snapshot: { empty?: boolean; size?: number; metadata?: { fromCache?: boolean }; docChanges: () => unknown[] },
+  list: FollowListState,
+): 'wait' | 'list' | 'confirm' {
+  if (list !== 'listed') return queryIsAuthoritative(snapshot) ? 'list' : 'wait';
+  return snapshot.docChanges().length === 0 ? 'confirm' : 'list';
+}
 
 /**
  * A journal follow refused by `planFollowToggle`; nothing was written.
