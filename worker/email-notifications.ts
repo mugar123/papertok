@@ -956,7 +956,7 @@ async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
     interests: refresh.interests,
     unsubscribeToken: refresh.unsubscribeToken,
   } : stored;
-  return { subscription, stored, state, stateKey };
+  return { subscription, stored, state, stateKey, refresh: current ? refresh : null };
 }
 
 async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
@@ -1087,6 +1087,15 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   ) {
     if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
       await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+    }
+    // An unchanged sync still renews the refresh in use. Left to expire, the
+    // stored record would come back with follows and interests the reader removed.
+    if (existingRecord!.refresh) {
+      await env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(existingRecord!.refresh), { expirationTtl: SYNC_REFRESH_TTL_SECONDS });
+      if (!await env.NOTIFICATION_STORE.get(key)) {
+        await env.NOTIFICATION_STORE.delete(syncKey(key));
+        return publicSubscription(null, identity.email);
+      }
     }
     return publicSubscription(existing, identity.email);
   }

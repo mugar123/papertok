@@ -1392,6 +1392,27 @@ test('a sync refresh expires within days, and the schedule removes one left with
   assert.equal(kv.values.has(syncKey), false, 'the orphaned refresh stayed');
 });
 
+test('an unchanged sync renews the refresh so removed follows do not return when it would have expired', async () => {
+  const kv = createMemoryKv();
+  const ttls: Record<string, number | undefined> = {};
+  const basePut = kv.put.bind(kv);
+  kv.put = (async (key: string, value: string, options?: { expirationTtl?: number }) => {
+    ttls[key] = options?.expirationTtl;
+    return basePut(key, value, options);
+  }) as typeof kv.put;
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')], previewItems: [] }), env, SYNC_READER);
+  const withoutA2 = { sync: true, enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] };
+  await saveSubscription(preferencesPut(withoutA2), env, SYNC_READER);
+  const syncKey = 'notification:sync:sync-reader';
+  delete ttls[syncKey];
+
+  await saveSubscription(preferencesPut(withoutA2), env, SYNC_READER);
+
+  assert.ok(ttls[syncKey] && ttls[syncKey] <= 8 * 24 * 60 * 60, 'the unchanged sync left the refresh to expire');
+  assert.deepEqual((await storedSubscriptionWithState(kv, SYNC_READER_KEY))?.follows?.map(follow => follow.canonicalId), ['A1']);
+});
+
 const SYNC_WITH_NEW_FOLLOW = {
   sync: true, enabled: true, maxPapers: 5,
   follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')], previewItems: [],
