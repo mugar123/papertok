@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who chose Got it on the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-03';
+export const PRIVACY_POLICY_VERSION = '2026-11-03.2';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -47,17 +47,23 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03';
  * Re-check this list whenever a bullet changes. Only what the page says about
  * this notice ships with it. Pablo chose on 2026-11-03 to set this instant to
  * the time of the commit that set it, rounded up to the next quarter hour,
- * rather than after the merge. An account created between this instant and
- * the deploy is not told: it signed up under a page, still dated 28 October,
- * that already said everything the summary announces.
+ * rather than after the merge.
+ *
+ * Version 2026-11-03.2 adds what the email subscription stores when the digest
+ * is filled from the subjects a reader chose (ENG-163, #442). That page text
+ * ships with #442, so unlike the bullets above it is not live at this instant:
+ * an account created between this instant and #442's deploy is not told of
+ * it. Following Pablo's choice above, this instant is the time of #442's
+ * commit that set it, rounded up. The order the server keeps near Frankfurt
+ * for up to 2 hours is left to the page to make room within three bullets.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T07:00:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T08:45:00Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   'PostHog analytics now connects your visits across days and records the papers you view, like or save and how the feed loads, linked to your account when you sign in. Turn it off in Settings.',
   'Your account now counts highly cited and recent papers you were shown, their likes, saves and PDF opens, and whether you lean to recent or older papers.',
-  'To rank your feed, the server gets your interests, what you follow and up to 24 papers you liked, saved or read at length, and keeps its order near Frankfurt for up to 2 hours.',
+  'To rank your feed, the server gets your interests, what you follow and up to 24 papers you liked, saved or read at length. Email updates, if on, store the subjects you chose.',
 ];
 
 /**
@@ -89,10 +95,10 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['the server gets your interests', /Each request for more papers sends it your interests/],
     ['what you follow', /the subjects you removed, what you follow, the identifiers of up to 24 papers you liked, saved or read at length/],
     ['up to 24 papers you liked, saved or read at length', /the identifiers of up to 24 papers you liked, saved or read at length/],
-    // What the server keeps of a ranked feed, and where (#347, #416).
-    ['keeps its order', /the server keeps the order it ranked for you/],
-    ['near Frankfurt', /placed near Frankfurt/],
-    ['for up to 2 hours', /for up to 2 hours after your last page/],
+    // What the email subscription keeps when the digest is filled from chosen subjects (ENG-163, #442).
+    ['Email updates', /<h2>Email updates<\/h2>/],
+    ['if on', /If you turn them on, PaperTok emails you/],
+    ['store the subjects you chose', /it stores your email address, your sending preferences, what you follow, the identifiers of the subjects you chose and an unsubscribe identifier in <strong>Cloudflare Workers KV<\/strong>/],
   ],
   unsaid: [[/on by default/, 'anonymous analytics was already on by default on 20 October']],
 };

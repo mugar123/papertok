@@ -555,7 +555,9 @@ test('Got it chosen in another tab puts away the notice this tab picked, open or
   assert.deepEqual(dialogSteps(steps), [true, false], 'a dialog open here closes');
 
   const newer = fakeStorage();
-  rememberPrivacyNotice(reader.uid, `${PRIVACY_POLICY_VERSION}.2`, newer);
+  // The same day's next suffix, whether or not the current version has one.
+  const [day, suffix = '1'] = PRIVACY_POLICY_VERSION.split('.');
+  rememberPrivacyNotice(reader.uid, `${day}.${Number(suffix) + 1}`, newer);
   assert.equal(shownIn(newer, '/feed'), false, 'a tab on a newer bundle settled a later version');
 
   assert.equal(
