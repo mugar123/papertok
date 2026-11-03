@@ -1,12 +1,13 @@
 import type { PaperAuthor } from '../models/paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
+import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
+import { OPENALEX_SEARCH_TYPES } from '../utils/open-alex-work.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS } from '../utils/open-alex-work.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europe-pmc-records.ts';
 import { openAlexClient } from './open-alex-client.ts';
 import { PaperBuilder } from './paper-builder.ts';
-import { reviewTagForPaper } from '../utils/paper-status.ts';
+import { accessStatusForPaper, reviewTagForPaper } from '../utils/paper-status.ts';
 import type { Paper } from '../models/paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
 
@@ -66,6 +67,17 @@ test('a search result with no arXiv copy has no arXiv id to give', () => {
   });
 
   assert.equal(paper!.arxivId, undefined);
+});
+
+test('a search result that does not say whether it is open gets no access chip, and a closed one still reads subscription', () => {
+  const adapter = new OpenAlexAdapter();
+  const work = { id: 'https://openalex.org/W321', title: 'A paper without access data', type: 'article', authorships: [] };
+  for (const silent of [adapter.mapToStandard(work), adapter.mapToStandard({ ...work, open_access: {} })]) {
+    assert.equal(silent!.openAccess, undefined);
+    assert.equal(accessStatusForPaper(silent), null);
+  }
+  const closed = adapter.mapToStandard({ ...work, open_access: { is_oa: false } });
+  assert.equal(accessStatusForPaper(closed), 'subscription');
 });
 
 test('does not mark repository preprints as published', () => {

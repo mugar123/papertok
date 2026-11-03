@@ -20,7 +20,8 @@ import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestination
  * A card's Save button, the same wherever the card is: a tap saves the paper
  * to Read later and offers "Add to list" in the toast; a tap on a saved paper
  * takes it out of every list, with Undo. `onSaveToList` opens the list picker,
- * for that toast action and for a saved paper whose lists cannot be read.
+ * for that toast action and for a saved paper whose lists cannot be read,
+ * with the surface the save reported, for the picker's own save to carry.
  *
  * The button changes at the tap and the writes follow; a write that is
  * refused puts it back and says so. It used to change only once Firestore
@@ -31,7 +32,7 @@ import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestination
  * emulator behind a 120 ms proxy: eight taps 300 ms apart, nothing for 1.4 s,
  * then three changes and seven toasts, the last change 0.4 s after the last tap.
  */
-export default function useQuickSave(onSaveToList: (paper: Paper) => void, surface: string) {
+export default function useQuickSave(onSaveToList: (paper: Paper, surface?: string) => void, surface: string) {
   const { markActivation, trackEvent } = useAnalyticsConsent();
   const { savedPaperIds, interactionIdFor, personalLibrary, toggleReadLater, markSaved, unmarkSaved } = useFeed();
   const { user } = useAuth();
@@ -47,7 +48,9 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
     [],
   );
 
-  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean, saveSurface: string) => {
+  // `restores` on the Undo of a removal: the save puts back what the removal
+  // took from the counts, not a new save from the card Undo was tapped on.
+  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean, saveSurface: string, restores = false) => {
     if (auth.currentUser?.uid !== user?.uid) return;
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
@@ -58,9 +61,9 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
       issued: user
         ? setDoc(savedPaperDocRef(user.uid, paper.id), copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())), { merge: true })
         : null,
-      mark: () => latest.markSaved(paper, { throwOnError: true }),
+      mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface, restores }),
       unmark: async () => {
-        if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper);
+        if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper, { rollback: true });
       },
       confirm: async () => {
         if (auth.currentUser?.uid !== user?.uid) return;
@@ -81,7 +84,9 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
   }, [interactionIdFor, language, trackEvent, user]);
 
   // A card may report a surface of its own: the paper opened from another
-  // card's Connections reports `connections`, not the host's surface.
+  // card's Connections reports `connections`, not the host's surface. The save
+  // carries it too, so that only a For You card's counts toward the share of
+  // notable cards (forYouCardNotable).
   const handleSaveToList = useCallback((paper: Paper, saveSurface: string = surface) => {
     const id = interactionIdFor(paper)!;
     toast.dismiss(pickerUndoToastId(paper.id));
@@ -91,7 +96,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
           await restoreSave(paper, [], true, saveSurface);
           void markActivation();
           toast.success('Saved to Read later', {
-            action: { label: 'Add to list', onClick: () => onSaveToList(paper) },
+            action: { label: 'Add to list', onClick: () => onSaveToList(paper, saveSurface) },
           });
         } catch {
           toast.error('Could not save this paper');
@@ -116,9 +121,10 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
             });
             return held;
           },
+          // The removal did not stand: the save puts back what it took.
           restore: async () => {
             if (auth.currentUser?.uid !== user?.uid) return;
-            await markSaved(paper);
+            await markSaved(paper, { surface: saveSurface, restores: true });
           },
           onRemoved: () => {
             if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface: saveSurface, paper_id: paper.id });
@@ -126,7 +132,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
         });
         if (!held) {
           // A full page may hide more lists: let the picker show them all.
-          onSaveToList(paper);
+          onSaveToList(paper, saveSurface);
           return;
         }
         lists = held;
@@ -137,7 +143,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
       toast('Removed from your saved papers', {
         action: {
           label: 'Undo',
-          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater, saveSurface)).catch(() => toast.error('Could not save this paper')); },
+          onClick: () => { oneAtATime(id, () => restoreSave(paper, lists, readLater, saveSurface, true)).catch(() => toast.error('Could not save this paper')); },
         },
       });
     });
