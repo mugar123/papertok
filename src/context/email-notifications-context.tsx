@@ -5,6 +5,8 @@ export interface EmailNotificationsContextValue {
   loading: boolean; saving: boolean; testing: boolean; error: unknown;
   health: Awaited<ReturnType<typeof getEmailNotificationHealth>>;
   notificationDataReady: boolean; hasFollows: boolean;
+  /** The digest was turned off this session because the reader no longer follows anything it covers. */
+  digestTurnedOff: boolean;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
@@ -27,6 +29,7 @@ import {
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
+import { digestShutoffDue } from '../utils/digest-shutoff.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -43,13 +46,14 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
-  const { followedEntities, loading: followsLoading, error: followsError } = useFollowing();
+  const { followedEntities, loading: followsLoading, error: followsError, confirmed: followsConfirmed } = useFollowing();
   const { items, loading: updatesLoading } = useFollowingUpdates();
   const [preferences, setPreferences] = useState<Required<NotificationPreferences>>({ ...DEFAULT_PREFERENCES, language, email: userEmail });
   const [loading, setLoading] = useState(Boolean(user));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [digestTurnedOff, setDigestTurnedOff] = useState(false);
   const [health, setHealth] = useState<Awaited<ReturnType<typeof getEmailNotificationHealth>>>({
     configured: false,
     available: false,
@@ -248,6 +252,32 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     };
   }, [followSignature, followedEntities, followsError, followsLoading, hasFollows, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
 
+  // The last digest follow was removed with the digest on: the Worker refuses
+  // an empty subscription and the sync above stops, so the stored follows would
+  // keep emailing the reader about what they unfollowed (ENG-163). Turn it off
+  // through the same save the toggle uses, once, and only on a confirmed read.
+  const shutoffAttemptedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (hasFollows) {
+      shutoffAttemptedFor.current = null;
+      return;
+    }
+    if (!userId || loading || loadedForUser.current !== userId) return;
+    if (!digestShutoffDue({
+      enabled: preferences.enabled,
+      followsConfirmed,
+      hasDigestFollows: hasFollows,
+      attempted: shutoffAttemptedFor.current === userId,
+    })) return;
+    shutoffAttemptedFor.current = userId;
+    saveEmailNotificationPreferences({ ...preferences, enabled: false, language }, followedEntities, items)
+      .then(saved => {
+        applySavedPreferences(saved, true);
+        setDigestTurnedOff(true);
+      })
+      .catch(shutoffError => console.warn('Could not turn the digest off after the last follow was removed', shutoffError));
+  }, [applySavedPreferences, followedEntities, followsConfirmed, hasFollows, items, language, loading, preferences, userId]);
+
   const localizedPreferences = useMemo(
     () => ({ ...preferences, language }),
     [language, preferences],
@@ -262,9 +292,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     health,
     notificationDataReady,
     hasFollows,
+    digestTurnedOff: digestTurnedOff && !localizedPreferences.enabled,
     savePreferences,
     sendTest,
-  }), [error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing]);
+  }), [digestTurnedOff, error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

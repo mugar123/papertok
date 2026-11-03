@@ -74,6 +74,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     testing,
     notificationDataReady,
     hasFollows,
+    digestTurnedOff,
     savePreferences,
     sendTest,
   } = useEmailNotifications();
@@ -180,6 +181,12 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
                 : health.code === 'EMAIL_SENDER_STATUS_UNKNOWN'
                   ? ('PaperTok cannot confirm the sender domain with the current Resend key.')
                 : ('The email provider is not available right now.')}</span>
+          </div>
+        )}
+        {digestTurnedOff && (
+          <div className="email-notification-provider-warning is-info">
+            <strong>{'Email updates turned off'}</strong>
+            <span>{'You no longer follow a topic, author, institution or project, which is what the weekly email covers. Follow one and switch email updates back on here.'}</span>
           </div>
         )}
         {!loading && notificationDataReady && followsNotice && (

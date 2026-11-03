@@ -6,6 +6,8 @@ export interface FollowingContextValue {
   followedByType: Record<string, FollowEntity[]>;
   loading: boolean;
   error: unknown;
+  /** The follows are the server's own answer: not from cache, not failed, no follow write in flight. */
+  confirmed: boolean;
   isFollowing: (entity: FollowInput) => boolean;
   isFollowPending: (entity: FollowInput) => boolean;
   toggleFollow: (entity: FollowInput) => Promise<boolean>;
@@ -45,6 +47,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   const [followedEntities, setFollowedEntities] = useState<FollowEntity[]>([]);
   const [loading, setLoading] = useState(Boolean(user));
   const [error, setError] = useState<unknown>(null);
+  const [snapshotFromServer, setSnapshotFromServer] = useState(false);
   const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set<string>());
   const [institutionLocalizationState, setInstitutionLocalizationState] = useState({
     userId: '',
@@ -124,6 +127,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
       window.clearTimeout(loadingTimeout);
       followList.current = 'listed';
+      setSnapshotFromServer(!snapshot.metadata.fromCache);
       setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
       // Whatever went wrong before, this is the server's own answer.
       setError(null);
@@ -131,6 +135,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     }, (snapshotError) => {
       window.clearTimeout(loadingTimeout);
       followList.current = 'failed';
+      setSnapshotFromServer(false);
       console.error('Error loading follows', snapshotError);
       setError(snapshotError);
       setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
@@ -305,10 +310,11 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     followedByType,
     loading,
     error,
+    confirmed: snapshotFromServer && !loading && !error && pendingFollowKeys.size === 0,
     isFollowing,
     isFollowPending,
     toggleFollow,
-  }), [error, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, toggleFollow]);
+  }), [error, followedByType, loading, pendingFollowKeys.size, snapshotFromServer, isFollowPending, isFollowing, loading, localizedFollowedEntities, toggleFollow]);
 
   return <FollowingContext.Provider value={value}>{children}</FollowingContext.Provider>;
 }
