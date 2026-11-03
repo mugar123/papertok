@@ -211,7 +211,7 @@ test('a partial refresh keeps the papers on screen of the follows that have not 
   const previous = [
     shown('ada-old', ada), shown('alan-old', alan), shown('grace-old', grace),
     { ...shown('shared-old', ada, alan), journal: 'arXiv preprint' },
-    shown('dropped-old', { type: 'author', canonicalId: 'A9', displayName: 'Dropped' } as FollowEntity),
+    shown('dropped-old', { type: 'author', canonicalId: 'A9', displayName: 'Dropped' }),
   ];
   const progress: string[][] = [];
   const result = await fetchFollowingUpdates([ada, alan, grace], {
