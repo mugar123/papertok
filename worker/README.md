@@ -1306,9 +1306,9 @@ ledger did not answer (logged as a 503), `NOT_FOUND`,
 `UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
 failed, with `retryAfterSeconds` when every one was only rate limited), so the
 client model can read them. A provider's `retry-after` becomes
-`retryAfterSeconds` whether it gives seconds or an HTTP date: a date already
-past is 1 second, a header that is neither is 60 seconds, and a day is the
-most. An exception inside a tool call is
+`retryAfterSeconds` whether it gives seconds or an HTTP date in any of RFC
+9110's three forms: a date already past is 1 second, a header that is neither
+(`1.5`, `-5`, an ISO date) is 60 seconds, and a day is the most. An exception inside a tool call is
 answered with `-32603` and the request's `id`, status 500. These answers are HTTP
 200, so `callTool` writes the Workers Logs line itself for a rate limit or a 5xx-class
 code, as `{route: '/mcp', tool, code, status}`, and reports the 5xx-class failures

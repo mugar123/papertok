@@ -901,15 +901,18 @@ test('a provider failure is a tool error the client can read', async () => {
 });
 
 test("a provider's retry-after reaches every tool as seconds, whether it was given in seconds or as an HTTP date", async () => {
-  // Five minutes ahead of the pinned clock, as both forms RFC 9110 allows.
-  const fiveMinutes = [String(5 * 60), new Date(EVEN_ARXIV_PERIOD + 5 * 60_000).toUTCString()];
-  for (const header of [...fiveMinutes, new Date(EVEN_ARXIV_PERIOD - 60_000).toUTCString(), 'soon']) {
+  // Five minutes ahead of the pinned clock (Saturday 24 October 2026, 12:00
+  // GMT), as seconds and as each of the three HTTP-date forms RFC 9110 allows.
+  const fiveMinutes = [String(5 * 60), new Date(EVEN_ARXIV_PERIOD + 5 * 60_000).toUTCString(), 'Saturday, 24-Oct-26 12:05:00 GMT', 'Sat Oct 24 12:05:00 2026'];
+  // Neither seconds nor an HTTP date, though `Date.parse` reads each as a date.
+  const malformed = ['soon', '1.5', '-5', '2026-10-24T12:05:00Z'];
+  for (const header of [...fiveMinutes, new Date(EVEN_ARXIV_PERIOD - 60_000).toUTCString(), ...malformed]) {
     const refused = () => new Response('Too many requests', { status: 429, headers: { 'retry-after': header } });
     await mcpLines(() => withUpstream(url => {
       if (url.startsWith('https://api.unpaywall.org/') || url.startsWith('https://api.openalex.org/') || url.startsWith('https://export.arxiv.org/')) return refused();
       throw new Error(`unexpected upstream ${url}`);
     }, async () => {
-      const expected = fiveMinutes.includes(header) ? 300 : header === 'soon' ? 60 : 1;
+      const expected = fiveMinutes.includes(header) ? 300 : malformed.includes(header) ? 60 : 1;
       // A route that throws the provider's refusal, and one that relays it.
       const access = await callTool(routeEnv(), 'find_open_access', { doi: '10.1234/example.2026.1' });
       const work = await callTool(routeEnv(), 'get_paper', { id: 'W4400000001' });

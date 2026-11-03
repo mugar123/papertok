@@ -207,16 +207,25 @@ function searchArguments(args: Arguments) {
 // ─── Asking the routes ───
 
 // A provider's `retry-after`, which the routes relay as they received it, is
-// whole seconds or an HTTP date (RFC 9110, section 10.2.3). A date already past
-// is a wait of one second, and a header that is neither is the minute the
-// router assumes for a provider that gave none. A day bounds a bogus header, as
-// it does in the browser's OpenAlex client.
+// whole seconds or an HTTP date (RFC 9110, section 10.2.3) in one of its three
+// forms (section 5.6.7): "Sun, 06 Nov 1994 08:49:37 GMT", the obsolete
+// "Sunday, 06-Nov-94 08:49:37 GMT" and asctime's "Sun Nov  6 08:49:37 1994",
+// which is in GMT too. A date already past is a wait of one second, and a
+// header that is neither is the minute the router assumes for a provider that
+// gave none: `Date.parse` alone read "1.5" or "-5" as dates in 2001. A day
+// bounds a bogus header, as it does in the browser's OpenAlex client.
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60;
+const HTTP_DAY = '(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)';
+const HTTP_MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)';
+const HTTP_TIME = '\\d{2}:\\d{2}:\\d{2}';
+const GMT_DATE = new RegExp(`^(?:${HTTP_DAY}, \\d{2} ${HTTP_MONTH} \\d{4}|(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day, \\d{2}-${HTTP_MONTH}-\\d{2}) ${HTTP_TIME} GMT$`);
+const ASCTIME_DATE = new RegExp(`^${HTTP_DAY} ${HTTP_MONTH} [ \\d]\\d ${HTTP_TIME} \\d{4}$`);
 function retryAfterSeconds(header: string | null | undefined) {
   const value = String(header || '').trim();
-  const seconds = /^\d+$/.test(value) ? Number(value) : Math.ceil((Date.parse(value) - Date.now()) / 1000);
-  if (!value || Number.isNaN(seconds)) return DEFAULT_RETRY_AFTER_SECONDS;
+  const at = GMT_DATE.test(value) ? Date.parse(value) : ASCTIME_DATE.test(value) ? Date.parse(`${value} GMT`) : NaN;
+  const seconds = /^\d+$/.test(value) ? Number(value) : Math.ceil((at - Date.now()) / 1000);
+  if (Number.isNaN(seconds)) return DEFAULT_RETRY_AFTER_SECONDS;
   return Math.min(Math.max(seconds, 1), MAX_RETRY_AFTER_SECONDS);
 }
 
