@@ -108,6 +108,17 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
 }
 
 /**
+ * A follow's string as the Worker reads it (`text` in src/utils/follow-lanes.ts:
+ * whitespace collapsed, trimmed), cut to `max`. The Worker then cuts a query to
+ * 120 characters and a funder to 80 after trimming, so those are sent one
+ * character longer: a cut ending in a space would be trimmed and file the
+ * follow under another lane. Anything but a string passes as stored.
+ */
+function cutFollowText<T>(value: T, max: number): T {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) as T : value;
+}
+
+/**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
  * by the reader's examples (likes, saves and long reads) per interest group.
@@ -130,11 +141,13 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
     // has a lane, the first still travels, so the request stays the follows'
     // page: the Worker reads no area lane for it, and answers it with no
     // papers when it has no categories either (`handleCorpusFeed`).
+    // A string is cut as the Worker reads it (`cutFollowText`), so the lane it
+    // files the follow under is the one the uncut follow has.
     follows: (read.length ? read : follows.slice(0, 1)).map(({ type, canonicalId, displayName, metadata }) => ({
       type,
       canonicalId,
-      displayName,
-      metadata: { query: metadata?.query, funder: metadata?.funder },
+      displayName: cutFollowText(displayName, 200),
+      metadata: { query: cutFollowText(metadata?.query, 121), funder: cutFollowText(metadata?.funder, 81) },
     })),
     positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
     // Copies: the examples below may be trimmed, and the plan is the feed's.
@@ -164,6 +177,12 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       const dropped = body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1);
       body.positiveIds = body.positiveIds.filter(id => id !== dropped);
       for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
+    } else if (body.follows.length > 1) {
+      // Last, so a reader's examples and exclusions are kept first: the follows
+      // are in the order the Worker serves them, other follows after the
+      // journals, and the last goes (ENG-182). The first stays: it keeps the
+      // request the follows' page.
+      body.follows.pop();
     } else break;
   }
   return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
