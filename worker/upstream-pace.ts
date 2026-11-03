@@ -46,11 +46,20 @@ const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolv
 // `accepts` limits a caller to some of the slots: one it does not accept is
 // passed over without asking the ledger, and stays free for a caller that
 // accepts it. The beat itself is unchanged, still one call per period.
+//
+// One call per period still lets two calls go out closer than a period: a
+// caller that takes the current slot late in its period sends at once, and
+// the next slot's caller sends at that slot's start. `spaced` keeps a whole
+// period after every call: a slot whose period has begun is taken only with
+// the next one, in the same reservation, and that next slot stays empty. A
+// slot reserved ahead whose start the reservation itself carried past is
+// given up, since its call would go out late without the next slot held.
 export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
   accepts = () => true,
+  spaced = false,
   now = Date.now,
   sleep = realSleep,
 }: {
@@ -58,6 +67,7 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
   periodMs?: number;
   maxWaitMs?: number;
   accepts?: (slot: number) => boolean;
+  spaced?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 } = {}) {
@@ -74,11 +84,14 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
       slot += 1;
       continue;
     }
+    // At its start exactly, the call still goes out after this round trip.
+    const late = spaced && slot * periodMs <= now();
     const reservation = await reserveRequestQuota(ledger, {
       periodKey: `${namespace}:pace`,
       subject: `${namespace}:slot:${slot}`,
       subjectLimit: 1,
       globalLimit: PACE_GLOBAL_LIMIT,
+      ...(late ? { part: { subject: `${namespace}:slot:${slot + 1}`, limit: 1 } } : {}),
     });
     if (!reservation.accepted && reservation.code) return { accepted: false, code: reservation.code };
     // The reservation round trip just spent is exactly what can burn the
@@ -91,7 +104,8 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
     // `slot`, past its own end included. (A check on `slot` before the
     // reservation call would not catch this -- it is the call's own latency
     // that does the damage, and it hasn't happened yet at that point.)
-    if (reservation.accepted && Math.floor(now() / periodMs) <= slot) {
+    const lateUnheld = spaced && !late && now() > slot * periodMs;
+    if (reservation.accepted && Math.floor(now() / periodMs) <= slot && !lateUnheld) {
       const waitMs = Math.max(0, slot * periodMs - now());
       if (waitMs > 0) await sleep(waitMs);
       return { accepted: true, slot, waitedMs: waitMs };

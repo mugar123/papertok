@@ -314,9 +314,9 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const { env, db } = store();
   Object.assign(env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
-  // Two in-process arXiv searches take this period's seat and the next one:
-  // the first goes to arXiv, the second waits for its seat.
-  const searches = ['all:attention', 'all:sparsity'].map(query => handleHarvestArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
+  // An in-process arXiv search takes this period's seat once the period has
+  // begun: it goes to arXiv at once and holds the next period's seat empty.
+  const searches = [handleHarvestArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent('all:attention')}`), env)];
   await flush();
   t.mock.timers.tick(cacheReadMs);
   for (let turn = 0; arxivAsked < 1; turn += 1) {
@@ -329,7 +329,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });
   await handleCorpusFeed(request, env, { uid: 'reader-1' }, work => { afterAnswer.push(work); });
   await run(Promise.all([...afterAnswer, ...searches]), 15_000);
-  assert.equal(arxivAsked, 3);
+  assert.equal(arxivAsked, 2);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM work_keys WHERE key = 'arxiv:2610.55555'").get()?.n, 1);
 });
 

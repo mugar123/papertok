@@ -386,7 +386,11 @@ Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
 request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMITED`
-(`retry-after: 4`) when none is free. A missing ledger, or one that answers with an error,
+(`retry-after: 4`) when none is free. Every call keeps three seconds after it: a request
+that takes a seat once its period has begun goes out at once and holds the next period's
+seat empty in the same reservation, so it cannot take that seat while the next one is
+booked, and one that takes a seat ahead goes out at its start. A seat reserved ahead whose
+start the ledger's round trip carried past is given up for a later one. A missing ledger, or one that answers with an error,
 lets the request go to arXiv unpaced. A request from
 outside the Worker, signed in or not, first spends a miss of its address's allowance (5 a
 minute, see [Public lookup caller limits](#public-lookup-caller-limits)) and may then take
@@ -1273,8 +1277,9 @@ points:
   seat of its period. An agent can still take the seat of a reader who
   arrives after it in the period's first two seconds: the next public seat is
   then more than four seconds away, so that reader is refused. An agent's call
-  goes out at once, so, like a reader's call that takes its period's seat
-  late, it and the next period's call can be less than a second apart. An
+  goes out at once, so, like any call that takes its period's seat late, it
+  holds the next period's seat empty, an odd one no reader can book; a
+  Worker's own caller that booked it first refuses the agent. An
   odd period is never an agent's, so even on an idle Worker every agent arXiv
   miss in an odd period is refused: about half of uncached arXiv lookups,
   which a search lists under `unavailable` and `get_paper` answers from

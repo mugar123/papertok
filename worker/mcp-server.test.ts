@@ -1,7 +1,8 @@
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
-import test, { afterEach, beforeEach, mock } from 'node:test';
+import test, { afterEach, beforeEach, mock, type TestContext } from 'node:test';
+import { handleHarvestArxiv } from './arxiv-api.ts';
 import { trackErrors } from './error-tracking.ts';
 import reportApi from './index.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
@@ -1168,6 +1169,65 @@ test("a reader who comes after a tool in a public period's first two seconds fin
     });
   } finally {
     clock.mock.restore();
+  }
+});
+
+// The ledger hashes subjects off the event loop; this lets it answer.
+async function letLedgerAnswer() {
+  for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => setImmediate(resolve));
+}
+
+// Runs requests on mocked timers in steps of 100 ms, so each call reaches
+// arXiv at the time it goes out, after its wait for a seat.
+async function onSteppedClock(t: TestContext, pending: Promise<unknown>) {
+  let settled = false;
+  pending.then(() => { settled = true; }, () => { settled = true; });
+  for (let elapsed = 0; !settled; elapsed += 100) {
+    if (elapsed > 10_000) throw new Error('the requests never settled');
+    await letLedgerAnswer();
+    t.mock.timers.tick(100);
+  }
+  return pending;
+}
+
+// arXiv asks for three seconds between calls. A call that takes its period's
+// seat late goes out at once, and the next period's seat used to go out at
+// its start, a tenth of a second later (outside review of PR #400).
+test('every arXiv call goes out three seconds or more after the one before, an agent\'s, a reader\'s and the Worker\'s own alike', async t => {
+  // The Worker's own lookup, which may take any seat, and a reader, who takes only public ones.
+  const lookup = (env: WorkerEnv) => handleHarvestArxiv(new Request('https://papertok.internal/arxiv?id_list=2603.09999'), env);
+  const reader = (env: WorkerEnv) => reportApi.fetch(new Request('https://papertok-report-api.example/arxiv?id_list=2603.01234', {
+    headers: { 'cf-connecting-ip': '203.0.113.5' },
+  }), env);
+  const lateInPeriod = EVEN_ARXIV_PERIOD + 2_900;
+  const scenarios: Array<[string, number, (env: WorkerEnv) => Promise<unknown>]> = [
+    ['an agent, then a lookup', lateInPeriod, async env => {
+      await callTool(env, 'get_paper', { id: '2603.01234' });
+      await onSteppedClock(t, lookup(env));
+    }],
+    ['a reader, then a lookup', lateInPeriod, async env => {
+      await reader(env);
+      await onSteppedClock(t, lookup(env));
+    }],
+    // The reader books the next public seat first; the lookup comes late in
+    // the odd period before it.
+    ['a reader waiting for a seat, and a lookup', lateInPeriod + 3_000, async env => {
+      const booked = reader(env);
+      await letLedgerAnswer();
+      await onSteppedClock(t, Promise.all([booked, lookup(env)]));
+    }],
+  ];
+  for (const [name, start, run] of scenarios) {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: start });
+    const sent: number[] = [];
+    await withUpstream(url => {
+      if (!url.startsWith('https://export.arxiv.org/api/query')) throw new Error(`unexpected upstream ${url}`);
+      sent.push(Date.now());
+      return new Response(arxivFeed(ARXIV_LAB_ENTRY));
+    }, () => run(routeEnv()));
+    t.mock.timers.reset();
+    assert.equal(sent.length, 2, `${name}: both calls went out`);
+    assert.ok(sent[1] - sent[0] >= 3_000, `${name}: ${sent[1] - sent[0]} ms between the calls`);
   }
 });
 

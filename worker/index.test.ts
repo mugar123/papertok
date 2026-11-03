@@ -1234,9 +1234,9 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 // script can spread more over several addresses, such as one IPv6 /64.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
-  // four seconds a caller may wait, the next one a millisecond away, so the
-  // seats taken here cost almost no real sleep.
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
+  // four seconds a caller may wait, the next one a millisecond away. The
+  // waits for them run on the mocked clock.
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:05.999Z') });
   const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
   const statuses: number[] = [];
   const papers = await withWorkerFetchMock(async input => {
@@ -1244,13 +1244,13 @@ test('anonymous cache-busting arXiv misses leave a seat on the beat for the Work
     return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
   }, async () => {
     for (let miss = 0; miss < 3; miss += 1) {
-      const response = await reportApi.fetch(new Request(
+      const response = await settledOnMockClock(t, reportApi.fetch(new Request(
         `https://papertok-report-api.example/arxiv?search_query=all:x${miss}`,
         { headers: { 'cf-connecting-ip': `2001:db8::${miss + 1}` } },
-      ), env);
+      ), env));
       statuses.push(response.status);
     }
-    return fetchArxivPapers(env, ['2610.01234']);
+    return settledOnMockClock(t, fetchArxivPapers(env, ['2610.01234']));
   });
 
   assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);

@@ -94,6 +94,7 @@ function shareProviders(env: WorkerEnv): ShareProviders {
         namespace: 'arxiv',
         periodMs: ARXIV_PACE_PERIOD_MS,
         maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+        spaced: true,
       });
       // No seat, no call: the hour's unit goes back. Kept, a burst drained the
       // hour without a single call to arXiv (review of 2026-09-25).

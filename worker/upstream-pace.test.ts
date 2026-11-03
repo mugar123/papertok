@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { QuotaReading } from './request-quota-ledger.ts';
 
-interface SeenReservations { periodKeys: string[]; calls: number; reservations?: Array<{ subjectKey: string; subjectLimit: number }> }
+interface SeenReservations { periodKeys: string[]; calls: number; reservations?: Array<{ subjectKey: string; subjectLimit: number; partKey?: string }> }
 import { awaitUpstreamSlot, DEFAULT_MAX_WAIT_MS, PACE_RETRY_AFTER_SECONDS, paceRetryAfterSeconds } from './upstream-pace.ts';
 
 // A ledger that answers each `reserve` from a script, and remembers what it was
@@ -130,7 +130,7 @@ function advancingLedger(answers: QuotaReading[], roundTripsMs: number[], clock:
         clock.value += roundTripsMs[Math.min(call, roundTripsMs.length - 1)];
         const body = JSON.parse(options!.body as string);
         seen.reservations ??= [];
-        seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit });
+        seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit, partKey: body.partKey });
         const answer = answers[Math.min(call, answers.length - 1)];
         call += 1;
         seen.calls = call;
@@ -161,6 +161,30 @@ test('a reservation confirmed after its second has closed is not spent -- the ca
   assert.deepEqual(slot, { accepted: true, slot: 12, waitedMs: 0 });
   assert.equal(seen.calls, 3, 'the stale accept of second 11 must cost a retry, not be spent as a send');
   assert.deepEqual(slept, [], 'the clock had already passed both seconds it tried by the time each was confirmed');
+});
+
+// A spaced beat keeps a whole period after every call. A slot whose period has
+// begun is reserved with the next one, and a slot reserved ahead that the
+// round trip carried past its start is given up: its call would go out late
+// with the next slot free for someone else.
+test('a spaced beat holds the next slot with a late one and gives up a slot the round trip made late', async () => {
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const clock = { value: 10_950 };
+  const slept: number[] = [];
+  // Second 10 (begun) is refused; second 11 (50 ms ahead) is accepted 100 ms
+  // later, at 11 050; second 12 is accepted at 11 150.
+  const slot = await awaitUpstreamSlot(
+    advancingLedger([{ accepted: false, scope: 'part' }, { accepted: true }, { accepted: true }], [0, 100, 100], clock, seen),
+    { namespace: 'arxiv', spaced: true, now: () => clock.value, sleep: async ms => { slept.push(ms); } },
+  );
+
+  assert.deepEqual(slot, { accepted: true, slot: 12, waitedMs: 850 });
+  assert.deepEqual(slept, [850]);
+  const [late, carried, ahead] = seen.reservations!;
+  assert.ok(late.partKey && late.partKey !== late.subjectKey, 'the begun slot is reserved with the next one');
+  assert.equal(late.partKey, carried.subjectKey, 'and the next one is second 11');
+  assert.equal(carried.partKey, undefined);
+  assert.equal(ahead.partKey, undefined);
 });
 
 // The header a refused caller receives has to cover the whole window the beat
