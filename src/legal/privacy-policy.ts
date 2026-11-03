@@ -45,7 +45,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03';
  * this instant and the deploy is not told: it signed up under a page, still
  * dated 28 October, that already said everything the summary announces.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T06:15:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T06:45:00Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
