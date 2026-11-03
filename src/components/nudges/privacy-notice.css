@@ -1,0 +1,82 @@
+/* The Dialog's sheet (ui/dialog.tsx) with the app's inner spacing, like the
+   Your university window (institution.css). On a short screen or at a large
+   text size the whole sheet scrolls, so the summary is never cut and Got it is
+   reached by scrolling past it; the close button scrolls with it. The padding
+   gives way on a narrow screen at a large text size, where 1.5rem a side would
+   leave the summary a few words a line. */
+.privacy-notice {
+  --privacy-notice-pad: min(var(--space-6), 8vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(460px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--privacy-notice-pad);
+}
+
+/* Clear of the close button in the corner (ui/dialog.tsx: right-3 top-3 h-8
+   w-8, so it reaches 2.75rem into the sheet at any text size). The float takes
+   the part of the first lines the button covers, plus a gap; a word that does
+   not fit beside it drops below it whole, where a padding or a flex row would
+   let it run under the X at a large text size. */
+.privacy-notice-title {
+  display: block;
+}
+
+.privacy-notice-title::before {
+  content: '';
+  float: right;
+  width: calc(var(--space-3) + var(--space-8) - var(--privacy-notice-pad) + var(--space-2));
+  height: calc(var(--space-3) + var(--space-8) - var(--privacy-notice-pad));
+}
+
+.privacy-notice-title > svg {
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: -0.125em;
+  color: var(--text-secondary);
+}
+
+/* The change itself is the message, so it reads in the body colour and size,
+   not as a muted lede. */
+.privacy-notice-summary {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.privacy-notice-summary p {
+  margin: 0;
+}
+
+.privacy-notice-summary ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding-left: 1.25em;
+  list-style: disc;
+}
+
+.privacy-notice-policy {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+/* Told from the text around it by more than its colour. */
+.privacy-notice-policy a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Primary first, on the left, and wrapping rather than clipping at a large
+   text size (design.md, Rule 6). */
+.privacy-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}

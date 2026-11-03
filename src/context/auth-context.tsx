@@ -4,6 +4,7 @@ import type { DocumentReference, DocumentSnapshot } from 'firebase/firestore';
 
 export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'photoURL'> & {
   providerData: Array<Pick<User['providerData'][number], 'providerId'> & Partial<Pick<User['providerData'][number], 'email' | 'displayName'>>>;
+  metadata?: Pick<User['metadata'], 'creationTime'>;
 };
 type ReadingPreferences = ReturnType<typeof normalizeReadingPreferences>;
 interface StoredProfile {
