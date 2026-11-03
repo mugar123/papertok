@@ -595,20 +595,17 @@ function undoEngagement(profile: InteractionProfile, paperId: string, signal: En
   const counted = paper?.[signal];
   const takenKey = `${signal}:${paperId}`;
   temporal.taken.delete(takenKey);
-  let taken: TakenEngagement | null = null;
-  if (paper && counted) {
-    if (typeof counted.notable === 'boolean') {
-      const kind = countsOf(temporal, counted.notable);
-      kind.engaged = Math.max(0, kind.engaged - 0.5 ** (temporal.halvings - counted.epoch));
-    }
-    const lean = clamp(temporal.lean - counted.lean, -1, 1);
-    taken = { counted, lean: temporal.lean - lean };
-    temporal.lean = lean;
-    delete paper[signal];
-    if (Object.keys(paper).length === 0) temporal.papers.delete(paperId);
-  }
-  temporal.taken.set(takenKey, taken);
+  const lean = counted ? clamp(temporal.lean - counted.lean, -1, 1) : temporal.lean;
+  temporal.taken.set(takenKey, counted ? { counted, lean: temporal.lean - lean } : null);
   while (temporal.taken.size > MAX_ENGAGED_PAPERS) temporal.taken.delete(temporal.taken.keys().next().value!);
+  if (!paper || !counted) return;
+  if (typeof counted.notable === 'boolean') {
+    const kind = countsOf(temporal, counted.notable);
+    kind.engaged = Math.max(0, kind.engaged - 0.5 ** (temporal.halvings - counted.epoch));
+  }
+  temporal.lean = lean;
+  delete paper[signal];
+  if (Object.keys(paper).length === 0) temporal.papers.delete(paperId);
 }
 
 function recordSessionImpact(
