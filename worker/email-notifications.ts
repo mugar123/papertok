@@ -1019,8 +1019,10 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
   // The reader's chosen categories fill the edition while nothing it covers
-  // is followed (ENG-163); with neither there is nothing to send.
-  const interests = sanitizeInterests(body.interests);
+  // is followed (ENG-163); with neither there is nothing to send. Only an
+  // explicit list replaces them: a client that omits the field, because it
+  // predates interests or has not confirmed the profile yet, keeps the stored ones.
+  const interests = sanitizeInterests(Array.isArray(body.interests) ? body.interests : existingRaw?.interests);
   if (!follows.length && !interests.length) {
     throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   }
@@ -1033,6 +1035,16 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     follows,
     interests,
   });
+  // KV has no transactions, so a sync re-reads the record right before it
+  // writes and gives up if anything was written since it first read it. An
+  // unsubscribe, or a save from another tab, that landed in between wins; the
+  // next sync starts from what it left.
+  const syncSuperseded = async () => {
+    const current = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+    return !current?.enabled
+      || subscriptionGeneration(current) !== subscriptionGeneration(existingRaw!)
+      || current.updatedAt !== existingRaw!.updatedAt;
+  };
   // A subscriber's app syncs on every open, usually with nothing new, and each
   // write costs two KV puts. The token index is still checked: a save whose
   // index put failed leaves an enabled subscription whose unsubscribe link
@@ -1048,6 +1060,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     && !selectionChanged
   ) {
     if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
+      if (await syncSuperseded()) return publicSubscription(await loadSubscriptionWithState(env, key), identity.email);
       await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
     }
     return publicSubscription(existing, identity.email);
@@ -1070,6 +1083,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
+  if (sync && await syncSuperseded()) return publicSubscription(await loadSubscriptionWithState(env, key), identity.email);
   await Promise.all([
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
     env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),

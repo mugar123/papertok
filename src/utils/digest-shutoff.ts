@@ -36,6 +36,16 @@ export function digestSyncAllowed({ hasFollows, followsConfirmed }: { hasFollows
 }
 
 /**
+ * The chosen categories a save, test or sync may send: only the server's copy
+ * of the profile. A cached copy may predate a change made elsewhere and would
+ * replace the categories the Worker stores, so it sends none and the Worker
+ * keeps what it has (ENG-163).
+ */
+export function digestInterestsToSend({ interests, interestsConfirmed }: { interests: readonly string[]; interestsConfirmed: boolean }) {
+  return interestsConfirmed ? interests : undefined;
+}
+
+/**
  * Whether the "email updates turned off" notice shows: this account's digest
  * was shut off by the app, and it is still off with nothing to cover. Keyed by
  * account so another sign-in on the same device never sees it.

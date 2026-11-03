@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
+import { digestInterestsToSend, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 
 const base = { enabled: true, followsConfirmed: true, interestsConfirmed: true, digestCovered: false, attempted: false };
+
+test('only categories from the server\'s copy of the profile are sent to the digest', () => {
+  assert.deepEqual(digestInterestsToSend({ interests: ['cs.LG'], interestsConfirmed: true }), ['cs.LG']);
+  assert.equal(digestInterestsToSend({ interests: ['cs.LG'], interestsConfirmed: false }), undefined);
+});
 
 test('a digest left with no follow it covers and no chosen categories is turned off, once', () => {
   assert.equal(digestShutoffDue(base), true);

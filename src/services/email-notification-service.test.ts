@@ -47,6 +47,12 @@ test('a save sends the reader\'s chosen categories as ids only', () => {
   assert.deepEqual(interests, ['cs.LG', 'quant-ph']);
 });
 
+// Unconfirmed categories are left out, so the Worker keeps the stored ones
+// instead of replacing them with the device's cache.
+test('a save without confirmed categories leaves the field out', () => {
+  assert.equal('interests' in buildNotificationPreferencesPayload({ enabled: true }, [], [], { sync: true }), false);
+});
+
 test('the digest leaves journals out before it cuts follows and previews', () => {
   const author = (index: number) => ({ type: 'author' as const, canonicalId: `A${index}`, displayName: `Author ${index}` });
   const topic = (index: number) => ({ type: 'topic' as const, canonicalId: `T${index}`, displayName: `Topic ${index}` });

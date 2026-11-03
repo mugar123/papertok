@@ -1340,6 +1340,39 @@ test('a background sync never brings back a digest the reader turned off', async
   assert.deepEqual([...legacyKv.values.keys()], [SYNC_READER_KEY]);
 });
 
+test('an unsubscribe that lands while a sync is in flight stays unsubscribed', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
+  const stored = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  assert.ok(stored);
+  const baseGet = kv.get.bind(kv);
+  let interleaved = false;
+  // The sync reads the enabled subscription; the reader unsubscribes before
+  // the sync gets to write.
+  kv.get = (async (key: string, type?: string) => {
+    const value = await (type === 'json' ? baseGet(key, 'json') : baseGet(key));
+    if (key === SYNC_READER_KEY && !interleaved) {
+      interleaved = true;
+      const unsubscribed = await handleEmailUnsubscribe(new Request(
+        `https://example.com/notifications/unsubscribe?token=${stored.unsubscribeToken}`,
+        { method: 'POST' },
+      ), env);
+      assert.equal(unsubscribed.status, 200);
+    }
+    return value;
+  }) as typeof kv.get;
+
+  const synced = await saveSubscription(preferencesPut({
+    sync: true, enabled: true, maxPapers: 5,
+    follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')], previewItems: [],
+  }), env, SYNC_READER);
+
+  assert.ok(interleaved);
+  assert.equal(synced.enabled, false);
+  assert.equal(kv.values.size, 0, 'the sync brought back the subscription or its token');
+});
+
 test('a background sync refreshes follows and previews and keeps the stored settings', async () => {
   const kv = createMemoryKv();
   const env = { NOTIFICATION_STORE: kv };
@@ -4273,6 +4306,21 @@ test('a subscription with no follows is saved with the chosen leaves, and refuse
     () => saveSubscription(preferencesPut({ enabled: true, follows: [], interests: ['not-a-leaf'] }), { NOTIFICATION_STORE: createMemoryKv() }, SYNC_READER),
     error => (error as { code?: string }).code === 'EMAIL_FOLLOWS_REQUIRED',
   );
+});
+
+test('a save that omits interests keeps the stored ones, and only an explicit list replaces them', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], interests: ['cs.LG'] }), env, SYNC_READER);
+
+  // An older client, or one whose profile is not confirmed yet, sends no field.
+  await saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
+  assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, ['cs.LG']);
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], previewItems: [] }), env, SYNC_READER);
+  assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, ['cs.LG']);
+
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow()], interests: [] }), env, SYNC_READER);
+  assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, []);
 });
 
 test('an edition from interests says so, and tags each paper with its subject', () => {

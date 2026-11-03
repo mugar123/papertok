@@ -191,8 +191,9 @@ const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 's
  *
  * `interests` are the reader's chosen leaf categories, ids only. The Worker
  * builds the digest from them while nothing it covers is followed (ENG-163).
+ * Without them the field is left out and the Worker keeps the stored ones.
  */
-export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], { sync = false, interests = [] }: NotificationSaveOptions = {}) {
+export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], { sync = false, interests }: NotificationSaveOptions = {}) {
   return {
     ...(sync ? { sync: true } : {}),
     enabled: Boolean(preferences.enabled),
@@ -209,7 +210,7 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
       .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
       .slice(0, 20)
       .map(paper => serializeUpdateForNotifications(paper)),
-    interests: [...new Set(interests)].sort(),
+    ...(interests ? { interests: [...new Set(interests)].sort() } : {}),
   };
 }
 

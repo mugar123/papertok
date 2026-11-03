@@ -32,7 +32,7 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
-import { digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
+import { digestInterestsToSend, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 
@@ -86,6 +86,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     [userPreferences],
   );
   const digestCovered = hasFollows || interests.length > 0;
+  const interestsConfirmed = profileFromServer && !profileLoadError;
+  const sentInterests = digestInterestsToSend({ interests, interestsConfirmed });
   // An empty follow list read from the cache must not replace the follows the
   // Worker stores, whether a sync, a save that turns the digest on or a test
   // sends it. Turning the digest off sends no follows to keep, so it stays open.
@@ -162,7 +164,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         { ...nextPreferences, language },
         followedEntities,
         items,
-        { interests },
+        { interests: sentInterests },
       );
       return applySavedPreferences(saved, wasEnabled);
     } catch (saveError) {
@@ -171,7 +173,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     } finally {
       setSaving(false);
     }
-  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, interests, items, language, notificationDataReady, preferences.enabled]);
+  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences.enabled]);
 
   const sendTest = useCallback(async (nextPreferences: NotificationPreferences = preferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
@@ -185,7 +187,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         { ...nextPreferences, enabled: true, language },
         followedEntities,
         items,
-        { interests },
+        { interests: sentInterests },
       );
       const normalized = applySavedPreferences(saved, wasEnabled);
       const result = await sendEmailNotificationTest();
@@ -199,7 +201,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     } finally {
       setTesting(false);
     }
-  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, interests, items, language, notificationDataReady, preferences]);
+  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences]);
 
   // A yes from the guest welcome, carried out here, to the address the account
   // signs in with: the subscription starts with the first follow other than a
@@ -258,7 +260,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       // this effect stops syncing. The answer skips applySavedPreferences:
       // the reader made no choice in this tab, so there is no
       // newsletter_change to report.
-      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items, { sync: true, interests })
+      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items, { sync: true, interests: sentInterests })
         .then(saved => {
           if (cancelled) return;
           setPreferences(current => {
@@ -274,7 +276,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(syncTimeout);
     };
-  }, [digestCovered, digestSendReady, followSignature, followedEntities, followsError, followsLoading, interests, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
+  }, [digestCovered, digestSendReady, followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, sentInterests, updatesLoading, userEmail, userId]);
 
   // Nothing left for the digest to cover with the digest on: no follow it
   // lists and no chosen category. The Worker refuses an empty subscription and
@@ -282,7 +284,6 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // synced (ENG-163). Turn it off through the same save the toggle uses, once,
   // and only when the follows and the profile are the server's own answer.
   const shutoffAttemptedFor = useRef<string | null>(null);
-  const interestsConfirmed = profileFromServer && !profileLoadError;
   useEffect(() => {
     if (digestCovered) {
       shutoffAttemptedFor.current = null;
