@@ -195,6 +195,36 @@ test('a follow that never answers is counted as failed at the deadline, and the 
   assert.deepEqual(result.papers.map(paper => paper.id), ['p1']);
 });
 
+// ENG-176: with the Worker unreachable every follow failed, and the refresh
+// resolved with no papers. The page read that as nothing new: it dropped its
+// cards, wrote the empty answer to its cache and said "Papers updated".
+test('a refresh in which every follow failed rejects instead of answering with no papers', async () => {
+  const follows = [
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Alan Turing' },
+    { type: 'author' as const, canonicalId: 'A2', displayName: 'Stalled' },
+  ];
+  await assert.rejects(fetchFollowingUpdates(follows, {
+    entityTimeoutMs: 20,
+    fetchUpdatesForFollow: (follow) => (follow.canonicalId === 'A2'
+      ? new Promise(() => {})
+      : Promise.reject(new Error('Worker unreachable'))),
+  }), /All follows failed/);
+
+  // One follow that answered, even with nothing recent, is an answer.
+  const answered = await fetchFollowingUpdates(follows, {
+    fetchUpdatesForFollow: async (follow) => {
+      if (follow.canonicalId === 'A1') return [];
+      throw new Error('Worker unreachable');
+    },
+  });
+  assert.deepEqual(
+    [answered.checkedEntities, answered.failedEntities, answered.papers.length],
+    [2, 1, 0],
+  );
+  // And nothing followed is nothing to fail.
+  assert.equal((await fetchFollowingUpdates([])).checkedEntities, 0);
+});
+
 test('a category topic in the inbox asks for what is new in the category, not for what matches its name', async () => {
   let received;
   const retriever: NonNullable<NonNullable<Parameters<typeof fetchFollowingUpdates>[1]>['topicRetriever']> = async (topic, options) => { received = options; return { papers: [], allFailed: false }; };

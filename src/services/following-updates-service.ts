@@ -172,6 +172,11 @@ export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
  * still working through the rest. Measured with fourteen follows on a cold
  * cache: the first answer was in at ~300 ms, the last at 6.5 s, and the feed
  * used to wait for the last. The final value is the last delivery.
+ *
+ * Rejects when every follow asked failed, as when the Worker is down or the
+ * device is offline. Resolving with no papers made that outage look like a
+ * follow list with nothing new: the page replaced its cards and its cache
+ * with the empty answer and said the papers were updated (ENG-176).
  */
 export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [], options: FollowingOptions = {}): Promise<FollowingResult> {
   // Journals are counted apart, as a page of the corpus counts them
@@ -216,5 +221,6 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
     }
   });
 
+  if (follows.length > 0 && failedEntities === follows.length) throw new Error('All follows failed.');
   return deliver();
 }

@@ -16,6 +16,8 @@ export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
   /** A failed load waits for its one automatic retry. */
   autoRetryPending: boolean;
+  /** `error` is a reset's (a refresh or a new list), not a next page's. */
+  resetFailed: boolean;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -221,6 +223,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which load `error` belongs to: a failed refresh is the pill's to report,
+  // a failed next page the feed tail's (ENG-176).
+  const [resetFailed, setResetFailed] = useState(false);
   // The request whose automatic retry is due. A retry's timer clears only its
   // own: an older timer that fires after a newer failure must not end its wait.
   const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
@@ -1557,6 +1562,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         telemetry.finish({ result: 'error', error: failure });
         const { error: shownError, autoRetry } = feedLoadOutcome(failure);
         setError(shownError);
+        setResetFailed(reset);
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
@@ -2454,7 +2460,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2467,7 +2473,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
