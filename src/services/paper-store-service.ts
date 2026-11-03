@@ -108,6 +108,17 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
 }
 
 /**
+ * A follow's string as the Worker reads it (`text` in src/utils/follow-lanes.ts:
+ * whitespace collapsed, trimmed), cut to `max`. The Worker then cuts a query to
+ * 120 characters and a funder to 80 after trimming, so those are sent one
+ * character longer: a cut ending in a space would be trimmed and file the
+ * follow under another lane. Anything but a string passes as stored.
+ */
+function cutFollowText<T>(value: T, max: number): T {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) as T : value;
+}
+
+/**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
  * by the reader's examples (likes, saves and long reads) per interest group.
@@ -130,13 +141,13 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
     // has a lane, the first still travels, so the request stays the follows'
     // page: the Worker reads no area lane for it, and answers it with no
     // papers when it has no categories either (`handleCorpusFeed`).
-    // Each field is cut where the Worker cuts it (`parseFeedRequest`,
-    // `followLane`): 200 characters of name, 120 of query, 80 of funder.
+    // A string is cut as the Worker reads it (`cutFollowText`), so the lane it
+    // files the follow under is the one the uncut follow has.
     follows: (read.length ? read : follows.slice(0, 1)).map(({ type, canonicalId, displayName, metadata }) => ({
       type,
       canonicalId,
-      displayName: displayName?.slice(0, 200),
-      metadata: { query: metadata?.query?.slice(0, 120), funder: metadata?.funder?.slice(0, 80) },
+      displayName: cutFollowText(displayName, 200),
+      metadata: { query: cutFollowText(metadata?.query, 121), funder: cutFollowText(metadata?.funder, 81) },
     })),
     positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
     // Copies: the examples below may be trimmed, and the plan is the feed's.

@@ -4,6 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { followLane } from '../utils/follow-lanes.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 
 const WORKER = 'https://papertok-report-api.example';
@@ -97,7 +98,22 @@ test('a page with ten journals and twenty long Unicode follows stays under the W
   assert.deepEqual(body.follows.map(follow => follow.canonicalId), kept.slice(0, body.follows.length));
   assert.ok(body.follows.length >= 10 && body.follows.length < 30);
   assert.equal(body.follows[0].displayName.length, 200);
-  assert.equal(body.follows.at(-1)!.metadata.query?.length ?? 120, 120);
+  assert.equal(body.follows.at(-1)!.metadata.query?.length ?? 121, 121);
+});
+
+test('a follow keeps its lane when its text is cut, and a stored number is sent as it is', async () => {
+  const { asked, options } = harness(answered([]));
+  const query = `${'a'.repeat(119)}  ${'b'.repeat(400)}`;
+  const follows = [
+    { type: 'topic', canonicalId: 'query-1', displayName: '  Name  ', metadata: { query: `  ${query}` } },
+    { type: 'project', canonicalId: '100010', displayName: 'P', metadata: { funder: `${'f'.repeat(79)} ${'g'.repeat(50)}` } },
+    { type: 'project', canonicalId: '5', displayName: 'N', metadata: { funder: 7 } },
+  ] as unknown as FollowEntity[];
+  await fetchCorpusPage({ categories: ['cs.CL'], follows, page: 0, pageSize: 15 }, options);
+  const sent = (asked[0].body as { follows: FollowEntity[] }).follows;
+  assert.deepEqual(sent.map(follow => followLane(follow)), follows.map(follow => followLane(follow)));
+  assert.equal(sent[2].metadata?.funder, 7);
+  assert.equal(sent[0].displayName, 'Name');
 });
 
 test('a page asked by interest groups sends them with their categories and examples as the flat request', async () => {
