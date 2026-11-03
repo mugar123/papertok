@@ -823,6 +823,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
+  // While its refresh runs the pill is `aria-disabled`, not `disabled`, which
+  // would drop its keyboard focus to the page (ENG-178), so a press is
+  // ignored here instead.
+  const handleRefreshPill = useCallback(() => {
+    if (isRefreshing) return;
+    refreshFeed();
+  }, [isRefreshing, refreshFeed]);
 
   // The pull's progress goes to the WRAPPER, not to the pill: the papers
   // follow the finger too, and the wrapper is the one ancestor both they and
@@ -1317,10 +1324,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           type="button"
           ref={refreshPillRef}
           className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}`}
-          onClick={handleRefresh}
+          onClick={handleRefreshPill}
           onFocus={(event) => setRefreshPillFocused(event.currentTarget.matches(':focus-visible'))}
           onBlur={() => setRefreshPillFocused(false)}
-          disabled={isRefreshing}
+          aria-disabled={isRefreshing || undefined}
           aria-busy={isRefreshing || undefined}
         >
           <span className="feed-refresh-face">

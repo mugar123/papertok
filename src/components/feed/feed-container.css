@@ -352,8 +352,8 @@
   transform: translateY(var(--pull-y));
   transition: none;
 }
-.feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
-.feed-refresh:disabled { cursor: default; }
+.feed-refresh:active:not([aria-disabled='true']) { scale: 0.96; transition-duration: 80ms; }
+.feed-refresh[aria-disabled='true'] { cursor: default; }
 /* Working: planted under the bar while the refresh runs. It used to pulse an
    accent ring as well; that glow went on 2026-09-12. The spinner already says
    "working", and a halo on the one element sitting over the reader's papers
@@ -508,6 +508,11 @@
   min-height: 0;
   z-index: 2;
   animation: none;
+  /* Unlike `.feed-empty`, the veil cannot grow with its copy. Copy taller
+     than the screen (320px with 200% text) starts at the top and scrolls
+     with the page, instead of being centred past the top edge, under the
+     navigation bar, where no scroll reaches it (ENG-178). */
+  justify-content: safe center;
 }
 
 .petri.feed-error-petri .onboarding-petri-body {
@@ -574,6 +579,9 @@
   letter-spacing: -0.015em;
   color: var(--text-primary);
   margin-bottom: var(--space-3);
+  /* At 320px with 200% text "discoveries..." is wider than the screen, and
+     the copy under it widened with it and was clipped (ENG-178). */
+  overflow-wrap: anywhere;
 }
 
 .feed-empty p:not(.empty-state-body) {
