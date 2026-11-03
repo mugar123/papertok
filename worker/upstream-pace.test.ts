@@ -5,6 +5,7 @@ import type { QuotaReading } from './request-quota-ledger.ts';
 
 interface SeenReservations { periodKeys: string[]; calls: number; reservations?: Array<{ subjectKey: string; subjectLimit: number; partKey?: string }> }
 import { awaitUpstreamSlot, DEFAULT_MAX_WAIT_MS, PACE_RETRY_AFTER_SECONDS, paceRetryAfterSeconds } from './upstream-pace.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 // A ledger that answers each `reserve` from a script, and remembers what it was
 // asked: the period key as-is, and the hashed subjectKey plus subjectLimit read
@@ -185,6 +186,34 @@ test('a spaced beat holds the next slot with a late one and gives up a slot the 
   assert.equal(late.partKey, carried.subjectKey, 'and the next one is second 11');
   assert.equal(carried.partKey, undefined);
   assert.equal(ahead.partKey, undefined);
+});
+
+// The cost of the empty slot, on the real ledger: a caller that would have
+// taken it is refused when the slot after it is past its wait (outside review
+// of PR #400). Three-second periods and a four-second wait, as arXiv's beat.
+test('a spaced beat refuses a caller that comes in the first two seconds after a late call, and seats one that comes later', async () => {
+  const period = 3_000;
+  const evenStart = 1_000_000 * period;
+  const callAt = async (ledger: Env['REQUEST_QUOTA_LEDGER'], at: number, accepts?: (slot: number) => boolean) => {
+    let clock = at;
+    const seat = await awaitUpstreamSlot(ledger, {
+      namespace: 'arxiv', periodMs: period, maxWaitMs: 4_000, spaced: true, accepts, now: () => clock, sleep: async ms => { clock += ms; },
+    });
+    return seat.accepted ? clock : null;
+  };
+  // Any caller after a late one, in its period: [first call, second call] offsets.
+  for (const [first, second, sentAt] of [[100, 900, null], [1_500, 1_800, null], [1_500, 2_100, 2 * period], [2_500, 2_800, 2 * period]] as const) {
+    const { binding } = inMemoryQuotaLedger();
+    assert.equal(await callAt(binding, evenStart + first), evenStart + first, 'the late call goes out at once');
+    assert.equal(await callAt(binding, evenStart + second), sentAt === null ? null : evenStart + sentAt, `${first} ms, then ${second} ms into the period`);
+  }
+  // A caller limited to even slots, after a late call in an odd period: the
+  // even slot after it is empty, and the next even one is six seconds on.
+  for (const [second, sentAt] of [[period + 900, null], [2 * period + 1_900, null], [2 * period + 2_000, 4 * period]] as const) {
+    const { binding } = inMemoryQuotaLedger();
+    await callAt(binding, evenStart + period + 500);
+    assert.equal(await callAt(binding, evenStart + second, slot => slot % 2 === 0), sentAt === null ? null : evenStart + sentAt, `even slots only, ${second} ms on`);
+  }
 });
 
 // The header a refused caller receives has to cover the whole window the beat

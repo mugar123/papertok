@@ -390,7 +390,14 @@ request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMIT
 that takes a seat once its period has begun goes out at once and holds the next period's
 seat empty in the same reservation, so it cannot take that seat while the next one is
 booked, and one that takes a seat ahead goes out at its start. A seat reserved ahead whose
-start the ledger's round trip carried past is given up for a later one. A missing ledger, or one that answers with an error,
+start the ledger's round trip carried past is given up for a later one. The empty seat costs
+refusals that taking it would not: a request that arrives less than two seconds into the
+period of a call that went out late finds the seat after the empty one more than 4 s away and
+is refused, the Worker's own lookups included (a share page; a liked paper looked up after a
+feed page, which the next feed request asks for again; a harvest lane, which waits and asks
+again). After a late call in an odd period, a request from outside the Worker, which takes
+only even seats, is refused until two seconds into the even period after it. The email
+digest's arXiv requests do not take the beat's seats. A missing ledger, or one that answers with an error,
 lets the request go to arXiv unpaced. A request from
 outside the Worker, signed in or not, first spends a miss of its address's allowance (5 a
 minute, see [Public lookup caller limits](#public-lookup-caller-limits)) and may then take
@@ -1279,7 +1286,10 @@ points:
   then more than four seconds away, so that reader is refused. An agent's call
   goes out at once, so, like any call that takes its period's seat late, it
   holds the next period's seat empty, an odd one no reader can book; a
-  Worker's own caller that booked it first refuses the agent. An
+  Worker's own caller that booked it first refuses the agent, and one that
+  comes after the agent in the period's first two seconds is refused where
+  it would have taken that seat, as after any late call (the `/arxiv`
+  paragraph above). An
   odd period is never an agent's, so even on an idle Worker every agent arXiv
   miss in an odd period is refused: about half of uncached arXiv lookups,
   which a search lists under `unavailable` and `get_paper` answers from

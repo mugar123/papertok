@@ -54,6 +54,8 @@ const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolv
 // the next one, in the same reservation, and that next slot stays empty. A
 // slot reserved ahead whose start the reservation itself carried past is
 // given up, since its call would go out late without the next slot held.
+// The empty slot is the cost: a caller that would have taken it waits for
+// the one after, or is refused when that one is past its `maxWaitMs`.
 export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
