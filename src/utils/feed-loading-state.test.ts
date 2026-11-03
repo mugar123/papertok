@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndedUpdated } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -167,6 +167,16 @@ test('the first wait is announced as loading papers, once, through its automatic
 test('a refresh keeps its own words under the veil', () => {
   assert.equal(feedStatusText({ refreshStatus: 'Refreshing papers…', veil: true }), 'Refreshing papers…');
   assert.equal(feedStatusText({ refreshStatus: 'Papers updated', veil: false }), 'Papers updated');
+});
+
+// ENG-176: a Try again that failed put "Papers updated" in the status region,
+// beside the "Error loading papers" alert, and the pill said Updated after a
+// refresh that failed over the papers already shown.
+test('only a refresh that ended without an error says the papers were updated', () => {
+  assert.equal(refreshEndedUpdated({ error: null }), true);
+  for (const error of ['FEED_LOAD_FAILED', 'FOLLOWING_LOAD_FAILED', FEED_EMPTY]) {
+    assert.equal(refreshEndedUpdated({ error }), false, error);
+  }
 });
 
 test('the tail speaks of more papers only under papers already shown', () => {

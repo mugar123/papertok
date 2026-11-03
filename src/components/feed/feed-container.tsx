@@ -24,7 +24,7 @@ interface FeedContainerProps {
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
@@ -53,7 +53,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndedUpdated } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -925,15 +925,21 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // A short "done" beat once a refresh lands, before the pill hides again.
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
   // clipped the Updated → Refresh exit mid-fade. While a new refresh runs,
-  // `refreshPhase` already prefers refreshing over done, so we never clear
-  // `refreshDone` synchronously here (react-hooks/set-state-in-effect).
+  // `refreshPhase` already prefers refreshing over done, so a beat still
+  // running is settled when that refresh ends, not when it starts. A refresh
+  // that ended with an error gets no beat, and takes down one still showing:
+  // it updated nothing (ENG-176). The error is read as the refresh ends, not
+  // followed: one that comes or goes later belongs to another load.
+  const refreshErrorAtEnd = useEffectEvent(() => error);
   useEffect(() => {
     if (wasRefreshingRef.current && !isRefreshing) {
-      setRefreshDone(true);
-      setDoneHold(true);
+      wasRefreshingRef.current = false;
+      const updated = refreshEndedUpdated({ error: refreshErrorAtEnd() });
+      setRefreshDone(updated);
+      setDoneHold(updated);
+      if (!updated) return undefined;
       const holdMs = prefersReducedMotion ? 500 : 1000;
       const t = setTimeout(() => setRefreshDone(false), holdMs);
-      wasRefreshingRef.current = false;
       return () => clearTimeout(t);
     }
     wasRefreshingRef.current = isRefreshing;

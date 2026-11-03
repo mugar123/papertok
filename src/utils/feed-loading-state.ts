@@ -56,6 +56,16 @@ export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string;
   return refreshStatus || (veil ? 'Loading papers…' : '');
 }
 
+/**
+ * Whether a refresh that has just ended earns its done beat: Updated on the
+ * pill and "Papers updated" in the status region. A refresh or Try again that
+ * ended with an error updated nothing, and the store's empty answer
+ * (`FEED_EMPTY`) brought no papers either (ENG-176).
+ */
+export function refreshEndedUpdated({ error }: { error: unknown }) {
+  return !error;
+}
+
 /** The feed tail's status: only for a next page, under papers already shown. */
 export function nextPageStatusText({ loading, hasPapers }: { loading: boolean; hasPapers: boolean }) {
   return loading && hasPapers ? 'Loading more papers…' : '';
