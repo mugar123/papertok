@@ -200,8 +200,11 @@ minute, hour or day, created near the first caller of that period and never
 moved. With the region, the fetch handler already runs in Frankfurt, so the
 hint matters for objects first opened outside the fetch handler, by the crons
 or by harvest Workflow runs, and keeps the ledger in WEUR if placement changes. Cloudflare reads the hint only when it creates an object, as a best
-effort: objects created before the deploy, such as the providers' pace objects,
-stay where they are, and minute, hour and day objects are created in WEUR as
+effort: objects created before the deploy, such as Semantic Scholar's pace
+object, stay where they are. The arXiv beat moved to a new object,
+`arxiv-v2:pace` (ENG-184), because each call has only 250 ms for the ledger's
+round trip; a seat dropped past it logs `Paced seat dropped past its window`
+with the round trip. Minute, hour and day objects are created in WEUR as
 their periods start. Reservations stay one transaction in one object per period.
 
 The paper store's ping (ENG-116). From 2026-10-28 to 2026-10-30, about 61 hours,

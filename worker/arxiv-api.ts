@@ -95,7 +95,11 @@ const ARXIV_SEATS: Record<ArxivCaller, {
  */
 export async function takeArxivSeat(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], caller: ArxivCaller) {
   const seat = await awaitUpstreamSlot(ledger, {
-    namespace: 'arxiv',
+    // A new beat object: the ledger's location hint applies only when an object
+    // is created, and the `arxiv:pace` object predates it, so its distance from
+    // the callers is unknown. The spaced windows leave its answer 250 ms
+    // (PACE_ANSWER_ALLOWANCE_MS) for the round trip.
+    namespace: 'arxiv-v2',
     periodMs: ARXIV_PACE_PERIOD_MS,
     spacingMs: ARXIV_PACE_PERIOD_MS,
     givesWayBy: GIVES_WAY_BY,

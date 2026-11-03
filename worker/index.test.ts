@@ -1123,7 +1123,7 @@ const arxivThrough = (t: TestContext, env: WorkerEnv, upstream: typeof fetch) =>
     ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
 };
-const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
+const IS_ARXIV_PACE = (key: string) => key === 'arxiv-v2:pace';
 
 // One request every three seconds is arXiv's published policy, and the Worker
 // is the one client arXiv sees. A miss takes a seat on the beat before it goes

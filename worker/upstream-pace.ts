@@ -150,6 +150,9 @@ export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'
       // late timer, the call could go out less than `spacingMs` from another,
       // so it does not go out on this slot.
       if (sendBy === undefined || now() <= sendBy) return { accepted: true, slot, waitedMs: waitMs };
+      // Logged so a slow ledger shows up as such, not as ordinary refusals: a
+      // round trip near PACE_ANSWER_ALLOWANCE_MS drops every seat it is given.
+      console.warn('Paced seat dropped past its window', { namespace, roundTripMs: arrived - asked, lateMs: now() - sendBy });
     }
     // A caller that gives way and was refused for spacing, or whose seat came
     // too late to use, takes only the slots it may take after spacing from
