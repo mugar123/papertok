@@ -199,13 +199,26 @@ test("an arXiv record is published by a publisher's DOI, not by arXiv's or a rep
     arxivId: '2603.01234', title: 'T', abstract: 'A', authors: ['Ada Lovelace'], doi, journalRef: '', comment: '',
     published: '2026-03-01', allCategories: ['cond-mat.mes-hall'], primaryCategory: 'cond-mat.mes-hall',
   });
-  for (const doi of ['10.48550/arXiv.2603.01234', '10.5281/zenodo.99999', 'https://doi.org/10.6084/m9.figshare.1', '10.2139/ssrn.4400088', 'n/a']) {
+  for (const doi of [
+    '10.48550/arXiv.2603.01234', '10.5281/zenodo.99999', 'https://doi.org/10.6084/m9.figshare.1', '10.2139/ssrn.4400088', 'n/a',
+    // Preprint servers, the ones under a journal publisher's registrant included.
+    '10.1101/2023.05.01.538912', '10.1101/123456', '10.31234/osf.io/abcde', '10.31235/osf.io/abcde', '10.31223/x5ab12',
+    '10.35542/osf.io/abcde', '10.36227/techrxiv.12345678', '10.22541/au.123', '10.33774/chemrxiv-2021-abcde', '10.32388/abcdef',
+    '10.7287/peerj.preprints.1234v1', '10.1590/SciELOPreprints.1234', '10.2196/preprints.12345', '10.1002/essoar.10501234.1',
+    '10.3762/bxiv.2020.1.v1',
+    // Repositories of data, code and uploads.
+    '10.17605/osf.io/abcde', '10.17632/abc.1', '10.7910/dvn/abc', '10.24433/co.1234567.v1', '10.13140/rg.2.2.1',
+  ]) {
     const paper = listing(doi);
     assert.deepEqual([paper.doi, paper.publicationStatus, paper.peerReviewed], [doi.replace('https://doi.org/', ''), 'preprint', false], doi);
     assert.equal(reviewTagForPaper(paper)?.key, 'preprint', `${doi}: the card keeps its Preprint tag`);
   }
-  // A publisher's DOI, alone or listed after a deposit's.
-  for (const doi of ['10.1103/PhysRevB.1.1', '10.5281/zenodo.99999 10.1103/PhysRevB.1.1']) {
+  // A publisher's DOI, alone or listed after a deposit's, Cold Spring Harbor's
+  // journals and SciELO's, JMIR's, Wiley's and Beilstein's included.
+  for (const doi of [
+    '10.1103/PhysRevB.1.1', '10.5281/zenodo.99999 10.1103/PhysRevB.1.1', '10.1101/gad.123456.116', '10.1101/gr.278000.123',
+    '10.1590/s0100-879x2012007500001', '10.2196/12345', '10.1002/anie.202301234', '10.3762/bjoc.19.1',
+  ]) {
     assert.equal(listing(doi).publicationStatus, 'published', doi);
   }
 });

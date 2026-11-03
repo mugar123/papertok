@@ -592,8 +592,12 @@ test("an arXiv record's DOI alone does not make its paper peer reviewed, nor a r
   const inJournal = ARXIV_LAB_ENTRY
     .replace('2603.01234', '2603.04321')
     .replace('<author>', '<arxiv:doi>10.1234/sheets.2026.7</arxiv:doi><arxiv:journal_ref>Journal of Sheets 12, 34 (2026)</arxiv:journal_ref><author>');
-  // arXiv's own DOI and a Zenodo deposit's are a repository's; the third is a publisher's.
-  for (const [doi, status] of [['10.48550/arXiv.2603.01234', 'preprint'], ['10.5281/zenodo.99999', 'preprint'], ['10.1234/sheets.2026.1', 'published']]) {
+  // arXiv's own DOI, a Zenodo deposit's and a bioRxiv preprint's are a
+  // repository's; the last is a publisher's.
+  for (const [doi, status] of [
+    ['10.48550/arXiv.2603.01234', 'preprint'], ['10.5281/zenodo.99999', 'preprint'], ['10.1101/2023.05.01.538912', 'preprint'],
+    ['10.1234/sheets.2026.1', 'published'],
+  ]) {
     await withUpstream(url => {
       if (url.includes('id_list=2603.04321')) return new Response(arxivFeed(inJournal));
       if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(listing(doi)));
