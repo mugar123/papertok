@@ -56,7 +56,22 @@ export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string;
   return refreshStatus || (veil ? 'Loading papers…' : '');
 }
 
+/**
+ * What the slot at the end of the feed holds: `loading` while a page is on its
+ * way or more can come, `failed` once a load failed under papers already
+ * shown, and null when nothing more can come. A failed load used to remove
+ * the slot, so the reader sat on the last paper with nothing after it and
+ * nothing said until the next attempt (ENG-183). The slot stays out while a
+ * refresh's automatic retry is due, since that retry is the next load, and
+ * after an answer with no papers, which asking again does not change.
+ */
+export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPending }: { loading: boolean; hasMore: boolean; error: unknown; hasPapers: boolean; autoRetryPending: boolean }) {
+  if (loading || (hasMore && !error)) return 'loading';
+  return hasMore && hasPapers && error !== FEED_EMPTY && !autoRetryPending ? 'failed' : null;
+}
+
 /** The feed tail's status: only for a next page, under papers already shown. */
-export function nextPageStatusText({ loading, hasPapers }: { loading: boolean; hasPapers: boolean }) {
+export function nextPageStatusText({ loading, hasPapers, failed = false }: { loading: boolean; hasPapers: boolean; failed?: boolean }) {
+  if (failed) return 'Could not load more papers.';
   return loading && hasPapers ? 'Loading more papers…' : '';
 }
