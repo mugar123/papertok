@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { trackVisibleTime } from './visible-time.ts';
+import { setCardsCovered, trackVisibleTime } from './visible-time.ts';
 
 function view(hidden = false) {
   const visibility = Object.assign(new EventTarget(), { hidden });
@@ -54,31 +54,40 @@ test('leaving the viewport while hidden flushes once and does not resume off scr
   assert.deepEqual(v.reported, [2]);
 });
 
-test('time under a covering dialog adds no reading time, and the stretch goes on once it closes', () => {
+test('time under the privacy dialog adds no reading time, and the stretch goes on once it closes', (t) => {
+  t.after(() => setCardsCovered(false));
   const v = view();
   v.tracker.setInView(true);
   v.advance(2000);
-  v.tracker.setCovered(true);
+  setCardsCovered(true);
   v.advance(30_000);
-  assert.deepEqual(v.reported, [], 'covering does not end the stretch');
-  v.tracker.setCovered(false);
+  assert.deepEqual(v.reported, [], 'the dialog does not end the stretch');
+  setCardsCovered(false);
   v.advance(1000);
   v.tracker.setInView(false);
   assert.deepEqual(v.reported, [3]);
 });
 
-test('a card that comes into view while covered starts timing once uncovered', () => {
-  const v = view();
-  v.tracker.setCovered(true);
-  v.tracker.setInView(true);
-  v.advance(10_000);
-  v.hide(true);
-  v.hide(false);
-  v.advance(5000);
-  v.tracker.setCovered(false);
-  v.advance(1500);
-  v.tracker.stop();
-  assert.deepEqual(v.reported, [1.5]);
+test('every card under the dialog waits for it to close, also one that comes into view under it', (t) => {
+  t.after(() => setCardsCovered(false));
+  const onScreen = view();
+  onScreen.tracker.setInView(true);
+  setCardsCovered(true);
+  const arriving = view();
+  arriving.tracker.setInView(true);
+  for (const v of [onScreen, arriving]) {
+    v.advance(10_000);
+    v.hide(true);
+    v.hide(false);
+    v.advance(5000);
+  }
+  setCardsCovered(false);
+  onScreen.advance(2500);
+  arriving.advance(1500);
+  onScreen.tracker.stop();
+  arriving.tracker.stop();
+  assert.deepEqual(onScreen.reported, [2.5]);
+  assert.deepEqual(arriving.reported, [1.5]);
 });
 
 test('returning to a card starts a separate interval and repeated observations do not reset it', () => {

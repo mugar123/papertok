@@ -16,7 +16,6 @@ import {
   isNudgePath,
   modalIsOpen,
   noticeOnScreen,
-  privacyDialogCover,
   privacyDialogOpen,
   privacyOwedFor,
   readDismissedNudges,
@@ -26,6 +25,7 @@ import {
   visitReaderReady,
   type VisitNotices,
 } from '../../utils/nudges.ts';
+import { setCardsCovered } from '../../utils/visible-time.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PrivacyNotice from './privacy-notice.tsx';
 
@@ -149,8 +149,8 @@ export default function NudgeHost() {
 
   // The cards under the open dialog stop counting their time on screen.
   useEffect(() => {
-    privacyDialogCover.set(dialogOpen);
-    return () => privacyDialogCover.set(false);
+    setCardsCovered(dialogOpen);
+    return () => setCardsCovered(false);
   }, [dialogOpen]);
 
   // Hide for now puts it away for this visit and does not count as reading it,

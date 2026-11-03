@@ -176,7 +176,6 @@ import {
 } from '../../utils/external-url.ts';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
-import { privacyDialogCover } from '../../utils/nudges.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
@@ -626,10 +625,6 @@ const PaperCard = memo(function PaperCard({
       }
     };
     const visibleTime = trackVisibleTime(document, reportViewTime);
-    // Time under the privacy dialog is not time spent on the paper.
-    const coverChanged = () => visibleTime.setCovered(privacyDialogCover.get());
-    coverChanged();
-    const unsubscribeCover = privacyDialogCover.subscribe(coverChanged);
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -650,7 +645,6 @@ const PaperCard = memo(function PaperCard({
 
     return () => {
       observer.disconnect();
-      unsubscribeCover();
       visibleTime.stop();
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);

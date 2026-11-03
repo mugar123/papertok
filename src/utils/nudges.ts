@@ -198,29 +198,6 @@ export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { s
 
 export const PRIVACY_NOTICE_ID = 'privacy-change';
 
-let privacyDialogCovering = false;
-const coverListeners = new Set<() => void>();
-
-/**
- * Whether the privacy dialog is open over the feed. NudgeHost writes it; feed
- * cards stop counting their time on screen while it is true (paper-card.tsx),
- * so the dialog does not add view time the feed learns from or measures.
- * Only this dialog: time under the reader and the app's other modals keeps
- * counting as it always has.
- */
-export const privacyDialogCover = {
-  get: () => privacyDialogCovering,
-  set(open: boolean) {
-    if (open === privacyDialogCovering) return;
-    privacyDialogCovering = open;
-    for (const listener of coverListeners) listener();
-  },
-  subscribe(listener: () => void) {
-    coverListeners.add(listener);
-    return () => { coverListeners.delete(listener); };
-  },
-};
-
 /**
  * The picked notice, while it may be on screen. A nudge, once picked on the
  * feed, stays on every route until it is dismissed, as it did before the
