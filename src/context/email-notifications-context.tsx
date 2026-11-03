@@ -21,6 +21,7 @@ import {
   EmailNotificationServiceError,
   getEmailNotificationPreferences,
   getEmailNotificationHealth,
+  hasDigestFollows,
   saveEmailNotificationPreferences,
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
@@ -62,7 +63,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
-  const hasFollows = followedEntities.length > 0;
+  // Journals do not count: a reader who follows only journals is told that
+  // journals are not in the email (emailFollowsNotice), and no save, sync or
+  // opt-in sends an empty follow list.
+  const hasFollows = hasDigestFollows(followedEntities);
 
   // The same reset `FollowingContext` does, and for the same reason: the tree
   // above is no longer rebuilt when the session resolves
@@ -172,11 +176,11 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
 
   // A yes from the guest welcome, carried out here: the account is created
   // with no follows and the digest is built from them (the Worker refuses an
-  // empty subscription), so the subscription starts with the first follow,
-  // to the address the account signs in with. Once per session; a failure
-  // keeps the flag and the next session tries again. Once it exists — or the
-  // reader already turned email on themselves — the flag is spent, so a later
-  // unsubscribe in Settings is never undone.
+  // empty subscription), so the subscription starts with the first follow
+  // other than a journal, to the address the account signs in with. Once per
+  // session; a failure keeps the flag and the next session tries again. Once
+  // it exists — or the reader already turned email on themselves — the flag is
+  // spent, so a later unsubscribe in Settings is never undone.
   const optInAttemptedFor = useRef<string | null>(null);
   const emailServiceDown = emailServiceState(health) === 'down';
   useEffect(() => {
@@ -215,7 +219,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       || followsLoading
       || followsError
       || updatesLoading
-      || !followedEntities.length
+      || !hasFollows
       || loadedForUser.current !== userId
     ) return undefined;
     let cancelled = false;
@@ -242,7 +246,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(syncTimeout);
     };
-  }, [followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
+  }, [followSignature, followedEntities, followsError, followsLoading, hasFollows, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
 
   const localizedPreferences = useMemo(
     () => ({ ...preferences, language }),

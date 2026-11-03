@@ -70,29 +70,32 @@ test("a reader's new follows are harvested at once up to 20 a day, however many 
   assert.deepEqual(Object.keys(lanes[0]).sort(), ['failed_turns', 'lane', 'registered_at', 'requested_at', 'retry_at']);
 });
 
-test('a reader writes at most 40 followed lanes a day, new or asked for again; past them a new follow is served from what the corpus has and is not registered', async t => {
+test('a reader writes at most 50 followed lanes a day, new or asked for again; past them a new follow is served from what the corpus has and is not registered', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
   const { db, ask } = store();
   const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
     type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
   }));
+  const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1_000 + index}`, displayName: `Journal ${index}` }));
   const registered = () => (db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n;
-  await ask({ follows: searches(0, 20) });
-  await ask({ follows: searches(20, 20) });
-  assert.equal(registered(), 40);
-  assert.deepEqual(await ask({ follows: searches(40, 1) }), { papers: [] });
-  assert.equal(registered(), 40);
+  // A request brings up to 20 follows and 10 journals.
+  await ask({ follows: [...searches(0, 20), ...journals] });
+  assert.equal(registered(), 30);
+  await ask({ follows: searches(30, 20) });
+  assert.equal(registered(), 50);
+  assert.deepEqual(await ask({ follows: searches(50, 1) }), { papers: [] });
+  assert.equal(registered(), 50);
   // Another reader's new follow is still registered.
-  await ask({ follows: searches(40, 1) }, 'reader-2');
-  assert.equal(registered(), 41);
+  await ask({ follows: searches(50, 1) }, 'reader-2');
+  assert.equal(registered(), 51);
 
-  // A week later, 20 of the reader's lanes asked for again are written again and leave them 20 new ones.
+  // A week later, the 30 lanes the reader asks for again are written again and leave them 20 new ones.
   t.mock.timers.setTime(Date.parse('2026-10-29T12:00:01Z'));
-  await ask({ follows: searches(0, 20) });
-  await ask({ follows: searches(41, 20) });
-  assert.deepEqual(await ask({ follows: searches(61, 1) }), { papers: [] });
-  assert.equal(registered(), 61);
-  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-29T12:00:01.000Z'").get() as { n: number }).n, 40);
+  await ask({ follows: [...searches(0, 20), ...journals] });
+  await ask({ follows: searches(51, 20) });
+  assert.deepEqual(await ask({ follows: searches(71, 1) }), { papers: [] });
+  assert.equal(registered(), 71);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-29T12:00:01.000Z'").get() as { n: number }).n, 50);
 });
 
 // Every write of a lane, new or asked for again, counts in the app's 4,000 a
@@ -138,12 +141,13 @@ test("a reader near the day's allowances still adds, and has harvested at once, 
   assert.deepEqual(lanesOf(runs[1]), ['author-name:author 19']);
   assert.equal(registered().length, 21);
 
-  await ask({ follows: authors(21, 18) });
+  await ask({ follows: authors(21, 20) });
+  await ask({ follows: authors(41, 8) });
   // Two new lanes and one registration left: the first is added.
-  await ask({ follows: authors(39, 2) });
-  assert.equal(registered().length, 40);
-  assert.ok(registered().includes('author-name:author 39'));
-  assert.equal(registered().includes('author-name:author 40'), false);
+  await ask({ follows: authors(49, 2) });
+  assert.equal(registered().length, 50);
+  assert.ok(registered().includes('author-name:author 49'));
+  assert.equal(registered().includes('author-name:author 50'), false);
 });
 
 test('two follows that name one lane count once against the allowances and are harvested once', async () => {
@@ -154,13 +158,14 @@ test('two follows that name one lane count once against the allowances and are h
     { type: 'author', canonicalId: 'name-g2', displayName: 'Author G' },
   ] });
   assert.deepEqual((runs[0] as { params: { lanes: string[] } }).params.lanes, ['author-name:author g']);
-  // 39 more new lanes fit the reader's 40.
+  // 49 more new lanes fit the reader's 50.
   const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
     type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
   }));
   await ask({ follows: searches(0, 20) });
-  await ask({ follows: searches(20, 19) });
-  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n, 40);
+  await ask({ follows: searches(20, 20) });
+  await ask({ follows: searches(40, 9) });
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n, 50);
 });
 
 test('the page answers before a liked paper without a vector is embedded, and the Worker embeds it afterwards', async t => {
