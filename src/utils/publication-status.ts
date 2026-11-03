@@ -16,6 +16,24 @@ export function arxivCommentSaysPublished(comment: unknown) {
   return ARXIV_PUBLISHED_COMMENT.test(String(comment || ''));
 }
 
+// Registrants that give DOIs to deposits and preprints, never to a version a
+// publisher accepted: arXiv itself, Zenodo, figshare, Dryad, OSF Preprints,
+// SSRN, Research Square, Preprints.org and ChemRxiv.
+const REPOSITORY_DOI_PREFIXES = ['10.48550/', '10.5281/', '10.6084/', '10.5061/', '10.31219/', '10.2139/', '10.21203/', '10.20944/', '10.26434/'];
+
+/**
+ * Whether the DOI an arXiv record lists says the paper was published. arXiv
+ * asks for the published version's DOI there, but a record can list arXiv's
+ * own DOI or a repository's, such as the Zenodo deposit of its code, and
+ * neither is evidence of publication (outside review of PR #400). arXiv lets
+ * a record list several DOIs, separated by spaces.
+ */
+export function arxivDoiSaysPublished(doi: unknown) {
+  return String(doi || '').toLowerCase().split(/[\s,;]+/)
+    .map(value => value.replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//, '').replace(/^doi:/, ''))
+    .some(value => /^10\.\d{4,9}\//.test(value) && !REPOSITORY_DOI_PREFIXES.some(prefix => value.startsWith(prefix)));
+}
+
 // OpenAlex types a preprint as such; every other type it gives — an article,
 // a book chapter, a proceedings paper — is a published work, whatever
 // repository its best copy sits in: 8 in 100 random chapters had one as their

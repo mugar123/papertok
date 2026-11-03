@@ -282,8 +282,9 @@ function withoutDefaults(paper: Partial<Paper>) {
   // A preprint record's `false` is about that version; the paper may have been
   // reviewed since (`ownAnswer` in paper-builder.ts). Its status says preprint.
   if (known.peerReviewed === false && known.publicationStatus === 'preprint') delete known.peerReviewed;
-  // arXiv reads any DOI on its record as publication, a repository's included,
-  // so a `true` with nothing else behind it does not show review.
+  // An arXiv record that lists a publisher's DOI reads as published
+  // (`arxivDoiSaysPublished`; arXiv's own DOI or a repository's leaves it a
+  // preprint), but a `true` with nothing else behind it does not show review.
   if (known.peerReviewed === true && restsOnArxivDoi(paper)) delete known.peerReviewed;
   return known as Omit<Partial<Paper>, 'authors'> & { authors?: RelayedAuthor[] };
 }

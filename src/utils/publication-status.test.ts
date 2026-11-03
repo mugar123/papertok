@@ -192,6 +192,24 @@ test('a preprint with no published copy is not peer reviewed', () => {
   }), false);
 });
 
+// arXiv asks a record for the published version's DOI, but arXiv's own DOI or
+// a Zenodo deposit's says nothing of publication (outside review of PR #400).
+test("an arXiv record is published by a publisher's DOI, not by arXiv's or a repository's", () => {
+  const listing = (doi: string) => arxivPaper({
+    arxivId: '2603.01234', title: 'T', abstract: 'A', authors: ['Ada Lovelace'], doi, journalRef: '', comment: '',
+    published: '2026-03-01', allCategories: ['cond-mat.mes-hall'], primaryCategory: 'cond-mat.mes-hall',
+  });
+  for (const doi of ['10.48550/arXiv.2603.01234', '10.5281/zenodo.99999', 'https://doi.org/10.6084/m9.figshare.1', '10.2139/ssrn.4400088', 'n/a']) {
+    const paper = listing(doi);
+    assert.deepEqual([paper.doi, paper.publicationStatus, paper.peerReviewed], [doi.replace('https://doi.org/', ''), 'preprint', false], doi);
+    assert.equal(reviewTagForPaper(paper)?.key, 'preprint', `${doi}: the card keeps its Preprint tag`);
+  }
+  // A publisher's DOI, alone or listed after a deposit's.
+  for (const doi of ['10.1103/PhysRevB.1.1', '10.5281/zenodo.99999 10.1103/PhysRevB.1.1']) {
+    assert.equal(listing(doi).publicationStatus, 'published', doi);
+  }
+});
+
 test('a Semantic Scholar review is an article, not a preprint', () => {
   // PMID 30617335, a Nature Medicine review, carried the chip.
   assert.equal(semanticScholarIsPreprint(['Review', 'JournalArticle']), false);

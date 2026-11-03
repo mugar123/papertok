@@ -53,8 +53,9 @@ function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
   return (record.sources?.enrichedBy?.length ?? 0) > 0;
 }
 
-// `arxivService` reads any DOI as publication, so an arXiv record without a
-// journal reference has nothing else behind its `true`. A merged record that
+// `arxivService` reads any DOI but a repository's as publication
+// (`arxivDoiSaysPublished`), so an arXiv record without a journal reference
+// has nothing else behind its `true`. A merged record that
 // does not say the paper was reviewed leaves it so (OpenAlex's record of the
 // eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
 // (Cornell University)" among them. So a record's own fields are read before

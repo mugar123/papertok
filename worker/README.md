@@ -1244,8 +1244,11 @@ affiliation of an author without an institution, no empty list or string, no `re
 false` (no record a tool reads carries them), no `citationCount` unless
 `citationCountKnown` is true, no `peerReviewed: false` on a preprint record,
 whose `publicationStatus` already says preprint, and no `peerReviewed: true`
-that rests on nothing but the DOI an arXiv record lists (`restsOnArxivDoi`),
-which can be a repository's. A client
+that rests on nothing but the DOI an arXiv record lists (`restsOnArxivDoi`).
+An arXiv record that lists only arXiv's own DOI or a repository's (Zenodo,
+figshare, Dryad, OSF, SSRN, Research Square, Preprints.org, ChemRxiv:
+`arxivDoiSaysPublished`) keeps that DOI and stays a preprint, in the app as
+in the tools. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
 tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
