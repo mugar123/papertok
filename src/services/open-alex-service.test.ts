@@ -59,6 +59,14 @@ test('entity and followed-work normalization preserves book and scientific revie
   assert.deepEqual(papers.map(paper => paper.publicationType), ['book', 'review']);
 });
 
+test("an Explorer or Following work keeps the OpenAlex id of its journal, and a repository's work has none", () => {
+  const { papers } = slimWorksPage({ results: [
+    { id: 'https://openalex.org/W1', type: 'article', title: 'In a journal', primary_location: { source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } } },
+    { id: 'https://openalex.org/W2', type: 'preprint', title: 'In a repository', primary_location: { source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' } } },
+  ] });
+  assert.deepEqual(papers.map(paper => paper.venueId), ['S23254222', undefined]);
+});
+
 // The FEDS paper and the Nature paper as OpenAlex returned them on 2026-10-19:
 // both `article`, in a `journal`, published version.
 const FEDS_WORK: OpenAlexWork = {

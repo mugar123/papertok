@@ -94,7 +94,7 @@ import { Button } from '../ui/button.tsx';
 import AuthorDots from './author-dots.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getProjectForPaper } from '../../services/open-aire-service.ts';

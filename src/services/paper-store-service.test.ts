@@ -73,6 +73,16 @@ test('a page sends only the follows the Worker reads: the first twenty with a la
   assert.deepEqual(body.follows.map(follow => follow.canonicalId), authors.slice(0, 20).map(follow => follow.canonicalId));
 });
 
+// ENG-123: journals are counted apart from the 20 other follows, up to 10.
+test('a page sends up to ten followed journals beside the twenty other follows', async () => {
+  const { asked, options } = harness(answered([]));
+  const journals: FollowEntity[] = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const authors: FollowEntity[] = Array.from({ length: 22 }, (_, index) => ({ type: 'author', canonicalId: `A${5000 + index}`, displayName: `Author ${index}` }));
+  await fetchCorpusPage({ categories: [], follows: [...journals, ...authors], page: 0, pageSize: 6 }, options);
+  const body = asked[0].body as { follows: Array<{ canonicalId: string }> };
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), [...journals.slice(0, 10), ...authors.slice(0, 20)].map(follow => follow.canonicalId));
+});
+
 test('a page asked by interest groups sends them with their categories and examples as the flat request', async () => {
   const { asked, options } = harness(answered([]));
   const groups = [
@@ -340,4 +350,28 @@ test('an answer without a papers list is an invalid response, not an empty page'
   }
   const { options } = harness(answered([]));
   assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { papers: [], skipsSeen: false });
+});
+
+test('the main response reports its Worker version before parsing success or refusal', async () => {
+  for (const status of [200, 429, 503]) {
+    const versions: Array<string | null> = [];
+    const { options } = harness(async () => new Response(JSON.stringify(status === 200 ? { papers: [STORED] } : { code: 'RATE_LIMITED' }), {
+      status, headers: { 'x-papertok-worker-version': 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57' },
+    }));
+    const promise = fetchCorpusPage({ page: 0, pageSize: 15 }, { ...options, onVersion: version => { versions.push(version); } });
+    if (status === 200) assert.deepEqual((await promise).papers, [STORED]);
+    else await assert.rejects(promise, { status });
+    assert.deepEqual(versions, ['bc13c637-c9af-4b4e-92a2-c4b3e9380a57']);
+  }
+});
+
+test('an older Worker leaves the version unknown and a connection failure reports none', async () => {
+  const versions: Array<string | null> = [];
+  const old = harness(answered([STORED]));
+  await fetchCorpusPage({ page: 0, pageSize: 15 }, { ...old.options, onVersion: version => { versions.push(version); } });
+  assert.deepEqual(versions, [null]);
+  const failedVersions: Array<string | null> = [];
+  const broken = harness(async () => { throw new TypeError('offline'); });
+  await assert.rejects(fetchCorpusPage({ page: 0, pageSize: 15 }, { ...broken.options, onVersion: version => { failedVersions.push(version); } }), { code: 'STORE_UNREACHABLE' });
+  assert.deepEqual(failedVersions, []);
 });

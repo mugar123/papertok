@@ -11,8 +11,10 @@ import {
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
+import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { emailServiceState } from '../../utils/email-health.ts';
+import { emailFollowsNotice } from './email-follows-notice.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Label } from '../ui/label.tsx';
@@ -75,6 +77,8 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     savePreferences,
     sendTest,
   } = useEmailNotifications();
+  const { followedEntities } = useFollowing();
+  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending);
   const [draft, setDraft] = useState(preferences);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
@@ -178,12 +182,10 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
                 : ('The email provider is not available right now.')}</span>
           </div>
         )}
-        {!loading && notificationDataReady && !hasFollows && (
+        {!loading && notificationDataReady && followsNotice && (
           <div className="email-notification-provider-warning is-follows">
-            <strong><Link to="/settings/following" onClick={onClose}>{'Nothing followed yet'}</Link></strong>
-            <span>{emailDigestPending
-              ? 'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'
-              : 'Follow a topic, author or institution to get updates.'}</span>
+            <strong><Link to="/settings/following" onClick={onClose}>{followsNotice.heading}</Link></strong>
+            <span>{followsNotice.body}</span>
           </div>
         )}
         <div className="email-notification-toggle-row">

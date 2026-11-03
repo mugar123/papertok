@@ -14,7 +14,8 @@ import { openAlexIsJournalArticle } from '../src/utils/publication-status.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
-import { FEED_MAX_FOLLOWS, entityLane, followLane } from '../src/utils/follow-lanes.ts';
+import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
+import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -258,9 +259,15 @@ const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 // The entities whose lanes hold papers only while a reader follows them: a
 // paper names many, readers follow few, and no page reads the rest. Their
 // unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
-const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
+// A paper names one journal (`source:S…`, ENG-123), and readers follow few of them.
+const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution', 'source'] as const;
+// A journal's lane holds only the types its own listing asks for: an editorial
+// or letter that an author's lane brings stays out of it, and a row the lane
+// holds leaves it once a record or the enrichment gives it another type.
+const fitsJournalLane = (paper: Partial<Paper>) => FOLLOWED_JOURNAL_WORK_TYPES.includes(paper.publicationType || '');
+const isJournalLane = (lane: string) => lane.startsWith('source:');
 
-// The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
+// The OpenAlex authors, institutions, topics, concepts and journal a paper names, as lanes.
 function namedEntityLanes(paper: Partial<Paper>) {
   const lanes = new Set<string>();
   for (const author of paper.authors || []) {
@@ -268,6 +275,7 @@ function namedEntityLanes(paper: Partial<Paper>) {
   }
   for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
+  if (fitsJournalLane(paper)) lanes.add(entityLane(paper.venueId));
   lanes.delete('');
   return [...lanes];
 }
@@ -296,10 +304,11 @@ async function followedLanesAmong(db: D1Database, lanes: Iterable<string>) {
 /**
  * The lanes a paper belongs to by its own record, whichever source listed it:
  * its arXiv categories that are categories of the app, the OpenAlex topics it
- * names, and the OpenAlex authors, institutions and concepts it names that
- * are in `followed`. Every reader of them shares these lanes, so a paper is
- * filed under them only inside the corpus window: an older one a reader liked,
- * or a lane that keeps listings kept, stays in the lanes it was asked for.
+ * names, and the OpenAlex authors, institutions, concepts and journal it
+ * names that are in `followed`. Every reader of them shares these lanes, so a
+ * paper is filed under them only inside the corpus window: an older one a
+ * reader liked, or a lane that keeps listings kept, stays in the lanes it was
+ * asked for.
  */
 export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>) {
   const lanes = new Set<string>();
@@ -575,6 +584,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
   const withdrawn: number[] = [];
+  // Rows stored as an article or review that the merged record types otherwise.
+  const leftJournals: number[] = [];
   // The groups written as a working paper's row: only their articles can
   // upgrade one, and the step reads no other row.
   const workingPaperGroups = new Set<Group>();
@@ -608,8 +619,12 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     // The merged row can be one the feed does not show: a retracted paper,
     // whether this record or the stored row says so. It is filed under no
     // lane, and leaves those it holds, a folded row's included.
-    if (isFeedPublication(paper)) filings.push({ id, paper, published, lanes: group.lanes });
-    else withdrawn.push(id);
+    if (isFeedPublication(paper)) {
+      filings.push({ id, paper, published, lanes: group.lanes });
+      if (!fitsJournalLane(paper) && stored.some(work => fitsJournalLane(work.paper))) leftJournals.push(id);
+    } else {
+      withdrawn.push(id);
+    }
     if (isWorkingPaperRow(paper)) workingPaperGroups.add(group);
   }
   // Asked once the records are merged: a stored row names entities, such as
@@ -617,6 +632,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
   for (const { id, paper, published, lanes } of filings) {
     for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
+      // A journal's listing names the type of its own record, which another record of the row can change.
+      if (isJournalLane(lane) && !fitsJournalLane(paper)) continue;
       laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
     }
   }
@@ -637,6 +654,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   for (let start = 0; start < withdrawn.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(withdrawn.slice(start, start + WRITE_CHUNK))));
+  }
+  // After the folds, which bring a folded row's lanes along.
+  for (let start = 0; start < leftJournals.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?)) AND lane LIKE 'source:%'`)
+      .bind(JSON.stringify(leftJournals.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
     statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
@@ -685,6 +707,7 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       // A book, an erratum or another type the feed does not show, or a
       // retracted paper, leaves every lane once the enrichment reveals it.
       offered: isFeedPublication(paper),
+      leftJournal: fitsJournalLane(before) && !fitsJournalLane(paper),
       keys: workKeys(paper),
       lanes: published >= since ? recordLanes(paper, followed) : [],
     },
@@ -705,6 +728,11 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
         SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
+      // Sent only when needed: D1 counts each statement against the invocation.
+      ...(slice.some(change => change.filing.leftJournal)
+        ? [db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'leftJournal')
+          AND lane LIKE 'source:%'`).bind(chunk)]
+        : []),
     ]);
   }
   return changed.length;
@@ -719,9 +747,9 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  * - a notable lane drops a paper once its `listed_until` has passed, 14 days
  *   after the listing that last returned it: the lane holds the leaf's most
  *   cited, whatever else keeps the paper (a like, its date, another lane);
- * - a paper leaves the lane of an author, concept or institution nobody
- *   follows: `recordLanes` files those for followed entities only, and the
- *   rows filed before it did go here. A later follow of that entity starts
+ * - a paper leaves the lane of an author, concept, institution or journal
+ *   nobody follows: `recordLanes` files those for followed entities only, and
+ *   the rows filed before it did go here. A later follow of that entity starts
  *   without those papers, until its own harvest lists them;
  * - a paper past its keeping date, or in no category, notable, working-paper,
  *   area or followed lane, goes, unless readers still rank their feed by it
@@ -1154,8 +1182,8 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
-// for up to a dozen categories and twenty follows. The candidates come in
-// turns across the lanes, each lane's newest first, and the ranking keeps that
+// for up to a dozen categories, twenty follows and ten journals. The
+// candidates come in turns across the lanes, each lane's newest first, and the ranking keeps that
 // order among papers it cannot tell apart: one night's articles of two areas
 // share their date, and take turns between the areas instead of following the
 // order the lanes were asked in.
@@ -2055,10 +2083,8 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
   const asked = parseFeedGroups(body?.groups);
   // A request without groups, from a bundle published before them, is one group.
   const categories = (asked.length ? [...new Set(asked.flatMap(group => group.categories))] : categoryIds(body?.categories)).slice(0, FEED_MAX_CATEGORIES);
-  const follows = (Array.isArray(body?.follows) ? body.follows : [])
-    .map(follow => ({ follow, lane: followLane(follow) }))
-    .filter(({ lane }) => lane)
-    .slice(0, FEED_MAX_FOLLOWS)
+  // At most 10 journals on top of 20 other follows, whatever a client stored.
+  const follows = servedFollows(Array.isArray(body?.follows) ? body.follows : [])
     .map(({ follow, lane }) => ({
       type: text(follow.type) as PaperFollowMatch['type'],
       canonicalId: text(follow.canonicalId).slice(0, 200),

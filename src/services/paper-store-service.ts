@@ -5,7 +5,7 @@ import type { InterestGroup } from '../utils/interest-memory.ts';
 import { authenticatedWorkerFetch, sourceResponseError, workerSourceUrl } from './worker-api-client.ts';
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
-import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
+import { servedFollows } from '../utils/follow-lanes.ts';
 
 // Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
 // so a token refresh does not spend it. The exploration and follows requests
@@ -67,6 +67,7 @@ export interface CorpusPageRequest {
 }
 
 interface StoreOptions {
+  onVersion?: (version: string | null) => void;
   fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
@@ -78,12 +79,13 @@ function markUnreachable(error: unknown): never {
   throw error;
 }
 
-async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
+async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase, onVersion }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   }, timeoutMs).catch(markUnreachable);
+  onVersion?.(response.headers.get('x-papertok-worker-version'));
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.
@@ -119,12 +121,12 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
  * for notable papers.
  */
 export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
-  const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
+  const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
-    // Only the follows the Worker reads travel (`parseFeedRequest`): the first
-    // FEED_MAX_FOLLOWS with a lane. A topic follow that is one of the app's
-    // categories has none; it is asked for as that category. When no follow
+    // Only the follows the Worker reads travel (`servedFollows`): the first
+    // MAX_FOLLOWED_JOURNALS journals and FEED_MAX_FOLLOWS other follows with a
+    // lane. A topic follow that is one of the app's categories has none; it is asked for as that category. When no follow
     // has a lane, the first still travels, so the request stays the follows'
     // page: the Worker reads no area lane for it, and answers it with no
     // papers when it has no categories either (`handleCorpusFeed`).

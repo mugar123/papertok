@@ -18,6 +18,7 @@ import { mapAdsPaper } from '../src/services/domain-source-records.ts';
 import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { mergeFeedAbstracts, notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
 import { sourceAttribution } from '../src/utils/source-attribution.ts';
@@ -506,6 +507,30 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.equal(rows(db, `SELECT liked_until FROM works WHERE id = ${idOf('2610.00001')}`)[0].liked_until, '2026-11-21T03:00:00.000Z');
   await evictAll(env, Date.parse('2026-11-01T00:00:00Z'));
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
+});
+
+// D3 (Pablo, 2026-10-25): at most 10 followed journals a reader. A journal's
+// lane costs the harvest a list call a night whoever follows it, so the cap
+// holds where the lanes are made, whatever a client stored.
+test('a request serves at most 10 followed journals, and still its other follows', () => {
+  const journals = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Wei Zhang' };
+  const { follows } = parseFeedRequest({ categories: [], follows: [...journals, author] });
+  assert.deepEqual(follows.map(follow => follow.lane), [
+    ...Array.from({ length: 10 }, (_, index) => `source:S${1000 + index}`),
+    'author:A5023888391',
+  ]);
+});
+
+test("a request's journals do not take the lanes of its 20 other follows", () => {
+  const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const others = [
+    ...Array.from({ length: 8 }, (_, index) => ({ type: 'author', canonicalId: `A${5000 + index}`, displayName: `Author ${index}` })),
+    ...Array.from({ length: 14 }, (_, index) => ({ type: 'topic', canonicalId: `T${2000 + index}`, displayName: `Topic ${index}` })),
+  ];
+  const { follows } = parseFeedRequest({ categories: [], follows: [...journals, ...others] });
+  assert.equal(follows.filter(follow => follow.type === 'journal').length, 10);
+  assert.equal(follows.filter(follow => follow.type !== 'journal').length, 20);
 });
 
 test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
@@ -2175,6 +2200,144 @@ test('an author, concept or institution lane is filed only while someone follows
   db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('concept:C20', ?)").run(new Date(NOW).toISOString());
   await ingestPapers(env, [{ paper: { ...paper, title: 'Listed again, v2' }, lanes: ['cs.LG'] }], { now: NOW });
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['concept:C20', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+// ENG-123: the stored row keeps the OpenAlex id of the journal that published
+// it (`venueId`), so a paper any lane lists joins a followed journal's lane,
+// as it joins a followed author's, and no other journal's.
+test("a journal's lane holds the papers that name it only while someone follows it, and eviction prunes it after", async () => {
+  const { env, db } = corpus();
+  const article = mapOpenAlexWork({
+    id: 'https://openalex.org/W7000000001',
+    doi: 'https://doi.org/10.1257/aer.20260001',
+    title: 'Monetary policy and the term structure of interest rates',
+    type: 'article',
+    publication_date: '2026-10-12',
+    abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+    authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+  })!;
+  const sourceLanes = () => rows(db, "SELECT lane FROM work_lanes WHERE lane LIKE 'source:%'").map(row => row.lane);
+  await ingestPapers(env, [{ paper: article, lanes: ['area:econ'] }], { now: NOW });
+  assert.equal(JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)).venueId, 'S23254222');
+  assert.deepEqual(sourceLanes(), [], 'nobody follows the journal');
+
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper: article, lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(sourceLanes(), ['source:S23254222']);
+
+  db.prepare('DELETE FROM followed_lanes').run();
+  await evictAll(env, NOW);
+  assert.deepEqual(sourceLanes(), [], 'unfollowed, the lane lets the paper go');
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'which its area lane keeps');
+});
+
+// ENG-123: the reader's journal name is the way to the journal's page and its
+// Follow, so a paper the corpus serves keeps OpenAlex's name for the journal.
+test("a journal article the corpus serves still names its journal for the reader's link", async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [{ paper: physicsJournalArticle, lanes: ['area:physics'] }], { now: NOW });
+  const [served] = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'] }), { now: NOW });
+  assert.deepEqual(journalExplorerLink(served), { name: 'Journal of the Physical Society of Japan', path: '/explorer/source/S119212824' });
+});
+
+// ENG-123: a journal's lane holds what its own listing asks for, articles and
+// reviews. An editorial or letter another lane lists keeps out of it.
+test("a followed journal's lane takes the reviews other lanes list, not their editorials or letters", async () => {
+  const { env, db } = corpus();
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('source:S23254222', ?)").run(new Date(NOW).toISOString());
+  const work = (id: number, type: string, title: string) => mapOpenAlexWork({
+    id: `https://openalex.org/W70000000${id}`,
+    title,
+    type,
+    publication_date: '2026-10-12',
+    abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+    authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+  })!;
+  const papers = [
+    work(11, 'review', 'Fifty years of the term structure: a review'),
+    work(12, 'editorial', 'Editorial: a new editor for the review'),
+    work(13, 'letter', 'Letter to the editor on monetary policy'),
+  ];
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['area:econ'] })), { now: NOW });
+  const filed = rows(db, "SELECT json_extract(works.paper, '$.title') AS title FROM work_lanes JOIN works ON works.id = work_lanes.work_id WHERE lane = 'source:S23254222'");
+  assert.deepEqual(filed.map(row => row.title), ['Fifty years of the term structure: a review']);
+});
+
+// ENG-123: the type decides the journal's lane whenever the row is written
+// again, not only when it is first filed. A row the journal's lane holds
+// leaves it once a record or the enrichment calls it an editorial, keeps its
+// other lanes, and comes back once it is an article again.
+const aerWork = (type: string) => mapOpenAlexWork({
+  id: 'https://openalex.org/W7000000021',
+  doi: 'https://doi.org/10.1257/aer.20260021',
+  title: 'Monetary policy and the term structure of interest rates, revisited',
+  type,
+  publication_date: '2026-10-12',
+  abstract_inverted_index: { We: [0], study: [1], the: [2], term: [3], structure: [4], of: [5], interest: [6], rates: [7], after: [8], policy: [9], shocks: [10] },
+  authorships: [{ author: { id: 'https://openalex.org/A10', display_name: 'Ana Economist' }, institutions: [] }],
+  primary_location: { is_published: true, source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+})!;
+const aerFollow = { type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' };
+// A notable listing of the paper, which the journal's lane must not take along.
+const aerNotable = { lanes: ['area:econ', 'notable:econ.GN'], keepUntil: '2026-11-05T03:00:00.000Z' };
+
+// The paper's author is followed too: leaving the journal's lane keeps the author's.
+function followedJournalCorpus() {
+  const store = corpus();
+  for (const lane of ['source:S23254222', 'author:A10']) {
+    store.db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)').run(lane, new Date(NOW).toISOString());
+  }
+  const lanes = () => rows(store.db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane);
+  const journalPage = async () => (await readFeedPage(store.env, parseFeedRequest({ categories: [], follows: [aerFollow], page: 0, pageSize: 15 }), { now: NOW }))
+    .map(entry => [entry.id, entry._followedEntityMatches]);
+  return { ...store, lanes, journalPage };
+}
+
+test("an article a listing reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
+  const { env, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
+  assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
+
+  await ingestPapers(env, [{ paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN'], 'its other lanes keep it');
+  assert.deepEqual(await journalPage(), []);
+
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
+});
+
+test("a journal's own listing does not keep in its lane a row another record of the batch calls an editorial", async () => {
+  const { env, lanes } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: ['source:S23254222'] }, { paper: aerWork('editorial'), lanes: ['area:econ'] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10']);
+});
+
+// The journal's row folds into the arXiv one, which then holds its lanes:
+// the lane of the journal goes with the fold, the others stay.
+test("a record that folds a journal's article into another row as an editorial takes it out of the journal's lane only", async () => {
+  const { env, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'cs.CL', 'cs.LG', 'notable:econ.GN', 'source:S23254222']);
+
+  await ingestPapers(env, [{ paper: { ...aerWork('editorial'), arxivId: arxivRecord.arxivId }, lanes: [] }], { now: NOW });
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'cs.CL', 'cs.LG', 'notable:econ.GN']);
+  assert.deepEqual(await journalPage(), []);
+});
+
+test("an article the enrichment reclassifies as an editorial leaves its followed journal's lane, and comes back as an article", async () => {
+  const { env, db, lanes, journalPage } = followedJournalCorpus();
+  await ingestPapers(env, [{ paper: aerWork('article'), lanes: aerNotable.lanes }], { now: NOW, keepUntil: aerNotable.keepUntil });
+  const stored = () => rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'editorial' } })), NOW);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN']);
+  assert.deepEqual(await journalPage(), []);
+
+  await rewriteWorks(env, stored().map(({ id, before }) => ({ id, before, after: { ...before, publicationType: 'article' } })), NOW);
+  assert.deepEqual(lanes(), ['area:econ', 'author:A10', 'notable:econ.GN', 'source:S23254222']);
+  assert.deepEqual(await journalPage(), [['openalex:W7000000021', [aerFollow]]]);
 });
 
 test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {
