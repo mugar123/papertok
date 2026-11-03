@@ -25,10 +25,11 @@ export function digestShutoffDue({ enabled, followsConfirmed, interestsConfirmed
 }
 
 /**
- * Whether the digest sync may send what is in hand. With no follow it covers,
- * a sync switches the stored subscription to the chosen categories and drops
- * the follows the Worker holds, so that empty follow list has to be the
- * server's answer, never a cached one (ENG-163).
+ * Whether the digest sync, a save that turns the digest on, or a test may send
+ * what is in hand. With no follow it covers, each of them switches the stored
+ * subscription to the chosen categories and drops the follows the Worker
+ * holds, so that empty follow list has to be the server's answer, never a
+ * cached one (ENG-163).
  */
 export function digestSyncAllowed({ hasFollows, followsConfirmed }: { hasFollows: boolean; followsConfirmed: boolean }) {
   return hasFollows || followsConfirmed;

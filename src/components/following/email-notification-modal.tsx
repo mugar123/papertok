@@ -74,6 +74,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     testing,
     notificationDataReady,
     digestCovered,
+    digestSendReady,
     digestTurnedOff,
     savePreferences,
     sendTest,
@@ -256,7 +257,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
           onClick={() => { void handleTest(); }}
-          disabled={saving || testing || loading || !notificationDataReady || !digestCovered || emailService === 'down' || testState === 'sent'}
+          disabled={saving || testing || loading || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
         >
@@ -276,7 +277,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}

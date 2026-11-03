@@ -51,13 +51,17 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03.2';
  *
  * Version 2026-11-03.2 adds what the email subscription stores when the digest
  * is filled from the subjects a reader chose (ENG-163, #442). That page text
- * ships with #442, so unlike the bullets above it is not live at this instant:
- * an account created between this instant and #442's deploy is not told of
- * it. Following Pablo's choice above, this instant is the time of #442's
- * commit that set it, rounded up. The order the server keeps near Frankfurt
- * for up to 2 hours is left to the page to make room within three bullets.
+ * ships with #442, so Pablo's quarter-hour choice above, made for text already
+ * live, does not apply: this instant follows the rule above and stands after
+ * #442's merge. #442 merges only after the Worker it needs is deployed
+ * (ENG-184), so this is the last instant the version's day allows. If the merge
+ * falls after it, move the page's "Last updated" date, PRIVACY_POLICY_VERSION
+ * and this instant to the merge day before merging; once Vercel reports the
+ * merge live, lower this instant to that success time. The order the server
+ * keeps near Frankfurt for up to 2 hours is left to the page to make room
+ * within three bullets.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T08:45:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T23:59:59Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
