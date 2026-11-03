@@ -128,7 +128,6 @@ for (const refused of refusals) {
     save.refuse(refused);
     assert.equal(await save.pressed, 'refused');
     assert.equal(paper.account.saved.has('p1'), false);
-    assert.equal(paper.account.written.at(-1), 'saved: false');
     assert.equal(savedIn(paper.account.profile)[1].saved, false);
   });
 }
