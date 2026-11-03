@@ -289,11 +289,13 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     shutoffAttemptedFor.current = userId;
     saveEmailNotificationPreferences({ ...preferences, enabled: false, language }, followedEntities, items)
       .then(saved => {
-        applySavedPreferences(saved, true);
+        // Like the sync, this skips applySavedPreferences: the reader did not
+        // unsubscribe, so there is no newsletter_change to report.
+        setPreferences({ ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail });
         setDigestTurnedOffFor(userId);
       })
       .catch(shutoffError => console.warn('Could not turn the digest off with nothing left for it to cover', shutoffError));
-  }, [applySavedPreferences, digestCovered, followedEntities, followsConfirmed, interestsConfirmed, items, language, loading, preferences, userId]);
+  }, [digestCovered, followedEntities, followsConfirmed, interestsConfirmed, items, language, loading, preferences, userEmail, userId]);
 
   const localizedPreferences = useMemo(
     () => ({ ...preferences, language }),
