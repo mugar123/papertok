@@ -113,6 +113,8 @@ export function markChanges() {
      * screen this value is on.
      */
     sent?: { value: boolean; read: boolean; spent?: boolean };
+    /** Whether a reset (`screenReplaced`) has passed since these changes started. */
+    reset?: true;
   }
   const marks = new Map<string, Mark>();
   const shouldShow = (mark: Mark) => (
@@ -211,13 +213,17 @@ export function markChanges() {
      * `loaded` gives a mark's value in what was loaded, when it holds one:
      * a refusal then puts back that value, not the screen from before the
      * load (a Like tapped before the profile arrived, on a paper the profile
-     * already liked, must not take the like away when refused).
+     * already liked, must not take the like away when refused). Only the
+     * first reset after a mark's changes started may set that value: a
+     * profile loaded at a later one, such as after signing out and back in,
+     * may hold the changes themselves, which this session wrote into it.
      */
     screenReplaced(loaded?: (key: string) => boolean | undefined) {
       for (const [key, mark] of marks) {
         if (mark.changes.some((change) => change.pending)) {
           delete mark.sent;
-          mark.startedFrom = loaded?.(key) ?? mark.startedFrom;
+          if (!mark.reset) mark.startedFrom = loaded?.(key) ?? mark.startedFrom;
+          mark.reset = true;
         } else {
           marks.delete(key);
         }

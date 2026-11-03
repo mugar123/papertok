@@ -52,7 +52,8 @@ export interface FeedContextValue {
   markSaved: (paper: Paper | string, options?: { throwOnError?: boolean; surface?: string; restores?: boolean }) => Promise<void>;
   /**
    * `rollback`: takes back a markSaved that did not stand, such as a refused
-   * save, and puts back what a profile loaded since then holds.
+   * save, and puts back what a profile loaded since then holds, when that
+   * profile can tell (takeBacksOnProfile).
    */
   unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; rollback?: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
@@ -107,8 +108,8 @@ import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './fee
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
-import { loadedMarkValue, markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
-import { saveRollbacks } from './save-rollback.ts';
+import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
+import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
 import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
@@ -975,7 +976,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // A write still waiting may answer after the same account signs back
       // in: what it sent to the screen is gone with these sets.
       markChangeLog.screenReplaced();
-      saveRollback.screenReplaced(new Set<string>());
+      saveRollback.screenReplaced();
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -1041,9 +1042,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // These sets and the library put every mark back where the profile
         // has it, so a move an answer sent before is no longer on screen. A
-        // write still waiting that is refused puts back what the profile holds.
-        markChangeLog.screenReplaced(loadedMarkValue(userId, { like: liked, read }));
-        saveRollback.screenReplaced(saved);
+        // write still waiting that is refused puts back what the profile
+        // holds, when the profile can tell (takeBacksOnProfile).
+        takeBacksOnProfile({ marks: markChangeLog, saves: saveRollback }, userId, { liked, read, saved }, result);
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
