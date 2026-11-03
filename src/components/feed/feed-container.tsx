@@ -952,7 +952,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // clipped the Updated → Refresh exit mid-fade. While a new refresh runs,
   // `refreshPhase` already prefers refreshing over a beat, so a beat still
   // running is replaced when that refresh ends, not when it starts. The error
-  // is read as the refresh ends, not followed (`refreshEndBeat`). A failure
+  // is read as the refresh's own load ends, not followed: a next page that
+  // fails under the spinner is the tail's to report (`refreshEndBeat`). A failure
   // whose automatic retry is due waits for that retry's outcome. The hold's
   // timer lives in a ref: the loads the watch follows must not cancel it.
   const refreshErrorAtEnd = useEffectEvent(() => error);

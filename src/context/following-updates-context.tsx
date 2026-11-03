@@ -149,6 +149,9 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const refresh = useCallback(async ({ silent = false } = {}) => {
     if (!userId || followsLoading) return;
     if (!followedEntities.length) {
+      // No follow is left to fail: an earlier refresh's error goes with them,
+      // so the empty state shows instead of an error Try again cannot clear.
+      setError(null);
       setItems([]);
       setMeta({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
       setLastUpdatedAt(new Date().toISOString());

@@ -61,25 +61,32 @@ export type RefreshEnd = 'updated' | 'failed';
 
 /**
  * What the pill waits for: nothing, a refresh, or the automatic retry of a
- * refresh that failed.
+ * refresh that failed. `updated` and `failed` hold how the refresh's own load
+ * ended while its spinner still runs.
  */
-export type RefreshWatch = 'idle' | 'refreshing' | 'retrying';
+export type RefreshWatch = 'idle' | 'refreshing' | 'retrying' | RefreshEnd;
 
 /**
  * One step of a refresh's watch, and the beat it earns as it ends: Updated or
  * Not updated on the pill, and the status region's words for it. A refresh
  * whose failure has its automatic retry due ends with that retry, so a
- * failure the retry repairs is never announced. `error` is the one the
- * refresh ended with, read at that moment; one that comes or goes later
- * belongs to another load. Any error is a failure, the store's empty answer
- * (`FEED_EMPTY`) included: none of them brought papers (ENG-176).
+ * failure the retry repairs is never announced. `error` is read as the
+ * refresh's own load ends: a next page that loads and fails before the
+ * spinner stops is not the refresh, and its tail says so. Without a load
+ * seen to end, the error at the spinner's end decides. Any error is a
+ * failure, the store's empty answer (`FEED_EMPTY`) included: none of them
+ * brought papers (ENG-176).
  */
 export function refreshEndBeat({ watch, isRefreshing, autoRetryPending, loading, error }: { watch: RefreshWatch; isRefreshing: boolean; autoRetryPending: boolean; loading: boolean; error: unknown }): { watch: RefreshWatch; end: RefreshEnd | null } {
-  const retrying = autoRetryPending || watch === 'retrying';
-  if (isRefreshing) return { watch: retrying ? 'retrying' : 'refreshing', end: null };
-  if (watch === 'idle') return { watch, end: null };
-  if (autoRetryPending || (watch === 'retrying' && loading)) return { watch: 'retrying', end: null };
-  return { watch: 'idle', end: error ? 'failed' : 'updated' };
+  const settled = watch === 'updated' || watch === 'failed';
+  const outcome: RefreshEnd = error ? 'failed' : 'updated';
+  if (!isRefreshing && watch === 'idle') return { watch, end: null };
+  if (autoRetryPending || (watch === 'retrying' && (isRefreshing || loading))) return { watch: 'retrying', end: null };
+  if (isRefreshing) {
+    if (settled) return { watch, end: null };
+    return { watch: watch === 'refreshing' && !loading ? outcome : 'refreshing', end: null };
+  }
+  return { watch: 'idle', end: settled ? watch : outcome };
 }
 
 /**
