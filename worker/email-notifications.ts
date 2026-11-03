@@ -15,10 +15,12 @@ type PaperInput = Partial<Record<keyof Paper | 'publishedDate' | 'area', unknown
   matches?: FollowInput[];
 };
 type SourceReportInput = Partial<Omit<SourceReport, 'bySource'>> & { bySource?: Record<string, Partial<SourceCounts>> };
-export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[] };
+// `interest` names the leaf a paper of the "From your interests" section came
+// from: the reader follows nothing the digest covers (ENG-163).
+export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[]; interest?: string };
 type IdentityPaper = Pick<PaperInput, 'title' | 'authors' | 'doi' | 'id'>;
 type PreferencesInput = Partial<Record<'maxPapers' | 'enabled' | 'frequency' | 'language', unknown>>;
-type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[] };
+type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[]; interests?: unknown };
 type Preferences = ReturnType<typeof sanitizePreferences>;
 interface SourceCounts { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }
 export interface SourceReport extends SourceCounts {
@@ -35,6 +37,8 @@ interface DeliveryState {
 }
 export interface Subscription extends Partial<Preferences>, DeliveryState {
   uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
+  /** The reader's chosen leaf categories, read only while `follows` is empty. */
+  interests?: string[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
 }
 type EmailIdentity = { uid: string; email: string; displayName: string };
@@ -76,7 +80,7 @@ import type { WorkerEnv } from './env.ts';
 import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
+import { CATEGORIES, getAllLeafCategories, getAreaLeaves, getCategoryLabel } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
@@ -87,6 +91,7 @@ import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { openAlexCostFor } from './openalex-api.ts';
 import { reserveOpenAlexBudget } from './provider-runtime.ts';
+import { readLeafHighlights } from './paper-store.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -145,6 +150,12 @@ const EXPLORATION_PAPER_MIN_SCORE = 70;
 const EXPLORATION_MIN_CITATIONS = 3;
 const MAX_ARXIV_DIGEST_CATEGORIES = 24;
 const MAX_ARXIV_DIGEST_RESULTS = 40;
+// A reader who follows nothing the digest covers gets the week's most cited
+// papers of the leaves they chose, read from the paper store (ENG-163).
+const MAX_DIGEST_INTERESTS = 24;
+const INTEREST_DIGEST_DAYS = 7;
+const INTEREST_PAPERS_PER_LEAF = 10;
+const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
 const ARXIV_CATEGORY_PREFIXES = [
   'cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ',
   'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph',
@@ -566,6 +577,19 @@ function sanitizePreferences(input: PreferencesInput = {}) {
   };
 }
 
+/** The leaf category ids among `value`, sorted, so an unchanged set compares equal. */
+function sanitizeInterests(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(leaf => cleanText(leaf, 80)).filter(leaf => LEAF_IDS.has(leaf)))]
+    .sort()
+    .slice(0, MAX_DIGEST_INTERESTS);
+}
+
+/** Whether a subscription has something to build an edition from: follows, or else interests. */
+function hasDigestSource(subscription: Subscription | null | undefined) {
+  return Boolean(subscription?.follows?.length || subscription?.interests?.length);
+}
+
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
@@ -878,7 +902,10 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
     follow.metadata?.query || '',
     [...new Set(followCategoryIds(follow))].sort(),
   ])).sort();
-  return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
+  // Interests only choose an edition while there are no follows; added last,
+  // so a held edition of a reader with follows keeps the key it was held under.
+  const interests = follows.length ? [] : sanitizeInterests(subscription.interests);
+  return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows, ...(interests.length ? [interests] : [])]);
 }
 
 async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
@@ -982,7 +1009,10 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   const previewItems = Array.isArray(body.previewItems)
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
-  if (!follows.length) {
+  // The reader's chosen categories fill the edition while nothing it covers
+  // is followed (ENG-163); with neither there is nothing to send.
+  const interests = sanitizeInterests(body.interests);
+  if (!follows.length && !interests.length) {
     throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   }
   const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
@@ -992,6 +1022,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ...(sync ? {} : preferences),
     email: identity.email,
     follows,
+    interests,
   });
   // A subscriber's app syncs on every open, usually with nothing new, and each
   // write costs two KV puts. The token index is still checked: a save whose
@@ -1004,6 +1035,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     && existingRaw.displayName === identity.displayName
     && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
     && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
+    && JSON.stringify(existingRaw.interests || []) === JSON.stringify(interests)
     && !selectionChanged
   ) {
     if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
@@ -1023,6 +1055,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     displayName: identity.displayName,
     follows,
     previewItems,
+    interests,
     unsubscribeToken,
     ...(!existingRaw ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
     createdAt: existing?.createdAt || now,
@@ -1402,14 +1435,63 @@ function rethrowTestOpenAlexBudgetError(results: PromiseSettledResult<unknown>[]
   }
 }
 
+/**
+ * The edition of a reader who follows nothing the digest covers: the most
+ * cited papers of the week in each leaf they chose, one leaf after another so
+ * that each is heard, from the paper store alone (ENG-163). No interests, no
+ * papers.
+ */
+async function collectInterestPapers(subscription: Subscription, env: WorkerEnv, { test = false, now = Date.now() }: DeliveryOptions = {}) {
+  const sourceReport = createSourceReport();
+  const interests = sanitizeInterests(subscription.interests);
+  if (!interests.length) return { papers: [] as DigestPaper[], sourceReport };
+  let rows;
+  try {
+    rows = await trackDigestSource(sourceReport, 'paper-store', () => readLeafHighlights(
+      env,
+      interests,
+      new Date(now - INTEREST_DIGEST_DAYS * DAY_MS).toISOString(),
+      INTEREST_PAPERS_PER_LEAF,
+    ));
+  } catch {
+    sourceReport.requiredFailed = 1;
+    throw new EmailDigestTransientError(sourceReport);
+  }
+  const byLeaf = interests.map(leaf => rows
+    .filter(row => row.leaf === leaf)
+    .map(row => sanitizePaper({ ...row.paper, area: areaKeyForPaper(row.paper) } as PaperInput))
+    .filter((paper): paper is NonNullable<typeof paper> => Boolean(paper?.url && paper.authors.length))
+    .map(paper => ({ ...paper, interest: leaf })));
+  const taken = test ? new Set<string>() : new Set(subscription.sentPaperKeys || []);
+  const maximum = subscription.maxPapers || 5;
+  const papers: DigestPaper[] = [];
+  // Each turn, every leaf adds its next paper not yet sent or taken.
+  const next = byLeaf.map(() => 0);
+  for (let added = true; added && papers.length < maximum;) {
+    added = false;
+    byLeaf.forEach((leafPapers, leaf) => {
+      while (next[leaf] < leafPapers.length && papers.length < maximum) {
+        const paper = leafPapers[next[leaf]++];
+        const keys = paperIdentityKeys(paper);
+        if (keys.some(key => taken.has(key))) continue;
+        keys.forEach(key => taken.add(key));
+        papers.push(paper);
+        added = true;
+        break;
+      }
+    });
+  }
+  return { papers, sourceReport };
+}
+
 async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   test = false,
   now = Date.now(),
   openAlexRequests = null,
 }: CollectOptions = {}) {
   const follows = digestFollowsForWindow(subscription.follows, now);
+  if (!follows.length) return collectInterestPapers(subscription, env, { test, now });
   const sourceReport = createSourceReport();
-  if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
   // A test fails whole on its first refusal and the ledger remembers none: a
@@ -1711,6 +1793,8 @@ const EMAIL_COPY = {
   paperCount: (count: number) => (count === 1 ? '1 new paper' : `${count} new papers`),
   emptyHeadline: 'Your email is ready',
   introduction: 'Welcome to your weekly selection of papers we think you might find interesting.',
+  interestsIntroduction: 'You do not follow a topic, author, institution or project yet, so these are the most cited new papers this week in the subjects you chose.',
+  fromInterests: 'From your interests',
   outsideFollows: 'Outside your follows',
   alsoInEdition: 'More to read',
   leadLabel: 'Start here',
@@ -1843,7 +1927,13 @@ function renderScientificExcerpt(value: unknown, maxLength = DIGEST_EXCERPT_LENG
 }
 
 function isDiscovery(paper: DigestPaper) {
-  return !(paper.matches || []).length;
+  return !(paper.matches || []).length && !paper.interest;
+}
+
+/** What a paper's tag says: the subject an interest paper came from, or that a discovery is outside the follows. */
+function storyTag(paper: DigestPaper) {
+  if (paper.interest) return getCategoryLabel(paper.interest);
+  return isDiscovery(paper) ? EMAIL_COPY.outsideFollows : '';
 }
 
 function fieldLabel(area = '') {
@@ -1893,13 +1983,13 @@ const STORY_FRAME = `border:1px solid ${EMAIL_PALETTE.frame};border-radius:3px`;
 
 function storyDetails(paper: DigestPaper, { lead = false } = {}) {
   return `<p style="margin:${lead ? 0 : '8px 0 0'};font:400 14px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper, { lead }))}</p>
-${isDiscovery(paper) ? `<p style="margin:10px 0 0"><span style="display:inline-block;padding:3px 7px;border:1px solid ${EMAIL_PALETTE.frame};border-radius:2px;${monoStyle({ size: 10, color: EMAIL_PALETTE.secondary })}">${EMAIL_COPY.outsideFollows}</span></p>` : ''}`;
+${storyTag(paper) ? `<p style="margin:10px 0 0"><span style="display:inline-block;padding:3px 7px;border:1px solid ${EMAIL_PALETTE.frame};border-radius:2px;${monoStyle({ size: 10, color: EMAIL_PALETTE.secondary })}">${escapeHtml(storyTag(paper))}</span></p>` : ''}`;
 }
 
-function renderLeadStory(paper: DigestPaper) {
+function renderLeadStory(paper: DigestPaper, label: string) {
   const excerpt = renderScientificExcerpt(paper.abstract);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:36px 0 40px">
-${sectionHeading(EMAIL_COPY.leadLabel)}
+${sectionHeading(label)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${STORY_FRAME}"><tr><td class="pt-card" style="padding:24px 26px 26px">
 <h3 class="pt-lead" style="margin:0 0 14px;font:600 26px/1.2 ${EMAIL_FONTS.serif};letter-spacing:-0.015em;color:${EMAIL_PALETTE.ink}">${storyLink(paper)}</h3>
 ${excerpt.html ? `<p style="margin:0 0 16px;font:400 17px/1.55 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${excerpt.html}</p>` : ''}
@@ -1933,6 +2023,10 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
   const dateline = editionDate(now);
   // collectDigestPapers ranks the followed papers first, the discovery last.
   const lead = papers[0] || null;
+  // collectInterestPapers fills the whole edition when nothing it covers is followed.
+  const fromInterests = Boolean(lead?.interest);
+  const leadLabel = fromInterests ? EMAIL_COPY.fromInterests : EMAIL_COPY.leadLabel;
+  const introduction = fromInterests ? EMAIL_COPY.interestsIntroduction : EMAIL_COPY.introduction;
   const rest = papers.filter(paper => paper !== lead);
   const others = [...rest.filter(paper => !isDiscovery(paper)), ...rest.filter(isDiscovery)];
   const subject = test ? EMAIL_COPY.testSubject : EMAIL_COPY.subject(editionWeek(now));
@@ -1949,7 +2043,7 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
 </td></tr></table></td></tr></table>`
     : '';
   const stories = lead
-    ? `${renderLeadStory(lead)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
+    ? `${renderLeadStory(lead, leadLabel)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
     : `<p style="margin:0;padding:30px 0;font:400 16px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
 
   const html = `<!doctype html><html lang="en"><head>
@@ -1980,7 +2074,7 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
 <div style="margin:18px 0 0;border-top:2px solid ${ink};height:0;line-height:0;font-size:0">&nbsp;</div>
 <p style="margin:32px 0 0;font:italic 400 19px/1.4 ${serif};color:${secondary}">${escapeHtml(greeting)}</p>
 <h1 class="pt-h1" style="margin:6px 0 0;font:600 40px/1.08 ${serif};letter-spacing:-0.025em;color:${ink}">${escapeHtml(headline)}</h1>
-${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.introduction)}</p>` : ''}
+${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(introduction)}</p>` : ''}
 ${index ? `<p style="margin:6px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(index)}</p>` : ''}
 ${testNotice}
 ${stories}
@@ -2003,15 +2097,15 @@ ${emailButton(PAPER_TOK_URL, EMAIL_COPY.openInbox)}
       if (excerpt) lines.push(excerpt);
     }
     lines.push(paperByline(paper, { lead: isLead }));
-    if (isDiscovery(paper)) lines.push(EMAIL_COPY.outsideFollows);
+    if (storyTag(paper)) lines.push(storyTag(paper));
     lines.push(paper.url || PAPER_TOK_URL);
     return lines.join('\n');
   };
   const blocks = [
     `${EMAIL_COPY.nameplate.toUpperCase()}\n${dateline}`,
-    [greeting, headline, ...(lead ? [EMAIL_COPY.introduction] : []), ...(index ? [index] : [])].join('\n'),
+    [greeting, headline, ...(lead ? [introduction] : []), ...(index ? [index] : [])].join('\n'),
     ...(test ? [`${EMAIL_COPY.testKicker.toUpperCase()}\n${EMAIL_COPY.testBody}`] : []),
-    ...(lead ? [`${EMAIL_COPY.leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
+    ...(lead ? [`${leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
     ...(others.length ? [`${EMAIL_COPY.alsoInEdition.toUpperCase()} (${others.length})`, ...others.map(paper => storyText(paper))] : []),
     `${lead ? `${EMAIL_COPY.closingTitle} ` : ''}${EMAIL_COPY.closingBody}\n${EMAIL_COPY.openInbox}: ${PAPER_TOK_URL}\n\n${EMAIL_COPY.footer}\n${EMAIL_COPY.unsubscribe}: ${unsubscribeUrl}`,
   ];
@@ -2149,9 +2243,11 @@ function papersForCurrentSubscription(papers: DigestPaper[], subscription: Subsc
   const followKeys = new Set((subscription.follows || []).map(follow => (
     `${follow.type}:${follow.canonicalId}`
   )));
+  const interests = new Set(sanitizeInterests(subscription.interests));
   return papers.filter(paper => (
     !paperIdentityKeys(paper).some(key => sentKeys.has(key))
     && (!(paper.matches || []).length || getPaperFollowKeys(paper).some(key => followKeys.has(key)))
+    && (!paper.interest || (!followKeys.size && interests.has(paper.interest)))
   )).slice(0, subscription.maxPapers || 5);
 }
 
@@ -2238,7 +2334,7 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
 
     const latest = await loadSubscriptionWithState(env, key);
     if (!latest?.enabled) return { pending: true, cancelled: true };
-    if (!(latest.follows || []).length) return { pending: true, invalid: true };
+    if (!hasDigestSource(latest)) return { pending: true, invalid: true };
     const draft = existing.draft;
     if (!draft?.delivery) return { pending: true };
     const reservedAt = Date.parse(existing.reservedAt || '');
@@ -2274,7 +2370,7 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const reservationId = await buildDeliveryReservationId(subscription, { test, now });
   const latest = await loadSubscriptionWithState(env, key);
-  if (!latest?.enabled || !(latest.follows || []).length) {
+  if (!latest?.enabled || !hasDigestSource(latest)) {
     return { cancelled: true, invalid: Boolean(latest?.enabled) };
   }
   if (!test && !isSubscriptionDue(latest, new Date(now))) {
@@ -2337,7 +2433,7 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
-  if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
+  if (!hasDigestSource(subscription)) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   const now = Date.now();
   await reserveTestEmail(env, identity.uid, now);
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
@@ -2770,7 +2866,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
   const subscription = await loadSubscriptionWithState(env, key.name);
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
-  if (!(subscription.follows || []).length) {
+  if (!hasDigestSource(subscription)) {
     const code = 'EMAIL_SUBSCRIPTION_INVALID';
     // Recorded once. Only a save can give the record follows, so writing the same
     // outcome again in every window spent a KV write per window and changed

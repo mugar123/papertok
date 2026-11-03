@@ -7,6 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
 import { readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
 import {
   emailNotificationInternals,
@@ -4154,4 +4155,100 @@ test('a notification write asks Identity Toolkit again, so a deleted account can
       assert.equal(await kv.get('notification:subscription:gone', 'json'), null);
     });
   } finally { globalThis.fetch = originalFetch; }
+});
+
+// ENG-163 (Pablo, 2026-11-03): a reader whose digest is on and who follows
+// nothing it covers gets the week's most cited papers of the leaves they
+// chose, read from the paper store, instead of losing the digest.
+const INTEREST_NOW = Date.parse('2026-08-10T07:00:00Z');
+
+function interestCorpus(rows: Array<{ lane: string; id: string; published: string; citationCount?: number }>) {
+  const { binding, db } = testD1();
+  rows.forEach((row, index) => {
+    const paper = {
+      id: row.id,
+      title: `Paper ${row.id}`,
+      authors: [{ name: 'Ada Lovelace' }],
+      published: row.published,
+      landingPageUrl: `https://arxiv.org/abs/${row.id}`,
+      primaryCategory: row.lane,
+      categories: [row.lane],
+      ...(row.citationCount === undefined ? {} : { citationCount: row.citationCount }),
+    };
+    db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)')
+      .run(index + 1, JSON.stringify(paper), row.published, '2027-01-01T00:00:00.000Z');
+    db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)').run(row.lane, index + 1, row.published);
+  });
+  return { PAPER_STORE: binding } as WorkerEnv;
+}
+
+test('a reader with no follows and chosen interests gets the most cited papers of the week in each, from the paper store', async () => {
+  const env = interestCorpus([
+    { lane: 'cs.LG', id: 'lg-cited', published: '2026-08-07T00:00:00.000Z', citationCount: 9 },
+    { lane: 'cs.LG', id: 'lg-new', published: '2026-08-09T00:00:00.000Z', citationCount: 0 },
+    { lane: 'cs.LG', id: 'lg-old', published: '2026-07-20T00:00:00.000Z', citationCount: 90 },
+    { lane: 'quant-ph', id: 'qp-cited', published: '2026-08-08T00:00:00.000Z', citationCount: 3 },
+    { lane: 'quant-ph', id: 'qp-sent', published: '2026-08-08T00:00:00.000Z', citationCount: 50 },
+  ]);
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => { providerCalls += 1; return new Response('{}'); };
+  try {
+    const { papers } = await collectDigestPapers(digestSubscription({
+      follows: [],
+      interests: ['cs.LG', 'quant-ph'],
+      maxPapers: 3,
+      sentPaperKeys: ['id:qp-sent'],
+    }), env, { now: INTEREST_NOW });
+    assert.deepEqual(papers.map(paper => [paper.id, paper.interest]), [
+      ['lg-cited', 'cs.LG'],
+      ['qp-cited', 'quant-ph'],
+      ['lg-new', 'cs.LG'],
+    ], 'one leaf after another, most cited first, within the week, never a paper already sent');
+    assert.equal(providerCalls, 0, 'no provider is asked');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a reader with follows keeps the follows digest whatever interests are stored', async () => {
+  const backlog = digestPaper({ id: 'weekend-backlog', published: '2026-08-06' });
+  const restoreFetch = stubFetch(jsonResponse(200, { results: [] }));
+  try {
+    const result = await collectDigestPapers(digestSubscription({
+      lastSentAt: '2026-08-08T07:00:00Z',
+      previewItems: [backlog],
+      interests: ['cs.LG'],
+    }), {}, { now: Date.parse('2026-08-09T07:00:00Z') });
+    assert.deepEqual(result.papers.map(paper => [paper.id, paper.interest]), [['weekend-backlog', undefined]]);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('a subscription with no follows is saved with the chosen leaves, and refused only with neither', async () => {
+  const kv = createMemoryKv();
+  const saved = await saveSubscription(preferencesPut({
+    enabled: true, maxPapers: 5, follows: [], interests: ['quant-ph', 'cs.LG', 'not-a-leaf', 'cs.LG'],
+  }), { NOTIFICATION_STORE: kv }, SYNC_READER);
+  assert.equal(saved.enabled, true);
+  assert.deepEqual((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.interests, ['cs.LG', 'quant-ph']);
+
+  await assert.rejects(
+    () => saveSubscription(preferencesPut({ enabled: true, follows: [], interests: ['not-a-leaf'] }), { NOTIFICATION_STORE: createMemoryKv() }, SYNC_READER),
+    error => (error as { code?: string }).code === 'EMAIL_FOLLOWS_REQUIRED',
+  );
+});
+
+test('an edition from interests says so, and tags each paper with its subject', () => {
+  const interestPaper = (id: string, interest: string) => frontPagePaper({ id, title: `Paper ${id}`, url: `https://example.com/${id}`, matches: [], interest });
+  const digest = renderDigest({}, [interestPaper('a', 'cs.LG'), interestPaper('b', 'quant-ph')], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  for (const output of [pageBody(digest.html), digest.text]) {
+    assert.match(output, /From your interests|FROM YOUR INTERESTS/);
+    assert.match(output, /in the subjects you chose/);
+    assert.equal(output.includes('Machine Learning'), true);
+    assert.equal(output.includes('Quantum Physics'), true);
+    assert.equal(output.includes('Outside your follows'), false);
+  }
 });

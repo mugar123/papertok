@@ -2,6 +2,7 @@ import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
 import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
+interface NotificationSaveOptions { sync?: boolean; interests?: readonly string[] }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
 
 import { auth } from './firebase.ts';
@@ -168,8 +169,9 @@ export async function getEmailNotificationHealth() {
 
 /**
  * Whether the reader follows anything the weekly digest is built from. A
- * journal is not (D6), so a reader who follows only journals has no digest,
- * and the Worker refuses to subscribe them (EMAIL_FOLLOWS_REQUIRED).
+ * journal is not (D6), so a reader who follows only journals gets the digest
+ * from their chosen categories, or, with none, the Worker refuses to subscribe
+ * them (EMAIL_FOLLOWS_REQUIRED).
  */
 export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
   return follows.some(isDigestFollow);
@@ -186,8 +188,11 @@ const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 's
  * never lets it create or re-enable a subscription or change its settings.
  * The other fields are still sent because a Worker deployed before `sync`
  * ignores the flag and saves them.
+ *
+ * `interests` are the reader's chosen leaf categories, ids only. The Worker
+ * builds the digest from them while nothing it covers is followed (ENG-163).
  */
-export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], { sync = false }: { sync?: boolean } = {}) {
+export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], { sync = false, interests = [] }: NotificationSaveOptions = {}) {
   return {
     ...(sync ? { sync: true } : {}),
     enabled: Boolean(preferences.enabled),
@@ -204,10 +209,11 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
       .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
       .slice(0, 20)
       .map(paper => serializeUpdateForNotifications(paper)),
+    interests: [...new Set(interests)].sort(),
   };
 }
 
-export async function saveEmailNotificationPreferences(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], options: { sync?: boolean } = {}) {
+export async function saveEmailNotificationPreferences(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], options: NotificationSaveOptions = {}) {
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {
     method: 'PUT',
     body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems, options)),

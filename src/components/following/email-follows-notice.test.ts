@@ -21,3 +21,10 @@ test('the email settings say nothing is followed only when nothing is', () => {
   assert.match(emailFollowsNotice([], true)!.body, /when you joined/);
   assert.equal(emailFollowsNotice([author, journal], false), null);
 });
+
+// ENG-163: with no digest follow, the reader's chosen categories fill the email.
+test('the email settings tell a reader with chosen categories and no digest follow that the email covers their interests', () => {
+  assert.equal(emailFollowsNotice([], false, true)?.heading, 'Your email covers your interests');
+  assert.equal(emailFollowsNotice([journal], true, true)?.heading, 'Your email covers your interests');
+  assert.equal(emailFollowsNotice([author], false, true), null);
+});
