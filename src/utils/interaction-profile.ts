@@ -21,6 +21,9 @@ export interface TemporalSignal { notable: KindCounts; recent: KindCounts; lean:
 // What one like, save or opened PDF of a paper added: to which kind, if any
 // (`notable`), at which halving (`epoch`), and the lean step it moved.
 interface CountedEngagement { notable?: boolean; epoch: number; lean: number; }
+// What an unlike or unsave took back: the engagement, and the part of its lean
+// step the lean actually lost, less than the whole step when a bound held it.
+interface TakenEngagement { counted: CountedEngagement; lean: number; }
 type EngagementSignal = 'like' | 'save' | 'openedPdf';
 type EngagedPaper = Partial<Record<EngagementSignal, CountedEngagement>>;
 interface TemporalState extends TemporalSignal {
@@ -32,7 +35,7 @@ interface TemporalState extends TemporalSignal {
   // In memory only: what the latest unlike or unsave of a paper took back,
   // null when it took nothing, keyed `<signal>:<paper id>`, for a like or save
   // that `restores` it to put back.
-  taken: Map<string, CountedEngagement | null>;
+  taken: Map<string, TakenEngagement | null>;
 }
 export interface InteractionProfile {
   version: number; updatedAt: string | null;
@@ -550,8 +553,9 @@ function countShown(profile: InteractionProfile, event: InteractionEvent) {
  * counts toward its kind when it is a For You card, and moves the lean by
  * `step`. What it added is kept, for an unlike or unsave to take back. A like
  * or save that `restores` puts back what the paper's latest unlike or unsave
- * took instead, halved as the counts were since: the card it was tapped on
- * may be of another kind, or off For You.
+ * took instead, halved as the counts were since, and moves the lean back by
+ * as much as that removal moved it: the card it was tapped on may be of
+ * another kind, or off For You.
  */
 function countEngagement(profile: InteractionProfile, event: InteractionEvent, signal: EngagementSignal, step: number, now: number) {
   const { temporal } = profile;
@@ -563,8 +567,8 @@ function countEngagement(profile: InteractionProfile, event: InteractionEvent, s
   let counted: CountedEngagement;
   if (event.restores === true && taken !== undefined) {
     if (taken === null) return;
-    counted = taken;
-    temporal.lean = clamp(temporal.lean + counted.lean, -1, 1);
+    counted = taken.counted;
+    temporal.lean = clamp(temporal.lean + taken.lean, -1, 1);
     if (typeof counted.notable === 'boolean') countsOf(temporal, counted.notable).engaged += 0.5 ** (temporal.halvings - counted.epoch);
   } else {
     const lean = leanAfterEngaging(temporal.lean, event, step, now);
@@ -583,23 +587,27 @@ function countEngagement(profile: InteractionProfile, event: InteractionEvent, s
 }
 
 // An unlike or unsave: takes back what the like or save added, halved as the
-// counts were since, and remembers it (`taken`).
+// counts were since, and remembers it with the lean it actually took (`taken`).
 function undoEngagement(profile: InteractionProfile, paperId: string, signal: EngagementSignal) {
   const { temporal } = profile;
   const paper = temporal.papers.get(paperId);
   const counted = paper?.[signal];
   const takenKey = `${signal}:${paperId}`;
   temporal.taken.delete(takenKey);
-  temporal.taken.set(takenKey, counted ?? null);
-  while (temporal.taken.size > MAX_ENGAGED_PAPERS) temporal.taken.delete(temporal.taken.keys().next().value!);
-  if (!paper || !counted) return;
-  if (typeof counted.notable === 'boolean') {
-    const kind = countsOf(temporal, counted.notable);
-    kind.engaged = Math.max(0, kind.engaged - 0.5 ** (temporal.halvings - counted.epoch));
+  let taken: TakenEngagement | null = null;
+  if (paper && counted) {
+    if (typeof counted.notable === 'boolean') {
+      const kind = countsOf(temporal, counted.notable);
+      kind.engaged = Math.max(0, kind.engaged - 0.5 ** (temporal.halvings - counted.epoch));
+    }
+    const lean = clamp(temporal.lean - counted.lean, -1, 1);
+    taken = { counted, lean: temporal.lean - lean };
+    temporal.lean = lean;
+    delete paper[signal];
+    if (Object.keys(paper).length === 0) temporal.papers.delete(paperId);
   }
-  temporal.lean = clamp(temporal.lean - counted.lean, -1, 1);
-  delete paper[signal];
-  if (Object.keys(paper).length === 0) temporal.papers.delete(paperId);
+  temporal.taken.set(takenKey, taken);
+  while (temporal.taken.size > MAX_ENGAGED_PAPERS) temporal.taken.delete(temporal.taken.keys().next().value!);
 }
 
 function recordSessionImpact(

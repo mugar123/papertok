@@ -1099,6 +1099,43 @@ test('a like or save restored after a halving is taken back at its halved worth 
   }
 });
 
+// The verifier's third case on PR #419: an unlike or unsave made where a bound
+// of the lean holds back part of its step takes back less than the step, and a
+// restore must put back only that.
+test('a like or save that restores a removal held at a bound of the lean puts the lean back where the removal found it', () => {
+  const recent = '2026-08-18T00:00:00.000Z';
+  const old = '2018-01-01T00:00:00.000Z';
+  const cases = [
+    ['an old paper at the upper bound', old, recent, false],
+    ['a recent paper at the lower bound', recent, old, false],
+    ['an old paper half a read short of the upper bound', old, recent, true],
+  ] as const;
+  for (const [add, remove, step] of [['like', 'unlike', 0.1], ['save', 'unsave', 0.15]] as const) {
+    for (const [label, date, pushDate, readBack] of cases) {
+      const profile = createEmptyInteractionProfile();
+      recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', published: date }, NOW);
+      for (let index = 0; index < 12; index += 1) {
+        recordInteractionEvent(profile, { paperId: `push-${index}`, kind: 'like', category: 'cs.LG', published: pushDate }, NOW);
+      }
+      if (readBack) recordInteractionEvent(profile, { paperId: 'read', kind: 'viewTime', viewTime: 12, category: 'cs.LG', published: date }, NOW);
+      const before = temporalOf(profile);
+      assert.equal(Math.abs(before.lean), readBack ? 0.95 : 1, `${add} of ${label}: the lean starts where the case says`);
+      recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+      recordInteractionEvent(profile, { paperId: 'card', kind: add, category: 'cs.LG', published: date, restores: true }, NOW);
+      assert.deepEqual(temporalOf(profile), before, `${add} of ${label}, restored`);
+
+      // Away from the bound, the next removal takes back the whole step again.
+      for (let index = 0; index < 10; index += 1) {
+        recordInteractionEvent(profile, { paperId: `back-${index}`, kind: 'like', category: 'cs.LG', published: date }, NOW);
+      }
+      const middle = temporalOf(profile).lean;
+      recordInteractionEvent(profile, { paperId: 'card', kind: remove, category: 'cs.LG' }, NOW);
+      const taken = temporalOf(profile).lean - middle;
+      assert.ok(Math.abs(Math.abs(taken) - step) < 1e-9, `${add} of ${label}, removed again away from the bound: ${taken}`);
+    }
+  }
+});
+
 test('a paper liked, saved or opened again counts once for each, and a card viewed again is shown once', () => {
   const profile = createEmptyInteractionProfile();
   const card = { paperId: 'card', category: 'cs.LG', notable: true, published: '2018-01-01T00:00:00.000Z' };
