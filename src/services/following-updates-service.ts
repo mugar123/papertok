@@ -6,6 +6,8 @@ interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntit
 interface FollowingOptions {
   topicRetriever?: TopicRetriever; fetchUpdatesForFollow?: (follow: FollowEntity, options: FollowingOptions) => Promise<Paper[]>;
   entityTimeoutMs?: number; limit?: number; maxAgeDays?: number; now?: number; onProgress?: (result: FollowingResult) => void;
+  /** The papers on screen, kept for the follows that have not answered this refresh. */
+  previous?: Paper[];
 }
 
 import { mapWithConcurrency } from '../utils/map-with-concurrency.ts';
@@ -17,6 +19,7 @@ import { getPapersByProject } from './open-aire-service.ts';
 import {
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
+  papersCarriedFor,
 } from '../utils/following-updates.ts';
 
 const PAPERS_PER_ENTITY = 5;
@@ -194,12 +197,16 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
   const limit = options.limit || 60;
   const maxAgeDays = options.maxAgeDays || 365;
   const collected: Paper[] = [];
+  // The follows that answered this refresh, empty answers included: the
+  // previous papers of every other follow refreshed stay until it answers.
+  const answered = new Set<FollowEntity>();
   let checkedEntities = 0;
   let failedEntities = 0;
 
   const deliver = () => ({
     papers: mergeFollowingUpdatePapers(
-      collected.filter(paper => isRecentFollowingUpdate(paper, options.now, maxAgeDays)),
+      [...collected, ...papersCarriedFor(options.previous || [], follows.filter(follow => !answered.has(follow)))]
+        .filter(paper => isRecentFollowingUpdate(paper, options.now, maxAgeDays)),
       limit,
     ),
     checkedEntities,
@@ -210,8 +217,10 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
   await mapWithConcurrency(follows, 4, async (follow) => {
     const settled = await settleWithin(Promise.resolve().then(() => fetchOne(follow, options)), deadlineMs!);
     checkedEntities += 1;
-    if (settled.status === 'fulfilled') collected.push(...withMatch(settled.value, follow));
-    else failedEntities += 1;
+    if (settled.status === 'fulfilled') {
+      answered.add(follow);
+      collected.push(...withMatch(settled.value, follow));
+    } else failedEntities += 1;
     if (typeof options.onProgress === 'function') {
       try {
         options.onProgress(deliver());

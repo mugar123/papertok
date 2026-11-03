@@ -81,3 +81,22 @@ export function resolveInteractionId(paper: Partial<Paper> | null | undefined, i
   }
   return raw;
 }
+
+/**
+ * The like, save and read marks a card shows, read under the id the reader's
+ * marks live under (`interactionIdFor`), the same id a toggle writes to. Read
+ * under the id the paper arrived with, a paper liked under another id showed
+ * its heart off, and the double tap that "liked" it wrote the unlike.
+ */
+export function interactionMarksOf(
+  paper: Partial<Paper>,
+  marks: { liked: Set<string>; saved: Set<string>; read: Set<string> },
+  interactionIdFor: (paper: Partial<Paper>) => string | undefined,
+) {
+  const id = interactionIdFor(paper);
+  return {
+    isLiked: Boolean(id && marks.liked.has(id)),
+    isSaved: Boolean(id && marks.saved.has(id)),
+    isRead: Boolean(id && marks.read.has(id)),
+  };
+}

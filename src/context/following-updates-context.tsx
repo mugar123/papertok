@@ -18,6 +18,7 @@ import { FollowingUpdatesContext } from './contexts.ts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase.ts';
 import { fetchFollowingUpdates } from '../services/following-updates-service.ts';
+import { followingRefreshTurns, settleFollowingRefresh } from './following-refresh.ts';
 import { useAuth } from './auth-context.tsx';
 import { useFollowing } from './following-context.tsx';
 import {
@@ -59,6 +60,16 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const userId = user?.uid || null;
   const { followedEntities, loading: followsLoading } = useFollowing();
   const [items, setItems] = useState<Paper[]>([]);
+  // Mirrors `items` synchronously, as `seenIdsRef` below mirrors `seenIds`:
+  // a refresh hands the papers on screen to the service, which keeps them for
+  // the follows that have not answered it, and a refresh that starts in the
+  // same tick as the restore below must already see what it restored.
+  const itemsRef = useRef(items);
+  const showItems = useCallback((next: Paper[]) => {
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
+  const refreshTurns = useRef(followingRefreshTurns());
   const [seenIds, setSeenIds] = useState(new Set<string>());
   // Mirrors `seenIds` synchronously — assigned at every `setSeenIds` call
   // site in this file, in the same statement/microtask that produces the
@@ -90,7 +101,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     const restoreTimeout = setTimeout(() => {
       if (cancelled) return;
       if (!userId) {
-        setItems([]);
+        showItems([]);
         const emptySeen = new Set<string>();
         seenIdsRef.current = emptySeen;
         setSeenIds(emptySeen);
@@ -103,7 +114,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       seenIdsRef.current = restoredSeen;
       setSeenIds(restoredSeen);
       if (local.signature === signature && Array.isArray(local.items)) {
-        setItems(local.items);
+        showItems(local.items);
         setMeta(local.meta || { checkedEntities: 0, totalEntities: followedEntities.length, failedEntities: 0 });
         setLastUpdatedAt(local.savedAt || null);
       }
@@ -129,7 +140,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(restoreTimeout);
     };
-  }, [followedEntities.length, signature, userId]);
+  }, [followedEntities.length, showItems, signature, userId]);
 
   // A delivery from the service, as each follow answers (see
   // fetchFollowingUpdates): the items the page ranks are replaced by the
@@ -142,13 +153,13 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const applyProgress = useCallback((partial: FollowingResult) => {
     if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
     if (!partial?.papers?.length) return;
-    setItems(partial.papers);
+    showItems(partial.papers);
     setMeta({
       checkedEntities: partial.checkedEntities,
       totalEntities: partial.totalEntities,
       failedEntities: partial.failedEntities,
     });
-  }, [signature, userId]);
+  }, [showItems, signature, userId]);
 
   const refresh = useCallback(async ({ silent = false } = {}) => {
     if (!userId || followsLoading) return;
@@ -156,7 +167,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       // No follow is left to fail: an earlier refresh's error goes with them,
       // so the empty state shows instead of an error Try again cannot clear.
       setError(null);
-      setItems([]);
+      showItems([]);
       setMeta({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
       setLastUpdatedAt(new Date().toISOString());
       return;
@@ -167,6 +178,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     if (!request) {
       request = fetchFollowingUpdates(followedEntities, {
         onProgress: applyProgress,
+        previous: itemsRef.current,
       }).finally(() => requestsInFlight.delete(requestKey));
       requestsInFlight.set(requestKey, request);
     }
@@ -175,46 +187,48 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     else setRefreshing(true);
     setError(null);
 
-    try {
-      const result = await request;
-      if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
-      const savedAt = new Date().toISOString();
-      setItems(result.papers);
-      setMeta({
-        checkedEntities: result.checkedEntities,
-        totalEntities: result.totalEntities,
-        failedEntities: result.failedEntities,
-      });
-      setLastUpdatedAt(savedAt);
-      const local = readLocalState(userId);
-      writeLocalState(userId, {
-        ...local,
-        items: result.papers,
-        meta: {
+    const isCurrent = () => isCurrentFollowingRequest(activeRequestRef.current, { userId, signature });
+    await settleFollowingRefresh(request, {
+      isCurrent,
+      ownsTurn: refreshTurns.current.take(),
+      apply: (result) => {
+        const savedAt = new Date().toISOString();
+        showItems(result.papers);
+        setMeta({
           checkedEntities: result.checkedEntities,
           totalEntities: result.totalEntities,
           failedEntities: result.failedEntities,
-        },
-        signature,
-        savedAt,
-      });
-    } catch (refreshError) {
-      if (!isCurrentFollowingRequest(activeRequestRef.current, { userId, signature })) return;
-      // The items, the cache and `lastUpdatedAt` stay as they were: a refresh
-      // in which every follow failed rejects (fetchFollowingUpdates), and the
-      // cards it would have replaced are still the newest answer (ENG-176).
-      console.error('Error loading followed updates', refreshError);
-      setError(refreshError);
-    } finally {
-      // By account only: the refresh for the follows that replaced these one
-      // may never start (a fresh cache, or no follow left), and the spinner
-      // must not stay up for it.
-      if (activeRequestRef.current.userId === userId) {
+        });
+        setLastUpdatedAt(savedAt);
+        const local = readLocalState(userId);
+        writeLocalState(userId, {
+          ...local,
+          items: result.papers,
+          meta: {
+            checkedEntities: result.checkedEntities,
+            totalEntities: result.totalEntities,
+            failedEntities: result.failedEntities,
+          },
+          signature,
+          savedAt,
+        });
+      },
+      fail: (refreshError) => {
+        // The items, the cache and `lastUpdatedAt` stay as they were: a refresh
+        // in which every follow failed rejects (fetchFollowingUpdates), and the
+        // cards it would have replaced are still the newest answer (ENG-176).
+        console.error('Error loading followed updates', refreshError);
+        setError(refreshError);
+      },
+      // Only the latest refresh started ends the spinner; when the follows
+      // that replaced these start none (a fresh cache, or no follow left),
+      // this one is still the latest (context/following-refresh.ts).
+      endLoading: () => {
         setLoading(false);
         setRefreshing(false);
-      }
-    }
-  }, [applyProgress, followedEntities, followsLoading, signature, userId]);
+      },
+    });
+  }, [applyProgress, followedEntities, followsLoading, showItems, signature, userId]);
 
   // The signature, not the follow array's identity, says what to fetch.
   const refreshSilently = useEffectEvent(() => refresh({ silent: true }));

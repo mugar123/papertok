@@ -5,7 +5,10 @@ export interface FollowingContextValue {
   followedEntities: FollowEntity[];
   followedByType: Record<string, FollowEntity[]>;
   loading: boolean;
+  /** Why the follow list could not be read; a refused follow or unfollow is thrown by `toggleFollow` instead. */
   error: unknown;
+  /** Starts reading the follow list again when it failed or has not arrived. */
+  retry: () => void;
   isFollowing: (entity: FollowInput) => boolean;
   isFollowPending: (entity: FollowInput) => boolean;
   toggleFollow: (entity: FollowInput) => Promise<boolean>;
@@ -25,6 +28,7 @@ import {
   createFollowEntity,
   createFollowKey,
   followChangeEvent,
+  followSnapshotAction,
   followsEntity,
   migrateLegacyAuthors,
   planFollowToggle,
@@ -65,6 +69,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   // it, and writing it from the snapshot callback keeps it correct before the
   // re-render it triggers.
   const followList = useRef<FollowListState>('waiting');
+  const [listenAttempt, setListenAttempt] = useState(0);
   const localizedInstitutionNames = institutionLocalizationState.userId === user?.uid
     ? institutionLocalizationState.names
     : EMPTY_LOCALIZED_INSTITUTION_NAMES;
@@ -121,11 +126,16 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       setError(new FollowsUnavailableError());
     }, FIRST_SNAPSHOT_GRACE_MS);
 
-    const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
+    // With metadata changes, so the server confirming the same documents the
+    // cache gave (none, for an account that follows nothing) still reaches
+    // the callback (`followSnapshotAction`).
+    const unsubscribe = onSnapshot(followsCollection, { includeMetadataChanges: true }, (snapshot) => {
+      const action = followSnapshotAction(snapshot, followList.current);
+      if (action === 'wait') return;
       window.clearTimeout(loadingTimeout);
       followList.current = 'listed';
-      setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
-      // Whatever went wrong before, this is the server's own answer.
+      if (action === 'list') setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
+      // Whatever went wrong before, this is an answer worth acting on.
       setError(null);
       setLoading(false);
     }, (snapshotError) => {
@@ -146,8 +156,17 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     // server. That tore down and rebuilt the only Firestore listener in the app
     // at least twice per sign-in, re-reading the whole collection each time.
     // The migration below is what actually needs those authors, so it reads
-    // them itself.
-  }, [user?.uid]);
+    // them itself. `listenAttempt` is `retry` starting it again.
+  }, [user?.uid, listenAttempt]);
+
+  // A listener ended by an error stays closed, and one still waiting may be
+  // waiting on a connection that has since come back: Try again on the
+  // Following page starts it again instead of only refreshing the papers.
+  // The error stays until the new listener answers, so the page does not
+  // read the wait as an account that follows nothing.
+  const retry = useCallback(() => {
+    if (followList.current !== 'listed') setListenAttempt(current => current + 1);
+  }, []);
 
   /**
    * One-off migration of the pre-`following` author list.
@@ -254,7 +273,6 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     const wasFollowing = Boolean(existingFollow);
     const previous = followedEntities;
     setFollowedEntities(next);
-    setError(null);
     setPendingFollowKeys(current => new Set(current).add(pendingKey));
 
     try {
@@ -268,8 +286,10 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       if (!wasFollowing) void markActivation();
       return !wasFollowing;
     } catch (toggleError) {
+      // A refused write is the caller's to report (follow-refused-toast.ts),
+      // never `error`: that is the follow list failing to load, and a first
+      // follow refused would read as a list of none that could not be read.
       setFollowedEntities(previous);
-      setError(toggleError);
       throw toggleError;
     } finally {
       setPendingFollowKeys(current => {
@@ -305,10 +325,11 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     followedByType,
     loading,
     error,
+    retry,
     isFollowing,
     isFollowPending,
     toggleFollow,
-  }), [error, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, toggleFollow]);
+  }), [error, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, retry, toggleFollow]);
 
   return <FollowingContext.Provider value={value}>{children}</FollowingContext.Provider>;
 }
