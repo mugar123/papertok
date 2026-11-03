@@ -59,6 +59,7 @@ import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-ski
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
+import { createNextPageSentinel } from './next-page-sentinel.ts';
 import './feed-container.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
@@ -724,17 +725,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [scrollKey, flushSkipExit]);
 
-  // Infinite scroll: observe sentinel element
+  // Infinite scroll: observe sentinel element. After a failed page the
+  // sentinel waits for the reader or a pause (next-page-sentinel.ts).
   useEffect(() => {
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
+    const sentinel = createNextPageSentinel({ failed: Boolean(error), hasMore, loading, loadMore });
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          loadMore();
-        }
-      },
+      (entries) => sentinel.report(entries[0].isIntersecting),
       {
         root,
         // Two viewports of runway, not five: loadPapers' per-source fetch is
@@ -752,8 +751,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     );
 
     observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, loading, loadMore]);
+    return () => {
+      observer.disconnect();
+      sentinel.stop();
+    };
+  }, [error, hasMore, loading, loadMore]);
 
   // Wheel and trackpad scrolling stay entirely native. CSS scroll snapping
   // keeps cards aligned without a non-passive listener blocking momentum
