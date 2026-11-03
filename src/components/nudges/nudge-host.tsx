@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -13,6 +13,7 @@ import {
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
+  feedCardsStay,
   modalIsOpen,
   noticeOnScreen,
   privacyDialogOpen,
@@ -150,11 +151,19 @@ export default function NudgeHost() {
   const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
 
-  // The cards under the open dialog stop counting their time on screen.
-  useEffect(() => {
-    setCardsCovered(dialogOpen);
-    return () => setCardsCovered(false);
-  }, [dialogOpen]);
+  // The cards under the open dialog stop counting their time on screen. When
+  // the reader answers it, here or in another tab, they count again. When it
+  // closes because the feed is going (feedCardsStay), they stay paused while
+  // the feed plays its exit. A layout effect, so the cover is lifted before the
+  // next page's cards start their trackers in that commit's effects, and those
+  // are not taken for leaving ones.
+  const cardsStay = feedCardsStay({ readerReady, pathname: location.pathname });
+  useLayoutEffect(() => {
+    if (dialogOpen) setCardsCovered(true);
+    else setCardsCovered(false, { leaving: !cardsStay });
+  }, [dialogOpen, cardsStay]);
+  // Unmounted with the whole account's tree, its cards included.
+  useLayoutEffect(() => () => setCardsCovered(false, { leaving: true }), []);
 
   // Hide for now puts it away for this visit and does not count as reading it,
   // so it returns next time. Back is not routed here: like the app's other

@@ -9,6 +9,7 @@ import {
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
+  feedCardsStay,
   forgetPrivacyNotice,
   noticeOnScreen,
   pickNudge,
@@ -465,6 +466,20 @@ test('once open, the privacy dialog stays open until it is put away or the reade
     [true, false, false, true],
     'back on the feed, unanswered, it again waits for any other dialog',
   );
+});
+
+test('the cards under the privacy dialog stay when it is answered, and leave with the feed when it closes for any other reason', () => {
+  for (const pathname of ['/feed', '/feed/', '/Feed', '/FEED']) {
+    assert.equal(feedCardsStay({ readerReady: true, pathname }), true, `answered on ${pathname}`);
+  }
+  for (const pathname of ['/settings', '/settings/profile', '/following', '/lists', '/search', '/paper/abc', '/feed/x', '/onboarding', '/']) {
+    assert.equal(feedCardsStay({ readerReady: true, pathname }), false, `the reader went to ${pathname}`);
+  }
+  const user = { uid: 'u1' };
+  for (const [over, why] of [[{ user: null }, 'signed out'], [{ profileLoadError: 'PROFILE_LOAD_FAILED' }, 'the profile retry screen'], [{ loading: true }, 'auth answering again'], [{ onboardingComplete: false }, 'sent to the onboarding']] as const) {
+    const readerReady = visitReaderReady({ user, loading: false, onboardingComplete: true, profileLoadError: null, ...over });
+    assert.equal(feedCardsStay({ readerReady, pathname: '/feed' }), false, why);
+  }
 });
 
 test('the privacy dialog opens once per policy version, for signed-in accounts created before the change', () => {

@@ -211,6 +211,18 @@ export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { s
   return shown && (wasOpen || (cardsShown && !modalOpen));
 }
 
+/**
+ * Whether the feed's cards stay on screen as the privacy dialog closes. They do
+ * while a ready reader (visitReaderReady) is still on the feed route, which is
+ * when the dialog closed because it was answered, here or in another tab.
+ * Otherwise it closed because the feed is going: another route (each pathname
+ * mounts its own page, which plays its exit before it unmounts), a sign-out or
+ * the profile retry screen. Those cards leave with it (visible-time.ts).
+ */
+export function feedCardsStay({ readerReady, pathname }: { readerReady: boolean; pathname: string }) {
+  return readerReady && isFeedPath(pathname);
+}
+
 export const PRIVACY_NOTICE_ID = 'privacy-change';
 
 /**

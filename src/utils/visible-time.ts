@@ -1,5 +1,5 @@
 let cardsCovered = false;
-const coverListeners = new Set<() => void>();
+const coverListeners = new Set<(leaving: boolean) => void>();
 
 /**
  * Whether the privacy dialog is drawn over the feed's cards. NudgeHost sets it
@@ -9,11 +9,18 @@ const coverListeners = new Set<() => void>();
  * sets it, because it opens without being asked for. The reader and the app's
  * other modals are opened by the person reading, and time under them counts
  * as it did before the dialog existed.
+ *
+ * `leaving` lifts the cover from cards that are going away with their page,
+ * when the dialog closes because the reader left the feed rather than answered
+ * it: the leaving feed stays on screen while it plays its exit, and those cards
+ * stay paused until they stop, so they report nothing the reader did not see.
+ * A card tracked from then on, on the next page or on the feed again, counts
+ * as usual. A cover laid again over a leaving card takes it back in.
  */
-export function setCardsCovered(value: boolean) {
+export function setCardsCovered(value: boolean, { leaving = false } = {}) {
   if (value === cardsCovered) return;
   cardsCovered = value;
-  for (const listener of coverListeners) listener();
+  for (const listener of coverListeners) listener(!value && leaving);
 }
 
 // Report one visible interval per viewport visit, combining foreground time
@@ -25,6 +32,7 @@ export function trackVisibleTime(
   now = () => performance.now(),
 ) {
   let inView = false;
+  let leaving = false;
   let startedAt: number | null = null;
   let elapsed = 0;
 
@@ -33,8 +41,12 @@ export function trackVisibleTime(
     startedAt = null;
   };
   const update = () => {
-    if (inView && !cardsCovered && !visibility.hidden) startedAt ??= now();
+    if (inView && !cardsCovered && !leaving && !visibility.hidden) startedAt ??= now();
     else pause();
+  };
+  const onCover = (coverLeaving: boolean) => {
+    leaving = coverLeaving;
+    update();
   };
   const flush = () => {
     pause();
@@ -44,7 +56,7 @@ export function trackVisibleTime(
   };
 
   visibility.addEventListener('visibilitychange', update);
-  coverListeners.add(update);
+  coverListeners.add(onCover);
   return {
     setInView(value: boolean) {
       inView = value;
@@ -53,7 +65,7 @@ export function trackVisibleTime(
     },
     stop() {
       visibility.removeEventListener('visibilitychange', update);
-      coverListeners.delete(update);
+      coverListeners.delete(onCover);
       inView = false;
       flush();
     },
