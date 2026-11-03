@@ -542,8 +542,8 @@ const PaperCard = memo(function PaperCard({
     }));
   }, [followedByType.author, isFollowing, paper]);
   const followReasons = useMemo(
-    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor),
-    [paper?._followedEntityMatches, hasFollowedAuthor],
+    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),
+    [paper?._followedEntityMatches, hasFollowedAuthor, isFollowing],
   );
 
   const lastTap = useRef(0);

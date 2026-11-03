@@ -586,7 +586,7 @@ a.pc-citations {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--tint-amber-fg);
+  color: var(--text-secondary);
 }
 
 /* ── Status chips ──
