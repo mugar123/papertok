@@ -209,15 +209,22 @@ test('a partial refresh keeps the papers on screen of the follows that have not 
   // On screen: Ada's, Alan's, Grace's, one both Ada and Alan brought in, and
   // one of a follow the reader has since dropped.
   const previous = [
-    shown('ada-old', ada), shown('alan-old', alan), shown('grace-old', grace), shown('shared-old', ada, alan),
+    shown('ada-old', ada), shown('alan-old', alan), shown('grace-old', grace),
+    { ...shown('shared-old', ada, alan), journal: 'arXiv preprint' },
     shown('dropped-old', { type: 'author', canonicalId: 'A9', displayName: 'Dropped' } as FollowEntity),
   ];
   const progress: string[][] = [];
   const result = await fetchFollowingUpdates([ada, alan, grace], {
     previous,
     fetchUpdatesForFollow: async (follow) => {
-      // Ada answers with a new paper, Grace answers with none, Alan fails.
-      if (follow === ada) return [{ id: 'ada-new', title: 'ada-new', published: '2026-09-01' }] as Paper[];
+      // Ada answers with a new paper and an updated copy of the shared one,
+      // Grace answers with none, Alan fails.
+      if (follow === ada) {
+        return [
+          { id: 'ada-new', title: 'ada-new', published: '2026-09-01' },
+          { id: 'shared-old', title: 'shared-old', published: '2026-08-01', journal: 'Nature' },
+        ] as Paper[];
+      }
       if (follow === grace) return [];
       await new Promise(resolve => setTimeout(resolve, 5));
       throw new Error('arXiv unavailable');
@@ -227,8 +234,10 @@ test('a partial refresh keeps the papers on screen of the follows that have not 
 
   assert.deepEqual(result.papers.map(paper => paper.id).sort(), ['ada-new', 'alan-old', 'shared-old'],
     "Alan's papers stay; Ada's and Grace's answers replace theirs; the dropped follow's paper goes");
-  assert.deepEqual(result.papers.find(paper => paper.id === 'shared-old')?._followedEntityMatches, [match(alan)],
-    'a paper kept for Alan is credited to Alan alone');
+  const shared = result.papers.find(paper => paper.id === 'shared-old');
+  assert.equal(shared?.journal, 'Nature', "Ada's fresh copy wins over the copy kept for Alan");
+  assert.deepEqual(shared?._followedEntityMatches?.map(entry => typeof entry === 'string' ? entry : entry.canonicalId), ['A2', 'A1'],
+    'a shared paper Ada brought in again is credited to both');
   assert.equal(result.failedEntities, 1, 'still a partial answer, so the next load asks again');
   assert.ok(progress.every(ids => ids.includes('alan-old')), "Alan's papers are on screen in every delivery");
   assert.deepEqual(progress[0], ['ada-new', 'alan-old', 'grace-old', 'shared-old'], 'a follow still on its way keeps its papers too');

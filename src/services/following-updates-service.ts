@@ -205,7 +205,8 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
 
   const deliver = () => ({
     papers: mergeFollowingUpdatePapers(
-      [...collected, ...papersCarriedFor(options.previous || [], follows.filter(follow => !answered.has(follow)))]
+      // Kept papers go first so a fresh answer's copy of a shared paper wins the merge.
+      [...papersCarriedFor(options.previous || [], follows.filter(follow => !answered.has(follow))), ...collected]
         .filter(paper => isRecentFollowingUpdate(paper, options.now, maxAgeDays)),
       limit,
     ),
