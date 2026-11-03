@@ -154,9 +154,22 @@ function integerArgument(value: unknown, fallback: number, name: string) {
   return value as number;
 }
 
+// A DOI link carries the DOI percent-encoded (`https://doi.org/10.1234/a%3Fb`
+// is 10.1234/a?b), so the link is decoded once, and only a link: a DOI given
+// as itself is read as written, a literal `%25` in it included.
+const DOI_LINK = /^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i;
+
 function paperIdentity(value: unknown) {
   if (typeof value !== 'string' || value.length > 300) return null;
-  const identity = getPaperIdentity(value.trim(), undefined);
+  let text = value.trim();
+  if (DOI_LINK.test(text)) {
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      // A `%` that starts no escape is the DOI's own; the DOI grammar decides.
+    }
+  }
+  const identity = getPaperIdentity(text, undefined);
   const separator = identity.indexOf(':');
   return separator > 0 ? { type: identity.slice(0, separator), value: identity.slice(separator + 1) } : null;
 }

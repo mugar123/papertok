@@ -824,6 +824,37 @@ test('get_paper asks OpenAlex for the DOI it was given, whatever characters the 
   });
 });
 
+test('a DOI given as a link is decoded once, and a DOI given as itself is read as written, in get_paper and find_open_access', async () => {
+  const literal = { ...OPENALEX_WORK, id: 'https://openalex.org/W4400000025', title: 'A DOI with a percent sign' };
+  await withUpstream(url => {
+    if (url.startsWith('https://api.openalex.org/works/doi:10.1234/odd%3Fpart?')) return Response.json(OPENALEX_WORK);
+    // The DOI 10.1234/a%25b, whose own characters include `%25`.
+    if (url.startsWith('https://api.openalex.org/works/doi:10.1234/a%2525b?')) return Response.json(literal);
+    if (url.startsWith('https://api.unpaywall.org/v2/10.1234%2Fodd%3Fpart?')) return Response.json(UNPAYWALL);
+    if (url.startsWith('https://api.openalex.org/') || url.startsWith('https://api.unpaywall.org/') || url.startsWith('https://api.crossref.org/')) {
+      return Response.json({ error: 'Not found' }, { status: 404 });
+    }
+    throw new Error(`unexpected upstream ${url}`);
+  }, async () => {
+    const env = routeEnv();
+    const title = async (id: string) => {
+      const { answer } = await callTool(env, 'get_paper', { id });
+      return (answer.result?.structuredContent?.paper as { title?: string } | undefined)?.title ?? answer.result?.structuredContent?.code;
+    };
+    for (const id of ['10.1234/odd?part', 'https://doi.org/10.1234/odd%3Fpart', 'doi.org/10.1234/odd%3fpart', 'http://dx.doi.org/10.1234%2Fodd%3Fpart']) {
+      assert.equal(await title(id), 'Graphene sheets under strain', id);
+    }
+    for (const id of ['10.1234/a%25b', 'https://doi.org/10.1234/a%2525b']) {
+      assert.equal(await title(id), 'A DOI with a percent sign', id);
+    }
+    // Decoded once only: this link names 10.1234/a%b, another DOI.
+    assert.equal(await title('https://doi.org/10.1234/a%25b'), 'NOT_FOUND');
+
+    const { answer } = await callTool(env, 'find_open_access', { doi: 'https://doi.org/10.1234/odd%3Fpart' });
+    assert.deepEqual([answer.result?.structuredContent?.doi, answer.result?.structuredContent?.is_oa], ['10.1234/odd?part', true]);
+  });
+});
+
 test('a provider failure is a tool error the client can read', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.unpaywall.org/')) return new Response('down', { status: 500 });

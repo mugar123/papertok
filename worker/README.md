@@ -1283,7 +1283,9 @@ points:
   `source: 'arxiv'` when OpenAlex has the paper.
 
 Arguments are validated before any reservation; `sources` is read in any case
-(`arXiv`, `OpenAlex`). Each `tools/call` then
+(`arXiv`, `OpenAlex`), and a DOI given as a `doi.org` link is percent-decoded
+once (`https://doi.org/10.1234/a%3Fb` is `10.1234/a?b`), while a DOI given as
+itself is read as written. Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
 `reserveCallerMinute`; cache hits count too. A refusal, a missing
 `PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
