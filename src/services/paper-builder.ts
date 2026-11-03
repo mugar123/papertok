@@ -9,6 +9,21 @@ import type { Paper, PaperAuthor, PaperSources } from '../models/paper.ts';
 // order-blind author keys in `deduplicate` are not issued for it.
 const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
 
+// A title as the title keys of `identityKeys` read it.
+function titleKeyText(title: unknown) {
+  return String(title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// The names the OpenAlex mappers write for an authorship OpenAlex gave no name
+// (`mapOpenAlexWork`, `formatOpenAlexWorkAsPaper`). They name nobody, so two
+// works "by" one of them have no author in common.
+const PLACEHOLDER_AUTHOR_NAMES: ReadonlySet<string> = new Set(['unknown', 'unknown author']);
+
+/** Whether an author name is a mapper's placeholder for a name the source did not give. */
+export function isPlaceholderAuthorName(name: unknown) {
+  return PLACEHOLDER_AUTHOR_NAMES.has(String(name ?? '').trim().toLowerCase());
+}
+
 // OpenAlex calls a working paper `published` as readily as a journal article,
 // so its mappers state peer review themselves (`openAlexPeerReviewed`) and a
 // gap in that answer stays a gap. Every other provider's `published` is still
@@ -691,11 +706,14 @@ export class PaperBuilder {
       doiKey = doiKey.replace('https://doi.org/', '');
     }
 
-    // Heuristic key: Alphanumeric title + first author's last name
-    const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const firstAuthorName = paper.authors && paper.authors.length > 0
+    // Heuristic key: Alphanumeric title + first author's last name. A
+    // placeholder for a missing name gives none: two works titled
+    // "Introduction" by "Unknown" merged, and one showed the other's citations.
+    const cleanTitle = titleKeyText(paper.title);
+    const givenFirstAuthor = paper.authors && paper.authors.length > 0
       ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
       : '';
+    const firstAuthorName = isPlaceholderAuthorName(givenFirstAuthor) ? '' : givenFirstAuthor;
     const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
     const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
     // The same paper under two records of one provider, with the first
@@ -767,7 +785,27 @@ export class PaperBuilder {
       // OpenAlex work that knows both. Taking only the first matching key merged
       // into one group and then repointed the other group's keys at the result,
       // so that group fell out of the map and its paper was silently dropped.
-      const groups = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
+      const candidates = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
+      // A title too short to be a fingerprint does not join two records under
+      // two publishers' DOIs: "Introduction" by two Smiths is two works. A
+      // long title still joins a preprint to its published version under
+      // another DOI, and arXiv's own DOI names the preprint.
+      const title = titleKeyText(paper.title);
+      const doi = normalizeDoi(paper.doi);
+      const otherWorks = title.length < HEURISTIC_LOOSE_TITLE_MIN_LENGTH && isPublisherDoi(doi)
+        ? candidates.filter(group => {
+          const groupDoi = normalizeDoi(group.doi);
+          // Shared through the title key alone: no identifier of the two agrees.
+          return isPublisherDoi(groupDoi) && groupDoi !== doi
+            && allKeys.every(key => mergedMap.get(key) !== group || key.startsWith(`${title}_`));
+        })
+        : [];
+      const groups = candidates.filter(group => !otherWorks.includes(group));
+      // The keys another work holds stay its own.
+      const point = (value: Paper) => allKeys.forEach(key => {
+        const owner = mergedMap.get(key);
+        if (!owner || !otherWorks.includes(owner)) mergedMap.set(key, value);
+      });
 
       // 3. Merge or Add
       if (groups.length > 0) {
@@ -785,11 +823,11 @@ export class PaperBuilder {
         }
         
         // Ensure both keys point to the same merged object to prevent future duplicates missing the link
-        allKeys.forEach(key => mergedMap.set(key, merged));
+        point(merged);
       } else {
         // Create base paper using the builder to normalize
         const basePaper = this.create(paper);
-        allKeys.forEach(key => mergedMap.set(key, basePaper));
+        point(basePaper);
         
         // If neither key exists (very rare, no title/author and no DOI), just use ID
         if (allKeys.length === 0) {

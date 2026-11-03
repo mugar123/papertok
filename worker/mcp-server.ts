@@ -3,7 +3,7 @@ import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { restsOnArxivDoi } from '../src/services/paper-builder.ts';
+import { isPlaceholderAuthorName, restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { getPaperIdentity } from '../src/utils/public-navigation.ts';
@@ -250,20 +250,18 @@ const PLACEHOLDER_TEXTS = new Set(['No abstract available.', 'Untitled', 'No Tit
 // No record a tool reads (`formatOpenAlexWorkAsPaper`, `mapOpenAlexWork`,
 // `arxivRecordPaper`) carries these, so a 0 or `false` here is the builder's.
 const UNSUPPLIED_COUNTS = ['referenceCount', 'hasReferences', 'hasData', 'hasSupplement'] as const;
-// The OpenAlex mappers name an authorship OpenAlex gave no name with these
-// (`mapOpenAlexWork`, `formatOpenAlexWorkAsPaper`), and the second lists one
-// such author for a work without authorships.
-const PLACEHOLDER_AUTHOR_NAMES = new Set(['Unknown', 'Unknown Author']);
 
 type RelayedAuthor = Partial<PaperAuthor> | string;
 
 // An author keeps what the source gave of it, and no field it did not give
 // (an affiliation OpenAlex left out is `null`): one known by its id alone
-// stays without a name, and one the source gave nothing of goes.
+// stays without a name, and one the source gave nothing of goes. The OpenAlex
+// mappers name an authorship without a name with a placeholder, and
+// `formatOpenAlexWorkAsPaper` lists one such author for a work without any.
 function knownAuthor(author: Paper['authors'][number]): RelayedAuthor[] {
   if (typeof author === 'string') return [author];
   const known = Object.entries(author).filter(([key, value]) => value !== null && value !== undefined && value !== ''
-    && !(key === 'name' && PLACEHOLDER_AUTHOR_NAMES.has(value)));
+    && !(key === 'name' && isPlaceholderAuthorName(value)));
   return known.length > 0 ? [Object.fromEntries(known)] : [];
 }
 

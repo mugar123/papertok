@@ -1,5 +1,7 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
 
+import { isPlaceholderAuthorName } from '../services/paper-builder.ts';
+
 const MAX_SEEN_IDS = 500;
 
 function normalizeDoi(value: unknown) {
@@ -30,9 +32,9 @@ function normalizeAuthor(value: unknown) {
 function getFollowingUpdateIdentityKeys(paper: Partial<Paper> = {}) {
   const stableKey = getFollowingUpdatePaperKey(paper);
   const firstAuthor = Array.isArray(paper.authors) ? paper.authors[0] : null;
-  const authorName = normalizeAuthor(
-    typeof firstAuthor === 'string' ? firstAuthor : firstAuthor?.name,
-  );
+  const givenName = typeof firstAuthor === 'string' ? firstAuthor : firstAuthor?.name;
+  // A placeholder for a missing name names nobody, so it joins no two works.
+  const authorName = isPlaceholderAuthorName(givenName) ? '' : normalizeAuthor(givenName);
   const title = normalizeTitle(paper.title);
   const workKey = title && authorName ? `work:${title}|${authorName}` : '';
   return [...new Set([stableKey, workKey].filter(Boolean))];

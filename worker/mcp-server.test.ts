@@ -295,6 +295,41 @@ test('search_papers merges records that share a title and first author but no id
   });
 });
 
+test('search_papers keeps works apart that share a title and only a missing or common first-author name', async () => {
+  // Synthetic OpenAlex works, each under its own DOI.
+  const work = (index: number, title: string, author: string | null, citations: number) => ({
+    ...OPENALEX_WORK,
+    id: `https://openalex.org/W44000002${index}`,
+    doi: `https://doi.org/10.1234/intro.${index}`,
+    ids: {},
+    title,
+    authorships: [{ author: { id: `https://openalex.org/A9${index}`, display_name: author }, institutions: [] }],
+    cited_by_count: citations,
+  });
+  const longTitle = 'Introduction to the special issue on strained graphene';
+  const cases = [
+    // The verifier's case: no first-author name on either, which the mapper writes as "Unknown".
+    [work(1, 'Introduction', null, 0), work(2, 'Introduction', null, 222)],
+    [work(3, longTitle, null, 5), work(4, longTitle, null, 17)],
+    // Two people who share a surname, on a title too short to name one paper.
+    [work(5, 'Introduction', 'Ana Smith', 3), work(6, 'Introduction', 'John Smith', 40)],
+  ];
+  for (const works of cases) {
+    await withUpstream(url => {
+      if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: works });
+      throw new Error(`unexpected upstream ${url}`);
+    }, async () => {
+      const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'introduction', sources: ['openalex'] });
+      const papers = answer.result?.structuredContent?.papers as Array<{ doi: string; citationCount?: number }>;
+      assert.deepEqual(
+        papers.map(paper => [paper.doi, paper.citationCount]).sort(),
+        works.map(found => [found.doi.replace('https://doi.org/', ''), found.cited_by_count]).sort(),
+        works[0].title,
+      );
+    });
+  }
+});
+
 test('search_papers ranks the merged list, so an arXiv-only title match survives a full OpenAlex page', async () => {
   // OpenAlex's record for the Llama 2 preprint carries another title: it sends
   // ten other works, and only arXiv knows the paper (src/services/paper-search-service.ts).

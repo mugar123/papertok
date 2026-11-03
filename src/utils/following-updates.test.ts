@@ -96,6 +96,17 @@ test('keeps identical titles from different first authors separate', () => {
   assert.equal(merged.length, 2);
 });
 
+// The name the OpenAlex mappers write for a missing one names nobody.
+test('keeps identical titles apart when the first author is a placeholder for a missing name', () => {
+  for (const name of ['Unknown', 'Unknown Author']) {
+    const merged = mergeFollowingUpdatePapers(([
+      { id: 'openalex:W1', doi: '10.1000/one', title: 'Introduction', authors: [{ name }], citationCount: 0 },
+      { id: 'openalex:W2', doi: '10.1000/two', title: 'Introduction', authors: [{ name }], citationCount: 222 },
+    ] as import('../models/paper.ts').Paper[]));
+    assert.deepEqual(merged.map(paper => [paper.doi, paper.citationCount]).sort(), [['10.1000/one', 0], ['10.1000/two', 222]], name);
+  }
+});
+
 test('sorts updates by publication date and rejects stale papers', () => {
   const now = Date.parse('2026-07-23T00:00:00Z');
   assert.equal(isRecentFollowingUpdate({ published: '2026-07-01' }, now, 365), true);

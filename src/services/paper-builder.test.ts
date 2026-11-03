@@ -2,7 +2,7 @@ import type { Paper, PaperAuthor } from '../models/paper.ts';
 import type { OpenAlexLocation, OpenAlexWork } from './adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBuilder } from './paper-builder.ts';
+import { PaperBuilder, isPlaceholderAuthorName } from './paper-builder.ts';
 import { mapCrossrefInstitutionWork } from './crossref-institution-service.ts';
 import { mapAdsPaper } from './domain-source-records.ts';
 import { slimWorksPage } from './open-alex-service.ts';
@@ -2095,6 +2095,44 @@ test('initials never bridge: "J. Smith" and "Smith J." meet on the surname, not 
   ]);
   assert.equal(out.length, 2);
   assert.ok(out.some(paper => paper.id === 'c'));
+});
+
+// A placeholder the OpenAlex mappers write for a missing name is no author:
+// two works "by Unknown" under one title merged, and the first DOI was shown
+// with the second's citations (outside review of PR #400).
+test('a placeholder for a missing author name joins no two works, on a short title or a long one', () => {
+  for (const [title, name] of [
+    ['Introduction', 'Unknown'],
+    ['Introduction', 'Unknown Author'],
+    ['A Comprehensive Survey of Graph Neural Networks', 'unknown'],
+    ['A Comprehensive Survey of Graph Neural Networks', ' UNKNOWN AUTHOR '],
+  ]) {
+    const out = PaperBuilder.deduplicate([
+      { id: 'openalex:W1', title, authors: [{ name }], citationCount: 0, provider: 'openalex' },
+      { id: 'openalex:W2', title, authors: [{ name }], citationCount: 222, provider: 'openalex' },
+    ]);
+    assert.deepEqual(out.map(paper => [paper.id, paper.citationCount]), [['openalex:W1', 0], ['openalex:W2', 222]], `${title} by ${name}`);
+  }
+  assert.equal(isPlaceholderAuthorName('Ana Unknown'), false);
+});
+
+test('a title too short to be a fingerprint does not join two works under two publishers\' DOIs', () => {
+  const smiths = PaperBuilder.deduplicate([
+    { id: 'a', doi: '10.1234/a', title: 'Introduction', authors: [{ name: 'Ana Smith' }], citationCount: 3, provider: 'openalex' },
+    { id: 'b', doi: 'https://doi.org/10.5678/B', title: 'Introduction', authors: [{ name: 'John Smith' }], citationCount: 40, provider: 'crossref' },
+    // A third record of the second work, known by its DOI and the title.
+    { id: 'c', doi: '10.5678/b', title: 'Introduction', authors: [{ name: 'J. Smith' }], provider: 'openalex' },
+  ]);
+  assert.deepEqual(smiths.map(paper => [paper.doi?.toLowerCase(), paper.citationCount]), [['10.1234/a', 3], ['10.5678/b', 40]]);
+
+  // The same title and surname still join a record without a DOI, a preprint
+  // under arXiv's own DOI, and one under the same DOI.
+  const versions = PaperBuilder.deduplicate([
+    { id: 'openalex:W1', doi: '10.1109/iccv.2017.322', title: 'Mask R-CNN', authors: [{ name: 'Kaiming He' }], provider: 'openalex' },
+    { id: 'openalex:W2', doi: '10.48550/arxiv.1703.06870', title: 'Mask R-CNN', authors: [{ name: 'Kaiming He' }], provider: 'openalex' },
+    { id: 'crossref:x', title: 'Mask R-CNN', authors: [{ name: 'K. He' }, { name: 'Georgia Gkioxari' }], provider: 'crossref' },
+  ]);
+  assert.equal(versions.length, 1);
 });
 
 test('authors given as plain strings still take part in the heuristic keys', () => {
