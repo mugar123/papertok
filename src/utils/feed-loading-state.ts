@@ -56,7 +56,68 @@ export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string;
   return refreshStatus || (veil ? 'Loading papers…' : '');
 }
 
+/** How a refresh ended: it brought the papers, or it failed over them. */
+export type RefreshEnd = 'updated' | 'failed';
+
+/**
+ * What the pill waits for: nothing, a refresh, or the automatic retry of a
+ * refresh that failed. `updated` and `failed` hold how the refresh's own load
+ * ended while its spinner still runs.
+ */
+export type RefreshWatch = 'idle' | 'refreshing' | 'retrying' | RefreshEnd;
+
+/**
+ * One step of a refresh's watch, and the beat it earns as it ends: Updated or
+ * Not updated on the pill, and the status region's words for it. A refresh
+ * whose failure has its automatic retry due ends with that retry, so a
+ * failure the retry repairs is never announced. `error` is read as the
+ * refresh's own load ends: a next page that loads and fails before the
+ * spinner stops is not the refresh, and its tail says so. Without a load
+ * seen to end, the error at the spinner's end decides. Any error is a
+ * failure, the store's empty answer (`FEED_EMPTY`) included: none of them
+ * brought papers (ENG-176).
+ */
+export function refreshEndBeat({ watch, isRefreshing, autoRetryPending, loading, error }: { watch: RefreshWatch; isRefreshing: boolean; autoRetryPending: boolean; loading: boolean; error: unknown }): { watch: RefreshWatch; end: RefreshEnd | null } {
+  const settled = watch === 'updated' || watch === 'failed';
+  const outcome: RefreshEnd = error ? 'failed' : 'updated';
+  if (!isRefreshing && watch === 'idle') return { watch, end: null };
+  if (autoRetryPending || (watch === 'retrying' && (isRefreshing || loading))) return { watch: 'retrying', end: null };
+  if (isRefreshing) {
+    if (settled) return { watch, end: null };
+    return { watch: watch === 'refreshing' && !loading ? outcome : 'refreshing', end: null };
+  }
+  return { watch: 'idle', end: settled ? watch : outcome };
+}
+
+/**
+ * What the status region says of a refresh. Its end is spoken only over
+ * cards: with none, the error's alert or the empty state says how it ended,
+ * and "Papers updated" beside either would be false (ENG-176).
+ */
+export function refreshStatusText({ isRefreshing, end, hasPapers }: { isRefreshing: boolean; end: RefreshEnd | null; hasPapers: boolean }) {
+  if (isRefreshing) return 'Refreshing papers…';
+  if (!end || !hasPapers) return '';
+  return end === 'updated' ? 'Papers updated' : 'Could not refresh papers';
+}
+
+/**
+ * What the slot at the end of the feed holds: `loading` while a page is on its
+ * way or more can come, `failed` once a load failed under papers already
+ * shown, and null when nothing more can come. A failed load used to remove
+ * the slot, so the reader sat on the last paper with nothing after it and
+ * nothing said until the next attempt (ENG-183). The slot stays out while a
+ * refresh's automatic retry is due, since that retry is the next load, and
+ * after an answer with no papers, which asking again does not change. A
+ * failed refresh (`resetFailed`) is the pill's to report, and its Try again
+ * would ask for the old list's next page: the slot stays out then too (ENG-176).
+ */
+export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPending, resetFailed }: { loading: boolean; hasMore: boolean; error: unknown; hasPapers: boolean; autoRetryPending: boolean; resetFailed: boolean }) {
+  if (loading || (hasMore && !error)) return 'loading';
+  return hasMore && hasPapers && error !== FEED_EMPTY && !autoRetryPending && !resetFailed ? 'failed' : null;
+}
+
 /** The feed tail's status: only for a next page, under papers already shown. */
-export function nextPageStatusText({ loading, hasPapers }: { loading: boolean; hasPapers: boolean }) {
+export function nextPageStatusText({ loading, hasPapers, failed = false }: { loading: boolean; hasPapers: boolean; failed?: boolean }) {
+  if (failed) return 'Could not load more papers.';
   return loading && hasPapers ? 'Loading more papers…' : '';
 }

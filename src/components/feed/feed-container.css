@@ -255,7 +255,8 @@
    fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
    set by FeedContainer); on touch, as a pull progresses (`data-pull` on the
    wrapper, below); or to the keyboard. While a refresh runs it stays out and spins;
-   when it lands it says Updated and goes back under the bar.
+   when it lands it says Updated, or Not updated if it failed, and goes back
+   under the bar.
    `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
    child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`. */
@@ -352,8 +353,8 @@
   transform: translateY(var(--pull-y));
   transition: none;
 }
-.feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
-.feed-refresh:disabled { cursor: default; }
+.feed-refresh:active:not([aria-disabled='true']) { scale: 0.96; transition-duration: 80ms; }
+.feed-refresh[aria-disabled='true'] { cursor: default; }
 /* Working: planted under the bar while the refresh runs. It used to pulse an
    accent ring as well; that glow went on 2026-09-12. The spinner already says
    "working", and a halo on the one element sitting over the reader's papers
@@ -362,8 +363,8 @@
   translate: -50% 0;
   scale: 1;
 }
-/* Face slot. Las tres caras se apilan en UNA celda de rejilla, y con ellas un
-   medidor invisible que lleva las tres etiquetas: la celda mide siempre lo
+/* Face slot. Las caras se apilan en UNA celda de rejilla, y con ellas un
+   medidor invisible que lleva todas las etiquetas: la celda mide siempre lo
    que la más ancha, así que la píldora no cambia de tamaño al cambiar de
    cara y las caras sólo se cruzan, centradas, dentro de una caja quieta.
 
@@ -508,7 +509,17 @@
   min-height: 0;
   z-index: 2;
   animation: none;
+  /* Unlike `.feed-empty`, the veil cannot grow with its copy. Copy taller
+     than the screen (320px with 200% text) starts at the top and scrolls
+     with the page, instead of being centred past the top edge, under the
+     navigation bar, where no scroll reaches it (ENG-178). The auto margins
+     below centre the copy while it fits and fall to 0 once it does not.
+     `justify-content: safe center` says the same, but a browser without the
+     `safe` keyword (Safari before 17.6) drops the whole declaration. */
+  justify-content: flex-start;
 }
+.feed-empty--veil > :first-child { margin-top: auto; }
+.feed-empty--veil > :last-child { margin-bottom: auto; }
 
 .petri.feed-error-petri .onboarding-petri-body {
   animation: none;
@@ -527,6 +538,13 @@
   gap: var(--space-4);
   padding: var(--space-6);
   text-align: center;
+}
+
+/* Try again leaves its focus on the slot while the page loads. The slot fills
+   the scroller, which clips the global ring's outer offset, so it is drawn
+   inside. */
+.feed-tail:focus-visible {
+  outline-offset: -4px;
 }
 
 .feed-tail .feed-tail-atom {
@@ -574,6 +592,9 @@
   letter-spacing: -0.015em;
   color: var(--text-primary);
   margin-bottom: var(--space-3);
+  /* At 320px with 200% text "discoveries..." is wider than the screen, and
+     the copy under it widened with it and was clipped (ENG-178). */
+  overflow-wrap: anywhere;
 }
 
 .feed-empty p:not(.empty-state-body) {

@@ -16,6 +16,8 @@ export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
   /** A failed load waits for its one automatic retry. */
   autoRetryPending: boolean;
+  /** `error` is a reset's (a refresh or a new list), not a next page's. */
+  resetFailed: boolean;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -34,7 +36,8 @@ export interface FeedContextValue {
    * this render's `papers` does not show yet (waitsAsFirstScreen).
    */
   loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { loadType?: FeedLoadType; attempt?: FeedLoadAttempt; keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
-  loadMore: () => void; refreshFeed: () => Promise<void>;
+  /** Whether a next-page load started, or waits for the commit of the load that just ended. */
+  loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
   // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
@@ -57,7 +60,7 @@ export interface FeedContextValue {
    */
   unmarkSaved: (paper: Paper | string, options?: { throwOnError?: boolean; rollback?: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
-  unmarkAsRead: (id: string, options?: MarkWriteOptions) => Promise<void>;
+  unmarkAsRead: (paper: Paper | string, options?: MarkWriteOptions) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
   toggleReadLater: (paper: Paper, value?: boolean, options?: MarkWriteOptions) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
@@ -220,6 +223,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which load `error` belongs to: a failed refresh is the pill's to report,
+  // a failed next page the feed tail's (ENG-176).
+  const [resetFailed, setResetFailed] = useState(false);
   // The request whose automatic retry is due. A retry's timer clears only its
   // own: an older timer that fires after a newer failure must not end its wait.
   const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
@@ -1556,6 +1562,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         telemetry.finish({ result: 'error', error: failure });
         const { error: shownError, autoRetry } = feedLoadOutcome(failure);
         setError(shownError);
+        setResetFailed(reset);
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
@@ -1796,8 +1803,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   // A due automatic retry is the next load. The scroll sentinel stays mounted
   // under the first wait's veil, and must not start pages in front of it.
-  const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current && !autoRetryPending) void loadPapers(false);
+  // The sentinel marks the retries it makes by itself after a failed page, and
+  // counts only those that started: loadPapers also refuses a load while the
+  // reader's interests or profile are not ready.
+  const loadMore = useCallback((attempt?: FeedLoadAttempt) => {
+    if (!hasMore || feedLoadInFlight.current || autoRetryPending) return false;
+    void loadPapers(false, undefined, undefined, { attempt });
+    return feedLoadInFlight.current || loadAfterCommit.current !== null;
   }, [autoRetryPending, hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
@@ -1909,7 +1921,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           deviceType: getDeviceInfo().type,
         }), { merge: true });
         void trackEvent('like_change', {
-          action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
+          action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id,
         });
       },
     });
@@ -2300,9 +2312,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid, saveRollback]);
 
-  const unmarkAsRead = useCallback(async (paperId: string, options?: MarkWriteOptions) => {
+  const unmarkAsRead = useCallback(async (paperOrId: Paper | string, options?: MarkWriteOptions) => {
     const userId = user?.uid;
     if (!userId) return;
+    // A card names its paper by its own id; the read mark lives under the interaction id.
+    const paperId = typeof paperOrId === 'string' ? paperOrId : withInteractionId(paperOrId).id;
     await unmarkRead(paperId, {
       setReadIds: setReadPaperIds,
       setLibrary: setPersonalLibrary,
@@ -2319,7 +2333,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       markKey: markKey(userId, 'read', paperId),
       isRead: () => readPaperIdsRef.current.has(paperId),
     });
-  }, [recordProfileEvent, user?.uid, markChangeLog]);
+  }, [withInteractionId, recordProfileEvent, user?.uid, markChangeLog]);
 
   const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: MarkWriteOptions) => {
     const paper = withInteractionId(paperInput);
@@ -2448,7 +2462,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2461,7 +2475,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, autoRetryPending, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
