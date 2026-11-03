@@ -1001,7 +1001,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         label: 'Undo',
         onClick: () => {
           clearTimeout(readAdvanceTimerRef.current!);
-          void unmarkAsRead(paper.id);
+          void unmarkAsRead(paper);
           const at = indexOfPaper();
           if (canAdvance && at >= 0 && isOnCard(at + 1)) scrollToCard(at);
         },

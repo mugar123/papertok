@@ -518,7 +518,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         onRequest: () => {
           requested = true;
           setStage('source');
-          void trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
+          void trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id });
         },
         onMeta: (nextMeta) => {
           replayed = nextMeta.cached === true;
