@@ -23,11 +23,12 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03';
  * the day of the version (a page edited after midnight UTC is dated later than
  * its text went live). An account created before it read an older policy and is told;
  * one created at or after it started under the announced text and is not. Keep
- * it at or AFTER the moment the announced policy text is live in production,
- * never before: an earlier instant skips the accounts created between it and
- * that moment, who read the old policy and are never told; a later one only
- * tells a few accounts that did not need it. Only the text's deploy counts, not
- * the deploy of this notice. When the text ships in the same PR, that moment is
+ * it at or AFTER the moment the page text behind everything the summary
+ * announces is live in production, never before: an earlier instant skips the
+ * accounts created between it and that moment, who read the old policy and are
+ * never told; a later one only tells a few accounts that did not need it. Page
+ * text that only describes this notice does not count, nor does the notice's
+ * own deploy. When the announced text ships in the same PR, that moment is
  * not known yet: set a time after the merge, raise it before merging if the
  * merge slips, and lower it to the deployment's success time once it is live.
  * Whenever a change to the page needs announcing, bump the page's date,

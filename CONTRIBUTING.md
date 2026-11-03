@@ -124,9 +124,10 @@ a session can finish, lints the files changed on the branch and in the working t
 - Write user-facing copy in English.
 - Explain any API quota, caching, privacy, or fallback implications.
 - When a change to `privacy.html` needs announcing, update its "Last updated" date and set
-  `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (at or after the moment the announced
-  policy text is live in production, never before: a later instant only tells a few new accounts
-  too, an earlier one skips accounts that read the old page) and the summary (at most three short
+  `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (at or after the moment the page text
+  behind everything the summary announces is live in production, never before: a later instant
+  only tells a few new accounts too, an earlier one skips accounts that read the old page; text
+  that only describes the notice itself does not count) and the summary (at most three short
   bullets with the main changes; the page keeps the full list), with the page sentences behind
   each of its clauses, in `src/legal/privacy-policy.ts`. The
   app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
