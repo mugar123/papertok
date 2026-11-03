@@ -29,10 +29,16 @@ export function digestShutoffDue({ enabled, followsConfirmed, interestsConfirmed
  * what is in hand. With no follow it covers, each of them switches the stored
  * subscription to the chosen categories and drops the follows the Worker
  * holds, so that empty follow list has to be the server's answer, never a
- * cached one (ENG-163).
+ * cached one (ENG-163). Without follows the digest rests on the chosen
+ * categories, so the profile read has to be confirmed too: otherwise nothing is
+ * sent to cover it and the Worker refuses with EMAIL_FOLLOWS_REQUIRED.
  */
-export function digestSyncAllowed({ hasFollows, followsConfirmed }: { hasFollows: boolean; followsConfirmed: boolean }) {
-  return hasFollows || followsConfirmed;
+export function digestSyncAllowed({ hasFollows, followsConfirmed, interestsConfirmed }: {
+  hasFollows: boolean;
+  followsConfirmed: boolean;
+  interestsConfirmed: boolean;
+}) {
+  return hasFollows || (followsConfirmed && interestsConfirmed);
 }
 
 /**

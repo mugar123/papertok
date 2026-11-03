@@ -91,7 +91,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // An empty follow list read from the cache must not replace the follows the
   // Worker stores, whether a sync, a save that turns the digest on or a test
   // sends it. Turning the digest off sends no follows to keep, so it stays open.
-  const digestSendReady = digestSyncAllowed({ hasFollows, followsConfirmed });
+  const digestSendReady = digestSyncAllowed({ hasFollows, followsConfirmed, interestsConfirmed });
 
   // The same reset `FollowingContext` does, and for the same reason: the tree
   // above is no longer rebuilt when the session resolves

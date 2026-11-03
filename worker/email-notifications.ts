@@ -132,6 +132,9 @@ const DIGEST_ABSTRACT_MAX_LENGTH = 600;
 const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
 const DELIVERY_STATE_TTL_SECONDS = 120 * 24 * 60 * 60;
+// A sync refresh holds the address and follows, so it is short-lived: each sync
+// renews it, and the schedule deletes one whose subscription is gone.
+const SYNC_REFRESH_TTL_SECONDS = 8 * 24 * 60 * 60;
 const DELIVERY_PENDING_RETRY_MIN_AGE_MS = 5 * 60 * 1000;
 const DELIVERY_PENDING_RETRY_WINDOW_MS = 25 * 60 * 1000;
 const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
@@ -1099,7 +1102,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
       unsubscribeToken,
     };
     await Promise.all([
-      env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(refresh), { expirationTtl: DELIVERY_STATE_TTL_SECONDS }),
+      env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(refresh), { expirationTtl: SYNC_REFRESH_TTL_SECONDS }),
       env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
     ]);
     // An unsubscribe that landed meanwhile already won; this only removes what
@@ -3080,6 +3083,22 @@ async function recordScheduleOutcome(env: WorkerEnv, summary: ScheduleSummary) {
   }
 }
 
+/**
+ * A sync from another location can write its refresh after an unsubscribe has
+ * deleted the subscription. Nothing reads it, but it holds the address and
+ * follows, so each run removes the ones whose subscription no longer exists.
+ */
+async function deleteOrphanedSyncRefreshes(store: KVNamespace) {
+  let cursor: string | undefined;
+  do {
+    const page = await store.list({ prefix: SYNC_PREFIX, cursor, limit: SCHEDULE_PAGE_SIZE });
+    await Promise.all((page.keys || []).map(async ({ name }) => {
+      if (!await store.get(`${SUBSCRIPTION_PREFIX}${name.slice(SYNC_PREFIX.length)}`)) await store.delete(name);
+    }));
+    cursor = page.list_complete || !page.cursor ? undefined : page.cursor;
+  } while (cursor);
+}
+
 export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime = Date.now()) {
   const now = new Date(scheduledTime);
   const startedAt = Date.now();
@@ -3114,6 +3133,11 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
     };
     await recordScheduleOutcome(env, summary);
     return summary;
+  }
+  try {
+    await deleteOrphanedSyncRefreshes(env.NOTIFICATION_STORE);
+  } catch (error) {
+    console.warn('Could not remove orphaned sync refreshes', (error as EmailNotificationError)?.message || error);
   }
   let cursor = await loadScheduleCursor(env.NOTIFICATION_STORE);
   let scanned = 0;

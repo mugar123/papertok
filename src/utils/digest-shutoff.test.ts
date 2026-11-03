@@ -23,9 +23,14 @@ test('a cached profile with no chosen categories, before the server copy arrives
 });
 
 test('a cached empty follow list never lets the sync replace the follows the Worker stores', () => {
-  assert.equal(digestSyncAllowed({ hasFollows: false, followsConfirmed: false }), false);
-  assert.equal(digestSyncAllowed({ hasFollows: false, followsConfirmed: true }), true);
-  assert.equal(digestSyncAllowed({ hasFollows: true, followsConfirmed: false }), true);
+  const state = { hasFollows: false, followsConfirmed: true, interestsConfirmed: true };
+  assert.equal(digestSyncAllowed({ ...state, followsConfirmed: false }), false);
+  assert.equal(digestSyncAllowed(state), true);
+  assert.equal(digestSyncAllowed({ ...state, hasFollows: true, followsConfirmed: false, interestsConfirmed: false }), true);
+});
+
+test('with no follows, a digest is not sent until the profile read is confirmed, so the chosen categories go with it', () => {
+  assert.equal(digestSyncAllowed({ hasFollows: false, followsConfirmed: true, interestsConfirmed: false }), false);
 });
 
 test('a digest that is off, or one with follows or chosen categories to cover, is left alone', () => {

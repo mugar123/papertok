@@ -1368,6 +1368,30 @@ test('an unsubscribe that lands while a sync is in flight stays unsubscribed', a
   assert.equal(kv.values.size, 0, 'the sync brought back the subscription or its token');
 });
 
+test('a sync refresh expires within days, and the schedule removes one left without a subscription', async () => {
+  const kv = createMemoryKv();
+  const ttls: Record<string, number | undefined> = {};
+  const basePut = kv.put.bind(kv);
+  kv.put = (async (key: string, value: string, options?: { expirationTtl?: number }) => {
+    ttls[key] = options?.expirationTtl;
+    return basePut(key, value);
+  }) as typeof kv.put;
+  const env = { NOTIFICATION_STORE: kv };
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }), env, SYNC_READER);
+  await saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), env, SYNC_READER);
+  const syncKey = 'notification:sync:sync-reader';
+  assert.ok(kv.values.has(syncKey));
+  assert.ok((ttls[syncKey] ?? Infinity) <= 8 * 24 * 60 * 60, 'the refresh outlives a week');
+
+  await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+  assert.ok(kv.values.has(syncKey), 'a refresh of a live subscription was removed');
+
+  // A late sync from another location lands after the unsubscribe.
+  kv.values.delete(SYNC_READER_KEY);
+  await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+  assert.equal(kv.values.has(syncKey), false, 'the orphaned refresh stayed');
+});
+
 const SYNC_WITH_NEW_FOLLOW = {
   sync: true, enabled: true, maxPapers: 5,
   follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')], previewItems: [],
