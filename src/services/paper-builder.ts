@@ -9,6 +9,37 @@ import type { Paper, PaperAuthor, PaperSources } from '../models/paper.ts';
 // order-blind author keys in `deduplicate` are not issued for it.
 const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
 
+// A title as the title keys of `identityKeys` read it.
+function titleKeyText(title: unknown) {
+  return String(title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// The names the OpenAlex mappers write for an authorship OpenAlex gave no name
+// (`mapOpenAlexWork`, `formatOpenAlexWorkAsPaper`). They name nobody, so two
+// works "by" one of them have no author in common.
+const PLACEHOLDER_AUTHOR_NAMES: ReadonlySet<string> = new Set(['unknown', 'unknown author']);
+
+/** Whether an author name is a mapper's placeholder for a name the source did not give. */
+export function isPlaceholderAuthorName(name: unknown) {
+  return PLACEHOLDER_AUTHOR_NAMES.has(String(name ?? '').trim().toLowerCase());
+}
+
+// The first author's name as the title keys read it: empty for a placeholder.
+function firstAuthorNameOf(paper: Partial<Paper>) {
+  const given = paper.authors && paper.authors.length > 0
+    ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
+    : '';
+  return isPlaceholderAuthorName(given) ? '' : given;
+}
+
+// Whether two records' first authors can be one person: one name, or one
+// surname whose given names agree ("Ana Economist", "Economist A"). A record
+// without a name says nothing against it.
+function sameFirstAuthor(left: Partial<Paper>, right: Partial<Paper>) {
+  const [a, b] = [firstAuthorNameOf(left), firstAuthorNameOf(right)];
+  return !a || !b || a.trim().toLowerCase() === b.trim().toLowerCase() || matchesAuthorName(a, b);
+}
+
 // OpenAlex calls a working paper `published` as readily as a journal article,
 // so its mappers state peer review themselves (`openAlexPeerReviewed`) and a
 // gap in that answer stays a gap. Every other provider's `published` is still
@@ -38,13 +69,14 @@ function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
   return (record.sources?.enrichedBy?.length ?? 0) > 0;
 }
 
-// `arxivService` reads any DOI as publication, so an arXiv record without a
-// journal reference has nothing else behind its `true`. A merged record that
+// `arxivService` reads any DOI but a repository's as publication
+// (`arxivDoiSaysPublished`), so an arXiv record without a journal reference
+// has nothing else behind its `true`. A merged record that
 // does not say the paper was reviewed leaves it so (OpenAlex's record of the
 // eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
 // (Cornell University)" among them. So a record's own fields are read before
 // its first merge, and `sources.arxivDoiOnly` carries the answer after it.
-function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
+export function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
   return !hasMerged(record)
     ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
     : record.sources?.arxivDoiOnly === true;
@@ -691,11 +723,11 @@ export class PaperBuilder {
       doiKey = doiKey.replace('https://doi.org/', '');
     }
 
-    // Heuristic key: Alphanumeric title + first author's last name
-    const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const firstAuthorName = paper.authors && paper.authors.length > 0
-      ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
-      : '';
+    // Heuristic key: Alphanumeric title + first author's last name. A
+    // placeholder for a missing name gives none: two works titled
+    // "Introduction" by "Unknown" merged, and one showed the other's citations.
+    const cleanTitle = titleKeyText(paper.title);
+    const firstAuthorName = firstAuthorNameOf(paper);
     const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
     const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
     // The same paper under two records of one provider, with the first
@@ -705,7 +737,8 @@ export class PaperBuilder {
     // token of the name ("lei" / "ke") could join them, and the search
     // showed the paper twice (2026-09-22). One key per token of the name is
     // order-blind: any shared token on an identical title is a match, and
-    // the bridging below folds the groups. Only for a title long enough to
+    // the bridging below folds the groups, once `deduplicate` finds that the
+    // two names can be one person's. Only for a title long enough to
     // be a fingerprint on its own -- "Editorial" or "Introduction" with a
     // shared "Wei" is not the same paper -- and never for a lone initial.
     const looseTitleKeys = cleanTitle.length >= HEURISTIC_LOOSE_TITLE_MIN_LENGTH
@@ -767,7 +800,33 @@ export class PaperBuilder {
       // OpenAlex work that knows both. Taking only the first matching key merged
       // into one group and then repointed the other group's keys at the result,
       // so that group fell out of the map and its paper was silently dropped.
-      const groups = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
+      const candidates = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
+      // Two records that share nothing but a title key are two works unless
+      // their first authors can be one person. A title key carries one token
+      // of a name: "Editorial: looking back and looking forward" by Maria
+      // Garcia and by Jose Garcia met on the surname, "Introduction to the
+      // special issue" by Wei Zhang and by Wei Li on the given name, and the
+      // first DOI showed the other work's citations (outside reviews of PR
+      // #400). A working paper and its journal version keep joining under
+      // their two DOIs: one author, written "Ana Economist" or "Economist A".
+      // A title too short to be a fingerprint does not join two publishers'
+      // DOIs even then: "Introduction" by two Smiths is two works. arXiv's own
+      // DOI names the preprint, which still joins its published version.
+      const title = titleKeyText(paper.title);
+      const doi = normalizeDoi(paper.doi);
+      const otherWorks = candidates.filter(group => {
+        const groupDoi = normalizeDoi(group.doi);
+        // Shared through title keys alone: no identifier of the two agrees.
+        return allKeys.every(key => mergedMap.get(key) !== group || key.startsWith(`${title}_`) || key.startsWith(`${title}~`))
+          && (!sameFirstAuthor(paper, group)
+            || (title.length < HEURISTIC_LOOSE_TITLE_MIN_LENGTH && isPublisherDoi(doi) && isPublisherDoi(groupDoi) && groupDoi !== doi));
+      });
+      const groups = candidates.filter(group => !otherWorks.includes(group));
+      // The keys another work holds stay its own.
+      const point = (value: Paper) => allKeys.forEach(key => {
+        const owner = mergedMap.get(key);
+        if (!owner || !otherWorks.includes(owner)) mergedMap.set(key, value);
+      });
 
       // 3. Merge or Add
       if (groups.length > 0) {
@@ -785,11 +844,11 @@ export class PaperBuilder {
         }
         
         // Ensure both keys point to the same merged object to prevent future duplicates missing the link
-        allKeys.forEach(key => mergedMap.set(key, merged));
+        point(merged);
       } else {
         // Create base paper using the builder to normalize
         const basePaper = this.create(paper);
-        allKeys.forEach(key => mergedMap.set(key, basePaper));
+        point(basePaper);
         
         // If neither key exists (very rare, no title/author and no DOI), just use ID
         if (allKeys.length === 0) {
