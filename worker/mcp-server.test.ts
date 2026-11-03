@@ -339,6 +339,9 @@ test('search_papers keeps works apart that share a title and only a missing or c
     [work(3, longTitle, null, 5), work(4, longTitle, null, 17)],
     // Two people who share a surname, on a title too short to name one paper.
     [work(5, 'Introduction', 'Ana Smith', 3), work(6, 'Introduction', 'John Smith', 40)],
+    // And on a long title: two people who share a surname, or a given name.
+    [work(7, 'Editorial: looking back and looking forward', 'Maria Garcia', 0), work(8, 'Editorial: looking back and looking forward', 'Jose Garcia', 57)],
+    [work(9, 'Introduction to the special issue', 'Wei Zhang', 222), work(10, 'Introduction to the special issue', 'Wei Li', 0)],
   ];
   for (const works of cases) {
     await withUpstream(url => {

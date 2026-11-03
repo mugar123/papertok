@@ -24,6 +24,22 @@ export function isPlaceholderAuthorName(name: unknown) {
   return PLACEHOLDER_AUTHOR_NAMES.has(String(name ?? '').trim().toLowerCase());
 }
 
+// The first author's name as the title keys read it: empty for a placeholder.
+function firstAuthorNameOf(paper: Partial<Paper>) {
+  const given = paper.authors && paper.authors.length > 0
+    ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
+    : '';
+  return isPlaceholderAuthorName(given) ? '' : given;
+}
+
+// Whether two records' first authors can be one person: one name, or one
+// surname whose given names agree ("Ana Economist", "Economist A"). A record
+// without a name says nothing against it.
+function sameFirstAuthor(left: Partial<Paper>, right: Partial<Paper>) {
+  const [a, b] = [firstAuthorNameOf(left), firstAuthorNameOf(right)];
+  return !a || !b || a.trim().toLowerCase() === b.trim().toLowerCase() || matchesAuthorName(a, b);
+}
+
 // OpenAlex calls a working paper `published` as readily as a journal article,
 // so its mappers state peer review themselves (`openAlexPeerReviewed`) and a
 // gap in that answer stays a gap. Every other provider's `published` is still
@@ -711,10 +727,7 @@ export class PaperBuilder {
     // placeholder for a missing name gives none: two works titled
     // "Introduction" by "Unknown" merged, and one showed the other's citations.
     const cleanTitle = titleKeyText(paper.title);
-    const givenFirstAuthor = paper.authors && paper.authors.length > 0
-      ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
-      : '';
-    const firstAuthorName = isPlaceholderAuthorName(givenFirstAuthor) ? '' : givenFirstAuthor;
+    const firstAuthorName = firstAuthorNameOf(paper);
     const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
     const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
     // The same paper under two records of one provider, with the first
@@ -724,7 +737,8 @@ export class PaperBuilder {
     // token of the name ("lei" / "ke") could join them, and the search
     // showed the paper twice (2026-09-22). One key per token of the name is
     // order-blind: any shared token on an identical title is a match, and
-    // the bridging below folds the groups. Only for a title long enough to
+    // the bridging below folds the groups, once `deduplicate` finds that the
+    // two names can be one person's. Only for a title long enough to
     // be a fingerprint on its own -- "Editorial" or "Introduction" with a
     // shared "Wei" is not the same paper -- and never for a lone initial.
     const looseTitleKeys = cleanTitle.length >= HEURISTIC_LOOSE_TITLE_MIN_LENGTH
@@ -787,20 +801,26 @@ export class PaperBuilder {
       // into one group and then repointed the other group's keys at the result,
       // so that group fell out of the map and its paper was silently dropped.
       const candidates = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
-      // A title too short to be a fingerprint does not join two records under
-      // two publishers' DOIs: "Introduction" by two Smiths is two works. A
-      // long title still joins a preprint to its published version under
-      // another DOI, and arXiv's own DOI names the preprint.
+      // Two records that share nothing but a title key are two works unless
+      // their first authors can be one person. A title key carries one token
+      // of a name: "Editorial: looking back and looking forward" by Maria
+      // Garcia and by Jose Garcia met on the surname, "Introduction to the
+      // special issue" by Wei Zhang and by Wei Li on the given name, and the
+      // first DOI showed the other work's citations (outside reviews of PR
+      // #400). A working paper and its journal version keep joining under
+      // their two DOIs: one author, written "Ana Economist" or "Economist A".
+      // A title too short to be a fingerprint does not join two publishers'
+      // DOIs even then: "Introduction" by two Smiths is two works. arXiv's own
+      // DOI names the preprint, which still joins its published version.
       const title = titleKeyText(paper.title);
       const doi = normalizeDoi(paper.doi);
-      const otherWorks = title.length < HEURISTIC_LOOSE_TITLE_MIN_LENGTH && isPublisherDoi(doi)
-        ? candidates.filter(group => {
-          const groupDoi = normalizeDoi(group.doi);
-          // Shared through the title key alone: no identifier of the two agrees.
-          return isPublisherDoi(groupDoi) && groupDoi !== doi
-            && allKeys.every(key => mergedMap.get(key) !== group || key.startsWith(`${title}_`));
-        })
-        : [];
+      const otherWorks = candidates.filter(group => {
+        const groupDoi = normalizeDoi(group.doi);
+        // Shared through title keys alone: no identifier of the two agrees.
+        return allKeys.every(key => mergedMap.get(key) !== group || key.startsWith(`${title}_`) || key.startsWith(`${title}~`))
+          && (!sameFirstAuthor(paper, group)
+            || (title.length < HEURISTIC_LOOSE_TITLE_MIN_LENGTH && isPublisherDoi(doi) && isPublisherDoi(groupDoi) && groupDoi !== doi));
+      });
       const groups = candidates.filter(group => !otherWorks.includes(group));
       // The keys another work holds stay its own.
       const point = (value: Paper) => allKeys.forEach(key => {

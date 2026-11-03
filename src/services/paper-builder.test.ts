@@ -2135,6 +2135,45 @@ test('a title too short to be a fingerprint does not join two works under two pu
   assert.equal(versions.length, 1);
 });
 
+// A title key carries one token of the first author's name, so on a long
+// title two people who share a surname or a given name met, and the first DOI
+// showed the other work's citations (outside review of PR #400).
+test('one long title by two people is two works, whatever DOIs the records carry', () => {
+  const work = (id: string, title: string, name: string, doi: string | undefined, citationCount: number) => (
+    { id, doi, title, authors: [{ name }], citationCount, provider: 'openalex' }
+  );
+  for (const [title, first, second] of [
+    ['Editorial: looking back and looking forward', 'Maria Garcia', 'Jose Garcia'],
+    ['Introduction to the special issue', 'Wei Zhang', 'Wei Li'],
+    ['Introduction to the special issue', 'Zhang Wei', 'Li, Wei'],
+  ]) {
+    for (const [firstDoi, secondDoi] of [
+      ['10.1001/ed.1', '10.1002/ed.2'],
+      ['10.48550/arxiv.2001.00001', '10.1002/ed.2'],
+      ['10.2139/ssrn.400001', '10.1002/ed.2'],
+      ['10.1001/ed.1', undefined],
+      [undefined, undefined],
+    ]) {
+      const rows = PaperBuilder.deduplicate([
+        work('openalex:W1', title, first, firstDoi, 0),
+        work('openalex:W2', title, second, secondDoi, 57),
+      ]);
+      assert.deepEqual(rows.map(row => [row.id, row.doi, row.citationCount, row.authors[0].name]), [
+        ['openalex:W1', firstDoi, 0, first],
+        ['openalex:W2', secondDoi, 57, second],
+      ], `${title}: ${first} (${firstDoi}), ${second} (${secondDoi})`);
+    }
+  }
+
+  // One person under two DOIs, as a working paper and its journal version
+  // name them, is still one work.
+  const [row, ...rest] = PaperBuilder.deduplicate([
+    work('openalex:W1', 'Editorial: looking back and looking forward', 'Maria Garcia', '10.3386/w1', 0),
+    work('pmid:1', 'Editorial: looking back and looking forward', 'Garcia M', '10.1002/ed.2', 57),
+  ]);
+  assert.deepEqual([row.doi, rest.length], ['10.3386/w1', 0]);
+});
+
 test('authors given as plain strings still take part in the heuristic keys', () => {
   const out = PaperBuilder.deduplicate([
     { id: 'a', title: 'Segment Anything in High Quality', authors: ['Ke Jian Lei'], provider: 'openalex' },
