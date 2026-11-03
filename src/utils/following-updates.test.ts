@@ -3,9 +3,21 @@ import assert from 'node:assert/strict';
 import {
   compactSeenIds,
   getFollowingUpdatePaperKey,
+  isFollowingCacheFresh,
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
 } from './following-updates.ts';
+
+test('a stored result in which some follows failed is not fresh, so the next load asks again (ENG-110)', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z');
+  const savedAt = new Date(now - 60_000).toISOString();
+  const ttl = 15 * 60 * 1000;
+  const answered = { signature: 'author:A1|topic:T1', savedAt, meta: { failedEntities: 0 } };
+  assert.equal(isFollowingCacheFresh(answered, 'author:A1|topic:T1', ttl, now), true);
+  assert.equal(isFollowingCacheFresh({ ...answered, meta: { failedEntities: 1 } }, 'author:A1|topic:T1', ttl, now), false);
+  assert.equal(isFollowingCacheFresh(answered, 'author:A1', ttl, now), false, 'other follows');
+  assert.equal(isFollowingCacheFresh({ ...answered, savedAt: new Date(now - ttl).toISOString() }, 'author:A1|topic:T1', ttl, now), false, 'expired');
+});
 
 test('uses DOI as the stable inbox identity when available', () => {
   assert.equal(

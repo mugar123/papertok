@@ -25,6 +25,7 @@ import {
   getFollowingSignature,
   getFollowingUpdatePaperKey,
   getFollowingUpdatesStorageKey,
+  isFollowingCacheFresh,
 } from '../utils/following-updates.ts';
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -213,10 +214,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const refreshSilently = useEffectEvent(() => refresh({ silent: true }));
   useEffect(() => {
     if (!userId || followsLoading) return undefined;
-    const local = readLocalState(userId);
-    const cacheIsFresh = local.signature === signature
-      && Date.now() - Date.parse((local.savedAt || 0) as string) < CACHE_TTL_MS;
-    if (cacheIsFresh) return undefined;
+    if (isFollowingCacheFresh(readLocalState(userId), signature, CACHE_TTL_MS)) return undefined;
     const refreshTimeout = setTimeout(refreshSilently, 0);
     return () => clearTimeout(refreshTimeout);
   }, [followsLoading, signature, userId]);
