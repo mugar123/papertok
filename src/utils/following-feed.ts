@@ -160,6 +160,18 @@ export function followingFirstLoadPending({ items = [], loading = false, lastUpd
 }
 
 /**
+ * The load failure the Following feed reports, or null.
+ *
+ * A failed refresh is one. So is a follows read that failed or timed out
+ * while no follow is in hand: an empty list then is not an answer, and saying
+ * "You're not following anything yet" would tell an account with follows
+ * that it has none (ENG-110).
+ */
+export function followingFeedError({ updatesError = null, followsError = null, hasFollows = false }: { updatesError?: unknown; followsError?: unknown; hasFollows?: boolean } = {}) {
+  return updatesError || (followsError && !hasFollows) ? 'FOLLOWING_LOAD_FAILED' : null;
+}
+
+/**
  * The order the Following feed resumes with.
  *
  * Each visit used to rank from scratch, and each visit had a different

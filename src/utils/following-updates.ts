@@ -131,6 +131,22 @@ export function getFollowingUpdatesStorageKey(userId: unknown) {
   return `papertok_following_updates_${String(userId || 'anonymous').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
+/**
+ * Whether the stored Following result can stand in for a refresh: saved for
+ * the same follows within `ttlMs`, with every follow answered. A result in
+ * which some follows failed is still shown, but the next load asks again
+ * instead of keeping the gap for the whole window (ENG-110).
+ */
+export function isFollowingCacheFresh(
+  stored: { signature?: string; savedAt?: string; meta?: { failedEntities?: number } },
+  signature: string,
+  ttlMs: number,
+  now = Date.now(),
+) {
+  if (stored.signature !== signature || (stored.meta?.failedEntities ?? 0) > 0) return false;
+  return now - Date.parse(stored.savedAt || '') < ttlMs;
+}
+
 export function getFollowingSignature(follows: PaperFollowMatch[] = []) {
   return follows
     .map(follow => `${follow.type}:${follow.canonicalId}`)

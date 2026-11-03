@@ -78,7 +78,18 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
   assert.deepEqual(orderFollowingFeedPapers(undefined, undefined), []);
 });
 
-import { followingFirstLoadPending, mergeOrderedPapers } from './following-feed.ts';
+import { followingFeedError, followingFirstLoadPending, mergeOrderedPapers } from './following-feed.ts';
+import { FollowsUnavailableError } from './following.ts';
+
+test('a follows read that timed out with nothing in hand is a load failure, not an empty follow list (ENG-110)', () => {
+  assert.equal(
+    followingFeedError({ followsError: new FollowsUnavailableError(), hasFollows: false }),
+    'FOLLOWING_LOAD_FAILED',
+  );
+  assert.equal(followingFeedError({ updatesError: new Error('All follows failed.'), hasFollows: true }), 'FOLLOWING_LOAD_FAILED');
+  assert.equal(followingFeedError({ followsError: new Error('snapshot'), hasFollows: true }), null, 'the follows in hand still load');
+  assert.equal(followingFeedError({ hasFollows: false }), null, 'a confirmed empty list is the empty state');
+});
 
 /**
  * A silent refresh landing while the Following feed is on screen used to
