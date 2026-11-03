@@ -2,7 +2,10 @@ import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { createNextPageSentinel, type NextPageRetries } from './next-page-sentinel.ts';
 
-test.afterEach(() => mock.timers.reset());
+test.afterEach(() => {
+  mock.timers.reset();
+  mock.restoreAll();
+});
 
 /**
  * The end of the For You feed, wired the way FeedContainer wires it: every
@@ -11,10 +14,16 @@ test.afterEach(() => mock.timers.reset());
  * FeedContainer's, kept across sentinels. A request stays out until the test
  * settles it, as a failure while `failing` is set. While `refusing` is set,
  * loadMore starts nothing, as FeedProvider's does while another load runs or
- * is due. The clock starts at 0.
+ * is due. The clock starts at 0, and the page's monotonic clock runs with the
+ * timers; `correctWallClock` moves only Date, as a system clock correction does.
  */
 function feedEnd({ inRange = true, failing = false } = {}) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const timerNow = Date.now;
+  let wallOffset = 0;
+  mock.method(performance, 'now', () => timerNow());
+  mock.method(Date, 'now', () => timerNow() + wallOffset);
+  const correctWallClock = (ms: number) => { wallOffset += ms; };
   const feed = { requests: [] as number[], attempts: [] as string[], loading: false, error: null as string | null, inRange, failing, refusing: false };
   const retries: NextPageRetries = { failedAt: null, used: 0 };
   const page = Object.assign(new EventTarget(), { hidden: false });
@@ -83,7 +92,7 @@ function feedEnd({ inRange = true, failing = false } = {}) {
   };
   const gaps = () => feed.requests.slice(1).map((at, index) => at - feed.requests[index]);
   observe();
-  return { feed, settle, scroll, rerender, setHidden, wait, gaps };
+  return { feed, settle, scroll, rerender, setHidden, wait, gaps, correctWallClock };
 }
 
 test('a failed next page is not asked for again each time its load ends while the reader stays near the end', () => {
@@ -142,6 +151,23 @@ test('the pause counts from the failure, not from the last change to the list', 
   }
   end.wait(2_100);
   assert.deepEqual(end.feed.requests, [0, 2_500]);
+});
+
+test('a system clock set back or forward during a pause neither stretches nor skips it', () => {
+  const end = feedEnd({ failing: true });
+  end.settle();
+  end.wait(1_000);
+  end.correctWallClock(-60 * 60_000);
+  end.rerender();
+  end.wait(1_500);
+  assert.equal(end.feed.requests.length, 2, 'the retry went 2.5 s after the failure, not an hour later');
+  end.wait(1_000);
+  end.correctWallClock(2 * 60 * 60_000);
+  end.rerender();
+  end.wait(3_999);
+  assert.equal(end.feed.requests.length, 2, 'the second pause is still 5 s');
+  end.wait(1);
+  assert.equal(end.feed.requests.length, 3);
 });
 
 test('a hidden tab sends no automatic retry; shown again, it asks at once if the pause is over and waits out the rest if not', () => {

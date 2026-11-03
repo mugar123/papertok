@@ -6,8 +6,10 @@ const NEXT_PAGE_RETRY_CAP_MS = 120_000;
 /**
  * The automatic retries of a failed next page. FeedContainer keeps one for
  * the feed's lifetime, because each load makes a new sentinel. `failedAt` is
- * when the current failure happened; `used` counts the automatic retries
- * that started since a page last landed.
+ * when the current failure happened, on the page's monotonic clock
+ * (`performance.now`), so a corrected system clock cannot stretch or skip a
+ * pause; `used` counts the automatic retries that started since a page last
+ * landed.
  */
 export interface NextPageRetries { failedAt: number | null; used: number }
 
@@ -42,7 +44,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
   page: Pick<Document, 'hidden'> & Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }) {
   if (failed) {
-    retries.failedAt ??= Date.now();
+    retries.failedAt ??= performance.now();
   } else {
     retries.failedAt = null;
     if (!loading) retries.used = 0;
@@ -66,7 +68,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     ask('automatic_retry');
   };
   const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
-  const retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - Date.now()));
+  const retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - performance.now()));
   return {
     /** The observer's report: whether the sentinel is in range now. */
     report(isIntersecting: boolean) {
