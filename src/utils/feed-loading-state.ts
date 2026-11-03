@@ -60,15 +60,26 @@ export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string;
 export type RefreshEnd = 'updated' | 'failed';
 
 /**
- * The beat a refresh earns as it ends, or null when none ended: Updated or
- * Not updated on the pill, and the status region's words for it. `error` is
- * the one the refresh ended with, read at that moment; one that comes or goes
- * later belongs to another load. Any error is a failure, the store's empty
- * answer (`FEED_EMPTY`) included: none of them brought papers (ENG-176).
+ * What the pill waits for: nothing, a refresh, or the automatic retry of a
+ * refresh that failed.
  */
-export function refreshEndBeat({ wasRefreshing, isRefreshing, error }: { wasRefreshing: boolean; isRefreshing: boolean; error: unknown }): RefreshEnd | null {
-  if (!wasRefreshing || isRefreshing) return null;
-  return error ? 'failed' : 'updated';
+export type RefreshWatch = 'idle' | 'refreshing' | 'retrying';
+
+/**
+ * One step of a refresh's watch, and the beat it earns as it ends: Updated or
+ * Not updated on the pill, and the status region's words for it. A refresh
+ * whose failure has its automatic retry due ends with that retry, so a
+ * failure the retry repairs is never announced. `error` is the one the
+ * refresh ended with, read at that moment; one that comes or goes later
+ * belongs to another load. Any error is a failure, the store's empty answer
+ * (`FEED_EMPTY`) included: none of them brought papers (ENG-176).
+ */
+export function refreshEndBeat({ watch, isRefreshing, autoRetryPending, loading, error }: { watch: RefreshWatch; isRefreshing: boolean; autoRetryPending: boolean; loading: boolean; error: unknown }): { watch: RefreshWatch; end: RefreshEnd | null } {
+  const retrying = autoRetryPending || watch === 'retrying';
+  if (isRefreshing) return { watch: retrying ? 'retrying' : 'refreshing', end: null };
+  if (watch === 'idle') return { watch, end: null };
+  if (autoRetryPending || (watch === 'retrying' && loading)) return { watch: 'retrying', end: null };
+  return { watch: 'idle', end: error ? 'failed' : 'updated' };
 }
 
 /**

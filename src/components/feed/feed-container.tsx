@@ -54,7 +54,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -374,7 +374,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // `:focus-visible` y no `:focus` a secas: un clic con el ratón también deja
   // el botón enfocado, y eso dejaría «Actualizado» clavado para siempre.
   const [refreshPillFocused, setRefreshPillFocused] = useState(false);
-  const wasRefreshingRef = useRef(false);
+  const refreshWatchRef = useRef<RefreshWatch>('idle');
+  const refreshBeatTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
   // The cards mounted right now: a window around the card this feed was left
@@ -942,18 +943,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // clipped the Updated → Refresh exit mid-fade. While a new refresh runs,
   // `refreshPhase` already prefers refreshing over a beat, so a beat still
   // running is replaced when that refresh ends, not when it starts. The error
-  // is read as the refresh ends, not followed (`refreshEndBeat`).
+  // is read as the refresh ends, not followed (`refreshEndBeat`). A failure
+  // whose automatic retry is due waits for that retry's outcome. The hold's
+  // timer lives in a ref: the loads the watch follows must not cancel it.
   const refreshErrorAtEnd = useEffectEvent(() => error);
   useEffect(() => {
-    const end = refreshEndBeat({ wasRefreshing: wasRefreshingRef.current, isRefreshing, error: refreshErrorAtEnd() });
-    wasRefreshingRef.current = isRefreshing;
-    if (!end) return undefined;
+    const { watch, end } = refreshEndBeat({ watch: refreshWatchRef.current, isRefreshing, autoRetryPending, loading, error: refreshErrorAtEnd() });
+    refreshWatchRef.current = watch;
+    if (!end) return;
     setRefreshEnd(end);
     setHeldEnd(end);
-    const holdMs = prefersReducedMotion ? 500 : 1000;
-    const t = setTimeout(() => setRefreshEnd(null), holdMs);
-    return () => clearTimeout(t);
-  }, [isRefreshing, prefersReducedMotion]);
+    clearTimeout(refreshBeatTimerRef.current);
+    refreshBeatTimerRef.current = setTimeout(() => setRefreshEnd(null), prefersReducedMotion ? 500 : 1000);
+  }, [isRefreshing, autoRetryPending, loading, prefersReducedMotion]);
+  useEffect(() => () => clearTimeout(refreshBeatTimerRef.current), []);
 
   // El otro extremo de la cola: «Actualizado» se suelta cuando la píldora ya
   // no se ve, más lo que tarda en llegar debajo de la barra (`PILL_EXIT_MS`).

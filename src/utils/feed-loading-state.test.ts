@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -173,15 +173,16 @@ test('a refresh keeps its own words under the veil', () => {
 // beside the "Error loading papers" alert. A refresh that failed over the
 // cards said Updated on the pill, and then, once that was fixed, nothing.
 test('a refresh that ends says whether it updated the papers', () => {
-  const ended = (error: unknown) => refreshEndBeat({ wasRefreshing: true, isRefreshing: false, error });
+  const quiet = { isRefreshing: false, autoRetryPending: false, loading: false };
+  const ended = (error: unknown) => refreshEndBeat({ ...quiet, watch: 'refreshing', error }).end;
   assert.equal(ended(null), 'updated');
   for (const error of ['FEED_LOAD_FAILED', 'FOLLOWING_LOAD_FAILED', FEED_EMPTY]) {
     assert.equal(ended(error), 'failed', error);
   }
   // Nothing ended: a refresh still running, or none at all.
-  assert.equal(refreshEndBeat({ wasRefreshing: true, isRefreshing: true, error: 'FEED_LOAD_FAILED' }), null);
-  assert.equal(refreshEndBeat({ wasRefreshing: false, isRefreshing: true, error: null }), null);
-  assert.equal(refreshEndBeat({ wasRefreshing: false, isRefreshing: false, error: null }), null);
+  assert.deepEqual(refreshEndBeat({ ...quiet, watch: 'refreshing', isRefreshing: true, error: 'FEED_LOAD_FAILED' }), { watch: 'refreshing', end: null });
+  assert.deepEqual(refreshEndBeat({ ...quiet, watch: 'idle', isRefreshing: true, error: null }), { watch: 'refreshing', end: null });
+  assert.deepEqual(refreshEndBeat({ ...quiet, watch: 'idle', error: null }), { watch: 'idle', end: null });
 
   const spoken = (error: unknown, hasPapers: boolean) => refreshStatusText({ isRefreshing: false, end: ended(error), hasPapers });
   assert.equal(spoken(null, true), 'Papers updated');
@@ -193,6 +194,44 @@ test('a refresh that ends says whether it updated the papers', () => {
   // A beat whose time is up says nothing, and a new refresh says it is running.
   assert.equal(refreshStatusText({ isRefreshing: false, end: null, hasPapers: true }), '');
   assert.equal(refreshStatusText({ isRefreshing: true, end: 'failed', hasPapers: true }), 'Refreshing papers…');
+});
+
+// A refresh that failed over the cards on For You, with its automatic retry
+// due, said "Not updated" and then the retry quietly brought the papers.
+test('a refresh whose automatic retry is due ends with that retry', () => {
+  const run = (steps: Array<{ isRefreshing: boolean; autoRetryPending: boolean; loading: boolean; error: unknown }>) => {
+    let watch: RefreshWatch = 'idle';
+    const ends: Array<RefreshEnd | null> = [];
+    for (const step of steps) {
+      const next = refreshEndBeat({ watch, ...step });
+      watch = next.watch;
+      ends.push(next.end);
+    }
+    return ends;
+  };
+  const failedWithRetryDue = [
+    { isRefreshing: true, autoRetryPending: false, loading: true, error: null },
+    // The refresh's load fails and schedules its retry; the spinner holds.
+    { isRefreshing: true, autoRetryPending: true, loading: false, error: 'FEED_LOAD_FAILED' },
+    // The refresh is over, the retry still due: no beat yet.
+    { isRefreshing: false, autoRetryPending: true, loading: false, error: 'FEED_LOAD_FAILED' },
+    // The retry runs.
+    { isRefreshing: false, autoRetryPending: false, loading: true, error: null },
+  ];
+  assert.deepEqual(run([...failedWithRetryDue, { isRefreshing: false, autoRetryPending: false, loading: false, error: null }]), [null, null, null, null, 'updated']);
+  assert.deepEqual(run([...failedWithRetryDue, { isRefreshing: false, autoRetryPending: false, loading: false, error: 'FEED_LOAD_FAILED' }]), [null, null, null, null, 'failed']);
+  // A retry that started before the refresh's spinner stopped is still waited for.
+  assert.deepEqual(run([
+    { isRefreshing: true, autoRetryPending: true, loading: false, error: 'FEED_LOAD_FAILED' },
+    { isRefreshing: true, autoRetryPending: false, loading: true, error: null },
+    { isRefreshing: false, autoRetryPending: false, loading: true, error: null },
+    { isRefreshing: false, autoRetryPending: false, loading: false, error: null },
+  ]), [null, null, null, 'updated']);
+  // Without a retry, a page loading after the refresh does not hold its beat.
+  assert.deepEqual(run([
+    { isRefreshing: true, autoRetryPending: false, loading: true, error: null },
+    { isRefreshing: false, autoRetryPending: false, loading: true, error: null },
+  ]), [null, 'updated']);
 });
 
 test('the tail speaks of more papers only under papers already shown', () => {
