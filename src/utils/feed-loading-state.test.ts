@@ -256,10 +256,22 @@ test('a next page that fails during the refresh spinner is the tail’s, not the
   }
   assert.deepEqual(ends, [null, null, null, null, 'updated']);
   assert.equal(refreshStatusText({ isRefreshing: false, end: 'updated', hasPapers: true }), 'Papers updated');
-  assert.equal(feedTailState({ ...failedPage, hasMore: true, hasPapers: true }), 'failed');
+  assert.equal(feedTailState({ ...failedPage, hasMore: true, hasPapers: true, resetFailed: false }), 'failed');
   // The refresh's own load failing is still the refresh's failure.
   assert.deepEqual(refreshEndBeat({ watch: 'refreshing', isRefreshing: true, autoRetryPending: false, loading: false, error: 'FEED_LOAD_FAILED' }), { watch: 'failed', end: null });
   assert.deepEqual(refreshEndBeat({ watch: 'failed', isRefreshing: false, autoRetryPending: false, loading: false, error: null }), { watch: 'idle', end: 'failed' });
+});
+
+// A refresh that failed over cards also set the tail to its failure, so one
+// failure said both "Could not refresh papers" and "Could not load more
+// papers", and the tail's Try again asked for the old list's next page.
+test('a refresh that fails over cards is reported by the pill alone, not the tail', () => {
+  const refreshFailed = { isRefreshing: false, autoRetryPending: false, loading: false, error: 'FEED_LOAD_FAILED' };
+  const { end } = refreshEndBeat({ watch: 'refreshing', ...refreshFailed });
+  assert.equal(refreshStatusText({ isRefreshing: false, end, hasPapers: true }), 'Could not refresh papers');
+  const tail = feedTailState({ ...refreshFailed, hasMore: true, hasPapers: true, resetFailed: true });
+  assert.equal(tail, null);
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: tail === 'failed' }), '');
 });
 
 test('the tail speaks of more papers only under papers already shown', () => {
@@ -272,7 +284,7 @@ test('the tail speaks of more papers only under papers already shown', () => {
 // retries paused, the reader sat on the last paper with nothing after it and
 // nothing said for up to two minutes.
 test('a load that fails under papers already shown keeps the tail, which says so and offers to try again', () => {
-  const shown = { loading: false, hasMore: true, error: null, hasPapers: true, autoRetryPending: false };
+  const shown = { loading: false, hasMore: true, error: null, hasPapers: true, autoRetryPending: false, resetFailed: false };
   assert.equal(feedTailState({ ...shown, loading: true }), 'loading');
   assert.equal(feedTailState(shown), 'loading', 'mounted ahead of the next page');
   const failed = { ...shown, error: 'FEED_LOAD_FAILED' };
@@ -282,7 +294,7 @@ test('a load that fails under papers already shown keeps the tail, which says so
 });
 
 test('the tail offers no retry when nothing more can come, nothing can be retried yet, or nothing is shown', () => {
-  const failed = { loading: false, hasMore: true, error: 'FEED_LOAD_FAILED', hasPapers: true, autoRetryPending: false };
+  const failed = { loading: false, hasMore: true, error: 'FEED_LOAD_FAILED', hasPapers: true, autoRetryPending: false, resetFailed: false };
   assert.equal(feedTailState({ ...failed, hasMore: false }), null);
   assert.equal(feedTailState({ ...failed, error: null, hasMore: false }), null);
   // A failed refresh's automatic retry is the next load, and loadMore waits for it.

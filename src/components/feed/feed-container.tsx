@@ -679,7 +679,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // The main feed's failed reset waits for its automatic retry under the wait
   // it was in, the first one or an emptied feed's (ENG-116).
   const autoRetryPending = !source && feed.autoRetryPending;
-  const tail = feedTailState({ loading, hasMore, error, hasPapers: papers.length > 0, autoRetryPending });
+  const tail = feedTailState({ loading, hasMore, error, hasPapers: papers.length > 0, autoRetryPending, resetFailed: !source && feed.resetFailed });
 
   // Only show the atom loader if loading takes more than 1.5s. A failed load
   // waiting for its automatic retry is already under the atom veil, which

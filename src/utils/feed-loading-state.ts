@@ -107,11 +107,13 @@ export function refreshStatusText({ isRefreshing, end, hasPapers }: { isRefreshi
  * the slot, so the reader sat on the last paper with nothing after it and
  * nothing said until the next attempt (ENG-183). The slot stays out while a
  * refresh's automatic retry is due, since that retry is the next load, and
- * after an answer with no papers, which asking again does not change.
+ * after an answer with no papers, which asking again does not change. A
+ * failed refresh (`resetFailed`) is the pill's to report, and its Try again
+ * would ask for the old list's next page: the slot stays out then too (ENG-176).
  */
-export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPending }: { loading: boolean; hasMore: boolean; error: unknown; hasPapers: boolean; autoRetryPending: boolean }) {
+export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPending, resetFailed }: { loading: boolean; hasMore: boolean; error: unknown; hasPapers: boolean; autoRetryPending: boolean; resetFailed: boolean }) {
   if (loading || (hasMore && !error)) return 'loading';
-  return hasMore && hasPapers && error !== FEED_EMPTY && !autoRetryPending ? 'failed' : null;
+  return hasMore && hasPapers && error !== FEED_EMPTY && !autoRetryPending && !resetFailed ? 'failed' : null;
 }
 
 /** The feed tail's status: only for a next page, under papers already shown. */
