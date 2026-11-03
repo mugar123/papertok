@@ -19,6 +19,9 @@ function feedEnd({ inRange = true, failing = false } = {}) {
   const retries: NextPageRetries = { failedAt: null, used: 0 };
   const page = Object.assign(new EventTarget(), { hidden: false });
   let sentinel: ReturnType<typeof createNextPageSentinel> | null = null;
+  // A real observer gives no report while the page is hidden: its first one
+  // comes when the page is shown, after the page's visibilitychange.
+  let reportHeld = false;
   const observe = () => {
     sentinel?.stop();
     sentinel = createNextPageSentinel({
@@ -38,12 +41,16 @@ function feedEnd({ inRange = true, failing = false } = {}) {
       retries,
       page,
     });
-    sentinel.report(feed.inRange);
+    reportHeld = page.hidden;
+    if (!reportHeld) sentinel.report(feed.inRange);
   };
   // The reader switches to another tab or app, or comes back.
   const setHidden = (hidden: boolean) => {
     page.hidden = hidden;
     page.dispatchEvent(new Event('visibilitychange'));
+    if (hidden || !reportHeld) return;
+    reportHeld = false;
+    sentinel?.report(feed.inRange);
   };
   const settle = () => {
     feed.loading = false;
@@ -165,6 +172,29 @@ test('the retries a pause makes count as automatic retries; the reader\'s retry 
   end.wait(5_000);
   end.scroll(true);
   assert.deepEqual(end.feed.attempts, ['original', 'automatic_retry', 'original', 'automatic_retry', 'original']);
+});
+
+test('a retry that fell due while the tab was hidden counts as automatic though the observer reports only once the tab is shown', () => {
+  const end = feedEnd({ failing: true });
+  end.setHidden(true);
+  // The page fails in the background, and the new observer stays silent.
+  end.settle();
+  end.wait(60_000);
+  assert.equal(end.feed.requests.length, 1);
+  end.setHidden(false);
+  assert.deepEqual(end.feed.attempts, ['original', 'automatic_retry']);
+});
+
+test('a retry that fell due while the tab was hidden, with the reader away from the end, waits for the reader and is theirs', () => {
+  const end = feedEnd({ failing: true });
+  end.setHidden(true);
+  end.feed.inRange = false;
+  end.settle();
+  end.wait(60_000);
+  end.setHidden(false);
+  assert.equal(end.feed.requests.length, 1);
+  end.scroll(true);
+  assert.deepEqual(end.feed.attempts, ['original', 'original']);
 });
 
 test('a reader who scrolls back toward the end asks for the failed page again at once', () => {

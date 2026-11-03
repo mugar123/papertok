@@ -18,16 +18,19 @@ export interface NextPageRetries { failedAt: number | null; used: number }
  * range, so a reader near the end used to ask for a failed page again as soon
  * as each attempt ended, for as long as the failure lasted (ENG-183).
  *
- * `failed` is the feed's error, the one that also removes the feed's tail. A
- * failed page waits until the reader comes back toward the end (the sentinel
- * leaves range and enters it again) or until its pause has passed since the
- * failure, and is then asked for once. The pause is the feed's retry pause,
- * doubled for each automatic retry already used, up to NEXT_PAGE_RETRY_CAP_MS,
- * so an outage gets fewer requests the longer it lasts. A page that lands
- * starts the pauses again from the shortest. A hidden page sends nothing: a
- * retry that falls due while it is hidden waits until it is shown, since the
- * observer does not report while the page is hidden and the reader cannot see
- * the page arrive. Without a failure, every report in range asks.
+ * `failed` is the feed's error, the one that also turns the feed's tail into
+ * its failure and Try again. A failed page waits until the reader comes back
+ * toward the end (the sentinel leaves range and enters it again) or until its
+ * pause has passed since the failure, and is then asked for once. The pause is
+ * the feed's retry pause, doubled for each automatic retry already used, up to
+ * NEXT_PAGE_RETRY_CAP_MS, so an outage gets fewer requests the longer it
+ * lasts. A page that lands starts the pauses again from the shortest. A hidden
+ * page sends nothing: a retry that falls due while it is hidden waits until it
+ * is shown, since the observer does not report while the page is hidden and
+ * the reader cannot see the page arrive. A pause that ends before the
+ * observer's first report, which a hidden page holds back, still asks as the
+ * automatic retry when that report finds the sentinel in range. Without a
+ * failure, every report in range asks.
  */
 export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries, page }: {
   failed: boolean; hasMore: boolean; loading: boolean; retries: NextPageRetries;
@@ -45,7 +48,10 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     if (!loading) retries.used = 0;
   }
   let waiting = failed;
-  let inRange = false;
+  // Null until the observer's first report.
+  let inRange: boolean | null = null;
+  // The pause ended before that report.
+  let owed = false;
   const ask = (attempt?: 'automatic_retry') => {
     if (!inRange || waiting || !hasMore || loading) return;
     if (loadMore(attempt) && attempt) retries.used += 1;
@@ -56,6 +62,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
       return;
     }
     waiting = false;
+    owed = inRange === null;
     ask('automatic_retry');
   };
   const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
@@ -65,7 +72,9 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     report(isIntersecting: boolean) {
       inRange = isIntersecting;
       if (!isIntersecting) waiting = false;
-      ask();
+      const attempt = owed ? 'automatic_retry' : undefined;
+      owed = false;
+      ask(attempt);
     },
     stop() {
       if (retry !== null) clearTimeout(retry);
