@@ -123,6 +123,18 @@ a session can finish, lints the files changed on the branch and in the working t
 - Document new routes, providers, environment variables, and persistence.
 - Write user-facing copy in English.
 - Explain any API quota, caching, privacy, or fallback implications.
+- When a change to `privacy.html` needs announcing, update its "Last updated" date and set
+  `PRIVACY_POLICY_VERSION`, `PRIVACY_POLICY_EFFECTIVE_AT` (at or after the moment the page text
+  behind everything the summary announces is live in production, never before: a later instant
+  only tells a few new accounts too, an earlier one skips accounts that read the old page; text
+  that only describes the notice itself does not count) and the summary (at most three short
+  bullets with the main changes; the page keeps the full list), with the page sentences behind
+  each of its clauses, in `src/legal/privacy-policy.ts`. The
+  app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
+  on each visit until the account chooses Got it in that browser. Hide for now, Escape, the close
+  button and a press outside hide it for the rest of the visit; leaving /feed with it unanswered
+  closes it until the reader returns there. Guests and accounts created at or after that time do
+  not see it.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.

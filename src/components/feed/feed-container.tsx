@@ -7,7 +7,8 @@ interface FeedSource {
   loading: boolean;
   error?: unknown;
   hasMore?: boolean;
-  loadMore?: () => void;
+  /** Whether a load started. */
+  loadMore?: () => boolean;
   // A source without one (the Similar layer's fixed list) gets no refresh pill.
   refresh?: () => void;
   isRefreshing?: boolean;
@@ -54,12 +55,13 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
+import { createNextPageSentinel, type NextPageRetries } from './next-page-sentinel.ts';
 import './feed-container.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
@@ -88,6 +90,8 @@ function resumeAnchor(papers: Paper[], scrollKey: string) {
   const saved = resumeMemory.get(scrollKey);
   return { saved, index: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }) };
 }
+/** A control a retry's focus can land on inside a card. */
+const CARD_CONTROL = ':is(a[href], button:not(:disabled)):not([inert], [hidden], [inert] *, [hidden] *)';
 /** Depth of the band under the navbar in which the mouse asks for the pill. */
 const REFRESH_HOVER_BAND_PX = 120;
 // How long the feed takes to dip out of sight when a refresh starts. The same
@@ -279,7 +283,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const error = source ? source.error : feed.error;
   const hasMore = source ? Boolean(source.hasMore) : feed.hasMore;
   const loadMore = useMemo(
-    () => (source ? (source.loadMore || (() => {})) : feed.loadMore),
+    () => (source ? (source.loadMore || (() => false)) : feed.loadMore),
     [source, feed.loadMore],
   );
   const refreshFeed = useMemo(
@@ -315,6 +319,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     setFeedNode(node);
   }, []);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const nextPageRetriesRef = useRef<NextPageRetries>({ failedAt: null, used: 0 });
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
   // uses. It tracks the scroll position on every scroll, and the mount
@@ -674,6 +679,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // The main feed's failed reset waits for its automatic retry under the wait
   // it was in, the first one or an emptied feed's (ENG-116).
   const autoRetryPending = !source && feed.autoRetryPending;
+  const tail = feedTailState({ loading, hasMore, error, hasPapers: papers.length > 0, autoRetryPending });
 
   // Only show the atom loader if loading takes more than 1.5s. A failed load
   // waiting for its automatic retry is already under the atom veil, which
@@ -732,17 +738,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [scrollKey, flushSkipExit]);
 
-  // Infinite scroll: observe sentinel element
+  // Infinite scroll: observe sentinel element. After a failed page the
+  // sentinel waits for the reader or a pause (next-page-sentinel.ts).
   useEffect(() => {
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
+    const sentinel = createNextPageSentinel({
+      failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current, page: document,
+    });
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          loadMore();
-        }
-      },
+      (entries) => sentinel.report(entries[0].isIntersecting),
       {
         root,
         // Two viewports of runway, not five: loadPapers' per-source fetch is
@@ -760,8 +766,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     );
 
     observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, loading, loadMore]);
+    return () => {
+      observer.disconnect();
+      sentinel.stop();
+    };
+  }, [error, hasMore, loading, loadMore]);
 
   // Wheel and trackpad scrolling stay entirely native. CSS scroll snapping
   // keeps cards aligned without a non-passive listener blocking momentum
@@ -804,7 +813,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         const currentIndex = Math.round(currentScroll / cardHeight);
         const nextIndex = currentIndex + direction;
 
-        const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
+        const itemCount = papers.length + (loading || tail === 'failed' ? 1 : 0) + (showEndCard ? 1 : 0);
         if (nextIndex >= 0 && nextIndex < itemCount) {
           // Smooth, as the browser's own arrow scroll is when a focused
           // control leaves the key to it: an instant jump here made the same
@@ -826,7 +835,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, showEndCard, feedNode, prefersReducedMotion]);
+  }, [papers.length, loading, tail, showEndCard, feedNode, prefersReducedMotion]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
@@ -1102,9 +1111,18 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const retryButtonRef = useWaitFocus(
     () => (atomVeil ? veilHeadingRef.current : null),
     () => feedRef.current?.querySelector<HTMLElement>(
-      '.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) :is(a[href], button:not(:disabled)):not([inert], [hidden], [inert] *, [hidden] *)',
+      `.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) ${CARD_CONTROL}`,
     ) ?? null,
     loading || isRefreshing || autoRetryPending,
+  );
+  // The tail's Try again leaves as the page it asks for starts: the focus
+  // waits on the tail, then returns to Try again if that page fails too, or
+  // goes to the card the reader is on, which the page now fills.
+  const tailRef = useRef<HTMLDivElement | null>(null);
+  const tailRetryRef = useWaitFocus(
+    () => (loading ? tailRef.current : null),
+    () => feedRef.current?.children[activeIndex]?.querySelector<HTMLElement>(CARD_CONTROL) ?? null,
+    loading,
   );
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   const hasSource = Boolean(source);
@@ -1442,21 +1460,35 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
             Keyed by the count, so the slot the page lands on is a new element:
             kept as the same one, the browser re-snapped to it after the
             insert (a snapped element stays snapped) and carried the reader
-            past the fifteen papers that had just arrived. */}
-        {(loading || (hasMore && !error)) && (
+            past the fifteen papers that had just arrived.
+            A failed page keeps the slot, with the failure and Try again
+            (feedTailState): the same element, so its status region speaks
+            the failure. */}
+        {tail && (
           <div key={`tail-${papers.length}`} className="feed-snap-item feed-snap-item--tail">
-            <div className="feed-tail">
+            {/* Where Try again's focus waits (tailRetryRef); never a tab stop. */}
+            <div ref={tailRef} className="feed-tail" tabIndex={-1}>
               <div className="atom-loader feed-tail-atom" aria-hidden="true">
-                <Petri pose="flask" className="petri-loader" />
+                {tail === 'failed'
+                  ? <Petri pose="upset" className="feed-error-petri" />
+                  : <Petri pose="flask" className="petri-loader" />}
               </div>
-              <p className="feed-tail-label" aria-hidden="true">{'Loading more papers…'}</p>
-              {/* Spoken only while a page is actually on its way: the slot
-                  is mounted ahead of the load, and a fresh one after every
-                  page, so a live region carrying the words from the start
-                  would speak for waits that are not happening. Under the
-                  veil there is no page to add to: the landmark's status
-                  speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0 })}</span>
+              <p className="feed-tail-label" aria-hidden="true">
+                {tail === 'failed' ? 'Could not load more papers' : 'Loading more papers…'}
+              </p>
+              {tail === 'failed' && (
+                <Button ref={tailRetryRef} size="sm" onClick={() => loadMore()}>
+                  <ArrowsClockwise size={16} aria-hidden="true" />
+                  {'Try again'}
+                </Button>
+              )}
+              {/* Spoken only while a page is actually on its way, or once it
+                  failed: the slot is mounted ahead of the load, and a fresh
+                  one after every page, so a live region carrying the words
+                  from the start would speak for waits that are not
+                  happening. Under the veil there is no page to add to: the
+                  landmark's status speaks for that wait. */}
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed' })}</span>
             </div>
           </div>
         )}

@@ -540,6 +540,13 @@
   text-align: center;
 }
 
+/* Try again leaves its focus on the slot while the page loads. The slot fills
+   the scroller, which clips the global ring's outer offset, so it is drawn
+   inside. */
+.feed-tail:focus-visible {
+  outline-offset: -4px;
+}
+
 .feed-tail .feed-tail-atom {
   width: 72px;
   height: 72px;

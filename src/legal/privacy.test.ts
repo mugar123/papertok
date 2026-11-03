@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -123,8 +124,71 @@ test('the page says figure lookups count against the caller address like the oth
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
 });
 
+test('the page promises the in-app announcement to signed-in accounts and says how Got it is remembered', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
+  assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
+  assert.match(html, /remembers that version, separately for each account/);
+});
+
+test('the in-app notice announces the version this page is dated', () => {
+  const html = stripHtmlComments(read('privacy.html'));
+  const shown = html.match(/<p class="lp-updated">Last updated ([^<]+)\.<\/p>/)?.[1];
+  assert.ok(shown, 'a "Last updated" date');
+  assert.match(PRIVACY_POLICY_VERSION, /^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
+  const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
+  const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
+  assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+});
+
+test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
+  assert.match(PRIVACY_POLICY_EFFECTIVE_AT, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  const at = new Date(PRIVACY_POLICY_EFFECTIVE_AT);
+  assert.ok(!Number.isNaN(at.getTime()), 'it parses');
+  // A page edited after midnight UTC may be dated later than the instant its text went live.
+  const endOfVersionDay = Date.parse(PRIVACY_POLICY_VERSION.slice(0, 10) + 'T23:59:59.999Z');
+  assert.ok(at.getTime() <= endOfVersionDay, 'the text went live no later than the day the page is dated');
+});
+
 test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
   assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
+});
+
+test('the in-app summary is short: at most three bullets, its lead change up front, the full list left to the page', () => {
+  assert.ok(PRIVACY_POLICY_CHANGE.length >= 1 && PRIVACY_POLICY_CHANGE.length <= 3, 'one to three bullets');
+  for (const bullet of PRIVACY_POLICY_CHANGE) {
+    const sentences = bullet.match(/[.!?](\s|$)/g)?.length ?? 0;
+    assert.ok(sentences >= 1 && sentences <= 2, `one or two sentences: "${bullet}"`);
+  }
+  // The dialog has to fit it on a phone's screen; the page has every detail.
+  const characters = PRIVACY_POLICY_CHANGE.join(' ').length;
+  assert.ok(characters <= 520, characters + ' characters');
+  const { lead } = PRIVACY_POLICY_CHANGE_EVIDENCE;
+  const at = PRIVACY_POLICY_CHANGE[0].indexOf(lead);
+  assert.ok(at >= 0 && at < 40, `"${lead}" is in the first bullet's lead clause`);
+});
+
+test("every clause of the in-app summary is the page's own words", () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const { clauses, unsaid } = PRIVACY_POLICY_CHANGE_EVIDENCE;
+  assert.ok(clauses.length > 0, 'the summary names where on the page it comes from');
+  const summary = PRIVACY_POLICY_CHANGE.join(' ');
+  for (const [said, onPage] of clauses) {
+    assert.ok(summary.includes(said), 'the summary says "' + said + '"');
+    assert.match(html, onPage);
+  }
+  for (const [claim, why] of unsaid) assert.doesNotMatch(summary, claim, why);
+});
+
+test('the page lists the notice key among what the browser keeps and what removes it, and says only Got it is remembered', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
+  // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
+  assert.match(storage, /Clearing the site's data removes it, and so does deleting the account from Settings in this browser/);
+  const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
+  assert.match(changes, /When you choose Got it, this browser remembers that version/);
+  assert.match(changes, /Choosing Hide for now only hides it for that visit/);
 });

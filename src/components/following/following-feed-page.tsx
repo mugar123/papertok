@@ -150,7 +150,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     // a refresh failed so it does not say the papers were updated (ENG-176).
     error: error ? 'FOLLOWING_LOAD_FAILED' : null,
     hasMore: false,
-    loadMore: () => {},
+    loadMore: () => false,
     refresh,
     isRefreshing: refreshing,
     emptyState,

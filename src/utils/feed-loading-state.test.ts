@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -238,4 +238,29 @@ test('the tail speaks of more papers only under papers already shown', () => {
   assert.equal(nextPageStatusText({ loading: true, hasPapers: false }), '');
   assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');
   assert.equal(nextPageStatusText({ loading: false, hasPapers: true }), '');
+});
+
+// ENG-183: a failed next page removed the tail, and with the automatic
+// retries paused, the reader sat on the last paper with nothing after it and
+// nothing said for up to two minutes.
+test('a load that fails under papers already shown keeps the tail, which says so and offers to try again', () => {
+  const shown = { loading: false, hasMore: true, error: null, hasPapers: true, autoRetryPending: false };
+  assert.equal(feedTailState({ ...shown, loading: true }), 'loading');
+  assert.equal(feedTailState(shown), 'loading', 'mounted ahead of the next page');
+  const failed = { ...shown, error: 'FEED_LOAD_FAILED' };
+  assert.equal(feedTailState(failed), 'failed');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true }), 'Could not load more papers.');
+  assert.equal(feedTailState({ ...failed, loading: true }), 'loading', 'Try again, or a retry, is on its way');
+});
+
+test('the tail offers no retry when nothing more can come, nothing can be retried yet, or nothing is shown', () => {
+  const failed = { loading: false, hasMore: true, error: 'FEED_LOAD_FAILED', hasPapers: true, autoRetryPending: false };
+  assert.equal(feedTailState({ ...failed, hasMore: false }), null);
+  assert.equal(feedTailState({ ...failed, error: null, hasMore: false }), null);
+  // A failed refresh's automatic retry is the next load, and loadMore waits for it.
+  assert.equal(feedTailState({ ...failed, autoRetryPending: true }), null);
+  // Asking again for an answer with no papers gets the same answer.
+  assert.equal(feedTailState({ ...failed, error: FEED_EMPTY }), null);
+  // An empty feed's failure is the error screen, with its own Try again.
+  assert.equal(feedTailState({ ...failed, hasPapers: false }), null);
 });

@@ -34,7 +34,8 @@ export interface FeedContextValue {
    * this render's `papers` does not show yet (waitsAsFirstScreen).
    */
   loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { loadType?: FeedLoadType; attempt?: FeedLoadAttempt; keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
-  loadMore: () => void; refreshFeed: () => Promise<void>;
+  /** Whether a next-page load started, or waits for the commit of the load that just ended. */
+  loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
   // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
@@ -1796,8 +1797,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   // A due automatic retry is the next load. The scroll sentinel stays mounted
   // under the first wait's veil, and must not start pages in front of it.
-  const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current && !autoRetryPending) void loadPapers(false);
+  // The sentinel marks the retries it makes by itself after a failed page, and
+  // counts only those that started: loadPapers also refuses a load while the
+  // reader's interests or profile are not ready.
+  const loadMore = useCallback((attempt?: FeedLoadAttempt) => {
+    if (!hasMore || feedLoadInFlight.current || autoRetryPending) return false;
+    void loadPapers(false, undefined, undefined, { attempt });
+    return feedLoadInFlight.current || loadAfterCommit.current !== null;
   }, [autoRetryPending, hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
