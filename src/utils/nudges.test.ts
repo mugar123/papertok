@@ -138,21 +138,21 @@ test('los tiempos son los acordados', () => {
   assert.equal(NUDGE_DWELL_MS, 60_000, 'un minuto leyendo antes de pedir nada');
 });
 
-test('a reader who has not dismissed this policy version is owed the notice', () => {
+test('a reader who has not chosen Got it for this policy version is owed the notice', () => {
   const version = '2026-10-22';
   const effectiveAt = '2026-10-22T05:00:00Z';
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: true }), true, 'an account with no creation date');
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: false }), false, 'a guest cannot be told apart from a first-time visitor');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'dismissed an earlier version');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'dismissed this one');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'chose Got it for an earlier version');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'chose Got it for this one');
   assert.equal(
     privacyNoticeOwed({ version: '2026-10-22.2', effectiveAt, acknowledged: '2026-10-22', signedIn: true }),
     true,
-    'a second change on the same day is news to whoever dismissed the first',
+    'a second change on the same day is news to whoever chose Got it for the first',
   );
 });
 
-test('dismissing a later version settles an earlier one, and a suffix sorts as a number', () => {
+test('Got it for a later version settles an earlier one, and a suffix sorts as a number', () => {
   const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, effectiveAt: '2026-10-25T05:00:00Z', acknowledged, signedIn: true });
   assert.equal(owed('2026-10-25', '2026-11-05'), false, 'a tab on an older bundle');
   assert.equal(owed('2026-10-25.2', '2026-10-26'), false, 'a later day covers an earlier day with a suffix');
@@ -163,7 +163,7 @@ test('dismissing a later version settles an earlier one, and a suffix sorts as a
   assert.equal(owed('2026-10-25', 'garbage'), true, 'a stored value that is no version covers nothing');
 });
 
-test('a tab on an older bundle does not overwrite a newer dismissal', () => {
+test('a tab on an older bundle does not overwrite a newer version acknowledged with Got it', () => {
   const storage = fakeStorage();
   rememberPrivacyNotice('reader-a', '2026-11-05', storage);
   rememberPrivacyNotice('reader-a', '2026-10-25', storage);
@@ -217,7 +217,7 @@ test('an account created after an earlier change on the same UTC day is still to
   assert.equal(owed(0), false, 'the instant of this change');
 });
 
-test('each account dismisses the notice separately', () => {
+test('each account chooses Got it separately', () => {
   const storage = fakeStorage();
   rememberPrivacyNotice('reader-a', '2026-10-22', storage);
   assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-10-22');
@@ -555,6 +555,6 @@ test('who is told is decided from the account, its creation time and what this b
   assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }, fakeStorage(), false), false, 'not signed in');
   const storage = fakeStorage();
   rememberPrivacyNotice('a', version, storage);
-  assert.equal(owed({ uid: 'a' }, storage), false, 'dismissed by this account');
+  assert.equal(owed({ uid: 'a' }, storage), false, 'Got it chosen by this account');
   assert.equal(owed({ uid: 'b' }, storage), true, 'another account on the same browser');
 });

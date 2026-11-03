@@ -124,7 +124,7 @@ test('the page says figure lookups count against the caller address like the oth
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
 });
 
-test('the page promises the in-app announcement to signed-in accounts and says how a dismissal is remembered', () => {
+test('the page promises the in-app announcement to signed-in accounts and says how Got it is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
   assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
