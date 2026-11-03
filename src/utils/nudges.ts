@@ -137,10 +137,10 @@ export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountC
 }
 
 /**
- * Whether the reader can be told or asked anything: signed in, onboarded and
- * with a profile that loaded. While the profile read has failed, ProtectedRoute
- * shows its retry screen instead of the feed, so neither notice has a page to
- * be on (app.tsx's showNavbar asks the same).
+ * Whether the privacy dialog may be on screen: signed in, onboarded and with a
+ * profile that loaded. While the profile read has failed, ProtectedRoute shows
+ * its retry screen instead of the feed, so the dialog has no feed to open over
+ * (app.tsx's showNavbar asks the same).
  */
 export function visitReaderReady({ user, loading, onboardingComplete, profileLoadError }: { user: unknown; loading: boolean; onboardingComplete: boolean; profileLoadError: string | null }) {
   return Boolean(user) && !loading && onboardingComplete && !profileLoadError;
@@ -169,8 +169,23 @@ const NUDGE_PATH = '/feed';
  * Whether `pathname` is the feed route. React Router (and app.tsx, which sets no
  * caseSensitive) also match '/feed/', '/Feed' and '/FEED'.
  */
-export function isNudgePath(pathname: string) {
+function isFeedPath(pathname: string) {
   return pathname.replace(/\/+$/, '').toLowerCase() === NUDGE_PATH;
+}
+
+/**
+ * Who may be told or asked something, and where each notice may be chosen.
+ * `signedIn` is an account signed in and onboarded, also while its profile
+ * read has failed; the minute of reading runs while it is true. The email
+ * nudge keeps the rule it had before the privacy notice existed: chosen at
+ * '/feed' exactly. The privacy notice is chosen on every spelling of the feed
+ * route (isFeedPath). While the profile read has failed it is not shown
+ * (visitReaderReady), and it keeps the visit's turn until a retry loads the
+ * profile, as it does while the feed has no cards.
+ */
+export function visitChoiceGates({ user, loading, onboardingComplete, pathname }: { user: unknown; loading: boolean; onboardingComplete: boolean; pathname: string }) {
+  const signedIn = Boolean(user) && !loading && onboardingComplete;
+  return { signedIn, nudge: signedIn && pathname === NUDGE_PATH, privacy: signedIn && isFeedPath(pathname) };
 }
 
 /**
@@ -209,7 +224,7 @@ export const PRIVACY_NOTICE_ID = 'privacy-change';
  */
 export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean }) {
   if (picked !== PRIVACY_NOTICE_ID) return picked;
-  return signedIn && isNudgePath(pathname) && privacyOwed ? picked : null;
+  return signedIn && isFeedPath(pathname) && privacyOwed ? picked : null;
 }
 
 /** One of the pending ones, at random, or nothing at all. */
@@ -264,11 +279,14 @@ export function readingMinutePassed(visit: VisitNotices, readingMinute: number):
  * The visit with its notice chosen once that is due (visitChoiceDue), or
  * `visit` itself while it is not, or was already made: one choice per visit, so
  * a re-render, a navigation or the email health answer landing cannot start a
- * second one. A privacy notice hidden this visit is no longer a candidate.
+ * second one. Each notice is a candidate only where its gate is open
+ * (visitChoiceGates), so a route or state where only the other one may be
+ * chosen does not spend the visit's choice. A privacy notice hidden this visit
+ * is no longer a candidate.
  */
-export function chooseVisitNotice(visit: VisitNotices, { privacyOwed, eligible, dismissed, random }: { privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
-  const owed = privacyOwed && !visit.privacyHidden;
-  if (visit.choiceMade || !visitChoiceDue({ privacyOwed: owed, dwellDone: visit.dwellDone })) return visit;
+export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
+  const owed = gates.privacy && privacyOwed && !visit.privacyHidden;
+  if (visit.choiceMade || !visitChoiceDue({ privacyOwed: owed, dwellDone: gates.nudge && visit.dwellDone })) return visit;
   return { ...visit, choiceMade: true, picked: pickVisitNotice({ privacyOwed: owed, eligible, dismissed, random }) };
 }
 

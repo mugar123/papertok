@@ -13,7 +13,6 @@ import {
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
-  isNudgePath,
   modalIsOpen,
   noticeOnScreen,
   privacyDialogOpen,
@@ -22,6 +21,7 @@ import {
   readingMinutePassed,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
+  visitChoiceGates,
   visitReaderReady,
   type VisitNotices,
 } from '../../utils/nudges.ts';
@@ -46,11 +46,13 @@ import PrivacyNotice from './privacy-notice.tsx';
 // it. Got it spends the visit's turn. Hide for now (or Escape, a press outside,
 // the X) hands it back, so a nudge may follow after another minute of reading:
 // a reader who keeps hiding the notice is not kept from hearing that email is
-// down (answerPrivacyNotice). Both are picked on the feed. The dialog is shown
-// on the feed only and comes back when the reader returns to it; a nudge stays
-// on every route until it is dismissed (noticeOnScreen). The notice takes the turn on
-// arrival, before the cards: a visit whose feed never shows any (an error, an
-// empty feed) shows neither the dialog nor a nudge. A change of account
+// down (answerPrivacyNotice). Both are picked on the feed, a nudge where it was
+// before the notice existed (visitChoiceGates). The dialog is shown on the feed
+// only and comes back when the reader returns to it; a nudge stays on every
+// route until it is dismissed (noticeOnScreen). The notice takes the turn on
+// arrival, before the cards and before a failed profile read is retried: a
+// visit whose feed never shows cards (an error, an empty feed) or whose profile
+// never loads shows neither the dialog nor a nudge. A change of account
 // remounts this component, which clears what was picked for the previous reader.
 
 const COPY = {
@@ -96,7 +98,8 @@ export default function NudgeHost() {
   const [visit, setVisit] = useState<VisitNotices>(VISIT_START);
   const { picked, dwellDone, readingMinute } = visit;
 
-  const signedIn = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
+  const gates = visitChoiceGates({ user, loading: authLoading, onboardingComplete, pathname: location.pathname });
+  const { signedIn } = gates;
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
 
   // Hide for now starts the minute over (readingMinute), so it restarts here
@@ -118,21 +121,21 @@ export default function NudgeHost() {
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
   // linter says so, twice. Same shape the guest interests sheet uses.
-  if (signedIn && isNudgePath(location.pathname)) {
-    const chosen = chooseVisitNotice(visit, {
-      privacyOwed,
-      eligible: emailProblem ? ['email-down'] : [],
-      dismissed,
-    });
-    if (chosen !== visit) setVisit(chosen);
-  }
+  const chosen = chooseVisitNotice(visit, {
+    gates,
+    privacyOwed,
+    eligible: emailProblem ? ['email-down'] : [],
+    dismissed,
+  });
+  if (chosen !== visit) setVisit(chosen);
 
   const close = useCallback((id: string) => {
     setDismissed(rememberNudgeDismissal(id));
     setVisit(current => ({ ...current, picked: null }));
   }, []);
 
-  const onScreen = noticeOnScreen({ picked, signedIn, pathname: location.pathname, privacyOwed });
+  const readerReady = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
+  const onScreen = noticeOnScreen({ picked, signedIn: readerReady, pathname: location.pathname, privacyOwed });
   const privacyShown = onScreen === PRIVACY_NOTICE_ID;
 
   // The dialog waits for the For You feed's first cards (/feed renders this

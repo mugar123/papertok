@@ -22,6 +22,7 @@ import {
   rememberNudgeDismissal,
   rememberPrivacyNotice,
   visitChoiceDue,
+  visitChoiceGates,
   visitReaderReady,
 } from './nudges.ts';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, getFeedDisplayState } from './feed-loading-state.ts';
@@ -256,8 +257,11 @@ test('a privacy change owed to the reader is chosen on arrival, a nudge only aft
   assert.equal(visitChoiceDue({ privacyOwed: false, dwellDone: true }), true);
 });
 
+// A signed-in reader at /feed, where either notice may be chosen.
+const ON_FEED = { nudge: true, privacy: true };
+
 test('after Hide for now the visit may still show a nudge, a minute of reading later; after Got it the nudge waits for the next visit', () => {
-  const facts = { privacyOwed: true, eligible: ['email-down'], dismissed: [] };
+  const facts = { gates: ON_FEED, privacyOwed: true, eligible: ['email-down'], dismissed: [] };
   const arrived = chooseVisitNotice(VISIT_START, facts);
   assert.equal(arrived.picked, PRIVACY_NOTICE_ID, 'the notice owed is chosen on arrival');
   assert.equal(chooseVisitNotice({ ...arrived, dwellDone: true }, facts).picked, PRIVACY_NOTICE_ID, 'while it is on screen the minute passing changes nothing');
@@ -285,7 +289,7 @@ test('after Hide for now the visit may still show a nudge, a minute of reading l
 });
 
 test('a nudge after Hide for now waits a whole minute from the hide, also when the first minute had not passed', () => {
-  const facts = { privacyOwed: true, eligible: ['email-down'], dismissed: [] };
+  const facts = { gates: ON_FEED, privacyOwed: true, eligible: ['email-down'], dismissed: [] };
   // The reader arrives at T0 and NudgeHost starts the timer of the minute running then.
   const arrived = chooseVisitNotice(VISIT_START, facts);
   const minuteAtArrival = arrived.readingMinute;
@@ -322,7 +326,34 @@ test('the email nudge, once picked, stays on every route until it is dismissed',
   }
 });
 
-test('nothing is picked or opened while the profile could not be loaded, and it is once a retry loads it', () => {
+test('the email nudge is chosen where it was before the privacy notice: at /feed exactly, also while the profile read has failed', () => {
+  const reader = { user: { uid: 'u1' }, loading: false, onboardingComplete: true };
+  const afterTheMinute = (pathname: string, over: Partial<Parameters<typeof visitChoiceGates>[0]> = {}) => chooseVisitNotice(
+    { ...VISIT_START, dwellDone: true },
+    { gates: visitChoiceGates({ ...reader, ...over, pathname }), privacyOwed: false, eligible: ['email-down'], dismissed: [] },
+  );
+  assert.equal(afterTheMinute('/feed').picked, 'email-down');
+  // The gates ask nothing of the profile read, so a failed one (the feed route's retry screen) does not hold the nudge back.
+  assert.equal(visitChoiceGates({ ...reader, pathname: '/settings' }).signedIn, true, 'its minute runs on any route');
+  for (const pathname of ['/feed/', '/Feed', '/FEED', '/search', '/settings', '/']) {
+    assert.equal(afterTheMinute(pathname).choiceMade, false, `not chosen on ${pathname}, so /feed can still choose it`);
+  }
+  assert.equal(afterTheMinute('/feed', { loading: true }).choiceMade, false, 'still loading');
+  assert.equal(afterTheMinute('/feed', { onboardingComplete: false }).choiceMade, false, 'not onboarded');
+  assert.equal(afterTheMinute('/feed', { user: null }).choiceMade, false, 'signed out');
+  assert.equal(visitChoiceGates({ ...reader, user: null, pathname: '/feed' }).signedIn, false, 'and its minute does not run');
+});
+
+test('the privacy notice is chosen on every spelling of the feed route, and a nudge does not take its turn there', () => {
+  const reader = { user: { uid: 'u1' }, loading: false, onboardingComplete: true };
+  for (const pathname of ['/feed', '/feed/', '/Feed', '/FEED']) {
+    const gates = visitChoiceGates({ ...reader, pathname });
+    assert.equal(chooseVisitNotice(VISIT_START, { gates, privacyOwed: true, eligible: ['email-down'] }).picked, PRIVACY_NOTICE_ID, pathname);
+  }
+  assert.equal(chooseVisitNotice(VISIT_START, { gates: visitChoiceGates({ ...reader, pathname: '/settings' }), privacyOwed: true }).choiceMade, false, 'off the feed nothing is chosen');
+});
+
+test('the privacy dialog is not shown while the profile could not be loaded, and it is once a retry loads it', () => {
   const user = { uid: 'u1' };
   const ready = (over: Partial<Parameters<typeof visitReaderReady>[0]> = {}) => visitReaderReady({ user, loading: false, onboardingComplete: true, profileLoadError: null, ...over });
   assert.equal(ready(), true);
@@ -331,7 +362,10 @@ test('nothing is picked or opened while the profile could not be loaded, and it 
   assert.equal(ready({ loading: true }), false, 'still loading');
   assert.equal(ready({ onboardingComplete: false }), false, 'not onboarded');
   assert.equal(ready({ user: null }), false, 'signed out');
-  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
+  // Chosen on arrival all the same, so it keeps the visit's turn and no nudge is picked over the retry screen.
+  const arrived = chooseVisitNotice(VISIT_START, { gates: visitChoiceGates({ user, loading: false, onboardingComplete: true, pathname: '/feed' }), privacyOwed: true, eligible: ['email-down'] });
+  assert.equal(arrived.picked, PRIVACY_NOTICE_ID);
+  assert.equal(noticeOnScreen({ picked: arrived.picked, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
   // Off screen the dialog closes, and it opens again when Try again brings the feed back.
   assert.equal(privacyDialogOpen({ shown: false, cardsShown: true, modalOpen: false, wasOpen: true }), false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed', privacyOwed: true }), PRIVACY_NOTICE_ID);
@@ -439,7 +473,8 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   // A visit's arrival on /feed, with its cards and no other dialog open, from the parts NudgeHost calls in this order.
   const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
-    const { picked } = chooseVisitNotice(VISIT_START, { privacyOwed, eligible: ['email-down'] });
+    const gates = visitChoiceGates({ user, loading: false, onboardingComplete: signedIn, pathname: '/feed' });
+    const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, eligible: ['email-down'] });
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
     return privacyDialogOpen({ shown, cardsShown: true, modalOpen: false, wasOpen: false });
   };
