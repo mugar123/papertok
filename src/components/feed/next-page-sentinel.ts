@@ -1,5 +1,15 @@
-/** How long a failed next page waits before the scroll sentinel asks for it again by itself. */
-export const NEXT_PAGE_RETRY_MS = 10_000;
+import { AUTO_RETRY_PAUSE_MS } from '../../context/feed-load-failure.ts';
+
+/** The longest a failed next page waits before the scroll sentinel asks for it again by itself. */
+const NEXT_PAGE_RETRY_CAP_MS = 120_000;
+
+/**
+ * The automatic retries of a failed next page. FeedContainer keeps one for
+ * the feed's lifetime, because each load makes a new sentinel. `failedAt` is
+ * when the current failure happened; `used` counts the automatic retries
+ * since a page last landed.
+ */
+export interface NextPageRetries { failedAt: number | null; used: number }
 
 /**
  * Whether the feed's scroll sentinel asks for the next page. FeedContainer
@@ -10,20 +20,34 @@ export const NEXT_PAGE_RETRY_MS = 10_000;
  *
  * `failed` is the feed's error, the one that also removes the feed's tail. A
  * failed page waits until the reader comes back toward the end (the sentinel
- * leaves range and enters it again) or until NEXT_PAGE_RETRY_MS have passed
- * since this sentinel was made, and is then asked for once. A change to the
- * list makes a new sentinel, so it starts the pause again. Without a failure,
- * every report in range asks.
+ * leaves range and enters it again) or until its pause has passed since the
+ * failure, and is then asked for once. The pause is the feed's retry pause,
+ * doubled for each automatic retry already used, up to NEXT_PAGE_RETRY_CAP_MS,
+ * so an outage gets fewer requests the longer it lasts. A page that lands
+ * starts the pauses again from the shortest. Without a failure, every report
+ * in range asks.
  */
-export function createNextPageSentinel({ failed, hasMore, loading, loadMore }: {
-  failed: boolean; hasMore: boolean; loading: boolean; loadMore: () => void;
+export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries }: {
+  failed: boolean; hasMore: boolean; loading: boolean; loadMore: () => void; retries: NextPageRetries;
 }) {
+  if (failed) {
+    retries.failedAt ??= Date.now();
+  } else {
+    retries.failedAt = null;
+    if (!loading) retries.used = 0;
+  }
   let waiting = failed;
   let inRange = false;
-  const ask = () => {
-    if (inRange && !waiting && hasMore && !loading) loadMore();
+  const ask = (automatic = false) => {
+    if (!inRange || waiting || !hasMore || loading) return;
+    if (automatic) retries.used += 1;
+    loadMore();
   };
-  const retry = failed ? setTimeout(() => { waiting = false; ask(); }, NEXT_PAGE_RETRY_MS) : null;
+  const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
+  const retry = retries.failedAt === null ? null : setTimeout(() => {
+    waiting = false;
+    ask(true);
+  }, Math.max(0, retries.failedAt + pause - Date.now()));
   return {
     /** The observer's report: whether the sentinel is in range now. */
     report(isIntersecting: boolean) {

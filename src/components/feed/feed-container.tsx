@@ -59,7 +59,7 @@ import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-ski
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
-import { createNextPageSentinel } from './next-page-sentinel.ts';
+import { createNextPageSentinel, type NextPageRetries } from './next-page-sentinel.ts';
 import './feed-container.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
@@ -315,6 +315,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     setFeedNode(node);
   }, []);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const nextPageRetriesRef = useRef<NextPageRetries>({ failedAt: null, used: 0 });
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
   // uses. It tracks the scroll position on every scroll, and the mount
@@ -731,7 +732,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
-    const sentinel = createNextPageSentinel({ failed: Boolean(error), hasMore, loading, loadMore });
+    const sentinel = createNextPageSentinel({ failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current });
     const observer = new IntersectionObserver(
       (entries) => sentinel.report(entries[0].isIntersecting),
       {
