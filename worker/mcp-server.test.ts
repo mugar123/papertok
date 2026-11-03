@@ -797,6 +797,30 @@ test('a provider failure is a tool error the client can read', async () => {
   });
 });
 
+test("a provider's retry-after reaches every tool as seconds, whether it was given in seconds or as an HTTP date", async () => {
+  // Five minutes ahead of the pinned clock, as both forms RFC 9110 allows.
+  const fiveMinutes = [String(5 * 60), new Date(EVEN_ARXIV_PERIOD + 5 * 60_000).toUTCString()];
+  for (const header of [...fiveMinutes, new Date(EVEN_ARXIV_PERIOD - 60_000).toUTCString(), 'soon']) {
+    const refused = () => new Response('Too many requests', { status: 429, headers: { 'retry-after': header } });
+    await mcpLines(() => withUpstream(url => {
+      if (url.startsWith('https://api.unpaywall.org/') || url.startsWith('https://api.openalex.org/') || url.startsWith('https://export.arxiv.org/')) return refused();
+      throw new Error(`unexpected upstream ${url}`);
+    }, async () => {
+      const expected = fiveMinutes.includes(header) ? 300 : header === 'soon' ? 60 : 1;
+      // A route that throws the provider's refusal, and one that relays it.
+      const access = await callTool(routeEnv(), 'find_open_access', { doi: '10.1234/example.2026.1' });
+      const work = await callTool(routeEnv(), 'get_paper', { id: 'W4400000001' });
+      const arxiv = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain', sources: ['arxiv'] });
+      const both = await callTool(routeEnv(), 'search_papers', { query: 'graphene strain' });
+      for (const [name, { answer }] of [['find_open_access', access], ['get_paper', work], ['search arXiv', arxiv], ['search both', both]] as const) {
+        assert.equal(answer.result?.structuredContent?.retryAfterSeconds, expected, `${name}, retry-after: ${header}`);
+      }
+      const unavailable = both.answer.result?.structuredContent?.unavailable as Array<{ source: string; retryAfterSeconds: number }>;
+      assert.deepEqual(unavailable.map(entry => [entry.source, entry.retryAfterSeconds]), [['openalex', expected], ['arxiv', expected]]);
+    }));
+  }
+});
+
 test('find_open_access relays the legal copy and licence without the record around it', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.unpaywall.org/v2/10.1234%2Fexample.2026.1')) return Response.json(UNPAYWALL);

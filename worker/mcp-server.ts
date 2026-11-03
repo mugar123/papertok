@@ -193,6 +193,20 @@ function searchArguments(args: Arguments) {
 
 // ─── Asking the routes ───
 
+// A provider's `retry-after`, which the routes relay as they received it, is
+// whole seconds or an HTTP date (RFC 9110, section 10.2.3). A date already past
+// is a wait of one second, and a header that is neither is the minute the
+// router assumes for a provider that gave none. A day bounds a bogus header, as
+// it does in the browser's OpenAlex client.
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+const MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60;
+function retryAfterSeconds(header: string | null | undefined) {
+  const value = String(header || '').trim();
+  const seconds = /^\d+$/.test(value) ? Number(value) : Math.ceil((Date.parse(value) - Date.now()) / 1000);
+  if (!value || Number.isNaN(seconds)) return DEFAULT_RETRY_AFTER_SECONDS;
+  return Math.min(Math.max(seconds, 1), MAX_RETRY_AFTER_SECONDS);
+}
+
 async function ask(handler: RouteHandler, path: string, params: Record<string, string | number>, caller: Request, env: WorkerEnv) {
   const url = new URL(`https://papertok.internal${path}`);
   for (const [name, value] of Object.entries(params)) {
@@ -209,7 +223,7 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
     // 429, 502 or 504 and reports it, and so does this, as a tool error.
     captureWorkerException(error);
     const { name, status, retryAfter } = error as UpstreamError;
-    if (status === 429) throw new ToolFailure({ code: 'UPSTREAM_RATE_LIMITED', retryAfterSeconds: Number(retryAfter) || 60 });
+    if (status === 429) throw new ToolFailure({ code: 'UPSTREAM_RATE_LIMITED', retryAfterSeconds: retryAfterSeconds(retryAfter) });
     throw new ToolFailure({ code: name === 'TimeoutError' ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE', ...(status ? { upstreamStatus: status } : {}) });
   }
   if (response.ok) return response;
@@ -221,7 +235,7 @@ async function ask(handler: RouteHandler, path: string, params: Record<string, s
   if (response.status === 429) {
     throw new ToolFailure({
       code: answer?.code || 'PROVIDER_RATE_LIMITED',
-      retryAfterSeconds: Number(response.headers.get('retry-after')) || 60,
+      retryAfterSeconds: retryAfterSeconds(response.headers.get('retry-after')),
     });
   }
   throw new ToolFailure({ code: answer?.code || 'UPSTREAM_UNAVAILABLE', upstreamStatus: response.status });
