@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndedUpdated } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -170,13 +170,29 @@ test('a refresh keeps its own words under the veil', () => {
 });
 
 // ENG-176: a Try again that failed put "Papers updated" in the status region,
-// beside the "Error loading papers" alert, and the pill said Updated after a
-// refresh that failed over the papers already shown.
-test('only a refresh that ended without an error says the papers were updated', () => {
-  assert.equal(refreshEndedUpdated({ error: null }), true);
+// beside the "Error loading papers" alert. A refresh that failed over the
+// cards said Updated on the pill, and then, once that was fixed, nothing.
+test('a refresh that ends says whether it updated the papers', () => {
+  const ended = (error: unknown) => refreshEndBeat({ wasRefreshing: true, isRefreshing: false, error });
+  assert.equal(ended(null), 'updated');
   for (const error of ['FEED_LOAD_FAILED', 'FOLLOWING_LOAD_FAILED', FEED_EMPTY]) {
-    assert.equal(refreshEndedUpdated({ error }), false, error);
+    assert.equal(ended(error), 'failed', error);
   }
+  // Nothing ended: a refresh still running, or none at all.
+  assert.equal(refreshEndBeat({ wasRefreshing: true, isRefreshing: true, error: 'FEED_LOAD_FAILED' }), null);
+  assert.equal(refreshEndBeat({ wasRefreshing: false, isRefreshing: true, error: null }), null);
+  assert.equal(refreshEndBeat({ wasRefreshing: false, isRefreshing: false, error: null }), null);
+
+  const spoken = (error: unknown, hasPapers: boolean) => refreshStatusText({ isRefreshing: false, end: ended(error), hasPapers });
+  assert.equal(spoken(null, true), 'Papers updated');
+  assert.equal(spoken('FEED_LOAD_FAILED', true), 'Could not refresh papers');
+  assert.equal(spoken('FOLLOWING_LOAD_FAILED', true), 'Could not refresh papers');
+  // With no card left, the error's alert or the empty state says how it ended.
+  assert.equal(spoken('FEED_LOAD_FAILED', false), '');
+  assert.equal(spoken(null, false), '');
+  // A beat whose time is up says nothing, and a new refresh says it is running.
+  assert.equal(refreshStatusText({ isRefreshing: false, end: null, hasPapers: true }), '');
+  assert.equal(refreshStatusText({ isRefreshing: true, end: 'failed', hasPapers: true }), 'Refreshing papers…');
 });
 
 test('the tail speaks of more papers only under papers already shown', () => {

@@ -56,14 +56,30 @@ export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string;
   return refreshStatus || (veil ? 'Loading papers…' : '');
 }
 
+/** How a refresh ended: it brought the papers, or it failed over them. */
+export type RefreshEnd = 'updated' | 'failed';
+
 /**
- * Whether a refresh that has just ended earns its done beat: Updated on the
- * pill and "Papers updated" in the status region. A refresh or Try again that
- * ended with an error updated nothing, and the store's empty answer
- * (`FEED_EMPTY`) brought no papers either (ENG-176).
+ * The beat a refresh earns as it ends, or null when none ended: Updated or
+ * Not updated on the pill, and the status region's words for it. `error` is
+ * the one the refresh ended with, read at that moment; one that comes or goes
+ * later belongs to another load. Any error is a failure, the store's empty
+ * answer (`FEED_EMPTY`) included: none of them brought papers (ENG-176).
  */
-export function refreshEndedUpdated({ error }: { error: unknown }) {
-  return !error;
+export function refreshEndBeat({ wasRefreshing, isRefreshing, error }: { wasRefreshing: boolean; isRefreshing: boolean; error: unknown }): RefreshEnd | null {
+  if (!wasRefreshing || isRefreshing) return null;
+  return error ? 'failed' : 'updated';
+}
+
+/**
+ * What the status region says of a refresh. Its end is spoken only over
+ * cards: with none, the error's alert or the empty state says how it ended,
+ * and "Papers updated" beside either would be false (ENG-176).
+ */
+export function refreshStatusText({ isRefreshing, end, hasPapers }: { isRefreshing: boolean; end: RefreshEnd | null; hasPapers: boolean }) {
+  if (isRefreshing) return 'Refreshing papers…';
+  if (!end || !hasPapers) return '';
+  return end === 'updated' ? 'Papers updated' : 'Could not refresh papers';
 }
 
 /** The feed tail's status: only for a next page, under papers already shown. */

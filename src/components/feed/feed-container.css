@@ -255,7 +255,8 @@
    fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
    set by FeedContainer); on touch, as a pull progresses (`data-pull` on the
    wrapper, below); or to the keyboard. While a refresh runs it stays out and spins;
-   when it lands it says Updated and goes back under the bar.
+   when it lands it says Updated, or Not updated if it failed, and goes back
+   under the bar.
    `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
    child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`. */
@@ -362,8 +363,8 @@
   translate: -50% 0;
   scale: 1;
 }
-/* Face slot. Las tres caras se apilan en UNA celda de rejilla, y con ellas un
-   medidor invisible que lleva las tres etiquetas: la celda mide siempre lo
+/* Face slot. Las caras se apilan en UNA celda de rejilla, y con ellas un
+   medidor invisible que lleva todas las etiquetas: la celda mide siempre lo
    que la más ancha, así que la píldora no cambia de tamaño al cambiar de
    cara y las caras sólo se cruzan, centradas, dentro de una caja quieta.
 
