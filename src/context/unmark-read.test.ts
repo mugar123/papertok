@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges } from './write-mark.ts';
+import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 
 type Entry = { paperId: string; readAt?: string | null };
 
@@ -412,4 +413,27 @@ test('a card unmark refused after markAsRead, before a render, adds no second re
   await silenced(() => cardUnmark);
   assert.deepEqual([...history.state.readIds].sort(), ['p1', 'p2']);
   assert.deepEqual(history.profile, ['unread', 'read']);
+});
+
+test('a card whose id is an alias of the stored id clears the stored read mark', async () => {
+  const { state, setReadIds, setLibrary } = feedState();
+  const index = buildInteractionAliasIndex([['p2', { id: 'p2', doi: '10.1234/alias' }]]);
+  // The feed served the paper under another id, carrying the same DOI.
+  const card = { id: 'openalex:W99', doi: '10.1234/alias' };
+  const id = resolveInteractionId(card, index, (known) => state.readIds.has(known))!;
+  const written: string[] = [];
+  await unmarkRead(id, {
+    setReadIds,
+    setLibrary,
+    write: () => { written.push(id); return Promise.resolve(); },
+    onUnmarked: () => {},
+    onRestored: () => {},
+    stillSignedIn: () => true,
+    changes: markChanges(),
+    markKey: `u1:read:${id}`,
+    isRead: () => state.readIds.has(id),
+  });
+  assert.equal(id, 'p2');
+  assert.deepEqual(written, ['p2']);
+  assert.deepEqual([...state.readIds], ['p1']);
 });

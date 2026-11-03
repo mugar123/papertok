@@ -146,7 +146,9 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     // container reads this instead of guessing from `loading`, which is false
     // for the tick before the first refresh starts.
     initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error }),
-    error: error && shownPapers.length === 0 ? 'FOLLOWING_LOAD_FAILED' : null,
+    // Over cards too: the cards stay, and the container still needs to know
+    // a refresh failed so it does not say the papers were updated (ENG-176).
+    error: error ? 'FOLLOWING_LOAD_FAILED' : null,
     hasMore: false,
     loadMore: () => false,
     refresh,

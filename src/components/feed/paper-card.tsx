@@ -15,7 +15,7 @@ export interface PaperCardProps {
   onLike?: (paper: Paper, surface?: string) => void | Promise<void>;
   onNotInterested?: (paper: Paper) => void | Promise<void>;
   onMarkAsRead?: (paper: Paper) => void | Promise<void>;
-  onUnmarkAsRead?: (paperId: string) => void | Promise<void>;
+  onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
   onOpenPdf?: (paper: Paper, surface?: string) => void | Promise<void>;
@@ -43,7 +43,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -116,6 +116,7 @@ import AbstractSheet from './abstract-sheet.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
+import { followReasonLabels } from '../../utils/follow-reasons.ts';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -540,6 +541,10 @@ const PaperCard = memo(function PaperCard({
       name: (author as PaperAuthor)?.name || author as string,
     }));
   }, [followedByType.author, isFollowing, paper]);
+  const followReasons = useMemo(
+    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),
+    [paper?._followedEntityMatches, hasFollowedAuthor, isFollowing],
+  );
 
   const lastTap = useRef(0);
   const abstractRef = useRef<HTMLDivElement | null>(null);
@@ -627,7 +632,7 @@ const PaperCard = memo(function PaperCard({
       if (seconds >= 1.0) void trackViewTime(paper, seconds, analyticsSurface);
       else if (seconds > 0.1) void trackSkip(paper, analyticsSurface);
       if (seconds > 0.1) {
-        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id });
       }
     };
     const visibleTime = trackVisibleTime(document, reportViewTime);
@@ -640,7 +645,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
+            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id });
           }
         }
         visibleTime.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
@@ -1253,7 +1258,7 @@ const PaperCard = memo(function PaperCard({
       return;
     }
     if (isRead) {
-      void onUnmarkAsRead(paper.id);
+      void onUnmarkAsRead(paper);
       return;
     }
     void onMarkAsRead(paper);
@@ -1537,7 +1542,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
+    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
@@ -1916,17 +1921,17 @@ const PaperCard = memo(function PaperCard({
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the
               field then stood beside an empty date. */}
-          {hasFollowedAuthor && (
-            <>
-              {categoryLabel && <span className="pc-meta-dot">·</span>}
+          {followReasons.map(({ type, label }, index) => (
+            <Fragment key={type}>
+              {(categoryLabel || index > 0) && <span className="pc-meta-dot">·</span>}
               <span className="pc-followed-badge">
-                <UserCheck size={12} /> {'Followed author'}
+                {type === 'author' && <UserCheck size={12} />} {label}
               </span>
-            </>
-          )}
+            </Fragment>
+          ))}
           {paper.year ? (
             <>
-              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
+              {(categoryLabel || followReasons.length > 0) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
@@ -1936,7 +1941,7 @@ const PaperCard = memo(function PaperCard({
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || followReasons.length > 0 || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
