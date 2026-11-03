@@ -34,13 +34,17 @@ export const PRIVACY_POLICY_VERSION = '2026-11-03';
  * PRIVACY_POLICY_VERSION and this instant together.
  *
  * The page's 3 November text adds followed journals (#399), the feed
- * diagnostics (#434) and how the notice itself is remembered, and ships with
- * this notice (ENG-14). Pablo chose on 2026-11-03 to set this instant to the
- * time of the commit that dated the page, rounded up to the next quarter hour,
- * rather than wait for the deploy: accounts created between this instant and
- * the deploy read the 28 October page and are not told.
+ * diagnostics (#434) and what it says about this notice: how Got it is stored
+ * and the Changes promise (ENG-14). Everything the summary below announces was
+ * live before this instant: the Vercel status of #434's merge commit reports
+ * success at 2026-11-01T12:32:49Z, and #399's at 2026-11-03T00:15:25Z. Only
+ * what the page says about this notice ships with it. Pablo chose on 2026-11-03
+ * to set this instant to the time of the commit that set it, rounded up to the
+ * next quarter hour, rather than after the merge. An account created between
+ * this instant and the deploy is not told: it signed up under a page, still
+ * dated 28 October, that already said everything the summary announces.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T06:00:00Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-03T06:15:00Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [

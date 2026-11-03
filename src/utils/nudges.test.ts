@@ -212,7 +212,7 @@ test('an account created after an earlier change on the same UTC day is still to
       accountCreated: new Date(effective + offsetMs).toUTCString(),
       signedIn: true,
     });
-  assert.equal(owed(-14 * HOUR), true, 'created the day of the earlier change, after it');
+  assert.equal(owed(-14 * HOUR), true, '14 hours before this change');
   assert.equal(owed(-1000), true, 'a second before this change');
   assert.equal(owed(0), false, 'the instant of this change');
 });
