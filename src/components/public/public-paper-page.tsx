@@ -252,8 +252,8 @@ export default function PublicPaperPage({
   const getInteractionState = useCallback((candidate: Paper) => ({
     isLiked: likedPaperIds.has(candidate.id),
     isSaved: savedPaperIds.has(candidate.id),
-    isRead: readPaperIds.has(candidate.id),
-  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+    isRead: readPaperIds.has(interactionIdFor(candidate)!),
+  }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
   const handleOpenPdf = useCallback((candidate: Paper) => {
     if (isAuthenticated) void trackPdfOpened(candidate);
     onOpenPdf?.(candidate);
@@ -332,7 +332,7 @@ export default function PublicPaperPage({
             paper={paper as Paper}
             isLiked={isAuthenticated && likedPaperIds.has(paper.id)}
             isSaved={isAuthenticated && savedPaperIds.has(paper.id)}
-            isRead={isAuthenticated && readPaperIds.has(paper.id)}
+            isRead={isAuthenticated && readPaperIds.has(interactionIdFor(paper)!)}
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}

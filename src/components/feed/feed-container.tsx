@@ -26,10 +26,10 @@ interface FeedContainerProps {
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowsClockwise, Check } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check, Warning } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
@@ -55,7 +55,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -358,8 +358,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // True until the pointer leaves the hover band once. Stops the pill from
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
-  const [refreshDone, setRefreshDone] = useState(false);
-  const refreshStatus = isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : '';
+  // The beat of the refresh that just ended, while it lasts.
+  const [refreshEnd, setRefreshEnd] = useState<RefreshEnd | null>(null);
+  const refreshStatus = refreshStatusText({ isRefreshing, end: refreshEnd, hasPapers: papers.length > 0 });
   // La píldora se va SIEMPRE diciendo «Actualizado».
   //
   // Al terminar el beat, la cara volvía al verbo. Ese cruce no informa de
@@ -370,14 +371,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // que acababa de pedir. Ahora la cara se queda puesta hasta que la píldora
   // está fuera de vista y vuelve al verbo debajo de la barra: la próxima vez
   // que asome ya viene ofreciéndose.
-  const [doneHold, setDoneHold] = useState(false);
+  // The same hold keeps "Not updated" on the face after a refresh that failed.
+  const [heldEnd, setHeldEnd] = useState<RefreshEnd | null>(null);
   // Si el botón tiene el foco de teclado, el CSS lo saca (`:focus-visible`)
   // sin pasar por el estado — así que la cola tiene que contar con él o la
   // cara volvería al verbo delante de quien refrescó con el teclado.
   // `:focus-visible` y no `:focus` a secas: un clic con el ratón también deja
   // el botón enfocado, y eso dejaría «Actualizado» clavado para siempre.
   const [refreshPillFocused, setRefreshPillFocused] = useState(false);
-  const wasRefreshingRef = useRef(false);
+  const refreshWatchRef = useRef<RefreshWatch>('idle');
+  const refreshBeatTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
   // The cards mounted right now: a window around the card this feed was left
@@ -676,7 +679,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // The main feed's failed reset waits for its automatic retry under the wait
   // it was in, the first one or an emptied feed's (ENG-116).
   const autoRetryPending = !source && feed.autoRetryPending;
-  const tail = feedTailState({ loading, hasMore, error, hasPapers: papers.length > 0, autoRetryPending });
+  const tail = feedTailState({ loading, hasMore, error, hasPapers: papers.length > 0, autoRetryPending, resetFailed: !source && feed.resetFailed });
 
   // Only show the atom loader if loading takes more than 1.5s. A failed load
   // waiting for its automatic retry is already under the atom veil, which
@@ -837,6 +840,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
+  // While its refresh runs the pill is `aria-disabled`, not `disabled`, which
+  // would drop its keyboard focus to the page (ENG-178), so a press is
+  // ignored here instead.
+  const handleRefreshPill = useCallback(() => {
+    if (isRefreshing) return;
+    refreshFeed();
+  }, [isRefreshing, refreshFeed]);
 
   // The pull's progress goes to the WRAPPER, not to the pill: the papers
   // follow the finger too, and the wrapper is the one ancestor both they and
@@ -936,23 +946,27 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [feedNode, handleMouseMove]);
 
-  // A short "done" beat once a refresh lands, before the pill hides again.
+  // A short beat once a refresh ends, before the pill hides again: Updated,
+  // or Not updated after a refresh that failed over the cards (ENG-176).
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
   // clipped the Updated → Refresh exit mid-fade. While a new refresh runs,
-  // `refreshPhase` already prefers refreshing over done, so we never clear
-  // `refreshDone` synchronously here (react-hooks/set-state-in-effect).
+  // `refreshPhase` already prefers refreshing over a beat, so a beat still
+  // running is replaced when that refresh ends, not when it starts. The error
+  // is read as the refresh's own load ends, not followed: a next page that
+  // fails under the spinner is the tail's to report (`refreshEndBeat`). A failure
+  // whose automatic retry is due waits for that retry's outcome. The hold's
+  // timer lives in a ref: the loads the watch follows must not cancel it.
+  const refreshErrorAtEnd = useEffectEvent(() => error);
   useEffect(() => {
-    if (wasRefreshingRef.current && !isRefreshing) {
-      setRefreshDone(true);
-      setDoneHold(true);
-      const holdMs = prefersReducedMotion ? 500 : 1000;
-      const t = setTimeout(() => setRefreshDone(false), holdMs);
-      wasRefreshingRef.current = false;
-      return () => clearTimeout(t);
-    }
-    wasRefreshingRef.current = isRefreshing;
-    return undefined;
-  }, [isRefreshing, prefersReducedMotion]);
+    const { watch, end } = refreshEndBeat({ watch: refreshWatchRef.current, isRefreshing, autoRetryPending, loading, error: refreshErrorAtEnd() });
+    refreshWatchRef.current = watch;
+    if (!end) return;
+    setRefreshEnd(end);
+    setHeldEnd(end);
+    clearTimeout(refreshBeatTimerRef.current);
+    refreshBeatTimerRef.current = setTimeout(() => setRefreshEnd(null), prefersReducedMotion ? 500 : 1000);
+  }, [isRefreshing, autoRetryPending, loading, prefersReducedMotion]);
+  useEffect(() => () => clearTimeout(refreshBeatTimerRef.current), []);
 
   // El otro extremo de la cola: «Actualizado» se suelta cuando la píldora ya
   // no se ve, más lo que tarda en llegar debajo de la barra (`PILL_EXIT_MS`).
@@ -962,12 +976,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // temporizador dispare, el cleanup lo cancela y sigue siendo la misma
   // visita. `pillOnScreen` lleva el foco de teclado además de las tres
   // condiciones de `is-visible`, porque `:focus-visible` también la saca.
-  const pillOnScreen = refreshPillHover || refreshPillFocused || isRefreshing || refreshDone;
+  const pillOnScreen = refreshPillHover || refreshPillFocused || isRefreshing || refreshEnd !== null;
   useEffect(() => {
-    if (!doneHold || pillOnScreen) return undefined;
-    const t = setTimeout(() => setDoneHold(false), PILL_EXIT_MS);
+    if (!heldEnd || pillOnScreen) return undefined;
+    const t = setTimeout(() => setHeldEnd(null), PILL_EXIT_MS);
     return () => clearTimeout(t);
-  }, [doneHold, pillOnScreen]);
+  }, [heldEnd, pillOnScreen]);
 
   const handleOpenPdf = useCallback((paper: Paper, surface?: string) => {
     void trackPdfOpened(paper, surface);
@@ -1010,7 +1024,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         label: 'Undo',
         onClick: () => {
           clearTimeout(readAdvanceTimerRef.current!);
-          void unmarkAsRead(paper.id);
+          void unmarkAsRead(paper);
           const at = indexOfPaper();
           if (canAdvance && at >= 0 && isOnCard(at + 1)) scrollToCard(at);
         },
@@ -1323,8 +1337,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
-  const refreshPhase = isRefreshing ? 'refreshing' : (refreshDone || doneHold) ? 'done' : 'idle';
-  const refreshLabels = { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' };
+  const shownEnd = refreshEnd ?? heldEnd;
+  const refreshPhase = isRefreshing ? 'refreshing' : shownEnd === 'updated' ? 'done' : shownEnd === 'failed' ? 'failed' : 'idle';
+  const refreshLabels = { refreshing: 'Refreshing…', done: 'Updated', failed: 'Not updated', idle: 'Refresh' };
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
@@ -1333,15 +1348,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <button
           type="button"
           ref={refreshPillRef}
-          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}`}
-          onClick={handleRefresh}
+          className={`feed-refresh${refreshPillHover || isRefreshing || refreshEnd ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}`}
+          onClick={handleRefreshPill}
           onFocus={(event) => setRefreshPillFocused(event.currentTarget.matches(':focus-visible'))}
           onBlur={() => setRefreshPillFocused(false)}
-          disabled={isRefreshing}
+          aria-disabled={isRefreshing || undefined}
           aria-busy={isRefreshing || undefined}
         >
           <span className="feed-refresh-face">
-            {/* El medidor. Lleva las tres etiquetas apiladas e invisibles, y
+            {/* El medidor. Lleva todas las etiquetas apiladas e invisibles, y
                 es lo único que decide el ancho de la píldora: con una caja
                 quieta las caras sólo se cruzan, sin que nada se mueva de
                 sitio. Antes lo hacía un `layout` de framer sobre la cara, y
@@ -1365,15 +1380,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                 animate={faceMotion.animate}
                 exit={faceMotion.exit}
               >
-                {refreshPhase === 'done'
-                  ? <Check size={14} aria-hidden="true" />
-                  : (
-                    <ArrowsClockwise
-                      size={14}
-                      aria-hidden="true"
-                      className={`feed-refresh-icon${refreshPhase === 'refreshing' ? ' feed-refresh-icon--spinning' : ''}`}
-                    />
-                  )}
+                {refreshPhase === 'done' && <Check size={14} aria-hidden="true" />}
+                {refreshPhase === 'failed' && <Warning size={14} aria-hidden="true" />}
+                {(refreshPhase === 'refreshing' || refreshPhase === 'idle') && (
+                  <ArrowsClockwise
+                    size={14}
+                    aria-hidden="true"
+                    className={`feed-refresh-icon${refreshPhase === 'refreshing' ? ' feed-refresh-icon--spinning' : ''}`}
+                  />
+                )}
                 <span className="feed-refresh-label">{refreshLabel}</span>
               </motion.span>
             </AnimatePresence>
