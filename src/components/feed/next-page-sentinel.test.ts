@@ -9,11 +9,13 @@ test.afterEach(() => mock.timers.reset());
  * load that starts or ends runs the sentinel effect again, and its new
  * observer reports at once whether the sentinel is in range. The retries are
  * FeedContainer's, kept across sentinels. A request stays out until the test
- * settles it, as a failure while `failing` is set. The clock starts at 0.
+ * settles it, as a failure while `failing` is set. While `refusing` is set,
+ * loadMore starts nothing, as FeedProvider's does while another load runs or
+ * is due. The clock starts at 0.
  */
 function feedEnd({ inRange = true, failing = false } = {}) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const feed = { requests: [] as number[], attempts: [] as string[], loading: false, error: null as string | null, inRange, failing };
+  const feed = { requests: [] as number[], attempts: [] as string[], loading: false, error: null as string | null, inRange, failing, refusing: false };
   const retries: NextPageRetries = { failedAt: null, used: 0 };
   const page = Object.assign(new EventTarget(), { hidden: false });
   let sentinel: ReturnType<typeof createNextPageSentinel> | null = null;
@@ -24,12 +26,14 @@ function feedEnd({ inRange = true, failing = false } = {}) {
       hasMore: true,
       loading: feed.loading,
       loadMore: (attempt) => {
+        if (feed.refusing) return false;
         feed.requests.push(Date.now());
         // What the load reports as its attempt; loadPapers defaults it to `original`.
         feed.attempts.push(attempt ?? 'original');
         feed.loading = true;
         feed.error = null;
         observe();
+        return true;
       },
       retries,
       page,
@@ -106,6 +110,20 @@ test('a page that lands starts the pauses again from the shortest', () => {
   assert.equal(end.feed.requests.length, 6, 'the next page failed');
   end.wait(1);
   assert.equal(end.feed.requests.length, 7, 'its retry waits the first pause, not the fifth');
+});
+
+test('an automatic retry that loadMore refused does not lengthen the next pause', () => {
+  const end = feedEnd({ failing: true });
+  end.settle();
+  // A failed refresh's own automatic retry falls due with the sentinel's.
+  end.feed.refusing = true;
+  end.wait(2_500);
+  assert.equal(end.feed.requests.length, 1, 'nothing was sent');
+  end.feed.refusing = false;
+  end.scroll(false);
+  end.scroll(true);
+  end.wait(2_500);
+  assert.deepEqual(end.feed.requests, [0, 2_500, 5_000], 'the reader\'s retry failed, and the first pause followed it');
 });
 
 test('the pause counts from the failure, not from the last change to the list', () => {

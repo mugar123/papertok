@@ -7,7 +7,7 @@ const NEXT_PAGE_RETRY_CAP_MS = 120_000;
  * The automatic retries of a failed next page. FeedContainer keeps one for
  * the feed's lifetime, because each load makes a new sentinel. `failedAt` is
  * when the current failure happened; `used` counts the automatic retries
- * since a page last landed.
+ * that started since a page last landed.
  */
 export interface NextPageRetries { failedAt: number | null; used: number }
 
@@ -31,8 +31,11 @@ export interface NextPageRetries { failedAt: number | null; used: number }
  */
 export function createNextPageSentinel({ failed, hasMore, loading, loadMore, retries, page }: {
   failed: boolean; hasMore: boolean; loading: boolean; retries: NextPageRetries;
-  /** Asks for the next page; `automatic_retry` when the pause, not the reader, asks. */
-  loadMore: (attempt?: 'automatic_retry') => void;
+  /**
+   * Asks for the next page; `automatic_retry` when the pause, not the reader,
+   * asks. Says whether a load started: a refused one is not counted.
+   */
+  loadMore: (attempt?: 'automatic_retry') => boolean;
   page: Pick<Document, 'hidden'> & Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 }) {
   if (failed) {
@@ -45,8 +48,7 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
   let inRange = false;
   const ask = (attempt?: 'automatic_retry') => {
     if (!inRange || waiting || !hasMore || loading) return;
-    if (attempt) retries.used += 1;
-    loadMore(attempt);
+    if (loadMore(attempt) && attempt) retries.used += 1;
   };
   const due = () => {
     if (page.hidden) {

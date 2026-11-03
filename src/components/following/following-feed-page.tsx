@@ -148,7 +148,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error }),
     error: error && shownPapers.length === 0 ? 'FOLLOWING_LOAD_FAILED' : null,
     hasMore: false,
-    loadMore: () => {},
+    loadMore: () => false,
     refresh,
     isRefreshing: refreshing,
     emptyState,

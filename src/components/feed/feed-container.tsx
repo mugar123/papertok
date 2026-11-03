@@ -7,7 +7,8 @@ interface FeedSource {
   loading: boolean;
   error?: unknown;
   hasMore?: boolean;
-  loadMore?: () => void;
+  /** Whether a load started. */
+  loadMore?: () => boolean;
   // A source without one (the Similar layer's fixed list) gets no refresh pill.
   refresh?: () => void;
   isRefreshing?: boolean;
@@ -281,7 +282,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const error = source ? source.error : feed.error;
   const hasMore = source ? Boolean(source.hasMore) : feed.hasMore;
   const loadMore = useMemo(
-    () => (source ? (source.loadMore || (() => {})) : feed.loadMore),
+    () => (source ? (source.loadMore || (() => false)) : feed.loadMore),
     [source, feed.loadMore],
   );
   const refreshFeed = useMemo(
