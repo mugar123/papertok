@@ -3165,6 +3165,7 @@ test('escapes paper metadata in email HTML', () => {
     matches: [],
   }], 'https://example.com/unsubscribe', true);
   assert.equal(digest.html.includes('<script>alert(1)</script>'), false);
+  assert.equal(digest.html.includes('<script'), false);
   assert.equal(digest.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), true);
   assert.equal(digest.html.includes('<img src=x'), false);
   assert.equal(digest.html.includes('<Nico>'), false);
@@ -3340,6 +3341,40 @@ test('the lead excerpt ends on a whole word and never inside a formula', () => {
   const leadHtml = digest.html.slice(digest.html.indexOf('<h2'), digest.html.indexOf('By A. Rivera'));
   assert.equal(leadHtml.includes('$'), false);
   assert.equal(leadHtml.split('<sup>').length, leadHtml.split('</sup>').length);
+});
+
+test('the digest shows LaTeX font wrappers and escaped percents as plain prose', () => {
+  const digest = renderDigest({}, [frontPagePaper({
+    title: 'A \\textbf{bold} and \\emph{careful} study of \\textit{p}-values at 5\\% with $x^{2}$',
+    abstract: `${'\\emph{word} '.repeat(40)}rose 12\\% and 50% here`,
+  })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  for (const part of [digest.html, digest.text]) {
+    assert.equal(/\\(?:textbf|emph|textit)|\\%/.test(part), false, part);
+  }
+  assert.equal(digest.text.includes('A bold and careful study of p-values at 5% with x^2'), true);
+  assert.equal(digest.html.includes('5% with'), true);
+  assert.equal(digest.html.includes('x<sup>2</sup>'), true);
+  const excerpt = digest.text.split('\n').find(line => line.startsWith('word'));
+  assert.ok(excerpt!.endsWith('…'), excerpt);
+  assert.equal(excerpt!.includes('\\'), false);
+  const preheader = renderDigest({}, [frontPagePaper({ title: '\\textbf{Bold} 5\\% result' })], UNSUBSCRIBE_URL, false, ON_A_MONDAY)
+    .html.match(/mso-hide:all">([^<]*)</)![1];
+  assert.equal(preheader.endsWith('Bold 5% result'), true);
+});
+
+test('the digest keeps comparisons and escapes markup in titles and excerpts', () => {
+  const digest = renderDigest({}, [frontPagePaper({
+    title: 'Why a<b>c and p<q and r>s <script>x</script>',
+    abstract: 'We show a<b>c, p<q and r>s and <script>x</script> hold.',
+  })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  assert.equal(digest.html.includes('a&lt;b&gt;c'), true);
+  assert.equal(digest.html.includes('p&lt;q and r&gt;s'), true);
+  assert.equal(digest.html.includes('<script'), false);
+  assert.equal(digest.html.includes('&lt;script&gt;x&lt;/script&gt;'), true);
+  assert.equal(digest.text.includes('Why a<b>c and p<q and r>s'), true);
+  assert.equal(digest.text.includes('We show a<b>c, p<q and r>s'), true);
 });
 
 test('a lead without an abstract goes straight from headline to byline', () => {

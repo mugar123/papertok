@@ -1,5 +1,6 @@
 import { captureEmailSendLimit, captureWorkerException } from './error-tracking.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
+import { displayProse, normalizeLatexText } from '../src/utils/latex.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -315,23 +316,31 @@ function findEmailLatexDelimiter(text: string, startIndex: number): { index: num
 }
 
 function splitEmailScientificText(value: unknown) {
-  const text = cleanText(value, 5_000);
+  // Rendered text only: font wrappers are unwrapped and `\%` becomes `%` in
+  // prose before any cut, so a wrapper is never split open.
+  // The normalizer also strips anything shaped like an HTML tag, which would
+  // eat comparisons such as `a<b>c`, so angle brackets are held back from it.
+  const text = cleanText(
+    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, ''))
+      .replace(//g, '<').replace(//g, '>'),
+    5_000,
+  );
   const chunks = [];
   let cursor = 0;
   while (cursor < text.length) {
     const match = findEmailLatexDelimiter(text, cursor);
     if (!match) {
-      chunks.push({ type: 'text', value: text.slice(cursor) });
+      chunks.push({ type: 'text', value: displayProse(text.slice(cursor)) });
       break;
     }
-    if (match.index > cursor) chunks.push({ type: 'text', value: text.slice(cursor, match.index) });
+    if (match.index > cursor) chunks.push({ type: 'text', value: displayProse(text.slice(cursor, match.index)) });
     const contentStart = match.index + match.delimiter.left.length;
     let contentEnd = text.indexOf(match.delimiter.right, contentStart);
     while (contentEnd !== -1 && isEscaped(text, contentEnd)) {
       contentEnd = text.indexOf(match.delimiter.right, contentEnd + match.delimiter.right.length);
     }
     if (contentEnd === -1) {
-      chunks.push({ type: 'text', value: text.slice(match.index) });
+      chunks.push({ type: 'text', value: displayProse(text.slice(match.index)) });
       break;
     }
     chunks.push({ type: 'math', value: text.slice(contentStart, contentEnd) });
