@@ -24,6 +24,13 @@ test('uses the display name for a legacy author follow', () => {
   );
 });
 
+test("a followed journal opens the Explorer's page of its OpenAlex source", () => {
+  assert.equal(
+    getFollowedEntityPath({ type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' }),
+    '/explorer/source/S23254222?name=American+Economic+Review',
+  );
+});
+
 test('keeps project navigation metadata and rejects unsupported entities', () => {
   assert.equal(
     getFollowedEntityPath({

@@ -1,11 +1,13 @@
 import type { Paper } from '../models/paper.ts';
-import type { FollowEntity } from '../utils/following.ts';
+import { MAX_FOLLOWED_JOURNALS, type FollowEntity } from '../utils/following.ts';
 import type { fetchTopicPapers } from './topic-retrieval-service.ts';
 type TopicRetriever = (...args: Parameters<typeof fetchTopicPapers>) => Promise<Pick<Awaited<ReturnType<typeof fetchTopicPapers>>, 'papers' | 'allFailed'>>;
 interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntities: number; failedEntities: number; }
 interface FollowingOptions {
   topicRetriever?: TopicRetriever; fetchUpdatesForFollow?: (follow: FollowEntity, options: FollowingOptions) => Promise<Paper[]>;
   entityTimeoutMs?: number; limit?: number; maxAgeDays?: number; now?: number; onProgress?: (result: FollowingResult) => void;
+  /** The papers on screen, kept for the follows that have not answered this refresh. */
+  previous?: Paper[];
 }
 
 import { mapWithConcurrency } from '../utils/map-with-concurrency.ts';
@@ -17,6 +19,7 @@ import { getPapersByProject } from './open-aire-service.ts';
 import {
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
+  papersCarriedFor,
 } from '../utils/following-updates.ts';
 
 const PAPERS_PER_ENTITY = 5;
@@ -111,6 +114,13 @@ async function fetchInstitutionUpdates(follow: FollowEntity) {
   return result.papers || [];
 }
 
+// A followed journal's newest articles (ENG-123, D7): fetched live like the
+// other follows, though the journal's lane in the corpus holds them too.
+async function fetchJournalUpdates(follow: FollowEntity) {
+  const result = await getWorksByEntity('journal', follow.canonicalId, 'publication_date:desc', 1);
+  return result.papers || [];
+}
+
 async function fetchProjectUpdates(follow: FollowEntity) {
   // A bare grant code answers for every funder that ever used it
   // (code 100010 is three projects), and that is the shape of every
@@ -133,6 +143,7 @@ async function fetchUpdatesForFollow(follow: FollowEntity, options: FollowingOpt
   if (follow.type === 'author') return fetchAuthorUpdates(follow);
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
   if (follow.type === 'project') return fetchProjectUpdates(follow);
+  if (follow.type === 'journal') return fetchJournalUpdates(follow);
   return [];
 }
 
@@ -145,7 +156,7 @@ function resolvesThroughOpenAlex(follow: FollowEntity) {
   const id = cleanOpenAlexId(follow?.canonicalId);
   if (follow?.type === 'author') return /^A\d+$/i.test(id);
   if (follow?.type === 'topic') return /^[TC]\d+$/i.test(id);
-  return follow?.type === 'institution';
+  return follow?.type === 'institution' || follow?.type === 'journal';
 }
 
 export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
@@ -164,20 +175,39 @@ export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
  * still working through the rest. Measured with fourteen follows on a cold
  * cache: the first answer was in at ~300 ms, the last at 6.5 s, and the feed
  * used to wait for the last. The final value is the last delivery.
+ *
+ * Rejects when every follow asked failed, as when the Worker is down or the
+ * device is offline. Resolving with no papers made that outage look like a
+ * follow list with nothing new: the page replaced its cards and its cache
+ * with the empty answer and said the papers were updated (ENG-176).
  */
 export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [], options: FollowingOptions = {}): Promise<FollowingResult> {
-  const follows = orderFollowsForRefresh(followedEntities.slice(0, MAX_FOLLOWS_PER_REFRESH));
+  // Journals are counted apart, as a page of the corpus counts them
+  // (`servedFollows`): the list arrives in document-id order, where
+  // `journal_…` sorts before `topic_…`, so one cap for both would let ten
+  // journals push a heavy follower's topics off the page.
+  const isJournal = (follow: FollowEntity) => follow.type === 'journal';
+  const refreshed = new Set([
+    ...followedEntities.filter(follow => !isJournal(follow)).slice(0, MAX_FOLLOWS_PER_REFRESH),
+    ...followedEntities.filter(isJournal).slice(0, MAX_FOLLOWED_JOURNALS),
+  ]);
+  const follows = orderFollowsForRefresh(followedEntities.filter(follow => refreshed.has(follow)));
   const fetchOne = options.fetchUpdatesForFollow || fetchUpdatesForFollow;
   const deadlineMs = Number.isFinite(options.entityTimeoutMs) ? options.entityTimeoutMs : ENTITY_DEADLINE_MS;
   const limit = options.limit || 60;
   const maxAgeDays = options.maxAgeDays || 365;
   const collected: Paper[] = [];
+  // The follows that answered this refresh, empty answers included: the
+  // previous papers of every other follow refreshed stay until it answers.
+  const answered = new Set<FollowEntity>();
   let checkedEntities = 0;
   let failedEntities = 0;
 
   const deliver = () => ({
     papers: mergeFollowingUpdatePapers(
-      collected.filter(paper => isRecentFollowingUpdate(paper, options.now, maxAgeDays)),
+      // Kept papers go first so a fresh answer's copy of a shared paper wins the merge.
+      [...papersCarriedFor(options.previous || [], follows.filter(follow => !answered.has(follow))), ...collected]
+        .filter(paper => isRecentFollowingUpdate(paper, options.now, maxAgeDays)),
       limit,
     ),
     checkedEntities,
@@ -188,8 +218,10 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
   await mapWithConcurrency(follows, 4, async (follow) => {
     const settled = await settleWithin(Promise.resolve().then(() => fetchOne(follow, options)), deadlineMs!);
     checkedEntities += 1;
-    if (settled.status === 'fulfilled') collected.push(...withMatch(settled.value, follow));
-    else failedEntities += 1;
+    if (settled.status === 'fulfilled') {
+      answered.add(follow);
+      collected.push(...withMatch(settled.value, follow));
+    } else failedEntities += 1;
     if (typeof options.onProgress === 'function') {
       try {
         options.onProgress(deliver());
@@ -199,5 +231,6 @@ export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [
     }
   });
 
+  if (follows.length > 0 && failedEntities === follows.length) throw new Error('All follows failed.');
   return deliver();
 }

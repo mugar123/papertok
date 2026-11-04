@@ -56,7 +56,7 @@ import {
 } from '../../utils/profile-session-caches.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
 import './save-to-list-modal.css';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { viewMorph } from '../../utils/view-morph.ts';
 import { EASE_IN_OUT, animateSize } from '../../utils/motion-curves.ts';
 
@@ -93,11 +93,14 @@ const LISTS_STOPPED = ['stalled', 'unavailable'];
 
 export default function SaveToListModal({
   paper,
+  surface,
   onClose,
   embedded = false,
   closeGuardRef,
 }: {
   paper: Paper;
+  /** The surface of the card that opened the picker, which its save reports (forYouCardNotable). */
+  surface?: string;
   onClose: () => void;
   embedded?: boolean;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
@@ -550,7 +553,7 @@ export default function SaveToListModal({
         // The other order left an orphan whenever this write was refused:
         // "saved" everywhere, a paper in no list, and a Save that could
         // never succeed again because markSaved saw it as already saved.
-        void markSaved(paper);
+        void markSaved(paper, { surface });
       }
 
       // `updatedAt` rides along on every list write. It is what tells a
@@ -564,7 +567,7 @@ export default function SaveToListModal({
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
       if (unsavesPaper) await unmarkSaved(paper);
 
-      const paperDetail = { paper_id: paper.id, paper_title: paper.title };
+      const paperDetail = { paper_id: paper.id };
       toAdd.forEach(() => { void trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }); });
       toRemove.forEach(() => { void trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }); });
       if (savesPaper) void markActivation();
@@ -577,8 +580,9 @@ export default function SaveToListModal({
         await writeListMembership({ uid, paper, lists: toRemove.map(listById), added: true, language });
         if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
         if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
-        if (savesPaper && !alreadySaved) await unmarkSaved(paper);
-        if (unsavesPaper) await markSaved(paper);
+        if (savesPaper && !alreadySaved) await unmarkSaved(paper, { rollback: true });
+        // Puts back what the unsave took from the counts (`restores`).
+        if (unsavesPaper) await markSaved(paper, { surface, restores: true });
         return true;
       };
       const destinations = [

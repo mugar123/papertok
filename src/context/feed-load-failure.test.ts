@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyFirstPageError, feedFailureEventStep, feedLoadFailure, feedLoadOutcome } from './feed-load-failure.ts';
+import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadFailure, feedLoadOutcome } from './feed-load-failure.ts';
 import { FEED_EMPTY } from '../utils/feed-loading-state.ts';
 import { WorkerApiAuthError, sourceResponseError } from '../services/worker-api-client.ts';
 
@@ -26,6 +26,18 @@ test('no papers for the reader\'s interests is an empty state that does not retr
   assert.deepEqual(feedLoadOutcome(emptyFirstPageError()), { error: FEED_EMPTY, autoRetry: false });
   assert.deepEqual(feedLoadOutcome(refused(503, 'PAPER_STORE_UNAVAILABLE')), { error: 'FEED_LOAD_FAILED', autoRetry: true });
   assert.deepEqual(feedLoadOutcome(new DOMException('The operation timed out.', 'TimeoutError')), { error: 'FEED_LOAD_FAILED', autoRetry: true });
+});
+
+test('only a first screen that timed out retries at once, without its long wait; every other failure keeps the pause', () => {
+  const timedOut = new DOMException('The operation timed out.', 'TimeoutError');
+  const atOnce = { pauseMs: 0, retriesTimeout: true };
+  const paused = { pauseMs: 2_500, retriesTimeout: false };
+  assert.deepEqual(automaticRetry(timedOut, true), atOnce);
+  assert.deepEqual(automaticRetry(new DOMException('The operation was aborted.', 'AbortError'), true), atOnce);
+  assert.deepEqual(automaticRetry(timedOut, false), paused, 'a refresh or a follow change over shown cards');
+  assert.deepEqual(automaticRetry(refused(503, 'PAPER_STORE_UNAVAILABLE'), true), paused);
+  assert.deepEqual(automaticRetry(Object.assign(new Error('unreachable'), { code: 'STORE_UNREACHABLE' }), true), paused);
+  assert.deepEqual(automaticRetry(Object.assign(new Error('offline'), { code: 'auth/network-request-failed' }), true), paused);
 });
 
 test('a build with no allowed Worker origin is not a session failure, and keeps its code', () => {

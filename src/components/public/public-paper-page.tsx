@@ -15,6 +15,7 @@ import {
   parsePaperKey,
 } from '../../utils/public-navigation.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
+import { interactionMarksOf } from '../../utils/interaction-aliases.ts';
 import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paper-seed.ts';
 import { publicPaperMetadata, readShareSeed } from '../../utils/share-seed.ts';
 import PaperCard from '../feed/paper-card.tsx';
@@ -249,11 +250,12 @@ export default function PublicPaperPage({
   }, [navigate]);
 
   const retry = useCallback(() => setAttempt(current => current + 1), []);
-  const getInteractionState = useCallback((candidate: Paper) => ({
-    isLiked: likedPaperIds.has(candidate.id),
-    isSaved: savedPaperIds.has(candidate.id),
-    isRead: readPaperIds.has(candidate.id),
-  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+  const getInteractionState = useCallback((candidate: Partial<Paper>) => interactionMarksOf(
+    candidate,
+    { liked: likedPaperIds, saved: savedPaperIds, read: readPaperIds },
+    interactionIdFor,
+  ), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
+  const marks = paper && isAuthenticated ? getInteractionState(paper) : null;
   const handleOpenPdf = useCallback((candidate: Paper) => {
     if (isAuthenticated) void trackPdfOpened(candidate);
     onOpenPdf?.(candidate);
@@ -330,9 +332,9 @@ export default function PublicPaperPage({
         >
           <PaperCard
             paper={paper as Paper}
-            isLiked={isAuthenticated && likedPaperIds.has(paper.id)}
-            isSaved={isAuthenticated && savedPaperIds.has(paper.id)}
-            isRead={isAuthenticated && readPaperIds.has(paper.id)}
+            isLiked={marks?.isLiked ?? false}
+            isSaved={marks?.isSaved ?? false}
+            isRead={marks?.isRead ?? false}
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}

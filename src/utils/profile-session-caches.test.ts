@@ -6,6 +6,8 @@ import {
   forgetOwnLists,
   ownListsAreFresh,
   ownListsCache,
+  readListPapers,
+  rememberListPapers,
   rememberOwnLists,
   reviseOwnLists,
 } from './profile-session-caches.ts';
@@ -59,4 +61,13 @@ test('rubbish is refused rather than cached', () => {
   rememberOwnLists(null!, [{ id: 'l1' }]);
   assert.equal(ownListsCache.get('uid-f'), undefined);
   assert.equal(ownListsAreFresh('uid-f', Date.now()), false);
+});
+
+// ENG-84. A list reopened in the session paints from this cache; the
+// savedPapers document, which keeps no status, must not wipe the retraction
+// the interaction's copy recorded.
+test('a newer copy of a list paper replaces the older one but keeps its retraction', () => {
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'Old', publicationStatus: 'retracted' } });
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'New', publicationStatus: 'preprint' } });
+  assert.deepEqual(readListPapers('uid-g')?.['pmid:9500320'], { id: 'pmid:9500320', title: 'New', publicationStatus: 'retracted' });
 });

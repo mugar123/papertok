@@ -7,7 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
-import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
@@ -1056,8 +1056,8 @@ async function workingPaperRowWith(t: import('node:test').TestContext, paper: Pa
     .map(row => ({ ...JSON.parse(row.paper) as Paper, storedPublished: row.published }));
 }
 
-// An arXiv eprint reads reviewed on any DOI it lists, arXiv's own included, or
-// on a comment saying it was published. Only OpenAlex's journal article makes
+// An arXiv eprint reads reviewed on a publisher's DOI it lists, or on a
+// comment saying it was published, and a preprint under arXiv's own DOI. Only OpenAlex's journal article makes
 // OpenAlex's working-paper row the journal's; an eprint naming its journal and
 // the journal's DOI does not either (ENG-145). `merge` keeps the working
 // paper's `false`.
@@ -1901,6 +1901,28 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
   assert.deepEqual(ledger.calls.map(key => key.split(':').slice(0, 2).join(':')), ['openalex:day']);
 });
 
+// ENG-123 (D4, Pablo 2026-10-25): a followed journal's lane lists its newest
+// articles, with or without an abstract, 100 a page: one list call, as a page
+// of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 39 articles a day,
+// Nature 12, the American Economic Review 0.3. Errata and paratext stay out;
+// reviews, which OpenAlex types `review` (every paper of the Annual Review of
+// Economics), are listed.
+test("a followed journal's lane asks OpenAlex for the journal's articles and reviews, 100 a page, none dated after today", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T02:40:00Z') });
+  const review = {
+    id: 'https://openalex.org/W7000000002', type: 'review', title: 'Macroeconomic models of inequality: a review', publication_date: '2026-10-20',
+    primary_location: { is_published: true, source: { id: 'https://openalex.org/S2764697018', display_name: 'Annual Review of Economics', type: 'journal' } },
+  };
+  const { urls, env } = relay(t, () => ({ results: [review] }));
+  assert.deepEqual(followedLaneJob('source:S2764697018'), { source: 'openalex-follows', lane: 'source:S2764697018' });
+  const { items } = await SOURCES['openalex-follows'].fetchPage(env, { lane: 'source:S2764697018', page: 1, since: '', waits: { seconds: 0 } });
+  const [url] = urls;
+  assert.deepEqual(filtersOf(url).sort(), ['primary_location.source.id:S2764697018', 'to_publication_date:2026-10-25', 'type:article|review']);
+  assert.deepEqual(items.map(item => [item.paper.title, item.lanes]), [['Macroeconomic models of inequality: a review', ['source:S2764697018']]]);
+  assert.equal(url.searchParams.get('per-page'), '100');
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+});
+
 // ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───
 
 // OpenAlex W2107743791 as returned on 2026-10-23 to cs.LG's notable query,
@@ -2103,6 +2125,45 @@ test("a notable lane's listing does not renew a paper without an abstract, so th
     'openalex:W2107743791': new Date(next).toISOString(),
     'openalex:W1000000004': enriched,
   });
+});
+
+test("a notable lane's listing does not renew a paper with a PubMed id, so the refresh reads PubMed's retraction from Europe PMC", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // A synthetic variant of the recorded work with a PubMed id. OpenAlex's
+  // listing keeps it while `is_retracted` stays false; Europe PMC's record
+  // types it retracted once PubMed does.
+  const inPubmed = { ...plsiWork, id: 'https://openalex.org/W1000000005', doi: 'https://doi.org/10.5555/cited-in-pubmed', title: 'A most-cited article PubMed also indexes', ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/9500320' } };
+  let pubType = ['Journal Article'];
+  const { urls, env } = relay(t, url => {
+    if (url.hostname === 'www.ebi.ac.uk') return { resultList: { result: [{ id: '9500320', source: 'MED', pmid: '9500320', title: inPubmed.title, pubTypeList: { pubType } }] } };
+    return url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: [plsiWork, inPubmed] } : { results: [] };
+  });
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const statusAndLanes = () => Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [
+    JSON.parse(row.paper).id,
+    [JSON.parse(row.paper).publicationStatus, (db.prepare('SELECT lane FROM work_lanes WHERE work_id = ?').all(row.id) as Array<{ lane: string }>).map(lane => lane.lane)],
+  ]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  const enrichedAt = Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string }>).map(row => [row.id, row.enriched_at]));
+  assert.deepEqual(enrichedAt, { 'openalex:W2107743791': new Date(next).toISOString(), 'openalex:W1000000005': enriched });
+
+  // PubMed types it retracted; OpenAlex has not caught up and still lists it.
+  pubType = ['Journal Article', 'Retracted Publication'];
+  const due = first + 14 * DAY + 3_600_000;
+  t.mock.timers.setTime(due);
+  urls.length = 0;
+  await enrichPending(store, 50, due);
+  assert.ok(urls.some(url => url.hostname === 'www.ebi.ac.uk'), 'the refresh asks Europe PMC for its PubMed id');
+  assert.deepEqual(statusAndLanes(), { 'openalex:W2107743791': ['published', ['notable:cs.CV']], 'openalex:W1000000005': ['retracted', []] });
 });
 
 test("a notable lane's listing renews the row a record merged into, and not one whose record it turned away", async t => {

@@ -1,10 +1,12 @@
+import type { OpenAlexWork } from './open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PubmedAdapter } from './pubmed-adapter.ts';
 import { pubmedCategoryQuery } from './pubmed-records.ts';
-import { isFeedPublication } from '../feed-publication-rules.ts';
+import { isFeedPublication, isFeedPublicationType } from '../feed-publication-rules.ts';
 import { PaperBuilder } from '../paper-builder.ts';
 import { accessTagForPaper, reviewStatusForPaper } from '../../utils/paper-status.ts';
+import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from '../../utils/open-alex-work.ts';
 
 const adapter = new PubmedAdapter();
 
@@ -46,6 +48,75 @@ test("PubMed's errata, retraction notices, expressions of concern and front matt
   assert.equal(typeOf(['Journal Article', 'Retracted Publication']).publicationType, 'article');
   assert.equal(typeOf(['Letter', 'Comment']).publicationType, 'letter');
   assert.equal(isFeedPublication(typeOf(['Letter', 'Comment'])), true);
+});
+
+// Captured from esummary on 2026-10-27 (keyless) and trimmed: Wakefield et al.,
+// Lancet 1998, which PubMed types `Retracted Publication`, and a journal
+// article of September 2026 with no other type.
+const WAKEFIELD_SUMMARY = {
+  uid: '9500320',
+  pubdate: '1998 Feb 28',
+  epubdate: '',
+  source: 'Lancet',
+  authors: [{ name: 'Wakefield AJ' }, { name: 'Murch SH' }],
+  title: 'Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.',
+  nlmuniqueid: '2985213R',
+  issn: '0140-6736',
+  essn: '',
+  pubtype: ['Journal Article', "Research Support, Non-U.S. Gov't", 'Retracted Publication'],
+  articleids: [{ idtype: 'pubmed', value: '9500320' }, { idtype: 'doi', value: '10.1016/s0140-6736(97)11096-0' }],
+};
+const ARTICLE_SUMMARY = {
+  uid: '42934083',
+  pubdate: '2026 Sep 30',
+  epubdate: '2026 Sep 30',
+  source: 'J Pediatr Urol',
+  authors: [{ name: 'Manivasagam SS' }, { name: 'Kane JA' }, { name: 'Decter RM' }],
+  title: 'Current trends in opioid prescription at discharge after pediatric urologic procedures: Analysis of ACS NSQIP pediatrics 2023 database.',
+  nlmuniqueid: '101233150',
+  issn: '1477-5131',
+  essn: '1873-4898',
+  pubtype: ['Journal Article'],
+  articleids: [{ idtype: 'pubmed', value: '42934083' }, { idtype: 'doi', value: '10.1016/j.jpurol.2026.106308' }],
+};
+
+test('an article PubMed types `Retracted Publication` is retracted, which the feed leaves out, and an article without the type is not', () => {
+  const retracted = PaperBuilder.create(adapter.mapToStandard(WAKEFIELD_SUMMARY));
+  assert.deepEqual([retracted.publicationType, retracted.publicationStatus], ['article', 'retracted']);
+  assert.equal(isFeedPublication(retracted), false);
+  assert.equal(isFeedPublicationType(retracted), true, 'left out as retracted, not for its type');
+
+  const article = PaperBuilder.create(adapter.mapToStandard(ARTICLE_SUMMARY));
+  assert.deepEqual([article.publicationType, article.publicationStatus], ['article', 'published']);
+  assert.equal(isFeedPublication(article), true);
+
+  // The type padded or in another case is the same type.
+  for (const type of ['Retracted Publication ', ' retracted publication']) {
+    const padded = PaperBuilder.create(adapter.mapToStandard({ ...WAKEFIELD_SUMMARY, pubtype: ['Journal Article', type] }));
+    assert.equal(padded.publicationStatus, 'retracted', JSON.stringify(type));
+  }
+});
+
+// Captured from OpenAlex on 2026-10-26 (W2117847125) and trimmed, with
+// `is_retracted` cleared: OpenAlex's answer before its data had the
+// retraction, which reads published.
+const WAKEFIELD_WORK_UNFLAGGED: OpenAlexWork = {
+  id: 'https://openalex.org/W2117847125',
+  doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0',
+  type: 'article',
+  is_retracted: false,
+  ids: { openalex: 'https://openalex.org/W2117847125', doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0', pmid: 'https://pubmed.ncbi.nlm.nih.gov/9500320' },
+  publication_year: 1998,
+};
+
+test("PubMed's retraction stands against a record of the paper that reads published, whichever comes first", () => {
+  const pubmed = () => PaperBuilder.create(adapter.mapToStandard(WAKEFIELD_SUMMARY));
+  const enrichment = mapOpenAlexEnrichmentWork(WAKEFIELD_WORK_UNFLAGGED)!.enrichment;
+  assert.equal(enrichment.publicationStatus, 'published');
+  assert.equal(PaperBuilder.merge(pubmed(), enrichment, 'openalex').publicationStatus, 'retracted', 'OpenAlex enriches the PubMed record');
+
+  const card = PaperBuilder.create(mapOpenAlexWork(WAKEFIELD_WORK_UNFLAGGED)!);
+  assert.equal(PaperBuilder.merge(card, pubmed(), 'pubmed').publicationStatus, 'retracted', "PubMed's record joins OpenAlex's");
 });
 
 test('arXiv keeps the preprint default the builder used to hand everyone', () => {

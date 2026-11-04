@@ -8,7 +8,7 @@ import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.t
 import { Button } from '../ui/button.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { interestsSaveRefusal } from './interests-save-refusal.ts';
 import './settings-sheet.css';
 import './edit-interests-modal.css';

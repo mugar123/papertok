@@ -3,9 +3,44 @@ import assert from 'node:assert/strict';
 import {
   compactSeenIds,
   getFollowingUpdatePaperKey,
+  getFollowingSignature,
+  isCurrentFollowingRequest,
+  isFollowingCacheFresh,
   isRecentFollowingUpdate,
+  keepPapersOfFollows,
   mergeFollowingUpdatePapers,
 } from './following-updates.ts';
+import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+
+const authorA = { type: 'author', canonicalId: 'A1' } as PaperFollowMatch;
+const topicT = { type: 'topic', canonicalId: 'T1' } as PaperFollowMatch;
+const paperOf = (id: string, matches: PaperFollowMatch[]) => ({ id, title: id, _followedEntityMatches: matches }) as Paper;
+
+test('an unfollow takes off at once the cards only that follow brought in (ENG-110)', () => {
+  const papers = [paperOf('author-only', [authorA]), paperOf('both', [authorA, topicT]), paperOf('topic-only', [topicT])];
+  assert.deepEqual(keepPapersOfFollows(papers, [authorA, topicT]).map(paper => paper.id), ['author-only', 'both', 'topic-only']);
+  assert.deepEqual(keepPapersOfFollows(papers, [topicT]).map(paper => paper.id), ['both', 'topic-only']);
+  assert.deepEqual(keepPapersOfFollows(papers, []), []);
+});
+
+test('a response for follows the reader has since changed is not delivered (ENG-110)', () => {
+  const started = { userId: 'u1', signature: getFollowingSignature([authorA, topicT]) };
+  assert.equal(isCurrentFollowingRequest(started, started), true);
+  assert.equal(isCurrentFollowingRequest({ userId: 'u1', signature: getFollowingSignature([topicT]) }, started), false, 'unfollowed');
+  assert.equal(isCurrentFollowingRequest({ ...started, userId: 'u2' }, started), false, 'other account');
+  assert.equal(isCurrentFollowingRequest({ userId: null, signature: '' }, started), false, 'signed out');
+});
+
+test('a stored result in which some follows failed is not fresh, so the next load asks again (ENG-110)', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z');
+  const savedAt = new Date(now - 60_000).toISOString();
+  const ttl = 15 * 60 * 1000;
+  const answered = { signature: 'author:A1|topic:T1', savedAt, meta: { failedEntities: 0 } };
+  assert.equal(isFollowingCacheFresh(answered, 'author:A1|topic:T1', ttl, now), true);
+  assert.equal(isFollowingCacheFresh({ ...answered, meta: { failedEntities: 1 } }, 'author:A1|topic:T1', ttl, now), false);
+  assert.equal(isFollowingCacheFresh(answered, 'author:A1', ttl, now), false, 'other follows');
+  assert.equal(isFollowingCacheFresh({ ...answered, savedAt: new Date(now - ttl).toISOString() }, 'author:A1|topic:T1', ttl, now), false, 'expired');
+});
 
 test('uses DOI as the stable inbox identity when available', () => {
   assert.equal(
@@ -94,6 +129,17 @@ test('keeps identical titles from different first authors separate', () => {
   ] as import('../models/paper.ts').Paper[]));
 
   assert.equal(merged.length, 2);
+});
+
+// The name the OpenAlex mappers write for a missing one names nobody.
+test('keeps identical titles apart when the first author is a placeholder for a missing name', () => {
+  for (const name of ['Unknown', 'Unknown Author']) {
+    const merged = mergeFollowingUpdatePapers(([
+      { id: 'openalex:W1', doi: '10.1000/one', title: 'Introduction', authors: [{ name }], citationCount: 0 },
+      { id: 'openalex:W2', doi: '10.1000/two', title: 'Introduction', authors: [{ name }], citationCount: 222 },
+    ] as import('../models/paper.ts').Paper[]));
+    assert.deepEqual(merged.map(paper => [paper.doi, paper.citationCount]).sort(), [['10.1000/one', 0], ['10.1000/two', 222]], name);
+  }
 });
 
 test('sorts updates by publication date and rejects stale papers', () => {

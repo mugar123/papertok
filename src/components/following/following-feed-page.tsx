@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Checks, MagnifyingGlass } from '@phosphor-icons/react';
 import Petri from '../onboarding/petri.tsx';
@@ -11,11 +11,13 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
 import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/following-order-storage.ts';
 import {
+  followingFeedError,
   followingFirstLoadPending,
   mergeOrderedPapers,
   orderFollowingFeedPapers,
   orderKeysOf,
   resumeOrderedPapers,
+  retryFollowingFeed,
   withoutNotInterested,
 } from '../../utils/following-feed.ts';
 import './following-feed-page.css';
@@ -62,7 +64,7 @@ lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const navigate = useNavigate();
-  const { followedEntities } = useFollowing();
+  const { followedEntities, error: followsError, retry: retryFollows } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
   // effect for free because that same call drops the paper from the list it
   // renders. This page renders its own, so it has to read the set itself.
@@ -104,6 +106,11 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
   );
 
   const hasFollows = followedEntities.length > 0;
+  const loadError = followingFeedError({ updatesError: error, followsError, hasFollows });
+  const retryFeed = useCallback(
+    () => retryFollowingFeed({ followsError, retryFollows, refresh }),
+    [followsError, refresh, retryFollows],
+  );
 
   const emptyState = useMemo(() => hasFollows ? (
     <EmptyState
@@ -145,15 +152,17 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     // The first wait is For You's discovery screen, not a skeleton card: the
     // container reads this instead of guessing from `loading`, which is false
     // for the tick before the first refresh starts.
-    initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error }),
-    error: error && shownPapers.length === 0 ? 'FOLLOWING_LOAD_FAILED' : null,
+    initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error: loadError }),
+    // Over cards too: the cards stay, and the container still needs to know
+    // a refresh failed so it does not say the papers were updated (ENG-176).
+    error: loadError,
     hasMore: false,
-    loadMore: () => {},
-    refresh,
+    loadMore: () => false,
+    refresh: retryFeed,
     isRefreshing: refreshing,
     emptyState,
     onPaperViewed: markSeen,
-  }), [shownPapers, items, loading, lastUpdatedAt, error, refresh, refreshing, emptyState, markSeen]);
+  }), [shownPapers, items, loading, lastUpdatedAt, loadError, retryFeed, refreshing, emptyState, markSeen]);
 
   return (
     <FeedContainer

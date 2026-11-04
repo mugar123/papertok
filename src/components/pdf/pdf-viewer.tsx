@@ -7,7 +7,7 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { ArrowSquareOut, Eye, EyeSlash, FilePdf, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import './pdf-viewer.css';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';

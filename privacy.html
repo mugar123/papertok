@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 29 October 2026.</p>
+      <p class="lp-updated">Last updated 3 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -114,9 +114,9 @@
               <td>Reopening a paper without writing its summary again, and the list in Settings → Reading &amp; AI</td>
             </tr>
             <tr>
-              <td>Authors, institutions and topics you follow</td>
+              <td>Authors, institutions, topics and journals you follow</td>
               <td>Your use of the app</td>
-              <td>Building your feed and, if you turn them on, your email updates</td>
+              <td>Building your feed and, if you turn them on, your email updates, which leave out journals</td>
             </tr>
             <tr>
               <td>Comments and content reports from earlier versions of PaperTok</td>
@@ -124,9 +124,9 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 highly cited papers the feed offered you that you viewed</td>
+              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed, a list of the last 1,200 highly cited papers the feed offered you that you viewed, counts of the feed's highly cited and recent papers you were shown and of the likes, saves and PDF opens they got, a number for how much you lean to recent or older papers, and the last 200 papers whose like, save or PDF open moved those counts or that number</td>
               <td>Your use of the app</td>
-              <td>Not showing you the same paper twice, and ordering the feed</td>
+              <td>Not showing you the same paper twice, ordering the feed, and choosing how many highly cited papers it shows</td>
             </tr>
             <tr>
               <td>Interests you chose, the subjects you removed and the new ones you added after signing up</td>
@@ -163,6 +163,32 @@
         oldest one off the list. A second list keeps the last 1,200 highly cited papers the
         feed offered you that you viewed, so that it does not offer them again. Only your
         account can read these lists.
+      </p>
+
+      <p>
+        Your account also counts, for the highly cited papers and for the recent papers in
+        your feed, how many you were shown and how many likes, saves and PDF opens they got.
+        A PDF open counts only when the paper opens in PaperTok's PDF reader, not when it opens
+        on another site, such as the publisher's or your library's.
+        Skipping a paper or marking it Not interested adds no like, save or open. Once 2,000
+        papers shown are counted, every count is halved, so your recent use weighs as much as
+        all the use before it. Your feed keeps between one place in fifteen and one in three
+        for a highly cited paper you have not seen. Each page picks its share at random,
+        weighted by those counts; when the feed has no such paper to put in a place, the next
+        paper takes it. The feed receives at most five highly cited papers at a time, so a full
+        page holds at most about one in five on the first page and one in seven on later pages.
+        Your account also keeps one number between −1 and 1 that likes, saves and long reads
+        of very recent or older papers move, and that orders the feed toward recent or older
+        papers. A long read of such a paper moves it every time, even when you read that paper
+        again. Your account keeps the last 200 papers whose like, save or PDF open moved the
+        counts or that number, so that a paper's like, save or PDF open counts once, and an
+        unlike or unsave takes back what the like or save added. Only your account can read them.
+        None of this is stored for a visitor without an account.
+        A tab or app on any device still running an older version of PaperTok does not keep
+        the counts, the number or the 200 papers. Using it saves your interactions without
+        them, so they can start again from zero. Reloading or closing it ends this. Otherwise
+        it looks for the new version every few minutes while on screen, and switches when you
+        next open another page.
       </p>
 
       <p>
@@ -206,7 +232,8 @@
 
       <h2>Email updates</h2>
       <p>
-        If you turn them on, PaperTok emails you what is new from what you follow. For that
+        If you turn them on, PaperTok emails you what is new from the authors, topics,
+        institutions and projects you follow. For that
         it stores your email address, your sending preferences and an unsubscribe
         identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
         an edition, PaperTok also stores its selected papers, abstracts and reasons
@@ -234,11 +261,14 @@
       <p>
         Product events record the papers you view, open, like, save, highlight or annotate
         by their identifier, how long cards and the reader stay on screen, the authors,
-        topics or institutions you follow by their identifier, search types and result
+        topics or institutions you follow by their identifier, that you followed a journal
+        but not which one, search types and result
         counts, and the outcome of sign-in and AI explanation requests. They also record
         when you open a paper's connections or its similar papers, and what you do in the
         connections map, such as switching to the list or centring the graph on another
-        paper. Events include browser, operating system, device type and session identifiers.
+        paper. Feed diagnostics record load starts, duration, result, initial loads versus
+        refreshes or additional pages, automatic retries, and the web and server versions.
+        They contain no paper identifiers or interests. Events include browser, operating system, device type and session identifiers.
       </p>
       <p>
         PaperTok does not send your name, email address, search text, notes, paper titles
@@ -295,15 +325,17 @@
         it keeps for up to three days.
       </p>
       <p>
-        When the in-app reader requests a paper's text or its PDF, or a public request looks up
-        papers, paper figures, open-access links or a shared page, that server uses the IP address
+        When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to
+        PaperTok's MCP server, or a public request looks up papers, paper figures,
+        open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
         counts. It does not store the original IP address in these counters or attach
         your account or the paper you requested. The identifier changes each minute
         and is not sent to analytics. People sharing a public IP, such as a campus
-        network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute.
+        network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute,
+        and the MCP server 30 tool calls.
       </p>
       <p>
         The text of a paper comes through that server too, but its figures do not: your
@@ -316,7 +348,8 @@
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
         fails to run that cleanup, but expired counters do not affect later windows.
-        The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule.
+        The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule,
+        and so do the MCP server's counters.
         OpenAlex and shared-page lookup counters are stored with their daily
         allowance and are scheduled for deletion after three days.
       </p>
@@ -340,8 +373,8 @@
         account does not remove it sooner; it expires on its own. Apart from that order,
         which papers you liked, saved, opened or viewed is not stored there, and neither is
         the filter. A paper you liked, saved or opened that the catalogue does not have yet
-        is added to it without any link to you. An author, institution, topic, search or project
-        you follow is added to the list of things the catalogue collects papers for, also
+        is added to it without any link to you. An author, institution, topic, journal, search or
+        project you follow is added to the list of things the catalogue collects papers for, also
         without any link to you, and leaves that list within 16 days of the last time anybody
         asks for it, later only if the daily clean-up fails. Cloudflare Workers AI turns the
         titles and abstracts of the catalogue's papers into numeric vectors. When papers you
@@ -412,11 +445,19 @@
         to the provider and comes back; during that trip this tab's session storage briefly
         holds the provider, the part of the app that asked and the page to return to, and they
         are removed when the page comes back or when the browser restores it after Back.
+        Once you have chosen Got it on the announcement of a policy change, this browser keeps
+        that version under your account identifier, so the announcement does not come back
+        after you sign out and in again. Clearing the site's data removes it, and so does
+        deleting the account from Settings in this browser.
       </p>
 
       <h2>Changes</h2>
       <p>
-        If this policy changes in a meaningful way, the date at the top will be updated.
+        If this policy changes in a meaningful way, the date at the top will be updated and
+        the change will be announced in the application to signed-in accounts created before
+        the change took effect. When you choose Got it, this browser remembers that version,
+        separately for each account, so the same announcement does not come back. Choosing
+        Hide for now only hides it for that visit.
       </p>
     </main>
 

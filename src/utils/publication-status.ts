@@ -16,6 +16,53 @@ export function arxivCommentSaysPublished(comment: unknown) {
   return ARXIV_PUBLISHED_COMMENT.test(String(comment || ''));
 }
 
+// Registrants that give DOIs to deposits and preprints, never to a version a
+// publisher accepted. arXiv itself; the repositories Zenodo, figshare, Dryad,
+// OSF, Mendeley Data, Harvard Dataverse, Code Ocean and ResearchGate; the
+// preprint servers SSRN, Research Square, Preprints.org, ChemRxiv (under both
+// of its registrants), TechRxiv, Authorea, Qeios, PeerJ Preprints and
+// EdArXiv; and the servers OSF hosts, 10.31219 to 10.31237 (OSF Preprints,
+// PsyArXiv, SocArXiv, EarthArXiv, engrXiv and the rest).
+const REPOSITORY_DOI_REGISTRANTS: ReadonlySet<string> = new Set([
+  '10.48550', '10.5281', '10.6084', '10.5061', '10.17605', '10.17632', '10.7910', '10.24433', '10.13140',
+  '10.2139', '10.21203', '10.20944', '10.26434', '10.33774', '10.36227', '10.22541', '10.32388', '10.7287', '10.35542',
+  ...Array.from({ length: 19 }, (_, index) => `10.${31219 + index}`),
+]);
+// Preprints under a registrant that also publishes journals, told apart by
+// the suffix: bioRxiv and medRxiv (10.1101/2023.05.01.538912, or six digits
+// before 2019) beside Cold Spring Harbor's journals (10.1101/gad.…), SciELO
+// Preprints, JMIR Preprints, Wiley's ESS Open Archive and Beilstein Archives.
+const REPOSITORY_DOI_SHAPES = [
+  /^10\.1101\/(?:\d{4}\.\d{2}\.\d{2}\.\d|\d{6,7}$)/,
+  /^10\.1590\/scielopreprints\./,
+  /^10\.2196\/preprints\./,
+  /^10\.1002\/essoar\./,
+  /^10\.3762\/bxiv\./,
+];
+
+function isRepositoryDoi(doi: string) {
+  return REPOSITORY_DOI_REGISTRANTS.has(doi.split('/')[0]) || REPOSITORY_DOI_SHAPES.some(shape => shape.test(doi));
+}
+
+/**
+ * Whether the DOI an arXiv record lists says the paper was published. arXiv
+ * asks for the published version's DOI there, but a record can list arXiv's
+ * own DOI or a repository's, such as the Zenodo deposit of its code or the
+ * paper's bioRxiv preprint, and neither is evidence of publication (outside
+ * review of PR #400). arXiv lets a record list several DOIs, separated by
+ * spaces.
+ */
+export function arxivDoiSaysPublished(doi: unknown) {
+  return listedDois(doi).some(value => !isRepositoryDoi(value));
+}
+
+/** The DOIs a field lists, lowercased and without a resolver prefix. */
+export function listedDois(field: unknown) {
+  return String(field || '').toLowerCase().split(/[\s,;]+/)
+    .map(value => value.replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//, '').replace(/^doi:/, ''))
+    .filter(value => /^10\.\d{4,9}\//.test(value));
+}
+
 // OpenAlex types a preprint as such; every other type it gives — an article,
 // a book chapter, a proceedings paper — is a published work, whatever
 // repository its best copy sits in: 8 in 100 random chapters had one as their
@@ -50,7 +97,7 @@ export function openAlexPublicationStatus(work: OpenAlexStatusFields) {
 // source shows nothing either way, and neither does a venue for an editorial,
 // a chapter or a dataset.
 const OPENALEX_REVIEWED_TYPES = new Set(['article', 'review', 'conference-paper']);
-const OPENALEX_VENUE_SOURCE_TYPES = new Set(['journal', 'conference', 'book series']);
+export const OPENALEX_VENUE_SOURCE_TYPES: ReadonlySet<string> = new Set(['journal', 'conference', 'book series']);
 
 // OpenAlex files many working-paper series as journals and their papers as
 // articles. IMF Working Paper, FEDS, the FRBSF and Kansas City Fed series and
@@ -77,8 +124,13 @@ const WORKING_PAPER_SOURCE_IDS = new Set([
 // does not count as a venue, so a series missing from the list stays unknown.
 const WORKING_PAPER_NAME = /\b(?:working|discussion) papers?\b|\bdiscussion (?:series|notes?)\b/i;
 
+/** Whether an OpenAlex source id (bare or as a URL) is one of the listed working-paper series. */
+export function isListedWorkingPaperSeries(sourceId: unknown) {
+  return WORKING_PAPER_SOURCE_IDS.has(String(sourceId || '').replace('https://openalex.org/', ''));
+}
+
 function isListedSeries(location: OpenAlexLocation | null | undefined) {
-  return WORKING_PAPER_SOURCE_IDS.has(String(location?.source?.id || '').replace('https://openalex.org/', ''));
+  return isListedWorkingPaperSeries(location?.source?.id);
 }
 
 function isVenue(location: OpenAlexLocation | null | undefined) {

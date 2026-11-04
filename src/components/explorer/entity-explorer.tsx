@@ -99,6 +99,8 @@ import { Switch } from '../ui/switch.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import { toastFollowRefused } from '../following/follow-refused-toast.ts';
+import { actionStart } from '../ui/toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import PaperCard from '../feed/paper-card.tsx';
@@ -667,8 +669,8 @@ export default function EntityExplorer({
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
-    isRead: readPaperIds.has(paper.id),
-  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+    isRead: readPaperIds.has(interactionIdFor(paper)!),
+  }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
 
   useEffect(() => {
     if (!entity) return;
@@ -1521,7 +1523,15 @@ export default function EntityExplorer({
       requestAccount();
       return;
     }
-    toggleFollow(followEntity).catch(console.error);
+    // Said aloud too: the toast region is a live region. It waits for an
+    // overlay opened before the write settles, such as the search palette.
+    const startedAt = actionStart();
+    toggleFollow(followEntity).catch((error: unknown) => toastFollowRefused(error, {
+      name: entityDisplayName,
+      following: entityIsFollowing,
+      startedAt,
+      openSettings: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); },
+    }));
   };
 
   const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
@@ -1530,7 +1540,7 @@ export default function EntityExplorer({
         <FollowToggle
           pressed={entityIsFollowing}
           onClick={handleFollow}
-          disabled={entityFollowPending}
+          pending={entityFollowPending}
           followLabel={'Follow'}
           followingLabel={'Following'}
         />

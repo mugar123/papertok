@@ -1,6 +1,8 @@
 import type { PaperFollowMatch } from '../models/paper.ts';
 
-const FOLLOW_PATH_TYPES = new Set(['author', 'topic', 'institution', 'project']);
+const FOLLOW_PATH_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
+// The Explorer serves a journal as the OpenAlex source it is.
+const explorerType = (type: PaperFollowMatch['type'] | undefined) => (type === 'journal' ? 'source' : type);
 
 function getNavigationId(entity: Partial<PaperFollowMatch>) {
   const canonicalId = String(entity?.canonicalId || '').trim();
@@ -29,5 +31,5 @@ export function getFollowedEntityPath(entity: Partial<PaperFollowMatch>) {
   if (entity.type === 'author' && arxivId) query.set('arxivId', arxivId);
 
   const suffix = query.toString();
-  return `/explorer/${entity.type}/${encodeURIComponent(navigationId)}${suffix ? `?${suffix}` : ''}`;
+  return `/explorer/${explorerType(entity.type)}/${encodeURIComponent(navigationId)}${suffix ? `?${suffix}` : ''}`;
 }

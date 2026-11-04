@@ -1,5 +1,7 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
 
+import { isPlaceholderAuthorName } from '../services/paper-builder.ts';
+
 const MAX_SEEN_IDS = 500;
 
 function normalizeDoi(value: unknown) {
@@ -30,9 +32,9 @@ function normalizeAuthor(value: unknown) {
 function getFollowingUpdateIdentityKeys(paper: Partial<Paper> = {}) {
   const stableKey = getFollowingUpdatePaperKey(paper);
   const firstAuthor = Array.isArray(paper.authors) ? paper.authors[0] : null;
-  const authorName = normalizeAuthor(
-    typeof firstAuthor === 'string' ? firstAuthor : firstAuthor?.name,
-  );
+  const givenName = typeof firstAuthor === 'string' ? firstAuthor : firstAuthor?.name;
+  // A placeholder for a missing name names nobody, so it joins no two works.
+  const authorName = isPlaceholderAuthorName(givenName) ? '' : normalizeAuthor(givenName);
   const title = normalizeTitle(paper.title);
   const workKey = title && authorName ? `work:${title}|${authorName}` : '';
   return [...new Set([stableKey, workKey].filter(Boolean))];
@@ -129,9 +131,67 @@ export function getFollowingUpdatesStorageKey(userId: unknown) {
   return `papertok_following_updates_${String(userId || 'anonymous').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
+/**
+ * Whether the stored Following result can stand in for a refresh: saved for
+ * the same follows within `ttlMs`, with every follow answered. A result in
+ * which some follows failed is still shown, but the next load asks again
+ * instead of keeping the gap for the whole window (ENG-110).
+ */
+export function isFollowingCacheFresh(
+  stored: { signature?: string; savedAt?: string; meta?: { failedEntities?: number } },
+  signature: string,
+  ttlMs: number,
+  now = Date.now(),
+) {
+  if (stored.signature !== signature || (stored.meta?.failedEntities ?? 0) > 0) return false;
+  return now - Date.parse(stored.savedAt || '') < ttlMs;
+}
+
+function getFollowKey(follow: Pick<PaperFollowMatch, 'type' | 'canonicalId'>) {
+  return `${follow.type}:${follow.canonicalId}`;
+}
+
 export function getFollowingSignature(follows: PaperFollowMatch[] = []) {
-  return follows
-    .map(follow => `${follow.type}:${follow.canonicalId}`)
-    .sort()
-    .join('|');
+  return follows.map(getFollowKey).sort().join('|');
+}
+
+/**
+ * The papers that match one of `follows`. An unfollow takes off the cards it
+ * alone brought in at once, instead of when the next refresh answers (ENG-110).
+ */
+export function keepPapersOfFollows(papers: Paper[], follows: PaperFollowMatch[]) {
+  const followed = new Set(follows.map(getFollowKey));
+  return papers.filter(paper => paper._followedEntityMatches?.some(match => (
+    typeof match === 'object' && followed.has(getFollowKey(match))
+  )));
+}
+
+/**
+ * The papers that `follows` brought in, credited to those follows only: what
+ * a refresh keeps from the previous answer for the follows that have not
+ * answered it. A partial refresh replaced the cards with the papers of the
+ * follows that answered, and the known papers of the one that failed were
+ * gone until a refresh in which it answered (ENG-110).
+ */
+export function papersCarriedFor(papers: Paper[], follows: PaperFollowMatch[]) {
+  const carried = new Set(follows.map(getFollowKey));
+  return papers.flatMap((paper) => {
+    const matches = (paper._followedEntityMatches || []).filter(match => (
+      typeof match === 'object' && carried.has(getFollowKey(match))
+    ));
+    return matches.length ? [{ ...paper, _followedEntityMatches: matches }] : [];
+  });
+}
+
+/**
+ * Whether a Following request still answers for the account and the follows
+ * on screen. A response that arrives after the reader switched accounts or
+ * changed their follows is dropped: it would put back the papers of a follow
+ * just removed and store them as the cache of the old follows (ENG-110).
+ */
+export function isCurrentFollowingRequest(
+  current: { userId: string | null; signature: string },
+  request: { userId: string | null; signature: string },
+) {
+  return current.userId === request.userId && current.signature === request.signature;
 }

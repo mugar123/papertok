@@ -82,7 +82,8 @@ export interface PaperResearchResource {
 }
 
 export interface PaperFollowMatch {
-  type: 'author' | 'topic' | 'institution' | 'project';
+  // A journal is an OpenAlex source, followed by its `S…` id (ENG-123).
+  type: 'author' | 'topic' | 'institution' | 'project' | 'journal';
   canonicalId: string;
   displayName: string;
   source?: string;
@@ -107,7 +108,9 @@ export interface PaperRecommendationScore {
   missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
-  followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
+  // The follows the client's ranking boosts. A followed journal's papers come
+  // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
+  followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
   explanation: string;
 }
@@ -155,6 +158,10 @@ export interface Paper {
   huggingFaceUpvotes?: number;
 
   journal?: string;
+  // The OpenAlex source id (`S…`) of the journal that published the work, read
+  // from OpenAlex's primary location when that source is a journal; absent
+  // otherwise. The lane of a followed journal is filed by it (ENG-123).
+  venueId?: string;
   conference?: string;
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).
@@ -333,6 +340,19 @@ export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'su
   const credited = paper.abstract || paper.summary;
   if ((source !== 'crossref' && source !== 'semanticscholar') || !kept?.trim() || !credited) return undefined;
   return credited.trim().startsWith(kept.trim()) ? source : undefined;
+}
+
+/**
+ * `paper` with the retraction that `other`, another copy of the same paper,
+ * records (ENG-84). No provider confirms that a paper is not retracted, so a
+ * copy written before a provider reported it, or by a writer that keeps no
+ * status (the `savedPapers` document), never removes it. Returns `paper`
+ * itself when `other` adds nothing.
+ */
+export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
+    ? { ...paper, publicationStatus: 'retracted' }
+    : paper;
 }
 
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;

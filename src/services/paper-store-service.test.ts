@@ -4,6 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { followLane } from '../utils/follow-lanes.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 
 const WORKER = 'https://papertok-report-api.example';
@@ -71,6 +72,48 @@ test('a page sends only the follows the Worker reads: the first twenty with a la
   const body = asked[0].body as { categories: string[]; follows: Array<{ canonicalId: string }> };
   assert.deepEqual(body.categories, ['cs.LG']);
   assert.deepEqual(body.follows.map(follow => follow.canonicalId), authors.slice(0, 20).map(follow => follow.canonicalId));
+});
+
+// ENG-123: journals are counted apart from the 20 other follows, up to 10.
+test('a page sends up to ten followed journals beside the twenty other follows', async () => {
+  const { asked, options } = harness(answered([]));
+  const journals: FollowEntity[] = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
+  const authors: FollowEntity[] = Array.from({ length: 22 }, (_, index) => ({ type: 'author', canonicalId: `A${5000 + index}`, displayName: `Author ${index}` }));
+  await fetchCorpusPage({ categories: [], follows: [...journals, ...authors], page: 0, pageSize: 6 }, options);
+  const body = asked[0].body as { follows: Array<{ canonicalId: string }> };
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), [...journals.slice(0, 10), ...authors.slice(0, 20)].map(follow => follow.canonicalId));
+});
+
+// ENG-182: the Worker answers 413 past 20,480 bytes (worker/paper-feed.ts).
+test('a page with ten journals and twenty long Unicode follows stays under the Worker body limit, keeping the first follows', async () => {
+  const { asked, options } = harness(answered([]));
+  const long = (mark: string) => `${mark}${'語'.repeat(400)}`;
+  const journals: FollowEntity[] = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: long(`J${index}`) }));
+  const topics: FollowEntity[] = Array.from({ length: 20 }, (_, index) => ({ type: 'topic', canonicalId: `T${2000 + index}`, displayName: long(`T${index}`), metadata: { query: long(`q${index}`) } }));
+  await fetchCorpusPage({ categories: ['cs.CL'], follows: [...journals, ...topics], page: 0, pageSize: 15 }, options);
+  const raw = JSON.stringify(asked[0].body);
+  assert.ok(new TextEncoder().encode(raw).byteLength <= 20_480);
+  const body = asked[0].body as { follows: Array<{ canonicalId: string; displayName: string; metadata: { query?: string } }> };
+  const kept = [...journals, ...topics].map(follow => follow.canonicalId);
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), kept.slice(0, body.follows.length));
+  assert.ok(body.follows.length >= 10 && body.follows.length < 30);
+  assert.equal(body.follows[0].displayName.length, 200);
+  assert.equal(body.follows.at(-1)!.metadata.query?.length ?? 121, 121);
+});
+
+test('a follow keeps its lane when its text is cut, and a stored number is sent as it is', async () => {
+  const { asked, options } = harness(answered([]));
+  const query = `${'a'.repeat(119)}  ${'b'.repeat(400)}`;
+  const follows = [
+    { type: 'topic', canonicalId: 'query-1', displayName: '  Name  ', metadata: { query: `  ${query}` } },
+    { type: 'project', canonicalId: '100010', displayName: 'P', metadata: { funder: `${'f'.repeat(79)} ${'g'.repeat(50)}` } },
+    { type: 'project', canonicalId: '5', displayName: 'N', metadata: { funder: 7 } },
+  ] as unknown as FollowEntity[];
+  await fetchCorpusPage({ categories: ['cs.CL'], follows, page: 0, pageSize: 15 }, options);
+  const sent = (asked[0].body as { follows: FollowEntity[] }).follows;
+  assert.deepEqual(sent.map(follow => followLane(follow)), follows.map(follow => followLane(follow)));
+  assert.equal(sent[2].metadata?.funder, 7);
+  assert.equal(sent[0].displayName, 'Name');
 });
 
 test('a page asked by interest groups sends them with their categories and examples as the flat request', async () => {
@@ -301,6 +344,32 @@ test('a slow ID token does not spend the deadline of the store request, and the 
   assert.equal((tooSlow.reason as Error).name, 'TimeoutError');
 });
 
+// ENG-116: once the deadline started after the token, every feed failure was a
+// list's first page timing out at 3.5 s, mostly on a session's first load, and
+// the automatic retry usually brought the papers. That page waits longer; a
+// later page does not.
+test("a store that answers in 5 s fills a list's first screen, and a later page still times out", async () => {
+  const sent: unknown[] = [];
+  const answersIn5s = async (_url: string, init: RequestInit, timeoutMs?: number) => {
+    sent.push(JSON.parse(String(init.body)));
+    const { signal } = withRequestDeadline(init, timeoutMs);
+    return new Promise<Response>((resolve, reject) => {
+      const answer = setTimeout(() => resolve(new Response(JSON.stringify({ papers: [STORED] }), { status: 200 })), 5_000);
+      signal.addEventListener('abort', () => { clearTimeout(answer); reject(signal.reason); }, { once: true });
+    });
+  };
+  const options = { apiBase: WORKER, fetchWorker: answersIn5s };
+  const [firstScreen, laterPage] = await Promise.allSettled([
+    fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, firstScreen: true }, options),
+    fetchCorpusPage({ categories: ['med.cardio'], page: 1, pageSize: 15 }, options),
+  ]);
+  assert.ok(firstScreen.status === 'fulfilled');
+  assert.deepEqual(firstScreen.value.papers, [STORED]);
+  assert.ok(laterPage.status === 'rejected');
+  assert.equal((laterPage.reason as Error).name, 'TimeoutError');
+  assert.ok(sent.every(body => !Object.hasOwn(body as object, 'firstScreen')), 'the wait is the app\'s; the Worker is not told');
+});
+
 test('a connection lost while the answer arrives is marked unreachable too', async () => {
   const cut = new ReadableStream({ start(controller) { controller.error(new TypeError('network error')); } });
   const { options } = harness(async () => new Response(cut, { status: 200 }));
@@ -314,4 +383,28 @@ test('an answer without a papers list is an invalid response, not an empty page'
   }
   const { options } = harness(answered([]));
   assert.deepEqual(await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { papers: [], skipsSeen: false });
+});
+
+test('the main response reports its Worker version before parsing success or refusal', async () => {
+  for (const status of [200, 429, 503]) {
+    const versions: Array<string | null> = [];
+    const { options } = harness(async () => new Response(JSON.stringify(status === 200 ? { papers: [STORED] } : { code: 'RATE_LIMITED' }), {
+      status, headers: { 'x-papertok-worker-version': 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57' },
+    }));
+    const promise = fetchCorpusPage({ page: 0, pageSize: 15 }, { ...options, onVersion: version => { versions.push(version); } });
+    if (status === 200) assert.deepEqual((await promise).papers, [STORED]);
+    else await assert.rejects(promise, { status });
+    assert.deepEqual(versions, ['bc13c637-c9af-4b4e-92a2-c4b3e9380a57']);
+  }
+});
+
+test('an older Worker leaves the version unknown and a connection failure reports none', async () => {
+  const versions: Array<string | null> = [];
+  const old = harness(answered([STORED]));
+  await fetchCorpusPage({ page: 0, pageSize: 15 }, { ...old.options, onVersion: version => { versions.push(version); } });
+  assert.deepEqual(versions, [null]);
+  const failedVersions: Array<string | null> = [];
+  const broken = harness(async () => { throw new TypeError('offline'); });
+  await assert.rejects(fetchCorpusPage({ page: 0, pageSize: 15 }, { ...broken.options, onVersion: version => { failedVersions.push(version); } }), { code: 'STORE_UNREACHABLE' });
+  assert.deepEqual(failedVersions, []);
 });

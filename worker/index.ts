@@ -2,6 +2,7 @@ import type { WorkerEnv } from './env.ts';
 
 import { runEmailNotificationSchedule } from './email-notifications.ts';
 import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
+import { PAPER_STORE_PING_CRON, pingPaperStore } from './paper-store.ts';
 import { handleRequest, routeForLog } from './router.ts';
 import { captureWorkerResponseFailure } from './error-tracking.ts';
 
@@ -25,6 +26,9 @@ export default {
     }
   },
   async scheduled(controller: Pick<ScheduledController, 'scheduledTime'> & Partial<Pick<ScheduledController, 'cron'>>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
+    // Returned rather than handed to waitUntil, so a failed ping escapes to
+    // the error report (instrumentation.ts).
+    if (controller.cron === PAPER_STORE_PING_CRON) return pingPaperStore(env);
     if (controller.cron === PAPER_HARVEST_CRON) {
       // One instance per UTC day: a repeated trigger finds the id taken.
       const id = `harvest-${new Date(controller.scheduledTime).toISOString().slice(0, 10)}`;

@@ -5,14 +5,28 @@ import type { InterestGroup } from '../utils/interest-memory.ts';
 import { authenticatedWorkerFetch, sourceResponseError, workerSourceUrl } from './worker-api-client.ts';
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from '../utils/feed-interactions.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
-import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
+import { servedFollows } from '../utils/follow-lanes.ts';
 
 // Counted from the moment the ID token is in hand (authenticatedWorkerFetch),
-// so a token refresh does not spend it. The feed's 4 s first-paint budget
-// bounds the main request only when the token is cached; the exploration and
-// follows requests keep their own budgets, counted from before the token
-// (feed-context.tsx), and fall back to no papers when those run out.
+// so a token refresh does not spend it. The exploration and follows requests
+// also have render budgets, counted from the start of the load
+// (awaitScreenSources in src/context/feed-corpus-requests.ts), and give no
+// papers when those run out.
 const STORE_TIMEOUT_MS = 3_500;
+// The requests of a list's first screen (`firstScreen`). After the 2026-10-28
+// fixes every feed failure was that page timing out at 3.5 s, mostly on a
+// session's first load; in most sessions the automatic retry, 2.5 s later,
+// showed papers 7-9 s after the feed opened. A token the Worker has not
+// verified in the last minute waits up to 4 s for Google
+// (worker/firebase-auth.ts) before the D1 reads and ranking, and the Worker's
+// hourly p90 wall time, all routes, reached 3.6 s. A first screen that times
+// out here, while the session's one automatic retry is unused, retries once, at
+// once and with STORE_TIMEOUT_MS, then shows its error; one that fails for
+// another reason retries after a pause with this deadline again (automaticRetry
+// in src/context/feed-load-failure.ts, ENG-116). The retry is armed again only
+// by a load that succeeds: Try again after an error waits this deadline once
+// and then shows the error, about 10 s after the token.
+const FIRST_SCREEN_TIMEOUT_MS = 10_000;
 
 export interface CorpusPageRequest {
   categories?: string[];
@@ -44,9 +58,16 @@ export interface CorpusPageRequest {
    * it lacks, which can take seconds: for More like this, never a feed page.
    */
   waitForLikes?: boolean;
+  /**
+   * A request of a load that fills a list with no cards shown, which the
+   * reader waits for (waitsAsFirstScreen in src/context/feed-corpus-requests.ts): it may take
+   * FIRST_SCREEN_TIMEOUT_MS instead of STORE_TIMEOUT_MS. Not sent.
+   */
+  firstScreen?: boolean;
 }
 
 interface StoreOptions {
+  onVersion?: (version: string | null) => void;
   fetchWorker?: (url: string, init: RequestInit, timeoutMs: number) => Promise<Response>;
   apiBase?: string;
 }
@@ -58,12 +79,13 @@ function markUnreachable(error: unknown): never {
   throw error;
 }
 
-async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions) {
+async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase, onVersion }: StoreOptions, timeoutMs = STORE_TIMEOUT_MS) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-  }, STORE_TIMEOUT_MS).catch(markUnreachable);
+  }, timeoutMs).catch(markUnreachable);
+  onVersion?.(response.headers.get('x-papertok-worker-version'));
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.
@@ -86,6 +108,17 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
 }
 
 /**
+ * A follow's string as the Worker reads it (`text` in src/utils/follow-lanes.ts:
+ * whitespace collapsed, trimmed), cut to `max`. The Worker then cuts a query to
+ * 120 characters and a funder to 80 after trimming, so those are sent one
+ * character longer: a cut ending in a space would be trimmed and file the
+ * follow under another lane. Anything but a string passes as stored.
+ */
+function cutFollowText<T>(value: T, max: number): T {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) as T : value;
+}
+
+/**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
  * by the reader's examples (likes, saves and long reads) per interest group.
@@ -98,21 +131,23 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
  */
-export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
-  const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
+export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
+  const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
-    // Only the follows the Worker reads travel (`parseFeedRequest`): the first
-    // FEED_MAX_FOLLOWS with a lane. A topic follow that is one of the app's
-    // categories has none; it is asked for as that category. When no follow
+    // Only the follows the Worker reads travel (`servedFollows`): the first
+    // MAX_FOLLOWED_JOURNALS journals and FEED_MAX_FOLLOWS other follows with a
+    // lane. A topic follow that is one of the app's categories has none; it is asked for as that category. When no follow
     // has a lane, the first still travels, so the request stays the follows'
     // page: the Worker reads no area lane for it, and answers it with no
     // papers when it has no categories either (`handleCorpusFeed`).
+    // A string is cut as the Worker reads it (`cutFollowText`), so the lane it
+    // files the follow under is the one the uncut follow has.
     follows: (read.length ? read : follows.slice(0, 1)).map(({ type, canonicalId, displayName, metadata }) => ({
       type,
       canonicalId,
-      displayName,
-      metadata: { query: metadata?.query, funder: metadata?.funder },
+      displayName: cutFollowText(displayName, 200),
+      metadata: { query: cutFollowText(metadata?.query, 121), funder: cutFollowText(metadata?.funder, 81) },
     })),
     positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
     // Copies: the examples below may be trimmed, and the plan is the feed's.
@@ -142,9 +177,15 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       const dropped = body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1);
       body.positiveIds = body.positiveIds.filter(id => id !== dropped);
       for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
+    } else if (body.follows.length > 1) {
+      // Last, so a reader's examples and exclusions are kept first: the follows
+      // are in the order the Worker serves them, other follows after the
+      // journals, and the last goes (ENG-182). The first stays: it keeps the
+      // request the follows' page.
+      body.follows.pop();
     } else break;
   }
-  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options);
+  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
 }
 
 /**

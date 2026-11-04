@@ -5,11 +5,12 @@ import type { Paper } from '../src/models/paper.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
-import { embedWorks, evictExpired, ingestPapers } from './paper-store.ts';
+import { embedWorks, evictExpired, ingestPapers, readNotableCandidates } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapPubmedSummary, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
 import { mapAdsPaper } from '../src/services/domain-source-records.ts';
+import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -393,12 +394,14 @@ const RETRACTED_WORK = {
 };
 
 // OpenAlex answering every works list with these works, as it answers: only
-// the fields the request selects. Every other provider answers empty.
-function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record<string, unknown>>) {
+// the fields the request selects. Europe PMC answers every search with the
+// records `europePmc` gives at the time; every other provider answers empty.
+function openAlexAnswers(t: import('node:test').TestContext, works: Array<Record<string, unknown>>, europePmc: () => Array<Record<string, unknown>> = () => []) {
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname === 'www.ebi.ac.uk') return Response.json({ resultList: { result: europePmc() } });
     if (url.hostname !== 'api.openalex.org') return Response.json({});
     const selected = url.searchParams.get('select')?.split(',') ?? [];
     return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
@@ -500,6 +503,236 @@ for (const [order, works] of [['first', [RETRACTED_WORK, EPRINT_WORK]], ['last',
   });
 }
 
+// OpenAlex can also hold the journal's article apart, without the arXiv
+// location, so that the arXiv id finds only the unretracted eprint. Synthetic:
+// the captured work without its arXiv location.
+const JOURNAL_ONLY_WORK = { ...RETRACTED_WORK, locations: RETRACTED_WORK.locations.slice(0, 1) };
+
+// When the arXiv id finds nothing, the retraction is all OpenAlex gave: the
+// paper is not OpenAlex-enriched, and it is asked again like any miss.
+for (const [found, arxivAnswer, enrichedByOpenAlex] of [['an unretracted eprint', [EPRINT_WORK], true], ['nothing', [], false]] as const) {
+  test(`an ADS paper whose arXiv id finds ${found} is retracted by its journal DOI's work, and is not offered as notable`, async t => {
+    const filters: string[] = [];
+    const realFetch = globalThis.fetch;
+    const realCaches = (globalThis as TestGlobals).caches;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.hostname !== 'api.openalex.org') return Response.json({});
+      const filter = url.searchParams.get('filter') ?? '';
+      filters.push(filter.slice(0, filter.indexOf(':')));
+      const selected = url.searchParams.get('select')?.split(',') ?? [];
+      const works = filter.startsWith('doi:') ? [JOURNAL_ONLY_WORK] : arxivAnswer;
+      return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
+    });
+    (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+    t.after(() => {
+      globalThis.fetch = realFetch;
+      if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+      else (globalThis as TestGlobals).caches = realCaches;
+    });
+    const { binding, db } = testD1();
+    const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+    await ingestPapers(env, [{ paper: ADS_LISTING, lanes: [NOTABLE_LANE] }], { now: NOW, keepUntil: keptFrom(NOW) });
+
+    await enrichPending(env, 50, NOW);
+    assert.deepEqual(filters, ['locations.landing_page_url', 'doi'], 'one call by arXiv id, one by the journal DOI');
+    const { paper, enrichedAt, misses } = stored(db)['ads:2018Natur.556...74Z'];
+    assert.equal(paper.publicationStatus, 'retracted');
+    assert.ok(enrichedAt);
+    assert.equal(paper.sources.enrichedBy.includes('openalex'), enrichedByOpenAlex);
+    assert.equal(misses, enrichedByOpenAlex ? 0 : 1);
+    assert.deepEqual(laneRows(db), []);
+    assert.deepEqual((await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).candidates, []);
+  });
+}
+
+// An author can put two DOIs in the one field arXiv, NASA ADS and the other
+// sources keep. OpenAlex reads a comma in a filter as the start of the next
+// filter and refuses the request (synthetic 400, which the relay passes on),
+// which used to fail the chunk and stop the whole pass.
+test('a DOI holding a comma is never put in an OpenAlex filter: the paper is asked by its arXiv id and the pass goes on', async t => {
+  const filters: string[] = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const filter = url.searchParams.get('filter') ?? '';
+    filters.push(filter);
+    if (filter.includes(',')) return Response.json({ error: 'Invalid query parameters error.' }, { status: 400 });
+    return Response.json({ results: filter.includes('2610.33333') ? [{
+      id: 'https://openalex.org/W4400000033',
+      ids: { arxiv: 'https://arxiv.org/abs/2610.33333' },
+      cited_by_count: 4,
+      type: 'preprint',
+      locations: [{ landing_page_url: 'https://arxiv.org/abs/2610.33333' }],
+    }] : [] });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  t.mock.method(console, 'warn', () => {});
+  const onArxiv = { ...preprint, id: '2610.33333', arxivId: '2610.33333', doi: '10.1103/PhysRevD.1,10.1103/PhysRevD.2', title: 'A paper that lists both its journal versions' };
+  // A record OpenAlex could be asked about only by its DOI.
+  const doiOnly = mapAdsPaper({ bibcode: '2026PhRvD.111a0001X', title: ['A record with two DOIs and no arXiv id'], abstract: 'A measurement that its record lists under two journal DOIs at once.', author: ['Pérez, Ana'], doi: ['10.1103/PhysRevD.3,10.1103/PhysRevD.4'], doctype: 'article', pub: 'Physical Review D', pubdate: '2026-10-00', year: '2026' })!;
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: onArxiv, lanes: ['hep-th'] }, { paper: doiOnly, lanes: [] }], { now: NOW });
+
+  const { workIds, stop } = await enrichPending(env, 50, NOW);
+  assert.equal(stop, false, 'OpenAlex answered: the pass goes on');
+  assert.equal(workIds.length, 2);
+  assert.deepEqual(filters.filter(filter => filter.includes(',')), [], 'neither DOI was asked');
+  const works = stored(db);
+  assert.equal(works['2610.33333'].paper.citationCount, 4);
+  assert.equal(works['2610.33333'].misses, 0);
+  assert.ok(works['2610.33333'].enrichedAt);
+  assert.ok(works['ads:2026PhRvD.111a0001X'].enrichedAt, 'a paper with no way into OpenAlex is done, not left waiting');
+});
+
+// The relay forwards no parameter longer than 2,000 characters: a longer
+// filter is dropped and the request goes out unfiltered. OpenAlex here answers
+// a DOI filter with a journal work for each DOI in it, in the filter's order and
+// one page of `per_page` at most, retracted for `retractedDois`, and anything
+// else with nothing, as an unfiltered page would hold none of these papers. A
+// DOI in `twoWorksFor` is answered by an unretracted duplicate record first.
+function openAlexByFilter(t: import('node:test').TestContext, retractedDois: string[], { twoWorksFor = [] as string[] } = {}) {
+  const filters: Array<string | null> = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  let answered = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.hostname !== 'api.openalex.org') return Response.json({});
+    const filter = url.searchParams.get('filter');
+    filters.push(filter);
+    const asked = filter?.startsWith('doi:') ? filter.slice('doi:'.length).split('|') : [];
+    const selected = url.searchParams.get('select')?.split(',') ?? [];
+    const works = asked.flatMap(doi => (twoWorksFor.includes(doi) ? [false, retractedDois.includes(doi)] : [retractedDois.includes(doi)]).map(retracted => {
+      const id = `https://openalex.org/W44${String((answered += 1)).padStart(8, '0')}`;
+      return { ...JOURNAL_ONLY_WORK, id, doi: `https://doi.org/${doi}`, ids: { openalex: id, doi: `https://doi.org/${doi}` }, is_retracted: retracted };
+    })).slice(0, Number(url.searchParams.get('per_page')));
+    return Response.json({ results: works.map(work => Object.fromEntries(Object.entries(work).filter(([field]) => selected.includes(field)))) });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  return filters;
+}
+
+const askedValues = (filters: Array<string | null>, key: string) => filters
+  .filter(filter => filter?.startsWith(`${key}:`))
+  .flatMap(filter => filter!.slice(key.length + 1).split('|'));
+
+test('fifty long journal DOIs and arXiv ids are asked in filters the relay forwards, each once, and a retraction in the second is found', async t => {
+  // 50-character DOIs, and arXiv ids of the longest form the id pattern takes.
+  const papers = Array.from({ length: 50 }, (_, index) => {
+    const id = `cond-mat.mes-hall/26100${String(index).padStart(2, '0')}`;
+    return { ...preprint, id, arxivId: id, doi: `10.5555/${'a'.repeat(38)}${String(index).padStart(4, '0')}`, title: `A paper with a long journal DOI (${index})` };
+  });
+  const last = papers[49];
+  const filters = openAlexByFilter(t, [last.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+  assert.deepEqual(askedValues(filters, 'doi').sort(), papers.map(paper => paper.doi).sort(), 'every DOI asked once');
+  assert.deepEqual(askedValues(filters, 'locations.landing_page_url').filter(value => value.startsWith('https:')).sort(),
+    papers.map(paper => `https://arxiv.org/abs/${paper.id}`).sort(), 'every arXiv id asked once');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
+  assert.notEqual(stored(db)[papers[0].id].paper.publicationStatus, 'retracted');
+});
+
+// Short ids fit many more values in 2,000 characters than the 50 a filter is
+// given, so the count, not the length, has to close these filters.
+test('fifty-one short journal DOIs and arXiv ids are asked at most 50 values a filter, each once, and a retraction in the 51st is found', async t => {
+  // The newest is asked first, so the 51st paper, the oldest, is asked last.
+  const papers = Array.from({ length: 51 }, (_, index) => {
+    const id = `2610.${String(index).padStart(5, '0')}`;
+    const published = new Date(Date.parse(preprint.published!) - index * 60_000).toISOString();
+    return { ...preprint, id, arxivId: id, published, doi: `10.5555/s${index}`, title: `A paper with a short journal DOI (${index})` };
+  });
+  const last = papers[50];
+  const filters = openAlexByFilter(t, [last.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 51, NOW);
+  for (const key of ['doi', 'locations.landing_page_url']) {
+    const sizes = filters.filter(filter => filter?.startsWith(`${key}:`)).map(filter => filter!.split('|').length);
+    assert.ok(sizes.length > 0 && sizes.every(size => size <= 50), `${key} filters of ${sizes.join(', ')} values`);
+  }
+  assert.deepEqual(askedValues(filters, 'doi').sort(), papers.map(paper => paper.doi).sort(), 'every DOI asked once');
+  assert.deepEqual(askedValues(filters, 'locations.landing_page_url').filter(value => value.startsWith('https:')).sort(),
+    papers.map(paper => `https://arxiv.org/abs/${paper.id}`).sort(), 'every arXiv id asked once');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
+  assert.notEqual(stored(db)[papers[0].id].paper.publicationStatus, 'retracted');
+});
+
+test('a DOI too long for any filter the relay forwards is not asked, and the papers beside it are', async t => {
+  const long = { ...preprint, id: '2610.44444', arxivId: '2610.44444', doi: `10.5555/${'b'.repeat(2_100)}`, title: 'A paper whose DOI is too long to ask' };
+  const beside = { ...preprint, id: '2610.55555', arxivId: '2610.55555', doi: '10.5555/beside', title: 'A paper beside it' };
+  const filters = openAlexByFilter(t, [beside.doi]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: long, lanes: [] }, { paper: beside, lanes: [] }], { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+  assert.deepEqual(askedValues(filters, 'doi'), [beside.doi]);
+  assert.equal(stored(db)[beside.id].paper.publicationStatus, 'retracted');
+});
+
+// The relay forwards a filter of exactly 2,000 characters and drops one of 2,001.
+for (const [length, filtersAsked] of [[2_000, 1], [2_001, 2]] as const) {
+  test(`two journal DOIs that make a filter of ${length} characters are asked in ${filtersAsked} filter${filtersAsked > 1 ? 's' : ''}, and both retractions are found`, async t => {
+    // `doi:` (4) + first + `|` (1) + second; DOIs are stored in lowercase.
+    const first = `10.5555/${'c'.repeat(997 - '10.5555/'.length)}`;
+    const second = `10.5555/${'d'.repeat(length - 4 - 1 - 997 - '10.5555/'.length)}`;
+    const papers = [first, second].map((doi, index) => ({ ...preprint, id: `2610.6666${index}`, arxivId: `2610.6666${index}`, doi, title: `A paper with a DOI at the filter's edge (${index})` }));
+    const filters = openAlexByFilter(t, [first, second]);
+    const { binding, db } = testD1();
+    const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+    await ingestPapers(env, papers.map(paper => ({ paper, lanes: [] })), { now: NOW });
+
+    await enrichPending(env, 50, NOW);
+    assert.ok(filters.every(filter => filter !== null), 'no request went out without its filter');
+    const doiFilters = filters.filter(filter => filter?.startsWith('doi:'));
+    assert.equal(doiFilters.length, filtersAsked);
+    if (filtersAsked === 1) assert.equal(doiFilters[0]?.length, 2_000);
+    assert.deepEqual(askedValues(filters, 'doi').sort(), [first, second].sort());
+    for (const paper of papers) assert.equal(stored(db)[paper.id].paper.publicationStatus, 'retracted');
+  });
+}
+
+// OpenAlex can answer one value of a filter with two works. A full filter of
+// 50 DOIs whose first answers twice still finds the retraction of the last.
+test('a filter of fifty journal DOIs, one answered by two works, still finds the retraction in the last', async t => {
+  const papers = Array.from({ length: 50 }, (_, index) => {
+    const id = `2610.${String(70_000 + index)}`;
+    const published = new Date(Date.parse(preprint.published!) - index * 60_000).toISOString();
+    return { ...preprint, id, arxivId: id, published, doi: `10.5555/t${index}`, title: `A paper whose DOI OpenAlex may answer twice (${index})` };
+  });
+  const last = papers[49];
+  const filters = openAlexByFilter(t, [last.doi], { twoWorksFor: [papers[0].doi] });
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cond-mat.mes-hall'] })), { now: NOW });
+
+  await enrichPending(env, 50, NOW);
+  assert.equal(filters.filter(filter => filter?.startsWith('doi:')).length, 1, 'the fifty DOIs share one filter');
+  assert.equal(stored(db)[last.id].paper.publicationStatus, 'retracted');
+});
+
 // A search, a reader's lookup of a liked paper by DOI and the lanes of
 // followed entities ask OpenAlex without leaving retracted works out.
 test("OpenAlex's own record of a retracted paper is stored under no lane: a filed copy leaves its lanes, and a reader's like of it is kept", async () => {
@@ -517,4 +750,107 @@ test("OpenAlex's own record of a retracted paper is stored under no lane: a file
   await ingestPapers({ PAPER_STORE: liked.binding }, [{ paper: record, lanes: [] }], { now: NOW, keepUntil: new Date(NOW + 30 * DAY_MS).toISOString() });
   assert.deepEqual(Object.values(stored(liked.db)).map(work => [work.paper.id, work.paper.publicationStatus]), [['openalex:W2766253867', 'retracted']]);
   assert.deepEqual(laneRows(liked.db), []);
+});
+
+// Captured on 2026-10-27 (esummary, keyless) and 2026-10-26 (efetch) and
+// trimmed: Wakefield et al., Lancet 1998 (PMID 9500320), which PubMed types
+// `Retracted Publication`, and a journal article of September 2026 (PMID
+// 42934083) with no other type.
+const WAKEFIELD_SUMMARY = {
+  uid: '9500320',
+  pubdate: '1998 Feb 28',
+  epubdate: '',
+  source: 'Lancet',
+  authors: [{ name: 'Wakefield AJ' }, { name: 'Murch SH' }],
+  title: 'Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.',
+  issn: '0140-6736',
+  pubtype: ['Journal Article', "Research Support, Non-U.S. Gov't", 'Retracted Publication'],
+  articleids: [{ idtype: 'pubmed', value: '9500320' }, { idtype: 'doi', value: '10.1016/s0140-6736(97)11096-0' }],
+};
+const PEDIATRIC_SUMMARY = {
+  uid: '42934083',
+  pubdate: '2026 Sep 30',
+  epubdate: '2026 Sep 30',
+  source: 'J Pediatr Urol',
+  authors: [{ name: 'Manivasagam SS' }, { name: 'Kane JA' }, { name: 'Decter RM' }],
+  title: 'Current trends in opioid prescription at discharge after pediatric urologic procedures: Analysis of ACS NSQIP pediatrics 2023 database.',
+  issn: '1477-5131',
+  pubtype: ['Journal Article'],
+  articleids: [{ idtype: 'pubmed', value: '42934083' }, { idtype: 'doi', value: '10.1016/j.jpurol.2026.106308' }],
+};
+const PUBMED_EFETCH = '<PubmedArticleSet>'
+  + '<PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM"><PMID Version="1">9500320</PMID><Article PubModel="Print">'
+  + '<ArticleTitle>Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children.</ArticleTitle>'
+  + '<Abstract><AbstractText Label="BACKGROUND">We investigated a consecutive series of children with chronic enterocolitis and regressive developmental disorder.</AbstractText>'
+  + '<AbstractText Label="METHODS">12 children (mean age 6 years [range 3-10], 11 boys) were referred to a paediatric gastroenterology unit with a history of normal development followed by loss of acquired skills, including language, together with diarrhoea and abdominal pain.</AbstractText></Abstract>'
+  + '<AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Wakefield</LastName><ForeName>A J</ForeName><Initials>AJ</Initials></Author><Author ValidYN="Y"><LastName>Murch</LastName><ForeName>S H</ForeName><Initials>SH</Initials></Author></AuthorList>'
+  + '<PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D013485">Research Support, Non-U.S. Gov\'t</PublicationType><PublicationType UI="D016441">Retracted Publication</PublicationType></PublicationTypeList>'
+  + '</Article></MedlineCitation></PubmedArticle>'
+  + '<PubmedArticle><MedlineCitation Status="Publisher" Owner="NLM"><PMID Version="1">42934083</PMID><Article PubModel="Print-Electronic">'
+  + '<ArticleTitle>Current trends in opioid prescription at discharge after pediatric urologic procedures: Analysis of ACS NSQIP pediatrics 2023 database.</ArticleTitle>'
+  + '<Abstract><AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Opioid prescribing at discharge after pediatric surgery contributes to unnecessary opioid exposure, chronic opioid use, and increased community circulation of opioids.</AbstractText></Abstract>'
+  + '<AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Manivasagam</LastName><ForeName>Sri Saran</ForeName><Initials>SS</Initials></Author><Author ValidYN="Y"><LastName>Kane</LastName><ForeName>Jennifer A</ForeName><Initials>JA</Initials></Author><Author ValidYN="Y"><LastName>Decter</LastName><ForeName>Ross M</ForeName><Initials>RM</Initials></Author></AuthorList>'
+  + '<PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>'
+  + '</Article></MedlineCitation></PubmedArticle>'
+  + '</PubmedArticleSet>';
+// Captured from OpenAlex on 2026-10-26 (W2117847125) and trimmed, with
+// `is_retracted` cleared: OpenAlex's answer before its data had the
+// retraction, which reads published.
+const WAKEFIELD_WORK_UNFLAGGED = {
+  id: 'https://openalex.org/W2117847125',
+  doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0',
+  ids: { openalex: 'https://openalex.org/W2117847125', doi: 'https://doi.org/10.1016/s0140-6736(97)11096-0', pmid: 'https://pubmed.ncbi.nlm.nih.gov/9500320' },
+  type: 'article',
+  is_retracted: false,
+  publication_year: 1998,
+};
+// Europe PMC's core record lists MEDLINE's types by NLM's names, as captured
+// for PMID 42159524 on 2026-10-26. Synthetic in that shape: Europe PMC
+// answered 503 when asked for Wakefield's record on 2026-10-27.
+const wakefieldInEuropePmc = (pubType: string[]) => ({ id: '9500320', source: 'MED', pmid: '9500320', title: WAKEFIELD_SUMMARY.title, pubTypeList: { pubType } });
+const LISTED = Date.parse('2026-10-27T03:00:00Z');
+
+// A page of the medicine lane for pediatrics, as the harvest reads it
+// (worker/paper-sources.ts): esummary's records with efetch's abstracts.
+const pediatricsPage = (...summaries: Array<typeof PEDIATRIC_SUMMARY>) => readPubmedPayload({
+  esearchresult: { idlist: summaries.map(summary => summary.uid) },
+  result: Object.fromEntries(summaries.map(summary => [summary.uid, summary])),
+  efetch: PUBMED_EFETCH,
+}, { internalCategories: ['med.peds'], parseXml: parseXmlDocument }).map(paper => ({ paper, lanes: ['med.peds'] }));
+const statusAndLanes = (db: ReturnType<typeof testD1>['db']) => Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>)
+  .map(row => [JSON.parse(row.paper).id, [
+    JSON.parse(row.paper).publicationStatus,
+    db.prepare('SELECT lane FROM work_lanes WHERE work_id = ? ORDER BY lane').all(row.id).map(lane => (lane as { lane: string }).lane),
+  ]]));
+
+// Kept whatever its age (`keepUntil`), as a notable listing or a reader's like
+// keeps a paper: PubMed's lanes list the last 90 days, and the paper PubMed
+// types retracted in these captures is from 1998.
+test('a paper PubMed types retracted is stored under no lane from its listing on, and an enrichment that reads it published does not file it', async t => {
+  openAlexAnswers(t, [WAKEFIELD_WORK_UNFLAGGED]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, pediatricsPage(WAKEFIELD_SUMMARY, PEDIATRIC_SUMMARY), { now: LISTED, keepUntil: keptFrom(LISTED) });
+  const expected = { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] };
+  assert.deepEqual(statusAndLanes(db), expected);
+
+  await enrichPending(env, 50, LISTED);
+  assert.ok(stored(db)['pmid:9500320'].paper.sources.enrichedBy.includes('openalex'));
+  assert.deepEqual(statusAndLanes(db), expected);
+});
+
+test('a retraction PubMed records after the paper was stored reaches it from Europe PMC at the refresh, and the paper leaves its lane', async t => {
+  let wakefieldTypes = ['Journal Article', "Research Support, Non-U.S. Gov't"];
+  openAlexAnswers(t, [WAKEFIELD_WORK_UNFLAGGED], () => [wakefieldInEuropePmc(wakefieldTypes)]);
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  // PubMed's record before NLM added the type.
+  const listedBefore = { ...WAKEFIELD_SUMMARY, pubtype: wakefieldTypes };
+  await ingestPapers(env, pediatricsPage(listedBefore, PEDIATRIC_SUMMARY), { now: LISTED, keepUntil: keptFrom(LISTED) });
+  await enrichPending(env, 50, LISTED);
+  assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['published', ['med.peds']], 'pmid:42934083': ['published', ['med.peds']] });
+
+  wakefieldTypes = [...wakefieldTypes, 'Retracted Publication'];
+  await enrichPending(env, 50, LISTED + 15 * DAY_MS);
+  assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] });
 });

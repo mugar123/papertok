@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { withStubbedFetch } from '../test-support/deadline-harness.ts';
 import { CACHE } from './open-aire-service.ts';
-import { fetchFollowingUpdates } from './following-updates-service.ts';
+import { openAlexClient } from './open-alex-client.ts';
+import { fetchFollowingUpdates, orderFollowsForRefresh } from './following-updates-service.ts';
 import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 
@@ -60,6 +61,70 @@ test('retrieves query-topic updates with stored metadata and preserves the full 
     externalIds: {},
     metadata: follow.metadata,
   }]);
+});
+
+// ENG-123 (D7): the Following page asks OpenAlex for a followed journal's
+// newest articles, as its lane in the corpus lists them: the journal as the
+// primary location (not a repository copy), articles and reviews (OpenAlex
+// types every paper of the Annual Review journals `review`), none dated after
+// today. Each says which journal it came from.
+test("a followed journal's updates are its newest articles, each naming the journal", async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T12:00:00Z') });
+  const previous = { storage: openAlexClient.storage, store: openAlexClient.persistentStore, fetchImpl: openAlexClient.fetchImpl };
+  const memory = new Map<string, string>();
+  openAlexClient.storage = { getItem: key => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value) };
+  openAlexClient.persistentStore = null;
+  const urls: URL[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(new URL(String(url)));
+    return Response.json({ meta: { count: 2 }, results: [{
+      id: 'https://openalex.org/W7000000001', type: 'article', title: 'Monetary policy and the term structure', publication_date: '2026-10-20',
+      primary_location: { source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+    }, {
+      id: 'https://openalex.org/W7000000002', type: 'review', title: 'Fifty years of the term structure: a review', publication_date: '2026-10-18',
+      primary_location: { source: { id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' } },
+    }] });
+  };
+  t.after(() => Object.assign(openAlexClient, { storage: previous.storage, persistentStore: previous.store, fetchImpl: previous.fetchImpl }));
+  const journal = { type: 'journal' as const, canonicalId: 'S23254222', displayName: 'American Economic Review', source: 'openalex', externalIds: { issnl: '0002-8282' }, metadata: {} };
+
+  const result = await fetchFollowingUpdates([journal]);
+
+  assert.equal(urls.length, 1);
+  assert.deepEqual(urls[0].searchParams.get('filter')!.split(',').sort(), ['primary_location.source.id:S23254222', 'to_publication_date:2026-10-25', 'type:article|review']);
+  assert.equal(urls[0].searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(result.failedEntities, 0);
+  assert.deepEqual(result.papers.map(paper => [paper.title, paper._followedEntityMatches]), [
+    ['Monetary policy and the term structure', [journal]],
+    ['Fifty years of the term structure: a review', [journal]],
+  ]);
+  assert.deepEqual(orderFollowsForRefresh([{ type: 'author', canonicalId: 'ada lovelace', displayName: 'Ada Lovelace' }, journal]).map(follow => follow.type), ['journal', 'author'],
+    'one OpenAlex request, so it answers before the follows that wait for arXiv');
+});
+
+// ENG-123: a refresh asks for up to 40 follows, and journals are counted
+// apart, up to 10. The follows arrive in Firestore document-id order, where
+// `journal_…` sorts between `institution_…` and `topic_…`.
+test('ten followed journals leave a heavy follower every other follow on the Following page', async () => {
+  const many = (type: FollowEntity['type'], prefix: string, count: number) => Array.from({ length: count }, (_, index): FollowEntity => (
+    { type, canonicalId: `${prefix}${100 + index}`, displayName: `${type} ${index}` }
+  ));
+  const follows = [
+    ...many('author', 'A', 25),
+    ...many('institution', 'I', 6),
+    ...many('journal', 'S', 11),
+    ...many('topic', 'T', 5),
+  ];
+  const asked: string[] = [];
+  const result = await fetchFollowingUpdates(follows, {
+    fetchUpdatesForFollow: async (follow) => { asked.push(follow.canonicalId); return []; },
+  });
+
+  assert.equal(asked.length, 46);
+  assert.deepEqual(asked.filter(id => id.startsWith('T')).sort(), ['T100', 'T101', 'T102', 'T103', 'T104']);
+  assert.equal(asked.filter(id => id.startsWith('S')).length, 10);
+  assert.equal(asked.includes('S110'), false, 'an eleventh journal, stored from two devices at once, is not asked for');
+  assert.equal(result.checkedEntities, 46);
 });
 
 test('counts a failed topic independently and returns successful topic updates', async () => {
@@ -128,6 +193,85 @@ test('a follow that never answers is counted as failed at the deadline, and the 
   assert.equal(result.checkedEntities, 2);
   assert.equal(result.failedEntities, 1);
   assert.deepEqual(result.papers.map(paper => paper.id), ['p1']);
+});
+
+// ENG-110 follow-up: with A and B on screen, a refresh in which A answered and
+// B failed replaced the cards with A's, and B's known papers were gone until
+// a refresh in which B answered.
+test('a partial refresh keeps the papers on screen of the follows that have not answered it', async () => {
+  const [ada, alan, grace] = [
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Ada' },
+    { type: 'author' as const, canonicalId: 'A2', displayName: 'Alan' },
+    { type: 'author' as const, canonicalId: 'A3', displayName: 'Grace' },
+  ];
+  const match = (follow: FollowEntity) => ({ type: follow.type, canonicalId: follow.canonicalId });
+  const shown = (id: string, ...follows: FollowEntity[]) => ({ id, title: id, published: '2026-08-01', _followedEntityMatches: follows.map(match) }) as Paper;
+  // On screen: Ada's, Alan's, Grace's, one both Ada and Alan brought in, and
+  // one of a follow the reader has since dropped.
+  const previous = [
+    shown('ada-old', ada), shown('alan-old', alan), shown('grace-old', grace),
+    { ...shown('shared-old', ada, alan), journal: 'arXiv preprint' },
+    shown('dropped-old', { type: 'author', canonicalId: 'A9', displayName: 'Dropped' }),
+  ];
+  const progress: string[][] = [];
+  const result = await fetchFollowingUpdates([ada, alan, grace], {
+    previous,
+    fetchUpdatesForFollow: async (follow) => {
+      // Ada answers with a new paper and an updated copy of the shared one,
+      // Grace answers with none, Alan fails.
+      if (follow === ada) {
+        return [
+          { id: 'ada-new', title: 'ada-new', published: '2026-09-01' },
+          { id: 'shared-old', title: 'shared-old', published: '2026-08-01', journal: 'Nature' },
+        ] as Paper[];
+      }
+      if (follow === grace) return [];
+      await new Promise(resolve => setTimeout(resolve, 5));
+      throw new Error('arXiv unavailable');
+    },
+    onProgress: partial => progress.push(partial.papers.map(paper => paper.id).sort()),
+  });
+
+  assert.deepEqual(result.papers.map(paper => paper.id).sort(), ['ada-new', 'alan-old', 'shared-old'],
+    "Alan's papers stay; Ada's and Grace's answers replace theirs; the dropped follow's paper goes");
+  const shared = result.papers.find(paper => paper.id === 'shared-old');
+  assert.equal(shared?.journal, 'Nature', "Ada's fresh copy wins over the copy kept for Alan");
+  assert.deepEqual(shared?._followedEntityMatches?.map(entry => typeof entry === 'string' ? entry : entry.canonicalId), ['A2', 'A1'],
+    'a shared paper Ada brought in again is credited to both');
+  assert.equal(result.failedEntities, 1, 'still a partial answer, so the next load asks again');
+  assert.ok(progress.every(ids => ids.includes('alan-old')), "Alan's papers are on screen in every delivery");
+  assert.deepEqual(progress[0], ['ada-new', 'alan-old', 'grace-old', 'shared-old'], 'a follow still on its way keeps its papers too');
+  assert.ok(!progress.at(-1)!.includes('grace-old'), "Grace's empty answer is her answer");
+});
+
+// ENG-176: with the Worker unreachable every follow failed, and the refresh
+// resolved with no papers. The page read that as nothing new: it dropped its
+// cards, wrote the empty answer to its cache and said "Papers updated".
+test('a refresh in which every follow failed rejects instead of answering with no papers', async () => {
+  const follows = [
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Alan Turing' },
+    { type: 'author' as const, canonicalId: 'A2', displayName: 'Stalled' },
+  ];
+  await assert.rejects(fetchFollowingUpdates(follows, {
+    entityTimeoutMs: 20,
+    fetchUpdatesForFollow: (follow) => (follow.canonicalId === 'A2'
+      ? new Promise(() => {})
+      : Promise.reject(new Error('Worker unreachable'))),
+  }), /All follows failed/);
+
+  // One follow that answered, even with nothing recent, is an answer.
+  const answered = await fetchFollowingUpdates(follows, {
+    fetchUpdatesForFollow: async (follow) => {
+      if (follow.canonicalId === 'A1') return [];
+      throw new Error('Worker unreachable');
+    },
+  });
+  assert.deepEqual(
+    [answered.checkedEntities, answered.failedEntities, answered.papers.length],
+    [2, 1, 0],
+  );
+  // And nothing followed is nothing to fail.
+  assert.equal((await fetchFollowingUpdates([])).checkedEntities, 0);
 });
 
 test('a category topic in the inbox asks for what is new in the category, not for what matches its name', async () => {

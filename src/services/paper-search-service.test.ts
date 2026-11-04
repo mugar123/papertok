@@ -15,7 +15,7 @@ import {
   DEFAULT_PAPER_SEARCH_PROVIDERS,
   searchPapersAcrossSources,
 } from './paper-search-service.ts';
-import { OPENALEX_SEARCH_TYPES } from './adapters/open-alex-adapter.ts';
+import { OPENALEX_SEARCH_TYPES } from '../utils/open-alex-work.ts';
 
 const openAlexPaper = (id: string, title: string, extra: Partial<Paper> & { citations?: number } = {}): Paper => ({
   id: `openalex:${id}`,

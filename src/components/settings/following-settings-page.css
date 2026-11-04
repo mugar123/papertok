@@ -113,6 +113,17 @@
   font-size: 12px;
 }
 
+/* More journals followed than the feeds read (journal-limit-note.ts). */
+.following-settings-note {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-amber-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+  font-size: var(--fs-sm);
+}
+
 .following-settings-list {
   display: grid;
 }
@@ -179,6 +190,11 @@
   background: rgba(245, 158, 11, 0.07);
 }
 
+.following-settings-initials.is-journal {
+  color: var(--tint-violet-fg);
+  background: var(--tint-violet-bg);
+}
+
 .following-settings-entity-name {
   display: -webkit-box;
   min-width: 0;
@@ -242,19 +258,15 @@
     gap: var(--space-5);
   }
 
+  /* The row wraps rather than scrolling under a hidden scrollbar: with five
+     tabs, or at 200% text, the last (Journals) would sit off-screen with
+     nothing to show it is there (ENG-123). Below 600px the tabs become a
+     grid (further down). */
   .following-settings-tabs {
     position: static;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: var(--space-1);
-    margin: 0 -24px;
-    padding: 0 24px;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-  }
-
-  .following-settings-tabs::-webkit-scrollbar {
-    display: none;
   }
 
   .following-settings-tabs button {
@@ -272,21 +284,26 @@
   .following-settings-heading {
     margin-bottom: var(--space-5);
   }
-
-  .following-settings-tabs {
-    margin: 0 -16px;
-    padding: 0 16px;
-  }
 }
 
+/* Two columns while a label fits half the row, one at large text sizes
+   (9rem grows with the reader's text). A label that still does not fit wraps
+   instead of being cut to "Jo…" (WCAG 1.4.4, ENG-123). */
 @media (max-width: 600px) {
   .following-settings-tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, max(9rem, calc((100% - var(--space-1)) / 2))), 1fr));
     gap: var(--space-1);
-    margin: 0;
-    padding: 0;
+  }
+
+  .following-settings-tabs button {
+    padding-block: var(--space-1);
+  }
+
+  .following-settings-tabs button span {
     overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 }
 
@@ -347,6 +364,11 @@
 .following-unfollow-petri.is-project {
   --balloon-fill: rgba(245, 158, 11, 0.07);
   --balloon-ink: var(--tint-amber-fg);
+}
+
+.following-unfollow-petri.is-journal {
+  --balloon-fill: var(--tint-violet-bg);
+  --balloon-ink: var(--tint-violet-fg);
 }
 
 /* Closed by a button rather than a swipe, the question leaves the way

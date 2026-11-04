@@ -4,7 +4,8 @@ import { normalizeDoi } from '../utils/public-navigation.ts';
 // Which papers the feed shows. By their type: not books or book reviews, nor
 // errata, retraction notices, datasets, peer-review records, front matter or
 // supplementary files. Nor a retracted paper (`publicationStatus`, from
-// OpenAlex's `is_retracted`). For the browser's Crossref lookups and the
+// OpenAlex's `is_retracted` or the `Retracted Publication` type of PubMed's
+// and Europe PMC's records). For the browser's Crossref lookups and the
 // Worker's paper store alike.
 
 const BOOK_TYPES = new Set(['book', 'monograph', 'edited-book', 'reference-book', 'book-set', 'book-series']);

@@ -7,21 +7,27 @@ export interface PaperCardProps {
   isLiked?: boolean;
   isSaved?: boolean;
   isRead?: boolean;
-  onLike?: (paper: Paper) => void | Promise<void>;
+  /**
+   * `surface` on a like, a view, a skip and an opened PDF is the card's own
+   * (`analyticsSurface`), for the feed to tell a For You card from the same
+   * paper elsewhere (forYouCardNotable).
+   */
+  onLike?: (paper: Paper, surface?: string) => void | Promise<void>;
   onNotInterested?: (paper: Paper) => void | Promise<void>;
   onMarkAsRead?: (paper: Paper) => void | Promise<void>;
-  onUnmarkAsRead?: (paperId: string) => void | Promise<void>;
-  trackViewTime?: (paper: Paper, seconds: number) => void | Promise<void>;
-  trackSkip?: (paper: Paper) => void | Promise<void>;
-  onOpenPdf?: (paper: Paper) => void | Promise<void>;
+  onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
+  trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
+  trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper, surface?: string) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
    * Holding Save on a touch screen. Where a tap on Save already opens the list
    * picker it does the same; the feed, whose tap quick-saves to Read later,
-   * passes the picker here.
+   * passes the picker here. `surface` is the card's own (`analyticsSurface`),
+   * which the picker's save carries (forYouCardNotable).
    */
-  onPickList?: (paper: Paper) => void | Promise<void>;
+  onPickList?: (paper: Paper, surface?: string) => void | Promise<void>;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
@@ -37,7 +43,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -83,6 +89,7 @@ import {
   Sparkle,
   TrendUp,
   UserCheck,
+  Warning,
   X,
 } from '@phosphor-icons/react';
 import { useSimilarFeed } from '../../hooks/use-similar-feed.ts';
@@ -93,7 +100,7 @@ import { Button } from '../ui/button.tsx';
 import AuthorDots from './author-dots.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
-import { Toggle } from '../ui/toggle.tsx';
+import { Toggle } from '../ui/toggle.ts';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getProjectForPaper } from '../../services/open-aire-service.ts';
@@ -109,6 +116,7 @@ import AbstractSheet from './abstract-sheet.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
+import { followReasonLabels } from '../../utils/follow-reasons.ts';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -130,6 +138,7 @@ import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
+import type { StatusTagKey } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
@@ -148,12 +157,14 @@ const ABSTRACT_MOTION_MS = 300;
 const SLOT_MORPH_MS = 240;
 
 /**
- * A glyph per status, keyed the same way the tags are.
+ * A glyph per status, keyed the same way the tags are: a tag without one does
+ * not compile. Retracted is not `Prohibit`, which the menu's Not interested uses.
  *
  * The icons stay here rather than in `paper-status.ts` so that module holds no
  * React and can be read straight by `node --test`.
  */
-const STATUS_CHIP_ICONS = {
+const STATUS_CHIP_ICONS: Record<StatusTagKey, Icon> = {
+  retracted: Warning,
   preprint: NotePencil,
   workingPaper: Files,
   open: LockKeyOpen,
@@ -534,6 +545,10 @@ const PaperCard = memo(function PaperCard({
       name: (author as PaperAuthor)?.name || author as string,
     }));
   }, [followedByType.author, isFollowing, paper]);
+  const followReasons = useMemo(
+    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),
+    [paper?._followedEntityMatches, hasFollowedAuthor, isFollowing],
+  );
 
   const lastTap = useRef(0);
   const abstractRef = useRef<HTMLDivElement | null>(null);
@@ -618,10 +633,10 @@ const PaperCard = memo(function PaperCard({
     // Every stretch on screen is reported, skips included, so the time per
     // paper averages over what was seen and not only over what was read.
     const reportViewTime = (seconds: number) => {
-      if (seconds >= 1.0) void trackViewTime(paper, seconds);
-      else if (seconds > 0.1) void trackSkip(paper);
+      if (seconds >= 1.0) void trackViewTime(paper, seconds, analyticsSurface);
+      else if (seconds > 0.1) void trackSkip(paper, analyticsSurface);
       if (seconds > 0.1) {
-        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id });
       }
     };
     const visibleTime = trackVisibleTime(document, reportViewTime);
@@ -634,7 +649,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
+            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id });
           }
         }
         visibleTime.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
@@ -1247,7 +1262,7 @@ const PaperCard = memo(function PaperCard({
       return;
     }
     if (isRead) {
-      void onUnmarkAsRead(paper.id);
+      void onUnmarkAsRead(paper);
       return;
     }
     void onMarkAsRead(paper);
@@ -1348,7 +1363,7 @@ const PaperCard = memo(function PaperCard({
           lastTap.current = now;
           return;
         }
-        void onLike(paper);
+        void onLike(paper, analyticsSurface);
         // One timer per card: a second double tap restarts it instead of
         // letting the first one cut the new heart short.
         clearTimeout(heartTimer.current!);
@@ -1357,7 +1372,7 @@ const PaperCard = memo(function PaperCard({
       }
     }
     lastTap.current = now;
-  }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
+  }, [analyticsSurface, isLiked, onLike, paper, publicMode, requireAuthentication]);
 
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
@@ -1371,7 +1386,7 @@ const PaperCard = memo(function PaperCard({
     }
     // The button is its own feedback (the icon fills); the big heart is the
     // double tap's, not a second celebration on every like (2026-10-15).
-    void onLike(paper);
+    void onLike(paper, analyticsSurface);
     pulse(likeIconRef.current, liking);
   };
 
@@ -1424,9 +1439,9 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => {
     pickListRef.current = () => {
       if (publicMode) requireAuthentication('save');
-      else void onPickList(paper);
+      else void onPickList(paper, analyticsSurface);
     };
-  }, [onPickList, paper, publicMode, requireAuthentication]);
+  }, [analyticsSurface, onPickList, paper, publicMode, requireAuthentication]);
   const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
   // A card that leaves mid-hold must not open the picker afterwards.
   useEffect(() => saveHold.onPointerCancel, [saveHold]);
@@ -1531,7 +1546,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
+    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
@@ -1539,7 +1554,7 @@ const PaperCard = memo(function PaperCard({
     // este botón ofrece -- el clic terminaba ahí, en silencio.
     const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, libraryAccess), {
       inline: (target) => {
-        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
+        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true }, analyticsSurface);
         return true;
       },
       external: (url) => openExternalUrl(url),
@@ -1714,7 +1729,7 @@ const PaperCard = memo(function PaperCard({
             <h3 className="pc-about-heading">{'Status'}</h3>
             <div className="pc-chips">
     {reviewTag && (() => {
-      const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
+      const Glyph = STATUS_CHIP_ICONS[reviewTag.key];
       return (
         <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
           <Glyph size={12} weight="bold" /> {reviewTag.label}
@@ -1724,7 +1739,7 @@ const PaperCard = memo(function PaperCard({
 
     <AnimatePresence mode="wait" initial={false}>
       {accessTag && (() => {
-        const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+        const Glyph = STATUS_CHIP_ICONS[accessTag.key];
         return (
           <motion.span
             key={accessTag.key}
@@ -1924,17 +1939,17 @@ const PaperCard = memo(function PaperCard({
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the
               field then stood beside an empty date. */}
-          {hasFollowedAuthor && (
-            <>
-              {categoryLabel && <span className="pc-meta-dot">·</span>}
+          {followReasons.map(({ type, label }, index) => (
+            <Fragment key={type}>
+              {(categoryLabel || index > 0) && <span className="pc-meta-dot">·</span>}
               <span className="pc-followed-badge">
-                <UserCheck size={12} /> {'Followed author'}
+                {type === 'author' && <UserCheck size={12} />} {label}
               </span>
-            </>
-          )}
+            </Fragment>
+          ))}
           {paper.year ? (
             <>
-              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
+              {(categoryLabel || followReasons.length > 0) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
@@ -1944,7 +1959,7 @@ const PaperCard = memo(function PaperCard({
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || followReasons.length > 0 || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
