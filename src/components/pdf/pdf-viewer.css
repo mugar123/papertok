@@ -315,3 +315,8 @@
   .pdf-info-rows a:hover { background: var(--bg-sunken); }
   .pdf-info-rows a:hover svg { transform: translateX(2px); color: var(--text-primary); }
 }
+
+/* A sheet opened from inside the viewer (the authors' list on a phone) sits
+   above it; elsewhere sheets keep their own layer (ui/drawer.css). */
+body:has(.pdf-overlay) .ui-drawer-backdrop { z-index: 12110; }
+body:has(.pdf-overlay) .ui-drawer-viewport { z-index: 12111; }

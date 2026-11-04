@@ -26,77 +26,23 @@
   color: var(--text-tertiary);
 }
 
-/* The title block as a paper prints it: centred title, authors numbered by affiliation, then the affiliations. */
+/* The title block as a paper prints it: the title centred, the authors as the feed's reader lists them, then their affiliations. */
 .ft-head { margin-bottom: var(--space-6); text-align: center; }
 .ft-title {
   margin: 0 0 var(--space-5);
   font: 700 clamp(1.5rem, 1rem + 1.6vw, 2.125rem)/1.2 var(--font-serif);
   text-wrap: balance;
 }
-.ft-authors, .ft-affiliations {
+.ft-authors { display: flex; justify-content: center; margin-bottom: var(--space-3); }
+.ft-affiliations {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  gap: var(--space-1) var(--space-5);
   margin: 0;
-  font-family: var(--font-serif);
-}
-.ft-authors { gap: var(--space-1) var(--space-6); margin-bottom: var(--space-2); font-size: 1.125rem; line-height: 1.5; }
-.ft-affiliations { gap: var(--space-1) var(--space-5); font-size: 0.95rem; line-height: 1.45; color: var(--text-secondary); }
-.ft-head sup { font-size: 0.65em; }
-.ft-article .ft-author {
-  padding-inline: 0.15em;
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-@media (pointer: coarse) {
-  .ft-article a.ft-author { display: inline-flex; align-items: center; min-height: 32px; }
-}
-.ft-article a.ft-author { background: color-mix(in srgb, var(--accent-secondary) 12%, transparent); transition: background-color 150ms ease; }
-@media (hover: hover) and (pointer: fine) {
-  .ft-article a.ft-author:hover { background: color-mix(in srgb, var(--accent-secondary) 22%, transparent); }
-}
-
-.ft-author-card { display: grid; gap: var(--space-3); }
-.ft-author-card-head { display: flex; gap: var(--space-3); align-items: center; }
-.ft-author-card p { margin: 0; }
-.ft-author-photo {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: var(--bg-sunken);
-  font: 600 1.25rem/1 var(--font-serif);
+  font: 0.95rem/1.45 var(--font-serif);
   color: var(--text-secondary);
 }
-/* A portrait gets a neutral edge of its own, black or white, never the surface's tint. */
-img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1px; }
-:root[data-theme='dark'] img.ft-author-photo { outline-color: oklch(1 0 0 / 0.1); }
-/* The author's profile on its way: a still frame of it, breathing. */
-.ft-author-skeleton { display: block; width: 11rem; max-width: 100%; height: 10px; margin-top: var(--space-2); border-radius: var(--radius-sm); background: var(--bg-sunken); animation: ftSkeleton 1.2s ease-in-out infinite alternate; }
-.ft-author-skeleton--short { width: 6.5rem; }
-.ft-author-photo[data-loading] { color: transparent; animation: ftSkeleton 1.2s ease-in-out infinite alternate; }
-@keyframes ftSkeleton { from { opacity: 1; } to { opacity: 0.45; } }
-@media (prefers-reduced-motion: reduce) {
-  .ft-author-skeleton, .ft-author-photo[data-loading] { animation: none; }
-}
-.ft-author-name { font-size: 1rem; font-weight: 600; line-height: 1.3; }
-.ft-author-place { color: var(--text-secondary); line-height: 1.35; }
-.ft-author-card .ft-author-stats { margin-top: var(--space-1); font: 500 11px/1.4 var(--font-mono); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-.ft-author-bio {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-.ft-author-links { display: flex; gap: var(--space-4); margin-left: auto; }
-.ft-author-links a { color: var(--text-primary); text-underline-offset: 2px; }
-.ft-author-actions { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
 
 .ft-warning {
   margin: 0 0 var(--space-5);

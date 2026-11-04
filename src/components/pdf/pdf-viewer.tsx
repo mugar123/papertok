@@ -190,7 +190,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
 
             {fullText && showsText && (
               <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef}>
-                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} />
+                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} onLeave={handleClose} />
               </div>
             )}
             {fullText && showsText && <OutlineRail {...outline} />}

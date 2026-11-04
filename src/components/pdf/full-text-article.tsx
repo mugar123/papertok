@@ -304,7 +304,7 @@ function needsKatex(doc: FullText) {
 }
 
 /** A paper's full text in the reader's type: the viewer's text view. */
-export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
+export default function FullTextArticle({ doc, paper, showAbstract = true, onLeave }: { doc: FullText; paper: Paper; showAbstract?: boolean; onLeave?: () => void }) {
   const [katexVersion, katexLoaded] = useReducer((count: number) => count + 1, 0);
   const wantsKatex = useMemo(() => needsKatex(doc), [doc]);
   useEffect(() => {
@@ -343,7 +343,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
   // card opening and closing re-renders the card, not the whole paper.
   const text = useMemo(() => (
     <>
-        <PaperByline paper={paper} />
+        <PaperByline paper={paper} onLeave={onLeave} />
         {doc.conversionErrors > 0 && (
           <p className="ft-warning">
             {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
@@ -383,7 +383,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
           </section>
         )}
     </>
-  ), [doc, context, paper, showAbstract]);
+  ), [doc, context, paper, showAbstract, onLeave]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
