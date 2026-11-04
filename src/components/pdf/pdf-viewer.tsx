@@ -1,16 +1,22 @@
 import type { Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, FilePdf, TextAlignLeft, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, Eye, EyeSlash, FilePdf, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
+import { Toggle } from '../ui/toggle.tsx';
 import './pdf-viewer.css';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
 import { getFullText } from '../../services/full-text-service.ts';
 import type { FullText } from '../../utils/full-text.ts';
 import FullTextArticle from './full-text-article.tsx';
+import { OutlineList, OutlineRail } from './full-text-outline.tsx';
+import { useOutline } from './use-outline.ts';
+import { PaperDock } from './paper-info.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
@@ -35,6 +41,25 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [fullText, setFullText] = useState<FullText | null | undefined>(undefined);
   const [view, setView] = useState<'text' | 'pdf'>('text');
   const showsText = Boolean(fullText) && view === 'text';
+  const [textScroll, setTextScroll] = useState<HTMLDivElement | null>(null);
+  const [abstractShown, setAbstractShown] = useState(false);
+  const outline = useOutline(fullText, textScroll, abstractShown);
+  // The article opens with the paper's title; the bar names it once that has scrolled away.
+  const [titleInText, setTitleInText] = useState(true);
+  // The text opens at its top again, title in view, whatever was last read.
+  const textScrollRef = useCallback((element: HTMLDivElement | null) => {
+    setTextScroll(element);
+    if (!element) setTitleInText(true);
+  }, []);
+  useEffect(() => {
+    const title = textScroll?.querySelector('.ft-title');
+    if (!textScroll || !title) return;
+    // Handed over as soon as the title starts to slide under the bar, not once it has gone.
+    const observer = new IntersectionObserver(([entry]) => setTitleInText(entry.intersectionRatio >= 0.99), { root: textScroll, threshold: [0, 0.99] });
+    observer.observe(title);
+    return () => observer.disconnect();
+  }, [textScroll]);
+  const tucked = showsText && titleInText;
   const showsPdf = fullText === null || view === 'pdf';
 
   useEffect(() => {
@@ -140,21 +165,22 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <X size={18} aria-hidden="true" />
             </DialogClose>
 
-            <h3 className="pdf-title">{paper.title}</h3>
-
-            <div className="pdf-actions">
-              {fullText && (
-                <Button size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
-                  {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
-                </Button>
+            {/* The bar names the paper once the article's own title has scrolled
+                away, rising in from below; it leaves the way it came. */}
+            <AnimatePresence initial={false}>
+              {!tucked && (
+                <motion.h3
+                  key="title"
+                  className="pdf-title"
+                  initial={{ opacity: 0, transform: 'translateY(40%)' }}
+                  animate={{ opacity: 1, transform: 'translateY(0%)' }}
+                  exit={{ opacity: 0, transform: 'translateY(40%)' }}
+                  transition={{ duration: MOTION_BASE_S, ease: EASE_OUT }}
+                >
+                  {paper.title}
+                </motion.h3>
               )}
-
-              {externalUrl && (
-                <Button variant="outline" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
-                  <ArrowSquareOut size={18} aria-hidden="true" />
-                </Button>
-              )}
-            </div>
+            </AnimatePresence>
           </div>
 
           <div className="pdf-stage">
@@ -163,10 +189,32 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text">
-                <div className="ft-progress" aria-hidden="true" />
-                <FullTextArticle doc={fullText} />
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef}>
+                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} />
               </div>
+            )}
+            {fullText && showsText && <OutlineRail {...outline} />}
+
+            {/* The tools are the loaded paper's: none of them shows while it is asked for. */}
+            {fullText !== undefined && (
+            <PaperDock paper={paper} doc={fullText} scroll={showsText ? textScroll : null} contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
+                {showsText && (fullText?.abstract.length ?? 0) > 0 && (
+                  <Toggle className="pdf-dock-toggle" pressed={abstractShown} onPressedChange={setAbstractShown} aria-label="Abstract" title={abstractShown ? 'Hide the abstract' : 'Show the abstract'}>
+                    {abstractShown ? <Eye size={18} aria-hidden="true" /> : <EyeSlash size={18} aria-hidden="true" />}
+                    Abstract
+                  </Toggle>
+                )}
+                {fullText && (
+                  <Button variant="ghost" size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
+                    {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
+                  </Button>
+                )}
+                {externalUrl && (
+                  <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
+                    <ArrowSquareOut size={18} aria-hidden="true" />
+                  </Button>
+                )}
+            </PaperDock>
             )}
 
             {/* Over the iframe, which takes its place while it loads unseen. */}

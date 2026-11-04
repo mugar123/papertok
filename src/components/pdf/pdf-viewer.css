@@ -62,7 +62,6 @@
   min-height: 60px;
   padding: var(--space-2) var(--space-4);
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-subtle);
   z-index: 1;
   flex-shrink: 0;
 }
@@ -71,7 +70,6 @@
    the app settled on — no more ghost circle beside a blue pill. */
 
 .pdf-topbar > :first-child { justify-self: start; }
-.pdf-actions { display: flex; justify-self: end; gap: var(--space-3); }
 
 .pdf-title {
   min-width: 0;
@@ -85,6 +83,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 
 
 
@@ -168,7 +167,8 @@
 
 /* A finger gets the 44px target the compact desktop buttons do not need. */
 @media (pointer: coarse) {
-  .pdf-topbar :is(button, a) {
+  .pdf-topbar :is(button, a),
+  .pdf-dock :is(button, a) {
     min-width: 44px;
     min-height: 44px;
   }
@@ -194,4 +194,124 @@
   .pdf-iframe {
     transition: none;
   }
+}
+
+/* The viewer's tools float over the bottom of the paper, out of the bar. The
+   shadow is the container's, so it follows the card while the card is
+   clipped to the bar's outline. */
+.pdf-dock-root {
+  position: absolute;
+  bottom: max(var(--space-5), env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 2;
+  translate: -50% 0;
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--text-primary) 14%, transparent));
+}
+@media (max-width: 767px) {
+  .pdf-dock-root { transition: translate 220ms var(--ease-out-expo), opacity 150ms linear; }
+  .pdf-dock-root[data-stowed]:not(:focus-within) { translate: -50% calc(100% + var(--space-8)); opacity: 0; pointer-events: none; }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .pdf-dock-root { transition: opacity 150ms linear; }
+  .pdf-dock-root[data-stowed]:not(:focus-within) { translate: -50% 0; }
+}
+.pdf-dock {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  transition: border-color 150ms ease;
+}
+/* Open, the bar sits inside the card, whose ground it shares: it draws none of
+   its own, so the card's border runs unbroken under it. */
+.pdf-dock[data-info-open] { border-color: transparent; background: transparent; }
+.pdf-dock > * { border-radius: var(--radius-sm); }
+.pdf-dock-toggle { height: 40px; padding-inline: var(--space-3); }
+/* On and off read apart by ink and icon (an open or a struck eye), not by a
+   fill: a filled button reads as hovered. */
+.pdf-dock-toggle[data-pressed] { background: transparent; color: var(--text-primary); box-shadow: none; }
+.pdf-dock-toggle:not([data-pressed]) { color: var(--text-tertiary); }
+
+/* The paper's information grows out of the bar: closed, the card is clipped
+   to the bar's own outline; open, to its whole rounded box. */
+.pdf-info {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: min(440px, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-2) var(--space-2) calc(var(--dock-h, 50px) + var(--space-2));
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  translate: -50% 0;
+  clip-path: inset(0 round var(--radius-xl));
+  transition: clip-path 240ms var(--ease-out-expo);
+}
+.pdf-info[data-starting-style],
+.pdf-info[data-ending-style] {
+  clip-path: inset(calc(100% - var(--dock-h, 50px)) calc(50% - var(--dock-w, 200px) / 2) 0 round var(--radius-xl));
+}
+.pdf-info[data-ending-style] { transition-duration: 180ms; }
+/* What scrolls is the card's content, so nothing passes under the bar at its
+   foot; and however long the outline, the card keeps to part of the screen. */
+.pdf-info-body {
+  max-height: min(60dvh, 520px);
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition: opacity 150ms linear 60ms;
+}
+.pdf-info[data-starting-style] .pdf-info-body,
+.pdf-info[data-ending-style] .pdf-info-body { opacity: 0; transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) {
+  .pdf-info, .pdf-info[data-starting-style], .pdf-info[data-ending-style] { clip-path: none; transition: opacity 150ms linear; }
+  .pdf-info[data-starting-style], .pdf-info[data-ending-style] { opacity: 0; }
+}
+/* When on the left, the status in the opposite corner, on one line. */
+.pdf-info-head { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; margin-bottom: var(--space-5); }
+.pdf-info-when { margin: 0; font: 600 1.15rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
+.pdf-info-status { display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end; margin: 0; padding: 0; list-style: none; }
+/* The card's status chips (feed/paper-card.css). */
+.pdf-info-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: 500 0.75rem/1.35 var(--font-mono);
+  white-space: nowrap;
+}
+.pdf-info-chip svg { flex: none; }
+.pdf-info-chip[data-tone="amber"] { border-color: var(--tint-amber-line); background: var(--tint-amber-bg); color: var(--tint-amber-fg); }
+.pdf-info-chip[data-tone="green"] { border-color: var(--tint-green-line); background: var(--tint-green-bg); color: var(--tint-green-fg); }
+/* The figures in one row of equal columns split by hairlines, no fills: each
+   named at the left above its number, centred in the column. */
+.pdf-info-stats { display: grid; margin: 0; padding: 0; list-style: none; }
+.pdf-info-stats li { display: grid; gap: var(--space-3); padding: 0 var(--space-3); }
+.pdf-info-stats li:first-child { padding-left: 0; }
+.pdf-info-value { justify-self: center; }
+.pdf-info-stats li + li { border-left: 1px solid var(--border-subtle); }
+.pdf-info-value { font: 600 1.4rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
+.pdf-info-value small { font: 500 0.8rem/1 var(--font-body); color: var(--text-secondary); }
+.pdf-info-label { font-size: 12px; line-height: 1.3; color: var(--text-secondary); }
+/* The subjects, ruled rows that open their pages; past three, the list scrolls. */
+.pdf-info-section { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.pdf-info-section-title { margin: 0 0 var(--space-2) var(--space-2); font: 600 0.8125rem/1.3 var(--font-body); color: var(--text-secondary); }
+.pdf-info-rows { max-height: calc(3 * 44px + 2px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.pdf-info-rows li + li { border-top: 1px solid var(--border-subtle); }
+.pdf-info-rows a, .pdf-info-rows li > span { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }
+.pdf-info-rows a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.pdf-info-rows a svg { flex: none; color: var(--text-tertiary); transition: transform 150ms var(--ease-out), color 150ms ease; }
+@media (hover: hover) and (pointer: fine) {
+  .pdf-info-rows a:hover { background: var(--bg-sunken); }
+  .pdf-info-rows a:hover svg { transform: translateX(2px); color: var(--text-primary); }
 }

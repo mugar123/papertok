@@ -229,12 +229,20 @@ export function latexmlTex(alttext: string | null | undefined) {
 }
 
 // LaTeXML splits a bibliography entry into blocks: authors, title, then
-// venue and year. An entry with fewer blocks was not split, and stays text.
+// venue and year, which an entry may not have. An entry in one block was not
+// split, and stays text.
+// arXiv appends two blocks of its own: "External Links:", whose external
+// identifier is a bare arXiv id, and "Cited by: §1, §2". Neither is the venue.
 function latexmlReference(item: Element, index: number): Reference {
-  const blocks = [...item.querySelectorAll('.ltx_bibblock')].map(block => clean(block.textContent));
+  const own = [...item.querySelectorAll('.ltx_bibblock')]
+    .filter(block => !block.classList.contains('ltx_bib_cited') && !block.querySelector('.ltx_bib_links'));
+  const blocks = own.map(block => clean(block.textContent));
   const all = blocks.join(' ');
   const facts = citationFacts(all);
-  const split = blocks.length >= 3;
+  const external = [...item.querySelectorAll('.ltx_bib_links .ltx_bib_external')]
+    .map(link => clean(link.textContent).match(/^(\d{4}\.\d{4,5})(v\d+)?$/)?.[1])
+    .find(Boolean);
+  const split = blocks.length >= 2;
   const [authorLine = '', title = '', ...rest] = blocks;
   const link = [...item.querySelectorAll('a[href]')].map(a => safeCatalogUrl(a.getAttribute('href'))).find(Boolean);
   return {
@@ -245,7 +253,7 @@ function latexmlReference(item: Element, index: number): Reference {
     title: split ? title.replace(/\.$/, '') : undefined,
     venue: split ? rest.join(' ').replace(/,?\s*(1[89]|20)\d{2}[a-z]?\.?\s*$/, '').replace(/\.$/, '') || undefined : undefined,
     doi: facts.doi,
-    arxiv: facts.arxiv,
+    arxiv: facts.arxiv ?? external,
     url: link || undefined,
     text: split ? '' : all,
   };

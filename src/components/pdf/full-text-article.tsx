@@ -1,17 +1,18 @@
-import type { MouseEvent, ReactNode } from 'react';
+import type { MouseEvent, ReactNode, RefObject } from 'react';
 import type { Block, FullText, Inline, Reference } from '../../utils/full-text.ts';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
+import { getPublicPaperPath } from '../../utils/public-navigation.ts';
 import { copyText } from '../../utils/clipboard.ts';
-import { Check, Copy } from '@phosphor-icons/react';
+import { ArrowRight, Check, Copy, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
-import { Drawer, DrawerBody, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
-import { Dialog, DialogContent } from '../ui/dialog.tsx';
+import { Popover } from '@base-ui/react/popover';
+import type { Paper } from '../../models/paper.ts';
+import { PaperByline } from './paper-byline.tsx';
+import { anchor, landOn } from './article-places.ts';
 import './full-text-article.css';
 
-const SOURCE_NAME: Record<FullText['source'], string> = { arxiv: 'arXiv HTML', ar5iv: 'ar5iv', europepmc: 'Europe PMC' };
-const anchor = (id: string) => `ft-${id}`;
 
 // A citation or a "Figure 2" moves within the article. Following it as a link
 // would put a fragment in the address bar, which the viewer's Back handling
@@ -21,12 +22,7 @@ const anchor = (id: string) => `ft-${id}`;
 function jumpTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
   event.preventDefault();
   const element = document.getElementById(anchor(target));
-  if (!element) return;
-  element.scrollIntoView({ block: element.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center' });
-  element.focus({ preventScroll: true });
-  element.removeAttribute('data-landed');
-  void element.offsetWidth;
-  element.setAttribute('data-landed', '');
+  if (element) landOn(element, element.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center');
 }
 
 const MAX_CACHED_FORMULAS = 2000;
@@ -120,6 +116,12 @@ function citedIn(content: Inline[], into: string[] = []) {
 // What names a reference in a list: its title, or its whole line, or at least where it appeared.
 const referenceTitle = (reference: Reference) => reference.title || reference.text || reference.venue || '';
 
+// A numbered reference reads "(26) 2016"; an author-year one already names its year.
+function referenceMeta({ label, year }: Reference) {
+  const mark = /^\d+$/.test(label) ? `(${label})` : label;
+  return year && !label.includes(year) ? `${mark} ${year}` : mark;
+}
+
 const authorLine = (authors: string[], max: number) =>
   authors.length > max ? `${authors.slice(0, max).join(', ')} et al.` : authors.join(', ');
 
@@ -145,20 +147,18 @@ function ReferenceLinks({ reference }: { reference: Reference }) {
   );
 }
 
-// A reference as the list prints it; the drawer shows the same on a screen with no margin.
-// In the list its title links the whole card to the reference's first identifier.
-function ReferenceEntry({ reference, title }: { reference: Reference; title?: ReactNode }) {
+// A reference as the list prints it. Its title links the whole card to the
+// reference's first identifier.
+function ReferenceEntry({ reference }: { reference: Reference }) {
   const primary = referenceLinks(reference)[0];
   return (
     <>
-      <span className="ft-ref-meta">{reference.label}{reference.year ? ` · ${reference.year}` : ''}</span>
-      {title ?? (
-        <span className="ft-ref-title">
-          {primary
-            ? <a className="ft-ref-card-link" href={primary.href} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<span className="visually-hidden"> (opens in a new tab)</span></a>
-            : referenceTitle(reference)}
-        </span>
-      )}
+      <span className="ft-ref-meta">{referenceMeta(reference)}</span>
+      <span className="ft-ref-title">
+        {primary
+          ? <a className="ft-ref-card-link" href={primary.href} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<span className="visually-hidden"> (opens in a new tab)</span></a>
+          : referenceTitle(reference)}
+      </span>
       {reference.title && reference.authors.length > 0 && <span className="ft-ref-authors">{authorLine(reference.authors, 4)}</span>}
       {reference.title && reference.venue && <span className="ft-ref-venue">{reference.venue}</span>}
       <ReferenceLinks reference={reference} />
@@ -166,9 +166,45 @@ function ReferenceEntry({ reference, title }: { reference: Reference; title?: Re
   );
 }
 
+// A cited work beside the citation that was pressed, where a screen has no
+// margin for it: the place in the text stays in view. It opens in PaperTok
+// when an identifier names it.
+function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; lang?: string }) {
+  const path = reference && (reference.arxiv || reference.doi || reference.pmid)
+    ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
+    : null;
+  return (
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
+      <Popover.Portal>
+        <Popover.Positioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
+          <Popover.Popup className="ft-peek" finalFocus={anchor}>
+            {reference && (
+              <div lang={lang}>
+                <div className="ft-peek-head">
+                  <span className="ft-ref-meta">{referenceMeta(reference)}</span>
+                  <Popover.Close render={<Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" />}><X size={14} aria-hidden="true" /></Popover.Close>
+                </div>
+                <Popover.Title className="ft-ref-title">{referenceTitle(reference)}</Popover.Title>
+                {reference.title && reference.authors.length > 0 && <p className="ft-ref-authors">{authorLine(reference.authors, 4)}</p>}
+                {reference.title && reference.venue && <p className="ft-ref-venue">{reference.venue}</p>}
+                <p className="ft-peek-links">
+                  {path && <a href={path} target="_blank" rel="noopener noreferrer">Open in PaperTok<ArrowRight size={12} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a>}
+                  {referenceLinks(reference).map(link => (
+                    <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">{link.text}<span className="visually-hidden"> (opens in a new tab)</span></a>
+                  ))}
+                </p>
+              </div>
+            )}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 type FigureBlock = Extract<Block, { t: 'figure' }>;
-type ZoomedFigure = { figure: FigureBlock; index: number };
-type Context = { references: Map<string, Reference>; lang?: string; zoom: (zoomed: ZoomedFigure, opener: HTMLElement) => void };
+// `katex` counts KaTeX's loads: a formula drawn before KaTeX arrived is drawn again once it has.
+type Context = { references: Map<string, Reference>; lang?: string; katex: number };
 
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
@@ -194,7 +230,7 @@ function BlockView({ block, context }: { block: Block; context: Context }): Reac
           <div className="ft-margin-notes">
             {cited.map(reference => (
               <a key={reference.id} href={`#${anchor(reference.id)}`} onClick={event => jumpTo(event, reference.id)} className="ft-margin-note" lang={context.lang}>
-                <span className="ft-ref-meta">{reference.label}{reference.year ? ` · ${reference.year}` : ''}</span>
+                <span className="ft-ref-meta">{referenceMeta(reference)}</span>
                 <span className="ft-margin-note-title">{referenceTitle(reference)}</span>
                 {reference.title && reference.authors.length > 0 && <span className="ft-ref-authors">{authorLine(reference.authors, 2)}</span>}
               </a>
@@ -219,10 +255,7 @@ function BlockView({ block, context }: { block: Block; context: Context }): Reac
       return (
         <figure id={id} tabIndex={-1} className="ft-figure">
           {block.images.map((image, index) => (
-            <button key={index} type="button" className="ft-figure-zoom" onClick={event => context.zoom({ figure: block, index }, event.currentTarget)}>
-              <img src={image.src} alt={figureAlt(block, index)} loading="lazy" referrerPolicy="no-referrer" />
-              <span className="visually-hidden"> (enlarge)</span>
-            </button>
+            <img key={index} src={image.src} alt={figureAlt(block, index)} loading="lazy" referrerPolicy="no-referrer" />
           ))}
           <figcaption><Label text={block.label} /><Inlines content={block.caption} /></figcaption>
         </figure>
@@ -271,8 +304,8 @@ function needsKatex(doc: FullText) {
 }
 
 /** A paper's full text in the reader's type: the viewer's text view. */
-export default function FullTextArticle({ doc }: { doc: FullText }) {
-  const [, katexLoaded] = useReducer((count: number) => count + 1, 0);
+export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
+  const [katexVersion, katexLoaded] = useReducer((count: number) => count + 1, 0);
   const wantsKatex = useMemo(() => needsKatex(doc), [doc]);
   useEffect(() => {
     if (!wantsKatex || getKatex()) return undefined;
@@ -283,54 +316,15 @@ export default function FullTextArticle({ doc }: { doc: FullText }) {
     return () => { active = false; };
   }, [wantsKatex]);
 
-  // What a dialog shows outlives its being open, so it leaves with its content.
-  const [zoomed, setZoomed] = useState<ZoomedFigure | null>(null);
-  const [zoomOpen, setZoomOpen] = useState(false);
-  const zoomOpener = useRef<HTMLElement | null>(null);
-  const zoomPopup = useRef<HTMLElement | null>(null);
-  // The enlarged figure grows out of the one in the text, and shrinks back into it.
-  // Measured on the image, not the dialog around it: the caption below would
-  // otherwise start it above the figure and smaller. An image not yet laid out
-  // grows from the dialog's centre instead. Measured again on close, where the
-  // dialog may have been scrolled.
-  const growFromOpener = (popup: HTMLElement | null) => {
-    zoomPopup.current = popup;
-    const from = zoomOpener.current?.querySelector('img')?.getBoundingClientRect();
-    if (!popup || !from) return;
-    const image = popup.querySelector<HTMLElement>('figure img');
-    const target = image?.offsetWidth && image.offsetHeight ? image : popup;
-    const centerX = target === popup ? popup.offsetWidth / 2 : target.offsetLeft + target.offsetWidth / 2;
-    const centerY = target === popup ? popup.offsetHeight / 2 : target.offsetTop - popup.scrollTop + target.offsetHeight / 2;
-    const left = (window.innerWidth - popup.offsetWidth) / 2;
-    const top = (window.innerHeight - popup.offsetHeight) / 2;
-    popup.style.transformOrigin = `${centerX}px ${centerY}px`;
-    popup.style.setProperty('--zoom-x', `${from.left + from.width / 2 - (left + centerX)}px`);
-    popup.style.setProperty('--zoom-y', `${from.top + from.height / 2 - (top + centerY)}px`);
-    popup.style.setProperty('--zoom-scale', String(Math.min(from.width / target.offsetWidth, 1)));
-  };
-  // The figure in the text fades into the one growing out of it, and comes back
-  // once the enlarged one has landed on it.
-  const setZoom = (open: boolean) => {
-    if (open) zoomOpener.current?.setAttribute('data-zoomed', '');
-    else growFromOpener(zoomPopup.current);
-    setZoomOpen(open);
-  };
-  const zoomSettled = (open: boolean) => {
-    if (!open) zoomOpener.current?.removeAttribute('data-zoomed');
-  };
   const context = useMemo<Context>(() => ({
     references: new Map(doc.references.map(reference => [reference.id, reference])),
     lang: doc.lang,
-    zoom: (figure, opener) => {
-      zoomOpener.current = opener;
-      opener.setAttribute('data-zoomed', '');
-      setZoomed(figure);
-      setZoomOpen(true);
-    },
-  }), [doc]);
+    katex: katexVersion,
+  }), [doc, katexVersion]);
 
   // Below the margin's breakpoint (full-text-article.css), a citation opens its
-  // reference in a sheet instead of jumping to the list, and focus returns to it.
+  // reference in a card beside it instead of jumping to the list, and focus
+  // returns to it.
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const citation = useRef<HTMLElement | null>(null);
@@ -345,71 +339,56 @@ export default function FullTextArticle({ doc }: { doc: FullText }) {
     setReferenceOpen(true);
   };
 
+  // The text is the same element from one render to the next, so a citation's
+  // card opening and closing re-renders the card, not the whole paper.
+  const text = useMemo(() => (
+    <>
+        <PaperByline paper={paper} />
+        {doc.conversionErrors > 0 && (
+          <p className="ft-warning">
+            {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
+          </p>
+        )}
+        {showAbstract && doc.abstract.length > 0 && (
+          <section className="ft-abstract" aria-labelledby="ft-abstract-title">
+            <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
+            <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
+          </section>
+        )}
+        {/* The paper's language marks its own text, not the reader's labels. */}
+        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
+        {doc.notes.length > 0 && (
+          <section className="ft-notes" aria-labelledby="ft-notes-title">
+            <h2 id="ft-notes-title" className="ft-section" tabIndex={-1}>Notes</h2>
+            <ol lang={doc.lang}>
+              {doc.notes.map(note => (
+                <li key={note.id} id={anchor(note.id)} tabIndex={-1}>
+                  <span className="ft-ref-meta">{note.label}</span>
+                  <span><Inlines content={note.content} /></span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        {doc.references.length > 0 && (
+          <section className="ft-references" aria-labelledby="ft-references-title">
+            <h2 id="ft-references-title" className="ft-section" tabIndex={-1}>References <span className="ft-count">{doc.references.length}</span></h2>
+            <ol lang={doc.lang}>
+              {doc.references.map(reference => (
+                <li key={reference.id} id={anchor(reference.id)} tabIndex={-1}>
+                  <ReferenceEntry reference={reference} />
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+    </>
+  ), [doc, context, paper, showAbstract]);
+
   return (
     <article className="ft-article" onClickCapture={showReference}>
-      <p className="ft-kicker">
-        {SOURCE_NAME[doc.source]}
-        {doc.license && <> · {doc.license.replace(/^https?:\/\//, '').replace(/\/$/, '')}</>}
-        {' · '}<a href={doc.sourceUrl} target="_blank" rel="noopener noreferrer">Original<span className="visually-hidden"> (opens in a new tab)</span></a>
-      </p>
-      {doc.conversionErrors > 0 && (
-        <p className="ft-warning">
-          {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
-        </p>
-      )}
-      {doc.abstract.length > 0 && (
-        <section className="ft-abstract" aria-labelledby="ft-abstract-title">
-          <h2 id="ft-abstract-title" className="ft-kicker">Abstract</h2>
-          <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
-        </section>
-      )}
-      {/* The paper's language marks its own text, not the reader's labels. */}
-      <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
-      {doc.notes.length > 0 && (
-        <section className="ft-notes" aria-labelledby="ft-notes-title">
-          <h2 id="ft-notes-title" className="ft-section">Notes</h2>
-          <ol lang={doc.lang}>
-            {doc.notes.map(note => (
-              <li key={note.id} id={anchor(note.id)} tabIndex={-1}>
-                <span className="ft-ref-meta">{note.label}</span>
-                <span><Inlines content={note.content} /></span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-      {doc.references.length > 0 && (
-        <section className="ft-references" aria-labelledby="ft-references-title">
-          <h2 id="ft-references-title" className="ft-section">References <span className="ft-count">{doc.references.length}</span></h2>
-          <ol lang={doc.lang}>
-            {doc.references.map(reference => (
-              <li key={reference.id} id={anchor(reference.id)} tabIndex={-1}>
-                <ReferenceEntry reference={reference} />
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-      <Dialog open={zoomOpen} onOpenChange={setZoom} onOpenChangeComplete={zoomSettled}>
-        <DialogContent className="ft-zoom" overlayClassName="ft-zoom-scrim" closeLabel="Close figure" finalFocus={zoomOpener} aria-label={zoomed?.figure.label ?? 'Figure'} ref={growFromOpener}>
-          {zoomed && (
-            <figure lang={doc.lang}>
-              <img src={zoomed.figure.images[zoomed.index].src} alt={figureAlt(zoomed.figure, zoomed.index)} referrerPolicy="no-referrer" />
-              <figcaption><Label text={zoomed.figure.label} /><Inlines content={zoomed.figure.caption} /></figcaption>
-            </figure>
-          )}
-        </DialogContent>
-      </Dialog>
-      <Drawer open={referenceOpen} onOpenChange={setReferenceOpen}>
-        <DrawerContent className="ft-ref-sheet" overlayClassName="ft-ref-sheet-backdrop" viewportClassName="ft-ref-sheet-viewport" finalFocus={citation}>
-          <DrawerHandle />
-          {shownReference && (
-            <DrawerBody className="ft-ref-sheet-body" lang={doc.lang}>
-              <ReferenceEntry reference={shownReference} title={<DrawerTitle render={<h2 />} className="ft-ref-title">{referenceTitle(shownReference)}</DrawerTitle>} />
-            </DrawerBody>
-          )}
-        </DrawerContent>
-      </Drawer>
+      {text}
+      <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} lang={doc.lang} />
     </article>
   );
 }
