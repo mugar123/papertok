@@ -680,6 +680,18 @@
   background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 35%, transparent);
 }
 
+/* A year before the earliest OpenAlex reports: unknown, so a baseline, not a bar. */
+.ehc-activity-bars span.is-unknown {
+  height: 2px;
+  background: var(--border-subtle);
+  animation: none;
+  pointer-events: none;
+}
+
+.ehc-activity-counts span.is-unknown {
+  color: var(--text-tertiary);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .ehc-activity-bars span:hover {
     background: var(--area-accent, var(--accent-primary));
