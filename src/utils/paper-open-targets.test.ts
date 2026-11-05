@@ -156,3 +156,8 @@ test('a Zenodo DOI is a PDF the Worker relays, found in its record', () => {
   });
   assert.equal(pdfLinksForPaper({ doi: '10.5281/zenodo.123/extra' }).relaySourceUrl, '');
 });
+
+test('a NASA NTRS PDF is relayed, not framed', () => {
+  const pdfUrl = 'https://ntrs.nasa.gov/api/citations/19670021251/downloads/19670021251.pdf';
+  assert.deepEqual(pdfLinksForPaper({ pdfUrl }), { fullTextUrl: pdfUrl, embedUrl: '', relaySourceUrl: pdfUrl });
+});

@@ -33,6 +33,7 @@ export function isAIReadablePdfUrl(value: string | URL | null | undefined) {
       || host === 'pmc.ncbi.nlm.nih.gov'
       || host.endsWith('.ncbi.nlm.nih.gov')
       || host === 'zenodo.org'
+      || host === 'ntrs.nasa.gov'
     );
   } catch {
     return false;
