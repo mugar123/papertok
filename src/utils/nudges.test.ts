@@ -21,6 +21,7 @@ import {
   readDismissedNudges,
   readPrivacyNoticeAck,
   readingMinutePassed,
+  recordPrivacyNoticeShown,
   rememberNudgeDismissal,
   rememberPrivacyNotice,
   visitChoiceDue,
@@ -140,21 +141,21 @@ test('los tiempos son los acordados', () => {
   assert.equal(NUDGE_DWELL_MS, 60_000, 'un minuto leyendo antes de pedir nada');
 });
 
-test('a reader who has not chosen Got it for this policy version is owed the notice', () => {
+test('a reader who has not been shown this policy version is owed the notice', () => {
   const version = '2026-10-22';
   const effectiveAt = '2026-10-22T05:00:00Z';
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: true }), true, 'an account with no creation date');
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: false }), false, 'a guest cannot be told apart from a first-time visitor');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'chose Got it for an earlier version');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'chose Got it for this one');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'shown an earlier version');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'shown this one');
   assert.equal(
     privacyNoticeOwed({ version: '2026-10-22.2', effectiveAt, acknowledged: '2026-10-22', signedIn: true }),
     true,
-    'a second change on the same day is news to whoever chose Got it for the first',
+    'a second change on the same day is news to whoever was shown the first',
   );
 });
 
-test('Got it for a later version settles an earlier one, and a suffix sorts as a number', () => {
+test('being shown a later version settles an earlier one, and a suffix sorts as a number', () => {
   const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, effectiveAt: '2026-10-25T05:00:00Z', acknowledged, signedIn: true });
   assert.equal(owed('2026-10-25', '2026-11-05'), false, 'a tab on an older bundle');
   assert.equal(owed('2026-10-25.2', '2026-10-26'), false, 'a later day covers an earlier day with a suffix');
@@ -165,7 +166,7 @@ test('Got it for a later version settles an earlier one, and a suffix sorts as a
   assert.equal(owed('2026-10-25', 'garbage'), true, 'a stored value that is no version covers nothing');
 });
 
-test('a tab on an older bundle does not overwrite a newer version acknowledged with Got it', () => {
+test('a tab on an older bundle does not overwrite a newer version already shown', () => {
   const storage = fakeStorage();
   rememberPrivacyNotice('reader-a', '2026-11-05', storage);
   rememberPrivacyNotice('reader-a', '2026-10-25', storage);
@@ -219,7 +220,7 @@ test('an account created after an earlier change on the same UTC day is still to
   assert.equal(owed(0), false, 'the instant of this change');
 });
 
-test('each account chooses Got it separately', () => {
+test('each account is told separately', () => {
   const storage = fakeStorage();
   rememberPrivacyNotice('reader-a', '2026-10-22', storage);
   assert.equal(readPrivacyNoticeAck('reader-a', storage), '2026-10-22');
@@ -263,51 +264,21 @@ test('a privacy change owed to the reader is chosen on arrival, a nudge only aft
 // A signed-in reader at /feed, where either notice may be chosen.
 const ON_FEED = { nudge: true, privacy: true };
 
-test('after Hide for now the visit may still show a nudge, a minute of reading later; after Got it the nudge waits for the next visit', () => {
+test('closing the privacy dialog any way spends the visit\'s turn, so a nudge waits for the next visit', () => {
   const facts = { gates: ON_FEED, privacyOwed: true, eligible: ['email-down'], dismissed: [] };
   const arrived = chooseVisitNotice(VISIT_START, facts);
   assert.equal(arrived.picked, PRIVACY_NOTICE_ID, 'the notice owed is chosen on arrival');
-  assert.equal(chooseVisitNotice({ ...arrived, dwellDone: true }, facts).picked, PRIVACY_NOTICE_ID, 'while it is on screen the minute passing changes nothing');
+  assert.equal(chooseVisitNotice(readingMinutePassed(arrived), facts).picked, PRIVACY_NOTICE_ID, 'while it is on screen the minute passing changes nothing');
 
-  // Hide for now, Escape, a press outside and the X all reach onHide (privacy-notice.tsx).
+  // Got it, Escape, a press outside and the X all reach onClose (privacy-notice.tsx).
   for (const dwellDone of [false, true]) {
-    const hidden = answerPrivacyNotice({ ...arrived, dwellDone }, 'hide');
-    assert.equal(hidden.picked, null, 'hidden for this visit');
-    assert.equal(chooseVisitNotice(hidden, facts), hidden, `the minute of reading starts again (it had${dwellDone ? '' : ' not'} passed)`);
-    const later = chooseVisitNotice({ ...hidden, dwellDone: true }, facts);
-    assert.equal(later.picked, 'email-down', 'the email nudge may follow in the same visit');
-    assert.equal(noticeOnScreen({ picked: later.picked, signedIn: true, pathname: '/feed', privacyOwed: true }), 'email-down', 'shown although the notice is still owed');
-    assert.equal(chooseVisitNotice({ ...later, picked: null }, facts).picked, null, 'once: after that nudge is dismissed the visit has nothing more');
-    assert.equal(answerPrivacyNotice(later, 'hide'), later, 'a late close of the dialog does not take the nudge away');
+    const closed = answerPrivacyNotice({ ...arrived, dwellDone });
+    assert.equal(closed.picked, null, 'put away');
+    assert.equal(chooseVisitNotice(readingMinutePassed(closed), facts).picked, null, `no nudge follows this visit (the minute had${dwellDone ? '' : ' not'} passed)`);
   }
-  const hidden = answerPrivacyNotice(arrived, 'hide');
-  assert.equal(chooseVisitNotice({ ...hidden, dwellDone: true }, { ...facts, eligible: [] }).picked, null, 'nothing pending: the notice does not come back this visit');
-  assert.equal(chooseVisitNotice({ ...hidden, dwellDone: true }, { ...facts, dismissed: ['email-down'] }).picked, null, 'a dismissed nudge stays dismissed');
-
-  const acknowledged = answerPrivacyNotice({ ...arrived, dwellDone: true }, 'got-it');
-  assert.equal(acknowledged.picked, null, 'Got it puts it away');
-  assert.equal(chooseVisitNotice(acknowledged, { ...facts, privacyOwed: false }), acknowledged, 'and the email nudge waits for the next visit');
-  const next = chooseVisitNotice({ ...VISIT_START, dwellDone: true }, { ...facts, privacyOwed: false });
-  assert.equal(next.picked, 'email-down', 'which picks it after its minute of reading');
-});
-
-test('a nudge after Hide for now waits a whole minute from the hide, also when the first minute had not passed', () => {
-  const facts = { gates: ON_FEED, privacyOwed: true, eligible: ['email-down'], dismissed: [] };
-  // The reader arrives at T0 and NudgeHost starts the timer of the minute running then.
-  const arrived = chooseVisitNotice(VISIT_START, facts);
-  const minuteAtArrival = arrived.readingMinute;
-  // Hide for now at T0+50s; the timer from arrival ends at T0+60s, 10 s after the hide.
-  const hidden = answerPrivacyNotice(arrived, 'hide');
-  const tenSecondsLater = readingMinutePassed(hidden, minuteAtArrival);
-  assert.equal(tenSecondsLater.dwellDone, false, 'the minute from arrival does not end the one the hide started');
-  assert.equal(chooseVisitNotice(tenSecondsLater, facts).picked, null, 'so no nudge 10 s after the hide');
-  const minuteAfterHide = readingMinutePassed(tenSecondsLater, hidden.readingMinute);
-  assert.equal(chooseVisitNotice(minuteAfterHide, facts).picked, 'email-down', 'a minute after the hide, the email nudge');
-
-  // Hidden after the first minute was up: the minute starts over as well.
-  const late = answerPrivacyNotice(readingMinutePassed(arrived, minuteAtArrival), 'hide');
-  assert.equal(chooseVisitNotice(late, facts).picked, null, 'nothing straight after the hide');
-  assert.equal(chooseVisitNotice(readingMinutePassed(late, late.readingMinute), facts).picked, 'email-down');
+  const next = chooseVisitNotice(readingMinutePassed(VISIT_START), { ...facts, privacyOwed: false });
+  assert.equal(next.picked, 'email-down', 'the next visit picks the nudge after its minute of reading');
+  assert.equal(answerPrivacyNotice(next), next, 'a late close of the dialog does not take the nudge away');
 });
 
 test('the privacy notice is shown only to a signed-in reader on the feed, and returns when they come back', () => {
@@ -440,7 +411,7 @@ test('the privacy dialog never opens over another dialog: it waits for that one 
   assert.deepEqual(dialogSteps([{ shown: true, modalOpen: false }]), [true], 'nothing else open: it opens on arrival');
 });
 
-test('once open, the privacy dialog stays open until it is put away or the reader leaves the feed, and opens again on return', () => {
+test('once open, the privacy dialog stays open until it is closed or the reader leaves the feed, and when shown again it waits as before', () => {
   assert.deepEqual(
     dialogSteps([
       { shown: true, modalOpen: false },
@@ -456,7 +427,7 @@ test('once open, the privacy dialog stays open until it is put away or the reade
       { shown: false, modalOpen: false },
     ]),
     [true, false],
-    'Got it, Hide for now, Escape, the close button or leaving the feed',
+    'Got it, Escape, the close button or leaving the feed',
   );
   assert.deepEqual(
     dialogSteps([
@@ -466,7 +437,7 @@ test('once open, the privacy dialog stays open until it is put away or the reade
       { shown: true, modalOpen: false },
     ]),
     [true, false, false, true],
-    'back on the feed, unanswered, it again waits for any other dialog',
+    'shown again (its record could not be stored), it again waits for any other dialog',
   );
 });
 
@@ -515,27 +486,53 @@ test('a card under the privacy dialog counts again when it is answered, and repo
 test('the privacy dialog opens once per policy version, for signed-in accounts created before the change', () => {
   const HOUR = 3_600_000;
   const createdAt = (uid: string, offsetMs: number) => ({ uid, metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) + offsetMs).toUTCString() } });
-  // A visit's arrival on /feed, with its cards and no other dialog open, from the parts NudgeHost calls in this order.
-  const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true) => {
+  // A visit's arrival on /feed with no other dialog open, from the parts NudgeHost calls in this order. The
+  // reader then closes the dialog (Got it, the X, Escape, a press outside, Back or closing the tab), which
+  // writes nothing more.
+  const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true, cardsShown = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
     const gates = visitChoiceGates({ user, loading: false, onboardingComplete: signedIn, pathname: '/feed' });
     const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, eligible: ['email-down'] });
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
-    return privacyDialogOpen({ shown, cardsShown: true, modalOpen: false, wasOpen: false });
+    const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, wasOpen: false });
+    recordPrivacyNoticeShown({ uid: user?.uid, dialogOpen, version: PRIVACY_POLICY_VERSION, storage });
+    return dialogOpen;
   };
   const storage = fakeStorage();
   const before = createdAt('reader-a', -24 * HOUR);
+  assert.equal(opensOnArrival(before, storage, true, false), false, 'a feed without cards yet');
+  assert.equal(readPrivacyNoticeAck(before.uid, storage), null, 'nothing is recorded before the dialog opens');
   assert.equal(opensOnArrival(before, storage), true, 'an account from before the change');
-  assert.equal(opensOnArrival(before, storage), true, 'until Got it, every visit opens it again');
-  rememberPrivacyNotice(before.uid, PRIVACY_POLICY_VERSION, storage);
-  assert.equal(opensOnArrival(before, storage), false, 'Got it settles this version for this account');
+  assert.equal(opensOnArrival(before, storage), false, 'shown once and closed without Got it, it is not owed on the next visit');
+  assert.equal(
+    privacyOwedFor({ user: before, signedIn: true, version: `${PRIVACY_POLICY_VERSION}.2`, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage }),
+    true,
+    'a later version is still owed',
+  );
   assert.equal(opensOnArrival(createdAt('reader-b', -24 * HOUR), storage), true, 'another account on the same browser is still told');
   assert.equal(opensOnArrival(createdAt('reader-c', 0), fakeStorage()), false, 'an account created at the instant of the change');
   assert.equal(opensOnArrival(createdAt('reader-c', 10 * HOUR), fakeStorage()), false, 'a new account');
-  assert.equal(opensOnArrival(null, fakeStorage(), false), false, 'a guest');
+  const guest = fakeStorage();
+  assert.equal(opensOnArrival(null, guest, false), false, 'a guest');
+  recordPrivacyNoticeShown({ uid: null, dialogOpen: true, version: PRIVACY_POLICY_VERSION, storage: guest });
+  assert.equal(guest.map.size, 0, 'nothing is recorded without an account');
 });
 
-test('Got it chosen in another tab puts away the notice this tab picked, open or waiting off the feed', () => {
+test('the privacy dialog, recorded as told on opening, stays open until it is closed or the reader leaves the feed', () => {
+  const reader = { uid: 'reader-a', metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) - 3_600_000).toUTCString() } };
+  const storage = fakeStorage();
+  recordPrivacyNoticeShown({ uid: reader.uid, dialogOpen: true, version: PRIVACY_POLICY_VERSION, storage });
+  const privacyOwed = privacyOwedFor({ user: reader, signedIn: true, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
+  assert.equal(privacyOwed, false, 'told once it opened');
+  const on = (pathname: string, dialogOpen: boolean) => noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: true, pathname, privacyOwed, dialogOpen });
+  assert.equal(on('/feed', true), PRIVACY_NOTICE_ID, 'still open on the feed');
+  assert.equal(on('/settings', true), null, 'leaving the feed closes it');
+  assert.equal(on('/feed', false), null, 'and it does not open again on return');
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: false, pathname: '/feed', privacyOwed, dialogOpen: true }), null, 'signed out');
+  assert.equal(answerPrivacyNotice({ ...VISIT_START, choiceMade: true, picked: PRIVACY_NOTICE_ID }).picked, null, 'Got it or any other close puts it away');
+});
+
+test('a notice shown in another tab puts away the one this tab picked and has not opened', () => {
   const reader = { uid: 'reader-a', metadata: { creationTime: new Date(Date.parse(PRIVACY_POLICY_EFFECTIVE_AT) - 3_600_000).toUTCString() } };
   const shownIn = (storage: ReturnType<typeof fakeStorage>, pathname: string) => {
     const privacyOwed = privacyOwedFor({ user: reader, signedIn: true, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
@@ -544,15 +541,9 @@ test('Got it chosen in another tab puts away the notice this tab picked, open or
 
   const storage = fakeStorage();
   assert.equal(shownIn(storage, '/feed'), true, 'picked in this tab');
-  assert.equal(shownIn(storage, '/settings'), false, 'the reader left the feed with it unanswered');
+  assert.equal(shownIn(storage, '/settings'), false, 'waiting off the feed');
   rememberPrivacyNotice(reader.uid, PRIVACY_POLICY_VERSION, storage);
-  assert.equal(shownIn(storage, '/feed'), false, 'back on the feed after Got it in the other tab');
-
-  const open = fakeStorage();
-  const steps = [{ shown: shownIn(open, '/feed'), modalOpen: false }];
-  rememberPrivacyNotice(reader.uid, PRIVACY_POLICY_VERSION, open);
-  steps.push({ shown: shownIn(open, '/feed'), modalOpen: false });
-  assert.deepEqual(dialogSteps(steps), [true, false], 'a dialog open here closes');
+  assert.equal(shownIn(storage, '/feed'), false, 'back on the feed after the other tab showed it');
 
   const newer = fakeStorage();
   rememberPrivacyNotice(reader.uid, `${PRIVACY_POLICY_VERSION}.2`, newer);
@@ -585,6 +576,6 @@ test('who is told is decided from the account, its creation time and what this b
   assert.equal(owed({ uid: 'a', metadata: { creationTime: 'Sun, 25 Oct 2026 10:00:00 GMT' } }, fakeStorage(), false), false, 'not signed in');
   const storage = fakeStorage();
   rememberPrivacyNotice('a', version, storage);
-  assert.equal(owed({ uid: 'a' }, storage), false, 'Got it chosen by this account');
+  assert.equal(owed({ uid: 'a' }, storage), false, 'shown to this account');
   assert.equal(owed({ uid: 'b' }, storage), true, 'another account on the same browser');
 });
