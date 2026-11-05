@@ -1,7 +1,8 @@
 interface WikiPage { index?: number; title?: string; extract?: string; thumbnail?: { source?: string }; fullurl?: string; pageprops?: { wikibase_item?: string; disambiguation?: unknown } }
 interface WikipediaPayload { query?: { pages?: Record<string, WikiPage> } }
+interface WikidataSearchPayload { query?: { search?: { title?: string }[]; searchinfo?: { totalhits?: number } } }
 interface WikidataPayload { entities?: Record<string, { id?: string; sitelinks?: Record<string, { title?: string }> }> }
-interface WikiIds { wikidata?: unknown; wikipedia?: unknown }
+interface WikiIds { wikidata?: unknown; wikipedia?: unknown; orcid?: unknown }
 interface WikiEntity { id?: string; display_name?: string; ids?: WikiIds; _queryTopic?: boolean; _localTopic?: boolean }
 interface WikiIdentity { qid?: string; enwikiTitle?: string; signal?: AbortSignal }
 interface WikiOptions { expectedTitle?: string; entity?: WikiEntity | null; title?: string; alternateTitle?: string; signal?: AbortSignal; strictTitleMatch?: boolean }
@@ -110,6 +111,12 @@ async function searchWikipedia(title: string, language: string, signal: AbortSig
 const WIKIDATA_ID_PATTERN = /^Q[1-9]\d*$/;
 const WIKIDATA_URL_PATTERN = /^https?:\/\/(?:www\.)?wikidata\.org\/(?:wiki|entity)\/(Q[1-9]\d*)$/i;
 const ENWIKI_URL_PATTERN = /^https?:\/\/en\.wikipedia\.org\/wiki\/([^?#]+)$/i;
+const ORCID_PATTERN = /^(?:https?:\/\/orcid\.org\/)?(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i;
+
+/** The ORCID iD behind OpenAlex's `ids.orcid`, a URL or a bare iD. */
+export function orcidFromOpenAlexIds(ids: WikiIds | null | undefined) {
+  return String(ids?.orcid || '').trim().match(ORCID_PATTERN)?.[1]?.toUpperCase() || '';
+}
 
 /**
  * The QID behind OpenAlex's `ids.wikidata`, which comes as a `/wiki/` URL, an
@@ -177,6 +184,25 @@ async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }: WikiIdentity
   return { qid: entity.id, titles };
 }
 
+/**
+ * The one Wikidata item that states this ORCID iD (P496). OpenAlex gives
+ * authors no Wikidata id, but an author's ORCID is an identity too; two items
+ * claiming it, or none, give nothing rather than a guess.
+ */
+async function fetchWikidataIdByOrcid(orcid: string, signal: AbortSignal | undefined) {
+  const url = new URL('https://www.wikidata.org/w/api.php');
+  url.searchParams.set('action', 'query');
+  url.searchParams.set('list', 'search');
+  url.searchParams.set('srsearch', `haswbstatement:P496=${orcid}`);
+  url.searchParams.set('srlimit', '2');
+  url.searchParams.set('srprop', '');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('origin', '*');
+  const hits = (await fetchJson<WikidataSearchPayload>(url, signal))?.query?.search || [];
+  const qid = hits.length === 1 ? hits[0].title || '' : '';
+  return WIKIDATA_ID_PATTERN.test(qid) ? qid : '';
+}
+
 async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { title: string; language: string; qid: string | undefined; signal?: AbortSignal }) {
   const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
   url.searchParams.set('action', 'query');
@@ -232,7 +258,8 @@ export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', 
  * What the Explorer's Wikipedia block loads for an entity. Topics of the
  * app's own taxonomy and free-text topics have no identity to follow and keep
  * the title search (exact-title for free text, as before); every OpenAlex
- * entity is resolved by identity or shows no Wikipedia block.
+ * entity is resolved by identity (its Wikidata id or English article, or for
+ * an author the Wikidata item stating its ORCID) or shows no Wikipedia block.
  */
 export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', signal }: WikiOptions = {}) {
   // No Wikidata id to go by: a search, and only an article by that exact
@@ -248,8 +275,10 @@ export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', s
     });
   }
   const identity = resolveEntityWikiIdentity(entity);
-  if (!identity) return null;
-  return getEntityWikiInfoByIdentity({ ...identity, signal });
+  if (identity) return getEntityWikiInfoByIdentity({ ...identity, signal });
+  const orcid = orcidFromOpenAlexIds(entity?.ids);
+  const qid = orcid ? await fetchWikidataIdByOrcid(orcid, signal) : '';
+  return qid ? getEntityWikiInfoByIdentity({ qid, signal }) : null;
 }
 
 export async function getEntityWikiInfo({
