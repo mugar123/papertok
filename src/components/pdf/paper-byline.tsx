@@ -57,7 +57,6 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
           />
         )}
         <span className="ft-author-links">
-          {profile?.wiki?.url && <a href={profile.wiki.url} target="_blank" rel="noopener noreferrer">Wikipedia<span className="visually-hidden"> (opens in a new tab)</span></a>}
           {path && <a href={path} target="_blank" rel="noopener noreferrer">Open profile<span className="visually-hidden"> (opens in a new tab)</span></a>}
         </span>
       </div>
