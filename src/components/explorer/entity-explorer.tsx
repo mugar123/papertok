@@ -12,6 +12,7 @@ type ExplorerEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTop
   _queryTopic?: boolean; _detailsPending?: boolean; query?: string;
   metadata?: { localizedNames?: Record<string, string>; query?: string; source?: string; categoryIds?: string[] };
   ids?: { wikidata?: string; wikipedia?: string; orcid?: string };
+  image_thumbnail_url?: string | null;
   categories?: string[]; primaryCategory?: string;
 };
 interface VisitRecord {
@@ -150,6 +151,16 @@ function ParticipantName({ name }: { name: string }) {
       <TooltipContent>{name}</TooltipContent>
     </Tooltip>
   );
+}
+
+/** An image URL OpenAlex links, kept only when Wikimedia serves it over HTTPS. */
+function wikimediaImage(url: string | null | undefined) {
+  try {
+    const parsed = new URL(String(url || ''));
+    return parsed.protocol === 'https:' && (parsed.hostname === 'wikimedia.org' || parsed.hostname.endsWith('.wikimedia.org')) ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 // Up to the last ten years of an author's output, from OpenAlex's per-year
@@ -587,6 +598,10 @@ export default function EntityExplorer({
   const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution);
   const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
+  // Wikipedia only lends a free image, so a non-free logo leaves it empty; the
+  // Wikimedia thumbnail OpenAlex links stands in once Wikipedia has answered.
+  const openAlexImage = wikimediaImage(entity?.image_thumbnail_url);
+  const heroImage = visibleWikiInfo?.thumbnail || (settledWikiRequestKey === wikiRequestKey ? openAlexImage : '');
   const safeRorUrl = safeExternalUrl(entity?.ror);
   const safeProjectWebsiteUrl = safeExternalUrl(entity?.websiteUrl);
   const safeHomepageUrl = safeExternalUrl(entity?.homepage_url);
@@ -615,7 +630,7 @@ export default function EntityExplorer({
     ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl, orcid: entityOrcid },
   }), [entityIsLocalTopic, entityIsQueryTopic, entityOrcid, entityWikidataId, entityWikipediaUrl]);
   const hasLoadedWikiImage = Boolean(
-    visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
+    heroImage && loadedWikiImageUrl === heroImage,
   );
 
   // The hero's body settles between its sizes instead of snapping. What it
@@ -2239,9 +2254,9 @@ export default function EntityExplorer({
                 {renderIcon()}
               </motion.div>
               <AnimatePresence>
-                {visibleWikiInfo?.thumbnail && (
+                {heroImage && (
                   <motion.div
-                    key={visibleWikiInfo.thumbnail}
+                    key={heroImage}
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
@@ -2249,9 +2264,9 @@ export default function EntityExplorer({
                     className="ehc-wiki-image"
                   >
                     <img
-                      src={visibleWikiInfo.thumbnail}
+                      src={heroImage}
                       alt={entityDisplayName}
-                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail!)}
+                      onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
                   </motion.div>
