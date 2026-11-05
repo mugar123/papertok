@@ -580,7 +580,8 @@
   flex-basis: 56px;
 }
 
-:is(.explorer-container--author, .explorer-skeleton--author) .ehc-icon {
+/* Every picture is round, its stand-in and its skeleton too. */
+.explorer-container .ehc-icon {
   border-radius: 50%;
 }
 

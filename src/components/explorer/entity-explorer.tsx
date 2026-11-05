@@ -358,6 +358,8 @@ export default function EntityExplorer({
   const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || Boolean(cachedEntity) || (type === 'topic' && isOpaqueQueryTopicText(id));
   const [entity, setEntity] = useState<ExplorerEntity | null>(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState<string | null>(null);
+  // Whether the entity on screen is the answer for this route, not a search row or a cached copy it upgrades.
+  const [isEntityFetched, setIsEntityFetched] = useState(false);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
@@ -808,6 +810,7 @@ export default function EntityExplorer({
 
     async function loadEntity() {
       setEntityError(null);
+      setIsEntityFetched(false);
       const bornWith: ExplorerEntity | null = handedEntity || cachedEntity;
       if (bornWith) {
         setEntity(bornWith);
@@ -843,6 +846,7 @@ export default function EntityExplorer({
       if (type === 'topic' && isOpaqueQueryTopicText(id)) {
         setEntity(resolveQueryTopicRoute(id, searchParams));
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -853,6 +857,7 @@ export default function EntityExplorer({
       if (local) {
         setEntity(local);
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -877,7 +882,8 @@ export default function EntityExplorer({
         // pill's name if there was one and never a stand-in
         // (explorer-project-entity.ts says why).
         setEntity(projectEntityFromLookup({ routeId: id, name, funder, details }));
-        if (!isCancelled) setIsLoadingEntity(false);
+        setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
       
@@ -928,6 +934,7 @@ export default function EntityExplorer({
       
       setEntity(data || handedEntity || cachedEntity);
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
 
       // Both follow-up requests declare themselves before either starts, in
       // the same batch as the entity, so the live hero mounts with the ORCID
@@ -1003,6 +1010,7 @@ export default function EntityExplorer({
       setEntity(handedEntity || cachedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
       setIsLoadingOrcid(false);
     });
     return () => {
@@ -1011,7 +1019,9 @@ export default function EntityExplorer({
   }, [type, id, searchParams, entityReloadKey, handedEntity, cachedEntity]);
 
   useEffect(() => {
-    if (!canLoadWikiInfo) {
+    // Looked up once, by the fetched entity's identifiers: a lookup by the
+    // search row's would show its picture and then swap it for another.
+    if (!canLoadWikiInfo || !isEntityFetched) {
       return undefined;
     }
 
@@ -1056,6 +1066,7 @@ export default function EntityExplorer({
     afterPageArrival,
     canLoadWikiInfo,
     entityDisplayName,
+    isEntityFetched,
     language,
     localizedTopicEntity?.label,
     type,
