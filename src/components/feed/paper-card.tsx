@@ -175,6 +175,7 @@ import { getRelatedPaperIdentity } from '../../utils/related-paper-transition.ts
 import { getCitationGraphDoi, hydrateCitationGraphPaper } from '../../services/citation-graph-service.ts';
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
 import { resolveWithin } from '../../utils/async-timing.ts';
+import { fullTextQuery, getFullText } from '../../services/full-text-service.ts';
 import {
   isTrustedInlinePdfUrl,
   openExternalUrl,
@@ -258,6 +259,8 @@ const LIBRARY_CHECKING_MIN_MS = 1_000;
 // what the record offers: under the browser's ~5 s of user activation, after
 // which the new tab would be blocked.
 const LIBRARY_PRESS_WAIT_MS = 3_000;
+// Past this wait, a press opens the paper's external target.
+const FULL_TEXT_PRESS_WAIT_MS = 1_500;
 
 // Read once at module load, not per render: every card in the feed was
 // hitting localStorage on its own render just to show a panel almost nobody
@@ -1555,6 +1558,18 @@ const PaperCard = memo(function PaperCard({
       },
       external: (url) => openExternalUrl(url),
     });
+
+    const opensInViewer = openTargetsForPaper(paper, resolvedOpenCopy, libraryAccess)[0]?.mode === 'inline';
+    if (!opensInViewer && libraryAccess?.status !== 'entitled' && fullTextQuery(paper)) {
+      setIsResolvingAccess(true);
+      // A slow lookup keeps running past the wait, so the next press finds it cached.
+      const fullText = await resolveWithin(getFullText(paper), FULL_TEXT_PRESS_WAIT_MS, null);
+      setIsResolvingAccess(false);
+      if (fullText?.doc) {
+        void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) });
+        return;
+      }
+    }
 
     if (openBestTarget(resolvedOpenCopy)) return;
 

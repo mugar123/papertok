@@ -192,6 +192,35 @@ test('the Explorer\'s loader shows nothing for an OpenAlex entity without an ide
   assert.deepEqual(requested, []);
 });
 
+const isWikidataOrcidSearch = (orcid: string) => (url: URL) => url.host === 'www.wikidata.org'
+  && url.searchParams.get('srsearch') === `haswbstatement:P496=${orcid}`;
+
+test('an author with no Wikidata id is found by the one item stating its ORCID', async (t) => {
+  stubWikiFetch(t, [
+    { match: isWikidataOrcidSearch('0000-0002-9322-3515'), body: { query: { search: [{ ns: 0, title: 'Q3572699' }], searchinfo: { totalhits: 1 } } } },
+    { match: isWikidata({ ids: 'Q3572699' }), body: wikidataEntity('Q3572699', { enwiki: 'Yoshua Bengio' }) },
+    { match: isWikipediaTitle('en', 'Yoshua Bengio'), body: wikipediaPage({ title: 'Yoshua Bengio', extract: 'Yoshua Bengio is a Canadian computer scientist.', qid: 'Q3572699', thumbnail: 'https://upload.wikimedia.org/bengio.jpg' }) },
+  ]);
+
+  const result = await loadEntityWikiInfo({
+    entity: { id: 'https://openalex.org/A5086198262', display_name: 'Yoshua Bengio', ids: { orcid: 'https://orcid.org/0000-0002-9322-3515' } },
+  });
+
+  assert.equal(result?.title, 'Yoshua Bengio');
+  assert.equal(result?.thumbnail, 'https://upload.wikimedia.org/bengio.jpg');
+});
+
+test('an ORCID that two items state, or none, gives nothing', async (t) => {
+  const requested = stubWikiFetch(t, [
+    { match: isWikidataOrcidSearch('0000-0001-0000-0002'), body: { query: { search: [{ ns: 0, title: 'Q1' }, { ns: 0, title: 'Q2' }], searchinfo: { totalhits: 2 } } } },
+    { match: isWikidataOrcidSearch('0000-0001-0000-0003'), body: { query: { search: [], searchinfo: { totalhits: 0 } } } },
+  ]);
+
+  assert.equal(await loadEntityWikiInfo({ entity: { ids: { orcid: 'https://orcid.org/0000-0001-0000-0002' } } }), null);
+  assert.equal(await loadEntityWikiInfo({ entity: { ids: { orcid: '0000-0001-0000-0003' } } }), null);
+  assert.equal(requested.some(url => url.includes('wbgetentities')), false);
+});
+
 test('the Explorer\'s loader keeps the exact-title search for a free-text topic', async (t) => {
   const requested = stubWikiFetch(t, [
     { match: isWikipediaSearch('en'), body: wikipediaPage({ title: 'Journal of Theory of Stuff', extract: 'A journal.', qid: 'Q1' }) },
