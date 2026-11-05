@@ -784,6 +784,13 @@
   object-fit: cover;
 }
 
+/* A logo is drawn whole inside the circle; a photo fills it. */
+.ehc-wiki-image img[data-logo] {
+  object-fit: contain;
+  padding: 12%;
+  background: var(--bg-sunken);
+}
+
 .ehc-info {
   display: flex;
   flex-direction: column;

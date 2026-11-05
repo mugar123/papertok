@@ -2266,6 +2266,7 @@ export default function EntityExplorer({
                     <img
                       src={heroImage}
                       alt={entityDisplayName}
+                      data-logo={/\.svg\b/i.test(heroImage) || undefined}
                       onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
