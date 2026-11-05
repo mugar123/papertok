@@ -580,13 +580,12 @@
   flex-basis: 56px;
 }
 
-:is(.explorer-container--author, .explorer-skeleton--author) :is(.ehc-icon, .ehc-wiki-image) {
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-icon {
   border-radius: 50%;
 }
 
-/* A portrait fills the round frame, faces kept in view; a logo stays contained. */
+/* A portrait keeps the face in the round frame. */
 .explorer-container--author .ehc-wiki-image img {
-  object-fit: cover;
   object-position: center 20%;
 }
 
@@ -774,7 +773,7 @@
 .ehc-wiki-image {
   width: 72px;
   height: 72px;
-  border-radius: var(--radius-lg);
+  border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -782,7 +781,7 @@
 .ehc-wiki-image img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .ehc-info {
