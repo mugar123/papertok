@@ -213,8 +213,8 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
  * (`shown`), the feed shows its first cards (`cardsShown`) and no other modal is
  * open, so it never lands over the feed's loading or error screen, a paper or
  * another dialog: it waits for the cards, and for that dialog to close. Once
- * open it stays open, under any modal opened over it, until the reader puts it
- * away or leaves the feed. `wasOpen` is the value this returned on the previous
+ * open it stays open, under any modal opened over it, until the reader closes
+ * it or leaves the feed. `wasOpen` is the value this returned on the previous
  * render; `cardsShown` and `modalOpen` only matter while the dialog is closed
  * (open, it is a modal itself).
  */
@@ -225,7 +225,7 @@ export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { s
 /**
  * Whether the feed's cards stay on screen as the privacy dialog closes. They do
  * while a ready reader (visitReaderReady) is still on the feed route, which is
- * when the dialog closed because it was answered, here or in another tab.
+ * when the dialog closed because the reader closed it.
  * Otherwise it closed because the feed is going: another route (each pathname
  * mounts its own page, which plays its exit before it unmounts), a sign-out or
  * the profile retry screen. Those cards leave with it (visible-time.ts).
