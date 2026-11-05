@@ -37,7 +37,10 @@ export const PRIVACY_POLICY_VERSION = '2026-11-05';
  * The page's 5 November text adds, since 3 November, the in-app reader
  * (#424): a paper's text comes through PaperTok's server, while its figures,
  * and a PDF shown on a computer, load straight from the repository, which
- * receives the reader's IP address. Following the convention Pablo chose on
+ * receives the reader's IP address; and the Wikidata and Wikipedia lookups the
+ * explorer's pages (already on main, undescribed until now) and the reader's
+ * author preview make from the browser, which Asier chose on 2026-11-05 to
+ * describe rather than route through the Worker. Following the convention Pablo chose on
  * 2026-11-03, this instant is the time of the commit that set it, rounded up
  * to the next quarter hour; raise it, with the version and the page's date,
  * if #424 is not live in production by then.
@@ -48,6 +51,7 @@ export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-05T19:00:00Z';
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "In the reader, a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
   'The text of a paper comes through PaperTok\'s server, like searches and lookups.',
+  "Pages for an author, an institution, a journal or a topic ask Wikidata and Wikipedia from your browser for a short summary and a picture, so Wikimedia receives your IP address.",
 ];
 
 /**
@@ -66,6 +70,9 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ["a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
     ['which receives your IP address', /which receives your IP address as with any image on the web/],
     ['The text of a paper comes through PaperTok\'s server', /The text of a paper comes through that server too/],
+    ['Pages for an author, an institution, a journal or a topic', /Pages for an author, an institution, a journal or a topic/],
+    ['ask Wikidata and Wikipedia from your browser for a short summary and a picture', /ask <strong>Wikidata<\/strong> and <strong>Wikipedia<\/strong> from your browser for a short summary and a picture/],
+    ['Wikimedia receives your IP address', /Wikimedia receives your IP address/],
   ],
   unsaid: [[/stor|keep/i, 'the reader keeps nothing new about the reader']],
 };

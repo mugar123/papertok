@@ -344,6 +344,13 @@
         receives your IP address as with any image on the web.
       </p>
       <p>
+        Pages for an author, an institution, a journal or a topic, and an author's preview in
+        the reader, ask <strong>Wikidata</strong> and <strong>Wikipedia</strong> from your
+        browser for a short summary and a picture of what they show, and the picture loads from
+        Wikimedia's servers. Wikimedia receives your IP address and the name or identifier looked
+        up, as with any visit to Wikipedia; PaperTok sends nothing about your account.
+      </p>
+      <p>
         These PDF counters are stored in Cloudflare Durable Objects. Their automatic
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
@@ -399,6 +406,7 @@
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
+        <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
       </ul>
 
       <h2>How long it is kept</h2>
