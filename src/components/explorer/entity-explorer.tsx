@@ -152,40 +152,38 @@ function ParticipantName({ name }: { name: string }) {
   );
 }
 
-// The last ten years of an author's output, from OpenAlex's per-year counts,
-// ending this year, always as ten slots so a short career draws its bars at
-// the size a long one does. Inside the span OpenAlex reports, a missing year
-// is a year with none; before its earliest year nothing is known, so that
-// slot stays empty, marked with a dash rather than a zero. This year is still
-// running: its bar is lighter.
+// Up to the last ten years of an author's output, from OpenAlex's per-year
+// counts, ending this year. Inside the span OpenAlex reports, a missing year
+// is a year with none; before its earliest year nothing is known, so the
+// chart starts there instead of drawing zeros. This year is still running:
+// its bar is lighter.
 const ACTIVITY_YEARS = 10;
 function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count: number }> }) {
   const [currentYear] = useState(() => new Date().getFullYear());
   const byYear = new Map(counts.map(count => [count.year, count.works_count]));
   const lastYear = currentYear;
-  const firstSlot = lastYear - ACTIVITY_YEARS + 1;
-  const firstKnown = Math.max(firstSlot, Math.min(...counts.map(count => count.year)));
-  const years = Array.from({ length: ACTIVITY_YEARS }, (_, i) => firstSlot + i);
-  const values = years.map(year => (year < firstKnown ? null : byYear.get(year) ?? 0));
-  const max = Math.max(...values.map(value => value ?? 0), 1);
-  const summary = years.flatMap((year, i) => (values[i] === null ? [] : [`${year}: ${values[i]}`])).join(', ');
+  const firstYear = Math.max(lastYear - ACTIVITY_YEARS + 1, Math.min(...counts.map(count => count.year)));
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
+  const values = years.map(year => byYear.get(year) ?? 0);
+  const max = Math.max(...values, 1);
+  const summary = years.map((year, i) => `${year}: ${values[i]}`).join(', ');
   return (
-    <figure className="ehc-activity" style={{ '--years': years.length }} aria-label={`Papers per year, ${firstKnown} to ${lastYear}. ${summary}`}>
+    <figure className="ehc-activity" style={{ '--years': years.length }} aria-label={`Papers per year, ${years[0]} to ${lastYear}. ${summary}`}>
       <div className="ehc-activity-head" aria-hidden="true">
         <span>{'Papers per year'}</span>
-        <span>{`${firstKnown}–${lastYear}`}</span>
+        <span>{`${years[0]}–${lastYear}`}</span>
       </div>
       <div className="ehc-activity-bars" aria-hidden="true">
         {values.map((value, i) => (
           <span
             key={years[i]}
-            className={value === null ? 'is-unknown' : years[i] === currentYear ? 'is-running' : undefined}
-            style={{ '--v': (value ?? 0) / max, '--i': i }}
+            className={years[i] === currentYear ? 'is-running' : undefined}
+            style={{ '--v': value / max, '--i': i }}
           />
         ))}
       </div>
       <div className="ehc-activity-counts" aria-hidden="true">
-        {values.map((value, i) => <span key={years[i]} className={value === null ? 'is-unknown' : undefined}>{value ?? '–'}</span>)}
+        {values.map((value, i) => <span key={years[i]}>{value}</span>)}
       </div>
     </figure>
   );

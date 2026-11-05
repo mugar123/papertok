@@ -1,44 +1,82 @@
-/* The guest wall at the foot of a list: one more row, on `.list-row`'s edges
-   and padding, on the sunken ground, so it reads as where the list stops
-   rather than as a banner dropped on it. */
+/* The guest wall at the foot of a list. It repeats the anatomy of a row
+   (`.explorer-list-item`): the card surface, the rule underneath, the same
+   left padding and the 3px mark down the inner edge — so it reads as the last
+   entry of the list rather than as a banner dropped on it. The mark is the
+   brand yellow, the one colour in the file that is not a field's: the block
+   is ours, not a paper's. */
 .explorer-guest-gate {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  margin-inline: calc(var(--space-2) * -1);
-  padding: var(--space-3) var(--space-2);
-  border-radius: var(--radius-lg);
-  background: var(--bg-sunken);
+  position: relative;
+  padding: var(--space-6) var(--space-5) var(--space-6) var(--space-6);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-default);
   animation: rise var(--motion-base) var(--ease-out) both;
 }
 
-.egg-icon {
-  flex: none;
+.explorer-guest-gate::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--space-6);
+  width: 3px;
+  height: 28px;
+  background: var(--brand-yellow);
+}
+
+/* The same label the rows wear (`.eli-cat`), in the shared mono shorthand. */
+.egg-kicker {
+  display: block;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   color: var(--text-tertiary);
 }
 
-.egg-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
+/* The voice of a row title (`.eli-title`), for the same reason the empty
+   state borrows it: this is the list still talking. */
+.egg-title {
+  margin: var(--space-2) 0 0;
+  max-width: var(--explorer-measure, 776px);
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+}
+
+.egg-body {
+  margin: var(--space-2) 0 0;
+  max-width: var(--explorer-measure, 776px);
   color: var(--text-secondary);
   font-size: var(--fs-sm);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.egg-text strong {
-  color: var(--text-primary);
-  font-weight: 600;
+.egg-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
 }
 
-/* On a phone the button drops under the sentence rather than squeezing it. */
+.egg-foot {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
+/* On a phone the button takes the width it needs and the note drops under it,
+   rather than the two sharing a line that leaves four words per row. */
 @media (max-width: 560px) {
   .explorer-guest-gate {
-    flex-wrap: wrap;
+    padding: var(--space-5) var(--space-4) var(--space-5) var(--space-5);
   }
 
-  .egg-text {
-    flex-basis: calc(100% - 18px - var(--space-4));
+  .egg-action {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-2);
   }
 }
 
