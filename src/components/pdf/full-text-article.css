@@ -374,6 +374,8 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 
 /* A cited work beside its citation, where the screen has no margin for it. */
 .ft-peek-positioner { z-index: 12110; }
+/* Until it closes, a card whose citation has left the view is not drawn pinned to the edge. */
+.ft-peek-positioner[data-anchor-hidden] { visibility: hidden; }
 .ft-peek {
   display: grid;
   gap: var(--space-1);
@@ -394,9 +396,16 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-peek-head { display: flex; align-items: center; justify-content: space-between; }
 .ft-peek .ft-ref-title { margin: 0; font-size: 1rem; }
 .ft-peek p { margin: 0; }
-.ft-peek .ft-peek-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-2); font-size: var(--fs-sm); }
-.ft-peek-links a { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; color: var(--text-primary); text-underline-offset: 3px; }
-.ft-peek-links a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* The card's links, stacked ruled rows like the information card's subjects. */
+.ft-peek .ft-peek-links { margin: var(--space-2) calc(-1 * var(--space-2)) 0; padding: 0; list-style: none; }
+.ft-peek-links li + li { border-top: 1px solid var(--border-subtle); }
+.ft-peek-links a { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 40px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }
+.ft-peek-links a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.ft-peek-links a svg { flex: none; color: var(--text-tertiary); transition: transform 150ms var(--ease-out), color 150ms ease; }
+@media (hover: hover) and (pointer: fine) {
+  .ft-peek-links a:hover { background: var(--bg-sunken); }
+  .ft-peek-links a:hover svg { transform: translateX(2px); color: var(--text-primary); }
+}
 
 /* On touch, the outline's entries and the reference card's controls reach 44px. */
 @media (pointer: coarse) {

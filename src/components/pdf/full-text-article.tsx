@@ -174,11 +174,33 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { refere
   const path = reference && (reference.arxiv || reference.doi || reference.pmid)
     ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
+  // The card belongs to its citation: once the text scrolls it out of view
+  // (by hand or by a jump), the card closes, and focus stays where the reader
+  // is rather than pulling the text back to the citation.
+  const scrolledAway = useRef(false);
+  useEffect(() => {
+    const citation = anchor.current;
+    const text = citation?.closest<HTMLElement>('.ft-scroll');
+    if (!open || !citation || !text) return;
+    scrolledAway.current = false;
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      const place = citation.getBoundingClientRect();
+      const view = text.getBoundingClientRect();
+      if (place.bottom > view.top && place.top < view.bottom) return;
+      scrolledAway.current = true;
+      onOpenChange(false);
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
+    text.addEventListener('scroll', onScroll, { passive: true });
+    return () => { text.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
+  }, [open, anchor, onOpenChange]);
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Portal>
         <Popover.Positioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
-          <Popover.Popup className="ft-peek" finalFocus={anchor}>
+          <Popover.Popup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor.current)}>
             {reference && (
               <div lang={lang}>
                 <div className="ft-peek-head">
@@ -188,12 +210,12 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { refere
                 <Popover.Title className="ft-ref-title">{referenceTitle(reference)}</Popover.Title>
                 {reference.title && reference.authors.length > 0 && <p className="ft-ref-authors">{authorLine(reference.authors, 4)}</p>}
                 {reference.title && reference.venue && <p className="ft-ref-venue">{reference.venue}</p>}
-                <p className="ft-peek-links">
-                  {path && <a href={path} target="_blank" rel="noopener noreferrer">Open in PaperTok<ArrowRight size={12} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a>}
+                <ul className="ft-peek-links">
+                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>Open in PaperTok</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>}
                   {referenceLinks(reference).map(link => (
-                    <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">{link.text}<span className="visually-hidden"> (opens in a new tab)</span></a>
+                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>
                   ))}
-                </p>
+                </ul>
               </div>
             )}
           </Popover.Popup>
