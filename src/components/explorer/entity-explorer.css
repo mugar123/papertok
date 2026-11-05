@@ -584,6 +584,12 @@
   border-radius: 50%;
 }
 
+/* A portrait fills the round frame, faces kept in view; a logo stays contained. */
+.explorer-container--author .ehc-wiki-image img {
+  object-fit: cover;
+  object-position: center 20%;
+}
+
 .ehc-initials {
   font: 600 1.25rem/1 var(--font-serif);
   letter-spacing: 0.02em;

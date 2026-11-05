@@ -11,7 +11,7 @@ import type { FollowInput } from '../../utils/following.ts';
 type ExplorerEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTopic & Project> & {
   _queryTopic?: boolean; _detailsPending?: boolean; query?: string;
   metadata?: { localizedNames?: Record<string, string>; query?: string; source?: string; categoryIds?: string[] };
-  ids?: { wikidata?: string; wikipedia?: string };
+  ids?: { wikidata?: string; wikipedia?: string; orcid?: string };
   categories?: string[]; primaryCategory?: string;
 };
 interface VisitRecord {
@@ -598,7 +598,7 @@ export default function EntityExplorer({
     ...(safeHomepageUrl ? [{ label: 'Official website', href: safeHomepageUrl }] : []),
   ];
   const canLoadWikiInfo = Boolean(
-    entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
+    entityDisplayName && ['author', 'institution', 'concept', 'topic', 'source'].includes(type),
   );
   // Only what the Wikipedia block is looked up by. The entity object is
   // replaced whenever a later answer is folded into it, and the lookup must
@@ -607,11 +607,13 @@ export default function EntityExplorer({
   const entityIsLocalTopic = Boolean(entity?._localTopic);
   const entityWikidataId = entity?.ids?.wikidata || '';
   const entityWikipediaUrl = entity?.ids?.wikipedia || '';
+  // An author has no Wikidata id in OpenAlex; its ORCID finds the Wikidata item instead.
+  const entityOrcid = entity?.ids?.orcid || entity?.orcid || '';
   const wikiEntity = useMemo(() => ({
     _queryTopic: entityIsQueryTopic,
     _localTopic: entityIsLocalTopic,
-    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl },
-  }), [entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl]);
+    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl, orcid: entityOrcid },
+  }), [entityIsLocalTopic, entityIsQueryTopic, entityOrcid, entityWikidataId, entityWikipediaUrl]);
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
   );
