@@ -312,8 +312,8 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
     setReferenceOpen(true);
   };
 
-  // Memoized so opening a citation's card does not re-render the whole paper.
-  const text = useMemo(() => (
+  // Memoized apart, so showing the abstract or a citation's card does not re-render the whole paper.
+  const head = useMemo(() => (
     <>
         <PaperByline paper={paper} />
         {doc.conversionErrors > 0 && (
@@ -321,12 +321,16 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
             {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
           </p>
         )}
-        {showAbstract && doc.abstract.length > 0 && (
-          <section className="ft-abstract" aria-labelledby="ft-abstract-title">
-            <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-            <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
-          </section>
-        )}
+    </>
+  ), [doc.conversionErrors, paper]);
+  const abstract = useMemo(() => showAbstract && doc.abstract.length > 0 && (
+    <section className="ft-abstract" aria-labelledby="ft-abstract-title">
+      <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
+      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
+    </section>
+  ), [doc, showAbstract]);
+  const body = useMemo(() => (
+    <>
         {/* The paper's language marks its own text, not the reader's labels. */}
         <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} />)}</div>
         {doc.notes.length > 0 && (
@@ -355,11 +359,13 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
           </section>
         )}
     </>
-  ), [doc, paper, showAbstract]);
+  ), [doc]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
-      {text}
+      {head}
+      {abstract}
+      {body}
       <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} scroll={citationScroll} lang={doc.lang} />
     </article>
   );
