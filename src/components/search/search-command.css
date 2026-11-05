@@ -279,7 +279,6 @@
   font: var(--mono-label);
   line-height: var(--lh-normal);
   letter-spacing: var(--mono-track);
-  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
