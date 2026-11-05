@@ -1,6 +1,6 @@
 import type { MouseEvent, ReactNode, RefObject } from 'react';
 import type { Block, FullText, Inline, Reference } from '../../utils/full-text.ts';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPublicPaperPath } from '../../utils/public-navigation.ts';
@@ -48,7 +48,16 @@ function katexHtml(tex: string | undefined, display: boolean) {
   return renderedFormulas.get(key)!;
 }
 
+// Formulas drawn before KaTeX arrived are drawn again once it has.
+const katexListeners = new Set<() => void>();
+const subscribeKatex = (listener: () => void) => {
+  katexListeners.add(listener);
+  return () => { katexListeners.delete(listener); };
+};
+const katexReady = () => getKatex() !== null;
+
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
+  useSyncExternalStore(subscribeKatex, katexReady);
   // KaTeX's markup and MathML rebuilt from an allowlist in utils/full-text.ts.
   const html = katexHtml(tex, display) ?? mathml;
   if (html) return <span className="ft-math" dangerouslySetInnerHTML={{ __html: html }} />;
@@ -105,21 +114,13 @@ function isNumeric(content: Inline[]) {
   return /^[-+−±~≈<>]?\s*\d[\d.,\s]*(%|\s*±\s*[\d.,]+)?$/.test(text);
 }
 
-function citedIn(content: Inline[], into: string[] = []) {
-  for (const item of content) {
-    if (item.t === 'ref') into.push(item.target);
-    if ('children' in item) citedIn(item.children, into);
-  }
-  return into;
-}
-
 // What names a reference in a list: its title, or its whole line, or at least where it appeared.
 const referenceTitle = (reference: Reference) => reference.title || reference.text || reference.venue || '';
 
-// A numbered reference reads "(26) 2016"; an author-year one already names its year.
+// A numbered reference reads "(26) 2016"; an author-year label already names a year, and keeps only its own.
 function referenceMeta({ label, year }: Reference) {
-  const mark = /^\d+$/.test(label) ? `(${label})` : label;
-  return year && !label.includes(year) ? `${mark} ${year}` : mark;
+  if (/^\d+$/.test(label)) return year ? `(${label}) ${year}` : `(${label})`;
+  return year && !/\b(1[89]|20)\d{2}/.test(label) ? `${label} ${year}` : label;
 }
 
 const authorLine = (authors: string[], max: number) =>
@@ -203,42 +204,20 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { refere
 }
 
 type FigureBlock = Extract<Block, { t: 'figure' }>;
-// `katex` counts KaTeX's loads: a formula drawn before KaTeX arrived is drawn again once it has.
-type Context = { references: Map<string, Reference>; lang?: string; katex: number };
+type Context = { references: Map<string, Reference> };
 
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
 
-function BlockView({ block, context }: { block: Block; context: Context }): ReactNode {
+function BlockView({ block }: { block: Block }): ReactNode {
   const id = 'id' in block && block.id ? anchor(block.id) : undefined;
   switch (block.t) {
     case 'heading': {
       const Tag = `h${Math.min(Math.max(block.level, 2), 4)}` as 'h2' | 'h3' | 'h4';
       return <Tag id={id} tabIndex={-1} className={block.level <= 2 ? 'ft-section' : 'ft-subsection'}><Label text={block.label} /><Inlines content={block.children} /></Tag>;
     }
-    case 'p': {
-      const paragraph = <p className="ft-p"><Inlines content={block.children} /></p>;
-      const cited = [...new Set(citedIn(block.children))]
-        .map(target => context.references.get(target))
-        .filter((reference): reference is Reference => Boolean(reference));
-      if (!cited.length) return paragraph;
-      // A paragraph's sources beside it, on a screen wide enough for a margin.
-      return (
-        <div className="ft-margin-row">
-          {paragraph}
-          {/* Not a landmark: a paper with sixty cited paragraphs would list sixty. */}
-          <div className="ft-margin-notes">
-            {cited.map(reference => (
-              <a key={reference.id} href={`#${anchor(reference.id)}`} onClick={event => jumpTo(event, reference.id)} className="ft-margin-note" lang={context.lang}>
-                <span className="ft-ref-meta">{referenceMeta(reference)}</span>
-                <span className="ft-margin-note-title">{referenceTitle(reference)}</span>
-                {reference.title && reference.authors.length > 0 && <span className="ft-ref-authors">{authorLine(reference.authors, 2)}</span>}
-              </a>
-            ))}
-          </div>
-        </div>
-      );
-    }
+    case 'p':
+      return <p className="ft-p"><Inlines content={block.children} /></p>;
     case 'equation':
       return (
         <div id={id} tabIndex={-1} className="ft-equation">
@@ -304,34 +283,30 @@ function needsKatex(doc: FullText) {
 }
 
 /** A paper's full text in the reader's type: the viewer's text view. */
-export default function FullTextArticle({ doc, paper, showAbstract = true, onLeave }: { doc: FullText; paper: Paper; showAbstract?: boolean; onLeave?: () => void }) {
-  const [katexVersion, katexLoaded] = useReducer((count: number) => count + 1, 0);
+export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
   const wantsKatex = useMemo(() => needsKatex(doc), [doc]);
   useEffect(() => {
     if (!wantsKatex || getKatex()) return undefined;
     let active = true;
     void loadKatex().then(loaded => {
-      if (active && loaded) katexLoaded();
+      if (active && loaded) katexListeners.forEach(notify => notify());
     });
     return () => { active = false; };
   }, [wantsKatex]);
 
   const context = useMemo<Context>(() => ({
     references: new Map(doc.references.map(reference => [reference.id, reference])),
-    lang: doc.lang,
-    katex: katexVersion,
-  }), [doc, katexVersion]);
+  }), [doc]);
 
-  // Below the margin's breakpoint (full-text-article.css), a citation opens its
-  // reference in a card beside it instead of jumping to the list, and focus
-  // returns to it.
+  // A citation opens its reference in a card beside it instead of jumping to
+  // the list, and focus returns to it.
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const citation = useRef<HTMLElement | null>(null);
   const showReference = (event: MouseEvent<HTMLElement>) => {
     const link = (event.target as Element).closest<HTMLAnchorElement>('a[href^="#ft-"]');
     const reference = link && context.references.get(link.getAttribute('href')!.slice(4));
-    if (!reference || window.matchMedia('(min-width: 1280px)').matches) return;
+    if (!reference) return;
     event.preventDefault();
     event.stopPropagation();
     citation.current = link;
@@ -343,7 +318,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, onLea
   // card opening and closing re-renders the card, not the whole paper.
   const text = useMemo(() => (
     <>
-        <PaperByline paper={paper} onLeave={onLeave} />
+        <PaperByline paper={paper} />
         {doc.conversionErrors > 0 && (
           <p className="ft-warning">
             {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
@@ -352,11 +327,11 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, onLea
         {showAbstract && doc.abstract.length > 0 && (
           <section className="ft-abstract" aria-labelledby="ft-abstract-title">
             <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-            <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
+            <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
           </section>
         )}
         {/* The paper's language marks its own text, not the reader's labels. */}
-        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} context={context} />)}</div>
+        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} />)}</div>
         {doc.notes.length > 0 && (
           <section className="ft-notes" aria-labelledby="ft-notes-title">
             <h2 id="ft-notes-title" className="ft-section" tabIndex={-1}>Notes</h2>
@@ -383,7 +358,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, onLea
           </section>
         )}
     </>
-  ), [doc, context, paper, showAbstract, onLeave]);
+  ), [doc, paper, showAbstract]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>

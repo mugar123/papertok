@@ -3,17 +3,14 @@ import type { Paper } from '../../models/paper.ts';
 import type { Block, FullText } from '../../utils/full-text.ts';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
-import { ArrowRight, Files, Info, ListBullets, LockKey, LockKeyOpen, NotePencil } from '@phosphor-icons/react';
+import { ArrowRight, Info, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { plainText } from '../../utils/full-text.ts';
 import { getCategoryLabel } from '../../data/category-taxonomy.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { accessTagForPaper, reviewStatusForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 
 const WORDS_PER_MINUTE = 230;
-// The card's status glyphs (feed/paper-card.tsx), by the tag's key.
-const STATUS_ICONS = { preprint: NotePencil, workingPaper: Files, open: LockKeyOpen, openCopy: LockKeyOpen, subscription: LockKey };
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
 function words(blocks: Block[]) {
@@ -27,15 +24,12 @@ function words(blocks: Block[]) {
 
 /**
  * What is known about the paper and about the text being read: where and when
- * it appeared, with its status in the opposite corner; the figures that size
- * it up, in one ruled row; and its subjects, each opening its page. A fact no
- * source states is left out rather than shown as empty or zero.
+ * it appeared, the figures that size it up in one ruled row, and its
+ * subjects, each opening its page. A fact no source states is left out rather
+ * than shown as empty or zero.
  */
 function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefined }) {
   const venue = paper.journal || paper.conference;
-  const status = reviewStatusForPaper(paper);
-  const reviewTag = reviewTagForPaper(paper);
-  const accessTag = accessTagForPaper(paper);
   // Each arXiv category as the app's own topic page, as a card's topic links to it.
   const subjects = [...new Set([paper.primaryCategory, ...(paper.categories ?? [])].filter((code): code is string => Boolean(code)))]
     .map(code => {
@@ -54,14 +48,6 @@ function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefi
     <>
       <div className="pdf-info-head">
         <p className="pdf-info-when">{[venue, paper.year].filter(Boolean).join(' · ') || 'About this paper'}</p>
-        <ul className="pdf-info-status" aria-label="Status">
-          {[reviewTag, accessTag].map(tag => {
-            if (!tag) return null;
-            const Glyph = STATUS_ICONS[tag.key as keyof typeof STATUS_ICONS];
-            return <li key={tag.key}><span className="pdf-info-chip" data-tone={tag.tone} title={tag.hint}>{Glyph && <Glyph size={12} weight="bold" aria-hidden="true" />}{tag.label}</span></li>;
-          })}
-          {status === 'verified' && <li><span className="pdf-info-chip">Peer reviewed</span></li>}
-        </ul>
       </div>
       {tiles.length > 0 && (
         <ul className="pdf-info-stats" style={{ gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))` }}>

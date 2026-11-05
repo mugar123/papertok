@@ -272,41 +272,23 @@
   .pdf-info, .pdf-info[data-starting-style], .pdf-info[data-ending-style] { clip-path: none; transition: opacity 150ms linear; }
   .pdf-info[data-starting-style], .pdf-info[data-ending-style] { opacity: 0; }
 }
-/* When on the left, the status in the opposite corner, on one line. */
-.pdf-info-head { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; margin-bottom: var(--space-5); }
-.pdf-info-when { margin: 0; font: 600 1.15rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
-.pdf-info-status { display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end; margin: 0; padding: 0; list-style: none; }
-/* The card's status chips (feed/paper-card.css). */
-.pdf-info-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 2px 8px;
-  border: 1px solid var(--tint-neutral-line);
-  border-radius: var(--radius-sm);
-  background: var(--tint-neutral-bg);
-  color: var(--tint-neutral-fg);
-  font: 500 0.75rem/1.35 var(--font-mono);
-  white-space: nowrap;
-}
-.pdf-info-chip svg { flex: none; }
-.pdf-info-chip[data-tone="amber"] { border-color: var(--tint-amber-line); background: var(--tint-amber-bg); color: var(--tint-amber-fg); }
-.pdf-info-chip[data-tone="green"] { border-color: var(--tint-green-line); background: var(--tint-green-bg); color: var(--tint-green-fg); }
+.pdf-info-head { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.pdf-info-when { margin: 0; font: 600 1.0625rem/1.3 var(--font-serif); font-variant-numeric: tabular-nums; }
 /* The figures in one row of equal columns split by hairlines, no fills: each
    named at the left above its number, centred in the column. */
 .pdf-info-stats { display: grid; margin: 0; padding: 0; list-style: none; }
-.pdf-info-stats li { display: grid; gap: var(--space-3); padding: 0 var(--space-3); }
+.pdf-info-stats li { display: grid; gap: var(--space-2); padding: 0 var(--space-3); }
 .pdf-info-stats li:first-child { padding-left: 0; }
-.pdf-info-value { justify-self: center; }
 .pdf-info-stats li + li { border-left: 1px solid var(--border-subtle); }
-.pdf-info-value { font: 600 1.4rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
-.pdf-info-value small { font: 500 0.8rem/1 var(--font-body); color: var(--text-secondary); }
-.pdf-info-label { font-size: 12px; line-height: 1.3; color: var(--text-secondary); }
+/* One label style for every name in the card: the stats' and the subjects' heading. */
+.pdf-info-label, .pdf-info-section-title { margin: 0; font: 500 0.75rem/1.3 var(--font-body); color: var(--text-secondary); }
+.pdf-info-value { justify-self: center; font: 600 1.5rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
+.pdf-info-value small { font: 500 0.8125rem/1 var(--font-body); color: var(--text-secondary); }
 /* The subjects, ruled rows that open their pages; past three, the list scrolls. */
-.pdf-info-section { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
-.pdf-info-section-title { margin: 0 0 var(--space-2) var(--space-2); font: 600 0.8125rem/1.3 var(--font-body); color: var(--text-secondary); }
-.pdf-info-rows { max-height: calc(3 * 44px + 2px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.pdf-info-section { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.pdf-info-section-title { margin-bottom: var(--space-1); }
+/* The rows' text starts on the card's edge; their hover ground reaches past it. */
+.pdf-info-rows { max-height: calc(3 * 44px + 2px); margin: 0 calc(-1 * var(--space-2)); padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
 .pdf-info-rows li + li { border-top: 1px solid var(--border-subtle); }
 .pdf-info-rows a, .pdf-info-rows li > span { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }
 .pdf-info-rows a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
@@ -315,8 +297,3 @@
   .pdf-info-rows a:hover { background: var(--bg-sunken); }
   .pdf-info-rows a:hover svg { transform: translateX(2px); color: var(--text-primary); }
 }
-
-/* A sheet opened from inside the viewer (the authors' list on a phone) sits
-   above it; elsewhere sheets keep their own layer (ui/drawer.css). */
-body:has(.pdf-overlay) .ui-drawer-backdrop { z-index: 12110; }
-body:has(.pdf-overlay) .ui-drawer-viewport { z-index: 12111; }
