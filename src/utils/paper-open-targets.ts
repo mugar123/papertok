@@ -32,7 +32,7 @@ export interface OpenTarget { mode: 'external' | 'inline'; url: string; }
  */
 import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from './external-url.ts';
 import { isChemRxivDoi } from './paper-status.ts';
-import { isAIReadablePdfUrl, zenodoRecordUrl } from './ai-explanation-access.ts';
+import { isAIReadablePdfUrl } from './ai-explanation-access.ts';
 
 function arxivPdfUrl(arxivId: unknown) {
   const id = String(arxivId || '').trim();
@@ -53,14 +53,12 @@ function arxivPdfUrl(arxivId: unknown) {
 export function pdfLinksForPaper(paper: Partial<Paper> | null | undefined) {
   const direct = safeExternalUrl(paper?.pdfUrl);
   const arxiv = arxivPdfUrl(paper?.arxivId);
-  // A Zenodo deposit names no PDF; the Worker finds it in the record.
-  const zenodo = zenodoRecordUrl(paper?.doi);
   return {
-    fullTextUrl: direct || arxiv || zenodo,
+    fullTextUrl: direct || arxiv,
     embedUrl: [direct, arxiv].find(url => url && isTrustedInlinePdfUrl(url)) || '',
-    // The one the Worker relays (`GET /pdf`) for the viewer to draw the pages
-    // itself, wherever the PDF cannot be framed: the hosts the AI routes read.
-    relaySourceUrl: [direct, arxiv, zenodo].find(url => url && isAIReadablePdfUrl(url)) || '',
+    // El que el Worker accede a reenviar (`GET /pdf`) para que el visor táctil
+    // dibuje las páginas él mismo: los hosts que ya leen las rutas de IA.
+    relaySourceUrl: [direct, arxiv].find(url => url && isAIReadablePdfUrl(url)) || '',
   };
 }
 

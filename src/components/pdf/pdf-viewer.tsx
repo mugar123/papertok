@@ -88,8 +88,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
   const canEmbed = Boolean(pdfUrl) && !coarsePointer && showsPdf;
-  // A desktop draws the pages too when the PDF's host refuses the frame.
-  const relayUrl = showsPdf && (coarsePointer || !pdfUrl) ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
+  const relayUrl = coarsePointer && showsPdf ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
   const [relayFailed, setRelayFailed] = useState(false);
   const drawsPages = Boolean(relayUrl) && !relayFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
@@ -223,7 +222,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <ViewerLoading label={'Loading PDF...'} />
             )}
 
-            {/* The pages, drawn here */}
+            {/* Touch: the pages, drawn here */}
             {drawsPages && (
               <Suspense fallback={(
                 <ViewerLoading label={'Loading PDF...'} />
@@ -249,11 +248,11 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
             {/* Fallback message. On touch it still owns the no-PDF case — the
                 hand-off card above only ever replaces it when there IS a PDF to
                 hand off. */}
-            {shouldShowFallback && !drawsPages && !(coarsePointer && fullTextUrl) && !iframeLoaded && (
+            {shouldShowFallback && !(coarsePointer && fullTextUrl) && !iframeLoaded && (
               <div className="pdf-fallback">
                 <p>{!fullTextUrl
                   ? ('No open-access PDF is available.')
-                  : !pdfUrl && !relayFailed
+                  : !pdfUrl
                     ? ('This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.')
                     : ('The PDF could not be loaded in the app.')}</p>
                 {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">

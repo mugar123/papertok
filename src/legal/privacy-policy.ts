@@ -49,7 +49,7 @@ export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-05T19:00:00Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "In the reader, a paper's figures, and an arXiv PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
+  "In the reader, a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
   'The text of a paper comes through PaperTok\'s server, like searches and lookups.',
   "Pages for an author, an institution, a journal or a topic ask Wikidata and Wikipedia from your browser for a short summary and a picture, so Wikimedia receives your IP address.",
 ];
@@ -67,8 +67,7 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   // An account from before 5 November read that repositories never receive its IP address.
   lead: 'figures',
   clauses: [
-    ["a paper's figures, and an arXiv PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
-    ['an arXiv PDF', /a PDF the\s+repository lets the reader frame, which today is arXiv's/],
+    ["a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
     ['which receives your IP address', /which receives your IP address as with any image on the web/],
     ['The text of a paper comes through PaperTok\'s server', /The text of a paper comes through that server too/],
     ['Pages for an author, an institution, a journal or a topic', /Pages for an author, an institution, a journal or a topic/],
