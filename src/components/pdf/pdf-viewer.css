@@ -290,8 +290,8 @@
 .pdf-info-rows li + li { border-top: 1px solid var(--border-subtle); }
 .pdf-info-rows a, .pdf-info-rows li > span { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }
 .pdf-info-rows a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-.pdf-info-rows a svg { flex: none; color: var(--text-tertiary); transition: transform 150ms var(--ease-out), color 150ms ease; }
+.pdf-info-rows a svg { flex: none; color: var(--text-tertiary); transition: color 150ms ease; }
 @media (hover: hover) and (pointer: fine) {
   .pdf-info-rows a:hover { background: var(--bg-sunken); }
-  .pdf-info-rows a:hover svg { transform: translateX(2px); color: var(--text-primary); }
+  .pdf-info-rows a:hover svg { color: var(--text-primary); }
 }

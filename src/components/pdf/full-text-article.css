@@ -59,6 +59,8 @@
 
 .ft-author-card { display: grid; gap: var(--space-3); }
 .ft-author-card-head { display: flex; gap: var(--space-3); align-items: center; }
+.ft-author-card-head > div { flex: 1; min-width: 0; }
+.ft-author-card-head > button { align-self: flex-start; }
 .ft-author-card p { margin: 0; }
 .ft-author-photo {
   display: grid;
@@ -135,10 +137,11 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-list { padding-left: var(--space-6); }
 
 .ft-article a { color: var(--text-primary); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
-/* A link within the paper (a citation, "Figure 2", an equation) is told apart by its colour. */
-.ft-article a[href^="#"] { text-decoration-line: underline; text-decoration-color: color-mix(in srgb, var(--accent-secondary) 45%, transparent); text-decoration-thickness: 1.5px; }
+/* A link within the paper is told apart by its colour: a jump ("Figure 2", an equation) in teal, a citation, which opens a card, in blue. */
+.ft-article a[href^="#"] { --ft-link: var(--accent-teal); text-decoration-line: underline; text-decoration-color: color-mix(in srgb, var(--ft-link) 45%, transparent); text-decoration-thickness: 1.5px; }
+.ft-article a[data-cites] { --ft-link: var(--accent-secondary); }
 @media (hover: hover) and (pointer: fine) {
-  .ft-article a[href^="#"]:hover { text-decoration-color: var(--accent-secondary); }
+  .ft-article a[href^="#"]:hover { text-decoration-color: var(--ft-link); }
 }
 .ft-article a:focus-visible,
 .ft-article [tabindex]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -228,7 +231,7 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-ref-venue { font-size: var(--fs-xs); font-style: italic; color: var(--text-tertiary); }
 .ft-ref-title { font: 600 0.95rem/1.35 var(--font-serif); color: var(--text-primary); overflow-wrap: anywhere; }
 .ft-ref-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
-.ft-ref-links a { font: 500 11px/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.ft-ref-links a { font: 500 11px/1.6 var(--font-mono); overflow-wrap: anywhere; text-decoration: none; }
 
 /* The list at the end reads as an index of titles. */
 .ft-references ol {
@@ -254,7 +257,6 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-references .ft-ref-links a { position: relative; z-index: 1; }
 @media (hover: hover) and (pointer: fine) {
   .ft-references li:has(.ft-ref-card-link):hover { background: var(--bg-sunken); }
-  .ft-references li:has(.ft-ref-card-link):hover .ft-ref-title { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
 }
 
 .ft-notes ol { margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); line-height: 1.55; color: var(--text-secondary); }
@@ -270,17 +272,15 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
   inset: 0;
   border-radius: var(--radius-md);
   pointer-events: none;
-  background:
-    linear-gradient(105deg, transparent 32%, color-mix(in srgb, var(--accent-secondary) 15%, transparent) 50%, transparent 68%) 100% 0 / 300% 100% no-repeat,
-    color-mix(in srgb, var(--accent-secondary) 5%, transparent);
+  background: linear-gradient(105deg, transparent 32%, color-mix(in srgb, var(--text-primary) 8%, transparent) 50%, transparent 68%) 100% 0 / 300% 100% no-repeat;
   animation: ftLanded 900ms var(--ease-in-out) both;
 }
 @keyframes ftLanded {
   60% { opacity: 1; }
-  to { background-position: 0 0, 0 0; opacity: 0; }
+  to { background-position: 0 0; opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ft-article [data-landed]::before { background: color-mix(in srgb, var(--accent-secondary) 7%, transparent); animation: fadeOut 900ms var(--ease-out) both; }
+  .ft-article [data-landed]::before { background: color-mix(in srgb, var(--text-primary) 6%, transparent); animation: fadeOut 900ms var(--ease-out) both; }
 }
 
 /* A citation's reference on a screen with no margin, above the viewer (pdf-viewer.css). */
@@ -401,10 +401,10 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-peek-links li + li { border-top: 1px solid var(--border-subtle); }
 .ft-peek-links a { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 40px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }
 .ft-peek-links a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-.ft-peek-links a svg { flex: none; color: var(--text-tertiary); transition: transform 150ms var(--ease-out), color 150ms ease; }
+.ft-peek-links a svg { flex: none; color: var(--text-tertiary); transition: color 150ms ease; }
 @media (hover: hover) and (pointer: fine) {
   .ft-peek-links a:hover { background: var(--bg-sunken); }
-  .ft-peek-links a:hover svg { transform: translateX(2px); color: var(--text-primary); }
+  .ft-peek-links a:hover svg { color: var(--text-primary); }
 }
 
 /* On touch, the outline's entries and the reference card's controls reach 44px. */

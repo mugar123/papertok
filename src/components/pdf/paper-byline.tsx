@@ -43,10 +43,6 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
           {institution && <p className="ft-author-place">{institution}</p>}
           {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compact.format(entity.works_count)} works</p>}
         </div>
-      </div>
-      {profile === null && <p className="ft-author-bio" role="status">Could not load this profile.</p>}
-      {profile?.wiki && <p className="ft-author-bio">{profile.wiki.extract}</p>}
-      <div className="ft-author-actions">
         {follow && (
           <FollowToggle
             pressed={isFollowing(follow)}
@@ -56,6 +52,10 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
             followingLabel={`Following ${name}`}
           />
         )}
+      </div>
+      {profile === null && <p className="ft-author-bio" role="status">Could not load this profile.</p>}
+      {profile?.wiki && <p className="ft-author-bio">{profile.wiki.extract}</p>}
+      <div className="ft-author-actions">
         <span className="ft-author-links">
           {path && <a href={path} target="_blank" rel="noopener noreferrer">Open profile<span className="visually-hidden"> (opens in a new tab)</span></a>}
         </span>

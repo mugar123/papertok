@@ -7,6 +7,7 @@ import type { ThemeContextValue } from './theme-context.tsx';
 import type { AnalyticsContextValue } from './privacy-context.tsx';
 import type { AuthContextValue } from './auth-context.tsx';
 import type { SimilarFeedContextValue } from './similar-feed-context.tsx';
+import type { Reference } from '../utils/full-text.ts';
 
 import { createContext } from 'react';
 
@@ -30,6 +31,8 @@ import { createContext } from 'react';
  *
  * Keep this file free of components and of anything that changes often.
  */
+// The references of the paper open in the reader, by the id its citations point at.
+export const ArticleReferencesContext = createContext<ReadonlyMap<string, Reference>>(new Map());
 export const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
 export const AuthContext = createContext<AuthContextValue | null>(null);
 export const EmailNotificationsContext = createContext<EmailNotificationsContextValue | null>(null);

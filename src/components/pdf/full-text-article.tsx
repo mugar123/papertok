@@ -1,16 +1,17 @@
 import type { MouseEvent, ReactNode, RefObject } from 'react';
 import type { Block, FullText, Inline, Reference } from '../../utils/full-text.ts';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { use, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPublicPaperPath } from '../../utils/public-navigation.ts';
 import { copyText } from '../../utils/clipboard.ts';
-import { ArrowRight, Check, Copy, X } from '@phosphor-icons/react';
+import { ArrowRight, ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { Popover } from '@base-ui/react/popover';
 import type { Paper } from '../../models/paper.ts';
 import { PaperByline } from './paper-byline.tsx';
 import { anchor, landOn } from './article-places.ts';
+import { ArticleReferencesContext } from '../../context/contexts.ts';
 import './full-text-article.css';
 
 
@@ -87,6 +88,12 @@ function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
   );
 }
 
+// A citation, which opens its reference's card, is marked apart from a jump to a figure or an equation.
+function Ref({ target, children }: { target: string; children: ReactNode }) {
+  const cites = use(ArticleReferencesContext).has(target);
+  return <a href={`#${anchor(target)}`} data-cites={cites || undefined} onClick={event => jumpTo(event, target)}>{children}</a>;
+}
+
 function Inlines({ content }: { content: Inline[] }) {
   return content.map((item, index) => {
     switch (item.t) {
@@ -94,7 +101,7 @@ function Inlines({ content }: { content: Inline[] }) {
       case 'math': return <Formula key={index} mathml={item.mathml} tex={item.tex} display={false} />;
       case 'formula-image': return <Formula key={index} image={item.src} display={false} />;
       case 'link': return <a key={index} href={item.href} target="_blank" rel="noopener noreferrer"><Inlines content={item.children} /></a>;
-      case 'ref': return <a key={index} href={`#${anchor(item.target)}`} onClick={event => jumpTo(event, item.target)}><Inlines content={item.children} /></a>;
+      case 'ref': return <Ref key={index} target={item.target}><Inlines content={item.children} /></Ref>;
       case 'em': return <em key={index}><Inlines content={item.children} /></em>;
       case 'strong': return <strong key={index}><Inlines content={item.children} /></strong>;
       case 'sup': return <sup key={index}><Inlines content={item.children} /></sup>;
@@ -131,7 +138,7 @@ const referenceLinks = (reference: Reference) =>
     reference.doi && { href: safeDoiUrl(reference.doi), text: `doi:${reference.doi}` },
     reference.pmid && { href: `https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(reference.pmid)}/`, text: `PubMed ${reference.pmid}` },
     reference.arxiv && { href: `https://arxiv.org/abs/${encodeURIComponent(reference.arxiv)}`, text: `arXiv:${reference.arxiv}` },
-    !reference.doi && !reference.arxiv && reference.url && { href: reference.url, text: 'Link' },
+    !reference.doi && !reference.arxiv && reference.url && { href: reference.url, text: 'Source' },
   ].filter((link): link is { href: string; text: string } => Boolean(link && link.href));
 
 function ReferenceLinks({ reference }: { reference: Reference }) {
@@ -211,9 +218,9 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { refere
                 {reference.title && reference.authors.length > 0 && <p className="ft-ref-authors">{authorLine(reference.authors, 4)}</p>}
                 {reference.title && reference.venue && <p className="ft-ref-venue">{reference.venue}</p>}
                 <ul className="ft-peek-links">
-                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>Open in PaperTok</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>}
+                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>}
                   {referenceLinks(reference).map(link => (
-                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>
+                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>
                   ))}
                 </ul>
               </div>
@@ -384,7 +391,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
-      {text}
+      <ArticleReferencesContext value={context.references}>{text}</ArticleReferencesContext>
       <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} lang={doc.lang} />
     </article>
   );
