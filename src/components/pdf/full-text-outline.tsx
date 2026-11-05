@@ -3,7 +3,6 @@ import type { Outline } from './use-outline.ts';
 import { useEffect, useRef, useState } from 'react';
 import { landOn } from './article-places.ts';
 
-// Keeps the section being read in the middle of a list that scrolls.
 function useActiveInView(list: HTMLElement | null, active: number) {
   useEffect(() => {
     if (!list) return;
@@ -35,12 +34,6 @@ export function OutlineList({ items, active, onPick }: Outline & { onPick?: () =
   );
 }
 
-/**
- * The outline as a rail of ticks along the left edge, long for a section and
- * short below it, the one being read lit. Hovering the rail or tabbing into it
- * unfolds the outline beside it; a tap opens it, and Escape or a press
- * elsewhere folds it again.
- */
 export function OutlineRail(outline: Outline) {
   const [open, setOpen] = useState(false);
   const nav = useRef<HTMLElement | null>(null);

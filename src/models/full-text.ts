@@ -1,4 +1,3 @@
-/** Where a paper's full text was read from. */
 export type FullTextSource = 'arxiv' | 'ar5iv' | 'europepmc';
 
 /** What the Worker's `/resources/full-text` answers: a paper's source document, unparsed. */

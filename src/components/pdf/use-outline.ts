@@ -21,10 +21,7 @@ function outlineOf(doc: FullText, withAbstract: boolean): OutlineItem[] {
   ];
 }
 
-/**
- * The paper's outline and the section being read in `scroll`: the last one
- * whose heading has passed a quarter of the way down the text.
- */
+// The section being read is the last whose heading has passed a quarter of the way down.
 export function useOutline(doc: FullText | null | undefined, scroll: HTMLElement | null, withAbstract: boolean): Outline {
   const items = useMemo(() => (doc ? outlineOf(doc, withAbstract) : []), [doc, withAbstract]);
   const [active, setActive] = useState(-1);
@@ -37,7 +34,6 @@ export function useOutline(doc: FullText | null | undefined, scroll: HTMLElement
     }));
   };
   useScrollFrame(items.length > 0 ? scroll : null, update);
-  // The section being read when the text first shows, before any scroll.
   const settle = useEffectEvent(update);
   useEffect(() => {
     if (!scroll || items.length === 0) return;

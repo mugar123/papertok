@@ -1,16 +1,4 @@
-/**
- * The source document of an open paper's full text, for the in-app reader.
- *
- * The reader shows a paper in PaperTok's own type when a provider publishes it
- * as structured text: arXiv's LaTeXML conversion (arxiv.org/html, then ar5iv
- * for the back catalogue) or Europe PMC's JATS XML. This route fetches that
- * document and hands it over unchanged; the browser parses it
- * (src/utils/full-text.ts). It goes through the Worker so the repositories
- * never see the reader's address, as the privacy page promises.
- *
- * A paper no provider publishes as text is an ordinary answer, `document:
- * null`, and the reader falls back to the PDF.
- */
+// Relayed so the repositories never see the reader's address, as the privacy page promises.
 import type { FullTextAnswer } from '../src/models/full-text.ts';
 import { isArxivFigureId, readHtmlWithinLimit } from './paper-figures.ts';
 
@@ -111,11 +99,7 @@ async function fromEuropePmc(request: FullTextRequest, signal: AbortSignal): Pro
   };
 }
 
-/**
- * arXiv first, then Europe PMC. A provider that fails or runs past the deadline
- * leaves the reader on the PDF as well, but the answer says so (`unavailable`)
- * and is kept briefly rather than as a confirmed absence.
- */
+/** A provider that fails or runs past the deadline makes the answer `unavailable`, kept briefly. */
 export async function fetchFullText(request: FullTextRequest): Promise<FullTextAnswer> {
   const signal = AbortSignal.timeout(LOOKUP_DEADLINE_MS);
   let unavailable = false;

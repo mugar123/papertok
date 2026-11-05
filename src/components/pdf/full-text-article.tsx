@@ -17,11 +17,7 @@ import './full-text-article.css';
 import { NewTabHint } from './new-tab-hint.tsx';
 
 
-// A citation or a "Figure 2" moves within the article. Following it as a link
-// would put a fragment in the address bar, which the viewer's Back handling
-// (useOverlayHistory) owns, so it never navigates, even to a target the
-// article does not show (an affiliation, a footnote). The target lands in the
-// middle of the screen, or at its top when it is nearly as tall as the screen.
+// Never navigates: a fragment in the address bar would fight useOverlayHistory for Back.
 function jumpTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
   event.preventDefault();
   const element = document.getElementById(anchor(target));
@@ -31,9 +27,6 @@ function jumpTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
 const MAX_CACHED_FORMULAS = 2000;
 const renderedFormulas = new Map<string, string | null>();
 
-// The paper's own TeX through KaTeX, as the reader's abstracts are drawn, or
-// `null` when KaTeX is not loaded or cannot read it (a macro the paper defined
-// itself); the formula's MathML is shown instead.
 function katexHtml(tex: string | undefined, display: boolean) {
   const katex = getKatex();
   if (!katex || !tex) return null;
@@ -61,15 +54,12 @@ const katexReady = () => getKatex() !== null;
 
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
   useSyncExternalStore(subscribeKatex, katexReady);
-  // KaTeX's markup and MathML rebuilt from an allowlist in utils/full-text.ts.
   const html = katexHtml(tex, display) ?? mathml;
   if (html) return <span className="ft-math" dangerouslySetInnerHTML={{ __html: html }} />;
   if (image) return <img className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
-  // TeX with no MathML, while KaTeX loads or when it cannot read it.
   return tex ? <code className="ft-tex">{tex}</code> : null;
 }
 
-// A formula's TeX when the paper has it, its MathML otherwise.
 function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {
@@ -90,7 +80,6 @@ function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
   );
 }
 
-// A citation, which opens its reference's card, is marked apart from a jump to a figure or an equation.
 function Ref({ target, cites, children }: { target: string; cites?: true; children: ReactNode }) {
   return <a href={`#${anchor(target)}`} data-cites={cites} onClick={event => jumpTo(event, target)}>{children}</a>;
 }
@@ -116,13 +105,11 @@ function Label({ text }: { text?: string }) {
   return text ? <span className="ft-label">{text}</span> : null;
 }
 
-/** Whether a cell reads as a number, so it aligns on the right with its column. */
 function isNumeric(content: Inline[]) {
   const text = content.map(item => (item.t === 'text' ? item.text : item.t === 'math' ? '0' : '')).join('').trim();
   return /^[-+−±~≈<>]?\s*\d[\d.,\s]*(%|\s*±\s*[\d.,]+)?$/.test(text);
 }
 
-// What names a reference in a list: its title, or its whole line, or at least where it appeared.
 const referenceTitle = (reference: Reference) => reference.title || reference.text || reference.venue || '';
 
 // A numbered reference reads "(26) 2016"; an author-year label already names a year, and keeps only its own.
@@ -142,7 +129,6 @@ const referenceLinks = (reference: Reference) =>
     !reference.doi && !reference.arxiv && reference.url && { href: reference.url, text: 'Source' },
   ].filter((link): link is { href: string; text: string } => Boolean(link && link.href));
 
-// Who wrote a reference and where it appeared, when its title stands apart from them.
 function ReferenceSource({ reference }: { reference: Reference }) {
   if (!reference.title) return null;
   return (
@@ -167,8 +153,6 @@ function ReferenceLinks({ reference }: { reference: Reference }) {
   );
 }
 
-// A reference as the list prints it. Its title links the whole card to the
-// reference's first identifier.
 function ReferenceEntry({ reference }: { reference: Reference }) {
   const primary = referenceLinks(reference)[0];
   return (
@@ -185,16 +169,11 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
   );
 }
 
-// A cited work beside the citation that was pressed, where a screen has no
-// margin for it: the place in the text stays in view. It opens in PaperTok
-// when an identifier names it.
 function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; scroll: HTMLElement | null; lang?: string }) {
   const path = reference && (reference.arxiv || reference.doi || reference.pmid)
     ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
-  // The card belongs to its citation: once the text scrolls it out of view
-  // (by hand or by a jump), the card closes, and focus stays where the reader
-  // is rather than pulling the text back to the citation.
+  // Closed by scrolling away, focus stays where the reader is instead of pulling the text back.
   const scrolledAway = useRef(false);
   useEffect(() => {
     if (open) scrolledAway.current = false;
@@ -270,8 +249,6 @@ function BlockView({ block }: { block: Block }): ReactNode {
         </figure>
       );
     case 'table':
-      // A wide table takes the width it needs beyond the text column, with its
-      // header row kept in view while it scrolls.
       return (
         <figure id={id} tabIndex={-1} className="ft-table">
           {block.caption.length > 0 && <figcaption><Label text={block.label} /><Inlines content={block.caption} /></figcaption>}
@@ -306,7 +283,6 @@ function needsKatex(doc: FullText) {
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
-/** A paper's full text in the reader's type: the viewer's text view. */
 export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
   const wantsKatex = useMemo(() => needsKatex(doc), [doc]);
   useEffect(() => {
@@ -320,8 +296,6 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
 
   const references = useMemo(() => new Map(doc.references.map(reference => [reference.id, reference])), [doc]);
 
-  // A citation opens its reference in a card beside it instead of jumping to
-  // the list, and focus returns to it.
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const citation = useRef<HTMLElement | null>(null);
@@ -338,8 +312,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
     setReferenceOpen(true);
   };
 
-  // The text is the same element from one render to the next, so a citation's
-  // card opening and closing re-renders the card, not the whole paper.
+  // Memoized so opening a citation's card does not re-render the whole paper.
   const text = useMemo(() => (
     <>
         <PaperByline paper={paper} />

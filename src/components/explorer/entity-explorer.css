@@ -580,12 +580,10 @@
   flex-basis: 56px;
 }
 
-/* Every picture is round, its stand-in and its skeleton too. */
 .explorer-container .ehc-icon {
   border-radius: 50%;
 }
 
-/* A portrait keeps the face in the round frame. */
 .explorer-container--author .ehc-wiki-image img {
   object-position: center 20%;
 }
@@ -785,7 +783,6 @@
   object-fit: cover;
 }
 
-/* A logo is drawn whole inside the circle; a photo fills it. */
 .ehc-wiki-image img[data-logo] {
   object-fit: contain;
   padding: 12%;

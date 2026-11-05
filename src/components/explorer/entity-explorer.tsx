@@ -153,7 +153,6 @@ function ParticipantName({ name }: { name: string }) {
   );
 }
 
-/** An image URL OpenAlex links, kept only when Wikimedia serves it over HTTPS. */
 function wikimediaImage(url: string | null | undefined) {
   const safe = safeExternalUrl(url);
   const host = safe ? new URL(safe).hostname : '';

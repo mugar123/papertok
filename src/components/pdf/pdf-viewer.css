@@ -12,8 +12,6 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  /* An opaque page, the same ground every route paints, so the paper opens
-     the way a list or a person does (page-transition.css). */
   background: var(--bg-primary);
 }
 
@@ -53,7 +51,6 @@
   flex-direction: column;
 }
 
-/* The title sits in the middle of the bar, whatever the controls either side. */
 .pdf-topbar {
   display: grid;
   grid-template-columns: 1fr minmax(0, max-content) 1fr;
@@ -100,7 +97,6 @@
   opacity: 1;
 }
 
-/* Everything under the header: the text, the PDF, and the states between. */
 .pdf-stage {
   position: relative;
   flex: 1;
@@ -109,7 +105,6 @@
   flex-direction: column;
 }
 
-/* Above the PDF when the text could not be asked for: what happened, and a second try. */
 .pdf-text-failed {
   display: flex;
   flex-wrap: wrap;
@@ -124,8 +119,6 @@
 }
 .pdf-text-failed p { margin: 0; }
 
-/* Petri and a line, centred on the page itself rather than on a card, over
-   whatever is still unseen beneath (the iframe loads in its place). */
 .pdf-loading {
   position: absolute;
   inset: 0;
@@ -140,13 +133,10 @@
   font-size: var(--fs-sm);
 }
 
-/* The paper is already on its way: Petri is simply there, with no rise. */
 .pdf-loading .petri .onboarding-petri-body {
   animation: none;
 }
 
-/* A card, not a caption: without its own surface the message read as stray
-   text in the middle of the viewer (seen on a real iPhone, 2026-08-29). */
 .pdf-fallback {
   position: absolute;
   top: 50%;
@@ -180,7 +170,6 @@
   text-decoration: none;
 }
 
-/* A finger gets the 44px target the compact desktop buttons do not need. */
 @media (pointer: coarse) {
   .pdf-topbar :is(button, a),
   .pdf-dock :is(button, a) {
@@ -196,7 +185,6 @@
   }
 }
 
-/* As a page does: the fades stay, the travel goes (page-transition.css). */
 @media (prefers-reduced-motion: reduce) {
   .pdf-overlay[data-open] {
     animation: pageCover 120ms linear both;
@@ -211,9 +199,7 @@
   }
 }
 
-/* The viewer's tools float over the bottom of the paper, out of the bar. The
-   shadow is the container's, so it follows the card while the card is
-   clipped to the bar's outline. */
+/* The shadow is the container's, so it follows the card while it is clipped to the bar. */
 .pdf-dock-root {
   position: absolute;
   bottom: max(var(--space-5), env(safe-area-inset-bottom));
@@ -252,9 +238,6 @@
 .pdf-dock-toggle[data-pressed] { background: transparent; color: var(--text-primary); box-shadow: none; }
 .pdf-dock-toggle:not([data-pressed]) { color: var(--text-tertiary); }
 
-/* The paper's information grows out of the bar: closed, the card is clipped
-   to the bar's own outline; open, to its whole rounded box. */
-/* Below the bar, which sits on the card's foot. */
 .pdf-info-positioner { z-index: 0; }
 .pdf-info {
   width: min(440px, calc(100vw - 2 * var(--space-4)));
@@ -287,20 +270,15 @@
 }
 .pdf-info-head { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
 .pdf-info-when { margin: 0; font: 600 1.0625rem/1.3 var(--font-serif); font-variant-numeric: tabular-nums; }
-/* The figures in one row of equal columns split by hairlines, no fills: each
-   named at the left above its number, centred in the column. */
 .pdf-info-stats { display: grid; margin: 0; padding: 0; list-style: none; }
 .pdf-info-stats li { display: grid; gap: var(--space-2); padding: 0 var(--space-3); }
 .pdf-info-stats li:first-child { padding-left: 0; }
 .pdf-info-stats li + li { border-left: 1px solid var(--border-subtle); }
-/* One label style for every name in the card: the stats' and the subjects' heading. */
 .pdf-info-label, .pdf-info-section-title { margin: 0; font: 500 0.75rem/1.3 var(--font-body); color: var(--text-secondary); }
 .pdf-info-value { justify-self: center; font: 600 1.5rem/1 var(--font-serif); font-variant-numeric: tabular-nums; }
 .pdf-info-value small { font: 500 0.8125rem/1 var(--font-body); color: var(--text-secondary); }
-/* The subjects, ruled rows that open their pages; past three, the list scrolls. */
 .pdf-info-section { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .pdf-info-section-title { margin-bottom: var(--space-1); }
-/* The rows' text starts on the card's edge; their hover ground reaches past it. */
 .pdf-info-rows { max-height: calc(3 * 44px + 2px); margin: 0 calc(-1 * var(--space-2)); padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
 .pdf-info-rows li + li { border-top: 1px solid var(--border-subtle); }
 .pdf-info-rows a, .pdf-info-rows li > span { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-sm); color: var(--text-primary); text-decoration: none; transition: background-color 150ms ease; }

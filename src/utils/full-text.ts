@@ -1,12 +1,4 @@
-/**
- * One document model for a paper's full text, read from the two shapes
- * providers publish it in: arXiv's LaTeXML HTML and Europe PMC's JATS XML.
- * The Worker fetches the source document (worker/full-text.ts); this parses
- * it in the browser, which has a DOM.
- *
- * Nothing from the source is rendered as markup except MathML, rebuilt here
- * from an allowlist of MathML elements and attributes.
- */
+// Nothing from the source is rendered as markup except MathML, rebuilt from an allowlist.
 import type { FullTextSource } from '../models/full-text.ts';
 import { safeCatalogUrl, safeExternalUrl } from './external-url.ts';
 
@@ -14,7 +6,6 @@ export type Inline =
   | { t: 'text'; text: string }
   | { t: 'em' | 'strong' | 'sup' | 'sub' | 'code'; children: Inline[] }
   | { t: 'link'; href: string; children: Inline[] }
-  // `cites` marks a citation, whose target is one of the references.
   | { t: 'ref'; target: string; cites?: true; children: Inline[] }
   | { t: 'math'; mathml: string; tex?: string }
   | { t: 'formula-image'; src: string };
@@ -228,7 +219,6 @@ const rows = (table: Element, rules: InlineRules): Cell[][] =>
         content: inlines(cell, rules),
       })));
 
-// arXiv: LaTeXML's ltx_* classes.
 
 /**
  * The year, DOI and arXiv id a citation line names. The year is the last
@@ -414,7 +404,6 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   });
 }
 
-// Europe PMC: JATS XML.
 
 const XLINK = 'http://www.w3.org/1999/xlink';
 

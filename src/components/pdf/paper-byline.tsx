@@ -65,7 +65,6 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
   );
 }
 
-// An author OpenAlex knows opens a preview of their profile; one it does not is only a name.
 function AuthorName({ author }: { author: PaperAuthor }) {
   const id = openAlexAuthorId(author);
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
@@ -91,7 +90,6 @@ function AuthorName({ author }: { author: PaperAuthor }) {
   );
 }
 
-/** The paper's title block: its title, its authors numbered by affiliation, and those affiliations. */
 export function PaperByline({ paper }: { paper: Paper }) {
   const authors = paper.authors.map(author => (typeof author === 'string' ? { name: author } : author)).filter(author => author.name);
   const affiliations = [...new Set(authors.map(author => author.affiliation?.trim()).filter((place): place is string => Boolean(place)))];

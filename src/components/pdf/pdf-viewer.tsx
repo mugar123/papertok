@@ -37,8 +37,6 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
-  // `undefined` while the Worker is asked for the paper's text, `null` when no
-  // provider publishes it as text: then the viewer is the PDF viewer it was.
   const [fullText, setFullText] = useState<FullText | null | undefined>(undefined);
   // The text could not be asked for, which is not the same as there being none.
   const [textFailed, setTextFailed] = useState(false);
@@ -48,9 +46,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [textScroll, setTextScroll] = useState<HTMLDivElement | null>(null);
   const [abstractShown, setAbstractShown] = useState(false);
   const outline = useOutline(fullText, textScroll, abstractShown);
-  // The article opens with the paper's title; the bar names it once that has scrolled away.
   const [titleInText, setTitleInText] = useState(true);
-  // The text opens at its top again, title in view, whatever was last read.
   const textScrollRef = useCallback((element: HTMLDivElement | null) => {
     setTextScroll(element);
     if (!element) setTitleInText(true);
@@ -103,7 +99,6 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [relayFailed, setRelayFailed] = useState(false);
   const drawsPages = Boolean(relayUrl) && !relayFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
-  // A PDF opened again starts loading again: the iframe is remounted.
   const showPdf = () => {
     setIframeLoaded(false);
     setShowFallback(false);

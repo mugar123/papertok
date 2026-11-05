@@ -5,16 +5,13 @@ import { normalizeArxivFigureId } from './paper-figure-service.ts';
 import { trustedWorkerUrl } from './worker-api-client.ts';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
-// The reader waits this long before showing the PDF instead; the Worker gives
-// the providers less (worker/full-text.ts), so its answer arrives in time.
+// Longer than the Worker's own deadline (worker/full-text.ts), so its answer arrives in time.
 const REQUEST_TIMEOUT_MS = 10_000;
-// The last answers, so the press that opens the viewer and the viewer itself
-// fetch and parse a document once.
+// The card press and the viewer it opens fetch and parse a document once.
 const RECENT_LIMIT = 8;
 const recent = new Map<string, FullText | null>();
 
 
-/** The identifiers the Worker can look a paper's text up by, or `null` if it has none. */
 export function fullTextQuery(paper: Partial<Paper> | null | undefined) {
   const query = new URLSearchParams();
   const arxivId = normalizeArxivFigureId(paper);

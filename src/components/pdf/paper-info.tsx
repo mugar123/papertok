@@ -20,15 +20,8 @@ function words(blocks: Block[]) {
   return blocks.flatMap(blockInlines).map(plainText).join(' ').split(/\s+/).filter(Boolean).length;
 }
 
-/**
- * What is known about the paper and about the text being read: where and when
- * it appeared, the figures that size it up in one ruled row, and its
- * subjects, each opening its page. A fact no source states is left out rather
- * than shown as empty or zero.
- */
 function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefined }) {
   const venue = paper.journal || paper.conference;
-  // Each arXiv category as the app's own topic page, as a card's topic links to it.
   const subjects = [...new Set([paper.primaryCategory, ...(paper.categories ?? [])].filter((code): code is string => Boolean(code)))]
     .map(code => {
       const label = getCategoryLabel(code) || code;
@@ -75,26 +68,16 @@ function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefi
   );
 }
 
-/**
- * The viewer's tools, floating at the bottom, and the card that grows out of
- * them with the outline or the paper's information. The card is a Base UI
- * Popover anchored on the bar, its foot on the bar's own, clipped to the bar's
- * outline when closed (`--dock-w`, `--dock-h`, measured here) and opening out
- * from it; Base UI owns its dismissal and focus.
- */
+// The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
 export function PaperDock({ paper, doc, scroll, contents, children }: {
   paper: Paper;
   doc: FullText | null | undefined;
   scroll: HTMLElement | null;
-  // The outline, where the bar offers it (below the rail's breakpoint), given a way to close the card.
   contents: ((close: () => void) => ReactNode) | null;
   children: ReactNode;
 }) {
-  // One card for two things, the outline or the paper's information: what it
-  // shows outlives its being open, so it leaves with its content.
   const [open, setOpen] = useState(false);
   const [shows, setShows] = useState<'contents' | 'info'>('info');
-  // Reading down the text stows the bar on a phone (pdf-viewer.css); scrolling back up brings it back.
   const [stowed, setStowed] = useState(false);
   const lastTop = useRef(0);
   useScrollFrame(scroll, () => {
@@ -105,7 +88,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     else return;
     lastTop.current = top;
   });
-  // The card mounts inside the dock, under the bar; the portal waits for it.
+  // State, not a ref: the portal needs the element on its first render.
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const dock = useRef<HTMLDivElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
@@ -121,7 +104,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     observer.observe(bar);
     return () => observer.disconnect();
   }, []);
-  // The outline opens on the section being read.
   useEffect(() => {
     if (!open || shows !== 'contents') return;
     const frame = requestAnimationFrame(() => {
@@ -131,10 +113,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     });
     return () => cancelAnimationFrame(frame);
   }, [open, shows]);
-  // Swapping what the open card shows (outline or information) resizes it
-  // from the height it had, measured at the press, to the one it lands on,
-  // and fades the new content in; a swap during a swap starts from where the
-  // card is.
+  // A swap resizes the card from the height measured at the press; a swap during a swap starts from where it is.
   const swapFrom = useRef(0);
   const resize = useRef<Animation | null>(null);
   useLayoutEffect(() => {
@@ -152,8 +131,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
       { duration: MOTION_BASE_S * 1000, easing: `cubic-bezier(${EASE_OUT.join(', ')})` },
     );
   }, [shows]);
-  // A press on the bar's other tools is not a press outside the card. Opening
-  // from the other trigger swaps what the open card shows.
+  // A press on the bar's other tools is not a press outside the card.
   const onOpenChange = (next: boolean, details: PopoverChangeDetails) => {
     if (!next && details.reason === 'outside-press' && dock.current?.contains(details.event.target as Node)) return;
     const what = details.trigger?.getAttribute('data-shows');
