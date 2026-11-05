@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { Block, FullText } from '../../utils/full-text.ts';
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Collapsible } from '@base-ui/react/collapsible';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Popover } from '@base-ui/react/popover';
 import { ArrowRight, Info, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
@@ -79,8 +79,10 @@ function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefi
 
 /**
  * The viewer's tools, floating at the bottom, and the card that grows out of
- * them with the outline or the paper's information: the card is clipped to the bar's own outline when
- * closed (`--dock-w`, `--dock-h`, measured here) and opens out from it.
+ * them with the outline or the paper's information. The card is a Base UI
+ * Popover anchored on the bar, its foot on the bar's own, clipped to the bar's
+ * outline when closed (`--dock-w`, `--dock-h`, measured here) and opening out
+ * from it; Base UI owns its dismissal and focus.
  */
 export function PaperDock({ paper, doc, scroll, contents, children }: {
   paper: Paper;
@@ -94,7 +96,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   // shows outlives its being open, so it leaves with its content.
   const [open, setOpen] = useState(false);
   const [shows, setShows] = useState<'contents' | 'info'>('info');
-  const panelId = useId();
   // Reading down the text stows the bar on a phone (pdf-viewer.css); scrolling back up brings it back.
   const [stowed, setStowed] = useState(false);
   useEffect(() => {
@@ -114,10 +115,10 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     scroll.addEventListener('scroll', onScroll, { passive: true });
     return () => { scroll.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
   }, [scroll]);
-  const root = useRef<HTMLDivElement | null>(null);
+  // The card mounts inside the dock, under the bar; the portal waits for it.
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const dock = useRef<HTMLDivElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
-  const opener = useRef<HTMLButtonElement | null>(null);
   useLayoutEffect(() => {
     const bar = dock.current;
     if (!bar) return;
@@ -130,20 +131,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     observer.observe(bar);
     return () => observer.disconnect();
   }, []);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setOpen(false);
-      opener.current?.focus();
-    };
-    document.addEventListener('pointerdown', outside);
-    root.current?.addEventListener('keydown', escape);
-    const element = root.current;
-    return () => { document.removeEventListener('pointerdown', outside); element?.removeEventListener('keydown', escape); };
-  }, [open]);
   // The outline opens on the section being read.
   useEffect(() => {
     if (!open || shows !== 'contents') return;
@@ -175,44 +162,49 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
       { duration: MOTION_BASE_S * 1000, easing: `cubic-bezier(${EASE_OUT.join(', ')})` },
     );
   }, [shows]);
-  // A second press of the same button closes the card; the other one swaps what it shows.
-  const toggle = (what: 'contents' | 'info', button: HTMLButtonElement) => {
-    opener.current = button;
-    if (open && shows === what) setOpen(false);
-    else {
-      if (open && panel.current) swapFrom.current = panel.current.getBoundingClientRect().height;
+  // A press on the bar's other tools is not a press outside the card. Opening
+  // from the other trigger swaps what the open card shows.
+  const onOpenChange = (next: boolean, details: Popover.Root.ChangeEventDetails) => {
+    if (!next && details.reason === 'outside-press' && dock.current?.contains(details.event.target as Node)) return;
+    const what = details.trigger?.getAttribute('data-shows');
+    if (next && (what === 'contents' || what === 'info')) {
+      if (open && what !== shows && panel.current) swapFrom.current = panel.current.getBoundingClientRect().height;
       setShows(what);
-      setOpen(true);
     }
+    setOpen(next);
   };
   const close = () => setOpen(false);
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className="pdf-dock-root" ref={root} data-stowed={(stowed && !open) || undefined}>
-      <Collapsible.Panel
-        keepMounted
-        id={panelId}
-        ref={panel}
-        className="pdf-info"
-        data-shows={shows}
-        role="region"
-        aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}
-        render={(props, state) => <div {...props} inert={!state.open} />}
-      >
-        <div className="pdf-info-body">
-          {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
+    <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
+      <Popover.Root open={open} onOpenChange={onOpenChange}>
+        <Popover.Portal keepMounted container={root}>
+          <Popover.Positioner
+            anchor={dock}
+            side="top"
+            align="center"
+            sideOffset={({ anchor }) => -anchor.height}
+            collisionAvoidance={{ side: 'none', align: 'none' }}
+            className="pdf-info-positioner"
+          >
+            <Popover.Popup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}>
+              <div className="pdf-info-body">
+                {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+        <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock} data-info-open={open || undefined}>
+          {contents && (
+            <Popover.Trigger data-shows="contents" render={<Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" />}>
+              <ListBullets size={18} aria-hidden="true" />
+            </Popover.Trigger>
+          )}
+          {children}
+          <Popover.Trigger data-shows="info" render={<Button variant="ghost" size="icon" aria-label="About this paper" title="About this paper" />}>
+            <Info size={18} aria-hidden="true" />
+          </Popover.Trigger>
         </div>
-      </Collapsible.Panel>
-      <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock} data-info-open={open || undefined}>
-        {contents && (
-          <Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" aria-expanded={open && shows === 'contents'} aria-controls={panelId} onClick={event => toggle('contents', event.currentTarget)}>
-            <ListBullets size={18} aria-hidden="true" />
-          </Button>
-        )}
-        {children}
-        <Button variant="ghost" size="icon" aria-label="About this paper" title="About this paper" aria-expanded={open && shows === 'info'} aria-controls={panelId} onClick={event => toggle('info', event.currentTarget)}>
-          <Info size={18} aria-hidden="true" />
-        </Button>
-      </div>
-    </Collapsible.Root>
+      </Popover.Root>
+    </div>
   );
 }
