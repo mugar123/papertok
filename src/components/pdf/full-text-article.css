@@ -67,14 +67,10 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  object-fit: cover;
   background: var(--bg-sunken);
   font: 600 1.25rem/1 var(--font-serif);
   color: var(--text-secondary);
 }
-/* A portrait gets a neutral edge of its own, black or white, never the surface's tint. */
-img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1px; }
-:root[data-theme='dark'] img.ft-author-photo { outline-color: oklch(1 0 0 / 0.1); }
 /* The author's profile on its way: a still frame of it, breathing. */
 .ft-author-skeleton { display: block; width: 11rem; max-width: 100%; height: 10px; margin-top: var(--space-2); border-radius: var(--radius-sm); background: var(--bg-sunken); animation: ftSkeleton 1.2s ease-in-out infinite alternate; }
 .ft-author-skeleton--short { width: 6.5rem; }
