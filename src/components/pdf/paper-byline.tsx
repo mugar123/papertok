@@ -41,14 +41,7 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
             </>
           )}
           {institution && <p className="ft-author-place">{institution}</p>}
-          {entity && (typeof entity.works_count === 'number' || typeof entity.cited_by_count === 'number') && (
-            <p className="ft-author-stats">
-              {[
-                typeof entity.works_count === 'number' && `${compact.format(entity.works_count)} works`,
-                typeof entity.cited_by_count === 'number' && `${compact.format(entity.cited_by_count)} citations`,
-              ].filter(Boolean).join(' · ')}
-            </p>
-          )}
+          {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compact.format(entity.works_count)} works</p>}
         </div>
       </div>
       {profile === null && <p className="ft-author-bio" role="status">Could not load this profile.</p>}
