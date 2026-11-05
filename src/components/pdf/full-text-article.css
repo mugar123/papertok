@@ -395,7 +395,7 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 }
 .ft-peek-head { display: flex; align-items: center; justify-content: space-between; }
 .ft-peek .ft-ref-title { margin: 0; font-size: 1rem; }
-.ft-peek p { margin: 0; }
+.ft-peek :is(.ft-ref-authors, .ft-ref-venue) { display: block; }
 /* The card's links, stacked ruled rows like the information card's subjects. */
 .ft-peek .ft-peek-links { margin: var(--space-2) calc(-1 * var(--space-2)) 0; padding: 0; list-style: none; }
 .ft-peek-links li + li { border-top: 1px solid var(--border-subtle); }

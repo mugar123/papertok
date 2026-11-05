@@ -11,10 +11,11 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { PreviewCard, PreviewCardContent, PreviewCardTrigger } from '../ui/preview-card.tsx';
 import ScientificText from '../scientific-text.ts';
+import { NewTabHint } from './new-tab-hint.tsx';
+import { compactCount } from '../../utils/format-count.ts';
 
 type Profile = { author: OpenAlexAuthor | null; wiki: WikiInfo | null };
 
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
 function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; profile: Profile | null | undefined }) {
   const { user } = useAuth();
@@ -41,7 +42,7 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
             </>
           )}
           {institution && <p className="ft-author-place">{institution}</p>}
-          {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compact.format(entity.works_count)} works</p>}
+          {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compactCount.format(entity.works_count)} works</p>}
         </div>
         {follow && (
           <FollowToggle
@@ -57,7 +58,7 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
       {profile?.wiki && <p className="ft-author-bio">{profile.wiki.extract}</p>}
       <div className="ft-author-actions">
         <span className="ft-author-links">
-          {path && <a href={path} target="_blank" rel="noopener noreferrer">Open profile<span className="visually-hidden"> (opens in a new tab)</span></a>}
+          {path && <a href={path} target="_blank" rel="noopener noreferrer">Open profile<NewTabHint /></a>}
         </span>
       </div>
     </>
@@ -72,8 +73,7 @@ function AuthorName({ author }: { author: PaperAuthor }) {
   const load = (open: boolean) => {
     if (!open || profile) return;
     void getEntityById('author', id)
-      .then(async found => {
-        const entity = found;
+      .then(async entity => {
         const wiki = entity ? await loadEntityWikiInfo({ entity }).catch(() => null) : null;
         setProfile({ author: entity, wiki });
       })

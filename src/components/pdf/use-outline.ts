@@ -1,5 +1,6 @@
 import type { FullText } from '../../utils/full-text.ts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useScrollFrame } from './use-scroll-frame.ts';
 import { plainText } from '../../utils/full-text.ts';
 import { anchor } from './article-places.ts';
 
@@ -27,19 +28,21 @@ function outlineOf(doc: FullText, withAbstract: boolean): OutlineItem[] {
 export function useOutline(doc: FullText | null | undefined, scroll: HTMLElement | null, withAbstract: boolean): Outline {
   const items = useMemo(() => (doc ? outlineOf(doc, withAbstract) : []), [doc, withAbstract]);
   const [active, setActive] = useState(-1);
+  const update = () => {
+    if (!scroll) return;
+    const line = scroll.getBoundingClientRect().top + scroll.clientHeight / 4;
+    setActive(items.findLastIndex(item => {
+      const heading = document.getElementById(item.target);
+      return heading !== null && heading.getBoundingClientRect().top <= line;
+    }));
+  };
+  useScrollFrame(items.length > 0 ? scroll : null, update);
+  // The section being read when the text first shows, before any scroll.
+  const settle = useEffectEvent(update);
   useEffect(() => {
     if (!scroll || items.length === 0) return;
-    const headings = items.map(item => document.getElementById(item.target));
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const line = scroll.getBoundingClientRect().top + scroll.clientHeight / 4;
-      setActive(headings.findLastIndex(heading => heading !== null && heading.getBoundingClientRect().top <= line));
-    };
-    const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
-    frame = requestAnimationFrame(update);
-    scroll.addEventListener('scroll', onScroll, { passive: true });
-    return () => { scroll.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
+    const frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
   }, [scroll, items]);
   return { items, active };
 }

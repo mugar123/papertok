@@ -11,6 +11,7 @@
  * A paper no provider publishes as text is an ordinary answer, `document:
  * null`, and the reader falls back to the PDF.
  */
+import type { FullTextAnswer } from '../src/models/full-text.ts';
 import { isArxivFigureId, readHtmlWithinLimit } from './paper-figures.ts';
 
 export const FULL_TEXT_CACHE_SECONDS = 30 * 24 * 60 * 60;
@@ -29,16 +30,6 @@ const DOI = /^10\.\d{4,9}\/[^\s"]{1,300}$/;
 
 export type FullTextRequest = { arxivId: string; fullTextId: string; doi: string };
 
-export type FullTextAnswer = {
-  source: 'arxiv' | 'ar5iv' | 'europepmc' | null;
-  format: 'latexml' | 'jats' | null;
-  url: string | null;
-  fullTextId?: string;
-  license?: string;
-  document: string | null;
-  /** A provider failed, so the absence of text is not established. */
-  unavailable?: true;
-};
 
 
 const NONE: FullTextAnswer = { source: null, format: null, url: null, document: null };
@@ -46,7 +37,7 @@ const NONE: FullTextAnswer = { source: null, format: null, url: null, document: 
 /** The identifiers the route will send upstream, or `null` when none is usable. */
 export function normalizeFullTextRequest(params: URLSearchParams): FullTextRequest | null {
   const arxivId = String(params.get('arxiv_id') || '').trim().replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
-  const fullTextId = String(params.get('pmcid') || '').trim().toUpperCase();
+  const fullTextId = String(params.get('fulltext_id') || '').trim().toUpperCase();
   const doi = String(params.get('doi') || '').trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase();
   const request = {
     arxivId: isArxivFigureId(arxivId) ? arxivId : '',

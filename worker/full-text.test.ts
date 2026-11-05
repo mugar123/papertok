@@ -23,14 +23,14 @@ function upstream(answers: Record<string, () => Response>) {
 
 test('keeps only well-formed identifiers, in the form sent upstream', () => {
   assert.deepEqual(
-    normalizeFullTextRequest(params({ arxiv_id: 'arXiv:1706.03762v7', pmcid: 'pmc1762328', doi: 'https://doi.org/10.1371/Journal.PONE.0000001' })),
+    normalizeFullTextRequest(params({ arxiv_id: 'arXiv:1706.03762v7', fulltext_id: 'pmc1762328', doi: 'https://doi.org/10.1371/Journal.PONE.0000001' })),
     { arxivId: '1706.03762', fullTextId: 'PMC1762328', doi: '10.1371/journal.pone.0000001' },
   );
   assert.deepEqual(
-    normalizeFullTextRequest(params({ arxiv_id: '../etc', pmcid: 'PPR1326190' })),
+    normalizeFullTextRequest(params({ arxiv_id: '../etc', fulltext_id: 'PPR1326190' })),
     { arxivId: '', fullTextId: 'PPR1326190', doi: '' },
   );
-  assert.equal(normalizeFullTextRequest(params({ arxiv_id: 'x', pmcid: 'PMC12/../1', doi: 'not-a-doi' })), null);
+  assert.equal(normalizeFullTextRequest(params({ arxiv_id: 'x', fulltext_id: 'PMC12/../1', doi: 'not-a-doi' })), null);
   assert.equal(normalizeFullTextRequest(params({})), null);
 });
 

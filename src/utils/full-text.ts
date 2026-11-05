@@ -7,13 +7,15 @@
  * Nothing from the source is rendered as markup except MathML, rebuilt here
  * from an allowlist of MathML elements and attributes.
  */
+import type { FullTextSource } from '../models/full-text.ts';
 import { safeCatalogUrl, safeExternalUrl } from './external-url.ts';
 
 export type Inline =
   | { t: 'text'; text: string }
   | { t: 'em' | 'strong' | 'sup' | 'sub' | 'code'; children: Inline[] }
   | { t: 'link'; href: string; children: Inline[] }
-  | { t: 'ref'; target: string; children: Inline[] }
+  // `cites` marks a citation, whose target is one of the references.
+  | { t: 'ref'; target: string; cites?: true; children: Inline[] }
   | { t: 'math'; mathml: string; tex?: string }
   | { t: 'formula-image'; src: string };
 
@@ -54,7 +56,7 @@ export type Reference = {
 export type Note = { id: string; label: string; content: Inline[] };
 
 export type FullText = {
-  source: 'arxiv' | 'ar5iv' | 'europepmc';
+  source: FullTextSource;
   sourceUrl: string;
   license?: string;
   lang?: string;
@@ -178,6 +180,30 @@ function inlines(node: Node, rules: InlineRules): Inline[] {
 export const plainText = (content: Inline[]): string =>
   content.map(item => (item.t === 'text' ? item.text : 'children' in item ? plainText(item.children) : '')).join('');
 
+/** Every run of inline content a block holds, its caption and table cells included. */
+export function blockInlines(block: Block): Inline[][] {
+  switch (block.t) {
+    case 'heading':
+    case 'p': return [block.children];
+    case 'list': return block.items;
+    case 'figure': return [block.caption];
+    case 'table': return [block.caption, ...block.rows.flatMap(row => row.map(cell => cell.content))];
+    case 'equation': return [];
+  }
+}
+
+// The parsers name a link's target, not what it is; one into the references is a citation.
+function withCitations(doc: FullText): FullText {
+  const references = new Set(doc.references.map(reference => reference.id));
+  const mark = (content: Inline[]) => content.forEach(item => {
+    if (item.t === 'ref' && references.has(item.target)) item.cites = true;
+    if ('children' in item) mark(item.children);
+  });
+  [...doc.abstract, ...doc.body].forEach(block => blockInlines(block).forEach(mark));
+  doc.notes.forEach(note => mark(note.content));
+  return doc;
+}
+
 const hasMath = (content: Inline[]) => content.some(item => item.t === 'math' || item.t === 'formula-image');
 
 const clean = (value: string | null | undefined) => (value || '').replace(/\s+/g, ' ').trim();
@@ -217,10 +243,7 @@ export function citationFacts(line: string) {
   };
 }
 
-/**
- * LaTeXML's TeX in the dialect KaTeX reads. KaTeX rejected 124 of the 1,400
- * formulas of math/0211159 and 20 of 122 of 1512.03385 on these three.
- */
+/** LaTeXML's TeX in the dialect KaTeX reads: three spellings KaTeX refuses, rewritten. */
 export function latexmlTex(alttext: string | null | undefined) {
   return clean(alttext)
     .replace(/\\begin\{array\}\[[^\]]*\]/g, '\\begin{array}')
@@ -378,7 +401,7 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   // arXiv's page header names the licence; a link inside the paper is the authors' text.
   const license = [...doc.querySelectorAll('a[href*="creativecommons.org"], a[href*="arxiv.org/licenses"]')]
     .find(link => !link.closest('article'))?.getAttribute('href') ?? undefined;
-  return {
+  return withCitations({
     source: 'arxiv',
     sourceUrl: url,
     license,
@@ -388,7 +411,7 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
     references,
     notes,
     conversionErrors: article.querySelectorAll('.ltx_ERROR').length,
-  };
+  });
 }
 
 // Europe PMC: JATS XML.
@@ -586,7 +609,7 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
   }
   const licenseEl = meta?.querySelector('license');
   const license = licenseEl?.getAttributeNS(XLINK, 'href') ?? licenseEl?.getAttribute('license-type') ?? undefined;
-  return {
+  return withCitations({
     source: 'europepmc',
     sourceUrl: url,
     license: license ?? undefined,
@@ -596,5 +619,5 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
     references: [...doc.querySelectorAll('ref-list ref')].map(jatsReference),
     notes: footnotes.map(fn => ({ id: fn.id, label: noteLabels.get(fn.id)!, content: inlines(fn, rules) })),
     conversionErrors: droppedFormulas,
-  };
+  });
 }

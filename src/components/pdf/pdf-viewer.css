@@ -109,6 +109,21 @@
   flex-direction: column;
 }
 
+/* Above the PDF when the text could not be asked for: what happened, and a second try. */
+.pdf-text-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.pdf-text-failed p { margin: 0; }
+
 /* Petri and a line, centred on the page itself rather than on a card, over
    whatever is still unseen beneath (the iframe loads in its place). */
 .pdf-loading {

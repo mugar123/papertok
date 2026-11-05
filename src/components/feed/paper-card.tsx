@@ -1568,7 +1568,7 @@ const PaperCard = memo(function PaperCard({
       // A slow lookup keeps running past the wait, so the next press finds it cached.
       const fullText = await resolveWithin(getFullText(paper), FULL_TEXT_PRESS_WAIT_MS, null);
       setIsResolvingAccess(false);
-      if (fullText) {
+      if (fullText?.doc) {
         void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) });
         return;
       }

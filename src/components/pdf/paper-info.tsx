@@ -2,24 +2,22 @@ import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { Block, FullText } from '../../utils/full-text.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Popover } from '@base-ui/react/popover';
+import type { PopoverChangeDetails } from '../ui/popover.tsx';
+import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTrigger } from '../ui/popover.tsx';
 import { ArrowRight, Info, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
+import { useScrollFrame } from './use-scroll-frame.ts';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
-import { plainText } from '../../utils/full-text.ts';
+import { blockInlines, plainText } from '../../utils/full-text.ts';
 import { getCategoryLabel } from '../../data/category-taxonomy.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
+import { NewTabHint } from './new-tab-hint.tsx';
+import { compactCount } from '../../utils/format-count.ts';
 
 const WORDS_PER_MINUTE = 230;
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
 function words(blocks: Block[]) {
-  const text = blocks.map(block => {
-    if (block.t === 'p' || block.t === 'heading') return plainText(block.children);
-    if (block.t === 'list') return block.items.map(plainText).join(' ');
-    return '';
-  }).join(' ');
-  return text.split(/\s+/).filter(Boolean).length;
+  return blocks.flatMap(blockInlines).map(plainText).join(' ').split(/\s+/).filter(Boolean).length;
 }
 
 /**
@@ -41,7 +39,7 @@ function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefi
   const tiles = [
     doc && { value: String(Math.max(1, Math.round(length / WORDS_PER_MINUTE))), unit: 'min', label: 'Reading time' },
     // Always shown: a count no source states is a dash, not a zero.
-    { value: citations !== undefined ? compact.format(citations) : '—', unit: '', label: 'Citations', hint: citations !== undefined ? undefined : 'Not counted yet' },
+    { value: citations !== undefined ? compactCount.format(citations) : '—', unit: '', label: 'Citations', hint: citations !== undefined ? undefined : 'Not counted yet' },
     doc && doc.references.length > 0 && { value: String(doc.references.length), unit: '', label: 'References' },
   ].filter((tile): tile is { value: string; unit: string; label: string; hint?: string } => Boolean(tile));
   return (
@@ -66,7 +64,7 @@ function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefi
             {subjects.map(subject => (
               <li key={subject.code}>
                 {subject.path
-                  ? <a href={subject.path} target="_blank" rel="noopener noreferrer"><span>{subject.label}</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a>
+                  ? <a href={subject.path} target="_blank" rel="noopener noreferrer"><span>{subject.label}</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a>
                   : <span>{subject.label}</span>}
               </li>
             ))}
@@ -98,23 +96,15 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   const [shows, setShows] = useState<'contents' | 'info'>('info');
   // Reading down the text stows the bar on a phone (pdf-viewer.css); scrolling back up brings it back.
   const [stowed, setStowed] = useState(false);
-  useEffect(() => {
-    if (!scroll) return;
-    let last = scroll.scrollTop;
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const top = scroll.scrollTop;
-      if (top < 48) setStowed(false);
-      else if (top - last > 8) setStowed(true);
-      else if (last - top > 8) setStowed(false);
-      else return;
-      last = top;
-    };
-    const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
-    scroll.addEventListener('scroll', onScroll, { passive: true });
-    return () => { scroll.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
-  }, [scroll]);
+  const lastTop = useRef(0);
+  useScrollFrame(scroll, () => {
+    const top = scroll?.scrollTop ?? 0;
+    if (top < 48) setStowed(false);
+    else if (top - lastTop.current > 8) setStowed(true);
+    else if (lastTop.current - top > 8) setStowed(false);
+    else return;
+    lastTop.current = top;
+  });
   // The card mounts inside the dock, under the bar; the portal waits for it.
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const dock = useRef<HTMLDivElement | null>(null);
@@ -164,7 +154,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   }, [shows]);
   // A press on the bar's other tools is not a press outside the card. Opening
   // from the other trigger swaps what the open card shows.
-  const onOpenChange = (next: boolean, details: Popover.Root.ChangeEventDetails) => {
+  const onOpenChange = (next: boolean, details: PopoverChangeDetails) => {
     if (!next && details.reason === 'outside-press' && dock.current?.contains(details.event.target as Node)) return;
     const what = details.trigger?.getAttribute('data-shows');
     if (next && (what === 'contents' || what === 'info')) {
@@ -176,9 +166,9 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   const close = () => setOpen(false);
   return (
     <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
-      <Popover.Root open={open} onOpenChange={onOpenChange}>
-        <Popover.Portal keepMounted container={root}>
-          <Popover.Positioner
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverPortal keepMounted container={root}>
+          <PopoverPositioner
             anchor={dock}
             side="top"
             align="center"
@@ -186,25 +176,25 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
             collisionAvoidance={{ side: 'none', align: 'none' }}
             className="pdf-info-positioner"
           >
-            <Popover.Popup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}>
+            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}>
               <div className="pdf-info-body">
                 {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
               </div>
-            </Popover.Popup>
-          </Popover.Positioner>
-        </Popover.Portal>
+            </PopoverPopup>
+          </PopoverPositioner>
+        </PopoverPortal>
         <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock} data-info-open={open || undefined}>
           {contents && (
-            <Popover.Trigger data-shows="contents" render={<Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" />}>
+            <PopoverTrigger data-shows="contents" render={<Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" />}>
               <ListBullets size={18} aria-hidden="true" />
-            </Popover.Trigger>
+            </PopoverTrigger>
           )}
           {children}
-          <Popover.Trigger data-shows="info" render={<Button variant="ghost" size="icon" aria-label="About this paper" title="About this paper" />}>
+          <PopoverTrigger data-shows="info" render={<Button variant="ghost" size="icon" aria-label="About this paper" title="About this paper" />}>
             <Info size={18} aria-hidden="true" />
-          </Popover.Trigger>
+          </PopoverTrigger>
         </div>
-      </Popover.Root>
+      </Popover>
     </div>
   );
 }

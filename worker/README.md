@@ -436,11 +436,11 @@ Everyone behind one NAT shares those 20. A refused miss is a
 closes the route with a 503; either way the card shows no figures and asks again the next
 time it appears.
 
-`/resources/full-text?arxiv_id=&pmcid=&doi=` returns the source document of a paper's full
+`/resources/full-text?arxiv_id=&fulltext_id=&doi=` returns the source document of a paper's full
 text for the in-app reader, which parses it in the browser (`src/utils/full-text.ts`). Any
 one identifier is enough; an unusable one is dropped, and none usable is a 400. An arXiv
 id asks arxiv.org/html, then ar5iv, and only a page containing a LaTeXML document counts.
-Without one, `pmcid` (a `PMC` or `PPR` id) or the DOI, resolved through Europe PMC's search
+Without one, `fulltext_id` (Europe PMC's full-text id: a `PMC` or `PPR` id) or the DOI, resolved through Europe PMC's search
 and only when it lists the article as open access, asks Europe PMC for its JATS XML. The
 answer is `{ source, format, url, fullTextId?, license?, document }`, with `format`
 `latexml` or `jats`, or `document: null` when no provider publishes the paper as text,

@@ -1,18 +1,20 @@
 import type { MouseEvent, ReactNode, RefObject } from 'react';
 import type { Block, FullText, Inline, Reference } from '../../utils/full-text.ts';
-import { use, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { blockInlines } from '../../utils/full-text.ts';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPublicPaperPath } from '../../utils/public-navigation.ts';
 import { copyText } from '../../utils/clipboard.ts';
 import { ArrowRight, ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
-import { Popover } from '@base-ui/react/popover';
+import { Popover, PopoverClose, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTitle } from '../ui/popover.tsx';
 import type { Paper } from '../../models/paper.ts';
 import { PaperByline } from './paper-byline.tsx';
-import { anchor, landOn } from './article-places.ts';
-import { ArticleReferencesContext } from '../../context/contexts.ts';
+import { anchor, anchorTarget, landOn } from './article-places.ts';
+import { useScrollFrame } from './use-scroll-frame.ts';
 import './full-text-article.css';
+import { NewTabHint } from './new-tab-hint.tsx';
 
 
 // A citation or a "Figure 2" moves within the article. Following it as a link
@@ -89,9 +91,8 @@ function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
 }
 
 // A citation, which opens its reference's card, is marked apart from a jump to a figure or an equation.
-function Ref({ target, children }: { target: string; children: ReactNode }) {
-  const cites = use(ArticleReferencesContext).has(target);
-  return <a href={`#${anchor(target)}`} data-cites={cites || undefined} onClick={event => jumpTo(event, target)}>{children}</a>;
+function Ref({ target, cites, children }: { target: string; cites?: true; children: ReactNode }) {
+  return <a href={`#${anchor(target)}`} data-cites={cites} onClick={event => jumpTo(event, target)}>{children}</a>;
 }
 
 function Inlines({ content }: { content: Inline[] }) {
@@ -101,7 +102,7 @@ function Inlines({ content }: { content: Inline[] }) {
       case 'math': return <Formula key={index} mathml={item.mathml} tex={item.tex} display={false} />;
       case 'formula-image': return <Formula key={index} image={item.src} display={false} />;
       case 'link': return <a key={index} href={item.href} target="_blank" rel="noopener noreferrer"><Inlines content={item.children} /></a>;
-      case 'ref': return <Ref key={index} target={item.target}><Inlines content={item.children} /></Ref>;
+      case 'ref': return <Ref key={index} target={item.target} cites={item.cites}><Inlines content={item.children} /></Ref>;
       case 'em': return <em key={index}><Inlines content={item.children} /></em>;
       case 'strong': return <strong key={index}><Inlines content={item.children} /></strong>;
       case 'sup': return <sup key={index}><Inlines content={item.children} /></sup>;
@@ -141,6 +142,17 @@ const referenceLinks = (reference: Reference) =>
     !reference.doi && !reference.arxiv && reference.url && { href: reference.url, text: 'Source' },
   ].filter((link): link is { href: string; text: string } => Boolean(link && link.href));
 
+// Who wrote a reference and where it appeared, when its title stands apart from them.
+function ReferenceSource({ reference }: { reference: Reference }) {
+  if (!reference.title) return null;
+  return (
+    <>
+      {reference.authors.length > 0 && <span className="ft-ref-authors">{authorLine(reference.authors, 4)}</span>}
+      {reference.venue && <span className="ft-ref-venue">{reference.venue}</span>}
+    </>
+  );
+}
+
 function ReferenceLinks({ reference }: { reference: Reference }) {
   const links = referenceLinks(reference);
   if (!links.length) return null;
@@ -148,7 +160,7 @@ function ReferenceLinks({ reference }: { reference: Reference }) {
     <span className="ft-ref-links">
       {links.map(link => (
         <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
-          {link.text}<span className="visually-hidden"> (opens in a new tab)</span>
+          {link.text}<NewTabHint />
         </a>
       ))}
     </span>
@@ -164,11 +176,10 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
       <span className="ft-ref-meta">{referenceMeta(reference)}</span>
       <span className="ft-ref-title">
         {primary
-          ? <a className="ft-ref-card-link" href={primary.href} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<span className="visually-hidden"> (opens in a new tab)</span></a>
+          ? <a className="ft-ref-card-link" href={primary.href} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<NewTabHint /></a>
           : referenceTitle(reference)}
       </span>
-      {reference.title && reference.authors.length > 0 && <span className="ft-ref-authors">{authorLine(reference.authors, 4)}</span>}
-      {reference.title && reference.venue && <span className="ft-ref-venue">{reference.venue}</span>}
+      <ReferenceSource reference={reference} />
       <ReferenceLinks reference={reference} />
     </>
   );
@@ -177,7 +188,7 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
 // A cited work beside the citation that was pressed, where a screen has no
 // margin for it: the place in the text stays in view. It opens in PaperTok
 // when an identifier names it.
-function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; lang?: string }) {
+function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; scroll: HTMLElement | null; lang?: string }) {
   const path = reference && (reference.arxiv || reference.doi || reference.pmid)
     ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
@@ -186,54 +197,44 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, lang }: { refere
   // is rather than pulling the text back to the citation.
   const scrolledAway = useRef(false);
   useEffect(() => {
-    const citation = anchor.current;
-    const text = citation?.closest<HTMLElement>('.ft-scroll');
-    if (!open || !citation || !text) return;
-    scrolledAway.current = false;
-    let frame = 0;
-    const check = () => {
-      frame = 0;
-      const place = citation.getBoundingClientRect();
-      const view = text.getBoundingClientRect();
-      if (place.bottom > view.top && place.top < view.bottom) return;
-      scrolledAway.current = true;
-      onOpenChange(false);
-    };
-    const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
-    text.addEventListener('scroll', onScroll, { passive: true });
-    return () => { text.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
-  }, [open, anchor, onOpenChange]);
+    if (open) scrolledAway.current = false;
+  }, [open]);
+  useScrollFrame(open ? scroll : null, () => {
+    const place = anchor.current?.getBoundingClientRect();
+    const view = scroll?.getBoundingClientRect();
+    if (!place || !view || (place.bottom > view.top && place.top < view.bottom)) return;
+    scrolledAway.current = true;
+    onOpenChange(false);
+  });
   return (
-    <Popover.Root open={open} onOpenChange={onOpenChange}>
-      <Popover.Portal>
-        <Popover.Positioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
-          <Popover.Popup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor.current)}>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverPortal>
+        <PopoverPositioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
+          <PopoverPopup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor.current)}>
             {reference && (
               <div lang={lang}>
                 <div className="ft-peek-head">
                   <span className="ft-ref-meta">{referenceMeta(reference)}</span>
-                  <Popover.Close render={<Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" />}><X size={14} aria-hidden="true" /></Popover.Close>
+                  <PopoverClose render={<Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" />}><X size={14} aria-hidden="true" /></PopoverClose>
                 </div>
-                <Popover.Title className="ft-ref-title">{referenceTitle(reference)}</Popover.Title>
-                {reference.title && reference.authors.length > 0 && <p className="ft-ref-authors">{authorLine(reference.authors, 4)}</p>}
-                {reference.title && reference.venue && <p className="ft-ref-venue">{reference.venue}</p>}
+                <PopoverTitle className="ft-ref-title">{referenceTitle(reference)}</PopoverTitle>
+                <ReferenceSource reference={reference} />
                 <ul className="ft-peek-links">
-                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>}
+                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a></li>}
                   {referenceLinks(reference).map(link => (
-                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><span className="visually-hidden"> (opens in a new tab)</span></a></li>
+                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
                   ))}
                 </ul>
               </div>
             )}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+          </PopoverPopup>
+        </PopoverPositioner>
+      </PopoverPortal>
+    </Popover>
   );
 }
 
 type FigureBlock = Extract<Block, { t: 'figure' }>;
-type Context = { references: Map<string, Reference> };
 
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
@@ -301,14 +302,8 @@ const hasTex = (content: Inline[]): boolean =>
   content.some(item => (item.t === 'math' && Boolean(item.tex)) || ('children' in item && hasTex(item.children)));
 
 function needsKatex(doc: FullText) {
-  if (doc.notes.some(note => hasTex(note.content))) return true;
-  return [...doc.abstract, ...doc.body].some(block => {
-    if (block.t === 'equation') return Boolean(block.tex);
-    if (block.t === 'p' || block.t === 'heading') return hasTex(block.children);
-    if (block.t === 'list') return block.items.some(hasTex);
-    if (block.t === 'figure' || block.t === 'table') return hasTex(block.caption) || (block.t === 'table' && block.rows.some(row => row.some(cell => hasTex(cell.content))));
-    return false;
-  });
+  return doc.notes.some(note => hasTex(note.content))
+    || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
 /** A paper's full text in the reader's type: the viewer's text view. */
@@ -323,22 +318,22 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
     return () => { active = false; };
   }, [wantsKatex]);
 
-  const context = useMemo<Context>(() => ({
-    references: new Map(doc.references.map(reference => [reference.id, reference])),
-  }), [doc]);
+  const references = useMemo(() => new Map(doc.references.map(reference => [reference.id, reference])), [doc]);
 
   // A citation opens its reference in a card beside it instead of jumping to
   // the list, and focus returns to it.
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const citation = useRef<HTMLElement | null>(null);
+  const [citationScroll, setCitationScroll] = useState<HTMLElement | null>(null);
   const showReference = (event: MouseEvent<HTMLElement>) => {
-    const link = (event.target as Element).closest<HTMLAnchorElement>('a[href^="#ft-"]');
-    const reference = link && context.references.get(link.getAttribute('href')!.slice(4));
+    const link = (event.target as Element).closest<HTMLAnchorElement>('a[data-cites]');
+    const reference = link && references.get(anchorTarget(link.getAttribute('href')!.slice(1)));
     if (!reference) return;
     event.preventDefault();
     event.stopPropagation();
     citation.current = link;
+    setCitationScroll(link.closest<HTMLElement>('.ft-scroll'));
     setShownReference(reference);
     setReferenceOpen(true);
   };
@@ -391,8 +386,8 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
-      <ArticleReferencesContext value={context.references}>{text}</ArticleReferencesContext>
-      <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} lang={doc.lang} />
+      {text}
+      <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} scroll={citationScroll} lang={doc.lang} />
     </article>
   );
 }

@@ -155,12 +155,9 @@ function ParticipantName({ name }: { name: string }) {
 
 /** An image URL OpenAlex links, kept only when Wikimedia serves it over HTTPS. */
 function wikimediaImage(url: string | null | undefined) {
-  try {
-    const parsed = new URL(String(url || ''));
-    return parsed.protocol === 'https:' && (parsed.hostname === 'wikimedia.org' || parsed.hostname.endsWith('.wikimedia.org')) ? parsed.toString() : '';
-  } catch {
-    return '';
-  }
+  const safe = safeExternalUrl(url);
+  const host = safe ? new URL(safe).hostname : '';
+  return host === 'wikimedia.org' || host.endsWith('.wikimedia.org') ? safe : '';
 }
 
 // Up to the last ten years of an author's output, from OpenAlex's per-year

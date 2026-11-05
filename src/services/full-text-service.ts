@@ -1,4 +1,5 @@
 import type { Paper } from '../models/paper.ts';
+import type { FullTextAnswer } from '../models/full-text.ts';
 import { parseArxivHtml, parseJats, type FullText } from '../utils/full-text.ts';
 import { normalizeArxivFigureId } from './paper-figure-service.ts';
 import { trustedWorkerUrl } from './worker-api-client.ts';
@@ -12,15 +13,6 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const RECENT_LIMIT = 8;
 const recent = new Map<string, FullText | null>();
 
-type FullTextAnswer = {
-  source: FullText['source'] | null;
-  format: 'latexml' | 'jats' | null;
-  url: string | null;
-  fullTextId?: string;
-  license?: string;
-  document: string | null;
-  unavailable?: true;
-};
 
 /** The identifiers the Worker can look a paper's text up by, or `null` if it has none. */
 export function fullTextQuery(paper: Partial<Paper> | null | undefined) {
@@ -29,25 +21,26 @@ export function fullTextQuery(paper: Partial<Paper> | null | undefined) {
   const pmcid = String(paper?.pmcid || '').trim();
   const doi = String(paper?.doi || '').trim();
   if (arxivId) query.set('arxiv_id', arxivId);
-  if (pmcid) query.set('pmcid', pmcid);
+  if (pmcid) query.set('fulltext_id', pmcid);
   if (doi) query.set('doi', doi);
   return query.size ? query : null;
 }
 
 /**
- * The paper's full text, or `null` when no provider publishes it as text or it
- * cannot be fetched right now. Either way the reader shows the PDF instead.
+ * The paper's full text: `doc` is `null` when no provider publishes it as text,
+ * and `failed` says the lookup could not tell (an outage, a refusal, no answer
+ * in time), so the reader can say so and offer to ask again.
  */
-export async function getFullText(paper: Partial<Paper>, signal?: AbortSignal): Promise<FullText | null> {
+export async function getFullText(paper: Partial<Paper>, signal?: AbortSignal): Promise<{ doc: FullText | null; failed: boolean }> {
   const query = fullTextQuery(paper);
   const url = query && PAPER_API_BASE ? trustedWorkerUrl(`${PAPER_API_BASE}/resources/full-text?${query}`) : '';
-  if (!url) return null;
+  if (!url) return { doc: null, failed: false };
   const known = recent.get(url);
-  if (known !== undefined) return known;
+  if (known !== undefined) return { doc: known, failed: false };
   try {
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    if (!response.ok) return null;
+    if (!response.ok) return { doc: null, failed: true };
     const answer = await response.json() as FullTextAnswer;
     const doc = !answer.document || !answer.url ? null : answer.format === 'latexml'
       ? parseArxivHtml(answer.document, answer.url)
@@ -58,14 +51,13 @@ export async function getFullText(paper: Partial<Paper>, signal?: AbortSignal): 
     if (usable && answer.source) usable.source = answer.source;
     if (usable && !usable.license && answer.license) usable.license = answer.license;
     // A provider outage is asked about again next time.
-    if (!answer.unavailable) {
-      recent.delete(url);
-      recent.set(url, usable);
-      const oldest = recent.keys().next().value;
-      if (recent.size > RECENT_LIMIT && oldest) recent.delete(oldest);
-    }
-    return usable;
+    if (answer.unavailable) return { doc: usable, failed: !usable };
+    recent.delete(url);
+    recent.set(url, usable);
+    const oldest = recent.keys().next().value;
+    if (recent.size > RECENT_LIMIT && oldest) recent.delete(oldest);
+    return { doc: usable, failed: false };
   } catch {
-    return null;
+    return { doc: null, failed: true };
   }
 }

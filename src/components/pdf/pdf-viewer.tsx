@@ -18,6 +18,7 @@ import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
 import { PaperDock } from './paper-info.tsx';
 import ViewerLoading from './viewer-loading.tsx';
+import { NewTabHint } from './new-tab-hint.tsx';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -39,6 +40,9 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   // `undefined` while the Worker is asked for the paper's text, `null` when no
   // provider publishes it as text: then the viewer is the PDF viewer it was.
   const [fullText, setFullText] = useState<FullText | null | undefined>(undefined);
+  // The text could not be asked for, which is not the same as there being none.
+  const [textFailed, setTextFailed] = useState(false);
+  const [textAttempt, setTextAttempt] = useState(0);
   const [view, setView] = useState<'text' | 'pdf'>('text');
   const showsText = Boolean(fullText) && view === 'text';
   const [textScroll, setTextScroll] = useState<HTMLDivElement | null>(null);
@@ -64,11 +68,18 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
 
   useEffect(() => {
     const controller = new AbortController();
-    void getFullText(paper, controller.signal).then(doc => {
-      if (!controller.signal.aborted) setFullText(doc);
+    void getFullText(paper, controller.signal).then(({ doc, failed }) => {
+      if (controller.signal.aborted) return;
+      setFullText(doc);
+      setTextFailed(failed);
     });
     return () => controller.abort();
-  }, [paper]);
+  }, [paper, textAttempt]);
+  const retryText = () => {
+    setFullText(undefined);
+    setTextFailed(false);
+    setTextAttempt(attempt => attempt + 1);
+  };
 
   // Que exista un PDF y que se pueda enmarcar son dos preguntas distintas, y
   // fundirlas hacía que el visor negara un PDF que tenía delante. `fullTextUrl`
@@ -184,6 +195,12 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
           </div>
 
           <div className="pdf-stage">
+            {textFailed && (
+              <div className="pdf-text-failed" role="status">
+                <p>The text of this paper could not be loaded right now.</p>
+                <Button variant="outline" size="sm" onClick={retryText}>Try again</Button>
+              </div>
+            )}
             {fullText === undefined && (
               <ViewerLoading label={'Loading paper...'} />
             )}
@@ -240,7 +257,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
                   : 'This PDF is hosted somewhere PaperTok cannot display it on a phone.'}</p>
                 <a href={fullTextUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
                   {'Open the full PDF →'}
-                  <span className="visually-hidden"> (opens in a new tab)</span>
+                  <NewTabHint />
                 </a>
               </div>
             )}

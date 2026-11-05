@@ -431,7 +431,7 @@ export async function handleFullText(request: Request, env: WorkerEnv) {
     (payload) => (payload.document ? FULL_TEXT_CACHE_SECONDS : payload.unavailable ? DEGRADED_CACHE_SECONDS : FULL_TEXT_EMPTY_CACHE_SECONDS),
     () => fetchFullText(ids),
     {
-      canonicalParams: { arxiv_id: ids.arxivId, pmcid: ids.fullTextId, doi: ids.doi },
+      canonicalParams: { arxiv_id: ids.arxivId, fulltext_id: ids.fullTextId, doi: ids.doi },
       callerMinute: FULL_TEXT_CALLER_MINUTE,
     },
   );
