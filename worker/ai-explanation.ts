@@ -148,19 +148,41 @@ export function bytesToBase64(bytes: Uint8Array) {
  * is a paper this endpoint will never read. They were indistinguishable in the
  * logs, which is how PMC's interstitial hid behind arXiv's timeouts.
  */
+// Zenodo refuses, with a 403 page, a request that does not say who sends it.
+const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
+const ZENODO_RECORD = /^https:\/\/zenodo\.org\/records\/(\d{1,12})\/?$/;
+
+/**
+ * A Zenodo record's first PDF, by the address Zenodo serves its bytes at, or ''
+ * when the record holds none (a dataset, software). The API answers for the
+ * record's latest version when asked for an older one.
+ */
+async function zenodoRecordPdfUrl(recordUrl: string, signal: AbortSignal) {
+  const id = ZENODO_RECORD.exec(recordUrl)?.[1];
+  if (!id) return recordUrl;
+  const response = await fetch(`https://zenodo.org/api/records/${id}`, { signal, headers: { accept: 'application/json', 'user-agent': USER_AGENT } });
+  if (!response.ok) return '';
+  const record = await response.json<{ files?: Array<{ key?: unknown; links?: { self?: unknown } }> }>();
+  const file = record.files?.find(entry => /\.pdf$/i.test(String(entry.key || '')));
+  const url = String(file?.links?.self || '');
+  return isAIReadablePdfUrl(url) ? url : '';
+}
+
 export async function fetchPaperPdfBytes(pdfUrl: string, timeoutMs: number): Promise<PdfResult> {
   const failed = (reason: 'unreachable' | 'not_pdf' | 'too_large'): PdfResult => ({ bytes: null, reason });
   if (!isAIReadablePdfUrl(pdfUrl)) return failed('unreachable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    let currentUrl = pdfUrl;
+    let currentUrl = await zenodoRecordPdfUrl(pdfUrl, controller.signal);
+    if (!currentUrl) return failed('not_pdf');
     let response;
     for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
       response = await fetch(currentUrl, {
         signal: controller.signal,
         redirect: 'manual',
-        headers: { accept: 'application/pdf' },
+        // Zenodo answers 406 to a request that accepts only `application/pdf`.
+        headers: { accept: 'application/pdf, */*;q=0.8', 'user-agent': USER_AGENT },
       });
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
       const location = response.headers.get('location');
@@ -172,13 +194,16 @@ export async function fetchPaperPdfBytes(pdfUrl: string, timeoutMs: number): Pro
     if (!response?.ok || !isAIReadablePdfUrl(response.url || currentUrl)) return failed('unreachable');
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
-    if (!contentType.toLowerCase().includes('pdf')) return failed('not_pdf');
+    // Zenodo sends every file as `application/octet-stream`; its bytes say whether it is a PDF.
+    const declaredPdf = contentType.toLowerCase().includes('pdf');
+    if (!declaredPdf && !contentType.toLowerCase().includes('octet-stream')) return failed('not_pdf');
     if (contentLength > MAX_PDF_BYTES) return failed('too_large');
     // `content-length` is the server's word for it, and a chunked response gives
     // none: the cap has to hold against the bytes themselves.
     const bytes = await readBoundedBytes(response, MAX_PDF_BYTES);
     if (!bytes) return failed('too_large');
     if (!bytes.length) return failed('unreachable');
+    if (!declaredPdf && new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-') return failed('not_pdf');
     return { bytes, reason: '' };
   } catch {
     return failed('unreachable');

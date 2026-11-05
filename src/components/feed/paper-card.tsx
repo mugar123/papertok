@@ -182,7 +182,8 @@ import {
   safeDoiUrl,
   safeExternalUrl,
 } from '../../utils/external-url.ts';
-import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
+import { openFirstTarget, openTargetsForPaper, pdfLinksForPaper } from '../../utils/paper-open-targets.ts';
+import { zenodoRecordUrl } from '../../utils/ai-explanation-access.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
@@ -1574,6 +1575,12 @@ const PaperCard = memo(function PaperCard({
       }
     }
 
+    // A PDF that cannot be framed but that the Worker relays opens in the viewer, which draws its pages.
+    if (!opensInViewer && libraryAccess?.status !== 'entitled' && pdfLinksForPaper(paper).relaySourceUrl) {
+      void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) });
+      return;
+    }
+
     if (openBestTarget(resolvedOpenCopy)) return;
 
     // Nada abrió y el paper no traía copia resuelta: es el momento de preguntar
@@ -1629,7 +1636,7 @@ const PaperCard = memo(function PaperCard({
     ? ('Read open version')
     : paper.openAccessPdfUrl
       ? ('Read full text')
-      : (!paper.pdfUrl && !paper.arxivId)
+      : (!paper.pdfUrl && !paper.arxivId && !zenodoRecordUrl(paper.doi))
         ? ('Source')
         : ('Read article');
   // The library's short name when the button goes through it: an entitled

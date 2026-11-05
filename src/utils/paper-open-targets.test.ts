@@ -147,3 +147,12 @@ test('avisa de que no abrió nada cuando ningún destino responde', () => {
   }), false);
   assert.equal(openFirstTarget([], { inline: () => true, external: () => true }), false);
 });
+
+test('a Zenodo DOI is a PDF the Worker relays, found in its record', () => {
+  assert.deepEqual(pdfLinksForPaper({ doi: '10.5281/zenodo.23965738' }), {
+    fullTextUrl: 'https://zenodo.org/records/23965738',
+    embedUrl: '',
+    relaySourceUrl: 'https://zenodo.org/records/23965738',
+  });
+  assert.equal(pdfLinksForPaper({ doi: '10.5281/zenodo.123/extra' }).relaySourceUrl, '');
+});
