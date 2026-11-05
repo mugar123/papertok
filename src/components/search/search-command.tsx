@@ -412,7 +412,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const loadingMessage = activeSection === 'all' ? 'Searching all categories…' : `Searching ${copy[activeSection].toLowerCase()}…`;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
+    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${manualSelection ? '' : ' sc-sheet--untouched'}${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
       commandProps={{
         label: copy.placeholder,
         // Enter follows the first row until the user chooses another one.
