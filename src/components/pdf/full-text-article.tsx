@@ -212,7 +212,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
   if (isPhone) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="ft-sheet" overlayClassName="ft-sheet-backdrop" viewportClassName="ft-sheet-viewport" finalFocus={anchor}>
+        <DrawerContent className="ft-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" finalFocus={anchor}>
           <DrawerHandle />
           {reference && (
             <ReferenceCard

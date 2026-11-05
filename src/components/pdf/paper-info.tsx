@@ -162,7 +162,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     return (
       <div className="pdf-dock-root" data-stowed={(stowed && !open) || undefined}>
         <Drawer open={open} onOpenChange={setOpen}>
-          <DrawerContent className="pdf-sheet" overlayClassName="ft-sheet-backdrop" viewportClassName="ft-sheet-viewport" aria-label={label} finalFocus={shows === 'contents' ? contentsButton : infoButton}>
+          <DrawerContent className="pdf-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" aria-label={label} finalFocus={shows === 'contents' ? contentsButton : infoButton}>
             <DrawerHandle />
             {content}
           </DrawerContent>
