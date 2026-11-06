@@ -1526,10 +1526,37 @@ test('rolling phase 2 back to phase 1 keeps what phase 2 saved, and phase 2 can 
   assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
 
   assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.maxPapers, 10);
-  assert.ok((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken);
   await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 5 }), phase1, SYNC_READER);
 
   assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.maxPapers, 5);
+});
+
+test('a phase 1 Worker beside phase 2 reads a moved reader without moving them back, so a stale KV read in phase 2 keeps them', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.enabled, true);
+
+  // The schedule of a phase 1 Worker that is still running reads the reader.
+  assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.enabled, true);
+  // Phase 2 elsewhere still reads the index from its KV cache.
+  await kv.put(SYNC_READER_KEY, JSON.stringify({ uid: SYNC_READER.uid }));
+
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.enabled, true);
+});
+
+test('the app turning the digest off in phase 1 after the reader moved also removes the unsubscribe link', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken;
+  assert.ok(kv.values.has(`notification:unsubscribe:${token}`));
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), phase1, SYNC_READER);
+
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
 });
 
 test('the schedule removes an index that points at no subscription', async () => {
@@ -2465,6 +2492,45 @@ for (const [change, saved] of [
     }
   });
 }
+
+test('a retried draft without a version is not sent once a phase 1 save changed the follows it was prepared from', async () => {
+  const subscriptionKey = 'notification:subscription:retry-reader';
+  // A KV record no phase 1 save has written yet carries no version.
+  const legacy = digestSubscription({
+    uid: 'retry-reader',
+    unsubscribeToken: 'retry-token',
+    previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
+  });
+  const kv = createMemoryKv({ [subscriptionKey]: legacy, 'notification:unsubscribe:retry-token': 'retry-reader' });
+  const env = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  let sends = 0;
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  globalThis.fetch = async (input) => {
+    if (new URL(String(input)).hostname === 'api.resend.com') {
+      sends += 1;
+      if (sends === 1) throw new TypeError('simulated response loss');
+      return jsonResponse(201, { id: 'must-not-be-sent' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    Date.now = () => new Date('2026-08-10T07:12:00Z').getTime();
+    const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
+    // What a phase 1 save of other follows writes to KV.
+    await kv.put(subscriptionKey, JSON.stringify({ ...legacy, follows: [digestFollow('A2', 'Bea Author')], version: 1 }));
+    Date.now = () => new Date('2026-08-10T07:20:00Z').getTime();
+    const retry = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+
+    assert.equal(first.failed, 1);
+    assert.equal(retry.sent, 0);
+    assert.equal(sends, 1, 'the draft of the old follows reached Resend again');
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('uses the final cron window only to replay a late uncertain provider response', async () => {
   const firstWindow = new Date('2026-08-10T13:20:00Z');
