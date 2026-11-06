@@ -986,8 +986,8 @@ async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean
 }
 
 /**
- * Phase 1: the KV record, with a version of its own that every write raises,
- * or `null` when KV holds no record (only the index phase 2 leaves, or nothing).
+ * Phase 1: the KV record, with the object version its save reopened as its
+ * version, or `null` when KV holds no record (only the index phase 2 leaves, or nothing).
  * `revision` is the object version the save that wrote it reopened (0 for a
  * record no phase 1 save wrote): a KV read whose revision is behind the object
  * may be an older record than the last save.
@@ -1119,8 +1119,10 @@ async function changeSubscription(
     }
     const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
     if (reopened.accepted) {
-      const version = slot.version + 1;
-      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: reopened.slot.version }));
+      // The object's version, not one past the KV read: that read may be stale,
+      // and two saves computed from it would write the same version.
+      const version = reopened.slot.version;
+      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: version }));
       return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
     }
     phase1 = await readPhase1Slot(env, uid);

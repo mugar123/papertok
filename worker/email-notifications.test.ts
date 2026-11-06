@@ -2691,6 +2691,50 @@ test('a retried draft without a version is not sent once a phase 1 save changed 
   }
 });
 
+test('a retried draft is not sent once a phase 1 save computed from a stale KV read changed the follows', async () => {
+  const subscriptionKey = 'notification:subscription:retry-reader';
+  const legacy = JSON.stringify(digestSubscription({ uid: 'retry-reader', unsubscribeToken: 'retry-token' }));
+  const kv = createMemoryKv({ [subscriptionKey]: legacy, 'notification:unsubscribe:retry-token': 'retry-reader' });
+  const env = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  const reader = { uid: 'retry-reader', email: 'reader@example.com', displayName: '' };
+  // Gives the saved record a paper to send, keeping what the save wrote.
+  const withPaper = () => kv.values.set(subscriptionKey, JSON.stringify({
+    ...JSON.parse(kv.values.get(subscriptionKey)!),
+    previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
+  }));
+  let sends = 0;
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  globalThis.fetch = async (input) => {
+    if (new URL(String(input)).hostname === 'api.resend.com') {
+      sends += 1;
+      if (sends === 1) throw new TypeError('simulated response loss');
+      return jsonResponse(201, { id: 'must-not-be-sent' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, reader);
+    withPaper();
+    Date.now = () => new Date('2026-08-10T07:12:00Z').getTime();
+    const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
+    // A second save whose KV read still returns the record from before the first.
+    kv.values.set(subscriptionKey, legacy);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, follows: [digestFollow('A2', 'Bea Author')] }), env, reader);
+    withPaper();
+    Date.now = () => new Date('2026-08-10T07:20:00Z').getTime();
+    const retry = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+
+    assert.equal(first.failed, 1);
+    assert.equal(retry.sent, 0);
+    assert.equal(sends, 1, 'the draft of the follows the last save replaced reached Resend again');
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('uses the final cron window only to replay a late uncertain provider response', async () => {
   const firstWindow = new Date('2026-08-10T13:20:00Z');
   const firstAttemptAt = new Date('2026-08-10T13:32:00Z');
