@@ -1059,7 +1059,9 @@ async function closeBeforeCancelling(env: WorkerEnv, uid: string) {
  * mark in the object. The record is read with the shortest cache KV allows and
  * read again after the move; when it is gone by then, the move is undone. That
  * only narrows the case phase 1 exists for: phase 2 follows once no Worker from
- * before phase 1 runs (see worker/README.md).
+ * before phase 1 runs (see worker/README.md). A KV read older than the last
+ * phase 1 save is not moved either: until a read returns that save's record,
+ * the reader reads as not subscribed and nothing is moved.
  */
 async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
   if (subscriptionInKv(env)) return (await readPhase1Slot(env, uid)).slot;
@@ -1075,6 +1077,10 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
     if (legacy && Object.keys(legacy).some(field => field !== 'uid')) await store.delete(key);
     return slot;
   }
+  // Only the record the last phase 1 save wrote moves: its revision is the
+  // object version that save reached (0 before any save). Any other revision is
+  // a stale KV read of an older record, so the reader moves on a later read.
+  if ((Number(legacy.revision) || 0) !== slot.version) return slot;
   const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: slot.version, subscription: storedRecord(legacy) });
   if (!moved.accepted) return moved.slot;
   if (!await readLegacy()) {
@@ -1105,7 +1111,7 @@ function storedRecord(subscription: Subscription) {
 async function changeSubscription(
   env: WorkerEnv,
   uid: string,
-  next: (current: Subscription | null) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
+  next: (current: Subscription | null, behind: boolean) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
 ) {
   let phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
   let slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
@@ -1116,7 +1122,7 @@ async function changeSubscription(
     // in between closed it, and the write is computed again from what it left.
     // A reader phase 2 moved stays in their object and is written below.
     const previous = slot.subscription;
-    const record = await next(previous);
+    const record = await next(previous, phase1.behind);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
     const key = `${SUBSCRIPTION_PREFIX}${uid}`;
     if (record === null) {
@@ -1138,7 +1144,7 @@ async function changeSubscription(
   if (phase1?.inKv) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
     const previous = slot.subscription;
-    const record = await next(previous);
+    const record = await next(previous, false);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: false };
     const result = await callSubscriptionStore(env, uid, {
       action: 'write',
@@ -1277,7 +1283,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
   const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
-  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current) => {
+  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind) => {
     if (sync && !current?.enabled) return undefined;
     read.state = current ? await store.get<DeliveryState>(deliveryStateKey(key, current), 'json') : null;
     const existing = current ? { ...current, ...deliveryStateFromSubscription(current), ...(read.state || {}) } : null;
@@ -1296,9 +1302,13 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
       follows,
       interests,
     });
-    // A subscriber's app syncs on every open, usually with nothing new.
+    // A subscriber's app syncs on every open, usually with nothing new. In
+    // phase 1 a KV record behind the object (a save whose KV write failed after
+    // it reopened the object) is written again even so: the schedule holds it
+    // until a save does, while Settings shows the digest as on.
     if (
       sync
+      && !behind
       && current!.unsubscribeToken
       && current!.email === identity.email
       && current!.displayName === identity.displayName
@@ -3232,9 +3242,9 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     }
     // Phase 1: a KV record behind the object is held until a save writes it
     // again; preparing a digest from it would only call providers for a send
-    // the last check cancels.
+    // the last check cancels. Counted, so held readers show in the summary.
     if (subscriptionInKv(env) && (await readPhase1Slot(env, subscriptionUid(key.name))).behind) {
-      return { skipped: true };
+      return { skipped: true, failureCodes: { EMAIL_SUBSCRIPTION_HELD: 1 } };
     }
 
     const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());

@@ -2702,10 +2702,49 @@ test('phase 1 prepares no digest from a KV record behind the last save', async (
     calls.length = 0;
     const result = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
     assert.equal(result.skipped, 1);
+    assert.deepEqual(result.failureCodes, { EMAIL_SUBSCRIPTION_HELD: 1 });
   } finally {
     globalThis.fetch = originalFetch;
   }
   assert.deepEqual(calls, []);
+});
+
+test('a phase 1 sync that changes nothing writes again a KV record behind the last save, so the schedule reaches the reader', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  // A second save reopened the object, and its KV put never landed.
+  const before = kv.values.get(SYNC_READER_KEY)!;
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  kv.values.set(SYNC_READER_KEY, before);
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase1, SYNC_READER);
+
+  const written = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  assert.notEqual(kv.values.get(SYNC_READER_KEY), before, 'the sync left the record behind');
+  assert.equal(written?.revision, written?.version);
+  await withDigestUpstream(answerWithOneRecentWork, async () => {
+    const summary = await runEmailNotificationSchedule({ ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' }, DIGEST_RUN.getTime());
+    assert.equal(summary.failureCodes.EMAIL_SUBSCRIPTION_HELD, undefined);
+    assert.equal(summary.sent, 1);
+  });
+});
+
+test('phase 2 does not move a stale KV read from before the last phase 1 save of a new address', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const before = kv.values.get(SYNC_READER_KEY)!;
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, { ...SYNC_READER, email: 'new-address@example.com' });
+  const saved = kv.values.get(SYNC_READER_KEY)!;
+  // Phase 2's KV reads still return the record from before the save.
+  kv.values.set(SYNC_READER_KEY, before);
+
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null, 'the old address was moved into the object');
+  // A later read that returns the saved record moves it.
+  kv.values.set(SYNC_READER_KEY, saved);
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.email, 'new-address@example.com');
 });
 
 test('a retried draft without a version is not sent once a phase 1 save changed the follows it was prepared from', async () => {
