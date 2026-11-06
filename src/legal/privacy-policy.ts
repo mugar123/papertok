@@ -43,7 +43,8 @@ export const PRIVACY_POLICY_VERSION = '2026-11-06';
  * describe rather than route through the Worker.
  *
  * Version 2026-11-06 adds what the email subscription stores when the digest
- * is filled from the subjects a reader chose (ENG-163, #442). That page text
+ * is filled from the subjects a reader chose, and that it is kept in a Durable
+ * Object of the account (ENG-163, #442). That page text
  * ships with #442, so this instant follows the rule above: it stands after
  * #442's merge, at the last moment the version's day allows. If the merge
  * falls after it, move the page's "Last updated" date, PRIVACY_POLICY_VERSION
@@ -54,9 +55,8 @@ export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-06T23:59:59Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "In the reader, a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
-  "The text of a paper comes through PaperTok's server, like searches and lookups. Email updates, if on, store the subjects you chose.",
-  "Pages for an author, an institution, a journal or a topic ask Wikidata and Wikipedia from your browser for a short summary and a picture, so Wikimedia receives your IP address.",
+  "Email updates, if on, also store the subjects you chose, and keep your subscription in a Cloudflare Durable Object of your account.",
+  "Since 5 November, in the reader, a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
 ];
 
 /**
@@ -69,19 +69,18 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // An account from before 5 November read that repositories never receive its IP address.
-  lead: 'figures',
+  // The only change since 5 November: what the email subscription keeps when
+  // the digest is filled from chosen subjects, and where (ENG-163, #442).
+  lead: 'Email updates',
   clauses: [
-    ["a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
-    ['which receives your IP address', /which receives your IP address as with any image on the web/],
-    ['The text of a paper comes through PaperTok\'s server', /The text of a paper comes through that server too/],
-    ['Pages for an author, an institution, a journal or a topic', /Pages for an author, an institution, a journal or a topic/],
-    ['ask Wikidata and Wikipedia from your browser for a short summary and a picture', /ask <strong>Wikidata<\/strong> and <strong>Wikipedia<\/strong> from your browser for a short summary and a picture/],
-    ['Wikimedia receives your IP address', /Wikimedia receives your IP address/],
-    // What the email subscription keeps when the digest is filled from chosen subjects (ENG-163, #442).
     ['Email updates', /<h2>Email updates<\/h2>/],
     ['if on', /If you turn them on, PaperTok emails you/],
-    ['store the subjects you chose', /it stores your email address, your sending preferences, what you follow, the identifiers of the subjects you chose and an unsubscribe identifier in a <strong>Cloudflare Durable Object<\/strong> of your account/],
+    ['store the subjects you chose', /the identifiers of the subjects you chose/],
+    ['in a Cloudflare Durable Object of your account', /in a <strong>Cloudflare Durable Object<\/strong> of your account/],
+    // Kept from 5 November for an account that has not opened the app since:
+    // it read that repositories never receive its IP address.
+    ["a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
+    ['which receives your IP address', /which receives your IP address as with any image on the web/],
   ],
   unsaid: [[/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader']],
 };

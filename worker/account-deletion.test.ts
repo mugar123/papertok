@@ -102,10 +102,10 @@ function kvStore(seed: Record<string, string> = {}) {
   const data = new Map(Object.entries(seed));
   return {
     data,
-    get: async (key: string, type?: string) => {
+    get: async (key: string, type?: string | { type?: string }) => {
       const value = data.get(key);
       if (value === undefined) return null;
-      return type === 'json' ? JSON.parse(value) : value;
+      return (typeof type === 'string' ? type : type?.type) === 'json' ? JSON.parse(value) : value;
     },
     put: async (key: string, value: string) => { data.set(key, value); },
     delete: async (key: string) => { data.delete(key); },
@@ -469,7 +469,7 @@ test('a purge that fails after the Auth delete still lets the final sweep run, a
   let authDeleted = false;
   let readsAfterAuth = 0;
   const get = store.get;
-  store.get = async (key: string, type?: string) => {
+  store.get = async (key: string, type?: string | { type?: string }) => {
     if (authDeleted) {
       readsAfterAuth += 1;
       throw new Error('KV GET failed: 503');

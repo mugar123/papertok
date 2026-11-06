@@ -84,10 +84,10 @@ function createMemoryKv(entries: Record<string, unknown> = {}) {
 
   return {
     values,
-    async get(key: string, type?: string) {
+    async get(key: string, type?: string | { type?: string }) {
       const value = values.get(key);
       if (value === undefined) return null;
-      return type === 'json' ? JSON.parse(value) : value;
+      return (typeof type === 'string' ? type : type?.type) === 'json' ? JSON.parse(value) : value;
     },
     async put(key: string, value: string) {
       values.set(key, String(value));
@@ -1447,6 +1447,37 @@ test('a background sync never brings back a digest the reader turned off', async
   assert.deepEqual(await legacyKv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
   // The disabled record's token has no index, and a sync must not add one.
   assert.deepEqual([...legacyKv.values.keys()], [SYNC_READER_KEY]);
+});
+
+test('a KV record unsubscribed by the old Worker while it moves into the object stays unsubscribed', async () => {
+  const legacy = digestSubscription({ uid: SYNC_READER.uid });
+  const kv = createMemoryKv({ [SYNC_READER_KEY]: legacy, [`notification:unsubscribe:${legacy.unsubscribeToken}`]: SYNC_READER.uid });
+  // The old Worker's unsubscribe deletes the KV record after this one read it.
+  const stores = interceptedStores(subscriptionsFor(kv), payload => payload.action === 'write', async () => {
+    await kv.delete(SYNC_READER_KEY);
+    await kv.delete(`notification:unsubscribe:${legacy.unsubscribeToken}`);
+  });
+  const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: stores };
+
+  assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
+  assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null);
+  assert.equal(kv.values.size, 0);
+});
+
+test('a KV record without an unsubscribe token is deleted, not left beside the object', async () => {
+  const kv = createMemoryKv({ [SYNC_READER_KEY]: digestSubscription({ uid: SYNC_READER.uid, unsubscribeToken: undefined }) });
+
+  assert.equal(await storedSubscriptionWithState(kv, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+});
+
+test('the schedule removes an index that points at no subscription', async () => {
+  const kv = createMemoryKv({ [SYNC_READER_KEY]: { uid: SYNC_READER.uid } });
+
+  await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-10T08:00:00.000Z'));
+
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+  assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null);
 });
 
 test('an unsubscribe that lands after a sync read the subscription stays unsubscribed', async () => {

@@ -135,6 +135,8 @@ const DIGEST_ABSTRACT_MAX_LENGTH = 600;
 const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
 const DELIVERY_STATE_TTL_SECONDS = 120 * 24 * 60 * 60;
+// The shortest `cacheTtl` Workers KV accepts on a read.
+const KV_MIN_CACHE_TTL_SECONDS = 30;
 // Writers that keep losing the race to the same reader's object give up.
 const SUBSCRIPTION_WRITE_ATTEMPTS = 3;
 const DELIVERY_PENDING_RETRY_MIN_AGE_MS = 5 * 60 * 1000;
@@ -965,15 +967,34 @@ async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: Subsc
  * An object that was never written takes, once, the KV record that a Worker
  * from before the object saved; from then on the object is the only record,
  * and a KV copy of any age is never read again.
+ *
+ * KV reads can be stale: while a deploy replaces the old Worker, an
+ * unsubscribe it handles deletes the KV record, and a copy cached here can
+ * still hold it. The record is read with the shortest cache KV allows and read
+ * again after the move; when it is gone by then, the move is undone. A cached
+ * copy that outlives both reads still comes back (see worker/README.md).
  */
 async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-  if (slot.version > 0 || !env.NOTIFICATION_STORE) return slot;
-  const legacy = await env.NOTIFICATION_STORE.get<Subscription>(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
-  if (!legacy?.unsubscribeToken) return slot;
+  const store = env.NOTIFICATION_STORE;
+  if (slot.version > 0 || !store) return slot;
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const readLegacy = () => store.get<Subscription>(key, { type: 'json', cacheTtl: KV_MIN_CACHE_TTL_SECONDS });
+  const legacy = await readLegacy();
+  if (!legacy?.unsubscribeToken) {
+    // A record without a token cannot be moved or unsubscribed from; drop the
+    // personal copy and keep only what an index holds.
+    if (legacy && Object.keys(legacy).some(field => field !== 'uid')) await store.delete(key);
+    return slot;
+  }
   const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: legacy });
+  if (!moved.accepted) return moved.slot;
+  if (!await readLegacy()) {
+    const undone = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: moved.slot.version, subscription: null });
+    return undone.slot;
+  }
   // Leave KV only the index a save writes, not a second copy of the record.
-  if (moved.accepted) await env.NOTIFICATION_STORE.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid }));
+  await store.put(key, JSON.stringify({ uid }));
   return moved.slot;
 }
 
@@ -1064,16 +1085,25 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
   const deleted = previous || subscription;
-  const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
   await Promise.all([
-    env.NOTIFICATION_STORE.delete(indexKey),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
     deleted?.unsubscribeToken
       ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${deleted.unsubscribeToken}`)
       : Promise.resolve(),
   ]);
+  await deleteScheduleIndex(env, uid);
+}
+
+/**
+ * Removes the reader's schedule index, then puts it back when their object
+ * holds an enabled subscription again: a save from another tab can write its
+ * index just before this delete, and the schedule would skip that reader.
+ */
+async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
+  const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
+  await env.NOTIFICATION_STORE!.delete(indexKey);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-  if (slot.subscription?.enabled) await env.NOTIFICATION_STORE.put(indexKey, JSON.stringify({ uid }));
+  if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
 }
 
 /**
@@ -1173,7 +1203,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // override. A sync that changes nothing still checks them: a save whose
   // index write failed would leave a subscriber the schedule never reaches or
   // whose unsubscribe link answers 400, and this sync may be its only retry.
-  // An index left after an unsubscribe opens the invalid-link page, which removes it.
+  // An index left after an unsubscribe points at no subscription; the schedule removes it.
   const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
   const [indexed, owner] = changed ? [null, null] : await Promise.all([store.get(key), store.get(unsubscribeKey)]);
   await Promise.all([
@@ -2990,6 +3020,8 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
   const subscription = await loadSubscriptionWithState(env, key.name);
+  // An index a save wrote just after an unsubscribe points at no subscription.
+  if (!subscription) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
   if (!hasDigestSource(subscription)) {
