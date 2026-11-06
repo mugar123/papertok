@@ -1,5 +1,6 @@
 import { hasUsableAIAbstract } from '../utils/ai-explanation-access.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
+import { listedDois } from '../utils/publication-status.ts';
 import { normalizeArxivId, normalizeDoi } from '../utils/public-navigation.ts';
 
 import type { Paper, PaperAuthor, PaperSources } from '../models/paper.ts';
@@ -75,10 +76,11 @@ function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
 // does not say the paper was reviewed leaves it so (OpenAlex's record of the
 // eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
 // (Cornell University)" among them. So a record's own fields are read before
-// its first merge, and `sources.arxivDoiOnly` carries the answer after it.
+// its first merge, and `sources.arxivDoiOnly` carries the answer after it. arXiv
+// lets a record list several DOIs, so any one of them can be the publisher's.
 export function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
   return !hasMerged(record)
-    ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
+    ? record.sources?.primary === 'arxiv' && !record.journal && listedDois(record.doi).some(isPublisherDoi)
     : record.sources?.arxivDoiOnly === true;
 }
 

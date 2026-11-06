@@ -149,7 +149,7 @@ function CommandGroup({ className, ...props }: StyledProps<typeof CommandPrimiti
         'overflow-hidden p-1 text-foreground',
         '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5',
         '[&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[0.6875rem]',
-        '[&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase',
+        '[&_[cmdk-group-heading]]:font-semibold',
         '[&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-muted-foreground',
         className,
       )}
