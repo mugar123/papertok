@@ -2544,7 +2544,9 @@ type RetryChange = (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => Pr
 // A digest whose first send loses Resend's answer, then its retry. `change` is
 // confirmed right before the `target`-th storage call (KV or the reader's
 // object) after the retry's reservation, unless the retry reaches Resend first.
-async function retryWithChangeAt(source: 'object' | 'kv', target: number, change: RetryChange) {
+// With `attempt` 'first', it is confirmed after the first send's reservation
+// instead, and no retry runs.
+async function retryWithChangeAt(source: 'object' | 'kv', target: number, change: RetryChange, attempt: 'first' | 'retry' = 'retry') {
   const kv = createMemoryKv({
     [RETRY_KEY]: digestSubscription({
       uid: 'retry-reader',
@@ -2610,11 +2612,14 @@ async function retryWithChangeAt(source: 'object' | 'kv', target: number, change
 
   try {
     Date.now = () => Date.parse('2026-08-10T07:12:00Z');
+    reserving = attempt === 'first';
     const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
-    assert.equal(first.failed, 1);
-    reserving = true;
-    Date.now = () => Date.parse('2026-08-10T07:20:00Z');
-    await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+    if (attempt === 'retry') {
+      assert.equal(first.failed, 1);
+      reserving = true;
+      Date.now = () => Date.parse('2026-08-10T07:20:00Z');
+      await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+    }
   } finally {
     Date.now = originalDateNow;
     globalThis.fetch = originalFetch;
@@ -2649,8 +2654,48 @@ for (const source of ['object', 'kv'] as const) {
       }
       assert.ok(passes > 0);
     });
+    test(`with the subscription in ${source}, a first digest is not sent when ${change} is confirmed before its call to Resend`, async () => {
+      let passes = 0;
+      for (let target = 0; ; target += 1) {
+        const { confirmed, recipients } = await retryWithChangeAt(source, target, confirm, 'first');
+        if (!confirmed) break;
+        passes += 1;
+        assert.deepEqual(recipients, [], `the first send reached Resend with ${change} confirmed before storage call ${target}`);
+      }
+      assert.ok(passes > 0);
+    });
   }
 }
+
+test('phase 1 prepares no digest from a KV record behind the last save', async () => {
+  const kv = createMemoryKv({
+    [RETRY_KEY]: digestSubscription({
+      uid: 'retry-reader',
+      unsubscribeToken: RETRY_TOKEN,
+      previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
+    }),
+    [`notification:unsubscribe:${RETRY_TOKEN}`]: 'retry-reader',
+  });
+  const env = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    calls.push(new URL(String(input)).hostname);
+    return jsonResponse(200, { results: [] });
+  };
+  try {
+    // A save that reopened the reader's object, and a KV put that never landed.
+    const before = kv.values.get(RETRY_KEY)!;
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid: 'retry-reader', email: 'reader@example.com', displayName: '' });
+    kv.values.set(RETRY_KEY, before);
+    calls.length = 0;
+    const result = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
+    assert.equal(result.skipped, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.deepEqual(calls, []);
+});
 
 test('a retried draft without a version is not sent once a phase 1 save changed the follows it was prepared from', async () => {
   const subscriptionKey = 'notification:subscription:retry-reader';

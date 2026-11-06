@@ -1019,9 +1019,16 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // still holds the full record: acting on that copy would reopen and empty it.
   if (kv && !slot.subscription) {
     const cancelled = !slot.migratable && !slot.subscription;
-    return { slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv, inKv: true, objectVersion: slot.version };
+    // `behind`: the record may be older than the last save (see readKvRecord),
+    // so the last check before a send would cancel a digest prepared from it.
+    return {
+      slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv,
+      inKv: true,
+      objectVersion: slot.version,
+      behind: !cancelled && kv.revision !== slot.version,
+    };
   }
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version };
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: false };
 }
 
 /**
@@ -3223,8 +3230,14 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
       return { skipped: true };
     }
+    // Phase 1: a KV record behind the object is held until a save writes it
+    // again; preparing a digest from it would only call providers for a send
+    // the last check cancels.
+    if (subscriptionInKv(env) && (await readPhase1Slot(env, subscriptionUid(key.name))).behind) {
+      return { skipped: true };
+    }
 
-    const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const dayStart =Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
     const held = subscription.heldDigest;
     const selectedAt = Date.parse(held?.selectedAt || '');
