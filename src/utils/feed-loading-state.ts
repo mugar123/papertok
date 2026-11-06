@@ -69,6 +69,18 @@ const LAST_VISIT_STATUS = {
   none: '',
 };
 
+/**
+ * What a failed reset does with the last visit's cards (ENG-188). With
+ * nothing on screen it reads them, whether or not an automatic retry is due:
+ * 'updating' while that retry runs, 'not-updated' without one. Over cards
+ * already shown, the last visit's cards stay and could not update.
+ */
+export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisitStatus }) {
+  const shown: LastVisitStatus = retryDue ? 'updating' : 'not-updated';
+  const kept: LastVisitStatus = lastVisit === null ? null : 'not-updated';
+  return { readSaved: nothingShown, shown, kept };
+}
+
 /** How a refresh ended: it brought the papers, or it failed over them. */
 export type RefreshEnd = 'updated' | 'failed';
 
@@ -129,8 +141,12 @@ export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPen
   return hasMore && hasPapers && error !== FEED_EMPTY && !autoRetryPending && !resetFailed ? 'failed' : null;
 }
 
-/** The feed tail's status: only for a next page, under papers already shown. */
-export function nextPageStatusText({ loading, hasPapers, failed = false }: { loading: boolean; hasPapers: boolean; failed?: boolean }) {
-  if (failed) return 'Could not load more papers.';
+/**
+ * The feed tail's status: only for a next page, under papers already shown.
+ * Under the last visit's cards a failed load is the first load's, and the
+ * feed's status already says the feed could not update (ENG-188).
+ */
+export function nextPageStatusText({ loading, hasPapers, failed = false, lastVisit = null }: { loading: boolean; hasPapers: boolean; failed?: boolean; lastVisit?: LastVisitStatus }) {
+  if (failed) return lastVisit === 'not-updated' ? '' : 'Could not load more papers.';
   return loading && hasPapers ? 'Loading more papers…' : '';
 }

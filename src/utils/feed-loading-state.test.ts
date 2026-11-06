@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitOnFailedReset, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -170,6 +170,25 @@ test('the last visit\'s cards say where they come from while the feed updates, a
   assert.equal(shown('updating'), 'These papers are from your last visit. The feed is updating.');
   assert.equal(shown('not-updated'), 'These papers are from your last visit. The feed could not update.');
   assert.equal(shown(null), '');
+});
+
+// A retry that failed under the last visit's cards was announced twice: by the
+// feed's status and by the tail's "Could not load more papers.", though no
+// next page was asked for.
+test('under the last visit\'s cards a failed update is announced by the feed status alone, and the tail keeps Try again', () => {
+  const failed = { loading: false, hasMore: true, error: 'FEED_LOAD_FAILED', hasPapers: true, autoRetryPending: false, resetFailed: false };
+  assert.equal(feedTailState(failed), 'failed');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true, lastVisit: 'not-updated' }), '');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true, lastVisit: null }), 'Could not load more papers.');
+});
+
+// The last visit's cards were read only while an automatic retry was due, so
+// a first load failing without one still showed the error screen.
+test('a failed first load reads the last visit\'s cards with or without an automatic retry', () => {
+  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: true, lastVisit: null }), { readSaved: true, shown: 'updating', kept: null });
+  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null }), { readSaved: true, shown: 'not-updated', kept: null });
+  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: null }).readSaved, false);
+  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: 'updating' }).kept, 'not-updated');
 });
 
 test('a refresh keeps its own words under the veil', () => {

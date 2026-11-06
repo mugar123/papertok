@@ -110,6 +110,7 @@ import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-l
 import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
+import { lastVisitOnFailedReset } from '../utils/feed-loading-state.ts';
 import { lastVisitCards, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
@@ -1621,9 +1622,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const { error: shownError, autoRetry } = feedLoadOutcome(failure);
         const retryDue = reset && autoRetry && !autoRetryUsedRef.current;
         // A first load that failed with nothing on screen shows the cards of
-        // the account's last saved feed the reader has not seen while its
-        // automatic retry runs (ENG-188).
-        const lastVisitShown = retryDue && papersRef.current.length === 0 && feedSessionId.current === activeSessionId
+        // the account's last saved feed the reader has not seen, with or
+        // without an automatic retry (ENG-188).
+        const lastVisitStep = lastVisitOnFailedReset({ nothingShown: papersRef.current.length === 0 && feedSessionId.current === activeSessionId, retryDue, lastVisit });
+        const lastVisitShown = reset && lastVisitStep.readSaved
           ? lastVisitCards(activeUserId.current, feedPreferenceSignature(userPreferences), isAvailablePaper)
           : null;
         setError(shownError);
@@ -1634,9 +1636,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // Nothing is on screen, so no snapshot is either.
           restoredFeedKeyRef.current = '';
           restoreFeedSnapshot({ papers: lastVisitShown.papers, page: 0, hasMore: true, savedAt: lastVisitShown.savedAt }, activeMode, feedPreferenceSignature(userPreferences));
-          setLastVisit('updating');
-        } else if (lastVisit !== null && reset) {
-          setLastVisit('not-updated');
+          setLastVisit(lastVisitStep.shown);
+        } else if (reset) {
+          setLastVisit(lastVisitStep.kept);
         }
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
