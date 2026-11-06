@@ -29,7 +29,7 @@ const RENDER_MARGIN = '150% 0px';
  * the relay refused it, it is not a PDF, it is too large — so the viewer can
  * offer the browser's own viewer instead of a blank sheet.
  */
-export default function PdfPages({ src, title, onUnavailable }: { src: string; title: string; onUnavailable?: () => void }) {
+export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src: string; title: string; onUnavailable?: () => void; onLoaded?: () => void }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [firstPageRatio, setFirstPageRatio] = useState(Math.SQRT2);
@@ -54,6 +54,7 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
       setFirstPageRatio(height / width);
       setPageCount(loaded.numPages);
       setDoc(loaded);
+      onLoaded?.();
     }).catch(() => {
       if (!cancelled) onUnavailable?.();
     });
@@ -61,9 +62,9 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
       cancelled = true;
       void task.destroy();
     };
-    // `onUnavailable` is a stable callback in PDFViewer; were it not, a new
-    // one would reload the document, never miss a failure.
-  }, [src, onUnavailable]);
+    // Both callbacks are stable in PDFViewer; were they not, a new one would
+    // reload the document, never miss a failure.
+  }, [src, onUnavailable, onLoaded]);
 
   const pages = [];
   for (let number = 1; number <= pageCount; number += 1) {

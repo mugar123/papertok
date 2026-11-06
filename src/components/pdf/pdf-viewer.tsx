@@ -1,6 +1,6 @@
 import type { Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -19,6 +19,8 @@ import { useOutline } from './use-outline.ts';
 import { PaperDock } from './paper-info.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer-outcome.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -99,6 +101,8 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [relayFailed, setRelayFailed] = useState(false);
   const drawsPages = Boolean(relayUrl) && !relayFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
+  const [pagesLoaded, setPagesLoaded] = useState(false);
+  const handlePagesLoaded = useCallback(() => setPagesLoaded(true), []);
   const showPdf = () => {
     setIframeLoaded(false);
     setShowFallback(false);
@@ -150,6 +154,40 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
       clearTimeout(fallbackTimer);
     };
   }, [iframeLoaded, canEmbed]);
+
+  // viewer_open on mount, viewer_content on the first outcome, viewer_time on unmount.
+  const { trackEvent } = useAnalyticsConsent();
+  const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>) => {
+    void trackEvent(name, params);
+  });
+  const trackerRef = useRef<ReturnType<typeof startViewerTracking> | null>(null);
+  useEffect(() => {
+    const tracker = startViewerTracking({ paperId: paper.id, now: Date.now, visibility: documentVisibility, send: (name, params) => sendViewerEvent(name, params) });
+    trackerRef.current = tracker;
+    return () => {
+      tracker.stop();
+      trackerRef.current = null;
+    };
+  }, [paper.id]);
+  useEffect(() => {
+    trackerRef.current?.showText(showsText);
+  }, [showsText]);
+  const outcome = viewerOutcome({
+    textSource: fullText === undefined ? undefined : fullText?.source ?? null,
+    textFailed,
+    coarsePointer,
+    hasPdf: Boolean(fullTextUrl),
+    embeddable: Boolean(pdfUrl),
+    relayable: Boolean(pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL)),
+    iframeLoaded,
+    embedTimedOut: showFallback,
+    pagesLoaded,
+    relayFailed,
+    hasLink: Boolean(externalUrl),
+  });
+  useEffect(() => {
+    if (outcome) trackerRef.current?.settle(outcome);
+  }, [outcome]);
 
   return (
     <Dialog
@@ -239,7 +277,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <Suspense fallback={(
                 <ViewerLoading label={'Loading PDF...'} />
               )}>
-                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} />
+                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} onLoaded={handlePagesLoaded} />
               </Suspense>
             )}
 

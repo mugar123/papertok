@@ -153,6 +153,12 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
+  // The in-app paper viewer (components/pdf/viewer-outcome.ts).
+  viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
+  viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
+  viewer_text_status: new Set(['shown', 'none', 'failed']),
+  viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'not_relayable', 'no_open_copy']),
+  full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -220,6 +226,14 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
+  // The in-app paper viewer, apart from the AI reader above: that it opened,
+  // what it first showed (or why it fell back), and its visible time, of which
+  // `text_seconds` was on the text. Fixed labels and times only, never a URL.
+  viewer_open: { ...PAPER_DETAIL },
+  viewer_content: {
+    content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration', ...PAPER_DETAIL,
+  },
+  viewer_time: { content: 'viewer_time_content', seconds: 'seconds', text_seconds: 'seconds', ...PAPER_DETAIL },
   // A card's Connections (the citation graph) and Similar papers, counted
   // apart: opening one, then what the reader does in the graph. Which paper is
   // not sent; `graph_available` says whether it has a DOI to draw a graph from.

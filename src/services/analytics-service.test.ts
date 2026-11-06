@@ -777,6 +777,25 @@ test('time on a paper is whole seconds, and a tab left open counts four hours at
   assert.equal(sanitizeProductEventParams('reader_time', { seconds: -3 }).seconds, 0);
 });
 
+test('the paper viewer sends fixed labels, times and the paper id, never its title, URL or DOI', () => {
+  const leaks = { paper_title: 'A private title', url: 'https://arxiv.org/pdf/2401.00001', doi: '10.1234/private', reason: 'anything' };
+  assert.deepEqual(sanitizeProductEventParams('viewer_open', { paper_id: 'W2741809807', ...leaks }, ANALYTICS_CONSENT.ENABLED), { paper_id: 'W2741809807' });
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1234.6, paper_id: 'W2741809807', ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1235, paper_id: 'W2741809807' });
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'loading', text_status: 'partial', pdf_issue: 'https://example.com', text_source: 'openalex', duration_ms: 'soon',
+  }), {});
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', {
+    content: 'loading', seconds: 19.4, text_seconds: 15.2, paper_id: 'W2741809807', ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'loading', seconds: 19, text_seconds: 15, paper_id: 'W2741809807' });
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', { content: 'pdf' }), {});
+
+  const capture = postHogCapture('viewer_content', { paper_id: 'W2741809807' });
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED)?.event, 'viewer_content');
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+});
+
 test('preserves previous refusals of persistent tracking and restores previous detailed preferences', () => {
   for (const value of ['granted', 'denied']) {
     assert.equal(readAnalyticsConsent(memoryStorage({ [ANALYTICS_CONSENT_KEY]: value })), 'denied');
