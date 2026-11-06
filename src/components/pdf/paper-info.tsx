@@ -7,8 +7,6 @@ import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTrigger
 import { ArrowRight, Info, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useScrollFrame } from './use-scroll-frame.ts';
-import useIsPhone from '../../hooks/use-is-phone.ts';
-import { Drawer, DrawerContent, DrawerHandle } from '../ui/drawer.tsx';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { blockInlines, plainText } from '../../utils/full-text.ts';
 import { getCategoryLabel } from '../../data/category-taxonomy.ts';
@@ -78,7 +76,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   contents: ((close: () => void) => ReactNode) | null;
   children: ReactNode;
 }) {
-  const isPhone = useIsPhone();
   const [open, setOpen] = useState(false);
   const [shows, setShows] = useState<'contents' | 'info'>('info');
   const [stowed, setStowed] = useState(false);
@@ -95,9 +92,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const dock = useRef<HTMLDivElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
-  const body = useRef<HTMLDivElement | null>(null);
-  const contentsButton = useRef<HTMLButtonElement | null>(null);
-  const infoButton = useRef<HTMLButtonElement | null>(null);
   useLayoutEffect(() => {
     const bar = dock.current;
     if (!bar) return;
@@ -113,7 +107,7 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   useEffect(() => {
     if (!open || shows !== 'contents') return;
     const frame = requestAnimationFrame(() => {
-      const card = body.current;
+      const card = panel.current?.querySelector<HTMLElement>('.pdf-info-body');
       const link = card?.querySelector<HTMLElement>('[aria-current="location"]');
       if (card && link) card.scrollTop = link.offsetTop - card.clientHeight / 2 + link.offsetHeight / 2;
     });
@@ -148,39 +142,6 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     setOpen(next);
   };
   const close = () => setOpen(false);
-  const label = shows === 'contents' ? 'Contents' : 'About this paper';
-  const content = (
-    <div className="pdf-info-body" ref={body} data-base-ui-swipe-ignore={isPhone || undefined}>
-      {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
-    </div>
-  );
-  if (isPhone) {
-    const show = (what: 'contents' | 'info') => {
-      setShows(what);
-      setOpen(true);
-    };
-    return (
-      <div className="pdf-dock-root" data-stowed={(stowed && !open) || undefined}>
-        <Drawer open={open} onOpenChange={setOpen}>
-          <DrawerContent className="pdf-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" aria-label={label} finalFocus={shows === 'contents' ? contentsButton : infoButton}>
-            <DrawerHandle />
-            {content}
-          </DrawerContent>
-        </Drawer>
-        <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock}>
-          {contents && (
-            <Button ref={contentsButton} variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" aria-haspopup="dialog" onClick={() => show('contents')}>
-              <ListBullets size={18} aria-hidden="true" />
-            </Button>
-          )}
-          {children}
-          <Button ref={infoButton} variant="ghost" size="icon" aria-label="About this paper" title="About this paper" aria-haspopup="dialog" onClick={() => show('info')}>
-            <Info size={18} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
       <Popover open={open} onOpenChange={onOpenChange}>
@@ -193,8 +154,10 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
             collisionAvoidance={{ side: 'none', align: 'none' }}
             className="pdf-info-positioner"
           >
-            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={label}>
-              {content}
+            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}>
+              <div className="pdf-info-body">
+                {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
+              </div>
             </PopoverPopup>
           </PopoverPositioner>
         </PopoverPortal>
