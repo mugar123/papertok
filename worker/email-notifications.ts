@@ -971,7 +971,10 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
   if (slot.version > 0 || !env.NOTIFICATION_STORE) return slot;
   const legacy = await env.NOTIFICATION_STORE.get<Subscription>(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
   if (!legacy?.unsubscribeToken) return slot;
-  return (await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: legacy })).slot;
+  const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: legacy });
+  // Leave KV only the index a save writes, not a second copy of the record.
+  if (moved.accepted) await env.NOTIFICATION_STORE.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid }));
+  return moved.slot;
 }
 
 function withVersion(slot: StoredSlot): Subscription | null {

@@ -772,9 +772,8 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
     assert.equal(storedSubscription!.sentPaperKeys!.includes('id:2607.26058'), true);
     const rawSubscription = await kv.get<Subscription>(subscriptionKey, 'json');
     const deliveryState = await kv.get<Subscription>(`${deliveryStatePrefix}arxiv-reader`, 'json');
-    assert.equal(rawSubscription!.lastSentAt, '2026-07-27T07:00:00Z');
-    assert.notEqual(rawSubscription!.lastSentAt, now.toISOString());
-    assert.equal(rawSubscription!.lastDelivery, undefined);
+    // The KV record moved into the object, so KV keeps only the index.
+    assert.deepEqual(rawSubscription, { uid: 'arxiv-reader' });
     assert.equal(deliveryState!.lastSentAt, now.toISOString());
   } finally {
     globalThis.fetch = originalFetch;
@@ -1327,7 +1326,8 @@ test('does not overwrite an enabled subscription when the client sends zero foll
     }),
     error => (error as Error & { code?: string; status?: number })?.code === 'EMAIL_FOLLOWS_REQUIRED' && (error as Error & { code?: string; status?: number })?.status === 409,
   );
-  assert.deepEqual(await kv.get<Subscription>(subscriptionKey, 'json'), existing);
+  // Version 1 is the KV record moved into the object, unchanged.
+  assert.deepEqual(await storedSubscriptionWithState(kv, subscriptionKey), { ...existing, version: 1 });
 });
 
 test('rejects oversized notification preference payloads before parsing them', async () => {
@@ -1420,7 +1420,8 @@ test('a background sync never brings back a digest the reader turned off', async
   }, SYNC_READER);
   assert.equal(onDisabled.enabled, false);
   assert.equal(onDisabled.maxPapers, 10);
-  assert.deepEqual(await legacyKv.get(SYNC_READER_KEY, 'json'), disabled);
+  // Moving the record into the object leaves KV only the index, though nothing changed.
+  assert.deepEqual(await legacyKv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
   // The disabled record's token has no index, and a sync must not add one.
   assert.deepEqual([...legacyKv.values.keys()], [SYNC_READER_KEY]);
 });
@@ -1620,7 +1621,7 @@ test('unsubscribe GET confirms without mutating and POST removes the subscriptio
   const confirmation = await handleEmailUnsubscribe(new Request(url), { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv) });
   assert.equal(confirmation.status, 200);
   assert.match(await confirmation.text(), /Confirm unsubscribe/);
-  assert.deepEqual(await kv.get<Subscription>('notification:subscription:reader', 'json'), subscription);
+  assert.deepEqual(await storedSubscriptionWithState(kv, 'notification:subscription:reader'), { ...subscription, version: 1 });
 
   const result = await handleEmailUnsubscribe(new Request(url, { method: 'POST' }), {
     NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv),
