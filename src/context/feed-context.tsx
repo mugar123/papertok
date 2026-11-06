@@ -1568,6 +1568,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { nextPage, hasMore: nextHasMore } = pageAfterLoad(newPapers.length, currentPage, seenFallback);
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
+      // A load that brings no card the list lacks (an empty answer, or only
+      // repeated ids) leaves the last visit's cards as they were: the saved
+      // copy keeps its date, so it cannot pass for a recent one.
+      const listedIds = new Set(papersRef.current.map(p => p.id));
+      const bringsNewCards = [...filtered, ...notableCards].some(p => !listedIds.has(p.id));
+      const keepsLastVisitCopy = showsLastVisit(lastVisit) && !bringsNewCards;
 
       setPapers(current => {
         const nextPapers = addPage(current);
@@ -1592,14 +1598,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           clearTimeout(pendingSnapshotWrite.timer);
           pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
         }
-        writeFeedSnapshot(snapshotUserId, preferenceSignature, feedCache.current[activeMode]);
+        if (!keepsLastVisitCopy) writeFeedSnapshot(snapshotUserId, preferenceSignature, feedCache.current[activeMode]);
         return nextPapers;
       });
       setPage(nextPage);
       setHasMore(nextHasMore);
       telemetry.finish({ result: filtered.length + notableCards.length > 0 ? 'success' : 'empty', degraded });
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
-      const added = filtered.length + notableCards.length > 0;
+      const added = bringsNewCards;
       setLastVisit(current => lastVisitAfterLoad(current, added));
 
       // A short first screen should fill itself even before the reader reaches
