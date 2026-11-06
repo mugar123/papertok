@@ -3537,6 +3537,17 @@ test('the digest shows LaTeX font wrappers and escaped percents as plain prose',
   assert.equal(preheader.endsWith('Bold 5% result'), true);
 });
 
+test('the digest keeps an amount written as an entity and still unwraps real math', () => {
+  const digest = renderDigest({}, [frontPagePaper({
+    title: 'Prices of &#36;5 and &#36;10 with $x^{2}$',
+    abstract: 'It costs &#36;5 and &#x24;10 while $y_{1}$ holds.',
+  })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  assert.equal(digest.text.includes('Prices of $5 and $10 with x^2'), true, digest.text);
+  assert.equal(digest.text.includes('It costs $5 and $10 while y_1 holds.'), true, digest.text);
+  assert.equal(digest.html.includes('x<sup>2</sup>'), true);
+});
+
 test('the digest keeps comparisons and escapes markup in titles and excerpts', () => {
   const digest = renderDigest({}, [frontPagePaper({
     title: 'Why a<b>c and p<q and r>s <script>x</script>',

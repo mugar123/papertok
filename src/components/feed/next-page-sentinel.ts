@@ -54,10 +54,15 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
   let inRange: boolean | null = null;
   // The pause ended before that report.
   let owed = false;
+  // Whether `loadMore` refused a request that was otherwise due.
   const ask = (attempt?: 'automatic_retry') => {
-    if (!inRange || waiting || !hasMore || loading) return;
-    if (loadMore(attempt) && attempt) retries.used += 1;
+    if (!inRange || waiting || !hasMore || loading) return false;
+    const started = loadMore(attempt);
+    if (started && attempt) retries.used += 1;
+    return !started;
   };
+  const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
+  let retry: ReturnType<typeof setTimeout> | null = null;
   const due = () => {
     if (page.hidden) {
       page.addEventListener('visibilitychange', due, { once: true });
@@ -65,10 +70,11 @@ export function createNextPageSentinel({ failed, hasMore, loading, loadMore, ret
     }
     waiting = false;
     owed = inRange === null;
-    ask('automatic_retry');
+    // A retry the feed refuses (a load is on its way, or a retry is due) is
+    // armed again a pause later, at the same spacing, so it is not lost.
+    if (ask('automatic_retry')) retry = setTimeout(due, pause);
   };
-  const pause = Math.min(AUTO_RETRY_PAUSE_MS * 2 ** retries.used, NEXT_PAGE_RETRY_CAP_MS);
-  const retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - performance.now()));
+  retry = retries.failedAt === null ? null : setTimeout(due, Math.max(0, retries.failedAt + pause - performance.now()));
   return {
     /** The observer's report: whether the sentinel is in range now. */
     report(isIntersecting: boolean) {
