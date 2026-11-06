@@ -3,7 +3,7 @@
  * meaningful change updates its "Last updated" date and is announced in the
  * app to signed-in accounts created before the change took effect; the feed
  * shows PRIVACY_POLICY_CHANGE in a dialog (components/nudges/privacy-notice.tsx)
- * to each of them until they choose Got it for this PRIVACY_POLICY_VERSION.
+ * to each of them once for this PRIVACY_POLICY_VERSION.
  *
  * Whoever makes such a change to privacy.html sets the version to its new date
  * and rewrites the change to say the main changes since the previous version, in
@@ -14,7 +14,7 @@
  * privacy.html`, not only the commits you made: a merge brings in others'
  * edits to the page. privacy.test.ts fails while the version and the page's date
  * disagree. A second change on a day that already has a version takes a suffix
- * ('2026-10-25.2'), so readers who chose Got it on the first notice still hear of it.
+ * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
 export const PRIVACY_POLICY_VERSION = '2026-11-05';
 

@@ -65,13 +65,13 @@ const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
 
 // Unlike the nudges above, kept per reader: each account that signs in on this
 // device has to be told separately. It is not swept at sign-out, so signing in
-// again does not repeat a notice already acknowledged with Got it. Deleting the
-// account does remove it (forgetPrivacyNotice).
+// again does not repeat a notice already shown. Deleting the account does
+// remove it (forgetPrivacyNotice).
 function privacyNoticeKey(uid: string) {
   return `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}`;
 }
 
-/** The policy version this reader last acknowledged with Got it on this device, if any. */
+/** The newest policy version this reader was shown the notice for on this device, if any. */
 export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null) {
   try {
     return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
@@ -107,9 +107,8 @@ function policyVersionCovers(acknowledged: string | null, version: string) {
 }
 
 /**
- * Keeps the newest version acknowledged with Got it: another tab still running
- * an older bundle must not write its version over a newer one this reader
- * acknowledged.
+ * Keeps the newest version shown: another tab still running an older bundle
+ * must not write its version over a newer one this reader was shown.
  */
 export function rememberPrivacyNotice(uid: string, version: string, storage?: NudgeStorage | null) {
   try {
@@ -117,13 +116,24 @@ export function rememberPrivacyNotice(uid: string, version: string, storage?: Nu
     if (policyVersionCovers(readPrivacyNoticeAck(uid, target), version)) return;
     target?.setItem(privacyNoticeKey(uid), version);
   } catch {
-    // The host still closes the notice for this visit; it returns next time.
+    // The dialog still stays open until it is closed; it returns next visit.
   }
 }
 
 /**
- * Whether a reader still has to hear about policy `version`; acknowledging it
- * or a later version with Got it settles that. Only signed-in
+ * Called by NudgeHost after each commit: once the privacy dialog is open on
+ * screen for a signed-in account, `version` counts as told for that account on
+ * this device, however the dialog is then closed (Got it, the X, Escape, a
+ * press outside, Back, or closing the tab). Nothing is recorded before it opens
+ * or without an account.
+ */
+export function recordPrivacyNoticeShown({ uid, dialogOpen, version, storage }: { uid: string | null | undefined; dialogOpen: boolean; version: string; storage?: NudgeStorage | null }) {
+  if (dialogOpen && uid) rememberPrivacyNotice(uid, version, storage);
+}
+
+/**
+ * Whether a reader still has to hear about policy `version`; having been shown
+ * it or a later version settles that. Only signed-in
  * accounts are told: a guest has no creation date, so a first-time visitor
  * could not be told apart from someone who read the old policy. An account
  * created at or after `effectiveAt` (an ISO instant: when the change went
@@ -203,19 +213,20 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
  * (`shown`), the feed shows its first cards (`cardsShown`) and no other modal is
  * open, so it never lands over the feed's loading or error screen, a paper or
  * another dialog: it waits for the cards, and for that dialog to close. Once
- * open it stays open, under any modal opened over it, until the reader puts it
- * away or leaves the feed. `wasOpen` is the value this returned on the previous
- * render; `cardsShown` and `modalOpen` only matter while the dialog is closed
- * (open, it is a modal itself).
+ * open it stays open, under any modal opened over it, until the reader closes
+ * it or leaves the feed. `wasOpen` is the value this returned on the previous
+ * render; `cardsShown`, `modalOpen` and `tabVisible` only matter while the
+ * dialog is closed (open, it is a modal itself). A hidden tab does not open it:
+ * opening records the version as told, and nobody would have seen the notice.
  */
-export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; wasOpen: boolean }) {
-  return shown && (wasOpen || (cardsShown && !modalOpen));
+export function privacyDialogOpen({ shown, cardsShown, modalOpen, tabVisible, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; tabVisible: boolean; wasOpen: boolean }) {
+  return shown && (wasOpen || (cardsShown && !modalOpen && tabVisible));
 }
 
 /**
  * Whether the feed's cards stay on screen as the privacy dialog closes. They do
  * while a ready reader (visitReaderReady) is still on the feed route, which is
- * when the dialog closed because it was answered, here or in another tab.
+ * when the dialog closed because the reader closed it.
  * Otherwise it closed because the feed is going: another route (each pathname
  * mounts its own page, which plays its exit before it unmounts), a sign-out or
  * the profile retry screen. Those cards leave with it (visible-time.ts).
@@ -240,13 +251,15 @@ export const PRIVACY_NOTICE_ID = 'privacy-change';
  * feed, stays on every route until it is dismissed, as it did before the
  * privacy notice existed. The privacy dialog is shown only to a signed-in reader
  * on the feed, since elsewhere a paper may be open as a modal, and comes back
- * when the reader returns to the feed. It also goes once it is no longer owed
- * (`privacyOwed`, read from storage on every render): Got it chosen in another
- * tab settles it here too.
+ * when the reader returns to the feed while it is still owed. Once it is no
+ * longer owed (`privacyOwed`, read from storage on every render) it does not
+ * open: shown in another tab, it is settled here too. A dialog already open
+ * here (`dialogOpen`, from the previous render) stays until the reader closes
+ * it or leaves the feed, although opening it recorded it as told.
  */
-export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean }) {
+export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed, dialogOpen = false }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean; dialogOpen?: boolean }) {
   if (picked !== PRIVACY_NOTICE_ID) return picked;
-  return signedIn && isFeedPath(pathname) && privacyOwed ? picked : null;
+  return signedIn && isFeedPath(pathname) && (privacyOwed || dialogOpen) ? picked : null;
 }
 
 /** One of the pending ones, at random, or nothing at all. */
@@ -277,24 +290,16 @@ export function visitChoiceDue({ privacyOwed, dwellDone }: { privacyOwed: boolea
 
 /**
  * One visit's notices, as NudgeHost keeps them: the notice picked (`null` for
- * none), whether the visit's choice has been made, whether the reader hid the
- * privacy notice for this visit, whether the minute of reading has passed, and
- * which minute of reading that is, counted from 0 (Hide for now starts another).
+ * none), whether the visit's choice has been made and whether the minute of
+ * reading has passed.
  */
-export interface VisitNotices { picked: string | null; choiceMade: boolean; privacyHidden: boolean; dwellDone: boolean; readingMinute: number }
+export interface VisitNotices { picked: string | null; choiceMade: boolean; dwellDone: boolean }
 
-export const VISIT_START: VisitNotices = { picked: null, choiceMade: false, privacyHidden: false, dwellDone: false, readingMinute: 0 };
+export const VISIT_START: VisitNotices = { picked: null, choiceMade: false, dwellDone: false };
 
-/**
- * The visit once minute `readingMinute` of reading has passed (NudgeHost's
- * timer). A timer started for an earlier minute ends nothing: the minute was
- * started over by Hide for now, and the nudge it lets follow waits a whole
- * minute from the hide, also when the reader hid the notice before the first
- * minute was up.
- */
-export function readingMinutePassed(visit: VisitNotices, readingMinute: number): VisitNotices {
-  if (visit.readingMinute !== readingMinute || visit.dwellDone) return visit;
-  return { ...visit, dwellDone: true };
+/** The visit once its minute of reading has passed (NudgeHost's timer). */
+export function readingMinutePassed(visit: VisitNotices): VisitNotices {
+  return visit.dwellDone ? visit : { ...visit, dwellDone: true };
 }
 
 /**
@@ -303,27 +308,21 @@ export function readingMinutePassed(visit: VisitNotices, readingMinute: number):
  * a re-render, a navigation or the email health answer landing cannot start a
  * second one. Each notice is a candidate only where its gate is open
  * (visitChoiceGates), so a route or state where only the other one may be
- * chosen does not spend the visit's choice. A privacy notice hidden this visit
- * is no longer a candidate.
+ * chosen does not spend the visit's choice.
  */
 export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
-  const owed = gates.privacy && privacyOwed && !visit.privacyHidden;
+  const owed = gates.privacy && privacyOwed;
   if (visit.choiceMade || !visitChoiceDue({ privacyOwed: owed, dwellDone: gates.nudge && visit.dwellDone })) return visit;
   return { ...visit, choiceMade: true, picked: pickVisitNotice({ privacyOwed: owed, eligible, dismissed, random }) };
 }
 
 /**
- * The visit after the reader answers the privacy notice. Got it spends the
- * visit's one notice, so a nudge waits for the next visit. Hide for now (or
- * Escape, a press outside, the X) puts the notice away for this visit and opens
- * the choice again with the minute of reading started over: a nudge such as
- * email being down may then follow a minute later, so a reader who keeps
- * hiding the notice is still told.
+ * The visit after the reader closes the privacy dialog, with Got it or any
+ * other way: it spends the visit's one notice, so a nudge waits for the next
+ * visit.
  */
-export function answerPrivacyNotice(visit: VisitNotices, answer: 'got-it' | 'hide'): VisitNotices {
-  if (visit.picked !== PRIVACY_NOTICE_ID) return visit;
-  if (answer === 'got-it') return { ...visit, picked: null };
-  return { picked: null, choiceMade: false, privacyHidden: true, dwellDone: false, readingMinute: visit.readingMinute + 1 };
+export function answerPrivacyNotice(visit: VisitNotices): VisitNotices {
+  return visit.picked === PRIVACY_NOTICE_ID ? { ...visit, picked: null } : visit;
 }
 
 /**
