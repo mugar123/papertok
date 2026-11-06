@@ -1,3 +1,21 @@
+import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+
+const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+
+/**
+ * The chosen categories a profile snapshot gives the digest: its leaf ids,
+ * once each and sorted, read the way the account profile reads them. They are
+ * confirmed only when the snapshot is the server's copy, never the device's
+ * cache; a server copy with no categories, or no profile, is a confirmed none.
+ */
+export function digestProfileInterests(profile: { preferences?: unknown; selectedCategories?: unknown } | undefined, fromCache: boolean) {
+  const chosen = profile?.preferences || profile?.selectedCategories;
+  const interests = Array.isArray(chosen)
+    ? [...new Set(chosen.filter((id): id is string => typeof id === 'string' && LEAF_IDS.has(id)))].sort()
+    : [];
+  return { interests, confirmed: !fromCache };
+}
+
 export interface DigestShutoffState {
   /** The saved subscription is on. */
   enabled: boolean;

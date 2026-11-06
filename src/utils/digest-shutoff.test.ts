@@ -1,8 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestInterestsToSend, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
+import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 
 const base = { enabled: true, followsConfirmed: true, interestsConfirmed: true, digestCovered: false, attempted: false };
+
+test('the live profile gives the digest its chosen leaf categories, confirmed only when the server sent them', () => {
+  const fromServer = digestProfileInterests({ preferences: ['cs.LG', 'not-a-category', 'cs.AI', 'cs.LG'] }, false);
+  assert.deepEqual(fromServer, { interests: ['cs.AI', 'cs.LG'], confirmed: true });
+  assert.deepEqual(digestProfileInterests({ selectedCategories: ['cs.AI'] }, false).interests, ['cs.AI']);
+  assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, true).confirmed, false);
+});
+
+test('a profile the server says holds no categories is a confirmed none', () => {
+  assert.deepEqual(digestProfileInterests(undefined, false), { interests: [], confirmed: true });
+  assert.deepEqual(digestProfileInterests({ preferences: 'cs.LG' }, false), { interests: [], confirmed: true });
+});
 
 test('only categories from the server\'s copy of the profile are sent to the digest', () => {
   assert.deepEqual(digestInterestsToSend({ interests: ['cs.LG'], interestsConfirmed: true }), ['cs.LG']);

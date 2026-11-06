@@ -32,12 +32,10 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
-import { digestInterestsToSend, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
-import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
-
-const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
-const NO_INTERESTS: string[] = [];
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -50,7 +48,7 @@ const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
 };
 
 export function EmailNotificationsProvider({ children }: PropsWithChildren) {
-  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences, profileLoadError, profileFromServer } = useAuth();
+  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
@@ -81,12 +79,34 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const hasFollows = hasDigestFollows(followedEntities);
   // The reader's chosen categories fill the digest while nothing it covers is
   // followed (ENG-163). Only their leaf ids reach the Worker.
-  const interests = useMemo(
-    () => (userPreferences ? [...new Set(userPreferences.filter(id => LEAF_IDS.has(id)))].sort() : NO_INTERESTS),
-    [userPreferences],
-  );
+  // The profile is read once per session by AuthContext, so a tab left open
+  // would send categories changed since on another device, or shut the digest
+  // off on a list emptied there. The digest listens to the profile itself, like
+  // the follows, and trusts only the server's copy.
+  const [liveProfile, setLiveProfile] = useState<{ uid: string; interests: string[]; confirmed: boolean } | null>(null);
+  useEffect(() => {
+    if (!userId) return undefined;
+    return onSnapshot(doc(db, 'users', userId), { includeMetadataChanges: true }, (snapshot) => {
+      const next = digestProfileInterests(snapshot.data(), snapshot.metadata.fromCache);
+      // The same answer keeps the same object, so a metadata-only snapshot
+      // does not schedule another digest sync.
+      setLiveProfile(current => (
+        current?.uid === userId && current.confirmed === next.confirmed && current.interests.join() === next.interests.join()
+          ? current
+          : { uid: userId, ...next }
+      ));
+    }, (listenError) => {
+      console.warn('Could not follow the profile for the email digest', listenError);
+      setLiveProfile(current => (current?.uid === userId ? { ...current, confirmed: false } : null));
+    });
+  }, [userId]);
+  const profileForUser = liveProfile?.uid === userId ? liveProfile : null;
+  // Until the listener answers, the categories in hand only decide what the
+  // settings screen shows; nothing unconfirmed is sent.
+  const fallbackInterests = useMemo(() => digestProfileInterests({ preferences: userPreferences }, true).interests, [userPreferences]);
+  const interests = profileForUser ? profileForUser.interests : fallbackInterests;
   const digestCovered = hasFollows || interests.length > 0;
-  const interestsConfirmed = profileFromServer && !profileLoadError;
+  const interestsConfirmed = profileForUser?.confirmed ?? false;
   const sentInterests = digestInterestsToSend({ interests, interestsConfirmed });
   // An empty follow list read from the cache must not replace the follows the
   // Worker stores, whether a sync, a save that turns the digest on or a test
