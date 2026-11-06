@@ -1389,6 +1389,29 @@ function interceptedStores(stores: WorkerEnv['EMAIL_SUBSCRIPTIONS'], when: (payl
   } as WorkerEnv['EMAIL_SUBSCRIPTIONS'] & { intercepted: boolean };
 }
 
+test('a subscribe from another tab during an unsubscribe keeps the reader on the schedule', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv) };
+  const subscribe = { enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] };
+  await saveSubscription(preferencesPut(subscribe), env, SYNC_READER);
+  // The other tab's save lands after the object delete and before the index delete.
+  const deleteIndex = kv.delete.bind(kv);
+  let raced = false;
+  kv.delete = async (key: string) => {
+    if (key === SYNC_READER_KEY && !raced) {
+      raced = true;
+      await saveSubscription(preferencesPut(subscribe), env, SYNC_READER);
+    }
+    await deleteIndex(key);
+  };
+
+  await saveSubscription(preferencesPut({ ...subscribe, enabled: false }), env, SYNC_READER);
+
+  assert.equal(raced, true);
+  assert.equal((await storedRecordOf(kv, SYNC_READER_KEY))?.enabled, true);
+  assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
+});
+
 test('a background sync never brings back a digest the reader turned off', async () => {
   // A tab that loaded with the digest on still sends enabled: true.
   const staleTab = {

@@ -1055,19 +1055,25 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
 
 /**
  * Deletes the reader's subscription in their object first, so no later read
- * finds it, then the KV indexes and delivery state that pointed at it.
+ * finds it, then the KV indexes and delivery state that pointed at it. A save
+ * from another tab can land between the two steps, and its index write can
+ * come before this delete, so the index is put back when the object holds a
+ * subscription again; without it the schedule would skip that reader.
  */
 async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
   const deleted = previous || subscription;
+  const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
   await Promise.all([
-    env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
+    env.NOTIFICATION_STORE.delete(indexKey),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
     deleted?.unsubscribeToken
       ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${deleted.unsubscribeToken}`)
       : Promise.resolve(),
   ]);
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (slot.subscription?.enabled) await env.NOTIFICATION_STORE.put(indexKey, JSON.stringify({ uid }));
 }
 
 /**
