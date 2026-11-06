@@ -15,6 +15,15 @@ test('a follow is served from the lane its entity names, and a followed category
   assert.equal(followLane({ type: 'institution', canonicalId: 'mit', displayName: 'MIT' }), '', 'an institution is served by its OpenAlex id only');
 });
 
+// ENG-187: a stored query of only whitespace is an empty query, which the
+// name stands in for; with no name either, the follow has no lane.
+test('a followed query of only whitespace is read as an empty one', () => {
+  const topic = { type: 'topic', canonicalId: 'query:abc', displayName: 'Graph Neural Networks' };
+  assert.equal(followLane({ ...topic, metadata: { query: '' } }), 'query:graph neural networks');
+  assert.equal(followLane({ ...topic, metadata: { query: ' 	 ' } }), 'query:graph neural networks');
+  assert.equal(followLane({ ...topic, displayName: '  ', metadata: { query: '   ' } }), '');
+});
+
 // ENG-123: a journal is followed by its OpenAlex source id, and served from
 // that source's lane. Its name is no lane: a search by name would be another
 // journal's papers as often as its own.

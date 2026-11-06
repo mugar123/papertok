@@ -1489,7 +1489,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   from the start would speak for waits that are not
                   happening. Under the veil there is no page to add to: the
                   landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed' })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetriesRef.current.used > 0 })}</span>
             </div>
           </div>
         )}
