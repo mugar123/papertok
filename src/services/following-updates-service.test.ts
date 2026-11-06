@@ -195,6 +195,55 @@ test('a follow that never answers is counted as failed at the deadline, and the 
   assert.deepEqual(result.papers.map(paper => paper.id), ['p1']);
 });
 
+// ENG-110 follow-up: with A and B on screen, a refresh in which A answered and
+// B failed replaced the cards with A's, and B's known papers were gone until
+// a refresh in which B answered.
+test('a partial refresh keeps the papers on screen of the follows that have not answered it', async () => {
+  const [ada, alan, grace] = [
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Ada' },
+    { type: 'author' as const, canonicalId: 'A2', displayName: 'Alan' },
+    { type: 'author' as const, canonicalId: 'A3', displayName: 'Grace' },
+  ];
+  const match = (follow: FollowEntity) => ({ type: follow.type, canonicalId: follow.canonicalId });
+  const shown = (id: string, ...follows: FollowEntity[]) => ({ id, title: id, published: '2026-08-01', _followedEntityMatches: follows.map(match) }) as Paper;
+  // On screen: Ada's, Alan's, Grace's, one both Ada and Alan brought in, and
+  // one of a follow the reader has since dropped.
+  const previous = [
+    shown('ada-old', ada), shown('alan-old', alan), shown('grace-old', grace),
+    { ...shown('shared-old', ada, alan), journal: 'arXiv preprint' },
+    shown('dropped-old', { type: 'author', canonicalId: 'A9', displayName: 'Dropped' }),
+  ];
+  const progress: string[][] = [];
+  const result = await fetchFollowingUpdates([ada, alan, grace], {
+    previous,
+    fetchUpdatesForFollow: async (follow) => {
+      // Ada answers with a new paper and an updated copy of the shared one,
+      // Grace answers with none, Alan fails.
+      if (follow === ada) {
+        return [
+          { id: 'ada-new', title: 'ada-new', published: '2026-09-01' },
+          { id: 'shared-old', title: 'shared-old', published: '2026-08-01', journal: 'Nature' },
+        ] as Paper[];
+      }
+      if (follow === grace) return [];
+      await new Promise(resolve => setTimeout(resolve, 5));
+      throw new Error('arXiv unavailable');
+    },
+    onProgress: partial => progress.push(partial.papers.map(paper => paper.id).sort()),
+  });
+
+  assert.deepEqual(result.papers.map(paper => paper.id).sort(), ['ada-new', 'alan-old', 'shared-old'],
+    "Alan's papers stay; Ada's and Grace's answers replace theirs; the dropped follow's paper goes");
+  const shared = result.papers.find(paper => paper.id === 'shared-old');
+  assert.equal(shared?.journal, 'Nature', "Ada's fresh copy wins over the copy kept for Alan");
+  assert.deepEqual(shared?._followedEntityMatches?.map(entry => typeof entry === 'string' ? entry : entry.canonicalId), ['A2', 'A1'],
+    'a shared paper Ada brought in again is credited to both');
+  assert.equal(result.failedEntities, 1, 'still a partial answer, so the next load asks again');
+  assert.ok(progress.every(ids => ids.includes('alan-old')), "Alan's papers are on screen in every delivery");
+  assert.deepEqual(progress[0], ['ada-new', 'alan-old', 'grace-old', 'shared-old'], 'a follow still on its way keeps its papers too');
+  assert.ok(!progress.at(-1)!.includes('grace-old'), "Grace's empty answer is her answer");
+});
+
 // ENG-176: with the Worker unreachable every follow failed, and the refresh
 // resolved with no papers. The page read that as nothing new: it dropped its
 // cards, wrote the empty answer to its cache and said "Papers updated".

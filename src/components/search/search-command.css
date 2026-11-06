@@ -279,7 +279,6 @@
   font: var(--mono-label);
   line-height: var(--lh-normal);
   letter-spacing: var(--mono-track);
-  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
@@ -591,7 +590,13 @@
   }
 }
 
-.sc-sheet [cmdk-item][data-selected='true'] > .sc-icon {
+/* The row cmdk picks on its own is not marked until the reader moves to a row. */
+.sc-sheet.sc-sheet--untouched [cmdk-item][data-selected='true'] {
+  background: none;
+  box-shadow: none;
+}
+
+.sc-sheet:not(.sc-sheet--untouched) [cmdk-item][data-selected='true'] > .sc-icon {
   color: var(--focus-ring);
   stroke: currentColor;
   stroke-width: 10px;

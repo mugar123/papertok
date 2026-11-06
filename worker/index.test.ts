@@ -1123,7 +1123,7 @@ const arxivThrough = (t: TestContext, env: WorkerEnv, upstream: typeof fetch) =>
     ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
 };
-const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
+const IS_ARXIV_PACE = (key: string) => key === 'arxiv-v2:pace';
 
 // One request every three seconds is arXiv's published policy, and the Worker
 // is the one client arXiv sees. A miss takes a seat on the beat before it goes
@@ -1160,8 +1160,8 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
   assert.equal(upstreamCalls, 0);
 });
 
-// The beat is courtesy towards arXiv, not the protection of a key: a ledger
-// that is missing or down must not take the source down with it.
+// Without a ledger binding (local runs) there is no beat, so the call goes out
+// unpaced; a ledger that answers with an error sends nothing (arxiv-api.test.ts).
 test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async t => {
   let upstreamCalls = 0;
   const response = await arxivThrough(
@@ -1234,9 +1234,11 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 // script can spread more over several addresses, such as one IPv6 /64.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
-  // four seconds a caller may wait, the next one a millisecond away, so the
-  // seats taken here cost almost no real sleep.
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
+  // four seconds a caller may wait, the next one a millisecond away. The
+  // Worker's lookup waits for its own seat three seconds after the misses' call
+  // (ENG-184), so the waits run on mocked timers: with a frozen clock and real
+  // timers it waited out its four seconds without the clock reaching the seat.
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:05.999Z') });
   const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
   const statuses: number[] = [];
   const papers = await withWorkerFetchMock(async input => {
@@ -1244,13 +1246,13 @@ test('anonymous cache-busting arXiv misses leave a seat on the beat for the Work
     return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
   }, async () => {
     for (let miss = 0; miss < 3; miss += 1) {
-      const response = await reportApi.fetch(new Request(
+      const response = await settledOnMockClock(t, reportApi.fetch(new Request(
         `https://papertok-report-api.example/arxiv?search_query=all:x${miss}`,
         { headers: { 'cf-connecting-ip': `2001:db8::${miss + 1}` } },
-      ), env);
+      ), env));
       statuses.push(response.status);
     }
-    return fetchArxivPapers(env, ['2610.01234']);
+    return settledOnMockClock(t, fetchArxivPapers(env, ['2610.01234']));
   });
 
   assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);
@@ -4697,4 +4699,41 @@ test('share image lookups spend the same per-IP allowance as share pages', async
     await ask('198.51.100.7');
     assert.equal(lookups, 21, 'another IP retains its share allowance');
   });
+});
+
+// The reader's full text: the app's own route, not a public relay.
+const FULL_TEXT_URL = 'https://papertok-report-api.example/resources/full-text';
+const fullText = (query: string, upstream: typeof fetch, origin = 'https://papertok.app') => withWorkerFetchMock(
+  upstream,
+  () => reportApi.fetch(new Request(`${FULL_TEXT_URL}?${query}`, { headers: { ...(origin ? { origin } : {}), ...CALLER } }), {
+    PDF_RATE_LIMIT_SECRET: CALLER_SECRET,
+    REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }),
+  }),
+);
+
+test('full text refuses a caller without an allowed Origin and an unusable identifier, asking no provider', async () => {
+  const fetched: string[] = [];
+  const upstream = (async (input: RequestInfo | URL) => { fetched.push(String(input)); return new Response(''); }) as typeof fetch;
+
+  assert.equal((await fullText('arxiv_id=1706.03762', upstream, '')).status, 403);
+  assert.equal((await fullText('arxiv_id=1706.03762', upstream, 'https://elsewhere.example')).status, 403);
+  assert.equal((await fullText('arxiv_id=..%2Fadmin&doi=nope', upstream)).status, 400);
+  assert.deepEqual(fetched, []);
+});
+
+test('full text answers with arXiv\'s HTML for a month, with nothing for an hour, and after an outage for two minutes', async () => {
+  const converted = await fullText('arxiv_id=2601.00011', (async () => new Response('<article class="ltx_document"></article>')));
+  assert.equal(converted.status, 200);
+  assert.equal(converted.headers.get('access-control-allow-origin'), 'https://papertok.app');
+  assert.match(converted.headers.get('cache-control') || '', /s-maxage=2592000/);
+  assert.equal((await converted.json<{ source: string }>()).source, 'arxiv');
+
+  const missing = await fullText('arxiv_id=2601.00012', (async () => new Response('', { status: 404 })));
+  assert.equal(missing.status, 200);
+  assert.match(missing.headers.get('cache-control') || '', /s-maxage=3600/);
+  assert.equal((await missing.json<{ document: string | null }>()).document, null);
+
+  const outage = await fullText('arxiv_id=2601.00013', (async () => new Response('', { status: 503 })));
+  assert.equal(outage.status, 200);
+  assert.match(outage.headers.get('cache-control') || '', /s-maxage=120\b/);
 });

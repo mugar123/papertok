@@ -119,12 +119,12 @@ test('the page names the public pages a shared link opens as places for the Priv
 test('the page says figure lookups count against the caller address like the other public lookups', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
-  assert.match(html, /a public request looks up papers, paper figures, open-access links or a shared page, that server uses the IP address/);
+  assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page, that server uses the IP address/);
   // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
 });
 
-test('the page promises the in-app announcement to signed-in accounts and says how Got it is remembered', () => {
+test('the page promises the in-app announcement to signed-in accounts and says how it is remembered', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
   assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
@@ -182,13 +182,14 @@ test("every clause of the in-app summary is the page's own words", () => {
   for (const [claim, why] of unsaid) assert.doesNotMatch(summary, claim, why);
 });
 
-test('the page lists the notice key among what the browser keeps and what removes it, and says only Got it is remembered', () => {
+test('the page lists the notice key among what the browser keeps and what removes it, and says it is remembered once shown', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(storage, /chosen Got it on the announcement of a policy change[^.]*keeps that version under your account identifier[^.]*sign out and in again/);
+  // NudgeHost records the version once the dialog is open (recordPrivacyNoticeShown in utils/nudges.ts).
+  assert.match(storage, /Once the announcement of a policy change has been shown to you, this browser keeps that version under your account identifier[^.]*sign out and in again/);
   // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
   assert.match(storage, /Clearing the site's data removes it, and so does deleting the account from Settings in this browser/);
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
-  assert.match(changes, /When you choose Got it, this browser remembers that version/);
-  assert.match(changes, /Choosing Hide for now only hides it for that visit/);
+  assert.match(changes, /Once the announcement has been shown, this browser remembers that version[^.]*however you closed it/);
+  assert.doesNotMatch(changes, /Hide for now/);
 });

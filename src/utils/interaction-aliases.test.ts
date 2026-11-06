@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInteractionAliasIndex, normalizedProviderId, paperIdentities, resolveInteractionId } from './interaction-aliases.ts';
+import { buildInteractionAliasIndex, interactionMarksOf, normalizedProviderId, paperIdentities, resolveInteractionId } from './interaction-aliases.ts';
 
 test('provider ids that arrive in several shapes normalize to one', () => {
   assert.equal(normalizedProviderId('W2741809807'), 'openalex:W2741809807');
@@ -45,4 +45,17 @@ test('a paper hydrated under another id resolves to the id its marks live under'
     'a mark already known under the paper\'s own id wins over an alias');
   assert.equal(resolveInteractionId({ id: '' }, index), '');
   assert.equal(resolveInteractionId(null, index), undefined);
+});
+
+// A shared link opened by DOI arrives under the provider's id, and the
+// favorite lives under the id the feed gave the paper. The card's double tap
+// only likes a paper it shows as not liked, so a favorite shown off was
+// unliked by the tap that meant to like it.
+test('a card reads its like and save under the id the marks live under, so a favorite reached by an alias shows as one', () => {
+  const marks = { liked: new Set(['openalex:W77']), saved: new Set(['openalex:W77']), read: new Set<string>() };
+  const idFor = (paper: Parameters<typeof resolveInteractionId>[0]) => resolveInteractionId(paper, index, id => marks.liked.has(id) || marks.saved.has(id));
+  const shared = { id: 'b2c7e1d3f4a5968778695a4b3c2d1e0f9a8b7c6d', doi: '10.1103/PhysRevApplied.2.064003' };
+
+  assert.deepEqual(interactionMarksOf(shared, marks, idFor), { isLiked: true, isSaved: true, isRead: false });
+  assert.deepEqual(interactionMarksOf({ id: 'openalex:W1', doi: '10.1/never' }, marks, idFor), { isLiked: false, isSaved: false, isRead: false });
 });

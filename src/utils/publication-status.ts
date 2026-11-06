@@ -53,9 +53,14 @@ function isRepositoryDoi(doi: string) {
  * spaces.
  */
 export function arxivDoiSaysPublished(doi: unknown) {
-  return String(doi || '').toLowerCase().split(/[\s,;]+/)
+  return listedDois(doi).some(value => !isRepositoryDoi(value));
+}
+
+/** The DOIs a field lists, lowercased and without a resolver prefix. */
+export function listedDois(field: unknown) {
+  return String(field || '').toLowerCase().split(/[\s,;]+/)
     .map(value => value.replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//, '').replace(/^doi:/, ''))
-    .some(value => /^10\.\d{4,9}\//.test(value) && !isRepositoryDoi(value));
+    .filter(value => /^10\.\d{4,9}\//.test(value));
 }
 
 // OpenAlex types a preprint as such; every other type it gives — an article,

@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 3 November 2026.</p>
+      <p class="lp-updated">Last updated 5 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -323,12 +323,13 @@
       <p>
         Those queries <strong>do not leave from your browser</strong>: they go through an
         intermediate server on Cloudflare, so those repositories never receive your IP
-        address. That server counts requests to respect each source's limits. For a
+        address from a search or lookup (figures and PDFs are the exception, described
+        below). That server counts requests to respect each source's limits. For a
         signed-in reader it also counts them per account, under a hashed account identifier
         it keeps for up to three days.
       </p>
       <p>
-        When the in-app PDF reader requests a document, an AI assistant sends a request to
+        When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to
         PaperTok's MCP server, or a public request looks up papers, paper figures,
         open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
@@ -339,6 +340,19 @@
         and is not sent to analytics. People sharing a public IP, such as a campus
         network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute,
         and the MCP server 30 tool calls.
+      </p>
+      <p>
+        The text of a paper comes through that server too, but its figures do not: your
+        browser loads each figure, and a PDF shown in the reader on a computer, directly
+        from the repository that hosts it (arXiv, PubMed Central or Europe PMC), which
+        receives your IP address as with any image on the web.
+      </p>
+      <p>
+        Pages for an author, an institution, a journal or a topic, and an author's preview in
+        the reader, ask <strong>Wikidata</strong> and <strong>Wikipedia</strong> from your
+        browser for a short summary and a picture of what they show, and the picture loads from
+        Wikimedia's servers. Wikimedia receives your IP address and the name or identifier looked
+        up, as with any visit to Wikipedia; PaperTok sends nothing about your account.
       </p>
       <p>
         These PDF counters are stored in Cloudflare Durable Objects. Their automatic
@@ -396,6 +410,7 @@
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
+        <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
       </ul>
 
       <h2>How long it is kept</h2>
@@ -442,7 +457,7 @@
         to the provider and comes back; during that trip this tab's session storage briefly
         holds the provider, the part of the app that asked and the page to return to, and they
         are removed when the page comes back or when the browser restores it after Back.
-        Once you have chosen Got it on the announcement of a policy change, this browser keeps
+        Once the announcement of a policy change has been shown to you, this browser keeps
         that version under your account identifier, so the announcement does not come back
         after you sign out and in again. Clearing the site's data removes it, and so does
         deleting the account from Settings in this browser.
@@ -452,9 +467,9 @@
       <p>
         If this policy changes in a meaningful way, the date at the top will be updated and
         the change will be announced in the application to signed-in accounts created before
-        the change took effect. When you choose Got it, this browser remembers that version,
-        separately for each account, so the same announcement does not come back. Choosing
-        Hide for now only hides it for that visit.
+        the change took effect. Once the announcement has been shown, this browser remembers
+        that version, separately for each account, so the same announcement does not come
+        back, however you closed it.
       </p>
     </main>
 

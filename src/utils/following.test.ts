@@ -6,6 +6,7 @@ import {
   createFollowEntity,
   createFollowKey,
   followChangeEvent,
+  followSnapshotAction,
   followsEntity,
   migrateLegacyAuthors,
   normalizeFollowId,
@@ -273,4 +274,20 @@ test('a project name is its acronym and its title, or whichever of the two it ha
   assert.equal(getProjectDisplayName({ title: 'Quantum leap' }), 'Quantum leap');
   assert.equal(getProjectDisplayName({ acronym: 'LEAP' }), 'LEAP');
   assert.equal(getProjectDisplayName(null), '');
+});
+
+// With the connection down, Firestore answers a list it never reached with an
+// empty snapshot from its cache. Taken as the follow list, the Following page
+// told an account with follows that it followed nothing.
+test('an empty follow list from the cache waits for the server; follows the cache holds are listed', () => {
+  const snapshot = (size: number, fromCache: boolean, changes = size) => ({
+    size, empty: size === 0, metadata: { fromCache }, docChanges: () => Array.from({ length: changes }),
+  });
+  assert.equal(followSnapshotAction(snapshot(0, true), 'waiting'), 'wait');
+  assert.equal(followSnapshotAction(snapshot(0, true), 'failed'), 'wait', 'a listener started again waits the same way');
+  assert.equal(followSnapshotAction(snapshot(3, true), 'waiting'), 'list', 'follows in the cache are follows');
+  assert.equal(followSnapshotAction(snapshot(0, false), 'waiting'), 'list', 'the server says there are none');
+  // The server confirming the same documents changes only their metadata.
+  assert.equal(followSnapshotAction(snapshot(3, false, 0), 'listed'), 'confirm');
+  assert.equal(followSnapshotAction(snapshot(2, true, 1), 'listed'), 'list', 'an unfollow made offline still leaves the list');
 });

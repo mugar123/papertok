@@ -596,6 +596,8 @@ test("an arXiv record's DOI alone does not make its paper peer reviewed, nor a r
   for (const [doi, status] of [
     ['10.48550/arXiv.2603.01234', 'preprint'], ['10.5281/zenodo.99999', 'preprint'], ['10.1101/2023.05.01.538912', 'preprint'],
     ['10.1234/sheets.2026.1', 'published'],
+    ['10.48550/arXiv.2603.01234 10.1234/sheets.2026.1', 'published'],
+    ['10.1234/sheets.2026.1 10.48550/arXiv.2603.01234', 'published'],
   ]) {
     await withUpstream(url => {
       if (url.includes('id_list=2603.04321')) return new Response(arxivFeed(inJournal));

@@ -7,7 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
-import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
@@ -60,6 +60,24 @@ const OAI_PAGE = `<?xml version="1.0" encoding="UTF-8"?>
     <resumptionToken expirationDate="2026-10-23T00:00:00Z">verb%3DListRecords%26skip%3D1300</resumptionToken>
   </ListRecords>
 </OAI-PMH>`;
+
+// arXiv's limit covers its OAI-PMH endpoint, so a page takes a seat on the
+// beat: with the ledger that keeps it unable to answer, nothing goes out.
+test('an OAI page is not requested while the arXiv beat cannot answer, and is waited out', async t => {
+  // The start of a three-second period the harvest may take, so it does not
+  // wait for one.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 3, 0, 0, 3) });
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => new Response(OAI_PAGE));
+  const env = {
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: () => ({}),
+      get: () => ({ fetch: async () => new Response('unavailable', { status: 503 }) }),
+    },
+  } as unknown as Parameters<typeof harvestArxivPage>[0];
+  const page = await harvestArxivPage(env, { set: 'cs', from: '2026-10-20' });
+  assert.deepEqual(page, { stored: 0, listed: 0, resumptionToken: '', retryAfterSeconds: 6 });
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
 
 test('an OAI page yields its live records with v1 as the publication date', () => {
   const { papers, resumptionToken } = parseOaiPage(OAI_PAGE);

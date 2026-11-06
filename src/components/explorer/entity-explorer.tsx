@@ -11,7 +11,8 @@ import type { FollowInput } from '../../utils/following.ts';
 type ExplorerEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTopic & Project> & {
   _queryTopic?: boolean; _detailsPending?: boolean; query?: string;
   metadata?: { localizedNames?: Record<string, string>; query?: string; source?: string; categoryIds?: string[] };
-  ids?: { wikidata?: string; wikipedia?: string };
+  ids?: { wikidata?: string; wikipedia?: string; orcid?: string };
+  image_thumbnail_url?: string | null;
   categories?: string[]; primaryCategory?: string;
 };
 interface VisitRecord {
@@ -150,6 +151,12 @@ function ParticipantName({ name }: { name: string }) {
       <TooltipContent>{name}</TooltipContent>
     </Tooltip>
   );
+}
+
+function wikimediaImage(url: string | null | undefined) {
+  const safe = safeExternalUrl(url);
+  const host = safe ? new URL(safe).hostname : '';
+  return host === 'wikimedia.org' || host.endsWith('.wikimedia.org') ? safe : '';
 }
 
 // Up to the last ten years of an author's output, from OpenAlex's per-year
@@ -347,6 +354,8 @@ export default function EntityExplorer({
   const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || Boolean(cachedEntity) || (type === 'topic' && isOpaqueQueryTopicText(id));
   const [entity, setEntity] = useState<ExplorerEntity | null>(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState<string | null>(null);
+  // Whether the entity on screen is the answer for this route, not a search row or a cached copy it upgrades.
+  const [isEntityFetched, setIsEntityFetched] = useState(false);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
@@ -587,6 +596,10 @@ export default function EntityExplorer({
   const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution);
   const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
+  // Wikipedia only lends a free image, so a non-free logo leaves it empty; the
+  // Wikimedia thumbnail OpenAlex links stands in once Wikipedia has answered.
+  const openAlexImage = wikimediaImage(entity?.image_thumbnail_url);
+  const heroImage = visibleWikiInfo?.thumbnail || (settledWikiRequestKey === wikiRequestKey ? openAlexImage : '');
   const safeRorUrl = safeExternalUrl(entity?.ror);
   const safeProjectWebsiteUrl = safeExternalUrl(entity?.websiteUrl);
   const safeHomepageUrl = safeExternalUrl(entity?.homepage_url);
@@ -598,7 +611,7 @@ export default function EntityExplorer({
     ...(safeHomepageUrl ? [{ label: 'Official website', href: safeHomepageUrl }] : []),
   ];
   const canLoadWikiInfo = Boolean(
-    entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
+    entityDisplayName && ['author', 'institution', 'concept', 'topic', 'source'].includes(type),
   );
   // Only what the Wikipedia block is looked up by. The entity object is
   // replaced whenever a later answer is folded into it, and the lookup must
@@ -607,13 +620,15 @@ export default function EntityExplorer({
   const entityIsLocalTopic = Boolean(entity?._localTopic);
   const entityWikidataId = entity?.ids?.wikidata || '';
   const entityWikipediaUrl = entity?.ids?.wikipedia || '';
+  // An author has no Wikidata id in OpenAlex; its ORCID finds the Wikidata item instead.
+  const entityOrcid = entity?.ids?.orcid || entity?.orcid || '';
   const wikiEntity = useMemo(() => ({
     _queryTopic: entityIsQueryTopic,
     _localTopic: entityIsLocalTopic,
-    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl },
-  }), [entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl]);
+    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl, orcid: entityOrcid },
+  }), [entityIsLocalTopic, entityIsQueryTopic, entityOrcid, entityWikidataId, entityWikipediaUrl]);
   const hasLoadedWikiImage = Boolean(
-    visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
+    heroImage && loadedWikiImageUrl === heroImage,
   );
 
   // The hero's body settles between its sizes instead of snapping. What it
@@ -791,6 +806,7 @@ export default function EntityExplorer({
 
     async function loadEntity() {
       setEntityError(null);
+      setIsEntityFetched(false);
       const bornWith: ExplorerEntity | null = handedEntity || cachedEntity;
       if (bornWith) {
         setEntity(bornWith);
@@ -826,6 +842,7 @@ export default function EntityExplorer({
       if (type === 'topic' && isOpaqueQueryTopicText(id)) {
         setEntity(resolveQueryTopicRoute(id, searchParams));
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -836,6 +853,7 @@ export default function EntityExplorer({
       if (local) {
         setEntity(local);
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -860,7 +878,8 @@ export default function EntityExplorer({
         // pill's name if there was one and never a stand-in
         // (explorer-project-entity.ts says why).
         setEntity(projectEntityFromLookup({ routeId: id, name, funder, details }));
-        if (!isCancelled) setIsLoadingEntity(false);
+        setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
       
@@ -911,6 +930,7 @@ export default function EntityExplorer({
       
       setEntity(data || handedEntity || cachedEntity);
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
 
       // Both follow-up requests declare themselves before either starts, in
       // the same batch as the entity, so the live hero mounts with the ORCID
@@ -986,6 +1006,7 @@ export default function EntityExplorer({
       setEntity(handedEntity || cachedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
       setIsLoadingOrcid(false);
     });
     return () => {
@@ -994,7 +1015,9 @@ export default function EntityExplorer({
   }, [type, id, searchParams, entityReloadKey, handedEntity, cachedEntity]);
 
   useEffect(() => {
-    if (!canLoadWikiInfo) {
+    // Looked up once, by the fetched entity's identifiers: a lookup by the
+    // search row's would show its picture and then swap it for another.
+    if (!canLoadWikiInfo || !isEntityFetched) {
       return undefined;
     }
 
@@ -1039,6 +1062,7 @@ export default function EntityExplorer({
     afterPageArrival,
     canLoadWikiInfo,
     entityDisplayName,
+    isEntityFetched,
     language,
     localizedTopicEntity?.label,
     type,
@@ -2237,9 +2261,9 @@ export default function EntityExplorer({
                 {renderIcon()}
               </motion.div>
               <AnimatePresence>
-                {visibleWikiInfo?.thumbnail && (
+                {heroImage && (
                   <motion.div
-                    key={visibleWikiInfo.thumbnail}
+                    key={heroImage}
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
@@ -2247,9 +2271,10 @@ export default function EntityExplorer({
                     className="ehc-wiki-image"
                   >
                     <img
-                      src={visibleWikiInfo.thumbnail}
+                      src={heroImage}
                       alt={entityDisplayName}
-                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail!)}
+                      data-logo={/\.svg\b/i.test(heroImage) || undefined}
+                      onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
                   </motion.div>
