@@ -60,11 +60,13 @@ function DrawerOverlay({ className, ...props }: StyledProps<typeof DrawerPrimiti
  * which covers the screen around the sheet; `className` the popup itself
  * (the visible sheet). A drawer without `snapPoints` opens at
  * its content height, capped at 85dvh with its own inside scroll.
+ * `forceOverlay` dims the screen even when the drawer opens inside another
+ * dialog, where Base UI draws no backdrop of its own.
  */
-function DrawerContent({ className, viewportClassName, viewportProps, overlayClassName, side = 'bottom', children, ...props }: StyledProps<typeof DrawerPrimitive.Popup> & { viewportClassName?: string; viewportProps?: ComponentProps<typeof DrawerPrimitive.Viewport>; overlayClassName?: string; side?: 'bottom' | 'top' | 'left' | 'right' }) {
+function DrawerContent({ className, viewportClassName, viewportProps, overlayClassName, forceOverlay, side = 'bottom', children, ...props }: StyledProps<typeof DrawerPrimitive.Popup> & { viewportClassName?: string; viewportProps?: ComponentProps<typeof DrawerPrimitive.Viewport>; overlayClassName?: string; forceOverlay?: boolean; side?: 'bottom' | 'top' | 'left' | 'right' }) {
   return (
     <DrawerPortal>
-      <DrawerOverlay className={overlayClassName} />
+      <DrawerOverlay className={overlayClassName} forceRender={forceOverlay} />
       <DrawerPrimitive.Viewport data-slot="drawer-viewport" data-side={side} className={cn('ui-drawer-viewport', viewportClassName)} {...viewportProps}>
         <DrawerPrimitive.Popup
         aria-modal="true"
