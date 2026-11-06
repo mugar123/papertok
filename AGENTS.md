@@ -136,14 +136,14 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
 - Analytics is on by default and has one switch (`src/services/analytics-service.ts`): the
   consent is `enabled` or `denied`, and a browser with no stored choice counts as `enabled`.
   PostHog, only on papertok.app, keeps a persistent browser identifier, identifies the
-  signed-in account by its Firebase user ID and records no sessions. `denied` sends nothing
-  and resets the identity. `privacy.html` promises exactly this, so a change here must not
-  go beyond it. Every event is registered in `EVENT_PARAMETER_SCHEMAS`, and each parameter
-  is a typed field: a boolean, a bounded number or a fixed list of labels. Never send paper
-  titles, search text, free text, error messages or unsanitized URLs. An identifier (paper
-  or entity ID) goes only through the `identifier` type, never a free string. Changing
-  what analytics sends or identifies needs authorization (see above) and a matching update
-  to `privacy.html` in the same change.
+  signed-in account by its Firebase user ID and records no session replays. `denied` stops
+  new browser events and resets the identity. `privacy.html` promises exactly this, so a
+  change here must not go beyond it. Every product event is registered in
+  `EVENT_PARAMETER_SCHEMAS`, and each parameter is a typed field: a boolean, a bounded
+  number or a fixed list of labels. Never send paper titles, search text, free text, error
+  messages or unsanitized URLs. An identifier (paper or entity ID) goes only through the
+  `identifier` type, never a free string. Changing what analytics sends or identifies needs
+  authorization (see above) and a matching update to `privacy.html` in the same change.
 
 ## Accessibility and interface
 
