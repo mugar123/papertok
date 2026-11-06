@@ -308,10 +308,14 @@ function findEmailLatexDelimiter(text: string, startIndex: number): { index: num
 function splitEmailScientificText(value: unknown) {
   // Rendered text only: font wrappers are unwrapped and `\%` becomes `%` in
   // prose before any cut, so a wrapper is never split open.
+  // A dollar written as an entity is an amount, not a delimiter. The normalizer
+  // decodes entities before formulas are separated, so it is held back here and
+  // printed once they are cut.
   // The normalizer also strips anything shaped like an HTML tag, which would
   // eat comparisons such as `a<b>c`, so angle brackets are held back from it.
   const text = cleanText(
-    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, ''))
+    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, '')
+      .replace(/&#(?:36|x24);/gi, ''))
       .replace(//g, '<').replace(//g, '>'),
     5_000,
   );
@@ -336,7 +340,7 @@ function splitEmailScientificText(value: unknown) {
     chunks.push({ type: 'math', value: text.slice(contentStart, contentEnd) });
     cursor = contentEnd + match.delimiter.right.length;
   }
-  return chunks;
+  return chunks.map(chunk => ({ ...chunk, value: chunk.value.replace(//g, '$') }));
 }
 
 function simplifyEmailLatex(value: unknown) {

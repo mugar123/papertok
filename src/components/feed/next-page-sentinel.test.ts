@@ -142,6 +142,17 @@ test('an automatic retry that loadMore refused does not lengthen the next pause'
   assert.deepEqual(end.feed.requests, [0, 2_500, 5_000], 'the reader\'s retry failed, and the first pause followed it');
 });
 
+test('an automatic retry that loadMore refused is armed again a pause later, with no help from the reader', () => {
+  const end = feedEnd({ failing: true });
+  end.settle();
+  end.feed.refusing = true;
+  end.wait(2_500);
+  assert.equal(end.feed.requests.length, 1, 'refused: nothing was sent');
+  end.feed.refusing = false;
+  end.wait(2_500);
+  assert.deepEqual(end.feed.requests, [0, 5_000], 'the retry came back at the same spacing');
+});
+
 test('the pause counts from the failure, not from the last change to the list', () => {
   const end = feedEnd({ failing: true });
   end.settle();
