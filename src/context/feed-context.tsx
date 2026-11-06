@@ -1624,7 +1624,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // A first load that failed with nothing on screen shows the cards of
         // the account's last saved feed the reader has not seen, with or
         // without an automatic retry (ENG-188).
-        const lastVisitStep = lastVisitOnFailedReset({ nothingShown: papersRef.current.length === 0 && feedSessionId.current === activeSessionId, retryDue, lastVisit });
+        const lastVisitStep = lastVisitOnFailedReset({ nothingShown: papersRef.current.length === 0 && feedSessionId.current === activeSessionId, retryDue, lastVisit, error: shownError });
         const lastVisitShown = reset && lastVisitStep.readSaved
           ? lastVisitCards(activeUserId.current, feedPreferenceSignature(userPreferences), isAvailablePaper)
           : null;

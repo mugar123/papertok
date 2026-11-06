@@ -46,17 +46,6 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
 }
 
 /**
- * What a screen reader hears from the feed's status region: a refresh's own
- * words, and "Loading papers…" under the veil otherwise. The veil's visible
- * copy is in the page from its first frame, so it cannot be the announcement.
- * One text through the veil's whole wait, its automatic retry included, so
- * the wait is spoken once.
- */
-export function feedStatusText({ refreshStatus, veil, lastVisit = null }: { refreshStatus: string; veil: boolean; lastVisit?: LastVisitStatus }) {
-  return refreshStatus || (veil ? 'Loading papers…' : '') || LAST_VISIT_STATUS[lastVisit ?? 'none'];
-}
-
-/**
  * Whether the feed shows the last visit's cards because its first load
  * failed (ENG-188): while its automatic retry runs ('updating'), or after that
  * retry failed too ('not-updated').
@@ -70,15 +59,28 @@ const LAST_VISIT_STATUS = {
 };
 
 /**
+ * What a screen reader hears from the feed's status region: a refresh's own
+ * words, and "Loading papers…" under the veil otherwise. The veil's visible
+ * copy is in the page from its first frame, so it cannot be the announcement.
+ * One text through the veil's whole wait, its automatic retry included, so
+ * the wait is spoken once.
+ */
+export function feedStatusText({ refreshStatus, veil, lastVisit = null }: { refreshStatus: string; veil: boolean; lastVisit?: LastVisitStatus }) {
+  return refreshStatus || (veil ? 'Loading papers…' : '') || LAST_VISIT_STATUS[lastVisit ?? 'none'];
+}
+
+/**
  * What a failed reset does with the last visit's cards (ENG-188). With
  * nothing on screen it reads them, whether or not an automatic retry is due:
  * 'updating' while that retry runs, 'not-updated' without one. Over cards
- * already shown, the last visit's cards stay and could not update.
+ * already shown, the last visit's cards stay and could not update. An empty
+ * answer (FEED_EMPTY) is not a failure to update: the store answered, with
+ * nothing new, so it keeps its own empty state.
  */
-export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisitStatus }) {
+export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit, error }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisitStatus; error?: string | null }) {
   const shown: LastVisitStatus = retryDue ? 'updating' : 'not-updated';
   const kept: LastVisitStatus = lastVisit === null ? null : 'not-updated';
-  return { readSaved: nothingShown, shown, kept };
+  return { readSaved: nothingShown && error !== FEED_EMPTY, shown, kept };
 }
 
 /** How a refresh ended: it brought the papers, or it failed over them. */

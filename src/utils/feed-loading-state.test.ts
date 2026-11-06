@@ -191,6 +191,13 @@ test('a failed first load reads the last visit\'s cards with or without an autom
   assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: 'updating' }).kept, 'not-updated');
 });
 
+// An empty first page also ended in this path and showed the last visit's
+// cards as "could not update", although the store had answered.
+test('an empty first page keeps its own empty state instead of the last visit\'s cards', () => {
+  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: FEED_EMPTY }).readSaved, false);
+  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: 'FEED_LOAD_FAILED' }).readSaved, true);
+});
+
 test('a refresh keeps its own words under the veil', () => {
   assert.equal(feedStatusText({ refreshStatus: 'Refreshing papers…', veil: true }), 'Refreshing papers…');
   assert.equal(feedStatusText({ refreshStatus: 'Papers updated', veil: false }), 'Papers updated');
