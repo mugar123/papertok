@@ -10,6 +10,7 @@ import {
   runAccountDeletionSlice,
 } from './account-deletion.ts';
 import { handleEmailNotificationRequest } from './email-notifications.ts';
+import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
 const UID = 'alice-uid';
@@ -206,7 +207,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     'notification:unsubscribe:tok-1': UID,
     [`notification:delivery-state:${UID}`]: JSON.stringify({ lastSentAt: 1 }),
   });
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   try {
     let result;
@@ -399,7 +400,7 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   const store = kvStore();
   const env = {
     ...SERVICE,
-    NOTIFICATION_STORE: store as typeof store & KVNamespace,
+    NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(),
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
@@ -475,7 +476,7 @@ test('a purge that fails after the Auth delete still lets the final sweep run, a
     }
     return get(key, type);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
 
   try {
@@ -520,7 +521,7 @@ test('a purge that KV refuses just after the Auth delete is retried once the sec
     }
     return remove(key);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
   const restore = stubIdentityLookup();
 
@@ -565,7 +566,7 @@ test('an unsubscribe index KV refuses after the Auth delete is still removed by 
     }
     return remove(key);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
   const restore = stubIdentityLookup();
 
@@ -603,7 +604,7 @@ test('a final sweep that fails after the Auth delete still purges the subscripti
     return runQuery(options);
   });
   const store = kvStore();
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
 
   try {
@@ -688,7 +689,7 @@ test('a sign-in that is not recent is refused before anything is deleted', async
     'notification:unsubscribe:tok-1': UID,
   });
   const authCalls: string[] = [];
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   try {
     for (const [why, token] of Object.entries({

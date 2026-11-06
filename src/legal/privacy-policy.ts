@@ -81,7 +81,7 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     // What the email subscription keeps when the digest is filled from chosen subjects (ENG-163, #442).
     ['Email updates', /<h2>Email updates<\/h2>/],
     ['if on', /If you turn them on, PaperTok emails you/],
-    ['store the subjects you chose', /it stores your email address, your sending preferences, what you follow, the identifiers of the subjects you chose and an unsubscribe identifier in <strong>Cloudflare Workers KV<\/strong>/],
+    ['store the subjects you chose', /it stores your email address, your sending preferences, what you follow, the identifiers of the subjects you chose and an unsubscribe identifier in a <strong>Cloudflare Durable Object<\/strong> of your account/],
   ],
   unsaid: [[/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader']],
 };

@@ -41,6 +41,8 @@ export interface Subscription extends Partial<Preferences>, DeliveryState {
   /** The reader's chosen leaf categories, read only while `follows` is empty. */
   interests?: string[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
+  /** The reader's object's version this copy was read at; never stored. */
+  version?: number;
 }
 type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
@@ -87,6 +89,7 @@ import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
+import type { SubscriptionSlot, SubscriptionStorePayload } from './email-subscription-store.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -98,7 +101,6 @@ import { takeArxivSeat } from './arxiv-api.ts';
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
 const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
-const SYNC_PREFIX = 'notification:sync:';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
@@ -133,9 +135,8 @@ const DIGEST_ABSTRACT_MAX_LENGTH = 600;
 const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
 const DELIVERY_STATE_TTL_SECONDS = 120 * 24 * 60 * 60;
-// A sync refresh holds the address and follows, so it is short-lived: each sync
-// renews it, and the schedule deletes one whose subscription is gone.
-const SYNC_REFRESH_TTL_SECONDS = 8 * 24 * 60 * 60;
+// Writers that keep losing the race to the same reader's object give up.
+const SUBSCRIPTION_WRITE_ATTEMPTS = 3;
 const DELIVERY_PENDING_RETRY_MIN_AGE_MS = 5 * 60 * 1000;
 const DELIVERY_PENDING_RETRY_WINDOW_MS = 25 * 60 * 1000;
 const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
@@ -933,42 +934,84 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
   return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows, ...(interests.length ? [interests] : [])]);
 }
 
-function syncKey(subscriptionKey: string) {
-  return `${SYNC_PREFIX}${subscriptionKey.slice(SUBSCRIPTION_PREFIX.length)}`;
+function subscriptionUid(key: string) {
+  const name = String(key || '');
+  return name.startsWith(SUBSCRIPTION_PREFIX) ? name.slice(SUBSCRIPTION_PREFIX.length) : name;
 }
 
-type SyncRefresh = Pick<Subscription, 'email' | 'displayName' | 'follows' | 'previewItems' | 'interests' | 'unsubscribeToken'> & {
-  generation?: string; baseUpdatedAt?: string;
-};
+type StoredSlot = SubscriptionSlot<Subscription>;
+
+async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: SubscriptionStorePayload) {
+  const namespace = env.EMAIL_SUBSCRIPTIONS;
+  if (!namespace) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const response = await namespace.get(namespace.idFromName(uid)).fetch('https://papertok.internal/email-subscription', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const slot = await response.json<StoredSlot>().catch(() => null);
+  if ((!response.ok && response.status !== 409) || !slot || !Number.isInteger(slot.version)) {
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  }
+  return { accepted: response.ok, slot };
+}
 
 /**
- * A background sync writes its refresh beside the subscription, never over it:
- * KV keeps the last write and a location can read a copy up to a minute old,
- * so a sync that rewrote the record could bring back one that an unsubscribe
- * had just deleted. The refresh counts only for the record it was read from,
- * so it is ignored once that record is deleted, replaced or saved again.
+ * The reader's subscription as their object holds it (email-subscription-store.ts).
+ * An object that was never written takes, once, the KV record that a Worker
+ * from before the object saved; from then on the object is the only record,
+ * and a KV copy of any age is never read again.
  */
+async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (slot.version > 0 || !env.NOTIFICATION_STORE) return slot;
+  const legacy = await env.NOTIFICATION_STORE.get<Subscription>(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
+  if (!legacy?.unsubscribeToken) return slot;
+  return (await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: legacy })).slot;
+}
+
+function withVersion(slot: StoredSlot): Subscription | null {
+  return slot.subscription ? { ...slot.subscription, version: slot.version } : null;
+}
+
+function storedRecord(subscription: Subscription) {
+  const record = { ...subscription };
+  delete record.version;
+  return record;
+}
+
+/**
+ * Writes what `next` makes of the reader's current subscription: a record,
+ * `null` to delete it, or `undefined` to leave it. A write that lost the race
+ * to another one is computed again from the record that won.
+ */
+async function changeSubscription(
+  env: WorkerEnv,
+  uid: string,
+  next: (current: Subscription | null) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
+) {
+  let slot = await readSubscriptionSlot(env, uid);
+  for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
+    const previous = slot.subscription;
+    const record = await next(previous);
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot) };
+    const result = await callSubscriptionStore(env, uid, {
+      action: 'write',
+      expectedVersion: slot.version,
+      subscription: record && storedRecord(record),
+    });
+    if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot) };
+    slot = result.slot;
+  }
+  throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+}
+
 async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
-  const stored = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
-  if (!stored) return null;
-  const stateKey = deliveryStateKey(key, stored);
-  const [state, refresh] = await Promise.all([
-    env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json'),
-    env.NOTIFICATION_STORE!.get<SyncRefresh>(syncKey(key), 'json'),
-  ]);
-  const current = refresh
-    && refresh.generation === subscriptionGeneration(stored)
-    && refresh.baseUpdatedAt === stored.updatedAt;
-  const subscription: Subscription = current ? {
-    ...stored,
-    email: refresh.email,
-    displayName: refresh.displayName,
-    follows: refresh.follows,
-    previewItems: refresh.previewItems,
-    interests: refresh.interests,
-    unsubscribeToken: refresh.unsubscribeToken,
-  } : stored;
-  return { subscription, stored, state, stateKey, refresh: current ? refresh : null };
+  const subscription = withVersion(await readSubscriptionSlot(env, subscriptionUid(key)));
+  if (!subscription) return null;
+  const stateKey = deliveryStateKey(key, subscription);
+  const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
+  return { subscription, state, stateKey };
 }
 
 async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
@@ -982,7 +1025,7 @@ async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
 }
 
 async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscription: Subscription | null, buildPatch: (state: DeliveryState, subscription: Subscription) => DeliveryState) {
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+  const subscription = withVersion(await readSubscriptionSlot(env, subscriptionUid(key)));
   if (!subscription) return null;
   if (
     expectedSubscription
@@ -1003,14 +1046,19 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
   return { ...subscription, ...mergedState };
 }
 
+/**
+ * Deletes the reader's subscription in their object first, so no later read
+ * finds it, then the KV indexes and delivery state that pointed at it.
+ */
 async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  const deleted = previous || subscription;
   await Promise.all([
     env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
-    env.NOTIFICATION_STORE.delete(`${SYNC_PREFIX}${uid}`),
-    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription)),
-    subscription?.unsubscribeToken
-      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
+    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
+    deleted?.unsubscribeToken
+      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${deleted.unsubscribeToken}`)
       : Promise.resolve(),
   ]);
 }
@@ -1024,15 +1072,16 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = (await loadSubscriptionRecord(env, key))?.subscription;
-  keys.add(key).add(syncKey(key)).add(deliveryStateKey(uid, subscription || { uid }));
-  if (subscription?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`);
+  const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
+  if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
   await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
   return { purged: true };
 }
 
 async function saveSubscription(request: Request, env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const store = env.NOTIFICATION_STORE;
   const body = await readBoundedJson(request);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
@@ -1040,22 +1089,13 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   const preferences = sanitizePreferences(body);
   // `sync` marks the app's background refresh of follows and previews. The tab
   // that sends it may have loaded before the reader unsubscribed or changed the
-  // digest elsewhere, so a sync never writes the subscription record: it keeps
-  // the stored settings and stores its refresh beside them (loadSubscriptionRecord).
+  // digest elsewhere, so a sync never creates or re-enables a subscription and
+  // keeps the stored settings. The reader's object orders it after every write
+  // it follows, so a sync that lands after an unsubscribe finds nothing to refresh.
   const sync = body.sync === true;
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
-  const existingRecord = await loadSubscriptionRecord(env, key);
-  const existingRaw = existingRecord?.subscription || null;
-  const existing = existingRaw ? {
-    ...existingRaw,
-    ...deliveryStateFromSubscription(existingRaw),
-    ...(existingRecord!.state || {}),
-  } : null;
-
-  if (sync) {
-    if (!existing?.enabled) return publicSubscription(existing, identity.email);
-  } else if (!preferences.enabled) {
-    await deleteSubscription(env, identity.uid, existing);
+  if (!sync && !preferences.enabled) {
+    await deleteSubscription(env, identity.uid, null);
     return publicSubscription(null, identity.email);
   }
 
@@ -1065,105 +1105,72 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   const previewItems = Array.isArray(body.previewItems)
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
-  // The reader's chosen categories fill the edition while nothing it covers
-  // is followed (ENG-163); with neither there is nothing to send. Only an
-  // explicit list replaces them: a client that omits the field, because it
-  // predates interests or has not confirmed the profile yet, keeps the stored ones.
-  const interests = sanitizeInterests(Array.isArray(body.interests) ? body.interests : existingRaw?.interests);
-  if (!follows.length && !interests.length) {
-    throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  }
-  const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
-  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`;
-  const selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
-    ...existingRaw,
-    ...(sync ? {} : preferences),
-    email: identity.email,
-    follows,
-    interests,
-  });
-  // A subscriber's app syncs on every open, usually with nothing new, and each
-  // write costs two KV puts. The token index is still checked: a save whose
-  // index put failed leaves an enabled subscription whose unsubscribe link
-  // answers 400, and this sync may be the only retry that save gets. An index
-  // left after an unsubscribe opens the invalid-link page, which removes it.
-  if (
-    sync
-    && existingRaw?.unsubscribeToken
-    && existingRaw.email === identity.email
-    && existingRaw.displayName === identity.displayName
-    && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
-    && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
-    && JSON.stringify(existingRaw.interests || []) === JSON.stringify(interests)
-    && !selectionChanged
-  ) {
-    if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
-      await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+  const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
+  const { changed, subscription } = await changeSubscription(env, identity.uid, async (current) => {
+    if (sync && !current?.enabled) return undefined;
+    read.state = current ? await store.get<DeliveryState>(deliveryStateKey(key, current), 'json') : null;
+    const existing = current ? { ...current, ...deliveryStateFromSubscription(current), ...(read.state || {}) } : null;
+    // The reader's chosen categories fill the edition while nothing it covers
+    // is followed (ENG-163); with neither there is nothing to send. Only an
+    // explicit list replaces them: a client that omits the field, because it
+    // predates interests or has not confirmed the profile yet, keeps the stored ones.
+    const interests = sanitizeInterests(Array.isArray(body.interests) ? body.interests : current?.interests);
+    if (!follows.length && !interests.length) {
+      throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
     }
-    // An unchanged sync still renews the refresh in use. Left to expire, the
-    // stored record would come back with follows and interests the reader removed.
-    if (existingRecord!.refresh) {
-      await env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(existingRecord!.refresh), { expirationTtl: SYNC_REFRESH_TTL_SECONDS });
-      if (!await env.NOTIFICATION_STORE.get(key)) {
-        await env.NOTIFICATION_STORE.delete(syncKey(key));
-        return publicSubscription(null, identity.email);
-      }
+    read.selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
+      ...current,
+      ...(sync ? {} : preferences),
+      email: identity.email,
+      follows,
+      interests,
+    });
+    // A subscriber's app syncs on every open, usually with nothing new.
+    if (
+      sync
+      && current!.unsubscribeToken
+      && current!.email === identity.email
+      && current!.displayName === identity.displayName
+      && JSON.stringify(current!.follows) === JSON.stringify(follows)
+      && JSON.stringify(current!.previewItems) === JSON.stringify(previewItems)
+      && JSON.stringify(current!.interests || []) === JSON.stringify(interests)
+    ) {
+      return undefined;
     }
-    return publicSubscription(existing, identity.email);
-  }
-  if (sync) {
-    const refresh: SyncRefresh = {
-      generation: subscriptionGeneration(existingRecord!.stored),
-      baseUpdatedAt: existingRecord!.stored.updatedAt,
+    const now = new Date().toISOString();
+    return {
+      ...(read.state && current ? stripDeliveryState(current) : (current || {})),
+      ...(sync ? {} : preferences),
+      uid: identity.uid,
       email: identity.email,
       displayName: identity.displayName,
       follows,
       previewItems,
       interests,
-      unsubscribeToken,
+      unsubscribeToken: current?.unsubscribeToken || crypto.randomUUID().replace(/-/g, ''),
+      ...(!current ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
+      createdAt: current?.createdAt || now,
+      updatedAt: now,
     };
-    await Promise.all([
-      env.NOTIFICATION_STORE.put(syncKey(key), JSON.stringify(refresh), { expirationTtl: SYNC_REFRESH_TTL_SECONDS }),
-      env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
-    ]);
-    // An unsubscribe that landed meanwhile already won; this only removes what
-    // the sync wrote, where this location can see the deletion. The record key
-    // is not deleted, so a subscription saved again since then keeps it.
-    if (!await env.NOTIFICATION_STORE.get(key)) {
-      await Promise.all([env.NOTIFICATION_STORE.delete(syncKey(key)), env.NOTIFICATION_STORE.delete(unsubscribeKey)]);
-      return publicSubscription(null, identity.email);
-    }
-    if (selectionChanged) {
-      await updateDeliveryState(env, key, existingRaw, () => ({ heldDigest: null }));
-    }
-    return publicSubscription(existing, identity.email);
-  }
-  const now = new Date().toISOString();
-  const persistedBase = existingRecord?.state
-    ? stripDeliveryState(existingRaw!)
-    : (existingRaw || {});
-  const subscription = {
-    ...persistedBase,
-    ...preferences,
-    uid: identity.uid,
-    email: identity.email,
-    displayName: identity.displayName,
-    follows,
-    previewItems,
-    interests,
-    unsubscribeToken,
-    ...(!existingRaw ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  };
+  });
+  if (!subscription?.enabled) return publicSubscription(subscription, identity.email);
+
+  // The schedule finds subscribers by the KV index, and the unsubscribe link by
+  // the token's. Both only point at the object, which a stale copy cannot
+  // override. A sync that changes nothing still checks them: a save whose
+  // index write failed would leave a subscriber the schedule never reaches or
+  // whose unsubscribe link answers 400, and this sync may be its only retry.
+  // An index left after an unsubscribe opens the invalid-link page, which removes it.
+  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+  const [indexed, owner] = changed ? [null, null] : await Promise.all([store.get(key), store.get(unsubscribeKey)]);
   await Promise.all([
-    env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
-    env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
+    indexed ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
   ]);
-  if (selectionChanged) {
+  if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }
-  return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
+  return publicSubscription({ ...subscription, ...(read.state || {}) }, identity.email);
 }
 
 function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
@@ -2363,6 +2370,7 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], e
     },
     content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt }),
     unsubscribeUrl,
+    subscriptionVersion: subscription.version ?? 0,
     delivery: {
       kind: test ? 'test' : 'digest',
       sentAt: new Date(now).toISOString(),
@@ -2410,6 +2418,15 @@ function deliveryAlreadySettled(subscription: Subscription, deliveredAt?: string
   return Number.isFinite(settled) && Number.isFinite(delivered) && settled >= delivered;
 }
 
+/**
+ * Whether a draft was prepared from the subscription as it stands. Every write
+ * to the reader's object raises its version, so any change since cancels it. A
+ * draft reserved before drafts carried a version (0) has nothing to compare.
+ */
+function draftMatchesSubscription(draft: { subscriptionVersion?: number }, subscription: Subscription) {
+  return !draft.subscriptionVersion || draft.subscriptionVersion === subscription.version;
+}
+
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
@@ -2446,6 +2463,9 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
       if (deliveryAlreadySettled(latest, draft.delivery.sentAt)) continue;
       return { reconciled: true, uncertain: true, delivery: draft.delivery };
     }
+    // The draft holds the address and papers of the version it was prepared
+    // from. Once the reader has changed anything, it is not sent again.
+    if (!draftMatchesSubscription(draft, latest)) return { pending: true, cancelled: true };
 
     const reservation = await reserveEmailDelivery(env, reservationId, ledgerTime);
     if (!reservation.retry || !reservation.draft) return { pending: true };
@@ -2488,18 +2508,16 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     }
     if (!reservation.retry) return { pending: true };
   }
-  if (!reservation.duplicate) {
-    const beforeDelivery = await loadSubscriptionWithState(env, key);
-    if (
-      !beforeDelivery?.enabled
-      || subscriptionGeneration(beforeDelivery) !== subscriptionGeneration(latest)
-      || beforeDelivery.updatedAt !== latest.updatedAt
-    ) {
-      await releaseEmailDelivery(env, reservationId, now);
-      return { cancelled: true };
-    }
-  }
   const reservedDraft = reservation.draft || draft;
+  // The last check, from the reader's object: a draft goes out only while the
+  // subscription is the version it was prepared from. A new address, a follow
+  // removed or an unsubscribe since then cancels it.
+  const beforeDelivery = await loadSubscriptionWithState(env, key);
+  if (!beforeDelivery?.enabled || !draftMatchesSubscription(reservedDraft, beforeDelivery)) {
+    if (reservation.duplicate) return { pending: true };
+    await releaseEmailDelivery(env, reservationId, now);
+    return { cancelled: true };
+  }
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
 
@@ -3104,22 +3122,6 @@ async function recordScheduleOutcome(env: WorkerEnv, summary: ScheduleSummary) {
   }
 }
 
-/**
- * A sync from another location can write its refresh after an unsubscribe has
- * deleted the subscription. Nothing reads it, but it holds the address and
- * follows, so each run removes the ones whose subscription no longer exists.
- */
-async function deleteOrphanedSyncRefreshes(store: KVNamespace) {
-  let cursor: string | undefined;
-  do {
-    const page = await store.list({ prefix: SYNC_PREFIX, cursor, limit: SCHEDULE_PAGE_SIZE });
-    await Promise.all((page.keys || []).map(async ({ name }) => {
-      if (!await store.get(`${SUBSCRIPTION_PREFIX}${name.slice(SYNC_PREFIX.length)}`)) await store.delete(name);
-    }));
-    cursor = page.list_complete || !page.cursor ? undefined : page.cursor;
-  } while (cursor);
-}
-
 export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime = Date.now()) {
   const now = new Date(scheduledTime);
   const startedAt = Date.now();
@@ -3154,11 +3156,6 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
     };
     await recordScheduleOutcome(env, summary);
     return summary;
-  }
-  try {
-    await deleteOrphanedSyncRefreshes(env.NOTIFICATION_STORE);
-  } catch (error) {
-    console.warn('Could not remove orphaned sync refreshes', (error as EmailNotificationError)?.message || error);
   }
   let cursor = await loadScheduleCursor(env.NOTIFICATION_STORE);
   let scanned = 0;

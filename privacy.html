@@ -237,13 +237,13 @@
         notable new papers in the subjects you chose. For that
         it stores your email address, your sending preferences, what you follow, the
         identifiers of the subjects you chose and an unsubscribe
-        identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
+        identifier in a <strong>Cloudflare Durable Object</strong> of your account, and
+        your account identifier and that unsubscribe identifier in
+        <strong>Cloudflare Workers KV</strong>. If a sending limit delays
         an edition, PaperTok also stores its selected papers, abstracts and reasons
         they matched your follows or subjects. That selection is removed after delivery, a
         change to your follows or a later edition that is processed; otherwise its delivery record
-        expires after 120 days. The app also refreshes your follows in the background;
-        that refresh is kept for 8 days after the app last refreshed it and deleted sooner once you
-        unsubscribe. <strong>Resend</strong> sends
+        expires after 120 days. <strong>Resend</strong> sends
         the emails. To limit test emails, Cloudflare counts them under a hashed account
         identifier that it keeps for up to three days.
       </p>
@@ -408,7 +408,7 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
-        <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
         <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
       </ul>

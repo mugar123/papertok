@@ -227,6 +227,12 @@ class_name = "PaperHarvestWorkflow"
 name = "EMAIL_DELIVERY_LEDGER"
 class_name = "EmailDeliveryLedger"
 
+# One object per Firebase uid holds that reader's digest subscription
+# (worker/email-subscription-store.ts).
+[[durable_objects.bindings]]
+name = "EMAIL_SUBSCRIPTIONS"
+class_name = "EmailSubscriptionStore"
+
 [[durable_objects.bindings]]
 name = "REQUEST_QUOTA_LEDGER"
 class_name = "RequestQuotaLedger"
@@ -254,6 +260,10 @@ new_sqlite_classes = ["PaperRewriteSession"]
 [[migrations]]
 tag = "v5"
 deleted_classes = ["KimiBudgetLedger"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["EmailSubscriptionStore"]
 
 [triggers]
 # Digests every 20 minutes in the morning; the paper harvest once a day; and,
