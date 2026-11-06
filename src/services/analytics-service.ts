@@ -229,6 +229,9 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // The in-app paper viewer, apart from the AI reader above: that it opened,
   // what it first showed (or why it fell back), and its visible time, of which
   // `text_seconds` was on the text. Fixed labels and times only, never a URL.
+  // Visible time is not reading time. The card under the viewer keeps counting
+  // its paper_dwell, so viewer time is part of it and must not be added to it;
+  // a viewer still open when the tab closes sends no viewer_time.
   viewer_open: { ...PAPER_DETAIL },
   viewer_content: {
     content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration', ...PAPER_DETAIL,
