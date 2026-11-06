@@ -308,6 +308,13 @@ test('a refresh that fails over cards is reported by the pill alone, not the tai
   assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: tail === 'failed' }), '');
 });
 
+test('an automatic retry of a failed page does not announce the failure again', () => {
+  const failed = nextPageStatusText({ loading: false, hasPapers: true, failed: true });
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true, retrying: true }), failed);
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, retrying: true }), '');
+});
+
 test('the tail speaks of more papers only under papers already shown', () => {
   assert.equal(nextPageStatusText({ loading: true, hasPapers: false }), '');
   assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');

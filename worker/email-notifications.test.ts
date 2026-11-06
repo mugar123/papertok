@@ -530,6 +530,40 @@ test('uses at most one strong exploration paper when followed selection is empty
   }
 });
 
+test('a digest that finds no arXiv seat of its own does not call arXiv and reads the topic from OpenAlex', async t => {
+  const now = Date.parse('2026-08-09T07:00:00Z');
+  // The digest waits for its seats on the clock; this one runs faster.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now });
+  const hosts: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    hosts.push(new URL(String(input)).hostname);
+    return jsonResponse(200, { results: [] });
+  };
+  // Every seat on the beat is taken.
+  const env = {
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: (name: string) => name,
+      get: () => ({ fetch: async () => Response.json({ accepted: false, scope: 'user' }) }),
+    },
+  } as unknown as WorkerEnv;
+  const arxivTopic = { type: 'topic' as const, canonicalId: 'quant-ph', displayName: 'Quantum Physics', externalIds: {}, metadata: { categoryIds: ['quant-ph'] } };
+  try {
+    let settled = false;
+    const pending = collectDigestPapers(digestSubscription({ follows: [arxivTopic] }), env, { now })
+      .finally(() => { settled = true; });
+    while (!settled) {
+      await new Promise(resolve => setImmediate(resolve));
+      t.mock.timers.tick(500);
+    }
+    const result = await pending;
+    assert.equal(result.sourceReport.failureCodes.EMAIL_SOURCE_ARXIV_RATE_LIMITED, 1);
+    assert.deepEqual([...new Set(hosts)], ['api.openalex.org']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('every subscription is due once on Monday, including one saved as daily', () => {
   const monday = new Date('2026-07-27T07:00:00Z');
   const laterMonday = new Date('2026-07-27T11:00:00Z');
@@ -3362,6 +3396,17 @@ test('the digest shows LaTeX font wrappers and escaped percents as plain prose',
   assert.equal(preheader.endsWith('Bold 5% result'), true);
 });
 
+test('the digest keeps an amount written as an entity and still unwraps real math', () => {
+  const digest = renderDigest({}, [frontPagePaper({
+    title: 'Prices of &#36;5 and &#36;10 with $x^{2}$',
+    abstract: 'It costs &#36;5 and &#x24;10 while $y_{1}$ holds.',
+  })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+
+  assert.equal(digest.text.includes('Prices of $5 and $10 with x^2'), true, digest.text);
+  assert.equal(digest.text.includes('It costs $5 and $10 while y_1 holds.'), true, digest.text);
+  assert.equal(digest.html.includes('x<sup>2</sup>'), true);
+});
+
 test('the digest keeps comparisons and escapes markup in titles and excerpts', () => {
   const digest = renderDigest({}, [frontPagePaper({
     title: 'Why a<b>c and p<q and r>s <script>x</script>',
@@ -3870,7 +3915,11 @@ function testEmailHarness(t: TestContext) {
   };
   const calls = { sources: 0, openAlex: 0, resend: 0 };
   let uid = 'tester';
-  let clock = Date.UTC(2026, 9, 26, 9, 0, 30);
+  // The start of an odd three-second period, which is a seat a test email's
+  // arXiv query may take: it takes it at once, and another query in the same
+  // instant finds its next seat (6 s on) more than its wait away and falls
+  // back to OpenAlex rather than sleeping for it in real time.
+  let clock = Date.UTC(2026, 9, 26, 9, 0, 33);
   const globals = globalThis as TestGlobals;
   if (!globals.caches) {
     // The shared verifier remembers an identity in the Workers cache, which Node

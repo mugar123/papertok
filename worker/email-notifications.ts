@@ -88,6 +88,7 @@ import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { openAlexCostFor } from './openalex-api.ts';
 import { reserveOpenAlexBudget } from './provider-runtime.ts';
+import { takeArxivSeat } from './arxiv-api.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -307,10 +308,14 @@ function findEmailLatexDelimiter(text: string, startIndex: number): { index: num
 function splitEmailScientificText(value: unknown) {
   // Rendered text only: font wrappers are unwrapped and `\%` becomes `%` in
   // prose before any cut, so a wrapper is never split open.
+  // A dollar written as an entity is an amount, not a delimiter. The normalizer
+  // decodes entities before formulas are separated, so it is held back here and
+  // printed once they are cut.
   // The normalizer also strips anything shaped like an HTML tag, which would
   // eat comparisons such as `a<b>c`, so angle brackets are held back from it.
   const text = cleanText(
-    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, ''))
+    normalizeLatexText(String(value || '').replace(/</g, '').replace(/>/g, '')
+      .replace(/&#(?:36|x24);/gi, ''))
       .replace(//g, '<').replace(//g, '>'),
     5_000,
   );
@@ -335,7 +340,7 @@ function splitEmailScientificText(value: unknown) {
     chunks.push({ type: 'math', value: text.slice(contentStart, contentEnd) });
     cursor = contentEnd + match.delimiter.right.length;
   }
-  return chunks;
+  return chunks.map(chunk => ({ ...chunk, value: chunk.value.replace(//g, '$') }));
 }
 
 function simplifyEmailLatex(value: unknown) {
@@ -797,7 +802,12 @@ function parseArxivDigestFeed(xml: unknown, follows: Follow[] = []) {
   }).filter(Boolean);
 }
 
-async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceReport | null) {
+// Each attempt, the retry too, takes a seat on the Worker's arXiv beat first
+// (`takeArxivSeat`). No seat within its wait ends the query without a call,
+// and the digest falls back to OpenAlex as for an arXiv outage, as it does
+// when the ledger answers with an error. Only a missing ledger binding lets
+// the call go unpaced.
+async function fetchArxivTopicUpdates(follows: Follow[], env: WorkerEnv, sourceReport: SourceReport | null | undefined, caller: 'digest' | 'test-email') {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),
   )].slice(0, MAX_ARXIV_DIGEST_CATEGORIES);
@@ -820,6 +830,12 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
       source: 'arxiv',
       report: sourceReport,
       timeoutMs: 8_000,
+      beforeAttempt: async () => {
+        const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, caller);
+        if (!seat.accepted && !seat.code) {
+          throw new DigestSourceError('arxiv', 'EMAIL_SOURCE_ARXIV_RATE_LIMITED', 'No arXiv seat for the digest');
+        }
+      },
     });
     return parseArxivDigestFeed(await response.text(), follows);
   });
@@ -1444,7 +1460,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
     try {
       return {
-        papers: await fetchArxivTopicUpdates(arxivFollows, sourceReport),
+        papers: await fetchArxivTopicUpdates(arxivFollows, env, sourceReport, test ? 'test-email' : 'digest'),
         requiredFailed: 0,
       };
     } catch (error) {

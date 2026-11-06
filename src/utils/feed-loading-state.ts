@@ -145,10 +145,13 @@ export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPen
 
 /**
  * The feed tail's status: only for a next page, under papers already shown.
- * Under the last visit's cards a failed load is the first load's, and the
- * feed's status already says the feed could not update (ENG-188).
+ * `retrying`: the load is an automatic retry of a failed page. It keeps the
+ * failure's words, so a long outage announces its state once, not at every
+ * attempt as "loading" and "could not load" alternate. Under the last visit's
+ * cards a failed load is the first load's, and the feed's status already says
+ * the feed could not update (ENG-188).
  */
-export function nextPageStatusText({ loading, hasPapers, failed = false, lastVisit = null }: { loading: boolean; hasPapers: boolean; failed?: boolean; lastVisit?: LastVisitStatus }) {
-  if (failed) return lastVisit === 'not-updated' ? '' : 'Could not load more papers.';
+export function nextPageStatusText({ loading, hasPapers, failed = false, retrying = false, lastVisit = null }: { loading: boolean; hasPapers: boolean; failed?: boolean; retrying?: boolean; lastVisit?: LastVisitStatus }) {
+  if (failed || (loading && retrying && hasPapers)) return lastVisit === 'not-updated' ? '' : 'Could not load more papers.';
   return loading && hasPapers ? 'Loading more papers…' : '';
 }

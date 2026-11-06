@@ -24,6 +24,22 @@ export interface QuotaRequest {
   // subject with its own limit, checked and counted in the same transaction
   // as the subject and the day, and given back with them.
   part?: QuotaPart;
+  // `reserve` only: this reservation is a slot of an upstream beat
+  // (`upstream-pace.ts`), and is accepted only with a send time.
+  pace?: QuotaPace;
+}
+
+// The send time is the earliest moment from `from` and the ledger's clock on
+// that keeps `spacingMs` from every call this object recorded, before it or
+// after it: a slot booked ahead does not push back a slot before it that is
+// reserved later. It may fall after `by` only when it is the ledger's present
+// moment (no wait at all). With `immediate`, only the present moment is
+// accepted, and only up to `by`.
+export interface QuotaPace {
+  from: number;
+  by: number;
+  immediate?: boolean;
+  spacingMs: number;
 }
 
 export interface QuotaPart {
@@ -51,6 +67,13 @@ export interface QuotaReading {
   remaining?: number;
   observed?: QuotaObservation;
   tally?: QuotaTally;
+  // A paced reservation's send time, on the ledger's clock, and the latest
+  // moment its call may still go out. A caller that cannot send by `sendBy`
+  // must not send at all.
+  sendAt?: number;
+  sendBy?: number;
+  // The ledger's clock when it answered a paced reservation.
+  present?: number;
 }
 
 const LEDGER_ACTIONS = new Set<unknown>(['reserve', 'release', 'peek', 'observe']);
@@ -61,6 +84,16 @@ const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 // every name in one value, so the number of names is bounded here too.
 const TALLY_NAME = /^[a-z]{1,16}\.[a-z]{1,16}$/;
 const MAX_TALLY_NAMES = 16;
+const PACE_SENDS_KEY = 'pace:sends';
+// How late after its send time, or after the answer left the ledger when that
+// time had come, a paced call may still go out: the answer's way back, or a
+// timer firing late. The ledger is placed beside the Worker
+// (LEDGER_LOCATION_HINT), so its answers take milliseconds. The ledger keeps
+// every call's whole window `spacingMs` from the others, and a caller past its
+// window does not send (`upstream-pace.ts`).
+export const PACE_ANSWER_ALLOWANCE_MS = 250;
+// A recorded call goes out at some moment from its start to its end.
+type PacedSend = [start: number, end: number];
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -94,6 +127,38 @@ function optionalTally(value: unknown) {
 function optionalRemaining(value: unknown) {
   if (value === undefined) return undefined;
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_LIMIT ? value as number : null;
+}
+
+function optionalPace(value: unknown): QuotaPace | undefined | null {
+  if (value === undefined) return undefined;
+  const { from, by, immediate, spacingMs } = (value ?? {}) as Partial<Record<keyof QuotaPace, unknown>>;
+  return Number.isSafeInteger(from) && Number.isSafeInteger(by)
+    && (immediate === undefined || typeof immediate === 'boolean')
+    && Number.isInteger(spacingMs) && (spacingMs as number) > 0 && (spacingMs as number) <= 60_000
+    ? { from: from as number, by: by as number, immediate: immediate === true, spacingMs: spacingMs as number }
+    : null;
+}
+
+function storedSends(value: unknown, after: number) {
+  return (Array.isArray(value) ? value as unknown[] : []).filter((send): send is PacedSend => Array.isArray(send)
+    && Number.isFinite(send[0]) && Number.isFinite(send[1]) && send[0] <= send[1] && send[1] > after);
+}
+
+// The earliest window from `earliest` on that keeps `spacingMs` from every
+// recorded one. The call goes out at `sendAt`, or on the answer's arrival when
+// that time has come by then, so the window runs from `sendAt` to
+// PACE_ANSWER_ALLOWANCE_MS after the later of `sendAt` and `present`, cut
+// short by a call recorded after it. The earliest start is `earliest` itself
+// or `spacingMs` after a recorded window's end.
+function pacedSend(sends: PacedSend[], earliest: number, present: number, spacingMs: number) {
+  const candidates = [earliest, ...sends.map(([, end]) => end + spacingMs).filter(time => time > earliest)].sort((a, b) => a - b);
+  for (const sendAt of candidates) {
+    const after = sends.filter(([, end]) => sendAt < end + spacingMs);
+    const sendBy = Math.min(Math.max(sendAt, present) + PACE_ANSWER_ALLOWANCE_MS, ...after.map(([start]) => start - spacingMs));
+    if (sendBy >= Math.max(sendAt, present)) return { sendAt, sendBy };
+  }
+  // The last candidate is after every recorded window, so the loop returns.
+  throw new Error('unreachable');
 }
 
 function storedTally(value: unknown): QuotaTally {
@@ -144,8 +209,10 @@ export class RequestQuotaLedger {
     const hasPart = payload?.partKey !== undefined || payload?.partLimit !== undefined;
     const partKey = hasPart ? safeSubjectKey(payload?.partKey) : '';
     const partLimit = hasPart ? positiveInteger(payload?.partLimit) : 0;
+    const pace = optionalPace(payload?.pace);
     if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount
-      || !percent || tallyName === null || reportedRemaining === null
+      || !percent || tallyName === null || reportedRemaining === null || pace === null
+      || (pace && action !== 'reserve')
       || (payload?.globalAmount !== undefined && payload.globalAmount !== 0 && !globalAmount)
       || (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt)
         || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + RETENTION_MS))
@@ -157,12 +224,13 @@ export class RequestQuotaLedger {
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
       const partStorageKey = `subject:${partKey}`;
-      const [subjectValue, globalValue, observedValue, tallyValue, partValue] = await Promise.all([
+      const [subjectValue, globalValue, observedValue, tallyValue, partValue, sendsValue] = await Promise.all([
         transaction.get(subjectStorageKey),
         transaction.get('global'),
         transaction.get('observed'),
         transaction.get('tally'),
         partKey ? transaction.get(partStorageKey) : undefined,
+        pace ? transaction.get(PACE_SENDS_KEY) : undefined,
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
@@ -242,6 +310,25 @@ export class RequestQuotaLedger {
         return { accepted: false, scope, subjectUsage, globalUsage };
       }
 
+      // Read here, inside the transaction that records it, so slots reserved in
+      // any order still get windows `spacingMs` apart. A window that ended
+      // more than `spacingMs` ago can no longer constrain one, so it is dropped.
+      // `present` goes back with the times, so the caller can read them as
+      // offsets from the moment the ledger answered rather than against a clock
+      // of its own that may run ahead of this one.
+      let paced: { sendAt: number; sendBy: number; present: number } | undefined;
+      let sends: PacedSend[] = [];
+      if (pace) {
+        const present = Date.now();
+        sends = storedSends(sendsValue, present - pace.spacingMs);
+        paced = { ...pacedSend(sends, Math.max(pace.from, present), present, pace.spacingMs), present };
+        // A refusal says when the slot could have gone out.
+        if (paced.sendAt > present ? paced.sendAt > pace.by || pace.immediate : pace.immediate && present > pace.by) {
+          return { accepted: false, scope: 'pace', subjectUsage, globalUsage, sendAt: paced.sendAt, present };
+        }
+        sends = [...sends, [paced.sendAt, paced.sendBy] as PacedSend].sort((a, b) => a[0] - b[0]);
+      }
+
       const nextSubjectUsage = subjectUsage + amount;
       const nextGlobalUsage = globalUsage + globalAmount;
       if (tallyName) addToTally(tally.used, tallyName, amount);
@@ -250,12 +337,14 @@ export class RequestQuotaLedger {
         transaction.put('global', nextGlobalUsage),
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
+        paced ? transaction.put(PACE_SENDS_KEY, sends) : undefined,
       ]);
       return {
         accepted: true,
         subjectUsage: nextSubjectUsage,
         globalUsage: nextGlobalUsage,
         remaining: Math.max(0, subjectLimit - nextSubjectUsage),
+        ...paced,
       };
     });
 
@@ -265,8 +354,14 @@ export class RequestQuotaLedger {
     return json(result);
   }
 
+  // The send times outlive the retention sweep: cleared, the next slot could
+  // go out less than `spacingMs` from a call sent or booked beside it.
   async alarm() {
+    const sends = await this.state.storage.transaction(async transaction => transaction.get(PACE_SENDS_KEY));
     await this.state.storage.deleteAll();
+    if (sends !== undefined) {
+      await this.state.storage.transaction(async transaction => { await transaction.put(PACE_SENDS_KEY, sends); });
+    }
   }
 }
 
@@ -299,6 +394,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   tally,
   remaining,
   part,
+  pace,
 }: QuotaRequest): Promise<QuotaReading> {
   if (!namespace?.idFromName || !namespace?.get) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
@@ -324,6 +420,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
       remaining,
       partKey,
       partLimit: part?.limit,
+      pace,
     }),
   });
   if (!response.ok) return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' };

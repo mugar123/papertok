@@ -320,6 +320,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, []);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const nextPageRetriesRef = useRef<NextPageRetries>({ failedAt: null, used: 0 });
+  // Whether the next page on its way is an automatic retry of a failed one, so
+  // the tail's status keeps the failure's words (nextPageStatusText). Kept as
+  // state because the status reads it while rendering.
+  const [nextPageRetrying, setNextPageRetrying] = useState(false);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
   // uses. It tracks the scroll position on every scroll, and the mount
@@ -744,8 +748,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
+    const next: (attempt?: 'automatic_retry') => boolean = loadMore;
     const sentinel = createNextPageSentinel({
-      failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current, page: document,
+      failed: Boolean(error), hasMore, loading, retries: nextPageRetriesRef.current, page: document,
+      loadMore: attempt => {
+        const started = next(attempt);
+        if (started) setNextPageRetrying(attempt === 'automatic_retry');
+        return started;
+      },
     });
     const observer = new IntersectionObserver(
       (entries) => sentinel.report(entries[0].isIntersecting),
@@ -1478,7 +1488,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                 {tail === 'failed' ? 'Could not load more papers' : 'Loading more papers…'}
               </p>
               {tail === 'failed' && (
-                <Button ref={tailRetryRef} size="sm" onClick={() => loadMore()}>
+                <Button ref={tailRetryRef} size="sm" onClick={() => { if (loadMore()) setNextPageRetrying(false); }}>
                   <ArrowsClockwise size={16} aria-hidden="true" />
                   {'Try again'}
                 </Button>
@@ -1489,7 +1499,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   from the start would speak for waits that are not
                   happening. Under the veil there is no page to add to: the
                   landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', lastVisit: source ? null : feed.lastVisit })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, lastVisit: source ? null : feed.lastVisit })}</span>
             </div>
           </div>
         )}
