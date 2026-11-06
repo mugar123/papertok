@@ -216,6 +216,10 @@ test('Try again under the last visit\'s cards announces how it ended', () => {
   assert.equal(lastVisitAfterLoad('not-updated', true), 'updated');
   assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: 'updated' }), 'Papers updated');
   assert.equal(lastVisitAfterLoad(null, true), null);
+  // A failed refresh afterwards ends "Papers updated": the status falls back to nothing.
+  const afterFailedRefresh = lastVisitOnFailedReset({ nothingShown: false, retryDue: true, lastVisit: 'updated' }).kept;
+  assert.equal(afterFailedRefresh, null);
+  assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: afterFailedRefresh }), '');
 });
 
 // A retry that answered with no papers over the last visit's cards kept them
