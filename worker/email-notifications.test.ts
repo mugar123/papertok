@@ -2539,7 +2539,9 @@ test('retries one unknown provider outcome inside the idempotency window', async
 
 const RETRY_KEY = 'notification:subscription:retry-reader';
 const RETRY_TOKEN = 'retry-reader-unsubscribe-token';
-type RetryChange = (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => Promise<void>;
+type RetryChange = (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => Promise<unknown>;
+const RETRY_READER = { uid: 'retry-reader', email: 'reader@example.com', displayName: '' };
+const RETRY_NEW_FOLLOWS = { ...SUBSCRIBE_ONE_FOLLOW, follows: [digestFollow('A2', 'Bea Author')] };
 
 // A digest whose first send loses Resend's answer, then its retry. `change` is
 // confirmed right before the `target`-th storage call (KV or the reader's
@@ -2642,7 +2644,16 @@ for (const source of ['object', 'kv'] as const) {
       await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid: 'retry-reader', email: 'new-address@example.com', displayName: '' });
       kv.values.set(RETRY_KEY, before);
     }],
+    // Same address, new follows: only the subscription version tells the draft is stale.
+    ['new follows', env => saveSubscription(preferencesPut(RETRY_NEW_FOLLOWS), env, RETRY_READER)],
   ];
+  if (source === 'kv') {
+    changes.push(['new follows, with a KV read from before the save', async (env, kv) => {
+      const before = kv.values.get(RETRY_KEY)!;
+      await saveSubscription(preferencesPut(RETRY_NEW_FOLLOWS), env, RETRY_READER);
+      kv.values.set(RETRY_KEY, before);
+    }]);
+  }
   for (const [change, confirm] of changes) {
     test(`with the subscription in ${source}, a retried digest is not sent when ${change} is confirmed before its call to Resend`, async () => {
       let passes = 0;
