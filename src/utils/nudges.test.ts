@@ -496,12 +496,12 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   // A visit's arrival on /feed with no other dialog open, from the parts NudgeHost calls in this order. The
   // reader then closes the dialog (Got it, the X, Escape, a press outside, Back or closing the tab), which
   // writes nothing more.
-  const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true, cardsShown = true) => {
+  const opensOnArrival = (user: Parameters<typeof privacyOwedFor>[0]['user'], storage: ReturnType<typeof fakeStorage>, signedIn = true, cardsShown = true, tabVisible = true) => {
     const privacyOwed = privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT, storage });
     const gates = visitChoiceGates({ user, loading: false, onboardingComplete: signedIn, pathname: '/feed' });
     const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, eligible: ['email-down'] });
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
-    const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, tabVisible: true, wasOpen: false });
+    const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, tabVisible, wasOpen: false });
     recordPrivacyNoticeShown({ uid: user?.uid, dialogOpen, version: PRIVACY_POLICY_VERSION, storage });
     return dialogOpen;
   };
@@ -509,6 +509,8 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
   const before = createdAt('reader-a', -24 * HOUR);
   assert.equal(opensOnArrival(before, storage, true, false), false, 'a feed without cards yet');
   assert.equal(readPrivacyNoticeAck(before.uid, storage), null, 'nothing is recorded before the dialog opens');
+  assert.equal(opensOnArrival(before, storage, true, true, false), false, 'a tab in the background');
+  assert.equal(readPrivacyNoticeAck(before.uid, storage), null, 'a tab in the background records nothing');
   assert.equal(opensOnArrival(before, storage), true, 'an account from before the change');
   assert.equal(opensOnArrival(before, storage), false, 'shown once and closed without Got it, it is not owed on the next visit');
   assert.equal(
