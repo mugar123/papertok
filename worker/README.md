@@ -451,6 +451,15 @@ the digest falls back to OpenAlex. Before ENG-184, a seat taken late in its peri
 once and the next period's seat could follow within 0.1 s, and a ledger error let every call
 go out unpaced.
 
+The beat covers what arXiv's limit covers. Its
+[API terms of use](https://info.arxiv.org/help/api/tou.html) set one request every three
+seconds for "the legacy APIs (including OAI-PMH, RSS, and the arXiv API)", and do not name
+the website. So the article pages that `/resources/figures` and `/resources/full-text` read
+from arxiv.org/html and ar5iv.labs.arxiv.org are not on the beat. arxiv.org's `robots.txt`
+allows `/html` and asks crawlers for a 15 s crawl delay. These routes do not crawl: each
+miss reads one paper someone opened, the answer stays at the edge for 30 days (an hour when
+empty), and each route has its own app-wide ceiling of 60 misses a minute.
+
 The Worker's own lookups (harvest, liked papers, share pages) and the digest give way to
 readers, so spacing refuses no reader that was answered before ENG-184. They take a seat only
 once its period has begun, and only to send at once, so they never hold a send time a reader
