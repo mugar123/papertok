@@ -1001,11 +1001,19 @@ async function readKvRecord(env: WorkerEnv, uid: string): Promise<StoredSlot | n
  * from their object, and never moves them back: a phase 1 Worker still running
  * beside phase 2, or one a rollback brought back, would otherwise empty the
  * object that phase 2 reads, and a stale KV read there would lose the reader.
+ *
+ * A KV record is also checked against the object: an object a cancellation
+ * closed means the record is a stale copy, so it reads as no subscription and
+ * a sync, the digest or a retry cannot act on it. A phase 1 save reopens the
+ * object before it writes KV, so a real re-subscription is never hidden.
  */
 async function readPhase1Slot(env: WorkerEnv, uid: string) {
   const kv = await readKvRecord(env, uid);
-  if (kv) return { slot: kv, inKv: true };
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (kv) {
+    const cancelled = !slot.migratable && !slot.subscription;
+    return { slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv, inKv: true };
+  }
   return { slot, inKv: !slot.subscription };
 }
 
@@ -1013,11 +1021,14 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
  * Phase 1: closes the reader's object before a cancellation deletes the KV
  * record, even when this read finds no record, since it may be a stale one.
  * Returns what the reader held first, because closing drops the object's copy.
+ * The KV record is deleted here, whatever the read found: once the object is
+ * closed, every later phase 1 read treats a KV record as a stale copy.
  */
 async function closeBeforeCancelling(env: WorkerEnv, uid: string) {
   if (!subscriptionInKv(env)) return null;
   const { slot } = await readPhase1Slot(env, uid);
   await markSubscription(env, uid, false);
+  await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
   return slot.subscription;
 }
 
@@ -3124,7 +3135,9 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
   const subscription = await loadSubscriptionWithState(env, key.name);
   // An index a save wrote just after an unsubscribe points at no subscription.
-  if (!subscription) await deleteScheduleIndex(env, subscriptionUid(key.name));
+  // In phase 1 the key is the record itself, and a read that missed it may be
+  // a stale one, so only a cancellation deletes it.
+  if (!subscription && !subscriptionInKv(env)) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
   if (!hasDigestSource(subscription)) {

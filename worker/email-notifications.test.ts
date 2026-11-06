@@ -1559,6 +1559,45 @@ test('the app turning the digest off in phase 1 after the reader moved also remo
   assert.equal(kv.values.has(SYNC_READER_KEY), false);
 });
 
+test('in phase 1 a stale KV copy read after an unsubscribe is not synced back, reopened or sent', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut({
+    enabled: true, maxPapers: 5, follows: [scheduledFollow('author', 'A1', 'Ada Author')], previewItems: [],
+  }), phase1, SYNC_READER);
+  const record = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  await unsubscribeWithLink(phase1, record?.unsubscribeToken);
+  // Another location still reads the record the unsubscribe deleted.
+  const stale = JSON.stringify(record);
+  kv.values.set(SYNC_READER_KEY, stale);
+
+  const synced = await saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), phase1, SYNC_READER);
+
+  assert.equal(synced.enabled, false);
+  assert.equal(kv.values.get(SYNC_READER_KEY), stale, 'the sync wrote the cancelled record back');
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null, 'the sync reopened the object');
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+    const summary = await runEmailNotificationSchedule({ ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' }, DIGEST_RUN.getTime());
+    assert.equal(summary.sent, 0);
+    assert.deepEqual(Object.keys(upstream.emailsTo), []);
+  });
+});
+
+test('the phase 1 schedule keeps a subscriber whose KV read missed the record', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  // The schedule's location still caches a miss for the key the list returned.
+  const baseGet = kv.get.bind(kv);
+  kv.get = (async (key: string, options?: unknown) => (key === SYNC_READER_KEY ? null : baseGet(key, options as never))) as typeof kv.get;
+
+  await runEmailNotificationSchedule({ ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' }, Date.parse('2026-08-10T08:00:00.000Z'));
+
+  kv.get = baseGet;
+  assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.enabled, true);
+});
+
 test('the schedule removes an index that points at no subscription', async () => {
   const kv = createMemoryKv({ [SYNC_READER_KEY]: { uid: SYNC_READER.uid } });
 
