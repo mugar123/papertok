@@ -16,6 +16,10 @@
   height: calc(100dvh - var(--nav-total));
   margin-top: var(--nav-total);
   background: var(--bg-secondary);
+  /* A column, so the last visit's note (.feed-last-visit) takes its height
+     from the scroller instead of covering a card. */
+  display: flex;
+  flex-direction: column;
   /* The pull writes both of these here rather than on the pill, because the
      papers follow the finger too and this is the one ancestor they share
      (FeedContainer's `setPull`). `--pull` is 0..1 and drives what grows;
@@ -25,7 +29,8 @@
 }
 
 .feed-container {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
   -webkit-overflow-scrolling: touch;
@@ -287,6 +292,24 @@
     opacity 140ms 60ms var(--ease-out),
     translate 200ms var(--ease-out),
     scale 200ms var(--ease-out);
+}
+/* The last visit's cards say so above themselves (ENG-188). In flow, a bar
+   that takes its height from the scroller (.feed-wrapper is a column): laid
+   over the cards it hid their first control from the keyboard, and it can
+   stay all session. The pill hides it while it is out over it. */
+.feed-last-visit {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-card); color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
+  font-size: 0.8rem; text-align: center;
+}
+.feed-refresh.is-visible ~ .feed-last-visit,
+.feed-refresh:focus-visible ~ .feed-last-visit,
+.feed-wrapper[data-pull='pulling'] .feed-last-visit,
+.feed-wrapper[data-pull='landing'] .feed-last-visit {
+  visibility: hidden;
 }
 .feed-refresh.is-visible,
 .feed-refresh:focus-visible {
