@@ -133,12 +133,17 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
 - Personal responses must not share global cache keys. Canonicalize keys from the parameters
   actually sent upstream. Reserve paid-provider budgets atomically; do not replace shared
   ledgers with process memory or non-atomic read-then-write counters.
-- Analytics has two levels (`src/services/analytics-service.ts`). Anonymous is the default
-  and needs no permission, so it stays cookieless and within the event allowlist: no paper
-  titles, entity IDs, search text, interests, account identifiers or unsanitized URLs.
-  Detailed analytics may identify the account, record sessions and send which paper or search,
-  but only after an explicit opt-in. Route new identifying fields through the `detail` schema
-  type so the anonymous level drops them, and update `privacy.html` when either level changes.
+- Analytics is on by default and has one switch (`src/services/analytics-service.ts`): the
+  consent is `enabled` or `denied`, and a browser with no stored choice counts as `enabled`.
+  PostHog, only on papertok.app, keeps a persistent browser identifier, identifies the
+  signed-in account by its Firebase user ID and records no sessions. `denied` sends nothing
+  and resets the identity. `privacy.html` promises exactly this, so a change here must not
+  go beyond it. Every event is registered in `EVENT_PARAMETER_SCHEMAS`, and each parameter
+  is a typed field: a boolean, a bounded number or a fixed list of labels. Never send paper
+  titles, search text, free text, error messages or unsanitized URLs. An identifier (paper
+  or entity ID) goes only through the `identifier` type, never a free string. Changing
+  what analytics sends or identifies needs authorization (see above) and a matching update
+  to `privacy.html` in the same change.
 
 ## Accessibility and interface
 
