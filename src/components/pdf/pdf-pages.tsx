@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 // The legacy build, on purpose: the modern one calls `Map.getOrInsertComputed`
 // and `Math.sumPrecise`, which the iPhones this viewer exists for do not have.
 // The legacy build carries its own polyfills for about 60 KB more.
@@ -25,9 +25,10 @@ const RENDER_MARGIN = '150% 0px';
  * width. This is the touch-screen route of PDFViewer: a framed PDF there shows
  * one page (iOS) or none (Android), so the pages are drawn here instead.
  *
- * `onUnavailable` is called once when the document cannot be read at all —
- * the relay refused it, it is not a PDF, it is too large — so the viewer can
- * offer the browser's own viewer instead of a blank sheet.
+ * `onUnavailable` is called when the document cannot be read at all — the
+ * relay refused it, it is not a PDF, it is too large — or no page of it could
+ * be drawn, so the viewer can offer the browser's own viewer instead of a blank
+ * sheet. `onDrawn` is called when a page has been drawn, not just measured.
  */
 export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: string; title: string; onUnavailable?: () => void; onDrawn?: () => void }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
@@ -37,6 +38,16 @@ export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: 
   // nothing: the pages live inside this scroller, which clips them, so only
   // the ones on screen ever counted as near (measured 2026-10-09: 2 of 15).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  // A page that cannot be drawn before any page was is a PDF this phone cannot
+  // show: hand it off as unavailable rather than leave blank sheets.
+  const anyDrawn = useRef(false);
+  const handleDrawn = useCallback(() => {
+    anyDrawn.current = true;
+    onDrawn?.();
+  }, [onDrawn]);
+  const handleDrawFailed = useCallback(() => {
+    if (!anyDrawn.current) onUnavailable?.();
+  }, [onUnavailable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +86,8 @@ export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: 
         number={number}
         count={pageCount}
         placeholderRatio={firstPageRatio}
-        onDrawn={onDrawn}
+        onDrawn={handleDrawn}
+        onDrawFailed={handleDrawFailed}
       />,
     );
   }
@@ -93,9 +105,10 @@ export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: 
   );
 }
 
-function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawn?: () => void }) {
+function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn, onDrawFailed }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawn: () => void; onDrawFailed: () => void }) {
   // Read at draw time, so a new callback never redraws the page.
-  const reportDrawn = useEffectEvent(() => onDrawn?.());
+  const reportDrawn = useEffectEvent(() => onDrawn());
+  const reportDrawFailed = useEffectEvent(() => onDrawFailed());
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -126,6 +139,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn }: { doc:
 
     const draw = async () => {
       const mine = ++generation;
+      let painted = false;
       try {
         const page = await doc.getPage(number);
         if (mine !== generation) return;
@@ -144,6 +158,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn }: { doc:
         });
         await renderTask.promise;
         if (mine !== generation) return;
+        painted = true;
         setDrawn(true);
         reportDrawn();
         node.style.setProperty('--total-scale-factor', String(viewport.scale));
@@ -154,8 +169,10 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn }: { doc:
         });
         await textLayer.render();
       } catch {
-        // A cancelled render (the page scrolled away) and a page that cannot
-        // be drawn both leave the empty box: the other pages still read.
+        // A cancelled render (the page scrolled away, so `generation` moved on)
+        // is not a failure. A page that cannot be drawn leaves the empty box,
+        // and the document goes unavailable if no page has been drawn yet.
+        if (mine === generation && !painted) reportDrawFailed();
       }
     };
 
