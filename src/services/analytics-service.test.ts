@@ -532,7 +532,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; } & Record<string, unknown>) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -593,16 +593,62 @@ test('an event leaves with the normalized address and nothing that names a paper
   assert.equal(sent!.$set_once, undefined, 'no person properties travel');
 });
 
-test('preserves persistent identity and session fields without the raw user agent', () => {
+test('preserves persistent identity and session fields without the browser\'s own user agent', () => {
   const sent = sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.ENABLED);
   assert.equal(sent!.properties.token, 'phc_test');
   assert.equal(sent!.properties.distinct_id, 'browser-123');
   assert.equal(sent!.properties.$device_id, 'device-123');
   assert.equal(sent!.properties.$session_id, 'session-123');
   assert.equal(sent!.properties.$cookieless_mode, false);
-  assert.equal(sent!.properties.$raw_user_agent, undefined);
+  assert.equal(sent!.properties.$raw_user_agent, 'Chrome (Mac OS X)', 'no version is known, so none is written');
   assert.equal(sent!.properties.$host, 'papertok.app');
   assert.equal(sent!.uuid, '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d');
+});
+
+const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.91 Safari/537.36';
+const ANDROID_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36';
+
+test('the user agent that leaves is the browser, its major version and the system, and nothing of the original', () => {
+  const desktop = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: DESKTOP_USER_AGENT, $browser: 'Chrome', $browser_version: 130.0, $os: 'Mac OS X',
+  }), ANALYTICS_CONSENT.ENABLED);
+  const android = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: ANDROID_USER_AGENT, $browser: 'Chrome', $browser_version: 130, $os: 'Android', $device_type: 'Mobile',
+  }), ANALYTICS_CONSENT.ENABLED);
+  const safari = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $browser: 'Mobile Safari', $browser_version: 18.1, $os: 'iOS',
+  }), ANALYTICS_CONSENT.ENABLED);
+
+  assert.equal(desktop!.properties.$raw_user_agent, 'Chrome/130 (Mac OS X)');
+  assert.equal(android!.properties.$raw_user_agent, 'Chrome/130 (Android)');
+  assert.equal(safari!.properties.$raw_user_agent, 'Mobile Safari/18 (iOS)', 'the major version only');
+  for (const [sent, original] of [[desktop, DESKTOP_USER_AGENT], [android, ANDROID_USER_AGENT]] as const) {
+    const payload = JSON.stringify(sent);
+    for (const part of [original, 'Mozilla', 'Macintosh', 'Intel', '10_15_7', 'AppleWebKit', 'KHTML', 'Gecko', '6723', 'Safari/', 'Linux', 'Android 14', 'SM-S918B', 'UP1A']) {
+      assert.ok(!payload.includes(part), `"${part}" left with the event`);
+    }
+  }
+});
+
+test('no user agent is invented without a browser name, and a hostile one is dropped', () => {
+  const userAgent = (properties: Record<string, unknown>) => sanitizeAnalyticsCapture(
+    postHogCapture('$pageview', { $browser: undefined, $os: undefined, ...properties }),
+    ANALYTICS_CONSENT.ENABLED,
+  )!.properties.$raw_user_agent;
+
+  assert.equal(userAgent({ $browser_version: 130, $os: 'Windows' }), undefined);
+  assert.equal(userAgent({ $browser: '', $os: 'Windows' }), undefined);
+  for (const browser of ['Chrome (evil)', 'Chrome\nX-Injected: 1', 'Mozilla/5.0', 'Mozilla', 'C'.repeat(65), 42, { name: 'Chrome' }]) {
+    assert.equal(userAgent({ $browser: browser, $browser_version: 5, $os: 'Linux' }), undefined, JSON.stringify(browser));
+  }
+  assert.equal(userAgent({ $browser: 'Firefox', $browser_version: '131.0; rv:131', $os: 'Windows) (Injected' }), 'Firefox/131');
+  assert.equal(userAgent({ $browser: 'Firefox', $browser_version: 'x131', $os: 'O'.repeat(65) }), 'Firefox');
+});
+
+test('no user agent leaves once analytics is off', () => {
+  assert.equal(sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: DESKTOP_USER_AGENT, $browser: 'Chrome', $browser_version: 130, $os: 'Mac OS X',
+  }), ANALYTICS_CONSENT.DENIED), null);
 });
 
 test('a page view on a paper is filed under the pattern, without the paper\'s title', () => {
