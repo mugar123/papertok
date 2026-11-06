@@ -56,7 +56,6 @@ export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-06T23:59:59Z';
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "Email updates, if on, also store the subjects you chose, and keep your subscription in a Cloudflare Durable Object of your account.",
-  "Since 5 November, in the reader, a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it, which receives your IP address.",
 ];
 
 /**
@@ -77,10 +76,9 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['if on', /If you turn them on, PaperTok emails you/],
     ['store the subjects you chose', /the identifiers of the subjects you chose/],
     ['in a Cloudflare Durable Object of your account', /in a <strong>Cloudflare Durable Object<\/strong> of your account/],
-    // Kept from 5 November for an account that has not opened the app since:
-    // it read that repositories never receive its IP address.
-    ["a paper's figures, and a PDF shown on a computer, load directly from the repository that hosts it", /your browser loads each figure, and a PDF shown in the reader on a computer, directly from the repository that hosts it/],
-    ['which receives your IP address', /which receives your IP address as with any image on the web/],
   ],
-  unsaid: [[/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader']],
+  unsaid: [
+    [/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader'],
+    [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
+  ],
 };
