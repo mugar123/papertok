@@ -963,21 +963,66 @@ async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: Subsc
 }
 
 /**
+ * Where the subscription is the record. The deploy has two phases
+ * (worker/README.md#email-digest-subscription-deploy): while
+ * `EMAIL_SUBSCRIPTION_SOURCE` is `kv` (phase 1, set in wrangler.toml), the KV
+ * record is the subscription, as before the object existed, and the reader's
+ * object only learns every unsubscribe, deletion and re-subscription, so that
+ * phase 2 (`object`) never moves in a record that was cancelled.
+ */
+function subscriptionInKv(env: WorkerEnv) {
+  return cleanText(env.EMAIL_SUBSCRIPTION_SOURCE, 20).toLowerCase() === 'kv';
+}
+
+/**
+ * Tells the reader's object that the KV record is cancelled (`migratable:
+ * false`, before the record is deleted) or live again (`true`, before a save
+ * writes it). Strongly consistent, unlike the KV delete that follows.
+ */
+async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean) {
+  await callSubscriptionStore(env, uid, { action: 'mark', migratable });
+}
+
+/**
+ * Phase 1: the KV record, with a version of its own that every write raises. An
+ * index without a token is what phase 2 leaves in KV; the object's record is
+ * handed back to KV (and the object reopened to a later phase 2) so that
+ * rolling phase 2 back loses no save made while it ran.
+ */
+async function readKvSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
+  const store = env.NOTIFICATION_STORE;
+  if (!store) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const record = await store.get<Subscription>(key, 'json');
+  if (record?.unsubscribeToken) return { version: Number(record.version) || 0, subscription: storedRecord(record), migratable: true };
+  if (!record) return { version: 0, subscription: null, migratable: true };
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (!slot.subscription) return { version: 0, subscription: null, migratable: true };
+  await store.put(key, JSON.stringify({ ...slot.subscription, version: slot.version }));
+  await markSubscription(env, uid, true);
+  return { version: slot.version, subscription: slot.subscription, migratable: true };
+}
+
+/**
  * The reader's subscription as their object holds it (email-subscription-store.ts).
- * An object that was never written takes, once, the KV record that a Worker
- * from before the object saved; from then on the object is the only record,
- * and a KV copy of any age is never read again.
+ * An object that is still open (never written, never closed by a Worker that
+ * handled an unsubscribe) takes, once, the KV record that a Worker from before
+ * the object saved; from then on the object is the only record, and a KV copy
+ * of any age is never read again. An object a cancellation closed never takes
+ * one, however stale the KV copy that still holds it.
  *
- * KV reads can be stale: while a deploy replaces the old Worker, an
- * unsubscribe it handles deletes the KV record, and a copy cached here can
- * still hold it. The record is read with the shortest cache KV allows and read
- * again after the move; when it is gone by then, the move is undone. A cached
- * copy that outlives both reads still comes back (see worker/README.md).
+ * KV reads can be stale: an unsubscribe a Worker from before phase 1 handled
+ * deletes the KV record, and a copy cached here can still hold it, without any
+ * mark in the object. The record is read with the shortest cache KV allows and
+ * read again after the move; when it is gone by then, the move is undone. That
+ * only narrows the case phase 1 exists for: phase 2 follows once no Worker from
+ * before phase 1 runs (see worker/README.md).
  */
 async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
+  if (subscriptionInKv(env)) return readKvSlot(env, uid);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   const store = env.NOTIFICATION_STORE;
-  if (slot.version > 0 || !store) return slot;
+  if (!slot.migratable || !store) return slot;
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   const readLegacy = () => store.get<Subscription>(key, { type: 'json', cacheTtl: KV_MIN_CACHE_TTL_SECONDS });
   const legacy = await readLegacy();
@@ -987,7 +1032,7 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
     if (legacy && Object.keys(legacy).some(field => field !== 'uid')) await store.delete(key);
     return slot;
   }
-  const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: legacy });
+  const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: slot.version, subscription: storedRecord(legacy) });
   if (!moved.accepted) return moved.slot;
   if (!await readLegacy()) {
     const undone = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: moved.slot.version, subscription: null });
@@ -1019,6 +1064,24 @@ async function changeSubscription(
   next: (current: Subscription | null) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
 ) {
   let slot = await readSubscriptionSlot(env, uid);
+  if (subscriptionInKv(env)) {
+    // Phase 1: KV is the record, written without a version check as before the
+    // object existed. The object hears first, so no later read sees the record
+    // as anything but what this write makes it.
+    const previous = slot.subscription;
+    const record = await next(previous);
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot) };
+    const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+    if (record === null) {
+      await markSubscription(env, uid, false);
+      await env.NOTIFICATION_STORE!.delete(key);
+      return { changed: true, previous, subscription: null };
+    }
+    await markSubscription(env, uid, true);
+    const version = slot.version + 1;
+    await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version }));
+    return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }) };
+  }
   for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
     const previous = slot.subscription;
     const record = await next(previous);
@@ -1083,6 +1146,8 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
  */
 async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  // Marked even when this read found no record: it may be a stale one.
+  if (subscriptionInKv(env)) await markSubscription(env, uid, false);
   const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
   const deleted = previous || subscription;
   await Promise.all([
@@ -1101,6 +1166,12 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
  */
 async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
+  if (subscriptionInKv(env)) {
+    // The key holds the record itself: only an index without one is orphaned.
+    const held = await env.NOTIFICATION_STORE!.get<Subscription>(indexKey, 'json');
+    if (!held?.unsubscribeToken) await env.NOTIFICATION_STORE!.delete(indexKey);
+    return;
+  }
   await env.NOTIFICATION_STORE!.delete(indexKey);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
@@ -1115,6 +1186,7 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  if (subscriptionInKv(env)) await markSubscription(env, uid, false);
   const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
   if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
@@ -1205,9 +1277,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // whose unsubscribe link answers 400, and this sync may be its only retry.
   // An index left after an unsubscribe points at no subscription; the schedule removes it.
   const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
-  const [indexed, owner] = changed ? [null, null] : await Promise.all([store.get(key), store.get(unsubscribeKey)]);
+  // While KV holds the record (phase 1) the schedule's key is the record itself.
+  const inKv = subscriptionInKv(env);
+  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? true : store.get(key), store.get(unsubscribeKey)]);
   await Promise.all([
-    indexed ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    indexed || inKv ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
     owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
   ]);
   if (changed && read.selectionChanged) {
@@ -2464,10 +2538,12 @@ function deliveryAlreadySettled(subscription: Subscription, deliveredAt?: string
 /**
  * Whether a draft was prepared from the subscription as it stands. Every write
  * to the reader's object raises its version, so any change since cancels it. A
- * draft reserved before drafts carried a version (0) has nothing to compare.
+ * draft reserved before drafts carried a version (0) has no version to compare,
+ * but still goes only to the address the subscription has now.
  */
-function draftMatchesSubscription(draft: { subscriptionVersion?: number }, subscription: Subscription) {
-  return !draft.subscriptionVersion || draft.subscriptionVersion === subscription.version;
+function draftMatchesSubscription(draft: { subscriptionVersion?: number; recipient?: { email?: string } }, subscription: Subscription) {
+  return (!draft.subscriptionVersion || draft.subscriptionVersion === subscription.version)
+    && draft.recipient?.email === subscription.email;
 }
 
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
@@ -2512,6 +2588,14 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
 
     const reservation = await reserveEmailDelivery(env, reservationId, ledgerTime);
     if (!reservation.retry || !reservation.draft) return { pending: true };
+    // The last check, after the reservation and right before the send: an
+    // unsubscribe or a change saved while the reservation was being taken
+    // cancels this retry and gives the reservation back.
+    const beforeRetry = await loadSubscriptionWithState(env, key);
+    if (!beforeRetry?.enabled || !draftMatchesSubscription(reservation.draft, beforeRetry)) {
+      await releaseEmailDelivery(env, reservationId, ledgerTime);
+      return { pending: true, cancelled: true };
+    }
     return deliverReservedDraft(env, reservationId, reservation.draft, now, { ledgerTime });
   }
   return null;

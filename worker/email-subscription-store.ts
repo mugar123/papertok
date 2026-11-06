@@ -3,13 +3,16 @@ import type { LedgerStorage } from './ledger-storage.ts';
 /**
  * What one reader's object holds: the digest subscription, or `null` once it is
  * deleted, and a version that every write raises. Version 0 means the object
- * has never been written.
+ * has never been written. `migratable` is true until the object has been
+ * written or marked as closed: only then may the KV record of a Worker from
+ * before the object move in (see `EMAIL_SUBSCRIPTION_SOURCE`).
  */
-export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null }
-export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown }
+export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean }
+export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown }
 
 const VERSION_KEY = 'version';
 const SUBSCRIPTION_KEY = 'subscription';
+const CLOSED_KEY = 'closed';
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -25,6 +28,12 @@ function json(payload: unknown, status = 200) {
  * a different record. Here every read sees the last write, and a write lands
  * only on the version it was computed from: a writer that lost the race gets
  * the current slot back and computes again.
+ *
+ * While KV is still the record (phase 1 of the deploy), a Worker marks here
+ * every unsubscribe, deletion and re-subscription it makes: `mark` with
+ * `migratable: false` drops the subscription and closes the object to the KV
+ * record, `migratable: true` reopens it. Unlike KV, the mark is seen by every
+ * later read, so a stale KV copy of a cancelled reader is never moved in.
  */
 export class EmailSubscriptionStore {
   declare state: { storage: LedgerStorage };
@@ -37,10 +46,12 @@ export class EmailSubscriptionStore {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
     const payload = await request.json<SubscriptionStorePayload>().catch(() => null);
     const write = payload?.action === 'write';
+    const mark = payload?.action === 'mark';
     const record = payload?.subscription;
     if (
       !payload
-      || (!write && payload.action !== 'read')
+      || (!write && !mark && payload.action !== 'read')
+      || (mark && typeof payload.migratable !== 'boolean')
       || (write && (
         !Number.isInteger(payload.expectedVersion)
         || (record !== null && (typeof record !== 'object' || Array.isArray(record)))
@@ -52,13 +63,22 @@ export class EmailSubscriptionStore {
     const outcome = await this.state.storage.transaction(async (transaction) => {
       const version = Number(await transaction.get<number>(VERSION_KEY)) || 0;
       const subscription = (await transaction.get(SUBSCRIPTION_KEY)) ?? null;
-      if (!write) return { status: 200, slot: { version, subscription } };
-      if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription } };
+      const migratable = (await transaction.get(CLOSED_KEY)) !== true;
+      if (!write && !mark) return { status: 200, slot: { version, subscription, migratable } };
+      if (mark) {
+        const next = version + 1;
+        await transaction.put(VERSION_KEY, next);
+        await transaction.put(CLOSED_KEY, !payload.migratable);
+        await transaction.delete(SUBSCRIPTION_KEY);
+        return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable) } };
+      }
+      if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription, migratable } };
       const next = version + 1;
       await transaction.put(VERSION_KEY, next);
+      await transaction.put(CLOSED_KEY, true);
       if (record === null) await transaction.delete(SUBSCRIPTION_KEY);
       else await transaction.put(SUBSCRIPTION_KEY, record);
-      return { status: 200, slot: { version: next, subscription: record } };
+      return { status: 200, slot: { version: next, subscription: record, migratable: false } };
     });
     return json(outcome.slot, outcome.status);
   }

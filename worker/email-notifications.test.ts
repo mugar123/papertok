@@ -1471,6 +1471,67 @@ test('a KV record without an unsubscribe token is deleted, not left beside the o
   assert.equal(kv.values.has(SYNC_READER_KEY), false);
 });
 
+// Phase 1 keeps the KV record as the subscription; phase 2 makes the object the record.
+function twoPhases(kv: ReturnType<typeof createMemoryKv>) {
+  const phase1 = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  return { phase1, phase2: { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: 'object' } };
+}
+const SUBSCRIBE_ONE_FOLLOW = { enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] };
+
+test('phase 1 keeps the subscription in KV and an unsubscribe stays cancelled when phase 2 reads a stale KV copy', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const record = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  assert.equal(record?.email, SYNC_READER.email);
+  assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.enabled, true);
+
+  await unsubscribeWithLink(phase1, record?.unsubscribeToken);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+  // Both of phase 2's reads of KV return the copy the unsubscribe deleted.
+  await kv.put(SYNC_READER_KEY, JSON.stringify(record));
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+});
+
+test('a reader who subscribes again in phase 1 is moved in at phase 2', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  await unsubscribeWithLink(phase1, (await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+
+  const moved = await loadSubscriptionWithState(phase2, SYNC_READER_KEY);
+  assert.equal(moved?.enabled, true);
+  assert.equal(moved?.email, SYNC_READER.email);
+});
+
+test('an unsubscribe a phase 1 Worker handles after the reader moved leaves no subscription in the object', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken;
+  assert.ok(token);
+
+  await unsubscribeWithLink(phase1, token);
+
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+});
+
+test('rolling phase 2 back to phase 1 keeps what phase 2 saved, and phase 2 can start again', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), phase2, SYNC_READER);
+  assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
+
+  assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.maxPapers, 10);
+  assert.ok((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken);
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 5 }), phase1, SYNC_READER);
+
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.maxPapers, 5);
+});
+
 test('the schedule removes an index that points at no subscription', async () => {
   const kv = createMemoryKv({ [SYNC_READER_KEY]: { uid: SYNC_READER.uid } });
 
@@ -2347,6 +2408,63 @@ test('retries one unknown provider outcome inside the idempotency window', async
     globalThis.fetch = originalFetch;
   }
 });
+
+for (const [change, saved] of [
+  ['an unsubscribe', async (env: WorkerEnv) => unsubscribeWithLink(env, 'retry-token')],
+  ['a new address', async (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => replaceStoredRecord(kv, {
+    ...(await storedRecordOf(kv, 'notification:subscription:retry-reader'))!,
+    email: 'new-address@example.com',
+  })],
+] as const) {
+  test(`a retried digest is not sent when ${change} is saved while its reservation is taken`, async () => {
+    const subscriptionKey = 'notification:subscription:retry-reader';
+    const kv = createMemoryKv({
+      [subscriptionKey]: digestSubscription({
+        uid: 'retry-reader',
+        unsubscribeToken: 'retry-token',
+        previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
+      }),
+      'notification:unsubscribe:retry-token': 'retry-reader',
+    });
+    const env = emailEnvironment(kv);
+    const recipients: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalDateNow = Date.now;
+    globalThis.fetch = async (input, options = {}) => {
+      if (new URL(String(input)).hostname === 'api.resend.com') {
+        recipients.push(JSON.parse(options.body as string).to);
+        if (recipients.length === 1) throw new TypeError('simulated response loss');
+        return jsonResponse(201, { id: 'must-not-be-sent' });
+      }
+      return jsonResponse(200, { results: [] });
+    };
+    let reserving = false;
+    const putLedger = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      await putLedger(key, value);
+      if (reserving && key.startsWith('notification:delivery-ledger:')) {
+        reserving = false;
+        await saved(env, kv);
+      }
+    };
+
+    try {
+      Date.now = () => new Date('2026-08-10T07:12:00Z').getTime();
+      const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
+      reserving = true;
+      Date.now = () => new Date('2026-08-10T07:20:00Z').getTime();
+      const retry = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+
+      assert.equal(first.failed, 1);
+      assert.equal(reserving, false, 'the change was never saved during the reservation');
+      assert.equal(retry.sent, 0);
+      assert.equal(recipients.length, 1, 'the retry reached Resend');
+    } finally {
+      Date.now = originalDateNow;
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
 
 test('uses the final cron window only to replay a late uncertain provider response', async () => {
   const firstWindow = new Date('2026-08-10T13:20:00Z');
