@@ -1012,9 +1012,9 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   if (kv) {
     const cancelled = !slot.migratable && !slot.subscription;
-    return { slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv, inKv: true };
+    return { slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv, inKv: true, objectVersion: slot.version };
   }
-  return { slot, inKv: !slot.subscription };
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version };
 }
 
 /**
@@ -1092,13 +1092,14 @@ async function changeSubscription(
   uid: string,
   next: (current: Subscription | null) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
 ) {
-  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
+  let phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
   let slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
-  if (phase1?.inKv) {
-    // Phase 1: KV is the record, written without a version check as before the
-    // object existed. The object hears first, so no later read sees the record
-    // as anything but what this write makes it. A reader phase 2 moved stays
-    // in their object and is written below.
+  for (let attempt = 0; phase1?.inKv && attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
+    // Phase 1: KV is the record. The object hears first, so no later read sees
+    // the record as anything but what this write makes it. Reopening it lands
+    // only on the object version this record was computed from: a cancellation
+    // in between closed it, and the write is computed again from what it left.
+    // A reader phase 2 moved stays in their object and is written below.
     const previous = slot.subscription;
     const record = await next(previous);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
@@ -1108,11 +1109,16 @@ async function changeSubscription(
       await env.NOTIFICATION_STORE!.delete(key);
       return { changed: true, previous, subscription: null, inKv: true };
     }
-    await markSubscription(env, uid, true);
-    const version = slot.version + 1;
-    await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version }));
-    return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
+    if (reopened.accepted) {
+      const version = slot.version + 1;
+      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version }));
+      return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
+    }
+    phase1 = await readPhase1Slot(env, uid);
+    slot = phase1.slot;
   }
+  if (phase1?.inKv) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
     const previous = slot.subscription;
     const record = await next(previous);
@@ -1196,8 +1202,14 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
  */
 async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
-  // In phase 1 a key that holds the record itself is not an index.
-  if (subscriptionInKv(env) && await readKvRecord(env, uid)) return;
+  // In phase 1 a key that holds the record itself is not an index. In phase 2
+  // it may still be one while the object is open: the record has not moved in
+  // yet, and a read that missed it may be a stale one, so a later window moves it.
+  if (subscriptionInKv(env)) {
+    if (await readKvRecord(env, uid)) return;
+  } else if ((await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable) {
+    return;
+  }
   await env.NOTIFICATION_STORE!.delete(indexKey);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));

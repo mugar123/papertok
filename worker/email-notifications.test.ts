@@ -1600,11 +1600,43 @@ test('the phase 1 schedule keeps a subscriber whose KV read missed the record', 
 
 test('the schedule removes an index that points at no subscription', async () => {
   const kv = createMemoryKv({ [SYNC_READER_KEY]: { uid: SYNC_READER.uid } });
+  // The reader's object was written, here by an unsubscribe.
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'write', expectedVersion: 0, subscription: null });
 
   await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-10T08:00:00.000Z'));
 
   assert.equal(kv.values.has(SYNC_READER_KEY), false);
   assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null);
+});
+
+test('the phase 2 schedule keeps a record its stale KV read missed while the reader\'s object is still open', async () => {
+  const legacy = digestSubscription({ uid: SYNC_READER.uid });
+  const kv = createMemoryKv({ [SYNC_READER_KEY]: legacy });
+  const baseGet = kv.get.bind(kv);
+  kv.get = (async (key: string, options?: unknown) => (key === SYNC_READER_KEY ? null : baseGet(key, options as never))) as typeof kv.get;
+
+  await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-10T08:00:00.000Z'));
+
+  kv.get = baseGet;
+  assert.equal((await storedSubscriptionWithState(kv, SYNC_READER_KEY))?.unsubscribeToken, legacy.unsubscribeToken);
+});
+
+test('in phase 1 an unsubscribe that lands while a sync computes its write is not undone', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken;
+  // The sync read the open object; the unsubscribe closes it before the sync reopens it.
+  const stores = interceptedStores(phase1.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'mark', () => unsubscribeWithLink(phase1, token));
+
+  const synced = await saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), { ...phase1, EMAIL_SUBSCRIPTIONS: stores }, SYNC_READER);
+
+  assert.ok(stores.intercepted);
+  assert.equal(synced.enabled, false);
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false, 'the sync wrote the cancelled record back');
+  assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false, 'the sync restored the unsubscribe link');
 });
 
 test('an unsubscribe that lands after a sync read the subscription stays unsubscribed', async () => {

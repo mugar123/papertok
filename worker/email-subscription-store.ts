@@ -33,7 +33,9 @@ function json(payload: unknown, status = 200) {
  * every unsubscribe, deletion and re-subscription it makes: `mark` with
  * `migratable: false` drops the subscription and closes the object to the KV
  * record, `migratable: true` reopens it. Unlike KV, the mark is seen by every
- * later read, so a stale KV copy of a cancelled reader is never moved in.
+ * later read, so a stale KV copy of a cancelled reader is never moved in. A
+ * mark with `expectedVersion` lands only on that version, so a save computed
+ * before a cancellation cannot reopen the object the cancellation closed.
  */
 export class EmailSubscriptionStore {
   declare state: { storage: LedgerStorage };
@@ -51,7 +53,8 @@ export class EmailSubscriptionStore {
     if (
       !payload
       || (!write && !mark && payload.action !== 'read')
-      || (mark && typeof payload.migratable !== 'boolean')
+      || (mark && (typeof payload.migratable !== 'boolean'
+        || (payload.expectedVersion !== undefined && !Number.isInteger(payload.expectedVersion))))
       || (write && (
         !Number.isInteger(payload.expectedVersion)
         || (record !== null && (typeof record !== 'object' || Array.isArray(record)))
@@ -66,6 +69,9 @@ export class EmailSubscriptionStore {
       const migratable = (await transaction.get(CLOSED_KEY)) !== true;
       if (!write && !mark) return { status: 200, slot: { version, subscription, migratable } };
       if (mark) {
+        if (payload.expectedVersion !== undefined && payload.expectedVersion !== version) {
+          return { status: 409, slot: { version, subscription, migratable } };
+        }
         const next = version + 1;
         await transaction.put(VERSION_KEY, next);
         await transaction.put(CLOSED_KEY, !payload.migratable);
