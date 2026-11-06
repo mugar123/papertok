@@ -3237,7 +3237,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
       return { skipped: true };
     }
 
-    const dayStart =Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
     const held = subscription.heldDigest;
     const selectedAt = Date.parse(held?.selectedAt || '');
