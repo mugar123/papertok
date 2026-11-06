@@ -383,9 +383,10 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
   .ft-peek-links a:hover svg { color: var(--text-primary); }
 }
 
-/* Above the viewer, which is itself a dialog above every other surface. */
-.ft-sheet-backdrop { z-index: 12110; }
-.ft-sheet-viewport { z-index: 12111; }
+/* Above the viewer, which is itself a dialog above every other surface; doubled
+   so ui/drawer's own z-index never wins, whichever stylesheet loads last. */
+.ui-drawer-backdrop.ft-sheet-backdrop { z-index: 12110; }
+.ui-drawer-viewport.ft-sheet-viewport { z-index: 12111; }
 .ft-sheet { padding: 0 var(--space-4); padding-bottom: calc(var(--inset-bottom) + var(--space-4) + var(--bleed)); }
 
 @media (pointer: coarse) {

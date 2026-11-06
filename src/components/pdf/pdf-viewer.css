@@ -239,8 +239,6 @@
 .pdf-dock-toggle:not([data-pressed]) { color: var(--text-tertiary); }
 
 .pdf-info-positioner { z-index: 0; }
-.pdf-sheet { padding-bottom: calc(var(--inset-bottom) + var(--bleed)); }
-.pdf-sheet .pdf-info-body { max-height: none; flex: 1; min-height: 0; }
 .pdf-info {
   width: min(440px, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-2) var(--space-2) calc(var(--dock-h, 50px) + var(--space-2));
