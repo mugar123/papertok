@@ -43,6 +43,8 @@ export interface Subscription extends Partial<Preferences>, DeliveryState {
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
   /** The reader's object's version this copy was read at; never stored. */
   version?: number;
+  /** Phase 1 KV record only: the object version the save that wrote it reopened. */
+  revision?: number;
 }
 type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
@@ -986,13 +988,16 @@ async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean
 /**
  * Phase 1: the KV record, with a version of its own that every write raises,
  * or `null` when KV holds no record (only the index phase 2 leaves, or nothing).
+ * `revision` is the object version the save that wrote it reopened (0 for a
+ * record no phase 1 save wrote): a KV read whose revision is behind the object
+ * may be an older record than the last save.
  */
-async function readKvRecord(env: WorkerEnv, uid: string): Promise<StoredSlot | null> {
+async function readKvRecord(env: WorkerEnv, uid: string): Promise<(StoredSlot & { revision: number }) | null> {
   const store = env.NOTIFICATION_STORE;
   if (!store) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const record = await store.get<Subscription>(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
   return record?.unsubscribeToken
-    ? { version: Number(record.version) || 0, subscription: storedRecord(record), migratable: true }
+    ? { version: Number(record.version) || 0, subscription: storedRecord(record), migratable: true, revision: Number(record.revision) || 0 }
     : null;
 }
 
@@ -1081,6 +1086,7 @@ function withVersion(slot: StoredSlot): Subscription | null {
 function storedRecord(subscription: Subscription) {
   const record = { ...subscription };
   delete record.version;
+  delete record.revision;
   return record;
 }
 
@@ -1114,7 +1120,7 @@ async function changeSubscription(
     const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
     if (reopened.accepted) {
       const version = slot.version + 1;
-      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version }));
+      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: reopened.slot.version }));
       return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
     }
     phase1 = await readPhase1Slot(env, uid);
@@ -2590,6 +2596,24 @@ function draftMatchesSubscription(draft: { provider?: string; subscriptionVersio
     && draft.recipient?.email === subscription.email;
 }
 
+/**
+ * The last check before a reserved draft goes to Resend; the caller sends with
+ * no other await in between. The reader's object is read last, so a save or an
+ * unsubscribe that lands before that read cancels the draft. In phase 1 the KV
+ * record counts only while its revision is the object's version: a KV read can
+ * return the record from before the last save, and a save reopens the object,
+ * raising its version, before it writes KV.
+ */
+async function draftStillCurrent(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0]) {
+  const uid = subscriptionUid(key);
+  const kv = subscriptionInKv(env) ? await readKvRecord(env, uid) : null;
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  const current = slot.subscription ? slot
+    : kv && slot.migratable && kv.revision === slot.version ? kv : null;
+  const subscription = current && withVersion(current);
+  return Boolean(subscription?.enabled) && draftMatchesSubscription(draft, subscription!);
+}
+
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
@@ -2633,10 +2657,9 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
     const reservation = await reserveEmailDelivery(env, reservationId, ledgerTime);
     if (!reservation.retry || !reservation.draft) return { pending: true };
     // The last check, after the reservation and right before the send: an
-    // unsubscribe or a change saved while the reservation was being taken
-    // cancels this retry and gives the reservation back.
-    const beforeRetry = await loadSubscriptionWithState(env, key);
-    if (!beforeRetry?.enabled || !draftMatchesSubscription(reservation.draft, beforeRetry)) {
+    // unsubscribe or a change saved before it cancels this retry and gives the
+    // reservation back.
+    if (!await draftStillCurrent(env, key, reservation.draft)) {
       await releaseEmailDelivery(env, reservationId, ledgerTime);
       return { pending: true, cancelled: true };
     }
@@ -2680,11 +2703,10 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     if (!reservation.retry) return { pending: true };
   }
   const reservedDraft = reservation.draft || draft;
-  // The last check, from the reader's object: a draft goes out only while the
+  // The last check, right before the send: a draft goes out only while the
   // subscription is the version it was prepared from. A new address, a follow
   // removed or an unsubscribe since then cancels it.
-  const beforeDelivery = await loadSubscriptionWithState(env, key);
-  if (!beforeDelivery?.enabled || !draftMatchesSubscription(reservedDraft, beforeDelivery)) {
+  if (!await draftStillCurrent(env, key, reservedDraft)) {
     if (reservation.duplicate) return { pending: true };
     await releaseEmailDelivery(env, reservationId, now);
     return { cancelled: true };

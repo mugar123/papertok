@@ -2537,61 +2537,119 @@ test('retries one unknown provider outcome inside the idempotency window', async
   }
 });
 
-for (const [change, saved] of [
-  ['an unsubscribe', async (env: WorkerEnv) => unsubscribeWithLink(env, 'retry-token')],
-  ['a new address', async (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => replaceStoredRecord(kv, {
-    ...(await storedRecordOf(kv, 'notification:subscription:retry-reader'))!,
-    email: 'new-address@example.com',
-  })],
-] as const) {
-  test(`a retried digest is not sent when ${change} is saved while its reservation is taken`, async () => {
-    const subscriptionKey = 'notification:subscription:retry-reader';
-    const kv = createMemoryKv({
-      [subscriptionKey]: digestSubscription({
-        uid: 'retry-reader',
-        unsubscribeToken: 'retry-token',
-        previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
-      }),
-      'notification:unsubscribe:retry-token': 'retry-reader',
-    });
-    const env = emailEnvironment(kv);
-    const recipients: string[] = [];
-    const originalFetch = globalThis.fetch;
-    const originalDateNow = Date.now;
-    globalThis.fetch = async (input, options = {}) => {
-      if (new URL(String(input)).hostname === 'api.resend.com') {
-        recipients.push(JSON.parse(options.body as string).to);
-        if (recipients.length === 1) throw new TypeError('simulated response loss');
-        return jsonResponse(201, { id: 'must-not-be-sent' });
-      }
-      return jsonResponse(200, { results: [] });
-    };
-    let reserving = false;
-    const putLedger = kv.put.bind(kv);
-    kv.put = async (key: string, value: string) => {
-      await putLedger(key, value);
-      if (reserving && key.startsWith('notification:delivery-ledger:')) {
-        reserving = false;
-        await saved(env, kv);
-      }
-    };
+const RETRY_KEY = 'notification:subscription:retry-reader';
+const RETRY_TOKEN = 'retry-reader-unsubscribe-token';
+type RetryChange = (env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>) => Promise<void>;
 
-    try {
-      Date.now = () => new Date('2026-08-10T07:12:00Z').getTime();
-      const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
-      reserving = true;
-      Date.now = () => new Date('2026-08-10T07:20:00Z').getTime();
-      const retry = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
-
-      assert.equal(first.failed, 1);
-      assert.equal(reserving, false, 'the change was never saved during the reservation');
-      assert.equal(retry.sent, 0);
-      assert.equal(recipients.length, 1, 'the retry reached Resend');
-    } finally {
-      Date.now = originalDateNow;
-      globalThis.fetch = originalFetch;
-    }
+// A digest whose first send loses Resend's answer, then its retry. `change` is
+// confirmed right before the `target`-th storage call (KV or the reader's
+// object) after the retry's reservation, unless the retry reaches Resend first.
+async function retryWithChangeAt(source: 'object' | 'kv', target: number, change: RetryChange) {
+  const kv = createMemoryKv({
+    [RETRY_KEY]: digestSubscription({
+      uid: 'retry-reader',
+      unsubscribeToken: RETRY_TOKEN,
+      previewItems: [digestPaper({ id: 'retry-guard-paper', published: '2026-08-08' })],
+    }),
+    [`notification:unsubscribe:${RETRY_TOKEN}`]: 'retry-reader',
   });
+  const plain = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: source };
+  let reserving = false;
+  let armed = false;
+  let seen = 0;
+  let confirmed = false;
+  let failure: unknown;
+  const beforeStorageCall = async () => {
+    if (!armed || seen++ !== target) return;
+    armed = false;
+    confirmed = true;
+    await change(plain, kv).catch((error: unknown) => { failure = error; });
+  };
+  const baseGet = kv.get.bind(kv);
+  const basePut = kv.put.bind(kv);
+  const baseDelete = kv.delete.bind(kv);
+  kv.get = (async (key: string, options?: unknown) => {
+    await beforeStorageCall();
+    return baseGet(key, options as never);
+  }) as typeof kv.get;
+  kv.put = async (key: string, value: string) => {
+    await beforeStorageCall();
+    await basePut(key, value);
+    if (reserving && key.startsWith('notification:delivery-ledger:')) {
+      reserving = false;
+      armed = true;
+    }
+  };
+  kv.delete = async (key: string) => {
+    await beforeStorageCall();
+    await baseDelete(key);
+  };
+  const stores = subscriptionsFor(kv)!;
+  const env = {
+    ...plain,
+    EMAIL_SUBSCRIPTIONS: {
+      idFromName: (name: string) => stores.idFromName(name),
+      get: (id: DurableObjectId) => ({
+        fetch: async (url: string, init: RequestInit) => {
+          await beforeStorageCall();
+          return stores.get(id).fetch(url, init);
+        },
+      }),
+    } as WorkerEnv['EMAIL_SUBSCRIPTIONS'],
+  };
+  const recipients: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  globalThis.fetch = async (input, options = {}) => {
+    if (new URL(String(input)).hostname !== 'api.resend.com') return jsonResponse(200, { results: [] });
+    armed = false;
+    recipients.push(JSON.parse(options.body as string).to[0]);
+    if (recipients.length === 1) throw new TypeError('simulated response loss');
+    return jsonResponse(201, { id: 'retried' });
+  };
+
+  try {
+    Date.now = () => Date.parse('2026-08-10T07:12:00Z');
+    const first = await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:00:00Z'));
+    assert.equal(first.failed, 1);
+    reserving = true;
+    Date.now = () => Date.parse('2026-08-10T07:20:00Z');
+    await runEmailNotificationSchedule(env, Date.parse('2026-08-10T07:20:00Z'));
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(reserving, false, 'the retry took no reservation');
+  if (failure) throw failure;
+  return { confirmed, recipients };
+}
+
+for (const source of ['object', 'kv'] as const) {
+  const changes: Array<[string, RetryChange]> = [
+    ['an unsubscribe', env => unsubscribeWithLink(env, RETRY_TOKEN)],
+    ['a new address', async (env, kv) => {
+      if (source === 'object') {
+        await replaceStoredRecord(kv, { ...(await storedRecordOf(kv, RETRY_KEY))!, email: 'new-address@example.com' });
+        return;
+      }
+      // A phase 1 save, and a KV read that still returns the record from before it.
+      const before = kv.values.get(RETRY_KEY)!;
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid: 'retry-reader', email: 'new-address@example.com', displayName: '' });
+      kv.values.set(RETRY_KEY, before);
+    }],
+  ];
+  for (const [change, confirm] of changes) {
+    test(`with the subscription in ${source}, a retried digest is not sent when ${change} is confirmed before its call to Resend`, async () => {
+      let passes = 0;
+      for (let target = 0; ; target += 1) {
+        const { confirmed, recipients } = await retryWithChangeAt(source, target, confirm);
+        if (!confirmed) break;
+        passes += 1;
+        assert.deepEqual(recipients, ['reader@example.com'], `the retry reached Resend with ${change} confirmed before storage call ${target}`);
+      }
+      assert.ok(passes > 0);
+    });
+  }
 }
 
 test('a retried draft without a version is not sent once a phase 1 save changed the follows it was prepared from', async () => {
