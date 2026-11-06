@@ -55,7 +55,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitNote, nextPageStatusText, showsLastVisit, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -324,6 +324,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the tail's status keeps the failure's words (nextPageStatusText). Kept as
   // state because the status reads it while rendering.
   const [nextPageRetrying, setNextPageRetrying] = useState(false);
+  // Whether the reader asked again with the tail's Try again under the last
+  // visit's cards, so that attempt's failure is spoken (nextPageStatusText).
+  const [askedUnderLastVisit, setAskedUnderLastVisit] = useState(false);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
   // uses. It tracks the scroll position on every scroll, and the mount
@@ -1114,7 +1117,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  const lastVisit = source ? null : feed.lastVisit;
+  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null, lastVisit });
+  const lastVisitShown = lastVisitNote(lastVisit);
+  // A new stretch of the last visit's cards starts with nothing asked.
+  if (askedUnderLastVisit && !showsLastVisit(lastVisit)) setAskedUnderLastVisit(false);
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
@@ -1405,6 +1412,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           </span>
         </button>
       )}
+      {/* The status region already speaks these words; this is their
+          visible copy, so it is hidden from screen readers (ENG-188). */}
+      {lastVisitShown && papers.length > 0 && (
+        <p className="feed-last-visit" aria-hidden="true">{lastVisitShown}</p>
+      )}
       <div
         className={`feed-container${isRefreshing ? ' feed-container--refreshing' : ''}`}
         ref={attachFeed}
@@ -1488,7 +1500,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                 {tail === 'failed' ? 'Could not load more papers' : 'Loading more papers…'}
               </p>
               {tail === 'failed' && (
-                <Button ref={tailRetryRef} size="sm" onClick={() => { if (loadMore()) setNextPageRetrying(false); }}>
+                <Button ref={tailRetryRef} size="sm" onClick={() => { if (loadMore()) { setNextPageRetrying(false); setAskedUnderLastVisit(showsLastVisit(lastVisit)); } }}>
                   <ArrowsClockwise size={16} aria-hidden="true" />
                   {'Try again'}
                 </Button>
@@ -1499,7 +1511,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   from the start would speak for waits that are not
                   happening. Under the veil there is no page to add to: the
                   landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, lastVisit, asked: askedUnderLastVisit })}</span>
             </div>
           </div>
         )}
