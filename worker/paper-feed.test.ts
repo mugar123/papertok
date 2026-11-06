@@ -1,6 +1,7 @@
 import type { PaperFollowMatch } from '../src/models/paper.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
@@ -286,6 +287,15 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const searchesAsk = (nextPeriod + (nextPeriod % 2)) * period + 100;
   const seatAsked = searchesAsk + 3 * period - ARXIV_PACE_MAX_WAIT_MS;
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: searchesAsk - cacheReadMs });
+  // The ledger hashes its subjects with `crypto.subtle`, which answers from a
+  // thread pool after however much real time the machine takes. The clock here
+  // is mocked and steps on, so on a slow runner the seat came late, its call
+  // was dropped and arXiv was asked twice. Hashed on the event loop, the ledger
+  // answers within the steps below, as it is meant to take no time here.
+  t.mock.method(crypto.subtle, 'digest', async (...[, data]: Parameters<typeof crypto.subtle.digest>) => {
+    const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+    return new Uint8Array(createHash('sha256').update(bytes).digest()).buffer;
+  });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
@@ -306,7 +316,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
     else (globalThis as TestGlobals).caches = realCaches;
   });
-  // The ledger hashes subjects off the event loop; let it answer between ticks.
+  // Let the ledger answer between ticks.
   const flush = async () => {
     for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => setImmediate(resolve));
   };
