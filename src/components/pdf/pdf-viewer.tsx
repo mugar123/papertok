@@ -101,8 +101,8 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const [relayFailed, setRelayFailed] = useState(false);
   const drawsPages = Boolean(relayUrl) && !relayFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
-  const [pagesLoaded, setPagesLoaded] = useState(false);
-  const handlePagesLoaded = useCallback(() => setPagesLoaded(true), []);
+  const [pagesDrawn, setPagesDrawn] = useState(false);
+  const handlePagesDrawn = useCallback(() => setPagesDrawn(true), []);
   const showPdf = () => {
     setIframeLoaded(false);
     setShowFallback(false);
@@ -162,7 +162,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   });
   const trackerRef = useRef<ReturnType<typeof startViewerTracking> | null>(null);
   useEffect(() => {
-    const tracker = startViewerTracking({ paperId: paper.id, now: Date.now, visibility: documentVisibility, send: (name, params) => sendViewerEvent(name, params) });
+    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, send: (name, params) => sendViewerEvent(name, params) });
     trackerRef.current = tracker;
     return () => {
       tracker.stop();
@@ -181,7 +181,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     relayable: Boolean(pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL)),
     iframeLoaded,
     embedTimedOut: showFallback,
-    pagesLoaded,
+    pagesDrawn,
     relayFailed,
     hasLink: Boolean(externalUrl),
   });
@@ -277,7 +277,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <Suspense fallback={(
                 <ViewerLoading label={'Loading PDF...'} />
               )}>
-                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} onLoaded={handlePagesLoaded} />
+                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} onDrawn={handlePagesDrawn} />
               </Suspense>
             )}
 

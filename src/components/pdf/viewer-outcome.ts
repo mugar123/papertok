@@ -23,7 +23,8 @@ type ViewerState = {
   relayable: boolean;
   iframeLoaded: boolean;
   embedTimedOut: boolean;
-  pagesLoaded: boolean;
+  /** The first page of the relayed PDF has been drawn, not just measured. */
+  pagesDrawn: boolean;
   relayFailed: boolean;
   /** Something opens in a new tab: the PDF, the DOI or the OpenAlex page. */
   hasLink: boolean;
@@ -43,7 +44,7 @@ export function viewerOutcome(state: ViewerState): ViewerOutcome | null {
   if (state.coarsePointer) {
     if (!state.relayable) return instead('not_relayable');
     if (state.relayFailed) return instead('relay_failed');
-    return state.pagesLoaded ? { content: 'pdf_pages', text_status } : null;
+    return state.pagesDrawn ? { content: 'pdf_pages', text_status } : null;
   }
   if (!state.embeddable) return instead('not_embeddable');
   if (state.iframeLoaded) return { content: 'pdf_embed', text_status };
@@ -68,8 +69,7 @@ type ViewerEvent = Extract<ProductAnalyticsEvent, 'viewer_open' | 'viewer_conten
  * The time counts only while the tab is visible, as `reader_time` does, and
  * `text_seconds` is the part of it spent on the text rather than the PDF.
  */
-export function startViewerTracking({ paperId, now, visibility, send }: {
-  paperId: string;
+export function startViewerTracking({ now, visibility, send }: {
   now: () => number;
   visibility: Visibility;
   send: (name: ViewerEvent, params: Record<string, unknown>) => void;
@@ -92,13 +92,13 @@ export function startViewerTracking({ paperId, now, visibility, send }: {
     visibleSince = visibility.hidden() ? null : at;
   };
   const unsubscribe = visibility.subscribe(flush);
-  send('viewer_open', { paper_id: paperId });
+  send('viewer_open', {});
 
   return {
     settle(next: ViewerOutcome) {
       if (outcome || stopped) return;
       outcome = next;
-      send('viewer_content', { ...next, duration_ms: now() - openedAt, paper_id: paperId });
+      send('viewer_content', { ...next, duration_ms: now() - openedAt });
     },
     showText(shown: boolean) {
       if (shown === onText || stopped) return;
@@ -110,7 +110,7 @@ export function startViewerTracking({ paperId, now, visibility, send }: {
       flush();
       stopped = true;
       unsubscribe();
-      send('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds, paper_id: paperId });
+      send('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds });
     },
   };
 }

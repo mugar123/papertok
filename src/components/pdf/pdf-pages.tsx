@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 // The legacy build, on purpose: the modern one calls `Map.getOrInsertComputed`
 // and `Math.sumPrecise`, which the iPhones this viewer exists for do not have.
 // The legacy build carries its own polyfills for about 60 KB more.
@@ -29,7 +29,7 @@ const RENDER_MARGIN = '150% 0px';
  * the relay refused it, it is not a PDF, it is too large — so the viewer can
  * offer the browser's own viewer instead of a blank sheet.
  */
-export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src: string; title: string; onUnavailable?: () => void; onLoaded?: () => void }) {
+export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: string; title: string; onUnavailable?: () => void; onDrawn?: () => void }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [firstPageRatio, setFirstPageRatio] = useState(Math.SQRT2);
@@ -54,7 +54,6 @@ export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src:
       setFirstPageRatio(height / width);
       setPageCount(loaded.numPages);
       setDoc(loaded);
-      onLoaded?.();
     }).catch(() => {
       if (!cancelled) onUnavailable?.();
     });
@@ -62,9 +61,9 @@ export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src:
       cancelled = true;
       void task.destroy();
     };
-    // Both callbacks are stable in PDFViewer; were they not, a new one would
+    // The callback is stable in PDFViewer; were it not, a new one would
     // reload the document, never miss a failure.
-  }, [src, onUnavailable, onLoaded]);
+  }, [src, onUnavailable]);
 
   const pages = [];
   for (let number = 1; number <= pageCount; number += 1) {
@@ -76,6 +75,7 @@ export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src:
         number={number}
         count={pageCount}
         placeholderRatio={firstPageRatio}
+        onDrawn={onDrawn}
       />,
     );
   }
@@ -93,7 +93,9 @@ export default function PdfPages({ src, title, onUnavailable, onLoaded }: { src:
   );
 }
 
-function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number }) {
+function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawn?: () => void }) {
+  // Read at draw time, so a new callback never redraws the page.
+  const reportDrawn = useEffectEvent(() => onDrawn?.());
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +145,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
         await renderTask.promise;
         if (mine !== generation) return;
         setDrawn(true);
+        reportDrawn();
         node.style.setProperty('--total-scale-factor', String(viewport.scale));
         textLayer = new TextLayer({
           textContentSource: page.streamTextContent(),

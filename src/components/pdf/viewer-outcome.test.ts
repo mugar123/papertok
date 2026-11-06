@@ -11,7 +11,7 @@ const desktopNoText = {
   relayable: true,
   iframeLoaded: false,
   embedTimedOut: false,
-  pagesLoaded: false,
+  pagesDrawn: false,
   relayFailed: false,
   hasLink: true,
 };
@@ -29,7 +29,8 @@ test('the viewer outcome is the first thing shown, or why the PDF was not drawn 
     ['desktop, iframe timed out', { ...desktopNoText, embedTimedOut: true }, { content: 'external_link', text_status: 'none', pdf_issue: 'timeout' }],
     ['desktop, host refuses framing', { ...desktopNoText, embeddable: false }, { content: 'external_link', text_status: 'none', pdf_issue: 'not_embeddable' }],
     ['phone, pages loading', phoneNoText, null],
-    ['phone, pages drawn', { ...phoneNoText, pagesLoaded: true, textFailed: true }, { content: 'pdf_pages', text_status: 'failed' }],
+    ['phone, pages measured but not drawn', { ...phoneNoText, textFailed: true }, null],
+    ['phone, pages drawn', { ...phoneNoText, pagesDrawn: true, textFailed: true }, { content: 'pdf_pages', text_status: 'failed' }],
     ['phone, relay failed', { ...phoneNoText, relayFailed: true }, { content: 'external_link', text_status: 'none', pdf_issue: 'relay_failed' }],
     ['phone, host not relayed', { ...phoneNoText, relayable: false }, { content: 'external_link', text_status: 'none', pdf_issue: 'not_relayable' }],
     ['phone, no open copy', { ...phoneNoText, hasPdf: false, relayable: false }, { content: 'external_link', text_status: 'none', pdf_issue: 'no_open_copy' }],
@@ -43,7 +44,6 @@ function harness(hiddenAtStart = false) {
   let listener: (() => void) | null = null;
   const sent: [string, Record<string, unknown>][] = [];
   const tracker = startViewerTracking({
-    paperId: 'W2741809807',
     now: () => clock,
     visibility: { hidden: () => hidden, subscribe: next => { listener = next; return () => { listener = null; }; } },
     send: (name, params) => sent.push([name, params]),
@@ -59,7 +59,7 @@ function harness(hiddenAtStart = false) {
 
 test('the viewer sends its opening, its first outcome and its time once each', () => {
   const { tracker, sent, advance, subscribed } = harness();
-  assert.deepEqual(sent, [['viewer_open', { paper_id: 'W2741809807' }]]);
+  assert.deepEqual(sent, [['viewer_open', {}]]);
   advance(1_200);
   tracker.settle({ content: 'pdf_embed', text_status: 'none' });
   tracker.settle({ content: 'external_link', text_status: 'none', pdf_issue: 'timeout' });
@@ -67,8 +67,8 @@ test('the viewer sends its opening, its first outcome and its time once each', (
   tracker.stop();
   tracker.stop();
   assert.deepEqual(sent.slice(1), [
-    ['viewer_content', { content: 'pdf_embed', text_status: 'none', duration_ms: 1_200, paper_id: 'W2741809807' }],
-    ['viewer_time', { content: 'pdf_embed', seconds: 5, text_seconds: 0, paper_id: 'W2741809807' }],
+    ['viewer_content', { content: 'pdf_embed', text_status: 'none', duration_ms: 1_200 }],
+    ['viewer_time', { content: 'pdf_embed', seconds: 5, text_seconds: 0 }],
   ]);
   assert.equal(subscribed(), false);
 });
@@ -85,7 +85,7 @@ test('the viewer time leaves out a hidden tab and splits off the time on the tex
   tracker.showText(false);
   advance(4_000);
   tracker.stop();
-  assert.deepEqual(sent.at(-1), ['viewer_time', { content: 'text', seconds: 19, text_seconds: 15, paper_id: 'W2741809807' }]);
+  assert.deepEqual(sent.at(-1), ['viewer_time', { content: 'text', seconds: 19, text_seconds: 15 }]);
 });
 
 test('a viewer opened in a hidden tab and closed before any outcome reports loading', () => {
@@ -96,5 +96,5 @@ test('a viewer opened in a hidden tab and closed before any outcome reports load
   tracker.stop();
   tracker.settle({ content: 'text', text_status: 'shown', text_source: 'arxiv' });
   assert.deepEqual(sent.map(([name]) => name), ['viewer_open', 'viewer_time']);
-  assert.deepEqual(sent[1][1], { content: 'loading', seconds: 2, text_seconds: 0, paper_id: 'W2741809807' });
+  assert.deepEqual(sent[1][1], { content: 'loading', seconds: 2, text_seconds: 0 });
 });

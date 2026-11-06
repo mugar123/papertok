@@ -232,11 +232,13 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // Visible time is not reading time. The card under the viewer keeps counting
   // its paper_dwell, so viewer time is part of it and must not be added to it;
   // a viewer still open when the tab closes sends no viewer_time.
-  viewer_open: { ...PAPER_DETAIL },
+  // No paper_id: a bioRxiv id is a DOI, and the viewer's records do not need to
+  // name the paper. Join them to `paper_open` by session and time order.
+  viewer_open: {},
   viewer_content: {
-    content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration', ...PAPER_DETAIL,
+    content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration',
   },
-  viewer_time: { content: 'viewer_time_content', seconds: 'seconds', text_seconds: 'seconds', ...PAPER_DETAIL },
+  viewer_time: { content: 'viewer_time_content', seconds: 'seconds', text_seconds: 'seconds' },
   // A card's Connections (the citation graph) and Similar papers, counted
   // apart: opening one, then what the reader does in the graph. Which paper is
   // not sent; `graph_available` says whether it has a DOI to draw a graph from.
