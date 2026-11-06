@@ -263,6 +263,8 @@ test('the last visit\'s cards are only the account\'s own, for the same interest
 // ENG-188: a Try again under the last visit's cards that brought no new card
 // saved them again with the current time, so a reload opened on them without
 // the note, even past their three days; repeated ids said "Papers updated".
+// A page whose only new card is notable adds none either: with no other card
+// to sit between, the join gives it no place.
 test('a load with no new card keeps the last visit\'s date and note through a reload, after a failed Refresh too', t => {
   const day = 24 * 60 * 60 * 1000;
   const savedAt = Date.now() - 2 * day;
@@ -270,14 +272,18 @@ test('a load with no new card keeps the last visit\'s date and note through a re
   // The verifier's case: a Refresh that failed first empties the feed's cache,
   // where the date was read from, and the Try again after it saved today's.
   const failedRefresh = (lastVisit: LastVisit) => lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit, error: 'FEED_LOAD_FAILED' }).kept;
+  const joinPage = (incoming: Paper[]) => joinFeedPage(listed, incoming.filter(paper => !paper._notable), incoming.filter(paper => paper._notable), { reset: false, keepThroughVisible: false, visiblePaperId: 'b', notableAfter: null });
   const before = [['Try again', (lastVisit: LastVisit) => lastVisit], ['a failed Refresh, then Try again', failedRefresh]] as const;
   for (const [steps, beforeTryAgain] of before) {
-    for (const [answer, incoming] of [['empty', []], ['repeated ids', [card('b'), card('a')]]] as const) {
+    const answers = [['empty', []], ['repeated ids', [card('b'), card('a')]], ['only a notable card', [notable('n')]], ['repeated ids and a notable card', [card('b'), notable('n')]]] as const;
+    for (const [answer, incoming] of answers) {
       const label = `${steps}, ${answer}`;
       const storage = memoryStorage();
       const resumeMemory = createFeedResumeMemory({ storage: memoryStorage() });
       const shown = beforeTryAgain({ status: 'not-updated', savedAt });
-      const loaded = loadOverList({ listed, incoming: [...incoming], lastVisit: shown });
+      const joined = joinPage([...incoming]);
+      assert.deepEqual(ids(joined), ['a', 'b'], `${label}: the list gains no card`);
+      const loaded = loadOverList({ listed, joined, lastVisit: shown });
       assert.deepEqual(lastVisitAfterLoad(shown, loaded.added), { status: 'no-new', savedAt }, `${label}: the note and date stay`);
       writeFeedSnapshot('test-user', 'cs.AI', { papers: listed, page: 1, hasMore: true, savedAt: loaded.savedAt }, storage);
       assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory }), null, `${label}: a reload does not open on them as recent`);
@@ -287,10 +293,10 @@ test('a load with no new card keeps the last visit\'s date and note through a re
       later.mock.restore();
     }
   }
-  const fresh = loadOverList({ listed, incoming: [card('a'), card('x')], lastVisit: { status: 'not-updated', savedAt } });
+  const fresh = loadOverList({ listed, joined: joinPage([card('a'), card('x')]), lastVisit: { status: 'not-updated', savedAt } });
   assert.deepEqual(lastVisitAfterLoad({ status: 'not-updated', savedAt }, fresh.added), { status: 'updated' });
   assert.equal(fresh.savedAt, undefined, 'a new card dates the list from this load');
-  assert.equal(loadOverList({ listed, incoming: [], lastVisit: { status: null } }).savedAt, undefined, 'outside the last visit a load dates the list as before');
+  assert.equal(loadOverList({ listed, joined: listed, lastVisit: { status: null } }).savedAt, undefined, 'outside the last visit a load dates the list as before');
 });
 
 test('fresh papers join the last visit\'s cards below the card the reader is on', () => {

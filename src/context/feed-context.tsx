@@ -1570,8 +1570,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
       // A load that brings no card the list lacks leaves the last visit's
-      // cards with their saved date and note (loadOverList).
-      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisit });
+      // cards with their saved date and note (loadOverList). A notable card
+      // counts only where the join gives it a place.
+      const loaded = loadOverList({ listed: papersRef.current, joined: addPage(papersRef.current), lastVisit });
 
       setPapers(current => {
         const nextPapers = addPage(current);

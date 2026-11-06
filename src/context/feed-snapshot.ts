@@ -125,15 +125,17 @@ export function lastVisitCards(
 
 /**
  * What a load that succeeded brings over the list (ENG-188). `added`: a card
- * the list lacks; an empty answer, or one of repeated ids, adds none. Under the
+ * `joined`, the list with the page joined (joinFeedPage), has and `listed`
+ * lacks. An empty answer, one of repeated ids, or a notable card the join
+ * found no place for adds none. Under the
  * last visit's cards, a load that adds none keeps the date they were saved
  * (`savedAt`, from `lastVisit`), so after a reload they cannot pass for a
  * recent feed; otherwise `savedAt` is undefined and the snapshot takes the
  * time of this load.
  */
-export function loadOverList({ listed, incoming, lastVisit }: { listed: Paper[]; incoming: Paper[]; lastVisit: LastVisit }) {
+export function loadOverList({ listed, joined, lastVisit }: { listed: Paper[]; joined: Paper[]; lastVisit: LastVisit }) {
   const listedIds = new Set(listed.map(paper => paper.id));
-  const added = incoming.some(paper => !listedIds.has(paper.id));
+  const added = joined.some(paper => !listedIds.has(paper.id));
   return { added, savedAt: lastVisitAfterLoad(lastVisit, added).savedAt };
 }
 
