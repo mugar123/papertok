@@ -110,7 +110,7 @@ import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-l
 import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
-import { lastVisitOnFailedReset } from '../utils/feed-loading-state.ts';
+import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit } from '../utils/feed-loading-state.ts';
 import { lastVisitCards, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
@@ -1599,7 +1599,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setHasMore(nextHasMore);
       telemetry.finish({ result: filtered.length + notableCards.length > 0 ? 'success' : 'empty', degraded });
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
-      setLastVisit(null);
+      const added = filtered.length + notableCards.length > 0;
+      setLastVisit(current => lastVisitAfterLoad(current, added));
 
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
@@ -1631,7 +1632,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setError(shownError);
         // Under the last visit's cards the tail offers Try again for a next
         // page, as under any shown list.
-        setResetFailed(reset && !lastVisitShown && lastVisit === null);
+        setResetFailed(reset && !lastVisitShown && !showsLastVisit(lastVisit));
         if (lastVisitShown) {
           // Nothing is on screen, so no snapshot is either.
           restoredFeedKeyRef.current = '';

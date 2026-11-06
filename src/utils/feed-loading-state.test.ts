@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitOnFailedReset, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitAfterLoad, lastVisitNote, lastVisitOnFailedReset, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from './feed-loading-state.ts';
 
 const baseState = {
   hasPapers: false,
@@ -196,6 +196,34 @@ test('a failed first load reads the last visit\'s cards with or without an autom
 test('an empty first page keeps its own empty state instead of the last visit\'s cards', () => {
   assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: FEED_EMPTY }).readSaved, false);
   assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: 'FEED_LOAD_FAILED' }).readSaved, true);
+});
+
+// The note was only in the screen-reader status, so a sighted reader had no
+// sign the cards could be days old.
+test('the last visit\'s cards carry a visible note with the status\'s words while they are all the feed shows', () => {
+  for (const lastVisit of ['updating', 'not-updated', 'no-new'] as const) {
+    assert.equal(lastVisitNote(lastVisit), feedStatusText({ refreshStatus: '', veil: false, lastVisit }));
+  }
+  assert.equal(lastVisitNote('updated'), '');
+  assert.equal(lastVisitNote(null), '');
+});
+
+// A Try again that failed under the last visit's cards announced its loading,
+// then nothing: the feed status did not change and the tail stayed silent.
+test('Try again under the last visit\'s cards announces how it ended', () => {
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true, lastVisit: 'not-updated', asked: true }), 'Loading more papers…');
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true, lastVisit: 'not-updated', asked: true }), 'Could not load more papers.');
+  assert.equal(lastVisitAfterLoad('not-updated', true), 'updated');
+  assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: 'updated' }), 'Papers updated');
+  assert.equal(lastVisitAfterLoad(null, true), null);
+});
+
+// A retry that answered with no papers over the last visit's cards kept them
+// and said the feed could not update, although the store had answered.
+test('an empty answer over the last visit\'s cards says there are no new papers, not a failure', () => {
+  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: 'updating', error: FEED_EMPTY }).kept, 'no-new');
+  assert.equal(lastVisitAfterLoad('not-updated', false), 'no-new');
+  assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: 'no-new' }), 'These papers are from your last visit. There are no new papers yet.');
 });
 
 test('a refresh keeps its own words under the veil', () => {

@@ -47,16 +47,41 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
 
 /**
  * Whether the feed shows the last visit's cards because its first load
- * failed (ENG-188): while its automatic retry runs ('updating'), or after that
- * retry failed too ('not-updated').
+ * failed (ENG-188): while its automatic retry runs ('updating'), after that
+ * retry failed too ('not-updated'), or after the store answered with no new
+ * papers ('no-new'). 'updated': a later load brought fresh papers below them.
  */
-export type LastVisitStatus = 'updating' | 'not-updated' | null;
+export type LastVisitStatus = 'updating' | 'not-updated' | 'no-new' | 'updated' | null;
 
 const LAST_VISIT_STATUS = {
   updating: 'These papers are from your last visit. The feed is updating.',
   'not-updated': 'These papers are from your last visit. The feed could not update.',
+  'no-new': 'These papers are from your last visit. There are no new papers yet.',
+  updated: 'Papers updated',
   none: '',
 };
+
+/** Whether the list is still only the last visit's cards. */
+export function showsLastVisit(lastVisit: LastVisitStatus) {
+  return lastVisit === 'updating' || lastVisit === 'not-updated' || lastVisit === 'no-new';
+}
+
+/**
+ * The visible note above the last visit's cards: the status region's words,
+ * shown, so a sighted reader also knows the cards may be days old.
+ */
+export function lastVisitNote(lastVisit: LastVisitStatus) {
+  return lastVisit && showsLastVisit(lastVisit) ? LAST_VISIT_STATUS[lastVisit] : '';
+}
+
+/**
+ * The last visit's status after a load that succeeded: fresh papers end it
+ * with "Papers updated", and an answer with none says there are no new ones.
+ */
+export function lastVisitAfterLoad(lastVisit: LastVisitStatus, added: boolean): LastVisitStatus {
+  if (!showsLastVisit(lastVisit)) return lastVisit;
+  return added ? 'updated' : 'no-new';
+}
 
 /**
  * What a screen reader hears from the feed's status region: a refresh's own
@@ -75,11 +100,12 @@ export function feedStatusText({ refreshStatus, veil, lastVisit = null }: { refr
  * 'updating' while that retry runs, 'not-updated' without one. Over cards
  * already shown, the last visit's cards stay and could not update. An empty
  * answer (FEED_EMPTY) is not a failure to update: the store answered, with
- * nothing new, so it keeps its own empty state.
+ * nothing new, so it keeps its own empty state, and over the last visit's
+ * cards says there are no new papers.
  */
 export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit, error }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisitStatus; error?: string | null }) {
   const shown: LastVisitStatus = retryDue ? 'updating' : 'not-updated';
-  const kept: LastVisitStatus = lastVisit === null ? null : 'not-updated';
+  const kept: LastVisitStatus = !showsLastVisit(lastVisit) ? null : error === FEED_EMPTY ? 'no-new' : 'not-updated';
   return { readSaved: nothingShown && error !== FEED_EMPTY, shown, kept };
 }
 
@@ -149,9 +175,10 @@ export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPen
  * failure's words, so a long outage announces its state once, not at every
  * attempt as "loading" and "could not load" alternate. Under the last visit's
  * cards a failed load is the first load's, and the feed's status already says
- * the feed could not update (ENG-188).
+ * the feed could not update (ENG-188), until the reader asks again with Try
+ * again (`asked`): that attempt's failure is the tail's to say.
  */
-export function nextPageStatusText({ loading, hasPapers, failed = false, retrying = false, lastVisit = null }: { loading: boolean; hasPapers: boolean; failed?: boolean; retrying?: boolean; lastVisit?: LastVisitStatus }) {
-  if (failed || (loading && retrying && hasPapers)) return lastVisit === 'not-updated' ? '' : 'Could not load more papers.';
+export function nextPageStatusText({ loading, hasPapers, failed = false, retrying = false, lastVisit = null, asked = false }: { loading: boolean; hasPapers: boolean; failed?: boolean; retrying?: boolean; lastVisit?: LastVisitStatus; asked?: boolean }) {
+  if (failed || (loading && retrying && hasPapers)) return lastVisit === 'not-updated' && !asked ? '' : 'Could not load more papers.';
   return loading && hasPapers ? 'Loading more papers…' : '';
 }

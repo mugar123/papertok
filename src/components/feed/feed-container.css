@@ -288,6 +288,26 @@
     translate 200ms var(--ease-out),
     scale 200ms var(--ease-out);
 }
+/* The last visit's cards say so above themselves (ENG-188), in the pill's
+   place and look. The pill takes the place back while it is out. */
+.feed-last-visit {
+  position: absolute; top: 12px; left: 50%;
+  z-index: 4;
+  translate: -50% 0;
+  width: max-content; max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 6px 12px; border-radius: 16px;
+  background: var(--bg-card); color: var(--text-secondary);
+  border: 1px solid var(--border-default); box-shadow: var(--shadow-md);
+  font-size: 0.8rem; text-align: center;
+  pointer-events: none;
+}
+.feed-refresh.is-visible ~ .feed-last-visit,
+.feed-refresh:focus-visible ~ .feed-last-visit,
+.feed-wrapper[data-pull='pulling'] .feed-last-visit,
+.feed-wrapper[data-pull='landing'] .feed-last-visit {
+  visibility: hidden;
+}
 .feed-refresh.is-visible,
 .feed-refresh:focus-visible {
   opacity: 1;
