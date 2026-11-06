@@ -13,6 +13,8 @@ import type { Paper } from '../../models/paper.ts';
 import { PaperByline } from './paper-byline.tsx';
 import { anchor, anchorTarget, landOn } from './article-places.ts';
 import { useScrollFrame } from './use-scroll-frame.ts';
+import useIsPhone from '../../hooks/use-is-phone.ts';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import './full-text-article.css';
 import { NewTabHint } from './new-tab-hint.tsx';
 
@@ -169,42 +171,73 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
   );
 }
 
-function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; scroll: HTMLElement | null; lang?: string }) {
-  const path = reference && (reference.arxiv || reference.doi || reference.pmid)
+// What a citation's card says, as a popover beside the citation or a sheet on a phone.
+function ReferenceCard({ reference, lang, title, close }: { reference: Reference; lang?: string; title: ReactNode; close: ReactNode }) {
+  const path = reference.arxiv || reference.doi || reference.pmid
     ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
+  return (
+    <div className="ft-peek-card" lang={lang}>
+      <div className="ft-peek-head">
+        <span className="ft-ref-meta">{referenceMeta(reference)}</span>
+        {close}
+      </div>
+      {title}
+      <ReferenceSource reference={reference} />
+      <ul className="ft-peek-links">
+        {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a></li>}
+        {referenceLinks(reference).map(link => (
+          <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; scroll: HTMLElement | null; lang?: string }) {
+  const isPhone = useIsPhone();
   // Closed by scrolling away, focus stays where the reader is instead of pulling the text back.
   const scrolledAway = useRef(false);
   useEffect(() => {
     if (open) scrolledAway.current = false;
   }, [open]);
-  useScrollFrame(open ? scroll : null, () => {
+  useScrollFrame(open && !isPhone ? scroll : null, () => {
     const place = anchor.current?.getBoundingClientRect();
     const view = scroll?.getBoundingClientRect();
     if (!place || !view || (place.bottom > view.top && place.top < view.bottom)) return;
     scrolledAway.current = true;
     onOpenChange(false);
   });
+  const closeButton = <Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" />;
+  if (isPhone) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent className="ft-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" finalFocus={anchor}>
+          <DrawerHandle />
+          {reference && (
+            <ReferenceCard
+              reference={reference}
+              lang={lang}
+              title={<DrawerTitle render={<h2 />} className="ft-ref-title">{referenceTitle(reference)}</DrawerTitle>}
+              close={<DrawerClose render={closeButton}><X size={14} aria-hidden="true" /></DrawerClose>}
+            />
+          )}
+        </DrawerContent>
+      </Drawer>
+    );
+  }
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverPortal>
         <PopoverPositioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
           <PopoverPopup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor.current)}>
             {reference && (
-              <div lang={lang}>
-                <div className="ft-peek-head">
-                  <span className="ft-ref-meta">{referenceMeta(reference)}</span>
-                  <PopoverClose render={<Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" />}><X size={14} aria-hidden="true" /></PopoverClose>
-                </div>
-                <PopoverTitle className="ft-ref-title">{referenceTitle(reference)}</PopoverTitle>
-                <ReferenceSource reference={reference} />
-                <ul className="ft-peek-links">
-                  {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a></li>}
-                  {referenceLinks(reference).map(link => (
-                    <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
-                  ))}
-                </ul>
-              </div>
+              <ReferenceCard
+                reference={reference}
+                lang={lang}
+                title={<PopoverTitle className="ft-ref-title">{referenceTitle(reference)}</PopoverTitle>}
+                close={<PopoverClose render={closeButton}><X size={14} aria-hidden="true" /></PopoverClose>}
+              />
             )}
           </PopoverPopup>
         </PopoverPositioner>
@@ -312,8 +345,8 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
     setReferenceOpen(true);
   };
 
-  // Memoized so opening a citation's card does not re-render the whole paper.
-  const text = useMemo(() => (
+  // Memoized apart, so showing the abstract or a citation's card does not re-render the whole paper.
+  const head = useMemo(() => (
     <>
         <PaperByline paper={paper} />
         {doc.conversionErrors > 0 && (
@@ -321,12 +354,16 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
             {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
           </p>
         )}
-        {showAbstract && doc.abstract.length > 0 && (
-          <section className="ft-abstract" aria-labelledby="ft-abstract-title">
-            <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-            <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
-          </section>
-        )}
+    </>
+  ), [doc.conversionErrors, paper]);
+  const abstract = useMemo(() => showAbstract && doc.abstract.length > 0 && (
+    <section className="ft-abstract" aria-labelledby="ft-abstract-title">
+      <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
+      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
+    </section>
+  ), [doc, showAbstract]);
+  const body = useMemo(() => (
+    <>
         {/* The paper's language marks its own text, not the reader's labels. */}
         <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} />)}</div>
         {doc.notes.length > 0 && (
@@ -355,11 +392,13 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
           </section>
         )}
     </>
-  ), [doc, paper, showAbstract]);
+  ), [doc]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
-      {text}
+      {head}
+      {abstract}
+      {body}
       <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} scroll={citationScroll} lang={doc.lang} />
     </article>
   );
