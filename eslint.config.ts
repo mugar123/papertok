@@ -320,6 +320,7 @@ export default defineConfig([
         { name: '--similar-origin', setBy: 'src/components/feed/similar-feed-layer.tsx', reason: 'the Similar layer opens from the card that was pressed' },
         { name: '--timeline-progress', setBy: 'src/components/explorer/entity-explorer.tsx', reason: 'how far the author timeline has been drawn' },
         { name: '--v', setBy: 'src/components/explorer/entity-explorer.tsx', reason: 'a chart bar’s value as a fraction of the tallest' },
+        { name: '--ft-share', setBy: 'src/components/pdf/full-text-article.tsx', reason: 'a figure image’s declared width as a fraction of the widest one in its paper' },
         { name: '--total-scale-factor', setBy: 'src/components/pdf/pdf-pages.tsx', reason: 'pdf.js’s text layer is sized by the page’s render scale' },
         { name: '--available-height', setBy: '@base-ui/react', reason: 'Base UI’s positioner sets the space left in the viewport on its popup' },
         { name: '--transform-origin', setBy: '@base-ui/react', reason: 'Base UI’s positioner sets the anchor side a popup grows from' },
