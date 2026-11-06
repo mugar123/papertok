@@ -1010,7 +1010,9 @@ async function readKvRecord(env: WorkerEnv, uid: string): Promise<StoredSlot | n
 async function readPhase1Slot(env: WorkerEnv, uid: string) {
   const kv = await readKvRecord(env, uid);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-  if (kv) {
+  // A reader phase 2 moved is read from their object even when a cached KV copy
+  // still holds the full record: acting on that copy would reopen and empty it.
+  if (kv && !slot.subscription) {
     const cancelled = !slot.migratable && !slot.subscription;
     return { slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv, inKv: true, objectVersion: slot.version };
   }
@@ -2870,6 +2872,15 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   if (!uid) return invalidLinkPage();
   const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
   if (!subscription || subscription.unsubscribeToken !== token) {
+    // A second POST from the same link (a double click, or a mail client's
+    // one-click POST before the reader's) may read a stale KV copy of the token
+    // index and record; the object a cancellation closed says it already worked.
+    if (!subscription && request.method === 'POST') {
+      const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+      if (!slot.migratable && !slot.subscription) {
+        return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
+      }
+    }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
     return invalidLinkPage();
   }

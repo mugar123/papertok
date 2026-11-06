@@ -1639,6 +1639,36 @@ test('in phase 1 an unsubscribe that lands while a sync computes its write is no
   assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false, 'the sync restored the unsubscribe link');
 });
 
+test('a phase 1 save that reads a cached full KV copy of a moved reader writes their object, not KV', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const full = kv.values.get(SYNC_READER_KEY)!;
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.enabled, true);
+  // The phase 1 isolate still reads the full record from its KV cache.
+  kv.values.set(SYNC_READER_KEY, full);
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), phase1, SYNC_READER);
+  // The mover's index write lands last.
+  await kv.put(SYNC_READER_KEY, JSON.stringify({ uid: SYNC_READER.uid }));
+
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.maxPapers, 10);
+});
+
+test('in phase 1 a second POST from the same unsubscribe link that reads stale KV copies shows the unsubscribed page', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const record = kv.values.get(SYNC_READER_KEY)!;
+  const token = (JSON.parse(record) as Subscription).unsubscribeToken;
+  await unsubscribeWithLink(phase1, token);
+  // The second request's location still caches the record and the token index.
+  kv.values.set(SYNC_READER_KEY, record);
+  kv.values.set(`notification:unsubscribe:${token}`, SYNC_READER.uid);
+
+  await unsubscribeWithLink(phase1, token);
+});
+
 test('an unsubscribe that lands after a sync read the subscription stays unsubscribed', async () => {
   const kv = createMemoryKv();
   const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv) };
