@@ -5,14 +5,13 @@ import type { WorkerEnv } from './env.ts';
 
 import { createFirestoreRest } from '../src/utils/firestore-rest.ts';
 import { OPENAIRE_GRAPH_URL } from '../src/services/open-aire-records.ts';
-import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
+import { ARXIV_UPSTREAM_TIMEOUT_MS, takeArxivSeat } from './arxiv-api.ts';
 import { callerSubject } from './caller-quota.ts';
 import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
 import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.ts';
 import { createPhotoLoader, handleShareImage } from './share-image.ts';
-import { awaitUpstreamSlot } from './upstream-pace.ts';
 
 // The share pages (worker/share-pages.ts) are public and carry no Origin, so a
 // cache miss is the one thing a scripted caller can make them spend: a random
@@ -90,11 +89,7 @@ function shareProviders(env: WorkerEnv): ShareProviders {
       const held = await reserveShareCeiling(env, `share:arxiv:${hour}`, SHARE_ARXIV_HOURLY_LIMIT);
       if (!held) throw new Error('The arXiv ceiling for share pages is spent');
       // The same beat as `/arxiv`: a share page waits its turn like the feed.
-      const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
-        namespace: 'arxiv',
-        periodMs: ARXIV_PACE_PERIOD_MS,
-        maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
-      });
+      const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, 'worker');
       // No seat, no call: the hour's unit goes back. Kept, a burst drained the
       // hour without a single call to arXiv (review of 2026-09-25).
       if (!seat.accepted && !seat.code) {

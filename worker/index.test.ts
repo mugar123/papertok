@@ -1123,7 +1123,7 @@ const arxivThrough = (t: TestContext, env: WorkerEnv, upstream: typeof fetch) =>
     ARXIV_URL, { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
   ), { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, ...env }));
 };
-const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
+const IS_ARXIV_PACE = (key: string) => key === 'arxiv-v2:pace';
 
 // One request every three seconds is arXiv's published policy, and the Worker
 // is the one client arXiv sees. A miss takes a seat on the beat before it goes
@@ -1160,8 +1160,8 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
   assert.equal(upstreamCalls, 0);
 });
 
-// The beat is courtesy towards arXiv, not the protection of a key: a ledger
-// that is missing or down must not take the source down with it.
+// Without a ledger binding (local runs) there is no beat, so the call goes out
+// unpaced; a ledger that answers with an error sends nothing (arxiv-api.test.ts).
 test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async t => {
   let upstreamCalls = 0;
   const response = await arxivThrough(
@@ -1234,9 +1234,11 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 // script can spread more over several addresses, such as one IPv6 /64.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
-  // four seconds a caller may wait, the next one a millisecond away, so the
-  // seats taken here cost almost no real sleep.
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
+  // four seconds a caller may wait, the next one a millisecond away. The
+  // Worker's lookup waits for its own seat three seconds after the misses' call
+  // (ENG-184), so the waits run on mocked timers: with a frozen clock and real
+  // timers it waited out its four seconds without the clock reaching the seat.
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-10-24T12:00:05.999Z') });
   const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
   const statuses: number[] = [];
   const papers = await withWorkerFetchMock(async input => {
@@ -1244,13 +1246,13 @@ test('anonymous cache-busting arXiv misses leave a seat on the beat for the Work
     return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
   }, async () => {
     for (let miss = 0; miss < 3; miss += 1) {
-      const response = await reportApi.fetch(new Request(
+      const response = await settledOnMockClock(t, reportApi.fetch(new Request(
         `https://papertok-report-api.example/arxiv?search_query=all:x${miss}`,
         { headers: { 'cf-connecting-ip': `2001:db8::${miss + 1}` } },
-      ), env);
+      ), env));
       statuses.push(response.status);
     }
-    return fetchArxivPapers(env, ['2610.01234']);
+    return settledOnMockClock(t, fetchArxivPapers(env, ['2610.01234']));
   });
 
   assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);

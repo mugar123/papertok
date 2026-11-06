@@ -20,7 +20,7 @@ import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 // exercise. An attempt running past `timeoutMs` is stopped, as a Workflow
 // stops one past its timeout and leaves its work unfinished, and the step is
 // tried again within its retries.
-function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number } = {}) {
+function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0, tick }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number; tick?: (ms: number) => void } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
   const step = {
@@ -48,6 +48,8 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: 
     },
     async sleep(_name: string, duration: number | string) {
       sleeps.push(duration);
+      // A test that keeps the clock moves it on by a sleep in milliseconds.
+      if (typeof duration === 'number') tick?.(duration);
     },
   };
   return { step: step as unknown as WorkflowStep, steps, sleeps };
@@ -735,16 +737,22 @@ test('exhausted D1 retries preserve the followed turn and continue with healthy 
 });
 
 test("arXiv's 503 is waited out as asked, but a long pause or one 503 after another ends the set, not the run", async t => {
+  // The start of a period the harvest may take a seat in; a wait moves the
+  // clock on, as a Workflow's sleep does.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T02:30:03Z') });
   let retryAfter = '';
-  providers(t, url => (url.hostname === 'oaipmh.arxiv.org'
+  const asked = providers(t, url => (url.hostname === 'oaipmh.arxiv.org'
     ? new Response('Retry later', { status: 503, headers: { 'retry-after': retryAfter } })
     : undefined));
   for (retryAfter of ['86400', '30']) {
     const { env } = corpus();
     // Ten requests of one set is a run that would never end.
-    const { step, steps, sleeps } = workflowStep({ skipLanes: true, fail: name => Number(name.match(/^cs: request (\d+)$/)?.[1]) >= 10 });
+    const { step, steps, sleeps } = workflowStep({ skipLanes: true, fail: name => Number(name.match(/^cs: request (\d+)$/)?.[1]) >= 10, tick: ms => t.mock.timers.tick(ms) });
     await runPaperHarvest(env, dailyRun(), step);
     const requests = steps.filter(name => /: request \d+$/.test(name));
+    // Each request took its seat on the arXiv beat and reached arXiv.
+    assert.equal(asked.filter(url => url.hostname === 'oaipmh.arxiv.org').length, requests.length, retryAfter);
+    asked.length = 0;
     assert.ok(requests.length <= 4 && requests.every(name => name.startsWith('cs:')), `${retryAfter}: ${requests.join(', ')}`);
     assert.ok(sleeps.every(duration => Number(duration) <= 300_000), `${retryAfter}: slept ${sleeps.join(', ')}`);
     assert.ok(steps.includes('embed 0'), `${retryAfter}: the run goes on`);

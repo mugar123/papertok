@@ -211,6 +211,38 @@ test('a three-second beat gives up inside its own wait budget', async () => {
   assert.deepEqual(slept, []);
 });
 
+// A round trip longer than the window's allowance leaves the caller past its
+// window when its send time comes, so it drops the seat; the log says how long
+// the ledger took, so a slow ledger is told apart from ordinary refusals.
+test('a seat dropped past its window logs the ledger round trip', async t => {
+  const warned = t.mock.method(console, 'warn', () => {});
+  let clock = 10_000;
+  const answers: QuotaReading[] = [
+    { accepted: true, sendAt: 12_000, sendBy: 12_250, present: 10_000 },
+    { accepted: false, scope: 'user' },
+  ];
+  let call = 0;
+  const ledger = {
+    idFromName: (name: string): unknown => name,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async () => {
+        clock += 300;
+        return new Response(JSON.stringify(answers[Math.min(call++, answers.length - 1)]));
+      },
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
+
+  const slot = await awaitUpstreamSlot(ledger, {
+    namespace: 'arxiv', periodMs: 3_000, maxWaitMs: 4_000, spacingMs: 3_000,
+    now: () => clock, sleep: async ms => { clock += ms; },
+  });
+
+  assert.deepEqual(slot, { accepted: false });
+  assert.deepEqual(warned.mock.calls.map(c => c.arguments), [
+    ['Paced seat dropped past its window', { namespace: 'arxiv', roundTripMs: 300, lateMs: 50 }],
+  ]);
+});
+
 test('the retry-after of a beat covers the wait budget it was given', () => {
   assert.equal(paceRetryAfterSeconds(4_000), '4');
   assert.equal(paceRetryAfterSeconds(2_500), '3');
