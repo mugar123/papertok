@@ -202,9 +202,9 @@ async function relayArxiv(request: Request, env: WorkerEnv, callerKind: 'reader'
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  // A miss takes a seat on the beat before it goes upstream. No ledger, no
-  // beat: the seat is courtesy towards arXiv, not the protection of a key,
-  // and a ledger that is down must not take the source down with it.
+  // A miss takes a seat on the beat before it goes upstream. No ledger binding
+  // (local runs), no beat: the call goes out unpaced. A ledger that answers
+  // with an error sends nothing, so no call can break the 3 s gap.
   if (env.REQUEST_QUOTA_LEDGER) {
     // The caller's allowance comes before the beat, so a caller past it takes
     // no seat. A missing identity fails closed; a ledger that cannot answer is

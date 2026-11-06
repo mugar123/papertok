@@ -1160,8 +1160,8 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
   assert.equal(upstreamCalls, 0);
 });
 
-// The beat is courtesy towards arXiv, not the protection of a key: a ledger
-// that is missing or down must not take the source down with it.
+// Without a ledger binding (local runs) there is no beat, so the call goes out
+// unpaced; a ledger that answers with an error sends nothing (arxiv-api.test.ts).
 test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async t => {
   let upstreamCalls = 0;
   const response = await arxivThrough(
