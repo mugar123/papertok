@@ -1104,7 +1104,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null, lastVisit: source ? null : feed.lastVisit });
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.

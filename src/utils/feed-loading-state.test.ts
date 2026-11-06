@@ -164,6 +164,14 @@ test('the first wait is announced as loading papers, once, through its automatic
   assert.equal(firstWait({ ...baseState, loading: true, showLoader: true }), 'Loading papers…');
 });
 
+// ENG-188: the last visit's cards stand in for a failed first load.
+test('the last visit\'s cards say where they come from while the feed updates, and when it could not', () => {
+  const shown = (lastVisit: Parameters<typeof feedStatusText>[0]['lastVisit']) => feedStatusText({ refreshStatus: '', veil: false, lastVisit });
+  assert.equal(shown('updating'), 'These papers are from your last visit. The feed is updating.');
+  assert.equal(shown('not-updated'), 'These papers are from your last visit. The feed could not update.');
+  assert.equal(shown(null), '');
+});
+
 test('a refresh keeps its own words under the veil', () => {
   assert.equal(feedStatusText({ refreshStatus: 'Refreshing papers…', veil: true }), 'Refreshing papers…');
   assert.equal(feedStatusText({ refreshStatus: 'Papers updated', veil: false }), 'Papers updated');

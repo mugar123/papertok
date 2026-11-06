@@ -6,7 +6,7 @@ import { placeNotableCards } from '../utils/feed-enrichment.ts';
 import { resumeIndex } from '../utils/feed-mount-window.ts';
 import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, forYouScrollKey } from '../utils/feed-resume-memory.ts';
 import { joinFeedPage, notablePlaceAfterDismissal, reRankAfterReader } from './feed-notable-cards.ts';
-import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
+import { lastVisitCards, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -230,4 +230,39 @@ test('a restored snapshot keeps the card before a dismissed notable card only wh
   const [[key, saved]] = storage.values;
   storage.setItem(key, JSON.stringify({ ...JSON.parse(saved), notableAfter: 7 }));
   assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory })?.notableAfter, null);
+});
+
+// ENG-188: when the first load of a feed entry fails, the account's last saved
+// feed stands in, even past the fifteen minutes that open the feed on it.
+test('a failed first load gets the unseen cards of a saved feed too old to open on', () => {
+  const storage = memoryStorage();
+  const resumeMemory = createFeedResumeMemory({ storage: memoryStorage() });
+  const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('seen'), card('a'), card('b')], page: 1, hasMore: true, savedAt: twoDaysAgo }, storage);
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory }), null, 'too old to open the feed on');
+  const shown = lastVisitCards('test-user', 'cs.AI', paper => paper.id !== 'seen', storage);
+  assert.deepEqual(shown && ids(shown.papers), ['a', 'b']);
+  assert.equal(shown?.savedAt, twoDaysAgo);
+});
+
+test('the last visit\'s cards are only the account\'s own, for the same interests, and not too old', () => {
+  const storage = memoryStorage();
+  const unseen = () => true;
+  assert.equal(lastVisitCards('test-user', 'cs.AI', unseen, storage), null, 'no saved feed keeps the error');
+  writeFeedSnapshot('other-user', 'cs.AI', { papers: [card('theirs')], page: 1, hasMore: true }, storage);
+  writeFeedSnapshot('test-user', 'math.CO', { papers: [card('other-interests')], page: 1, hasMore: true }, storage);
+  assert.equal(lastVisitCards('test-user', 'cs.AI', unseen, storage), null);
+  assert.equal(lastVisitCards(null, 'cs.AI', unseen, storage), null);
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('old')], page: 1, hasMore: true, savedAt: Date.now() - 8 * 24 * 60 * 60 * 1000 }, storage);
+  assert.equal(lastVisitCards('test-user', 'cs.AI', unseen, storage), null, 'a week-old feed is not shown');
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('seen')], page: 1, hasMore: true }, storage);
+  assert.equal(lastVisitCards('test-user', 'cs.AI', paper => paper.id !== 'seen', storage), null, 'a feed the reader has seen whole keeps the error');
+});
+
+test('fresh papers join the last visit\'s cards below the card the reader is on', () => {
+  const lastVisit = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => card(id));
+  const fresh = ['x', 'y'].map(id => card(id));
+  const joined = joinFeedPage(lastVisit, fresh, [], { reset: true, keepThroughVisible: true, visiblePaperId: 'b' });
+  assert.deepEqual(ids(joined.slice(0, 4)), ['a', 'b', 'c', 'd'], 'the cards through the reader and the next ones stay in place');
+  assert.deepEqual(ids(joined.slice(4)), ['x', 'y']);
 });

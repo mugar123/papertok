@@ -302,7 +302,7 @@ A Worker version from before `peerReviewedByDoiComplete` keeps that mark on a ro
 npx wrangler d1 execute PAPER_STORE --remote --command "UPDATE works SET paper = json_remove(paper, '$.sources.peerReviewedByDoiComplete') WHERE json_extract(paper, '$.sources.peerReviewedByDoiComplete') IS NOT NULL"
 ```
 
-Each row then reads as one merged before the map existed. The older version adds no mark to the rows it merges later, so this one update also covers the next deploy of current code. A harvest that was running at the rollback can still write the mark: if `npx wrangler workflows instances list papertok-paper-harvest` shows one running, run the update again when it ends. A card served before the update can still show from a browser's feed snapshot for up to 15 minutes.
+Each row then reads as one merged before the map existed. The older version adds no mark to the rows it merges later, so this one update also covers the next deploy of current code. A harvest that was running at the rollback can still write the mark: if `npx wrangler workflows instances list papertok-paper-harvest` shows one running, run the update again when it ends. A card served before the update can still show from a browser's feed snapshot for up to 15 minutes, and for up to three days when the feed's first load fails (`lastVisitCards` in `src/context/feed-snapshot.ts`).
 
 ## Deployment
 

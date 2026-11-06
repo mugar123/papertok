@@ -52,9 +52,22 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
  * One text through the veil's whole wait, its automatic retry included, so
  * the wait is spoken once.
  */
-export function feedStatusText({ refreshStatus, veil }: { refreshStatus: string; veil: boolean }) {
-  return refreshStatus || (veil ? 'Loading papers…' : '');
+export function feedStatusText({ refreshStatus, veil, lastVisit = null }: { refreshStatus: string; veil: boolean; lastVisit?: LastVisitStatus }) {
+  return refreshStatus || (veil ? 'Loading papers…' : '') || LAST_VISIT_STATUS[lastVisit ?? 'none'];
 }
+
+/**
+ * Whether the feed shows the last visit's cards because its first load
+ * failed (ENG-188): while its automatic retry runs ('updating'), or after that
+ * retry failed too ('not-updated').
+ */
+export type LastVisitStatus = 'updating' | 'not-updated' | null;
+
+const LAST_VISIT_STATUS = {
+  updating: 'These papers are from your last visit. The feed is updating.',
+  'not-updated': 'These papers are from your last visit. The feed could not update.',
+  none: '',
+};
 
 /** How a refresh ended: it brought the papers, or it failed over them. */
 export type RefreshEnd = 'updated' | 'failed';
