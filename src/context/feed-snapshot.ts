@@ -2,6 +2,7 @@ import type { Paper } from '../models/paper.ts';
 import { applyKnownPublicationTypes } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { keepNotablePlaces } from '../utils/feed-enrichment.ts';
+import { lastVisitAfterLoad, type LastVisit } from '../utils/feed-loading-state.ts';
 import { resumeIndex } from '../utils/feed-mount-window.ts';
 import { feedResumeMemory, forYouScrollKey } from '../utils/feed-resume-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
@@ -126,13 +127,14 @@ export function lastVisitCards(
  * What a load that succeeded brings over the list (ENG-188). `added`: a card
  * the list lacks; an empty answer, or one of repeated ids, adds none. Under the
  * last visit's cards, a load that adds none keeps the date they were saved
- * (`savedAt`), so after a reload they cannot pass for a recent feed; otherwise
- * `savedAt` is undefined and the snapshot takes the time of this load.
+ * (`savedAt`, from `lastVisit`), so after a reload they cannot pass for a
+ * recent feed; otherwise `savedAt` is undefined and the snapshot takes the
+ * time of this load.
  */
-export function loadOverList({ listed, incoming, lastVisitShown, savedAt }: { listed: Paper[]; incoming: Paper[]; lastVisitShown: boolean; savedAt?: number }) {
+export function loadOverList({ listed, incoming, lastVisit }: { listed: Paper[]; incoming: Paper[]; lastVisit: LastVisit }) {
   const listedIds = new Set(listed.map(paper => paper.id));
   const added = incoming.some(paper => !listedIds.has(paper.id));
-  return { added, savedAt: lastVisitShown && !added ? savedAt : undefined };
+  return { added, savedAt: lastVisitAfterLoad(lastVisit, added).savedAt };
 }
 
 export function writeFeedSnapshot(userId: string | null | undefined, signature: string, snapshot: FeedSnapshot, storage?: SnapshotStorage) {

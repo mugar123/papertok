@@ -53,6 +53,15 @@ export function feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetr
  */
 export type LastVisitStatus = 'updating' | 'not-updated' | 'no-new' | 'updated' | null;
 
+/**
+ * The last visit's status with the date its cards were saved (`savedAt`),
+ * kept while those cards are all the feed shows. A refresh empties the feed's
+ * cache, not this: a later load that brings no new card saves them under
+ * their original date, so after a reload they still carry the note and
+ * expire three days after that date.
+ */
+export interface LastVisit { status: LastVisitStatus; savedAt?: number }
+
 const LAST_VISIT_STATUS = {
   updating: 'These papers are from your last visit. The feed is updating.',
   'not-updated': 'These papers are from your last visit. The feed could not update.',
@@ -76,11 +85,12 @@ export function lastVisitNote(lastVisit: LastVisitStatus) {
 
 /**
  * The last visit's status after a load that succeeded: fresh papers end it
- * with "Papers updated", and an answer with none says there are no new ones.
+ * with "Papers updated", and an answer with none says there are no new ones
+ * and keeps the cards' saved date.
  */
-export function lastVisitAfterLoad(lastVisit: LastVisitStatus, added: boolean): LastVisitStatus {
-  if (!showsLastVisit(lastVisit)) return lastVisit;
-  return added ? 'updated' : 'no-new';
+export function lastVisitAfterLoad(lastVisit: LastVisit, added: boolean): LastVisit {
+  if (!showsLastVisit(lastVisit.status)) return lastVisit;
+  return added ? { status: 'updated' } : { status: 'no-new', savedAt: lastVisit.savedAt };
 }
 
 /**
@@ -101,11 +111,13 @@ export function feedStatusText({ refreshStatus, veil, lastVisit = null }: { refr
  * already shown, the last visit's cards stay and could not update. An empty
  * answer (FEED_EMPTY) is not a failure to update: the store answered, with
  * nothing new, so it keeps its own empty state, and over the last visit's
- * cards says there are no new papers.
+ * cards says there are no new papers. Kept cards keep their saved date.
  */
-export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit, error }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisitStatus; error?: string | null }) {
+export function lastVisitOnFailedReset({ nothingShown, retryDue, lastVisit, error }: { nothingShown: boolean; retryDue: boolean; lastVisit: LastVisit; error?: string | null }) {
   const shown: LastVisitStatus = retryDue ? 'updating' : 'not-updated';
-  const kept: LastVisitStatus = !showsLastVisit(lastVisit) ? null : error === FEED_EMPTY ? 'no-new' : 'not-updated';
+  const kept: LastVisit = !showsLastVisit(lastVisit.status)
+    ? { status: null }
+    : { status: error === FEED_EMPTY ? 'no-new' : 'not-updated', savedAt: lastVisit.savedAt };
   return { readSaved: nothingShown && error !== FEED_EMPTY, shown, kept };
 }
 

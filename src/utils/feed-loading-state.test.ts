@@ -185,17 +185,17 @@ test('under the last visit\'s cards a failed update is announced by the feed sta
 // The last visit's cards were read only while an automatic retry was due, so
 // a first load failing without one still showed the error screen.
 test('a failed first load reads the last visit\'s cards with or without an automatic retry', () => {
-  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: true, lastVisit: null }), { readSaved: true, shown: 'updating', kept: null });
-  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null }), { readSaved: true, shown: 'not-updated', kept: null });
-  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: null }).readSaved, false);
-  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: 'updating' }).kept, 'not-updated');
+  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: true, lastVisit: { status: null } }), { readSaved: true, shown: 'updating', kept: { status: null } });
+  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: { status: null } }), { readSaved: true, shown: 'not-updated', kept: { status: null } });
+  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: { status: null } }).readSaved, false);
+  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: { status: 'updating' } }).kept.status, 'not-updated');
 });
 
 // An empty first page also ended in this path and showed the last visit's
 // cards as "could not update", although the store had answered.
 test('an empty first page keeps its own empty state instead of the last visit\'s cards', () => {
-  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: FEED_EMPTY }).readSaved, false);
-  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: null, error: 'FEED_LOAD_FAILED' }).readSaved, true);
+  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: { status: null }, error: FEED_EMPTY }).readSaved, false);
+  assert.equal(lastVisitOnFailedReset({ nothingShown: true, retryDue: false, lastVisit: { status: null }, error: 'FEED_LOAD_FAILED' }).readSaved, true);
 });
 
 // The note was only in the screen-reader status, so a sighted reader had no
@@ -213,11 +213,11 @@ test('the last visit\'s cards carry a visible note with the status\'s words whil
 test('Try again under the last visit\'s cards announces how it ended', () => {
   assert.equal(nextPageStatusText({ loading: true, hasPapers: true, lastVisit: 'not-updated', asked: true }), 'Loading more papers…');
   assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true, lastVisit: 'not-updated', asked: true }), 'Could not load more papers.');
-  assert.equal(lastVisitAfterLoad('not-updated', true), 'updated');
+  assert.deepEqual(lastVisitAfterLoad({ status: 'not-updated', savedAt: 1 }, true), { status: 'updated' });
   assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: 'updated' }), 'Papers updated');
-  assert.equal(lastVisitAfterLoad(null, true), null);
+  assert.deepEqual(lastVisitAfterLoad({ status: null }, true), { status: null });
   // A failed refresh afterwards ends "Papers updated": the status falls back to nothing.
-  const afterFailedRefresh = lastVisitOnFailedReset({ nothingShown: false, retryDue: true, lastVisit: 'updated' }).kept;
+  const afterFailedRefresh = lastVisitOnFailedReset({ nothingShown: false, retryDue: true, lastVisit: { status: 'updated' } }).kept.status;
   assert.equal(afterFailedRefresh, null);
   assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: afterFailedRefresh }), '');
 });
@@ -225,8 +225,8 @@ test('Try again under the last visit\'s cards announces how it ended', () => {
 // A retry that answered with no papers over the last visit's cards kept them
 // and said the feed could not update, although the store had answered.
 test('an empty answer over the last visit\'s cards says there are no new papers, not a failure', () => {
-  assert.equal(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: 'updating', error: FEED_EMPTY }).kept, 'no-new');
-  assert.equal(lastVisitAfterLoad('not-updated', false), 'no-new');
+  assert.deepEqual(lastVisitOnFailedReset({ nothingShown: false, retryDue: false, lastVisit: { status: 'updating', savedAt: 1 }, error: FEED_EMPTY }).kept, { status: 'no-new', savedAt: 1 });
+  assert.deepEqual(lastVisitAfterLoad({ status: 'not-updated', savedAt: 1 }, false), { status: 'no-new', savedAt: 1 });
   assert.equal(feedStatusText({ refreshStatus: '', veil: false, lastVisit: 'no-new' }), 'These papers are from your last visit. There are no new papers yet.');
 });
 

@@ -110,7 +110,7 @@ import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-l
 import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
-import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit } from '../utils/feed-loading-state.ts';
+import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit, type LastVisit } from '../utils/feed-loading-state.ts';
 import { lastVisitCards, loadOverList, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
@@ -236,12 +236,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const autoRetryPending = autoRetryFor !== null;
   // The list shows the last visit's cards in place of a failed first load
   // (lastVisitCards), until a load brings fresh papers: 'updating' while the
-  // automatic retry is due or running, 'not-updated' once it failed too.
-  const [lastVisit, setLastVisit] = useState<LastVisitStatus>(null);
-  // The date those cards were saved, kept beside them: a refresh empties the
-  // cache, and a later load that brings nothing new must still save them
-  // under their original date.
-  const lastVisitSavedAt = useRef<number | undefined>(undefined);
+  // automatic retry is due or running, 'not-updated' once it failed too. It
+  // holds the date those cards were saved, which a refresh cannot empty.
+  const [lastVisit, setLastVisit] = useState<LastVisit>({ status: null });
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1574,8 +1571,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const preferenceSignature = feedPreferenceSignature(userPreferences);
       // A load that brings no card the list lacks leaves the last visit's
       // cards with their saved date and note (loadOverList).
-      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisitShown: showsLastVisit(lastVisit), savedAt: lastVisitSavedAt.current });
-      lastVisitSavedAt.current = loaded.savedAt;
+      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisit });
 
       setPapers(current => {
         const nextPapers = addPage(current);
@@ -1639,13 +1635,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setError(shownError);
         // Under the last visit's cards the tail offers Try again for a next
         // page, as under any shown list.
-        setResetFailed(reset && !lastVisitShown && !showsLastVisit(lastVisit));
+        setResetFailed(reset && !lastVisitShown && !showsLastVisit(lastVisit.status));
         if (lastVisitShown) {
           // Nothing is on screen, so no snapshot is either.
           restoredFeedKeyRef.current = '';
-          lastVisitSavedAt.current = lastVisitShown.savedAt;
           restoreFeedSnapshot({ papers: lastVisitShown.papers, page: 0, hasMore: true, savedAt: lastVisitShown.savedAt }, activeMode, feedPreferenceSignature(userPreferences));
-          setLastVisit(lastVisitStep.shown);
+          setLastVisit({ status: lastVisitStep.shown, savedAt: lastVisitShown.savedAt });
         } else if (reset) {
           setLastVisit(lastVisitStep.kept);
         }
@@ -1702,8 +1697,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     const snapshot = readFeedSnapshot(user?.uid, signature);
     return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
-      setLastVisit(null);
-      lastVisitSavedAt.current = undefined;
+      setLastVisit({ status: null });
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
@@ -2502,7 +2496,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, autoRetryPending, resetFailed, lastVisit, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, lastVisit: lastVisit.status, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
