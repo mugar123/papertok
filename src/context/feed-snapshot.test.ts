@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import { dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { placeNotableCards } from '../utils/feed-enrichment.ts';
+import { lastVisitAfterLoad } from '../utils/feed-loading-state.ts';
 import { resumeIndex } from '../utils/feed-mount-window.ts';
 import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, forYouScrollKey } from '../utils/feed-resume-memory.ts';
 import { joinFeedPage, notablePlaceAfterDismissal, reRankAfterReader } from './feed-notable-cards.ts';
-import { lastVisitCards, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
+import { lastVisitCards, loadOverList, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -257,6 +258,31 @@ test('the last visit\'s cards are only the account\'s own, for the same interest
   assert.equal(lastVisitCards('test-user', 'cs.AI', unseen, storage), null, 'a week-old feed is not shown');
   writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('seen')], page: 1, hasMore: true }, storage);
   assert.equal(lastVisitCards('test-user', 'cs.AI', paper => paper.id !== 'seen', storage), null, 'a feed the reader has seen whole keeps the error');
+});
+
+// ENG-188: a Try again under the last visit's cards that brought no new card
+// saved them again with the current time, so a reload opened on them without
+// the note, even past their three days; repeated ids said "Papers updated".
+test('a load with no new card keeps the last visit\'s date and note through a reload', t => {
+  const day = 24 * 60 * 60 * 1000;
+  const savedAt = Date.now() - 2 * day;
+  const listed = [card('a'), card('b')];
+  for (const [answer, incoming] of [['empty', []], ['repeated ids', [card('b'), card('a')]]] as const) {
+    const storage = memoryStorage();
+    const resumeMemory = createFeedResumeMemory({ storage: memoryStorage() });
+    const loaded = loadOverList({ listed, incoming: [...incoming], lastVisitShown: true, savedAt });
+    assert.equal(lastVisitAfterLoad('not-updated', loaded.added), 'no-new', `${answer}: the note stays`);
+    writeFeedSnapshot('test-user', 'cs.AI', { papers: listed, page: 1, hasMore: true, savedAt: loaded.savedAt }, storage);
+    assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory }), null, `${answer}: a reload does not open on them as recent`);
+    assert.equal(lastVisitCards('test-user', 'cs.AI', () => true, storage)?.savedAt, savedAt, `${answer}: they keep their date`);
+    const later = t.mock.method(Date, 'now', () => savedAt + 3 * day + 1);
+    assert.equal(lastVisitCards('test-user', 'cs.AI', () => true, storage), null, `${answer}: they expire three days after they were saved`);
+    later.mock.restore();
+  }
+  const fresh = loadOverList({ listed, incoming: [card('a'), card('x')], lastVisitShown: true, savedAt });
+  assert.equal(lastVisitAfterLoad('not-updated', fresh.added), 'updated');
+  assert.equal(fresh.savedAt, undefined, 'a new card dates the list from this load');
+  assert.equal(loadOverList({ listed, incoming: [], lastVisitShown: false, savedAt }).savedAt, undefined, 'outside the last visit a load dates the list as before');
 });
 
 test('fresh papers join the last visit\'s cards below the card the reader is on', () => {

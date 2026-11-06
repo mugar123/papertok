@@ -122,6 +122,19 @@ export function lastVisitCards(
   }
 }
 
+/**
+ * What a load that succeeded brings over the list (ENG-188). `added`: a card
+ * the list lacks; an empty answer, or one of repeated ids, adds none. Under the
+ * last visit's cards, a load that adds none keeps the date they were saved
+ * (`savedAt`), so after a reload they cannot pass for a recent feed; otherwise
+ * `savedAt` is undefined and the snapshot takes the time of this load.
+ */
+export function loadOverList({ listed, incoming, lastVisitShown, savedAt }: { listed: Paper[]; incoming: Paper[]; lastVisitShown: boolean; savedAt?: number }) {
+  const listedIds = new Set(listed.map(paper => paper.id));
+  const added = incoming.some(paper => !listedIds.has(paper.id));
+  return { added, savedAt: lastVisitShown && !added ? savedAt : undefined };
+}
+
 export function writeFeedSnapshot(userId: string | null | undefined, signature: string, snapshot: FeedSnapshot, storage?: SnapshotStorage) {
   if (!userId || !signature || !snapshot?.papers?.length) return;
   try {

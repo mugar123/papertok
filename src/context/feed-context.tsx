@@ -111,7 +111,7 @@ import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutc
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit } from '../utils/feed-loading-state.ts';
-import { lastVisitCards, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
+import { lastVisitCards, loadOverList, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
@@ -1568,19 +1568,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { nextPage, hasMore: nextHasMore } = pageAfterLoad(newPapers.length, currentPage, seenFallback);
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
-      // A load that brings no card the list lacks (an empty answer, or only
-      // repeated ids) leaves the last visit's cards as they were: the saved
-      // copy keeps its date, so it cannot pass for a recent one.
-      const listedIds = new Set(papersRef.current.map(p => p.id));
-      const bringsNewCards = [...filtered, ...notableCards].some(p => !listedIds.has(p.id));
-      const keepsLastVisitCopy = showsLastVisit(lastVisit) && !bringsNewCards;
+      // A load that brings no card the list lacks leaves the last visit's
+      // cards with their saved date and note (loadOverList).
+      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisitShown: showsLastVisit(lastVisit), savedAt: feedCache.current[activeMode]?.savedAt });
 
       setPapers(current => {
         const nextPapers = addPage(current);
         const listed = new Set(nextPapers.map(p => p.id));
         notableCards.forEach(p => { if (listed.has(p.id)) sessionSeenPapers.current.add(p.id); });
         // The cache and the snapshot keep the list the reader sees.
-        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, notableAfter: notableAfterRef.current, excludedIds };
+        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, notableAfter: notableAfterRef.current, excludedIds, savedAt: loaded.savedAt };
         // This write is synchronous and bypasses the debounce map on purpose —
         // it's the primary persist, not a merge, so it should land immediately.
         // But it shares its localStorage key (userId, preferenceSignature) with
@@ -1598,15 +1595,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           clearTimeout(pendingSnapshotWrite.timer);
           pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
         }
-        if (!keepsLastVisitCopy) writeFeedSnapshot(snapshotUserId, preferenceSignature, feedCache.current[activeMode]);
+        writeFeedSnapshot(snapshotUserId, preferenceSignature, feedCache.current[activeMode]);
         return nextPapers;
       });
       setPage(nextPage);
       setHasMore(nextHasMore);
       telemetry.finish({ result: filtered.length + notableCards.length > 0 ? 'success' : 'empty', degraded });
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
-      const added = bringsNewCards;
-      setLastVisit(current => lastVisitAfterLoad(current, added));
+      setLastVisit(current => lastVisitAfterLoad(current, loaded.added));
 
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
