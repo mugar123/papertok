@@ -140,8 +140,9 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
   new browser events and resets the identity. `privacy.html` promises exactly this, so a
   change here must not go beyond it. Every product event is registered in
   `EVENT_PARAMETER_SCHEMAS`, and each parameter is a typed field: a boolean, a bounded
-  number or a fixed list of labels. Never send paper titles, search text, free text, error
-  messages or unsanitized URLs. An identifier (paper or entity ID) goes only through the
+  number or a fixed list of labels. Never send paper titles, search text, interests, free text,
+  error messages, unsanitized URLs or account identifiers as event properties: the account
+  is linked only by PostHog's identify call. An identifier (paper or entity ID) goes only through the
   `identifier` type, never a free string. Changing what analytics sends or identifies needs
   authorization (see above) and a matching update to `privacy.html` in the same change.
 
