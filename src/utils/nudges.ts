@@ -215,11 +215,12 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
  * another dialog: it waits for the cards, and for that dialog to close. Once
  * open it stays open, under any modal opened over it, until the reader closes
  * it or leaves the feed. `wasOpen` is the value this returned on the previous
- * render; `cardsShown` and `modalOpen` only matter while the dialog is closed
- * (open, it is a modal itself).
+ * render; `cardsShown`, `modalOpen` and `tabVisible` only matter while the
+ * dialog is closed (open, it is a modal itself). A hidden tab does not open it:
+ * opening records the version as told, and nobody would have seen the notice.
  */
-export function privacyDialogOpen({ shown, cardsShown, modalOpen, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; wasOpen: boolean }) {
-  return shown && (wasOpen || (cardsShown && !modalOpen));
+export function privacyDialogOpen({ shown, cardsShown, modalOpen, tabVisible, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; tabVisible: boolean; wasOpen: boolean }) {
+  return shown && (wasOpen || (cardsShown && !modalOpen && tabVisible));
 }
 
 /**

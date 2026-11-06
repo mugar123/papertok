@@ -341,9 +341,16 @@ test('the privacy dialog is not shown while the profile could not be loaded, and
   assert.equal(arrived.picked, PRIVACY_NOTICE_ID);
   assert.equal(noticeOnScreen({ picked: arrived.picked, signedIn: ready({ profileLoadError: 'PROFILE_LOAD_FAILED' }), pathname: '/feed', privacyOwed: true }), null);
   // Off screen the dialog closes, and it opens again when Try again brings the feed back.
-  assert.equal(privacyDialogOpen({ shown: false, cardsShown: true, modalOpen: false, wasOpen: true }), false);
+  assert.equal(privacyDialogOpen({ shown: false, cardsShown: true, modalOpen: false, tabVisible: true, wasOpen: true }), false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: ready(), pathname: '/feed', privacyOwed: true }), PRIVACY_NOTICE_ID);
-  assert.equal(privacyDialogOpen({ shown: true, cardsShown: true, modalOpen: false, wasOpen: false }), true);
+  assert.equal(privacyDialogOpen({ shown: true, cardsShown: true, modalOpen: false, tabVisible: true, wasOpen: false }), true);
+});
+
+test('the privacy dialog waits for a hidden tab to be visible and stays open if the tab is hidden after', () => {
+  const open = (tabVisible: boolean, wasOpen: boolean) => privacyDialogOpen({ shown: true, cardsShown: true, modalOpen: false, tabVisible, wasOpen });
+  assert.equal(open(false, false), false);
+  assert.equal(open(true, false), true);
+  assert.equal(open(false, true), true);
 });
 
 // Whether the privacy dialog is open after each render, as NudgeHost feeds it:
@@ -351,7 +358,7 @@ test('the privacy dialog is not shown while the profile could not be loaded, and
 // `modalOpen` whether a modal is on the page while the dialog is closed.
 const dialogSteps = (events: Array<{ shown: boolean; cardsShown?: boolean; modalOpen: boolean }>) => {
   let wasOpen = false;
-  return events.map(({ cardsShown = true, ...event }) => (wasOpen = privacyDialogOpen({ ...event, cardsShown, wasOpen })));
+  return events.map(({ cardsShown = true, ...event }) => (wasOpen = privacyDialogOpen({ ...event, cardsShown, tabVisible: true, wasOpen })));
 };
 
 test('the privacy dialog opens once the feed shows its first cards, never over its loading or error screen', () => {
@@ -494,7 +501,7 @@ test('the privacy dialog opens once per policy version, for signed-in accounts c
     const gates = visitChoiceGates({ user, loading: false, onboardingComplete: signedIn, pathname: '/feed' });
     const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, eligible: ['email-down'] });
     const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
-    const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, wasOpen: false });
+    const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, tabVisible: true, wasOpen: false });
     recordPrivacyNoticeShown({ uid: user?.uid, dialogOpen, version: PRIVACY_POLICY_VERSION, storage });
     return dialogOpen;
   };

@@ -85,6 +85,13 @@ function subscribeToOtherTabs(onChange: () => void) {
   return () => window.removeEventListener('storage', onChange);
 }
 
+// A hidden tab does not open the dialog, so a tab in the background cannot use
+// up the notice before anybody has seen it.
+function subscribeToTabVisibility(onChange: () => void) {
+  document.addEventListener('visibilitychange', onChange);
+  return () => document.removeEventListener('visibilitychange', onChange);
+}
+
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
@@ -146,7 +153,8 @@ export default function NudgeHost() {
   const waiting = privacyShown && cardsShown && !privacyOpen;
   const subscribe = useCallback((onChange: () => void) => (waiting ? subscribeToModals(onChange) : () => undefined), [waiting]);
   const modalOpen = useSyncExternalStore(subscribe, () => waiting && modalIsOpen(document), () => false);
-  const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, wasOpen: privacyOpen });
+  const tabVisible = useSyncExternalStore(subscribeToTabVisibility, () => document.visibilityState === 'visible', () => false);
+  const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, tabVisible, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
 
   // The cards under the open dialog stop counting their time on screen. When
