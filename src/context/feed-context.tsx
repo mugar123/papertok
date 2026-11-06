@@ -238,6 +238,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // (lastVisitCards), until a load brings fresh papers: 'updating' while the
   // automatic retry is due or running, 'not-updated' once it failed too.
   const [lastVisit, setLastVisit] = useState<LastVisitStatus>(null);
+  // The date those cards were saved, kept beside them: a refresh empties the
+  // cache, and a later load that brings nothing new must still save them
+  // under their original date.
+  const lastVisitSavedAt = useRef<number | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1570,7 +1574,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const preferenceSignature = feedPreferenceSignature(userPreferences);
       // A load that brings no card the list lacks leaves the last visit's
       // cards with their saved date and note (loadOverList).
-      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisitShown: showsLastVisit(lastVisit), savedAt: feedCache.current[activeMode]?.savedAt });
+      const loaded = loadOverList({ listed: papersRef.current, incoming: [...filtered, ...notableCards], lastVisitShown: showsLastVisit(lastVisit), savedAt: lastVisitSavedAt.current });
+      lastVisitSavedAt.current = loaded.savedAt;
 
       setPapers(current => {
         const nextPapers = addPage(current);
@@ -1638,6 +1643,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (lastVisitShown) {
           // Nothing is on screen, so no snapshot is either.
           restoredFeedKeyRef.current = '';
+          lastVisitSavedAt.current = lastVisitShown.savedAt;
           restoreFeedSnapshot({ papers: lastVisitShown.papers, page: 0, hasMore: true, savedAt: lastVisitShown.savedAt }, activeMode, feedPreferenceSignature(userPreferences));
           setLastVisit(lastVisitStep.shown);
         } else if (reset) {
@@ -1697,6 +1703,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const snapshot = readFeedSnapshot(user?.uid, signature);
     return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
       setLastVisit(null);
+      lastVisitSavedAt.current = undefined;
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
