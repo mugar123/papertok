@@ -5,6 +5,7 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Interac
 import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendation-engine.ts';
 import type { FeedSnapshot } from './feed-snapshot.ts';
+import type { LastVisitStatus } from '../utils/feed-loading-state.ts';
 import type { LibraryEntry } from './library-entry.ts';
 import type { MarkWriteOptions } from './write-mark.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
@@ -18,6 +19,8 @@ export interface FeedContextValue {
   autoRetryPending: boolean;
   /** `error` is a reset's (a refresh or a new list), not a next page's. */
   resetFailed: boolean;
+  /** The list shows the last visit's cards because the first load failed (ENG-188). */
+  lastVisit: LastVisitStatus;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -107,7 +110,8 @@ import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-l
 import { automaticRetry, emptyFirstPageError, feedFailureEventStep, feedLoadOutcome } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
-import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
+import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit, type LastVisit } from '../utils/feed-loading-state.ts';
+import { lastVisitCards, loadOverList, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
@@ -230,6 +234,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // own: an older timer that fires after a newer failure must not end its wait.
   const [autoRetryFor, setAutoRetryFor] = useState<number | null>(null);
   const autoRetryPending = autoRetryFor !== null;
+  // The list shows the last visit's cards in place of a failed first load
+  // (lastVisitCards), until a load brings fresh papers: 'updating' while the
+  // automatic retry is due or running, 'not-updated' once it failed too. It
+  // holds the date those cards were saved, which a refresh cannot empty.
+  const [lastVisit, setLastVisit] = useState<LastVisit>({ status: null });
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1186,6 +1195,56 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     };
   }, [carryViewedPapers, isKnownPaper, user?.uid, markChangeLog, saveRollback]);
 
+  // The account and interests whose snapshot is on screen. Both effects below
+  // restore on a cold mount; the second must not read the snapshot again once
+  // the first has shown it, or it would undo what the requests below applied.
+  const restoredFeedKeyRef = useRef('');
+  // A snapshot can be saved before its page's requests answered, and nothing
+  // restarts them after a reload. The restored cards ask again: Crossref for
+  // types still unknown, and the abstract sources for a card one can still fill.
+  const restoreFeedSnapshot = useCallback((snapshot: FeedSnapshot, mode: string, signature: string) => {
+    const key = `${activeUserId.current}:${signature}`;
+    if (restoredFeedKeyRef.current === key) return;
+    restoredFeedKeyRef.current = key;
+    feedCache.current[mode] = snapshot;
+    feedExcludedIds.current = snapshot.excludedIds ?? [];
+    feedPlan.current = null;
+    // The restore shows these cards in this session, as a load would: a refresh
+    // must not offer them again. Only a card's own report makes one "viewed".
+    snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
+    // Only the feed reports the card the reader is on, and a reload can open
+    // another page. Until it reports, the card it will open on stands in, so a
+    // late book and a re-rank keep each card on its side of the reader.
+    visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
+    notableAfterRef.current = snapshot.notableAfter ?? null;
+    setPapers(snapshot.papers);
+    setPage(snapshot.page || 0);
+    setHasMore(snapshot.hasMore !== false);
+
+    const waiting = abstractsInFlight(snapshot.papers, { openAlex: true, europePmc: true, recovery: true });
+    const pending = snapshot.papers.filter(paper => waiting.has(paper.id));
+    const enrichmentIds = [...new Set(pending.filter(needsOpenAlexEnrichment).map(getOpenAlexEnrichmentId).filter(Boolean))];
+    const pmids = [...new Set(pending.map(paper => paper.pmid).filter(Boolean))] as string[];
+    followShownPapers({
+      mode, sessionId: feedSessionId.current, signature, waiting,
+      openAlex: enrichmentIds.length > 0
+        ? enrichPapersBatch(enrichmentIds, { timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS }).catch((err): Awaited<ReturnType<typeof enrichPapersBatch>> => {
+          console.error('OpenAlex feed enrichment failed', err);
+          return {};
+        })
+        : null,
+      iCite: null,
+      europePmc: pmids.length > 0
+        ? enrichPubmedIds(pmids).catch((err) => {
+          console.warn('Europe PMC feed enrichment failed', err);
+          return new Map();
+        })
+        : null,
+      recovery: pending.length > 0 ? recoverFeedAbstracts(pending) : null,
+      publications: classifyFeedPublications(snapshot.papers),
+    });
+  }, [followShownPapers]);
+
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
@@ -1510,13 +1569,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { nextPage, hasMore: nextHasMore } = pageAfterLoad(newPapers.length, currentPage, seenFallback);
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
+      // A load that brings no card the list lacks leaves the last visit's
+      // cards with their saved date and note (loadOverList). A notable card
+      // counts only where the join gives it a place.
+      const loaded = loadOverList({ listed: papersRef.current, joined: addPage(papersRef.current), lastVisit });
 
       setPapers(current => {
         const nextPapers = addPage(current);
         const listed = new Set(nextPapers.map(p => p.id));
         notableCards.forEach(p => { if (listed.has(p.id)) sessionSeenPapers.current.add(p.id); });
         // The cache and the snapshot keep the list the reader sees.
-        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, notableAfter: notableAfterRef.current, excludedIds };
+        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, notableAfter: notableAfterRef.current, excludedIds, savedAt: loaded.savedAt };
         // This write is synchronous and bypasses the debounce map on purpose —
         // it's the primary persist, not a merge, so it should land immediately.
         // But it shares its localStorage key (userId, preferenceSignature) with
@@ -1541,6 +1604,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setHasMore(nextHasMore);
       telemetry.finish({ result: filtered.length + notableCards.length > 0 ? 'success' : 'empty', degraded });
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
+      setLastVisit(current => lastVisitAfterLoad(current, loaded.added));
 
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
@@ -1561,8 +1625,26 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (requestId === feedRequestId.current) {
         telemetry.finish({ result: 'error', error: failure });
         const { error: shownError, autoRetry } = feedLoadOutcome(failure);
+        const retryDue = reset && autoRetry && !autoRetryUsedRef.current;
+        // A first load that failed with nothing on screen shows the cards of
+        // the account's last saved feed the reader has not seen, with or
+        // without an automatic retry (ENG-188).
+        const lastVisitStep = lastVisitOnFailedReset({ nothingShown: papersRef.current.length === 0 && feedSessionId.current === activeSessionId, retryDue, lastVisit, error: shownError });
+        const lastVisitShown = reset && lastVisitStep.readSaved
+          ? lastVisitCards(activeUserId.current, feedPreferenceSignature(userPreferences), isAvailablePaper)
+          : null;
         setError(shownError);
-        setResetFailed(reset);
+        // Under the last visit's cards the tail offers Try again for a next
+        // page, as under any shown list.
+        setResetFailed(reset && !lastVisitShown && !showsLastVisit(lastVisit.status));
+        if (lastVisitShown) {
+          // Nothing is on screen, so no snapshot is either.
+          restoredFeedKeyRef.current = '';
+          restoreFeedSnapshot({ papers: lastVisitShown.papers, page: 0, hasMore: true, savedAt: lastVisitShown.savedAt }, activeMode, feedPreferenceSignature(userPreferences));
+          setLastVisit({ status: lastVisitStep.shown, savedAt: lastVisitShown.savedAt });
+        } else if (reset) {
+          setLastVisit(lastVisitStep.kept);
+        }
         // One event per failed attempt, sent where the load runs: a remounted
         // feed screen showing the same error must not send it again. Off /feed,
         // or behind a card that still hides the error, it is held until the
@@ -1586,7 +1668,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           setTimeout(() => {
             setAutoRetryFor(current => (current === requestId ? null : current));
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              void loadPapersRef.current?.(true, activeMode, undefined, { loadType, attempt: 'automatic_retry', keepThroughVisible, retriesTimeout: retry.retriesTimeout });
+              // Fresh papers join below the card the reader is on.
+              void loadPapersRef.current?.(true, activeMode, undefined, { loadType, attempt: 'automatic_retry', keepThroughVisible: keepThroughVisible || Boolean(lastVisitShown), retriesTimeout: retry.retriesTimeout });
             }
           }, retry.pauseMs);
         }
@@ -1602,57 +1685,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
+    lastVisit, restoreFeedSnapshot,
   ]);
-
-  // The account and interests whose snapshot is on screen. Both effects below
-  // restore on a cold mount; the second must not read the snapshot again once
-  // the first has shown it, or it would undo what the requests below applied.
-  const restoredFeedKeyRef = useRef('');
-  // A snapshot can be saved before its page's requests answered, and nothing
-  // restarts them after a reload. The restored cards ask again: Crossref for
-  // types still unknown, and the abstract sources for a card one can still fill.
-  const restoreFeedSnapshot = useCallback((snapshot: FeedSnapshot, mode: string, signature: string) => {
-    const key = `${activeUserId.current}:${signature}`;
-    if (restoredFeedKeyRef.current === key) return;
-    restoredFeedKeyRef.current = key;
-    feedCache.current[mode] = snapshot;
-    feedExcludedIds.current = snapshot.excludedIds ?? [];
-    feedPlan.current = null;
-    // The restore shows these cards in this session, as a load would: a refresh
-    // must not offer them again. Only a card's own report makes one "viewed".
-    snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
-    // Only the feed reports the card the reader is on, and a reload can open
-    // another page. Until it reports, the card it will open on stands in, so a
-    // late book and a re-rank keep each card on its side of the reader.
-    visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
-    notableAfterRef.current = snapshot.notableAfter ?? null;
-    setPapers(snapshot.papers);
-    setPage(snapshot.page || 0);
-    setHasMore(snapshot.hasMore !== false);
-
-    const waiting = abstractsInFlight(snapshot.papers, { openAlex: true, europePmc: true, recovery: true });
-    const pending = snapshot.papers.filter(paper => waiting.has(paper.id));
-    const enrichmentIds = [...new Set(pending.filter(needsOpenAlexEnrichment).map(getOpenAlexEnrichmentId).filter(Boolean))];
-    const pmids = [...new Set(pending.map(paper => paper.pmid).filter(Boolean))] as string[];
-    followShownPapers({
-      mode, sessionId: feedSessionId.current, signature, waiting,
-      openAlex: enrichmentIds.length > 0
-        ? enrichPapersBatch(enrichmentIds, { timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS }).catch((err): Awaited<ReturnType<typeof enrichPapersBatch>> => {
-          console.error('OpenAlex feed enrichment failed', err);
-          return {};
-        })
-        : null,
-      iCite: null,
-      europePmc: pmids.length > 0
-        ? enrichPubmedIds(pmids).catch((err) => {
-          console.warn('Europe PMC feed enrichment failed', err);
-          return new Map();
-        })
-        : null,
-      recovery: pending.length > 0 ? recoverFeedAbstracts(pending) : null,
-      publications: classifyFeedPublications(snapshot.papers),
-    });
-  }, [followShownPapers]);
 
   const preferencesSignatureRef = useRef<string | null>(null);
   const restoredSnapshotKeyRef = useRef('');
@@ -1664,6 +1698,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     const snapshot = readFeedSnapshot(user?.uid, signature);
     return scheduleRefresh(restoredSnapshotKeyRef, restoreKey, () => {
+      setLastVisit({ status: null });
       if (snapshot?.papers?.length) {
         restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
@@ -2462,7 +2497,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
 
   const value = useMemo(() => ({
-    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, lastVisit: lastVisit.status, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
@@ -2475,7 +2510,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, autoRetryPending, resetFailed, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, autoRetryPending, resetFailed, lastVisit, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
