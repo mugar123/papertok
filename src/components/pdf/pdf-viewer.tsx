@@ -21,12 +21,24 @@ import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
+import { readAnalyticsConsent } from '../../services/analytics-service.ts';
+import { auth } from '../../services/firebase.ts';
 import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer-outcome.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
 const PdfPages = lazy(() => import('./pdf-pages.tsx'));
 const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
+
+/**
+ * The consent and account a viewer session belongs to, read when asked rather
+ * than from the last render: a viewer that unmounts in the commit that switches
+ * the account would otherwise compare against the old account and send its
+ * time after PostHog was identified as the new one.
+ */
+function viewerContext() {
+  return `${readAnalyticsConsent()}|${auth.currentUser?.uid ?? ''}`;
+}
 
 /**
  * A full-screen Base UI Dialog (ui/dialog.jsx). app.tsx mounts the viewer and
@@ -160,10 +172,10 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   }, [iframeLoaded, canEmbed]);
 
   // viewer_open on mount, viewer_content on the first outcome, viewer_time on unmount.
-  // A change of consent or account while open drops the session (viewer-outcome.ts).
+  // A change of consent or account while open drops the session (viewer-outcome.ts):
+  // `consent` and `uid` drop it at once, and `viewerContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const uid = useAuth().user?.uid ?? '';
-  const viewerContext = useEffectEvent(() => `${consent}|${uid}`);
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>) => {
     void trackEvent(name, params);
   });
@@ -172,7 +184,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     trackerRef.current?.check();
   }, [consent, uid]);
   useEffect(() => {
-    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, context: () => viewerContext(), send: (name, params) => sendViewerEvent(name, params) });
+    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, context: viewerContext, send: (name, params) => sendViewerEvent(name, params) });
     trackerRef.current = tracker;
     return () => {
       tracker.stop();
