@@ -3,6 +3,7 @@ import type { Block, FullText, Inline, Reference } from '../../utils/full-text.t
 import { blockInlines } from '../../utils/full-text.ts';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
+import { getTemml, loadTemml, temmlMarkup } from '../../utils/temml-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPublicPaperPath } from '../../utils/public-navigation.ts';
 import { copyText } from '../../utils/clipboard.ts';
@@ -26,19 +27,22 @@ function jumpTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
   if (element) landOn(element, element.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center');
 }
 
-const katexOutput = typeof CSS !== 'undefined' && CSS.supports('font', '-apple-system-body') ? 'mathml' : 'htmlAndMathml';
+const drawsMathml = typeof CSS !== 'undefined' && CSS.supports('font', '-apple-system-body');
+const mathReady = () => (drawsMathml ? getTemml() : getKatex()) !== null;
+const loadMath = () => (drawsMathml ? loadTemml() : loadKatex());
 
 const MAX_CACHED_FORMULAS = 2000;
 const renderedFormulas = new Map<string, string | null>();
 
-function katexHtml(tex: string | undefined, display: boolean) {
-  const katex = getKatex();
-  if (!katex || !tex) return null;
+function formulaHtml(tex: string | undefined, display: boolean) {
+  if (!tex || !mathReady()) return null;
   const key = `${display ? 'D' : 'I'}\u0000${tex}`;
   if (!renderedFormulas.has(key)) {
     let html: string | null;
     try {
-      html = katex.renderToString(tex, { displayMode: display, output: katexOutput, throwOnError: true, strict: 'ignore', trust: false });
+      html = drawsMathml
+        ? temmlMarkup(getTemml()!, tex, display)
+        : getKatex()!.renderToString(tex, { displayMode: display, throwOnError: true, strict: 'ignore', trust: false });
     } catch {
       html = null;
     }
@@ -48,17 +52,16 @@ function katexHtml(tex: string | undefined, display: boolean) {
   return renderedFormulas.get(key)!;
 }
 
-// Formulas drawn before KaTeX arrived are drawn again once it has.
-const katexListeners = new Set<() => void>();
-const subscribeKatex = (listener: () => void) => {
-  katexListeners.add(listener);
-  return () => { katexListeners.delete(listener); };
+// Formulas drawn before their renderer arrived are drawn again once it has.
+const mathListeners = new Set<() => void>();
+const subscribeMath = (listener: () => void) => {
+  mathListeners.add(listener);
+  return () => { mathListeners.delete(listener); };
 };
-const katexReady = () => getKatex() !== null;
 
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
-  useSyncExternalStore(subscribeKatex, katexReady);
-  const html = katexHtml(tex, display) ?? mathml;
+  useSyncExternalStore(subscribeMath, mathReady);
+  const html = formulaHtml(tex, display) ?? mathml;
   if (html) return <span className="ft-math" dangerouslySetInnerHTML={{ __html: html }} />;
   if (image) return <img className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
   return tex ? <code className="ft-tex">{tex}</code> : null;
@@ -313,21 +316,21 @@ function BlockView({ block, figureWidth }: { block: Block; figureWidth: number }
 const hasTex = (content: Inline[]): boolean =>
   content.some(item => (item.t === 'math' && Boolean(item.tex)) || ('children' in item && hasTex(item.children)));
 
-function needsKatex(doc: FullText) {
+function needsMath(doc: FullText) {
   return doc.notes.some(note => hasTex(note.content))
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
 export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
-  const wantsKatex = useMemo(() => needsKatex(doc), [doc]);
+  const wantsMath = useMemo(() => needsMath(doc), [doc]);
   useEffect(() => {
-    if (!wantsKatex || getKatex()) return undefined;
+    if (!wantsMath || mathReady()) return undefined;
     let active = true;
-    void loadKatex().then(loaded => {
-      if (active && loaded) katexListeners.forEach(notify => notify());
+    void loadMath().then(loaded => {
+      if (active && loaded) mathListeners.forEach(notify => notify());
     });
     return () => { active = false; };
-  }, [wantsKatex]);
+  }, [wantsMath]);
 
   const references = useMemo(() => new Map(doc.references.map(reference => [reference.id, reference])), [doc]);
   const figureWidth = useMemo(() => Math.max(0, ...[...doc.abstract, ...doc.body].flatMap(block => (block.t === 'figure' ? block.images.map(image => image.width ?? 0) : []))), [doc]);
