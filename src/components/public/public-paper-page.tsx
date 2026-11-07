@@ -56,10 +56,12 @@ const COPY = {
 export default function PublicPaperPage({
   onAuthRequired,
   onOpenPdf,
+  onPaperShown,
   onSaveToList,
   isAuthenticated = false,
 }: Pick<PaperCardProps, 'onAuthRequired'> & {
   onOpenPdf?: (paper: Paper) => void;
+  onPaperShown?: () => void;
   onSaveToList?: (paper: Paper) => void;
   isAuthenticated?: boolean;
 }) {
@@ -200,6 +202,9 @@ export default function PublicPaperPage({
     const timer = setTimeout(() => setCardRevealed(true), 1200);
     return () => clearTimeout(timer);
   }, [status, cardRevealed]);
+  useEffect(() => {
+    if (cardRevealed) onPaperShown?.();
+  }, [cardRevealed, onPaperShown]);
 
   const canonicalRoute = identity
     ? getPublicPaperPath(identity.type, identity.value)
