@@ -260,6 +260,9 @@ const MAX_TRACKED_SECONDS = 4 * 60 * 60;
 
 let acquisitionTrackedInMemory = false;
 let analyticsClient: Promise<PostHog | null> | null = null;
+// Set once `init` has run. Until then the SDK has not read storage, so what is
+// cleared there is gone for it too.
+let readyClient: PostHog | null = null;
 
 function getBrowserStorage() {
   try {
@@ -480,8 +483,9 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
-// A PostHog that never loaded in this tab (or was blocked) cannot reset itself,
-// so the identity an earlier visit stored is removed from storage directly.
+// A PostHog that never loaded in this tab, was blocked or is still loading
+// cannot reset itself, so the identity an earlier visit stored is removed from
+// storage directly; a load still under way then starts from the current choice.
 let consentChanges = 0;
 
 /**
@@ -500,15 +504,13 @@ export async function setAnalyticsConsent(value: string) {
   consentChanges++;
   const denied = value === ANALYTICS_CONSENT.DENIED;
   if (denied) clearConsentScopedAnalyticsState();
-  if (denied && !analyticsClient) clearStoredPostHogIdentity();
-  // Persisting the preference must not wait for an SDK that a blocker can stall.
-  // Read the latest choice when it arrives, rather than applying a stale toggle.
-  if (analyticsClient) {
-    void analyticsClient.then(client => {
-      const consent = readAnalyticsConsent();
-      if (client) applyConsent(client, consent);
-      else if (consent === ANALYTICS_CONSENT.DENIED) clearStoredPostHogIdentity();
-    }).catch(error => { console.warn('Could not update analytics preferences', error); });
+  if (denied && !readyClient) clearStoredPostHogIdentity();
+  if (readyClient) {
+    try {
+      applyConsent(readyClient, readAnalyticsConsent());
+    } catch (error) {
+      console.warn('Could not update analytics preferences', error);
+    }
   }
   return true;
 }
@@ -517,7 +519,7 @@ export async function setAnalyticsConsent(value: string) {
 // identity PostHog stored then, and with analytics off nothing loads PostHog or
 // calls `setAnalyticsConsent` again, so each start removes it while it is off.
 export function clearStoredIdentityWhileAnalyticsOff() {
-  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED && !analyticsClient) clearStoredPostHogIdentity();
+  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED && !readyClient) clearStoredPostHogIdentity();
 }
 
 function clearStoredPostHogIdentity() {
@@ -704,6 +706,7 @@ function loadAnalyticsClient() {
       if (!module) return null;
       const { posthog } = module;
       startAnalyticsClient(posthog, readAnalyticsConsent());
+      readyClient = posthog;
       return posthog;
     })
     .catch(() => null);
