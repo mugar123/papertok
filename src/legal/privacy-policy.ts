@@ -44,10 +44,12 @@ export const PRIVACY_POLICY_VERSION = '2026-11-07';
  *
  * Version 2026-11-07 adds what the email subscription stores when the digest
  * is filled from the subjects a reader chose, and that it is kept in Workers KV
- * or, once moved, a Durable Object of the account (ENG-163, #442). The wording
- * holds for both deploy phases, so phase 2 needs no new notice. That page text
- * ships with #442, so this instant follows the rule above: it stands after
- * #442's merge, at the last moment the version's day allows. If the merge
+ * or, once moved, a Durable Object of the account (ENG-163, #442), and what
+ * usage analytics records when a paper opens in the app's viewer (#458). The
+ * email wording holds for both deploy phases, so phase 2 needs no new notice.
+ * Both texts ship with #442, which merges before #458 so that no build sends
+ * viewer events before this notice. This instant follows the rule above: it
+ * stands after #442's merge, at the last moment the version's day allows. If the merge
  * falls after it, move the page's "Last updated" date, PRIVACY_POLICY_VERSION
  * and this instant to the merge day before merging; once Vercel reports the
  * merge live, lower this instant to that success time.
@@ -57,6 +59,7 @@ export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-07T23:59:59Z';
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "Email updates, if on, also store the subjects you chose, and keep your subscription in Cloudflare Workers KV or, as it moves, a Cloudflare Durable Object of your account.",
+  "Usage analytics also records whether the app's viewer showed a paper's text, its PDF, a link or nothing, and how long the viewer stays on screen.",
 ];
 
 /**
@@ -69,8 +72,9 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The only change since 5 November: what the email subscription keeps when
-  // the digest is filled from chosen subjects, and where (ENG-163, #442).
+  // The two changes since 5 November: what the email subscription keeps when
+  // the digest is filled from chosen subjects, and where (ENG-163, #442); and
+  // what usage analytics records about the app's viewer (#458).
   lead: 'Email updates',
   clauses: [
     ['Email updates', /<h2>Email updates<\/h2>/],
@@ -78,6 +82,10 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['store the subjects you chose', /the identifiers of the subjects you chose/],
     ['in Cloudflare Workers KV or, as it moves', /in <strong>Cloudflare Workers KV<\/strong> or, as it moves,/],
     ['a Cloudflare Durable Object of your account', /in a\s+<strong>Cloudflare Durable Object<\/strong> of your account/],
+    ['Usage analytics', /Usage analytics is enabled by default/],
+    ["the app's viewer", /When you open a paper in the app's viewer, they record whether it showed the paper's text/],
+    ['its PDF, a link or nothing', /its PDF, a link or nothing/],
+    ['how long the viewer stays on screen', /how long the viewer stays on screen/],
   ],
   unsaid: [
     [/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader'],
