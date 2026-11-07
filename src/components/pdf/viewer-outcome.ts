@@ -83,7 +83,7 @@ export function startViewerTracking({ now, visibility, context, send }: {
   now: () => number;
   visibility: Visibility;
   context: () => string;
-  send: (name: ViewerEvent, params: Record<string, unknown>) => void;
+  send: (name: ViewerEvent, params: Record<string, unknown>, stillValid: () => boolean) => void;
 }) {
   const openedWith = context();
   let dropped = false;
@@ -91,6 +91,7 @@ export function startViewerTracking({ now, visibility, context, send }: {
     if (context() !== openedWith) dropped = true;
     return !dropped;
   };
+  const sendEvent = (name: ViewerEvent, params: Record<string, unknown>) => send(name, params, check);
   const openedAt = now();
   let visibleSince: number | null = visibility.hidden() ? null : openedAt;
   let onText = false;
@@ -109,14 +110,14 @@ export function startViewerTracking({ now, visibility, context, send }: {
     visibleSince = visibility.hidden() ? null : at;
   };
   const unsubscribe = visibility.subscribe(flush);
-  send('viewer_open', {});
+  sendEvent('viewer_open', {});
 
   return {
     check,
     settle(next: ViewerOutcome) {
       if (outcome || stopped || !check()) return;
       outcome = next;
-      send('viewer_content', { ...next, duration_ms: now() - openedAt });
+      sendEvent('viewer_content', { ...next, duration_ms: now() - openedAt });
     },
     showText(shown: boolean) {
       if (shown === onText || stopped) return;
@@ -128,7 +129,7 @@ export function startViewerTracking({ now, visibility, context, send }: {
       flush();
       stopped = true;
       unsubscribe();
-      if (check()) send('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds });
+      if (check()) sendEvent('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds });
     },
   };
 }

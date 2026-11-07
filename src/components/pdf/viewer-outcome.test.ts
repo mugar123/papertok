@@ -46,15 +46,17 @@ function harness(hiddenAtStart = false) {
   let listener: (() => void) | null = null;
   let context = 'anonymous|A';
   const sent: [string, Record<string, unknown>][] = [];
+  const valid: (() => boolean)[] = [];
   const tracker = startViewerTracking({
     now: () => clock,
     visibility: { hidden: () => hidden, subscribe: next => { listener = next; return () => { listener = null; }; } },
     context: () => context,
-    send: (name, params) => sent.push([name, params]),
+    send: (name, params, stillValid) => { sent.push([name, params]); valid.push(stillValid); },
   });
   return {
     tracker,
     sent,
+    valid,
     setContext: (next: string) => { context = next; },
     advance: (ms: number) => { clock += ms; },
     setHidden: (next: boolean) => { hidden = next; listener?.(); },
@@ -112,6 +114,16 @@ test('a session opened under one account sends nothing once another account sign
   tracker.settle({ content: 'pdf_embed', text_status: 'none' });
   tracker.stop();
   assert.deepEqual(sent.map(([name]) => name), ['viewer_open']);
+});
+
+test('the guard handed to each send turns false when the account changes after the send started', () => {
+  const { tracker, valid, advance, setContext } = harness();
+  advance(10_000);
+  tracker.stop();
+  const timeGuard = valid.at(-1);
+  assert.equal(timeGuard?.(), true);
+  setContext('anonymous|B');
+  assert.equal(timeGuard?.(), false, 'a time still waiting for the SDK is dropped under the new account');
 });
 
 test('a viewer opened in a hidden tab and closed before any outcome reports loading', () => {

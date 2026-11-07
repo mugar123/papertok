@@ -7,6 +7,7 @@ import {
   ANALYTICS_CONSENT,
   ANALYTICS_CONSENT_COOKIE_KEY,
   ANALYTICS_CONSENT_KEY,
+  analyticsConsentState,
   inferAcquisitionChannel,
   identifyAnalyticsUser,
   markActivation,
@@ -882,6 +883,16 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
     trackProductEvent('paper_open', { surface: 'feed' }),
   ]);
   assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
+
+  capturedAccounts.length = 0;
+  const before = analyticsConsentState();
+  const guarded = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === before);
+  await setAnalyticsConsent('denied');
+  await setAnalyticsConsent('enabled');
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), before, 'off and on again is a different session');
+  assert.equal(await guarded, false);
+  assert.deepEqual(capturedAccounts, [], 'an event queued before the withdrawal is not captured after it');
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

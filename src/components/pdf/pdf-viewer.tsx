@@ -21,7 +21,7 @@ import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
-import { readAnalyticsConsent } from '../../services/analytics-service.ts';
+import { analyticsConsentState } from '../../services/analytics-service.ts';
 import { auth } from '../../services/firebase.ts';
 import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer-outcome.ts';
 
@@ -37,7 +37,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * time after PostHog was identified as the new one.
  */
 function viewerContext() {
-  return `${readAnalyticsConsent()}|${auth.currentUser?.uid ?? ''}`;
+  return `${analyticsConsentState()}|${auth.currentUser?.uid ?? ''}`;
 }
 
 /**
@@ -176,15 +176,15 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   // `consent` and `uid` drop it at once, and `viewerContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const uid = useAuth().user?.uid ?? '';
-  const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>) => {
-    void trackEvent(name, params);
+  const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
+    void trackEvent(name, params, stillValid);
   });
   const trackerRef = useRef<ReturnType<typeof startViewerTracking> | null>(null);
   useEffect(() => {
     trackerRef.current?.check();
   }, [consent, uid]);
   useEffect(() => {
-    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, context: viewerContext, send: (name, params) => sendViewerEvent(name, params) });
+    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, context: viewerContext, send: sendViewerEvent });
     trackerRef.current = tracker;
     return () => {
       tracker.stop();

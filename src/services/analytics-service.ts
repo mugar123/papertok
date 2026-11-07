@@ -464,8 +464,21 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
+let consentChanges = 0;
+
+/**
+ * The analytics choice as a session must see it: the stored level plus how many
+ * times it was written in this tab, including the writes other tabs make (the
+ * privacy provider replays those through `setAnalyticsConsent`). Turning
+ * analytics off and on again leaves the level as it was, but not this value.
+ */
+export function analyticsConsentState() {
+  return `${readAnalyticsConsent()}#${consentChanges}`;
+}
+
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
+  consentChanges++;
   if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
   // Persisting the preference must not wait for an SDK that a blocker can stall.
   // Read the latest choice when it arrives, rather than applying a stale toggle.
@@ -649,9 +662,11 @@ function canSendAnalytics() {
 // as a batched transport can honestly report. The callers' bookkeeping
 // (`activation`, `day_7_return`, the guest demo) relies on it never being true
 // for an event that was dropped.
-async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
+async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>, stillValid?: () => boolean) {
   if (!canSendAnalytics()) return false;
   const client = await loadAnalyticsClient();
+  // The SDK can take long to load; the sender may have been invalidated meanwhile.
+  if (stillValid && !stillValid()) return false;
   return Boolean(client?.capture(eventName, properties));
 }
 
@@ -670,11 +685,12 @@ export async function trackPageView(pathname: string) {
   return sendAnalyticsEvent('$pageview', { $current_url: url });
 }
 
-export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}) {
+/** `stillValid` is asked once more after the SDK has loaded, just before capture. */
+export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}, stillValid?: () => boolean) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
-  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
+  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent), stillValid);
 }
 
 function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
