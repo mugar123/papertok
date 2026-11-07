@@ -263,6 +263,12 @@ let analyticsClient: Promise<PostHog | null> | null = null;
 // Set once `init` has run. Until then the SDK has not read storage, so what is
 // cleared there is gone for it too.
 let readyClient: PostHog | null = null;
+// The stored consent change count when this tab last applied the choice to
+// `readyClient`. Another tab can turn analytics off and on again before this tab
+// handles either storage event (they can arrive together, late in a background
+// tab, or never for a page restored from the back-forward cache), and the choice
+// stored then reads 'enabled' as before (see `applyStoredConsent`).
+let appliedConsentChanges = 0;
 
 function getBrowserStorage() {
   try {
@@ -507,7 +513,7 @@ export async function setAnalyticsConsent(value: string) {
   if (denied && !readyClient) clearStoredPostHogIdentity();
   if (readyClient) {
     try {
-      applyConsent(readyClient, readAnalyticsConsent());
+      applyStoredConsent(readyClient);
     } catch (error) {
       console.warn('Could not update analytics preferences', error);
     }
@@ -705,6 +711,7 @@ function loadAnalyticsClient() {
     .then(module => {
       if (!module) return null;
       const { posthog } = module;
+      appliedConsentChanges = storedConsentChanges();
       startAnalyticsClient(posthog, readAnalyticsConsent());
       readyClient = posthog;
       return posthog;
@@ -731,6 +738,24 @@ function applyConsent(client: ConsentControls, consent: Consent) {
   } else if (!client.has_opted_in_capturing()) client.opt_in_capturing({ captureEventName: false });
 }
 
+// Every counted change writes 'enabled' or 'denied' over a different value, so a
+// count that moved by two or more and ends at 'enabled' passed through 'denied'.
+// The identity this client holds in memory was cleared from storage then and
+// must not be opted in again.
+function applyStoredConsent(client: ConsentControls) {
+  const changes = storedConsentChanges();
+  const consent = readAnalyticsConsent();
+  if (consent === ANALYTICS_CONSENT.ENABLED && changes - appliedConsentChanges >= 2) client.reset(true);
+  appliedConsentChanges = changes;
+  applyConsent(client, consent);
+}
+
+// Asked by every send from this tab's ready client, just before it captures.
+function mayCapture(client: ConsentControls) {
+  if (storedConsentChanges() !== appliedConsentChanges) applyStoredConsent(client);
+  return readAnalyticsConsent() === ANALYTICS_CONSENT.ENABLED;
+}
+
 export interface AnalyticsUser { uid: string }
 let identityVersion = 0;
 
@@ -742,7 +767,7 @@ export async function identifyAnalyticsUser(user: AnalyticsUser | null) {
   const version = ++identityVersion;
   if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
   const client = await loadAnalyticsClient();
-  if (version !== identityVersion || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !client || !client.has_opted_in_capturing()) return;
+  if (version !== identityVersion || !client || !mayCapture(client) || !client.has_opted_in_capturing()) return;
   // PostHog's own persisted state, so a sign-out in another tab counts too.
   const identifiedAs = client.get_property('$user_state') === 'identified' ? client.get_distinct_id() : null;
   if (identifiedAs && identifiedAs !== user?.uid) {
@@ -767,7 +792,8 @@ async function sendAnalyticsEvent(eventName: string, properties: Record<string, 
   const client = await loadAnalyticsClient();
   // The SDK can take long to load; the sender may have been invalidated meanwhile.
   if (stillValid && !stillValid()) return false;
-  return Boolean(client?.capture(eventName, properties));
+  if (!client || !mayCapture(client)) return false;
+  return Boolean(client.capture(eventName, properties));
 }
 
 /**
@@ -973,5 +999,5 @@ export async function trackAppCrash({
 export async function captureAppException(error: unknown) {
   if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
   const client = await loadAnalyticsClient();
-  client?.captureException(error, { operation: 'render' });
+  if (client && mayCapture(client)) client.captureException(error, { operation: 'render' });
 }

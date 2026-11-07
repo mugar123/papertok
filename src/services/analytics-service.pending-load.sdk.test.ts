@@ -82,6 +82,7 @@ test('turning analytics off and on while PostHog is still loading does not bring
   // This page's first event starts loading PostHog, and the reader turns
   // analytics off and on again before it has loaded.
   const sending = trackProductEvent('paper_open', { surface: 'feed' });
+  // `__loaded` is the SDK's own flag, set when its `init` has run.
   assert.equal(posthog.__loaded, false, 'PostHog is still loading');
   assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), true);
   assert.equal(posthog.__loaded, false, 'PostHog is still loading when analytics is turned off');

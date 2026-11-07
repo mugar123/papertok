@@ -42,9 +42,6 @@ function cookieJar(hostname: string) {
   };
 }
 
-// The consent update reaches a loaded SDK once its promise settles.
-const settle = () => new Promise(resolve => { setImmediate(resolve); });
-
 test('a tab where PostHog never loaded turns analytics off, and the tab where it did forgets its identity for good', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const local = memoryStorage();
@@ -92,14 +89,13 @@ test('a tab where PostHog never loaded turns analytics off, and the tab where it
 
   // Tab A's PrivacyProvider answers the storage event with the stored choice.
   inTab(sessionA);
+  // A loaded SDK is updated before `setAnalyticsConsent` resolves.
   assert.equal(await tabA.setAnalyticsConsent(tabA.readAnalyticsConsent()), true);
-  await settle();
   assert.equal(posthog.is_capturing(), false);
   assert.notEqual(posthog.get_distinct_id(), firstId, 'tab A dropped the identity it held in memory');
   assert.equal(storedAnywhere(firstId), false);
 
   assert.equal(await tabA.setAnalyticsConsent(tabA.ANALYTICS_CONSENT.ENABLED), true);
-  await settle();
   assert.equal(await tabA.trackProductEvent('paper_open', { surface: 'feed' }), true);
   assert.notEqual(posthog.get_distinct_id(), firstId, 'turning analytics on again starts a new browser identity');
   assert.equal(storedAnywhere(firstId), false, 'the old identity is not written back');
