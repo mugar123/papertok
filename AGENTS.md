@@ -138,14 +138,14 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
   Browser analytics (PostHog) runs only on papertok.app; it keeps a persistent browser
   identifier, identifies the signed-in account by its Firebase user ID and records no
   session replays. `denied` stops new browser events and resets the identity. `privacy.html`
-  promises exactly this, so a change here must not go beyond it. Every product event is
-  registered in `EVENT_PARAMETER_SCHEMAS`, and each parameter is a typed field: a boolean, a
-  bounded number, a fixed list of labels or a pattern-checked build version. Never send
-  paper titles, search text, interests, free text, error messages, unsanitized URLs or
-  account identifiers as event properties: the account is linked only by PostHog's identify
-  call. An identifier (paper or entity ID) goes only through the `identifier` type, never a
-  free string. Changing what analytics sends or identifies needs authorization (see above)
-  and a matching update to `privacy.html` in the same change.
+  describes exactly this. Every product event is registered in `EVENT_PARAMETER_SCHEMAS`,
+  and each parameter is a typed field: a boolean, a bounded number, a fixed list of labels,
+  a pattern-checked build version or an `identifier`. Never send paper titles, search text,
+  interests, free text, error messages, unsanitized URLs or account identifiers as event
+  properties: the account is linked only by PostHog's identify call. The `identifier` type
+  checks no pattern, so only a paper or entity ID may go through it, never other text.
+  Changing what analytics or error reports (browser or Worker) send or identify needs
+  authorization (see above) and a matching update to `privacy.html` in the same change.
 
 ## Accessibility and interface
 
