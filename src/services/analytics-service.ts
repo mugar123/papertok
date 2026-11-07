@@ -267,7 +267,9 @@ let readyClient: PostHog | null = null;
 // `readyClient`. Another tab can turn analytics off and on again before this tab
 // handles either storage event (they can arrive together, late in a background
 // tab, or never for a page restored from the back-forward cache), and the choice
-// stored then reads 'enabled' as before (see `applyStoredConsent`).
+// stored then reads 'enabled' as before. `applyStoredConsent` reads it to tell
+// that apart, and `mayCapture` and `sanitizeAnalyticsCapture` compare it with
+// the stored count to apply the choice before anything is sent.
 let appliedConsentChanges = 0;
 
 function getBrowserStorage() {
@@ -662,6 +664,23 @@ function reducedUserAgent({ $browser, $browser_version, $os }: Record<string, un
  */
 export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()): CaptureResult | null {
   if (!capture || consent === ANALYTICS_CONSENT.DENIED) return null;
+  // A capture that did not pass `mayCapture`, such as PostHog's own exception
+  // autocapture, was built with the identity this tab holds in memory. When
+  // another tab turned analytics off and on unseen (see `applyStoredConsent`),
+  // that identity was cleared: drop the event and apply the stored choice once
+  // this capture has returned.
+  if (readyClient && storedConsentChanges() - appliedConsentChanges >= 2) {
+    const client = readyClient;
+    // A failure here must not become an uncaught error that autocapture brings back.
+    queueMicrotask(() => {
+      try {
+        applyStoredConsent(client);
+      } catch (error) {
+        console.warn('Could not update analytics preferences', error);
+      }
+    });
+    return null;
+  }
   const { event, properties = {} } = capture;
   const exception = event === '$exception' ? sanitizeExceptionProperties(properties) : null;
   if (event !== '$pageview' && event !== '$identify' && !exception && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
