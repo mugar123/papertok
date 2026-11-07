@@ -38,7 +38,7 @@ const ERROR_COPY = {
     EMAIL_TEST_OPENALEX_BUDGET: "PaperTok has paused test emails to keep the day's OpenAlex budget for opening papers and the feed. You can send one again by 00:00 UTC at the latest.",
     EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend rejected this recipient. Check that the sender domain is verified.',
     EMAIL_DATA_LOADING: 'We are still loading what you follow. Try again in a few seconds.',
-    EMAIL_FOLLOWS_REQUIRED: 'Follow at least one topic, author, institution, or project before enabling emails.',
+    EMAIL_FOLLOWS_REQUIRED: 'Follow a topic, author, institution, or project, or choose your subjects, before enabling emails.',
     EMAIL_SEND_FAILED: 'The test email could not be sent.',
     EMAIL_TIMEOUT: 'The email service is taking too long.',
     EMAIL_UNAVAILABLE: 'The email service is not available right now.',
@@ -73,12 +73,14 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     saving,
     testing,
     notificationDataReady,
-    hasFollows,
+    digestCovered,
+    digestSendReady,
+    digestTurnedOff,
     savePreferences,
     sendTest,
   } = useEmailNotifications();
   const { followedEntities } = useFollowing();
-  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending);
+  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending, digestCovered);
   const [draft, setDraft] = useState(preferences);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
@@ -144,7 +146,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   };
 
   const emailService = emailServiceState(health);
-  const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!hasFollows && !draft.enabled);
+  const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!digestCovered && !draft.enabled);
   const optionsDisabled = !draft.enabled || loading;
   const statusUnknown = !loading && emailService === 'unknown';
   const providerDown = !loading && emailService === 'down';
@@ -180,6 +182,12 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
                 : health.code === 'EMAIL_SENDER_STATUS_UNKNOWN'
                   ? ('PaperTok cannot confirm the sender domain with the current Resend key.')
                 : ('The email provider is not available right now.')}</span>
+          </div>
+        )}
+        {digestTurnedOff && (
+          <div className="email-notification-provider-warning is-info">
+            <strong>{'Email updates turned off'}</strong>
+            <span>{'You no longer follow a topic, author, institution or project, and you have no subjects chosen, which is what the weekly email covers. Follow one or choose your subjects, then switch email updates back on here.'}</span>
           </div>
         )}
         {!loading && notificationDataReady && followsNotice && (
@@ -249,7 +257,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
           onClick={() => { void handleTest(); }}
-          disabled={saving || testing || loading || !notificationDataReady || !hasFollows || emailService === 'down' || testState === 'sent'}
+          disabled={saving || testing || loading || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
         >
@@ -269,7 +277,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !hasFollows))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}
