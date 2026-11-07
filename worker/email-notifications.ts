@@ -1272,6 +1272,11 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  // A KV record that a closed object hides (one a Worker from before the
+  // object saved) still names its token and delivery state; read it before
+  // the reads below, which treat it as cancelled and return nothing.
+  const raw = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
+  if (raw?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${raw.unsubscribeToken}`).add(deliveryStateKey(uid, raw));
   const held = await closeBeforeCancelling(env, uid);
   const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
   const previous = changed || held;
