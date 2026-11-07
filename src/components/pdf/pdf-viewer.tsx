@@ -118,8 +118,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef<number | null>(null);
 
-  // Every way out — the X, Escape — lands here, so the bounce is counted
-  // once, whichever it was.
+  // The X and Escape land here, so the bounce is counted once, whichever it was.
   const handleClose = useCallback(() => {
     if (!open) return;
     const elapsed = (Date.now() - startTimeRef.current!) / 1000;
@@ -130,9 +129,10 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   }, [open, paper, trackPdfBounce]);
   const afterClose = useRef<(() => void) | null>(null);
   const leaveThen = useCallback((then: () => void) => {
+    if (!open) return;
     afterClose.current = then;
-    handleClose();
-  }, [handleClose]);
+    setOpen(false);
+  }, [open]);
 
   useEffect(() => {
     startTimeRef.current = Date.now();

@@ -1,4 +1,4 @@
-import type { ComponentProps, MouseEvent, ReactNode, SyntheticEvent, TransitionEvent } from 'react';
+import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
@@ -111,8 +111,8 @@ import AbstractSheet from './abstract-sheet.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
-import type { ReaderMenu } from './paper-menu.tsx';
-import { paperActions, paperShareUrl, shareMethod } from './paper-actions.ts';
+import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
+import { paperActions, shareMethod } from './paper-actions.ts';
 import { followReasonLabels } from '../../utils/follow-reasons.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -182,7 +182,7 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
-import { getPublicEntityPath } from '../../utils/public-navigation.ts';
+import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
 
@@ -1446,13 +1446,14 @@ const PaperCard = memo(function PaperCard({
     e.stopPropagation();
     notInterested();
   };
-  const readerRef = useRef<{ about: ReactNode; links: ReactNode; isRead: boolean; notInterested: () => void; toggleRead: () => void }>({ about: null, links: null, isRead: false, notInterested: () => {}, toggleRead: () => {} });
+  const readerRef = useRef<ReaderCard>({ about: null, links: null, isRead: false, shareUrl: '', notInterested: () => {}, toggleRead: () => {} });
+  const readerListeners = useRef(new Set<() => void>());
   const readerMenu: ReaderMenu = {
-    about: () => readerRef.current.about,
-    links: () => readerRef.current.links,
-    isRead: () => readerRef.current.isRead,
-    notInterested: () => readerRef.current.notInterested(),
-    toggleRead: () => readerRef.current.toggleRead(),
+    snapshot: () => readerRef.current,
+    subscribe: (onChange) => {
+      readerListeners.current.add(onChange);
+      return () => { readerListeners.current.delete(onChange); };
+    },
   };
 
   // Created once, so a re-render between the hold and its click keeps the
@@ -1626,7 +1627,16 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
-  const shareUrl = paperShareUrl(paper, resolvedOpenCopy);
+  // Never the library link: it only opens for readers at that institution.
+  const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
+    || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
+    || safeExternalUrl(paper.openAccessPdfUrl)
+    || safeExternalUrl(paper.pdfUrl)
+    || safeExternalUrl(paper.landingPageUrl)
+    || safeDoiUrl(paper.doi);
+  const shareUrl = getPublicPaperUrl(paper)
+    || bestAvailableUrl
+    || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
 
   const handleShared = (method: string) => {
     void trackEvent('share', { method: shareMethod(method), content_type: 'paper', surface: analyticsSurface });
@@ -1839,7 +1849,10 @@ const PaperCard = memo(function PaperCard({
           )}
     </>
   );
-  useLayoutEffect(() => { readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, notInterested, toggleRead: handleMarkAsRead }; });
+  useLayoutEffect(() => {
+    readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, shareUrl, notInterested, toggleRead: handleMarkAsRead };
+    readerListeners.current.forEach(onChange => onChange());
+  });
 
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
@@ -2377,7 +2390,6 @@ const PaperCard = memo(function PaperCard({
           actions={paperActions({
             paper,
             isRead: isReadActive,
-            aboutHint: 'Status, topics, funding and links',
             onAbout: () => setMenuView('about'),
             onToggleRead: handleMarkAsRead,
             onNotInterested: handleNotInterested,

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { FullText } from '../../utils/full-text.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PopoverChangeDetails } from '../ui/popover.tsx';
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
 import { DotsThree, ListBullets } from '@phosphor-icons/react';
@@ -11,7 +11,7 @@ import { useScrollFrame } from './use-scroll-frame.ts';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { readingMinutes } from '../../utils/full-text.ts';
 import { PaperMenuBody } from '../feed/paper-menu.tsx';
-import { paperActions, paperShareUrl, shareMethod } from '../feed/paper-actions.ts';
+import { paperActions, shareMethod } from '../feed/paper-actions.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { areaAccentForPaper } from '../../utils/area-accent.ts';
@@ -26,6 +26,7 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
   onLeave: (then: () => void) => void;
   children: ReactNode;
 }) {
+  const card = useSyncExternalStore(fromCard.subscribe, fromCard.snapshot);
   const [view, setView] = useState<'closed' | 'contents' | 'actions' | 'about'>('closed');
   const open = view !== 'closed';
   const [shows, setShows] = useState<'contents' | 'menu'>('menu');
@@ -100,15 +101,14 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
   const menu = (
     <PaperMenuBody
       title={paper.title}
-      url={paperShareUrl(paper)}
+      url={card.shareUrl}
       onShared={method => { void trackEvent('share', { method: shareMethod(method), content_type: 'paper', surface: 'reader' }); }}
       actions={paperActions({
         paper,
-        isRead: fromCard.isRead(),
-        aboutHint: 'Status, topics, funding and links',
+        isRead: card.isRead,
         onAbout: () => setView('about'),
-        onToggleRead: () => { if (signedIn && fromCard.isRead()) fromCard.toggleRead(); else onLeave(fromCard.toggleRead); },
-        onNotInterested: () => onLeave(fromCard.notInterested),
+        onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
+        onNotInterested: () => onLeave(card.notInterested),
       })}
       open={view === 'actions' || view === 'about'}
       onClose={close}
@@ -117,13 +117,13 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
         id: 'about',
         title: 'About this paper',
         subtitle: doc && `${readingMinutes(doc)} min read`,
-        aside: fromCard.links(),
-        content: fromCard.about(),
+        aside: card.links,
+        content: card.about,
         className: 'pc-about pc-about--reader',
         style: { '--area-accent': areaAccentForPaper(paper) },
         onBack: () => setView('actions'),
       } : null}
-      renderTitle={heading => <PopoverTitle className="pc-share-sheet-title font-serif text-[1.25rem] font-semibold leading-tight tracking-[-0.01em] text-foreground">{heading}</PopoverTitle>}
+      renderTitle={heading => <PopoverTitle className="pc-share-sheet-title pdf-menu-title">{heading}</PopoverTitle>}
     />
   );
   return (

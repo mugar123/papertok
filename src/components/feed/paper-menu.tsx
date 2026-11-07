@@ -4,7 +4,8 @@ import type { ExternalToast } from 'sonner';
 import type { Shared } from './share-targets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
-export interface ReaderMenu { about: () => ReactNode; links: () => ReactNode; isRead: () => boolean; notInterested: () => void; toggleRead: () => void }
+export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }
+export interface ReaderMenu { snapshot: () => ReaderCard; subscribe: (onChange: () => void) => () => void }
 export interface PaperMenuPanel { id: string; title: string; subtitle?: ReactNode; aside?: ReactNode; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 
 import { cloneElement, useEffect, useRef, useState } from 'react';
