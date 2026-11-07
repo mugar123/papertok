@@ -325,13 +325,29 @@ export function readAnalyticsConsent(storage?: AnalyticsStorage | null): Consent
   return readStoredAnalyticsConsent(storage) ?? ANALYTICS_CONSENT.ENABLED;
 }
 
+const ANALYTICS_CONSENT_CHANGES_KEY = 'papertok_analytics_consent_changes';
+
+function storedConsentChanges(storage: AnalyticsStorage | null = getBrowserStorage()) {
+  try {
+    return Number(storage?.getItem(ANALYTICS_CONSENT_CHANGES_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function persistAnalyticsConsent(value: string, storage?: AnalyticsStorage | null) {
   if (!Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return false;
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   let persisted = false;
   try {
+    const previous = targetStorage?.getItem(ANALYTICS_CONSENT_KEY);
     targetStorage?.setItem(ANALYTICS_CONSENT_KEY, value);
     persisted = targetStorage?.getItem(ANALYTICS_CONSENT_KEY) === value;
+    // Counts changes of the choice for `analyticsConsentState`. A count only:
+    // it holds no personal data and is never sent anywhere.
+    if (persisted && previous !== value) {
+      targetStorage?.setItem(ANALYTICS_CONSENT_CHANGES_KEY, String(storedConsentChanges(targetStorage) + 1));
+    }
   } catch {
     // Continue with the cookie fallback for browsers that restrict localStorage.
   }
@@ -467,13 +483,14 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 let consentChanges = 0;
 
 /**
- * The analytics choice as a session must see it: the stored level plus how many
- * times it was written in this tab, including the writes other tabs make (the
- * privacy provider replays those through `setAnalyticsConsent`). Turning
- * analytics off and on again leaves the level as it was, but not this value.
+ * The analytics choice as a session must see it: the stored level, how many
+ * times any tab changed it (read from storage now, so a change made in another
+ * tab counts before its storage event reaches this one), and how many times this
+ * tab wrote it (for browsers without storage). Turning analytics off and on
+ * again leaves the level as it was, but not this value.
  */
 export function analyticsConsentState() {
-  return `${readAnalyticsConsent()}#${consentChanges}`;
+  return `${readAnalyticsConsent()}#${storedConsentChanges()}#${consentChanges}`;
 }
 
 export async function setAnalyticsConsent(value: string) {

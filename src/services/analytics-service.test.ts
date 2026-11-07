@@ -893,6 +893,18 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
   assert.notEqual(analyticsConsentState(), before, 'off and on again is a different session');
   assert.equal(await guarded, false);
   assert.deepEqual(capturedAccounts, [], 'an event queued before the withdrawal is not captured after it');
+
+  // Another tab turns analytics off and on again; this tab has not had its storage events yet.
+  const stable = analyticsConsentState();
+  assert.equal(analyticsConsentState(), stable, 'reading the state does not move it');
+  const beforeOtherTab = analyticsConsentState();
+  const fromOtherTab = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === beforeOtherTab);
+  persistAnalyticsConsent('denied', storage);
+  persistAnalyticsConsent('enabled', storage);
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), beforeOtherTab, 'a round trip in another tab is a different session before this tab hears of it');
+  assert.equal(await fromOtherTab, false);
+  assert.deepEqual(capturedAccounts, []);
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {
