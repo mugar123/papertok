@@ -197,19 +197,31 @@ export function heldAccountNotice({ dialogOpen, uid, version, account }: { dialo
 
 /**
  * Asks the account for its record (`read`) and adopts the answer
- * (adoptAccountNotice). Null when there is nothing to go by: a failed read,
- * which is reported and never taken for an account with no record, or an
- * answer that lands after `signal` was aborted (the reader signed out or
- * switched account, or the host unmounted), which is dropped unadopted.
+ * (adoptAccountNotice). `'failed'` for a failed read, which is reported and
+ * never taken for an account with no record. Null for an answer that lands
+ * after `signal` was aborted (the reader signed out or switched account, or
+ * the host unmounted), which is dropped unadopted and unreported.
  */
-export async function loadAccountNotice({ uid, read, signal, storage }: { uid: string; read: (uid: string, signal: AbortSignal) => Promise<string | null>; signal: AbortSignal; storage?: NudgeStorage | null }): Promise<AccountNoticeRecord | null> {
+export async function loadAccountNotice({ uid, read, signal, storage }: { uid: string; read: (uid: string, signal: AbortSignal) => Promise<string | null>; signal: AbortSignal; storage?: NudgeStorage | null }): Promise<AccountNoticeRecord | 'failed' | null> {
   try {
     const version = await read(uid, signal);
     return signal.aborted ? null : adoptAccountNotice(uid, version, storage);
   } catch (error) {
-    if (!signal.aborted) console.warn('Could not read whether the privacy notice was shown', error);
-    return null;
+    if (signal.aborted) return null;
+    console.warn('Could not read whether the privacy notice was shown', error);
+    return 'failed';
   }
+}
+
+/**
+ * Whether the visit still waits for the account's answer (chooseVisitNotice's
+ * `privacyPending`): the account is being asked (`ask-account`) and its read
+ * for this uid has not failed. A failed read is not repeated in the visit, so
+ * the notice cannot become owed in it, and waiting on would only keep a nudge
+ * from the visit.
+ */
+export function accountAnswerPending({ status, uid, failedFor }: { status: 'settled' | 'ask-account' | 'owed'; uid: string | null | undefined; failedFor: string | null }) {
+  return status === 'ask-account' && Boolean(uid) && failedFor !== uid;
 }
 
 /**
@@ -379,8 +391,8 @@ export function readingMinutePassed(visit: VisitNotices): VisitNotices {
  * asked whether the privacy notice is owed (`privacyPending`, privacyNoticeStatus's
  * `ask-account`), it may yet be, so the choice waits for the answer instead of
  * going to a nudge or to nothing, as when the minute of reading passes in a tab
- * that was suspended during the read. A read that fails keeps it waiting for
- * the rest of the visit.
+ * that was suspended during the read. Once a read fails it stops waiting
+ * (accountAnswerPending).
  */
 export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, privacyPending = false, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; privacyPending?: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
   const owed = gates.privacy && privacyOwed;

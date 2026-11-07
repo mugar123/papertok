@@ -11,6 +11,7 @@ import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
   VISIT_START,
+  accountAnswerPending,
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
@@ -48,7 +49,8 @@ import PrivacyNotice from './privacy-notice.tsx';
 // signed-in accounts are told, in a dialog that opens once the feed shows its
 // first cards, never over its loading or error screen; utils/nudges.ts decides
 // who is owed it, and when that takes the account's own record, the dialog
-// waits for the read. Once the dialog is open on screen the version is recorded
+// and the visit's choice of a notice wait for the read (a failed read releases
+// the choice). Once the dialog is open on screen the version is recorded
 // as told for the account, in the account and in this browser
 // (recordPrivacyNoticeShown), so it does not return on a later visit or another
 // device however it was closed. It stays open until the reader closes it,
@@ -125,6 +127,8 @@ export default function NudgeHost() {
   // The account's record of the version it was shown, once read. Kept with its
   // uid, so a read for one account never decides for the next.
   const [accountNotice, setAccountNotice] = useState<AccountNoticeRecord | null>(null);
+  // The uid whose read failed in this visit, so the visit stops waiting for it.
+  const [accountReadFailedFor, setAccountReadFailedFor] = useState<string | null>(null);
   const uid = user?.uid;
 
   // Read again on every render and whenever another tab writes storage, so a
@@ -143,6 +147,7 @@ export default function NudgeHost() {
   );
   const privacyOwed = privacyStatus === 'owed';
   const askAccount = privacyStatus === 'ask-account';
+  const privacyPending = accountAnswerPending({ status: privacyStatus, uid, failedFor: accountReadFailedFor });
 
   // Asked once per account and visit, only when nothing else settles it. A
   // failed read leaves the notice unshown for this visit (the next one asks
@@ -150,8 +155,9 @@ export default function NudgeHost() {
   useEffect(() => {
     if (!askAccount || !uid) return undefined;
     const controller = new AbortController();
-    void loadAccountNotice({ uid, read: readAccountPrivacyNotice, signal: controller.signal }).then(record => {
-      if (record) setAccountNotice(record);
+    void loadAccountNotice({ uid, read: readAccountPrivacyNotice, signal: controller.signal }).then(answer => {
+      if (answer === 'failed') setAccountReadFailedFor(uid);
+      else if (answer) setAccountNotice(answer);
     });
     return () => controller.abort();
   }, [askAccount, uid]);
@@ -162,7 +168,7 @@ export default function NudgeHost() {
   const chosen = chooseVisitNotice(visit, {
     gates,
     privacyOwed,
-    privacyPending: askAccount,
+    privacyPending,
     eligible: emailProblem ? ['email-down'] : [],
     dismissed,
   });

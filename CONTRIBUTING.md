@@ -134,12 +134,12 @@ a session can finish, lints the files changed on the branch and in the working t
   once per account: as soon as the dialog opens, the version is written to the account
   (`users/{uid}/settings/privacyNotice`, `src/services/privacy-notice-service.ts`) and to the
   browser, so Got it, Escape, the close button, a press outside and leaving /feed all settle it
-  on every device. A browser without a copy asks the account first, and the dialog stays shut
-  until it answers, and for the rest of the visit if the read fails. Guests and accounts
-  created at or after that time do not see it, and their account is not asked; an account
-  still onboarding waits until it finishes. Every account counts as shown
-  `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went out when only the browser
-  remembered it); leave it there. Deploy the Firestore rules for that document before a
+  on every device. A browser without a copy asks the account first: until it answers, neither
+  the dialog nor a nudge is chosen, and if the read fails the dialog stays shut for the rest
+  of the visit. Guests and accounts created at or after that time do not see it, and their
+  account is not asked; an account still onboarding waits until it finishes. Every account
+  counts as shown `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went out when only
+  the browser remembered it); leave it there. Deploy the Firestore rules for that document before a
   frontend whose version is later than the baseline: until then the account read is refused,
   so that version's dialog opens for nobody.
 

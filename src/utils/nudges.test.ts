@@ -6,6 +6,7 @@ import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
   VISIT_START,
+  accountAnswerPending,
   adoptAccountNotice,
   answerPrivacyNotice,
   chooseVisitNotice,
@@ -517,8 +518,9 @@ const arrive = ({ cardsShown = true, tabVisible = true, ...facts }: NoticeFacts 
   const saved: [string, string][] = [];
   const status = statusOf(facts);
   const privacyOwed = status === 'owed';
+  const privacyPending = accountAnswerPending({ status, uid: user?.uid, failedFor: null });
   const gates = visitChoiceGates({ user, loading: false, onboardingComplete: signedIn, pathname: '/feed' });
-  const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, eligible: ['email-down'] });
+  const { picked } = chooseVisitNotice(VISIT_START, { gates, privacyOwed, privacyPending, eligible: ['email-down'] });
   const shown = noticeOnScreen({ picked, signedIn, pathname: '/feed', privacyOwed }) === PRIVACY_NOTICE_ID;
   const dialogOpen = privacyDialogOpen({ shown, cardsShown, modalOpen: false, tabVisible, wasOpen: false });
   recordPrivacyNoticeShown({
@@ -640,6 +642,14 @@ test('the visit keeps its choice while the account is asked, so a minute that pa
   assert.equal(chooseVisitNotice(minuteFirst, facts(answered)).picked, PRIVACY_NOTICE_ID, 'the answer that it is owed still picks it');
   const settled = statusOf({ user: reader, account: { uid: reader.uid, version: NEXT_VERSION } });
   assert.equal(chooseVisitNotice(minuteFirst, facts(settled)).picked, 'email-down', 'an answer that it is not owed lets the nudge have the visit');
+  // A read that fails is not repeated in the visit, so the notice cannot become owed in it: the nudge may have the visit.
+  assert.equal(accountAnswerPending({ status: pending, uid: reader.uid, failedFor: null }), true, 'waiting while the read is out');
+  assert.equal(accountAnswerPending({ status: pending, uid: reader.uid, failedFor: reader.uid }), false, 'not after it failed');
+  assert.equal(accountAnswerPending({ status: pending, uid: reader.uid, failedFor: 'reader-b' }), true, "another account's failure does not count");
+  assert.equal(accountAnswerPending({ status: 'settled', uid: reader.uid, failedFor: null }), false, 'nothing to wait for once settled');
+  assert.equal(accountAnswerPending({ status: 'owed', uid: reader.uid, failedFor: null }), false, 'nor once owed');
+  const afterFailure = { ...facts(pending), privacyPending: accountAnswerPending({ status: pending, uid: reader.uid, failedFor: reader.uid }) };
+  assert.equal(chooseVisitNotice(minuteFirst, afterFailure).picked, 'email-down', 'after a failed read the nudge is chosen');
   const offFeed = { gates: { nudge: false, privacy: false }, privacyOwed: false, privacyPending: true, eligible: ['email-down'] };
   assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), offFeed).choiceMade, false, 'off the feed nothing is chosen either way');
   assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), { ...facts('settled'), privacyPending: false }).picked, 'email-down', 'with nothing to ask, the nudge is chosen after its minute as before');
@@ -673,9 +683,9 @@ test('the account is asked once: a failed read is reported and gives nothing to 
   assert.deepEqual(asked, ['reader-a', 'reader-b'], 'each account is asked for itself');
 
   const failed = await loadAccountNotice({ uid: 'reader-c', read: () => Promise.reject(new Error('unavailable')), signal: live(), storage });
-  assert.equal(failed, null, 'a failed read is no record at all, not an empty one');
+  assert.equal(failed, 'failed', 'a failed read is no record at all, not an empty one');
   assert.equal(warn.mock.callCount(), 1, 'and it is reported');
-  assert.equal(arrive({ user: createdBefore('reader-c'), storage, account: failed }).dialogOpen, false, 'so the dialog stays shut until the next visit asks again');
+  assert.equal(arrive({ user: createdBefore('reader-c'), storage }).dialogOpen, false, 'so the dialog stays shut until the next visit asks again');
 
   // The reader signs out or switches account while the read is out: NudgeHost aborts it.
   const controller = new AbortController();
