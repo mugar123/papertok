@@ -146,21 +146,22 @@ export default function NudgeHost() {
     () => 'settled' as const,
   );
   const privacyOwed = privacyStatus === 'owed';
-  const askAccount = privacyStatus === 'ask-account';
+  // Whether the account is being asked and its read for this uid has not failed.
   const privacyPending = accountAnswerPending({ status: privacyStatus, uid, failedFor: accountReadFailedFor });
 
-  // Asked once per account and visit, only when nothing else settles it. A
-  // failed read leaves the notice unshown for this visit (the next one asks
-  // again); an answer that lands after the account changed is dropped.
+  // Asked only when nothing else settles it, and not again in this visit once a
+  // read for the uid has failed (a profile retry included): the notice stays
+  // unshown until the next visit asks again. An answer that lands after the
+  // account changed is dropped.
   useEffect(() => {
-    if (!askAccount || !uid) return undefined;
+    if (!privacyPending || !uid) return undefined;
     const controller = new AbortController();
     void loadAccountNotice({ uid, read: readAccountPrivacyNotice, signal: controller.signal }).then(answer => {
       if (answer === 'failed') setAccountReadFailedFor(uid);
       else if (answer) setAccountNotice(answer);
     });
     return () => controller.abort();
-  }, [askAccount, uid]);
+  }, [privacyPending, uid]);
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
