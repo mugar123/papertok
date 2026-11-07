@@ -124,20 +124,14 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
       panel={view === 'about' ? {
         id: 'about',
         title: 'About this paper',
+        subtitle: doc && `${readingMinutes(doc)} min read`,
+        aside: fromCard.links(),
         content: fromCard.about(),
         className: 'pc-about pc-about--reader',
         style: { '--area-accent': areaAccentForPaper(paper) },
         onBack: () => setView('actions'),
       } : null}
-      renderTitle={heading => (
-        <div className="pdf-menu-title">
-          <div>
-            <PopoverTitle className="pc-share-sheet-title font-serif text-[1.25rem] font-semibold leading-tight tracking-[-0.01em] text-foreground">{heading}</PopoverTitle>
-            {view === 'about' && doc && <p className="pdf-menu-subtitle">{readingMinutes(doc)} min read</p>}
-          </div>
-          {view === 'about' && fromCard.links()}
-        </div>
-      )}
+      renderTitle={heading => <PopoverTitle className="pc-share-sheet-title font-serif text-[1.25rem] font-semibold leading-tight tracking-[-0.01em] text-foreground">{heading}</PopoverTitle>}
     />
   );
   return (

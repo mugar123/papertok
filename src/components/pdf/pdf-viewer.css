@@ -270,8 +270,3 @@
 }
 .pdf-info .pc-menu-share { flex-wrap: wrap; }
 .pdf-info .pc-menu-link { flex-basis: 100%; }
-.pdf-info .pc-menu-head { flex-direction: column; align-items: stretch; gap: var(--space-2); }
-.pdf-info .pc-menu-back { align-self: flex-start; }
-.pdf-menu-title { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-.pdf-menu-title .pc-chips { justify-content: flex-end; }
-.pdf-menu-subtitle { margin: 0; font: 500 var(--fs-sm)/1.3 var(--font-body); color: var(--text-secondary); font-variant-numeric: tabular-nums; }

@@ -5,7 +5,7 @@ import type { Shared } from './share-targets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
 export interface ReaderMenu { about: () => ReactNode; links: () => ReactNode; isRead: () => boolean; notInterested: () => void; toggleRead: () => void }
-export interface PaperMenuPanel { id: string; title: string; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
+export interface PaperMenuPanel { id: string; title: string; subtitle?: ReactNode; aside?: ReactNode; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 
 import { cloneElement, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, LinkSimple } from '@phosphor-icons/react';
@@ -93,13 +93,19 @@ export function PaperMenuBody({ title, url, onShared, actions, open, onClose, pa
   const enter = panel ? 'forward' : cameBack ? 'back' : undefined;
   return (
     <div key={panel?.id ?? 'actions'} className="pc-menu-stage" data-enter={enter}>
-      <div className="pc-menu-head">
+      <div className={cn('pc-menu-head', panel && 'pc-menu-head--panel')}>
         {panel && (
           <button type="button" className="pc-menu-back" aria-label={'Back to paper options'} onClick={() => { setCameBack(true); panel.onBack(); }} autoFocus>
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
-        {renderTitle(panel?.title ?? 'Paper options')}
+        <div className="pc-menu-title-row">
+          <div>
+            {renderTitle(panel?.title ?? 'Paper options')}
+            {panel?.subtitle && <p className="pc-menu-subtitle">{panel.subtitle}</p>}
+          </div>
+          {panel?.aside}
+        </div>
       </div>
       <div className={cn('pc-menu-view', panel?.className)} style={panel?.style}>
         {panel ? panel.content : rows}

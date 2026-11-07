@@ -1827,17 +1827,6 @@ const PaperCard = memo(function PaperCard({
           )}
     </>
   );
-  const aboutSections = (
-    <>
-      {aboutBody}
-          {aboutLinks && (
-            <section className="pc-about-section">
-              <h3 className="pc-about-heading">{'Links'}</h3>
-              {aboutLinks}
-            </section>
-          )}
-    </>
-  );
   useLayoutEffect(() => { readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, notInterested, toggleRead: handleMarkAsRead }; });
 
   return (
@@ -2366,7 +2355,8 @@ const PaperCard = memo(function PaperCard({
           panel={menuView === 'about' ? {
             id: 'about',
             title: 'About this paper',
-            content: aboutSections,
+            aside: aboutLinks,
+            content: aboutBody,
             className: 'pc-about',
             style: { '--area-accent': areaAccentForPaper(paper) },
             onBack: () => setMenuView('actions'),
