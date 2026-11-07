@@ -260,6 +260,17 @@ const MAX_TRACKED_SECONDS = 4 * 60 * 60;
 
 let acquisitionTrackedInMemory = false;
 let analyticsClient: Promise<PostHog | null> | null = null;
+// Set once `init` has run. Until then the SDK has not read storage, so what is
+// cleared there is gone for it too.
+let readyClient: PostHog | null = null;
+// The stored consent change count when this tab last applied the choice to
+// `readyClient`. Another tab can turn analytics off and on again before this tab
+// handles either storage event (they can arrive together, late in a background
+// tab, or never for a page restored from the back-forward cache), and the choice
+// stored then reads 'enabled' as before. `applyStoredConsent` reads it to tell
+// that apart, and `mayCapture` and `sanitizeAnalyticsCapture` compare it with
+// the stored count to apply the choice before anything is sent.
+let appliedConsentChanges = 0;
 
 function getBrowserStorage() {
   try {
@@ -480,6 +491,9 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
+// A PostHog that never loaded in this tab, was blocked or is still loading
+// cannot reset itself, so the identity an earlier visit stored is removed from
+// storage directly; a load still under way then starts from the current choice.
 let consentChanges = 0;
 
 /**
@@ -496,15 +510,32 @@ export function analyticsConsentState() {
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
   consentChanges++;
-  if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
-  // Persisting the preference must not wait for an SDK that a blocker can stall.
-  // Read the latest choice when it arrives, rather than applying a stale toggle.
-  if (analyticsClient) {
-    void analyticsClient.then(client => {
-      if (client) applyConsent(client, readAnalyticsConsent());
-    }).catch(error => { console.warn('Could not update analytics preferences', error); });
+  const denied = value === ANALYTICS_CONSENT.DENIED;
+  if (denied) clearConsentScopedAnalyticsState();
+  if (denied && !readyClient) clearStoredPostHogIdentity();
+  if (readyClient) {
+    try {
+      applyStoredConsent(readyClient);
+    } catch (error) {
+      console.warn('Could not update analytics preferences', error);
+    }
   }
   return true;
+}
+
+// A reader who turned analytics off under an earlier build may still hold the
+// identity PostHog stored then, and with analytics off nothing loads PostHog or
+// calls `setAnalyticsConsent` again, so each start removes it while it is off.
+export function clearStoredIdentityWhileAnalyticsOff() {
+  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED && !readyClient) clearStoredPostHogIdentity();
+}
+
+function clearStoredPostHogIdentity() {
+  removePostHogIdentity({
+    local: getBrowserStorage(),
+    session: getSessionStorage(),
+    writeCookie: cookie => { if (typeof document !== 'undefined') document.cookie = cookie; },
+  });
 }
 
 // Public by design, like the Firebase web config: this token sends events and
@@ -514,6 +545,40 @@ const POSTHOG_PROJECT_TOKEN = 'phc_BNGdTudnBx4BoLJFLChGGbCzsBtNLagJJ5vgiVNha9yy'
 // Only the production site reports. Preview deployments are production builds
 // that share vercel.json, and a local server has nothing behind the proxy.
 const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
+// The parent domain PostHog's cross-subdomain cookie is set on for both hosts.
+const ANALYTICS_COOKIE_DOMAIN = 'papertok.app';
+
+/**
+ * The names posthog-js 1.435.5 stores for this token with persistence
+ * 'localStorage+cookie': its state in local storage and a cookie, which on
+ * papertok.app it sets on the parent domain; its tab state in session storage;
+ * and the opt-in choice. The `_cpm` cookie is its cookie-wins variant.
+ */
+function removePostHogIdentity({ local, session, writeCookie }: {
+  local: Pick<Storage, 'removeItem'> | null;
+  session: Pick<Storage, 'removeItem'> | null;
+  writeCookie: (cookie: string) => void;
+}) {
+  const prefix = `ph_${POSTHOG_PROJECT_TOKEN}`;
+  const remove = (storage: Pick<Storage, 'removeItem'> | null, keys: string[]) => {
+    try {
+      keys.forEach(key => storage?.removeItem(key));
+    } catch {
+      // Storage the browser refuses holds nothing PostHog could have written.
+    }
+  };
+  remove(local, [`${prefix}_posthog`, `__ph_opt_in_out_${POSTHOG_PROJECT_TOKEN}`]);
+  remove(session, [`${prefix}_posthog`, `${prefix}_window_id`, `${prefix}_primary_window_exists`, `${prefix}_session_registered_properties`]);
+  for (const name of [`${prefix}_posthog`, `${prefix}_posthog_cpm`]) {
+    for (const domain of ['', `; Domain=${ANALYTICS_COOKIE_DOMAIN}`]) {
+      try {
+        writeCookie(`${name}=; Max-Age=0; Path=/${domain}`);
+      } catch {
+        // A browser that refuses cookies stored none.
+      }
+    }
+  }
+}
 
 // Start opted out so init cannot emit anything before our stored preference
 // is applied. Persistence then lets repeat visits retain the same identity.
@@ -599,6 +664,23 @@ function reducedUserAgent({ $browser, $browser_version, $os }: Record<string, un
  */
 export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()): CaptureResult | null {
   if (!capture || consent === ANALYTICS_CONSENT.DENIED) return null;
+  // A capture that did not pass `mayCapture`, such as PostHog's own exception
+  // autocapture, was built with the identity this tab holds in memory. When
+  // another tab turned analytics off and on unseen (see `applyStoredConsent`),
+  // that identity was cleared: drop the event and apply the stored choice once
+  // this capture has returned.
+  if (readyClient && storedConsentChanges() - appliedConsentChanges >= 2) {
+    const client = readyClient;
+    // A failure here must not become an uncaught error that autocapture brings back.
+    queueMicrotask(() => {
+      try {
+        applyStoredConsent(client);
+      } catch (error) {
+        console.warn('Could not update analytics preferences', error);
+      }
+    });
+    return null;
+  }
   const { event, properties = {} } = capture;
   const exception = event === '$exception' ? sanitizeExceptionProperties(properties) : null;
   if (event !== '$pageview' && event !== '$identify' && !exception && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
@@ -648,7 +730,9 @@ function loadAnalyticsClient() {
     .then(module => {
       if (!module) return null;
       const { posthog } = module;
+      appliedConsentChanges = storedConsentChanges();
       startAnalyticsClient(posthog, readAnalyticsConsent());
+      readyClient = posthog;
       return posthog;
     })
     .catch(() => null);
@@ -663,14 +747,32 @@ export function startAnalyticsClient(client: ConsentControls & { init(token: str
 }
 
 // Do not opt in again on reload: the SDK must retain its browser identity.
+// Withdrawing always resets: the SDK reads its opt-in from shared storage, which
+// another tab's opt-out may already have removed while this tab still holds the
+// identity in memory.
 function applyConsent(client: ConsentControls, consent: Consent) {
-  const enabled = consent === ANALYTICS_CONSENT.ENABLED;
-  if (enabled === client.has_opted_in_capturing()) return;
-  if (enabled) client.opt_in_capturing({ captureEventName: false });
-  else {
+  if (consent === ANALYTICS_CONSENT.DENIED) {
     client.reset(true);
     client.opt_out_capturing();
-  }
+  } else if (!client.has_opted_in_capturing()) client.opt_in_capturing({ captureEventName: false });
+}
+
+// Every counted change writes 'enabled' or 'denied' over a different value, so a
+// count that moved by two or more and ends at 'enabled' passed through 'denied'.
+// The identity this client holds in memory was cleared from storage then and
+// must not be opted in again.
+function applyStoredConsent(client: ConsentControls) {
+  const changes = storedConsentChanges();
+  const consent = readAnalyticsConsent();
+  if (consent === ANALYTICS_CONSENT.ENABLED && changes - appliedConsentChanges >= 2) client.reset(true);
+  appliedConsentChanges = changes;
+  applyConsent(client, consent);
+}
+
+// Asked by every send from this tab's ready client, just before it captures.
+function mayCapture(client: ConsentControls) {
+  if (storedConsentChanges() !== appliedConsentChanges) applyStoredConsent(client);
+  return readAnalyticsConsent() === ANALYTICS_CONSENT.ENABLED;
 }
 
 export interface AnalyticsUser { uid: string }
@@ -684,7 +786,7 @@ export async function identifyAnalyticsUser(user: AnalyticsUser | null) {
   const version = ++identityVersion;
   if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
   const client = await loadAnalyticsClient();
-  if (version !== identityVersion || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !client || !client.has_opted_in_capturing()) return;
+  if (version !== identityVersion || !client || !mayCapture(client) || !client.has_opted_in_capturing()) return;
   // PostHog's own persisted state, so a sign-out in another tab counts too.
   const identifiedAs = client.get_property('$user_state') === 'identified' ? client.get_distinct_id() : null;
   if (identifiedAs && identifiedAs !== user?.uid) {
@@ -709,7 +811,8 @@ async function sendAnalyticsEvent(eventName: string, properties: Record<string, 
   const client = await loadAnalyticsClient();
   // The SDK can take long to load; the sender may have been invalidated meanwhile.
   if (stillValid && !stillValid()) return false;
-  return Boolean(client?.capture(eventName, properties));
+  if (!client || !mayCapture(client)) return false;
+  return Boolean(client.capture(eventName, properties));
 }
 
 /**
@@ -915,5 +1018,5 @@ export async function trackAppCrash({
 export async function captureAppException(error: unknown) {
   if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
   const client = await loadAnalyticsClient();
-  client?.captureException(error, { operation: 'render' });
+  if (client && mayCapture(client)) client.captureException(error, { operation: 'render' });
 }

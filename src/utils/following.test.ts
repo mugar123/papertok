@@ -269,6 +269,34 @@ test('a journal follow reaches analytics as its type alone, even with detailed a
   assert.deepEqual(detailed(followChangeEvent(author, false)), { entity_type: 'author', action: 'add', surface: 'other', entity_id: 'A5023888391' });
 });
 
+// ENG-192: `follow_change` carries a verified provider id or none at all.
+test('a follow reaches analytics with its id only when the id is a verified provider id', () => {
+  const sentId = (input: Parameters<typeof createFollowEntity>[0]) => {
+    const entity = createFollowEntity(input)!;
+    const params = sanitizeProductEventParams('follow_change', followChangeEvent(entity, false), ANALYTICS_CONSENT.ENABLED);
+    assert.equal(params.entity_type, entity.type);
+    assert.equal(params.action, 'add');
+    return params.entity_id;
+  };
+  assert.equal(sentId({ type: 'author', id: 'https://openalex.org/A5023888391', displayName: 'Wei Zhang' }), 'A5023888391');
+  assert.equal(sentId({ type: 'author', id: 'https://orcid.org/0000-0002-1825-009X', displayName: 'Wei Zhang' }), '0000-0002-1825-009X');
+  assert.equal(sentId({ type: 'institution', id: 'https://openalex.org/I1321305853', displayName: 'MIT' }), 'I1321305853');
+  assert.equal(sentId({ type: 'institution', id: 'https://ror.org/042nb2s44', displayName: 'MIT' }), '042nb2s44');
+  assert.equal(sentId({ type: 'topic', id: 'T10604', displayName: 'Topic' }), 'T10604');
+  assert.equal(sentId({ type: 'topic', id: 'C41008148', displayName: 'Computer science' }), 'C41008148');
+  assert.equal(sentId({ type: 'topic', id: 'cs.LG', displayName: 'Machine Learning' }), 'cs.LG');
+  assert.equal(sentId({ type: 'topic', id: 'physics', displayName: 'Physics' }), 'physics', 'an area of the app taxonomy');
+
+  assert.equal(sentId(migrateLegacyAuthors(['Ada Lovelace'])[0]), undefined, 'a legacy author id is the name');
+  assert.equal(sentId({ type: 'author', displayName: 'Ada Lovelace' }), undefined, 'a nameless id falls back to the name');
+  assert.equal(sentId({ type: 'institution', id: 'mit', displayName: 'MIT' }), undefined);
+  assert.equal(sentId({ type: 'topic', id: 'query-3f419c36', displayName: 'Spatial transcriptomics' }), undefined, 'a followed search');
+  assert.equal(sentId({ type: 'author', id: 'T10604', displayName: 'Wei Zhang' }), undefined, 'a topic id is no author');
+  assert.equal(sentId({ type: 'project', id: '101034344', displayName: 'A grant' }), undefined);
+  assert.equal(sentId({ type: 'project', id: 'my-thesis-on-ada', displayName: 'Typed in the address bar' }), undefined, 'route text');
+  assert.equal(sentId({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), undefined);
+});
+
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
   assert.equal(getProjectDisplayName({ acronym: 'LEAP', title: 'Quantum leap' }), 'LEAP: Quantum leap');
   assert.equal(getProjectDisplayName({ title: 'Quantum leap' }), 'Quantum leap');
