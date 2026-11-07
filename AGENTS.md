@@ -137,17 +137,18 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
   consent is `enabled` or `denied`, and a browser with no stored choice counts as `enabled`.
   Browser analytics (PostHog) runs only on papertok.app; it keeps a persistent browser
   identifier, identifies the signed-in account by its Firebase user ID and records no
-  session replays. `denied` stops new browser events and resets the identity. `privacy.html`
-  describes exactly this. Every product event is registered in `EVENT_PARAMETER_SCHEMAS`,
-  and each parameter is a typed field: a boolean, a bounded number, a fixed list of labels,
-  a pattern-checked build version or an `identifier`. Never put paper titles, search text,
+  session replays. `denied` stops new browser events and, in a tab where PostHog has loaded,
+  resets its identity. Every product event is registered in `EVENT_PARAMETER_SCHEMAS`, and
+  each parameter is a typed field: a boolean, a bounded number, a fixed list of labels, a
+  pattern-checked build version or an `identifier`. Never put paper titles, search text,
   interests (the subjects a reader chose), free text, error messages, unsanitized URLs or
   account identifiers in an event's parameters: the account reaches PostHog only through
   the identify call and the SDK's own identity fields. The `identifier` type checks no
-  pattern, so only a paper ID or the ID of a followed author, institution, project or topic
-  may go through it, never other text. Changing what analytics or error reports (browser or
-  Worker) send or identify needs authorization (see above), and the same change updates
-  `privacy.html` wherever it no longer matches.
+  pattern, so only a paper ID or a verified provider ID (OpenAlex, ORCID or ROR) of a
+  followed author, institution or topic may go through it; never a project's or journal's
+  ID, a name, text from a route or any other text. Changing what analytics or error reports
+  (browser or Worker) send or identify needs authorization (see above), and the same change
+  updates `privacy.html` wherever it no longer matches.
 
 ## Accessibility and interface
 
