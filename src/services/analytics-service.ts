@@ -443,17 +443,63 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
+// A PostHog that never loaded in this tab (or was blocked) cannot reset itself,
+// so the identity an earlier visit stored is removed from storage directly.
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
-  if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
+  const denied = value === ANALYTICS_CONSENT.DENIED;
+  if (denied) clearConsentScopedAnalyticsState();
+  if (denied && !analyticsClient) clearStoredPostHogIdentity();
   // Persisting the preference must not wait for an SDK that a blocker can stall.
   // Read the latest choice when it arrives, rather than applying a stale toggle.
   if (analyticsClient) {
     void analyticsClient.then(client => {
-      if (client) applyConsent(client, readAnalyticsConsent());
+      const consent = readAnalyticsConsent();
+      if (client) applyConsent(client, consent);
+      else if (consent === ANALYTICS_CONSENT.DENIED) clearStoredPostHogIdentity();
     }).catch(error => { console.warn('Could not update analytics preferences', error); });
   }
   return true;
+}
+
+function clearStoredPostHogIdentity() {
+  removePostHogIdentity({
+    local: getBrowserStorage(),
+    session: getSessionStorage(),
+    writeCookie: cookie => { if (typeof document !== 'undefined') document.cookie = cookie; },
+  });
+}
+
+/**
+ * The names posthog-js 1.435.5 stores for this token with persistence
+ * 'localStorage+cookie': its state in local storage and a cookie, which on
+ * papertok.app it sets on the parent domain; its tab state in session storage;
+ * and the opt-in choice. The `_cpm` cookie is its cookie-wins variant.
+ */
+export function removePostHogIdentity({ local, session, writeCookie }: {
+  local: Pick<Storage, 'removeItem'> | null;
+  session: Pick<Storage, 'removeItem'> | null;
+  writeCookie: (cookie: string) => void;
+}) {
+  const prefix = `ph_${POSTHOG_PROJECT_TOKEN}`;
+  const remove = (storage: Pick<Storage, 'removeItem'> | null, keys: string[]) => {
+    try {
+      keys.forEach(key => storage?.removeItem(key));
+    } catch {
+      // Storage the browser refuses holds nothing PostHog could have written.
+    }
+  };
+  remove(local, [`${prefix}_posthog`, `__ph_opt_in_out_${POSTHOG_PROJECT_TOKEN}`]);
+  remove(session, [`${prefix}_posthog`, `${prefix}_window_id`, `${prefix}_primary_window_exists`, `${prefix}_session_registered_properties`]);
+  for (const name of [`${prefix}_posthog`, `${prefix}_posthog_cpm`]) {
+    for (const domain of ['', `; Domain=${ANALYTICS_COOKIE_DOMAIN}`]) {
+      try {
+        writeCookie(`${name}=; Max-Age=0; Path=/${domain}`);
+      } catch {
+        // A browser that refuses cookies stored none.
+      }
+    }
+  }
 }
 
 // Public by design, like the Firebase web config: this token sends events and
@@ -463,6 +509,8 @@ const POSTHOG_PROJECT_TOKEN = 'phc_BNGdTudnBx4BoLJFLChGGbCzsBtNLagJJ5vgiVNha9yy'
 // Only the production site reports. Preview deployments are production builds
 // that share vercel.json, and a local server has nothing behind the proxy.
 const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
+// The parent domain PostHog's cross-subdomain cookie is set on for both hosts.
+const ANALYTICS_COOKIE_DOMAIN = 'papertok.app';
 
 // Start opted out so init cannot emit anything before our stored preference
 // is applied. Persistence then lets repeat visits retain the same identity.
