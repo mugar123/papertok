@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { Block, FullText } from '../../utils/full-text.ts';
+import type { FullText } from '../../utils/full-text.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PopoverChangeDetails } from '../ui/popover.tsx';
@@ -9,20 +9,12 @@ import { DotsThree, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useScrollFrame } from './use-scroll-frame.ts';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
-import { blockInlines, plainText } from '../../utils/full-text.ts';
+import { readingMinutes } from '../../utils/full-text.ts';
 import { PaperMenuBody } from '../feed/paper-menu.tsx';
 import { paperActions, paperShareUrl, shareMethod } from '../feed/paper-actions.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { areaAccentForPaper } from '../../utils/area-accent.ts';
-
-const WORDS_PER_MINUTE = 230;
-
-function words(blocks: Block[]) {
-  return blocks.flatMap(blockInlines).map(plainText).join(' ').split(/\s+/).filter(Boolean).length;
-}
-
-const readingMinutes = (doc: FullText) => Math.max(1, Math.round(words([...doc.abstract, ...doc.body]) / WORDS_PER_MINUTE));
 
 // The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
 export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, children }: {

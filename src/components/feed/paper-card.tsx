@@ -172,6 +172,7 @@ import { getCitationGraphDoi, hydrateCitationGraphPaper } from '../../services/c
 import { getSemanticScholarPaperId } from '../../services/related-papers-service.ts';
 import { resolveWithin } from '../../utils/async-timing.ts';
 import { fullTextQuery, getFullText } from '../../services/full-text-service.ts';
+import { readingMinutes } from '../../utils/full-text.ts';
 import {
   isTrustedInlinePdfUrl,
   openExternalUrl,
@@ -1299,6 +1300,15 @@ const PaperCard = memo(function PaperCard({
     if (path) goTo(event, path);
   }, [analyticsSurface, goTo, position, publicMode, trackEvent]);
   const [menuView, setMenuView] = useState<'closed' | 'actions' | 'about'>('closed');
+  const [readTime, setReadTime] = useState<{ paperId: string; minutes: number } | null>(null);
+  useEffect(() => {
+    if (menuView !== 'about' || readTime?.paperId === paper.id || !fullTextQuery(paper)) return;
+    const request = new AbortController();
+    void getFullText(paper, request.signal).then(({ doc }) => {
+      if (doc) setReadTime({ paperId: paper.id, minutes: readingMinutes(doc) });
+    });
+    return () => request.abort();
+  }, [menuView, paper, readTime]);
   const topicsList = (
     <ul className="pc-topics-pop-list">
       {topicItems.map((item) => (
@@ -2355,6 +2365,7 @@ const PaperCard = memo(function PaperCard({
           panel={menuView === 'about' ? {
             id: 'about',
             title: 'About this paper',
+            subtitle: readTime?.paperId === paper.id ? `${readTime.minutes} min read` : undefined,
             aside: aboutLinks,
             content: aboutBody,
             className: 'pc-about',
