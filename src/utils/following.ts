@@ -214,6 +214,20 @@ export function planFollowToggle(followedEntities: FollowEntity[], entity: Follo
   return { existing, next: [...followedEntities, entity] };
 }
 
+const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+
+/**
+ * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
+ * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
+ * one of the app's areas or categories. A project's id can be address-bar text, and a
+ * legacy or nameless follow's id is the person's name, so neither is sent.
+ */
+const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
+  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
+  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
+  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
+};
+
 /**
  * The `follow_change` event of a press that followed or unfollowed `entity`.
  * Which journals a reader follows stays out of analytics, detailed analytics
@@ -228,20 +242,6 @@ export function followChangeEvent(entity: FollowEntity, wasFollowing: boolean) {
     entity_id: VERIFIED_FOLLOW_ID[entity.type]?.(entity.canonicalId) ? entity.canonicalId : undefined,
   };
 }
-
-const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
-
-/**
- * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
- * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
- * one of the app's areas or categories. A project's id can be address-bar text, and a
- * legacy or nameless follow's id is the person's name, so neither is sent.
- */
-const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
-  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
-  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
-  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
-};
 
 export function migrateLegacyAuthors(authorNames: string[] = []) {
   return [...new Set(authorNames.filter(Boolean))].map((displayName) => createFollowEntity({

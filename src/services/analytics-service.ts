@@ -528,6 +528,16 @@ function clearStoredPostHogIdentity() {
   });
 }
 
+// Public by design, like the Firebase web config: this token sends events and
+// reads the project's public client config (flags, surveys), never its data.
+const POSTHOG_PROJECT_TOKEN = 'phc_BNGdTudnBx4BoLJFLChGGbCzsBtNLagJJ5vgiVNha9yy';
+
+// Only the production site reports. Preview deployments are production builds
+// that share vercel.json, and a local server has nothing behind the proxy.
+const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
+// The parent domain PostHog's cross-subdomain cookie is set on for both hosts.
+const ANALYTICS_COOKIE_DOMAIN = 'papertok.app';
+
 /**
  * The names posthog-js 1.435.5 stores for this token with persistence
  * 'localStorage+cookie': its state in local storage and a cookie, which on
@@ -559,16 +569,6 @@ function removePostHogIdentity({ local, session, writeCookie }: {
     }
   }
 }
-
-// Public by design, like the Firebase web config: this token sends events and
-// reads the project's public client config (flags, surveys), never its data.
-const POSTHOG_PROJECT_TOKEN = 'phc_BNGdTudnBx4BoLJFLChGGbCzsBtNLagJJ5vgiVNha9yy';
-
-// Only the production site reports. Preview deployments are production builds
-// that share vercel.json, and a local server has nothing behind the proxy.
-const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
-// The parent domain PostHog's cross-subdomain cookie is set on for both hosts.
-const ANALYTICS_COOKIE_DOMAIN = 'papertok.app';
 
 // Start opted out so init cannot emit anything before our stored preference
 // is applied. Persistence then lets repeat visits retain the same identity.
