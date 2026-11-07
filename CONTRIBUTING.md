@@ -139,9 +139,9 @@ a session can finish, lints the files changed on the branch and in the working t
   of the visit. Guests and accounts created at or after that time do not see it, and their
   account is not asked; an account still onboarding waits until it finishes. Every account
   counts as shown `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went out when only
-  the browser remembered it); leave it there. Deploy the Firestore rules for that document before a
-  frontend whose version is later than the baseline: until then the account read is refused,
-  so that version's dialog opens for nobody.
+  the browser remembered it); leave it there. Deploy the Firestore rules for that document
+  before a frontend whose version is later than the baseline: until then the account read is
+  refused, so that version's dialog opens for nobody.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.
