@@ -1014,11 +1014,17 @@ async function readKvRecord(env: WorkerEnv, uid: string, cacheTtl?: number): Pro
  * object before it writes KV, so a real re-subscription is never hidden.
  */
 async function readPhase1Slot(env: WorkerEnv, uid: string) {
-  let kv = await readKvRecord(env, uid);
+  const first = await readKvRecord(env, uid);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  // A record written before the last cancellation is a cached copy of the
+  // cancelled subscription, even once a save reopened the object: it reads as a
+  // miss, so its token and settings never answer for the re-subscription.
+  const sinceCancelled = (record: typeof first) => (record && record.revision >= (slot.cancelledAt || 0) ? record : null);
+  let kv = sinceCancelled(first);
   // A miss over an object a save reopened may be a cached miss of the record
   // that save wrote: read once more with the shortest cache KV allows.
-  if (!kv && !slot.subscription && slot.migratable && slot.version > 0) kv = await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS);
+  if (!kv && !slot.subscription && slot.migratable && slot.version > 0) kv = sinceCancelled(await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS));
+
   // A reader phase 2 moved is read from their object even when a cached KV copy
   // still holds the full record: acting on that copy would reopen and empty it.
   if (kv && !slot.subscription) {

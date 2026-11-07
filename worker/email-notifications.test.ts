@@ -1773,6 +1773,51 @@ test('in phase 1 a second POST from the same unsubscribe link that reads stale K
   await unsubscribeWithLink(phase1, token);
 });
 
+// A reader who unsubscribed and subscribed again, read where KV still caches
+// the record from before the unsubscribe.
+async function resubscribedOverStaleCopy(kv: ReturnType<typeof createMemoryKv>, phase1: WorkerEnv) {
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const before = kv.values.get(SYNC_READER_KEY)!;
+  await unsubscribeWithLink(phase1, (JSON.parse(before) as Subscription).unsubscribeToken);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const current = kv.values.get(SYNC_READER_KEY)!;
+  const read = kv.get.bind(kv);
+  let stale = true;
+  kv.get = (async (name: string, options?: unknown) => (
+    stale && name === SYNC_READER_KEY ? JSON.parse(before) : read(name, options as never)
+  )) as typeof kv.get;
+  return { current, token: (JSON.parse(current) as Subscription).unsubscribeToken, show: () => { stale = false; } };
+}
+
+test('in phase 1 the new unsubscribe link still works where KV caches the record from before an earlier unsubscribe', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  const { token, show } = await resubscribedOverStaleCopy(kv, phase1);
+  const link = `https://example.com/notifications/unsubscribe?token=${token}`;
+
+  assert.equal((await handleEmailUnsubscribe(new Request(link), phase1)).status, 200);
+  assert.equal(kv.values.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the link was deleted');
+  await unsubscribeWithLink(phase1, token);
+
+  show();
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false);
+});
+
+test('a phase 1 sync that reads the record from before an earlier unsubscribe does not write its token back', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const { current, show } = await resubscribedOverStaleCopy(kv, phase1);
+
+  await assert.rejects(
+    saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), phase1, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  show();
+  assert.equal(kv.values.get(SYNC_READER_KEY), current, 'the sync changed the record');
+});
+
 test('an unsubscribe that lands after a sync read the subscription stays unsubscribed', async () => {
   const kv = createMemoryKv();
   const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv) };

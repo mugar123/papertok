@@ -5,14 +5,17 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * deleted, and a version that every write raises. Version 0 means the object
  * has never been written. `migratable` is true until the object has been
  * written or marked as closed: only then may the KV record of a Worker from
- * before the object move in (see `EMAIL_SUBSCRIPTION_SOURCE`).
+ * before the object move in (see `EMAIL_SUBSCRIPTION_SOURCE`). `cancelledAt`
+ * is the version the last `mark` with `migratable: false` reached (0 for none):
+ * a KV record written before it is a copy of a cancelled subscription.
  */
-export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean }
+export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number }
 export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown }
 
 const VERSION_KEY = 'version';
 const SUBSCRIPTION_KEY = 'subscription';
 const CLOSED_KEY = 'closed';
+const CANCELLED_AT_KEY = 'cancelledAt';
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -67,24 +70,26 @@ export class EmailSubscriptionStore {
       const version = Number(await transaction.get<number>(VERSION_KEY)) || 0;
       const subscription = (await transaction.get(SUBSCRIPTION_KEY)) ?? null;
       const migratable = (await transaction.get(CLOSED_KEY)) !== true;
-      if (!write && !mark) return { status: 200, slot: { version, subscription, migratable } };
+      const cancelledAt = Number(await transaction.get<number>(CANCELLED_AT_KEY)) || 0;
+      if (!write && !mark) return { status: 200, slot: { version, subscription, migratable, cancelledAt } };
       if (mark) {
         if (payload.expectedVersion !== undefined && payload.expectedVersion !== version) {
-          return { status: 409, slot: { version, subscription, migratable } };
+          return { status: 409, slot: { version, subscription, migratable, cancelledAt } };
         }
         const next = version + 1;
         await transaction.put(VERSION_KEY, next);
         await transaction.put(CLOSED_KEY, !payload.migratable);
+        if (!payload.migratable) await transaction.put(CANCELLED_AT_KEY, next);
         await transaction.delete(SUBSCRIPTION_KEY);
-        return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable) } };
+        return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable), cancelledAt: payload.migratable ? cancelledAt : next } };
       }
-      if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription, migratable } };
+      if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription, migratable, cancelledAt } };
       const next = version + 1;
       await transaction.put(VERSION_KEY, next);
       await transaction.put(CLOSED_KEY, true);
       if (record === null) await transaction.delete(SUBSCRIPTION_KEY);
       else await transaction.put(SUBSCRIPTION_KEY, record);
-      return { status: 200, slot: { version: next, subscription: record, migratable: false } };
+      return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt } };
     });
     return json(outcome.slot, outcome.status);
   }
