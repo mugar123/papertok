@@ -285,6 +285,7 @@ test('a follow reaches analytics with its id only when the id is a verified prov
   assert.equal(sentId({ type: 'topic', id: 'T10604', displayName: 'Topic' }), 'T10604');
   assert.equal(sentId({ type: 'topic', id: 'C41008148', displayName: 'Computer science' }), 'C41008148');
   assert.equal(sentId({ type: 'topic', id: 'cs.LG', displayName: 'Machine Learning' }), 'cs.LG');
+  assert.equal(sentId({ type: 'topic', id: 'physics', displayName: 'Physics' }), 'physics', 'an area of the app taxonomy');
 
   assert.equal(sentId(migrateLegacyAuthors(['Ada Lovelace'])[0]), undefined, 'a legacy author id is the name');
   assert.equal(sentId({ type: 'author', displayName: 'Ada Lovelace' }), undefined, 'a nameless id falls back to the name');
