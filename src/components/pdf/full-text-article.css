@@ -342,7 +342,7 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
   .ft-rail-tick[data-active] { transform: none; }
 }
 
-.ft-outline-scroll { position: relative; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.ft-outline-scroll { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .ft-outline-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; font-family: var(--font-body); }
 .ft-outline-list a {
   display: block;
