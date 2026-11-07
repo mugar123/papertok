@@ -462,6 +462,13 @@ export async function setAnalyticsConsent(value: string) {
   return true;
 }
 
+// A reader who turned analytics off under an earlier build may still hold the
+// identity PostHog stored then, and with analytics off nothing loads PostHog or
+// calls `setAnalyticsConsent` again, so each start removes it while it is off.
+export function clearStoredIdentityWhileAnalyticsOff() {
+  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED && !analyticsClient) clearStoredPostHogIdentity();
+}
+
 function clearStoredPostHogIdentity() {
   removePostHogIdentity({
     local: getBrowserStorage(),

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import type * as PostHogModule from 'posthog-js';
-import { ANALYTICS_CONSENT, ANALYTICS_CONSENT_KEY, setAnalyticsConsent, startAnalyticsClient } from './analytics-service.ts';
+import { ANALYTICS_CONSENT, ANALYTICS_CONSENT_KEY, clearStoredIdentityWhileAnalyticsOff, setAnalyticsConsent, startAnalyticsClient } from './analytics-service.ts';
 
 // The installed SDK, run against a minimal browser: the storage names
 // `removePostHogIdentity` clears are the ones this posthog-js really writes.
@@ -103,4 +103,11 @@ test('turning analytics off where PostHog never loaded removes the identity it s
   const after = new PostHog();
   startAnalyticsClient(after, ANALYTICS_CONSENT.ENABLED);
   assert.notEqual(after.get_distinct_id(), firstId);
+
+  // Analytics was turned off under an earlier build that left the identity
+  // behind; the next start removes it although no one turns analytics off again.
+  assert.ok(stored().length > 0, 'the new start stored an identity again');
+  local.setItem(ANALYTICS_CONSENT_KEY, ANALYTICS_CONSENT.DENIED);
+  clearStoredIdentityWhileAnalyticsOff();
+  assert.deepEqual(stored(), []);
 });
