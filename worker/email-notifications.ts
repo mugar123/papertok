@@ -1028,7 +1028,10 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
       behind: !cancelled && kv.revision !== slot.version,
     };
   }
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: false };
+  // No KV record, yet a save reopened the object: that read may be a cached
+  // miss of a record the save wrote, so the reader is held, not absent. A
+  // cancellation closes the object, so a cancelled reader never reads as held.
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: !slot.subscription && slot.migratable && slot.version > 0 };
 }
 
 /**
@@ -1039,7 +1042,14 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
  * closed, every later phase 1 read treats a KV record as a stale copy.
  */
 async function closeBeforeCancelling(env: WorkerEnv, uid: string) {
-  if (!subscriptionInKv(env)) return null;
+  if (!subscriptionInKv(env)) {
+    // Phase 2: a record that reads as missing may be a cached miss of one a
+    // Worker from before the object saved. A cancellation closes the object
+    // whatever was read, so no later read moves that record in.
+    const slot = await readSubscriptionSlot(env, uid);
+    if (slot.migratable) await markSubscription(env, uid, false);
+    return slot.subscription;
+  }
   const { slot } = await readPhase1Slot(env, uid);
   await markSubscription(env, uid, false);
   await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
@@ -1158,8 +1168,8 @@ async function changeSubscription(
 }
 
 /** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
-async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
-  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null;
+async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>) {
+  const phase1 = read ?? (subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null);
   const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
@@ -2921,21 +2931,24 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   const uid = await env.NOTIFICATION_STORE.get(`${UNSUBSCRIBE_PREFIX}${token}`);
   if (!uid) return invalidLinkPage();
   const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
-  if (!subscription || subscription.unsubscribeToken !== token) {
+  // The token index names this reader but their record reads as missing: a
+  // cached miss of a record just saved, unless their object says a cancellation
+  // closed it. Only a closed object makes the link spent; otherwise the link
+  // still works, and an unsubscribe cancels whatever the record turns out to be.
+  const unread = !subscription && (await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable;
+  if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
     // A second POST from the same link (a double click, or a mail client's
     // one-click POST before the reader's) may read a stale KV copy of the token
     // index and record; the object a cancellation closed says it already worked.
     if (!subscription && request.method === 'POST') {
-      const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-      if (!slot.migratable && !slot.subscription) {
-        return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
-      }
+      return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
     }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
     return invalidLinkPage();
   }
   if (request.method === 'POST') {
     await deleteSubscription(env, uid, subscription);
+    if (unread) await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
   }
 
   const title = request.method === 'POST' ? copy.disabledTitle : copy.confirmTitle;
@@ -3206,9 +3219,13 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 }
 
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
-  const record = await loadSubscriptionRecord(env, key.name);
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key.name)) : undefined;
+  const record = await loadSubscriptionRecord(env, key.name, phase1);
   const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
-  if (!record?.behind) return outcome;
+  // A listed key whose KV read returned nothing counts too, when the object
+  // holds a reopened reader (see readPhase1Slot): a cached miss must not make
+  // the window look clean.
+  if (!phase1?.behind) return outcome;
   // Phase 1: a KV record behind the object is held until a save writes it
   // again. Counted in every window, enabled or not and due or not, so a window
   // without held readers shows none remain (worker/README.md, phase 2 step 0).

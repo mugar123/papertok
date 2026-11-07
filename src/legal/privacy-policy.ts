@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-06';
+export const PRIVACY_POLICY_VERSION = '2026-11-07';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -42,7 +42,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-06';
  * author preview make from the browser, which Asier chose on 2026-11-05 to
  * describe rather than route through the Worker.
  *
- * Version 2026-11-06 adds what the email subscription stores when the digest
+ * Version 2026-11-07 adds what the email subscription stores when the digest
  * is filled from the subjects a reader chose, and that it is kept in Workers KV
  * or, once moved, a Durable Object of the account (ENG-163, #442). The wording
  * holds for both deploy phases, so phase 2 needs no new notice. That page text
@@ -52,7 +52,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-06';
  * and this instant to the merge day before merging; once Vercel reports the
  * merge live, lower this instant to that success time.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-06T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-07T23:59:59Z';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
