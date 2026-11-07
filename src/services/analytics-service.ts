@@ -233,7 +233,9 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // its paper_dwell, so viewer time is part of it and must not be added to it;
   // a viewer still open when the tab closes sends no viewer_time.
   // No paper_id: a bioRxiv id is a DOI, and the viewer's records do not need to
-  // name the paper. Join them to `paper_open` by session and time order.
+  // name the paper. Viewer events are matched to `paper_open` by session and
+  // time order, so the paper is known only when that `paper_open` carries its
+  // identifier.
   viewer_open: {},
   viewer_content: {
     content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration',
