@@ -2709,6 +2709,37 @@ test('phase 1 prepares no digest from a KV record behind the last save', async (
   assert.deepEqual(calls, []);
 });
 
+for (const [held, overrides, at] of [
+  ['on a weekday its weekly digest is not due', { frequency: 'weekly' }, '2026-08-13T07:00:00Z'],
+  ['whose KV record has the digest off', { enabled: false }, '2026-08-10T07:00:00Z'],
+] as const) {
+  test(`phase 1 counts a held reader ${held}, with no provider call`, async () => {
+    const kv = createMemoryKv({
+      [RETRY_KEY]: digestSubscription({ uid: 'retry-reader', unsubscribeToken: RETRY_TOKEN, ...overrides }),
+      [`notification:unsubscribe:${RETRY_TOKEN}`]: 'retry-reader',
+    });
+    const env = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+    const calls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      calls.push(new URL(String(input)).hostname);
+      return jsonResponse(200, { results: [] });
+    };
+    try {
+      const before = kv.values.get(RETRY_KEY)!;
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid: 'retry-reader', email: 'reader@example.com', displayName: '' });
+      kv.values.set(RETRY_KEY, before);
+      calls.length = 0;
+      const result = await runEmailNotificationSchedule(env, Date.parse(at));
+      assert.equal(result.skipped, 1);
+      assert.deepEqual(result.failureCodes, { EMAIL_SUBSCRIPTION_HELD: 1 });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.deepEqual(calls, []);
+  });
+}
+
 test('a phase 1 sync that changes nothing writes again a KV record behind the last save, so the schedule reaches the reader', async () => {
   const kv = createMemoryKv();
   const { phase1 } = twoPhases(kv);

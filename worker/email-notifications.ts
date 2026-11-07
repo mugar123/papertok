@@ -1157,22 +1157,27 @@ async function changeSubscription(
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
+/** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
 async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
-  const subscription = withVersion(await readSubscriptionSlot(env, subscriptionUid(key)));
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null;
+  const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
   const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
-  return { subscription, state, stateKey };
+  return { subscription, state, stateKey, behind: Boolean(phase1?.behind) };
 }
 
-async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
-  const record = await loadSubscriptionRecord(env, key);
-  if (!record) return null;
+function subscriptionWithState(record: NonNullable<Awaited<ReturnType<typeof loadSubscriptionRecord>>>) {
   return {
     ...record.subscription,
     ...deliveryStateFromSubscription(record.subscription),
     ...(record.state || {}),
   };
+}
+
+async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
+  const record = await loadSubscriptionRecord(env, key);
+  return record && subscriptionWithState(record);
 }
 
 async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscription: Subscription | null, buildPatch: (state: DeliveryState, subscription: Subscription) => DeliveryState) {
@@ -3201,7 +3206,25 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 }
 
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
-  const subscription = await loadSubscriptionWithState(env, key.name);
+  const record = await loadSubscriptionRecord(env, key.name);
+  const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
+  if (!record?.behind) return outcome;
+  // Phase 1: a KV record behind the object is held until a save writes it
+  // again. Counted in every window, enabled or not and due or not, so a window
+  // without held readers shows none remain (worker/README.md, phase 2 step 0).
+  const failureCodes = { ...outcome.failureCodes };
+  failureCodes.EMAIL_SUBSCRIPTION_HELD = (failureCodes.EMAIL_SUBSCRIPTION_HELD || 0) + 1;
+  return { ...outcome, failureCodes };
+}
+
+async function processLoadedSubscription(
+  env: WorkerEnv,
+  key: { name: string },
+  now: Date,
+  openAlexRequests: OpenAlexRequests,
+  record: Awaited<ReturnType<typeof loadSubscriptionRecord>>,
+): Promise<ScheduledOutcome> {
+  const subscription = record && subscriptionWithState(record);
   // An index a save wrote just after an unsubscribe points at no subscription.
   // In phase 1 the key is the record itself, and a read that missed it may be
   // a stale one, so only a cancellation deletes it.
@@ -3244,12 +3267,9 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
       return { skipped: true };
     }
-    // Phase 1: a KV record behind the object is held until a save writes it
-    // again; preparing a digest from it would only call providers for a send
-    // the last check cancels. Counted, so held readers show in the summary.
-    if (subscriptionInKv(env) && (await readPhase1Slot(env, subscriptionUid(key.name))).behind) {
-      return { skipped: true, failureCodes: { EMAIL_SUBSCRIPTION_HELD: 1 } };
-    }
+    // Phase 1: preparing a digest from a held record would only call providers
+    // for a send the last check cancels.
+    if (record?.behind) return { skipped: true };
 
     const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
