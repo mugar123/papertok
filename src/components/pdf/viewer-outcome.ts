@@ -72,12 +72,25 @@ type ViewerEvent = Extract<ProductAnalyticsEvent, 'viewer_open' | 'viewer_conten
  * `viewer_content` for the first outcome only, and `viewer_time` on `stop`.
  * The time counts only while the tab is visible, as `reader_time` does, and
  * `text_seconds` is the part of it spent on the text rather than the PDF.
+ *
+ * `context` names the analytics consent and the account the session belongs
+ * to. Once it differs from the one at opening, the session is dropped and
+ * sends nothing more: time counted before a consent change or under another
+ * account must not be reported now. `check` lets the viewer drop it as soon as
+ * either changes; every send checks again.
  */
-export function startViewerTracking({ now, visibility, send }: {
+export function startViewerTracking({ now, visibility, context, send }: {
   now: () => number;
   visibility: Visibility;
+  context: () => string;
   send: (name: ViewerEvent, params: Record<string, unknown>) => void;
 }) {
+  const openedWith = context();
+  let dropped = false;
+  const check = () => {
+    if (context() !== openedWith) dropped = true;
+    return !dropped;
+  };
   const openedAt = now();
   let visibleSince: number | null = visibility.hidden() ? null : openedAt;
   let onText = false;
@@ -99,8 +112,9 @@ export function startViewerTracking({ now, visibility, send }: {
   send('viewer_open', {});
 
   return {
+    check,
     settle(next: ViewerOutcome) {
-      if (outcome || stopped) return;
+      if (outcome || stopped || !check()) return;
       outcome = next;
       send('viewer_content', { ...next, duration_ms: now() - openedAt });
     },
@@ -114,7 +128,7 @@ export function startViewerTracking({ now, visibility, send }: {
       flush();
       stopped = true;
       unsubscribe();
-      send('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds });
+      if (check()) send('viewer_time', { content: outcome?.content ?? 'loading', seconds, text_seconds: textSeconds });
     },
   };
 }

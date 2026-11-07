@@ -20,6 +20,7 @@ import { PaperDock } from './paper-info.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { useAuth } from '../../context/auth-context.tsx';
 import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer-outcome.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
@@ -159,13 +160,19 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   }, [iframeLoaded, canEmbed]);
 
   // viewer_open on mount, viewer_content on the first outcome, viewer_time on unmount.
-  const { trackEvent } = useAnalyticsConsent();
+  // A change of consent or account while open drops the session (viewer-outcome.ts).
+  const { trackEvent, consent } = useAnalyticsConsent();
+  const uid = useAuth().user?.uid ?? '';
+  const viewerContext = useEffectEvent(() => `${consent}|${uid}`);
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>) => {
     void trackEvent(name, params);
   });
   const trackerRef = useRef<ReturnType<typeof startViewerTracking> | null>(null);
   useEffect(() => {
-    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, send: (name, params) => sendViewerEvent(name, params) });
+    trackerRef.current?.check();
+  }, [consent, uid]);
+  useEffect(() => {
+    const tracker = startViewerTracking({ now: Date.now, visibility: documentVisibility, context: () => viewerContext(), send: (name, params) => sendViewerEvent(name, params) });
     trackerRef.current = tracker;
     return () => {
       tracker.stop();

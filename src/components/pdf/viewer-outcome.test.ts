@@ -44,15 +44,18 @@ function harness(hiddenAtStart = false) {
   let clock = 1_000;
   let hidden = hiddenAtStart;
   let listener: (() => void) | null = null;
+  let context = 'anonymous|A';
   const sent: [string, Record<string, unknown>][] = [];
   const tracker = startViewerTracking({
     now: () => clock,
     visibility: { hidden: () => hidden, subscribe: next => { listener = next; return () => { listener = null; }; } },
+    context: () => context,
     send: (name, params) => sent.push([name, params]),
   });
   return {
     tracker,
     sent,
+    setContext: (next: string) => { context = next; },
     advance: (ms: number) => { clock += ms; },
     setHidden: (next: boolean) => { hidden = next; listener?.(); },
     subscribed: () => listener !== null,
@@ -88,6 +91,27 @@ test('the viewer time leaves out a hidden tab and splits off the time on the tex
   advance(4_000);
   tracker.stop();
   assert.deepEqual(sent.at(-1), ['viewer_time', { content: 'text', seconds: 19, text_seconds: 15 }]);
+});
+
+test('analytics turned off and on again while the viewer is open sends no time from before', () => {
+  const { tracker, sent, advance, setContext } = harness();
+  setContext('denied|A');
+  tracker.check();
+  advance(55_000);
+  setContext('anonymous|A');
+  tracker.check();
+  tracker.settle({ content: 'pdf_embed', text_status: 'none' });
+  tracker.stop();
+  assert.deepEqual(sent.map(([name]) => name), ['viewer_open']);
+});
+
+test('a session opened under one account sends nothing once another account signs in', () => {
+  const { tracker, sent, advance, setContext } = harness();
+  advance(10_000);
+  setContext('anonymous|B');
+  tracker.settle({ content: 'pdf_embed', text_status: 'none' });
+  tracker.stop();
+  assert.deepEqual(sent.map(([name]) => name), ['viewer_open']);
 });
 
 test('a viewer opened in a hidden tab and closed before any outcome reports loading', () => {

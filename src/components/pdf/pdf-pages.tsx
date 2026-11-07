@@ -6,6 +6,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { createPageDraws, type DrawOutcome } from './page-draws.ts';
+import { openPdf } from './open-pdf.ts';
 import ViewerLoading from './viewer-loading.tsx';
 import './pdf-pages.css';
 
@@ -62,15 +63,15 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
       isEvalSupported: false,
       enableXfa: false,
     } as Parameters<typeof getDocument>[0] & { isEvalSupported: boolean });
-    task.promise.then(async (loaded) => {
-      const first = await loaded.getPage(1);
+    void openPdf(task.promise).then((opened) => {
       if (cancelled) return;
-      const { width, height } = first.getViewport({ scale: 1 });
-      setFirstPageRatio(height / width);
-      setPageCount(loaded.numPages);
-      setDoc(loaded);
-    }).catch(() => {
-      if (!cancelled) onUnavailable?.();
+      if (!opened) {
+        onUnavailable?.();
+        return;
+      }
+      if (opened.ratio !== null) setFirstPageRatio(opened.ratio);
+      setPageCount(opened.doc.numPages);
+      setDoc(opened.doc);
     });
     return () => {
       cancelled = true;
