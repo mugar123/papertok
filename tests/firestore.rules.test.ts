@@ -28,6 +28,8 @@ import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
+import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
+import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import {
   deleteDoc,
   deleteField,
@@ -1508,4 +1510,50 @@ test('a topic that arrives late is added to the copies of a liked and saved pape
   assert.equal(copy.title, title, 'the rest of the copy is unchanged');
   assert.equal(areaLabelForPaper(paperLegacyAdapter(copy)), 'Biology');
   assert.equal(areaLabelForPaper(paperLegacyAdapter({ id, ...(await getDoc(saved)).data() })), 'Biology');
+});
+
+// =========================================================================
+// ENG-196: the account's own record of the newest privacy policy version whose
+// change notice it was shown, so the notice does not return on another device.
+// =========================================================================
+
+const privacyNoticeDoc = (db: ReturnType<typeof asAlice>, uid = ALICE) => doc(db, 'users', uid, 'settings', 'privacyNotice');
+
+test('ENG-196: the owner records and reads the privacy notice version shown, as the app writes it', async () => {
+  await reset();
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord(PRIVACY_POLICY_VERSION), { merge: true }));
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01.2'), { merge: true }));
+  const record = await assertSucceeds(getDoc(privacyNoticeDoc(asAlice())));
+  assert.equal(record.get('shownVersion'), '2026-12-01.2');
+});
+
+test('ENG-196: no other account and no guest reads or writes it, and the client cannot delete it', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(privacyNoticeDoc(context.firestore()), { shownVersion: '2026-12-01' });
+  });
+  await assertFails(getDoc(privacyNoticeDoc(asBob())));
+  await assertFails(getDoc(privacyNoticeDoc(asGuest())));
+  await assertFails(setDoc(privacyNoticeDoc(asBob()), privacyNoticeRecord('2026-12-02'), { merge: true }));
+  await assertFails(setDoc(privacyNoticeDoc(asGuest()), privacyNoticeRecord('2026-12-02'), { merge: true }));
+  await assertFails(deleteDoc(privacyNoticeDoc(asAlice())));
+});
+
+test('ENG-196: the record holds one policy version and nothing else, no acceptance among it', async () => {
+  await reset();
+  for (const shownVersion of ['', 'garbage', '2026-11-7', '2026-11-07.', '2026-11-07.12345', ' 2026-11-07', '2026-11-07 ', '2026-11-07.2.1', 20261107, null]) {
+    await assertFails(setDoc(privacyNoticeDoc(asAlice()), { shownVersion }));
+  }
+  await assertFails(setDoc(privacyNoticeDoc(asAlice()), {}));
+  await assertFails(setDoc(privacyNoticeDoc(asAlice()), { shownVersion: '2026-12-01', acceptedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), { shownVersion: '2026-12-01.1234' }));
+});
+
+test('ENG-196: recording it changes nothing in the user document', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), { onboardingComplete: true, preferences: ['cs.AI'] });
+  });
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01'), { merge: true }));
+  assert.deepEqual((await getDoc(doc(asAlice(), 'users', ALICE))).data(), { onboardingComplete: true, preferences: ['cs.AI'] });
 });

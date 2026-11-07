@@ -56,6 +56,18 @@ export const PRIVACY_POLICY_VERSION = '2026-11-07';
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-07T23:59:59Z';
 
+/**
+ * The version every account counts as already shown, whatever this browser or
+ * the account has recorded. The 2026-11-07 notice went live at 08:04Z that day
+ * when only each browser remembered it, so a reader who had seen it would have
+ * seen it again on every new browser or device. Pablo decided on 2026-11-07
+ * (ENG-196) that no account is shown it again, including one that never saw
+ * it, and that only later versions are remembered in the account. Leave this
+ * at 2026-11-07: raising it would skip a later version's notice for every
+ * account, and nothing is written to accounts for it.
+ */
+export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
+
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "Email updates, if on, also store the subjects you chose, and keep your subscription in Cloudflare Workers KV or, as it moves, a Cloudflare Durable Object of your account.",

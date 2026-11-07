@@ -138,6 +138,11 @@
               <td>You choose them</td>
               <td>So the app behaves the same on every device</td>
             </tr>
+            <tr>
+              <td>The latest version of this policy whose change announcement you were shown</td>
+              <td>Recorded when the announcement opens</td>
+              <td>So the same announcement does not come back on another device; it records that the announcement was shown, not that you accepted anything</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -466,19 +471,20 @@
         to the provider and comes back; during that trip this tab's session storage briefly
         holds the provider, the part of the app that asked and the page to return to, and they
         are removed when the page comes back or when the browser restores it after Back.
-        Once the announcement of a policy change has been shown to you, this browser keeps
-        that version under your account identifier, so the announcement does not come back
-        after you sign out and in again. Clearing the site's data removes it, and so does
-        deleting the account from Settings in this browser.
+        This browser also keeps, under your account identifier, a copy of the latest policy
+        version whose announcement your account was shown, so it does not ask your account
+        again, also after you sign out and in again. Clearing the site's data removes the
+        copy, and so does deleting the account from Settings in this browser.
       </p>
 
       <h2>Changes</h2>
       <p>
         If this policy changes in a meaningful way, the date at the top will be updated and
         the change will be announced in the application to signed-in accounts created before
-        the change took effect. Once the announcement has been shown, this browser remembers
-        that version, separately for each account, so the same announcement does not come
-        back, however you closed it.
+        the change took effect. Once the announcement has been shown, your account remembers
+        that version, so the same announcement does not come back on this or another device,
+        however you closed it. The announcement of the 7 November 2026 change is no longer
+        shown, including to accounts that had not seen it.
       </p>
     </main>
 

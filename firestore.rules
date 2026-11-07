@@ -288,6 +288,20 @@ service cloud.firestore {
           && request.resource.data.seenIds.size() <= 500;
       }
 
+      // The newest privacy policy version whose change notice this account was
+      // shown (src/services/privacy-notice-service.ts), so it does not return
+      // on another device. A record of what was on screen, not a consent. Its
+      // own document, so writing it can touch no other field of the account.
+      // Only fetched by id and only written by the client: account deletion
+      // removes it with the service identity, past these rules.
+      match /settings/privacyNotice {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['shownVersion'])
+          && request.resource.data.shownVersion is string
+          && request.resource.data.shownVersion.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}([.][0-9]{1,4})?');
+      }
+
       // `publicShareId` is the pointer from a private list to its public copy,
       // and after F11 only the Worker may move it: it sets the field in the same
       // commit that creates both public documents, and clears it in the same

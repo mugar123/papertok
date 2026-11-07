@@ -128,7 +128,11 @@ test('the page promises the in-app announcement to signed-in accounts and says h
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
   assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
-  assert.match(html, /remembers that version, separately for each account/);
+  assert.match(html, /your account remembers that version, so the same announcement does not come back on this or another device/);
+  // PRIVACY_NOTICE_BASELINE_VERSION (src/legal/privacy-policy.ts) settles 2026-11-07 for every account.
+  assert.match(html, /The announcement of the 7 November 2026 change is no longer shown, including to accounts that had not seen it/);
+  // users/{uid}/settings/privacyNotice (src/services/privacy-notice-service.ts) is listed with the account's data.
+  assert.match(html, /<td>The latest version of this policy whose change announcement you were shown<\/td>/);
 });
 
 test('the in-app notice announces the version this page is dated', () => {
@@ -185,11 +189,12 @@ test("every clause of the in-app summary is the page's own words", () => {
 test('the page lists the notice key among what the browser keeps and what removes it, and says it is remembered once shown', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
-  // NudgeHost records the version once the dialog is open (recordPrivacyNoticeShown in utils/nudges.ts).
-  assert.match(storage, /Once the announcement of a policy change has been shown to you, this browser keeps that version under your account identifier[^.]*sign out and in again/);
+  // NudgeHost keeps the version once the dialog opens or the account's record says so
+  // (recordPrivacyNoticeShown and adoptAccountNotice in utils/nudges.ts).
+  assert.match(storage, /This browser also keeps, under your account identifier, a copy of the latest policy version whose announcement your account was shown[^.]*sign out and in again/);
   // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
-  assert.match(storage, /Clearing the site's data removes it, and so does deleting the account from Settings in this browser/);
+  assert.match(storage, /Clearing the site's data removes the copy, and so does deleting the account from Settings in this browser/);
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
-  assert.match(changes, /Once the announcement has been shown, this browser remembers that version[^.]*however you closed it/);
+  assert.match(changes, /Once the announcement has been shown, your account remembers that version[^.]*however you closed it/);
   assert.doesNotMatch(changes, /Hide for now/);
 });

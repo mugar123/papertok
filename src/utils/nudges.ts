@@ -63,6 +63,10 @@ export function rememberNudgeDismissal<T>(id: T, storage?: NudgeStorage | null) 
 
 const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
 
+// The account's own record (users/{uid}/settings/privacyNotice) says which
+// version it was shown, on any device; this key is this browser's copy, so a
+// reader it already covers is settled without asking the account. Neither is a
+// consent: they record that a notice was on screen, not that it was accepted.
 // Unlike the nudges above, kept per reader: each account that signs in on this
 // device has to be told separately. It is not swept at sign-out, so signing in
 // again does not repeat a notice already shown. Deleting the account does
@@ -122,13 +126,19 @@ export function rememberPrivacyNotice(uid: string, version: string, storage?: Nu
 
 /**
  * Called by NudgeHost after each commit: once the privacy dialog is open on
- * screen for a signed-in account, `version` counts as told for that account on
- * this device, however the dialog is then closed (Got it, the X, Escape, a
- * press outside, Back, or closing the tab). Nothing is recorded before it opens
- * or without an account.
+ * screen for a signed-in account, `version` counts as told for that account,
+ * however the dialog is then closed (Got it, the X, Escape, a press outside,
+ * Back, or closing the tab). It is written to this browser and handed to
+ * `saveToAccount` for the account's own record. A failed save is reported and
+ * left: this browser's copy still settles it here, and another device may show
+ * it once more. Nothing is recorded before it opens or without an account.
  */
-export function recordPrivacyNoticeShown({ uid, dialogOpen, version, storage }: { uid: string | null | undefined; dialogOpen: boolean; version: string; storage?: NudgeStorage | null }) {
-  if (dialogOpen && uid) rememberPrivacyNotice(uid, version, storage);
+export function recordPrivacyNoticeShown({ uid, dialogOpen, version, storage, saveToAccount }: { uid: string | null | undefined; dialogOpen: boolean; version: string; storage?: NudgeStorage | null; saveToAccount: (uid: string, version: string) => Promise<void> }) {
+  if (!dialogOpen || !uid) return;
+  rememberPrivacyNotice(uid, version, storage);
+  saveToAccount(uid, version).catch((error: unknown) => {
+    console.warn('Could not record in the account that the privacy notice was shown', error);
+  });
 }
 
 /**
@@ -158,19 +168,47 @@ export function visitReaderReady({ user, loading, onboardingComplete, profileLoa
 }
 
 /**
- * What NudgeHost asks of the policy: the signed-in account, when it was
- * created and what this browser has stored for its uid. Kept here so the
- * arguments that decide who is told are tested, not only the rule itself.
+ * The account's own record of the newest version it was shown, as read for
+ * `uid`: `version` is null when the account has none.
  */
-export function privacyOwedFor({ user, signedIn, version, effectiveAt, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; storage?: NudgeStorage | null }) {
-  if (!user) return false;
-  return privacyNoticeOwed({
+export interface AccountNoticeRecord { uid: string; version: string | null }
+
+/**
+ * Takes the account's answer for `uid`: what it records is kept as this
+ * browser's copy, so the next visit here is settled without asking again, and
+ * the record NudgeHost holds for the visit is handed back.
+ */
+export function adoptAccountNotice(uid: string, version: string | null, storage?: NudgeStorage | null): AccountNoticeRecord {
+  if (version) rememberPrivacyNotice(uid, version, storage);
+  return { uid, version };
+}
+
+/**
+ * Where the privacy notice stands for the signed-in reader, from what NudgeHost
+ * knows: `settled` (not owed), `ask-account` (only the account's own record can
+ * tell) or `owed`. Kept here so the arguments that decide who is told are
+ * tested, not only the rule itself.
+ *
+ * The baseline, then this browser's copy for the uid, then the account's
+ * creation time settle it without asking the account, so a version the
+ * baseline covers, a new account and a reader this browser already told never
+ * make that read. Otherwise it waits for the account's record (`account`),
+ * which counts only for the same uid: before it is read, while a read has
+ * failed or when it belongs to the previous account, nothing is owed, so the
+ * dialog never opens on a guess and then has to be taken back.
+ */
+export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, baseline, account, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; baseline: string; account: AccountNoticeRecord | null; storage?: NudgeStorage | null }): 'settled' | 'ask-account' | 'owed' {
+  if (!user) return 'settled';
+  const told = (acknowledged: string | null) => !privacyNoticeOwed({
     version,
     effectiveAt,
-    acknowledged: readPrivacyNoticeAck(user.uid, storage),
+    acknowledged,
     accountCreated: user.metadata?.creationTime,
     signedIn,
   });
+  if (told(baseline) || told(readPrivacyNoticeAck(user.uid, storage))) return 'settled';
+  if (account?.uid !== user.uid) return 'ask-account';
+  return told(account.version) ? 'settled' : 'owed';
 }
 
 /** The only route a notice is picked on, and the privacy dialog shown on. */
@@ -252,7 +290,7 @@ export const PRIVACY_NOTICE_ID = 'privacy-change';
  * privacy notice existed. The privacy dialog is shown only to a signed-in reader
  * on the feed, since elsewhere a paper may be open as a modal, and comes back
  * when the reader returns to the feed while it is still owed. Once it is no
- * longer owed (`privacyOwed`, read from storage on every render) it does not
+ * longer owed (`privacyOwed`, privacyNoticeStatus on every render) it does not
  * open: shown in another tab, it is settled here too. A dialog already open
  * here (`dialogOpen`, from the previous render) stays until the reader closes
  * it or leaves the feed, although opening it recorded it as told.
