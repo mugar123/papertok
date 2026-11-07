@@ -5115,6 +5115,32 @@ test('a notification write asks Identity Toolkit again, so a deleted account can
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('phase 1: purging a deleted account removes a KV record its closed object hides, with its token and delivery state', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv), EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  await callSubscriptionObject(kv, 'hidden', { action: 'mark', migratable: false });
+  // Saved by a Worker from before the object: revision 0, below the cancellation.
+  kv.values.set('notification:subscription:hidden', JSON.stringify(digestSubscription({ uid: 'hidden', unsubscribeToken: 'tok-hidden', stateId: 's1' })));
+  kv.values.set('notification:unsubscribe:tok-hidden', 'hidden');
+  kv.values.set('notification:delivery-state:hidden:s1', JSON.stringify({ lastSentAt: '2026-11-02T07:00:00Z' }));
+
+  await purgeEmailSubscription(env, 'hidden');
+
+  assert.deepEqual([...kv.values.keys()], []);
+});
+
+test('phase 2: a KV read that fails while purging a deleted account still clears the subscription from its object', async () => {
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv), EMAIL_SUBSCRIPTION_SOURCE: 'object' };
+  await callSubscriptionObject(kv, 'moved', { action: 'write', expectedVersion: 0, subscription: digestSubscription({ uid: 'moved', unsubscribeToken: 'tok-moved' }) });
+  kv.values.set('notification:subscription:moved', JSON.stringify({ uid: 'moved' }));
+  kv.get = async () => { throw new Error('KV GET failed: 503'); };
+
+  await assert.rejects(() => purgeEmailSubscription(env, 'moved'), /KV GET failed/);
+
+  assert.equal((await callSubscriptionObject(kv, 'moved', { action: 'read' })).subscription, null);
+});
+
 // ENG-163 (Pablo, 2026-11-03): a reader whose digest is on and who follows
 // nothing it covers gets the week's most cited papers of the leaves they
 // chose, read from the paper store, instead of losing the digest.

@@ -1273,12 +1273,19 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   // A KV record that a closed object hides (one a Worker from before the
-  // object saved) still names its token and delivery state; read it before
-  // the reads below, which treat it as cancelled and return nothing.
-  const raw = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
-  if (raw?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${raw.unsubscribeToken}`).add(deliveryStateKey(uid, raw));
+  // object saved) still names its token and delivery state, which the reads
+  // below treat as cancelled and do not return. Phase 1 reads it first, since
+  // closeBeforeCancelling deletes it; phase 2's object steps never delete the
+  // KV key, so it is read after them there, and a failed KV read cannot stop
+  // a deleted account's subscription being cleared from its object.
+  const collectHiddenRecord = async () => {
+    const raw = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+    if (raw?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${raw.unsubscribeToken}`).add(deliveryStateKey(uid, raw));
+  };
+  if (subscriptionInKv(env)) await collectHiddenRecord();
   const held = await closeBeforeCancelling(env, uid);
   const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
   if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
