@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import type { Paper } from '../models/paper.ts';
+import type { ReaderMenu } from '../components/feed/paper-menu.tsx';
 
 import { useCallback, useMemo, useState } from 'react';
 import SimilarFeedLayer from '../components/feed/similar-feed-layer.tsx';
@@ -18,7 +19,7 @@ export interface SimilarFeedContextValue {
  * folds back into the card the reader left.
  */
 export function SimilarFeedProvider({ children, onOpenPdf, onSaveToList }: PropsWithChildren<{
-  onOpenPdf?: (paper: Paper) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   onSaveToList?: (paper: Paper) => void;
 }>) {
   const [layer, setLayer] = useState<{ anchor: Paper; origin: HTMLElement } | null>(null);

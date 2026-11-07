@@ -183,6 +183,13 @@ export function blockInlines(block: Block): Inline[][] {
   }
 }
 
+const WORDS_PER_MINUTE = 230;
+
+export function readingMinutes(doc: FullText) {
+  const words = [...doc.abstract, ...doc.body].flatMap(blockInlines).map(plainText).join(' ').split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+}
+
 // The parsers name a link's target, not what it is; one into the references is a citation.
 function withCitations(doc: FullText): FullText {
   const references = new Set(doc.references.map(reference => reference.id));

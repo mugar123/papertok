@@ -1,83 +1,37 @@
 import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { Block, FullText } from '../../utils/full-text.ts';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { FullText } from '../../utils/full-text.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PopoverChangeDetails } from '../ui/popover.tsx';
-import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTrigger } from '../ui/popover.tsx';
-import { ArrowRight, Info, ListBullets } from '@phosphor-icons/react';
+import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
+import { DotsThree, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useScrollFrame } from './use-scroll-frame.ts';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
-import { blockInlines, plainText } from '../../utils/full-text.ts';
-import { getCategoryLabel } from '../../data/category-taxonomy.ts';
-import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { NewTabHint } from './new-tab-hint.tsx';
-import { compactCount } from '../../utils/format-count.ts';
-
-const WORDS_PER_MINUTE = 230;
-
-function words(blocks: Block[]) {
-  return blocks.flatMap(blockInlines).map(plainText).join(' ').split(/\s+/).filter(Boolean).length;
-}
-
-function PaperInfo({ paper, doc }: { paper: Paper; doc: FullText | null | undefined }) {
-  const venue = paper.journal || paper.conference;
-  const subjects = [...new Set([paper.primaryCategory, ...(paper.categories ?? [])].filter((code): code is string => Boolean(code)))]
-    .map(code => {
-      const label = getCategoryLabel(code) || code;
-      return { code, label, path: topicExplorerPath(resolvePaperTopic({ categoryId: code, label })) };
-    });
-  const citations = paper.citationCountKnown || (paper.citationCount ?? 0) > 0 ? paper.citationCount : undefined;
-  const length = doc ? words([...doc.abstract, ...doc.body]) : 0;
-  const tiles = [
-    doc && { value: String(Math.max(1, Math.round(length / WORDS_PER_MINUTE))), unit: 'min', label: 'Reading time' },
-    // Always shown: a count no source states is a dash, not a zero.
-    { value: citations !== undefined ? compactCount.format(citations) : '—', unit: '', label: 'Citations', hint: citations !== undefined ? undefined : 'Not counted yet' },
-    doc && doc.references.length > 0 && { value: String(doc.references.length), unit: '', label: 'References' },
-  ].filter((tile): tile is { value: string; unit: string; label: string; hint?: string } => Boolean(tile));
-  return (
-    <>
-      <div className="pdf-info-head">
-        <p className="pdf-info-when">{[venue, paper.year].filter(Boolean).join(' · ') || 'About this paper'}</p>
-      </div>
-      {tiles.length > 0 && (
-        <ul className="pdf-info-stats" style={{ gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))` }}>
-          {tiles.map(tile => (
-            <li key={tile.label}>
-              <span className="pdf-info-label">{tile.label}</span>
-              <span className="pdf-info-value" title={tile.hint}>{tile.value}{tile.unit && <small> {tile.unit}</small>}{tile.hint && <span className="visually-hidden"> ({tile.hint})</span>}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {subjects.length > 0 && (
-        <section className="pdf-info-section" aria-labelledby="pdf-info-subjects">
-          <h3 id="pdf-info-subjects" className="pdf-info-section-title">Subjects</h3>
-          <ul className="pdf-info-rows">
-            {subjects.map(subject => (
-              <li key={subject.code}>
-                {subject.path
-                  ? <a href={subject.path} target="_blank" rel="noopener noreferrer"><span>{subject.label}</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a>
-                  : <span>{subject.label}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </>
-  );
-}
+import { readingMinutes } from '../../utils/full-text.ts';
+import { PaperMenuBody } from '../feed/paper-menu.tsx';
+import { paperActions, shareMethod } from '../feed/paper-actions.ts';
+import { useAuth } from '../../context/auth-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { areaAccentForPaper } from '../../utils/area-accent.ts';
 
 // The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
-export function PaperDock({ paper, doc, scroll, contents, children }: {
+export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, children }: {
   paper: Paper;
   doc: FullText | null | undefined;
   scroll: HTMLElement | null;
   contents: ((close: () => void) => ReactNode) | null;
+  fromCard: ReaderMenu;
+  onLeave: (then: () => void) => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const [shows, setShows] = useState<'contents' | 'info'>('info');
+  const card = useSyncExternalStore(fromCard.subscribe, fromCard.snapshot);
+  const [view, setView] = useState<'closed' | 'contents' | 'actions' | 'about'>('closed');
+  const open = view !== 'closed';
+  const [shows, setShows] = useState<'contents' | 'menu'>('menu');
+  const signedIn = Boolean(useAuth().user);
+  const { trackEvent } = useAnalyticsConsent();
   const [stowed, setStowed] = useState(false);
   const lastTop = useRef(0);
   useScrollFrame(scroll, () => {
@@ -105,14 +59,14 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (!open || shows !== 'contents') return;
+    if (view !== 'contents') return;
     const frame = requestAnimationFrame(() => {
       const card = panel.current?.querySelector<HTMLElement>('.pdf-info-body');
       const link = card?.querySelector<HTMLElement>('[aria-current="location"]');
       if (card && link) card.scrollTop = link.offsetTop - card.clientHeight / 2 + link.offsetHeight / 2;
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, shows]);
+  }, [view]);
   // A swap resizes the card from the height measured at the press; a swap during a swap starts from where it is.
   const swapFrom = useRef(0);
   const resize = useRef<Animation | null>(null);
@@ -135,13 +89,43 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
   const onOpenChange = (next: boolean, details: PopoverChangeDetails) => {
     if (!next && details.reason === 'outside-press' && dock.current?.contains(details.event.target as Node)) return;
     const what = details.trigger?.getAttribute('data-shows');
-    if (next && (what === 'contents' || what === 'info')) {
+    if (next && (what === 'contents' || what === 'menu')) {
       if (open && what !== shows && panel.current) swapFrom.current = panel.current.getBoundingClientRect().height;
       setShows(what);
+      setView(what === 'contents' ? 'contents' : 'actions');
+      return;
     }
-    setOpen(next);
+    if (!next) setView('closed');
   };
-  const close = () => setOpen(false);
+  const close = () => setView('closed');
+  const menu = (
+    <PaperMenuBody
+      title={paper.title}
+      url={card.shareUrl}
+      onShared={method => { void trackEvent('share', { method: shareMethod(method), content_type: 'paper', surface: 'reader' }); }}
+      actions={paperActions({
+        paper,
+        isRead: card.isRead,
+        onAbout: () => setView('about'),
+        onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
+        onNotInterested: () => onLeave(card.notInterested),
+      })}
+      open={view === 'actions' || view === 'about'}
+      onClose={close}
+      ShareHeading="h3"
+      panel={view === 'about' ? {
+        id: 'about',
+        title: 'About this paper',
+        subtitle: doc && `${readingMinutes(doc)} min read`,
+        aside: card.links,
+        content: card.about,
+        className: 'pc-about pc-about--reader',
+        style: { '--area-accent': areaAccentForPaper(paper) },
+        onBack: () => setView('actions'),
+      } : null}
+      renderTitle={heading => <PopoverTitle className="pc-share-sheet-title pdf-menu-title">{heading}</PopoverTitle>}
+    />
+  );
   return (
     <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
       <Popover open={open} onOpenChange={onOpenChange}>
@@ -154,9 +138,9 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
             collisionAvoidance={{ side: 'none', align: 'none' }}
             className="pdf-info-positioner"
           >
-            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : 'About this paper'}>
+            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : undefined}>
               <div className="pdf-info-body">
-                {shows === 'contents' && contents ? contents(close) : <PaperInfo paper={paper} doc={doc} />}
+                {shows === 'contents' && contents ? contents(close) : menu}
               </div>
             </PopoverPopup>
           </PopoverPositioner>
@@ -168,8 +152,8 @@ export function PaperDock({ paper, doc, scroll, contents, children }: {
             </PopoverTrigger>
           )}
           {children}
-          <PopoverTrigger data-shows="info" render={<Button variant="ghost" size="icon" aria-label="About this paper" title="About this paper" />}>
-            <Info size={18} aria-hidden="true" />
+          <PopoverTrigger data-shows="menu" render={<Button variant="ghost" size="icon" aria-label="More actions" title="More actions" />}>
+            <DotsThree size={18} weight="bold" aria-hidden="true" />
           </PopoverTrigger>
         </div>
       </Popover>

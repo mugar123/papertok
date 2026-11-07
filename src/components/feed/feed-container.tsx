@@ -1,5 +1,6 @@
 import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
+import type { ReaderMenu } from './paper-menu.tsx';
 import type { Paper } from '../../models/paper.ts';
 
 interface FeedSource {
@@ -19,7 +20,7 @@ interface FeedSource {
   initialLoadPending?: boolean;
 }
 interface FeedContainerProps {
-  onOpenPdf?: (paper: Paper) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   /** Opens the list picker; `surface` is the card's (PaperCard's `onPickList`). */
   onSaveToList?: (paper: Paper, surface?: string) => void;
   source?: FeedSource | null;
@@ -996,9 +997,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => clearTimeout(t);
   }, [heldEnd, pillOnScreen]);
 
-  const handleOpenPdf = useCallback((paper: Paper, surface?: string) => {
+  const handleOpenPdf = useCallback((paper: Paper, surface: string | undefined, menu: ReaderMenu) => {
     void trackPdfOpened(paper, surface);
-    onOpenPdf!(paper);
+    onOpenPdf!(paper, menu);
   }, [onOpenPdf, trackPdfOpened]);
 
   const handleSaveToList = useQuickSave(onSaveToList!, analyticsSurface);

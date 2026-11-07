@@ -1,5 +1,6 @@
 import type { MouseEvent, PropsWithChildren, ReactElement } from 'react';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { FollowInput } from '../../utils/following.ts';
 import type { SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entity-search-service.ts';
 import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
@@ -283,17 +284,18 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const [projectResults, setProjectResults] = useState<SearchResults['projects']>([]);
 
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [pdfPaper, setPdfPaper] = useState<Paper | null>(null);
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
+  const pdfPaper = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfPaper(null)` is just
+  // reports back only when its leave has played; `setPdfOpen(null)` is just
   // the fallback for the sub-frame gap before PDFViewer's own
   // `useImperativeHandle` has populated the ref — this import (above) is
   // plain, not lazy, so there is no chunk boundary to blame it on here.
   const pdfCloseRef = useRef<(() => void) | null>(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
-    else setPdfPaper(null);
+    else setPdfOpen(null);
   }, []);
   useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
@@ -1023,7 +1025,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper) => setPdfPaper(paper)}
+            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -1035,8 +1037,8 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
       </PaperOverlay>
 
       {/* PDF Viewer */}
-      {pdfPaper && (
-        <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
+      {pdfOpen && (
+        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
       )}
     </main>
   );
