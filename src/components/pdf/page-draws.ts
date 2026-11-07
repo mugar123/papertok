@@ -23,10 +23,12 @@ export function createPageDraws() {
     /**
      * Records how page `number` of `count` ended a started draw. Returns
      * 'hand-off' when the PDF should be handed off, the number of a page to
-     * draw even off screen, or null when nothing needs to happen.
+     * draw even off screen, or null when nothing needs to happen. A cancelled
+     * draw decides nothing: it is a page scrolled away or a viewer closing.
      */
     settle(number: number, count: number, outcome: DrawOutcome): 'hand-off' | number | null {
       inFlight -= 1;
+      if (outcome === 'cancelled') return null;
       if (outcome === 'drawn') drawn = true;
       if (outcome === 'failed') failed.add(number);
       if (drawn || failed.size === 0 || inFlight > 0) return null;

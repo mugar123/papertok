@@ -49,3 +49,23 @@ test('a cancelled draw is not a failure', () => {
   draws.start();
   assert.equal(draws.settle(1, 10, 'cancelled'), null);
 });
+
+test('cancelling the last draw in flight after a failure neither hands off nor probes', () => {
+  const draws = createPageDraws();
+  draws.start();
+  draws.start();
+  assert.equal(draws.settle(1, 10, 'failed'), null);
+  assert.equal(draws.settle(2, 10, 'cancelled'), null);
+});
+
+test('cancelling the last draw in flight after enough failures does not hand off', () => {
+  const draws = createPageDraws();
+  draws.start();
+  draws.start();
+  draws.start();
+  draws.start();
+  assert.equal(draws.settle(1, 10, 'failed'), null);
+  assert.equal(draws.settle(2, 10, 'failed'), null);
+  assert.equal(draws.settle(3, 10, 'failed'), null);
+  assert.equal(draws.settle(4, 10, 'cancelled'), null);
+});
