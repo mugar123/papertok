@@ -276,7 +276,12 @@
         connections map, such as switching to the list or centring the graph on another
         paper. Feed diagnostics record load starts, duration, result, initial loads versus
         refreshes or additional pages, automatic retries, and the web and server versions.
-        They contain no paper identifiers or interests. Events include browser, operating system, device type and session identifiers.
+        They contain no paper identifiers or interests.
+        Events include the browser and its version, the operating system and its version,
+        the device type, and session and tab identifiers. They also carry a short browser label
+        built only from the browser, its major version and the operating system (for example
+        "Chrome/130 (Mac OS X)"), so PostHog can tell people from automated traffic; this label
+        never contains the full user agent your browser sends.
       </p>
       <p>
         PaperTok does not send your name, email address, search text, notes, paper titles

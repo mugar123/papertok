@@ -570,6 +570,29 @@ const POSTHOG_PROPERTIES = new Set([
   '$device_type',
 ]);
 
+const USER_AGENT_PART = /^[A-Za-z][A-Za-z0-9 .-]{0,31}$/;
+
+function userAgentPart(value: unknown) {
+  return typeof value === 'string' && USER_AGENT_PART.test(value) ? value : undefined;
+}
+
+/**
+ * PostHog files an event without `$raw_user_agent` as automated traffic, and
+ * the browser's own string names exact versions and, on Android, the phone
+ * model. Send a short one built only from fields that already leave, such as
+ * `Chrome/130 (Mac OS X)`. `Mozilla` is the SDK's name for a browser it could
+ * not identify, and PostHog reads a bare `Mozilla/5.0` as a headless browser.
+ */
+function reducedUserAgent({ $browser, $browser_version, $os }: Record<string, unknown>) {
+  const browser = userAgentPart($browser);
+  if (!browser || /^mozilla$/i.test(browser)) return undefined;
+  const major = typeof $browser_version === 'number' || typeof $browser_version === 'string'
+    ? /^\d{1,5}/.exec(String($browser_version))?.[0]
+    : undefined;
+  const os = userAgentPart($os);
+  return `${browser}${major ? `/${major}` : ''}${os ? ` (${os})` : ''}`;
+}
+
 /**
  * Apply the event and property allowlists to every capture, including SDK
  * identity events. Error messages and raw URLs can contain private content.
@@ -584,12 +607,14 @@ export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent 
   const kept = Object.fromEntries(
     Object.entries(properties).filter(([key]) => POSTHOG_PROPERTIES.has(key)),
   );
+  const userAgent = reducedUserAgent(properties);
   return {
     uuid: capture.uuid,
     event,
     timestamp: capture.timestamp,
     properties: {
       ...kept,
+      ...(userAgent && { $raw_user_agent: userAgent }),
       ...(exception ?? sanitizeProductEventParams(event, properties, consent)),
       $current_url: currentUrl,
       $pathname: new URL(currentUrl, 'https://papertok.app').pathname,
