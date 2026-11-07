@@ -6,9 +6,6 @@ import { downloadCitationFile } from '../../utils/reading-library.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { getPublicPaperUrl } from '../../utils/public-navigation.ts';
 
-// Every way the link leaves the share panel (PaperMenu): `clipboard`,
-// `instagram` (which copies) or a network's id, reported in the analytics
-// `method` vocabulary, which has no network names.
 export const shareMethod = (method: string) => (method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other');
 
 export function paperActions({ paper, isRead, aboutHint, onAbout, onToggleRead, onNotInterested }: {
