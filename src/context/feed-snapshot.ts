@@ -2,6 +2,7 @@ import type { Paper } from '../models/paper.ts';
 import { applyKnownPublicationTypes } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { keepNotablePlaces } from '../utils/feed-enrichment.ts';
+import { lastVisitAfterLoad, type LastVisit } from '../utils/feed-loading-state.ts';
 import { resumeIndex } from '../utils/feed-mount-window.ts';
 import { feedResumeMemory, forYouScrollKey } from '../utils/feed-resume-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
@@ -89,6 +90,53 @@ export function readFeedSnapshot(
   } catch {
     return withoutPlace();
   }
+}
+
+// How old a snapshot can be and still stand in for a first load that failed
+// (lastVisitCards). Past fifteen minutes it no longer opens the feed
+// (FEED_SNAPSHOT_TTL_MS), but its unseen cards are better than an error while
+// the store does not answer (ENG-188).
+const FEED_SNAPSHOT_FALLBACK_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * The cards of the account's last saved feed for these interests that
+ * `isUnseen` accepts, shown when the first load of a feed entry fails
+ * (ENG-188), with the time they were saved. Null when there is none: no
+ * account, no snapshot for this account and signature, one older than
+ * FEED_SNAPSHOT_FALLBACK_MAX_AGE_MS, or none of its cards unseen.
+ */
+export function lastVisitCards(
+  userId: string | null | undefined,
+  signature: string,
+  isUnseen: (paper: Paper) => boolean,
+  storage?: Pick<Storage, 'getItem'>,
+): { papers: Paper[]; savedAt: number } | null {
+  if (!userId || !signature) return null;
+  try {
+    const snapshot = JSON.parse((storage ?? localStorage).getItem(feedSnapshotKey(userId, signature)) || 'null');
+    if (!snapshot || snapshot.publicationPolicy !== 3 || !Array.isArray(snapshot.papers) || typeof snapshot.savedAt !== 'number') return null;
+    if (Date.now() - snapshot.savedAt > FEED_SNAPSHOT_FALLBACK_MAX_AGE_MS) return null;
+    const papers = applyKnownPublicationTypes(snapshot.papers as Paper[]).filter(isUnseen);
+    return papers.length > 0 ? { papers, savedAt: snapshot.savedAt } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a load that succeeded brings over the list (ENG-188). `added`: a card
+ * `joined`, the list with the page joined (joinFeedPage), has and `listed`
+ * lacks. An empty answer, one of repeated ids, or a notable card the join
+ * found no place for adds none. Under the
+ * last visit's cards, a load that adds none keeps the date they were saved
+ * (`savedAt`, from `lastVisit`), so after a reload they cannot pass for a
+ * recent feed; otherwise `savedAt` is undefined and the snapshot takes the
+ * time of this load.
+ */
+export function loadOverList({ listed, joined, lastVisit }: { listed: Paper[]; joined: Paper[]; lastVisit: LastVisit }) {
+  const listedIds = new Set(listed.map(paper => paper.id));
+  const added = joined.some(paper => !listedIds.has(paper.id));
+  return { added, savedAt: lastVisitAfterLoad(lastVisit, added).savedAt };
 }
 
 export function writeFeedSnapshot(userId: string | null | undefined, signature: string, snapshot: FeedSnapshot, storage?: SnapshotStorage) {
