@@ -483,7 +483,7 @@ function clearStoredPostHogIdentity() {
  * papertok.app it sets on the parent domain; its tab state in session storage;
  * and the opt-in choice. The `_cpm` cookie is its cookie-wins variant.
  */
-export function removePostHogIdentity({ local, session, writeCookie }: {
+function removePostHogIdentity({ local, session, writeCookie }: {
   local: Pick<Storage, 'removeItem'> | null;
   session: Pick<Storage, 'removeItem'> | null;
   writeCookie: (cookie: string) => void;
