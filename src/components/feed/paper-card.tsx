@@ -395,6 +395,8 @@ function RelatedPaperCardSkeleton({ label }: { label: string }) {
  */
 const swallowClick = (event: SyntheticEvent) => event.stopPropagation();
 
+const fromReader = (event: MouseEvent) => Boolean(event.currentTarget.closest('.pc-about--reader'));
+
 const PaperCard = memo(function PaperCard({ 
   paper, 
   isLiked = false, 
@@ -1285,8 +1287,8 @@ const PaperCard = memo(function PaperCard({
     }),
   ], [categoryLabel, paperTopicTags, primaryTopic]);
 
-  const goTo = useCallback((event: MouseEvent, path: string) => {
-    if (event.currentTarget.closest('.pc-about--reader')) window.open(path, '_blank', 'noopener');
+  const openPath = useCallback((event: MouseEvent, path: string) => {
+    if (fromReader(event)) window.open(path, '_blank', 'noopener');
     else navigate(path);
   }, [navigate]);
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
@@ -1294,11 +1296,11 @@ const PaperCard = memo(function PaperCard({
     const path = topicExplorerPath(topic, publicMode);
     void trackEvent('select_content', {
       content_type: topic.type === 'concept' ? 'topic' : topic.type,
-      surface: analyticsSurface,
+      surface: fromReader(event) ? 'reader' : analyticsSurface,
       position,
     });
-    if (path) goTo(event, path);
-  }, [analyticsSurface, goTo, position, publicMode, trackEvent]);
+    if (path) openPath(event, path);
+  }, [analyticsSurface, openPath, position, publicMode, trackEvent]);
   const [menuView, setMenuView] = useState<'closed' | 'actions' | 'about'>('closed');
   const [readTime, setReadTime] = useState<{ paperId: string; minutes: number } | null>(null);
   useEffect(() => {
@@ -1722,10 +1724,10 @@ const PaperCard = memo(function PaperCard({
       : projectExplorerPath({ id: projectRouteId!, name: project.acronym!, funder: project.funder }, paperId);
     void trackEvent('select_content', {
       content_type: 'project',
-      surface: analyticsSurface,
+      surface: fromReader(event) ? 'reader' : analyticsSurface,
       position,
     });
-    if (path) goTo(event, path);
+    if (path) openPath(event, path);
   };
 
   const aboutLinks = (paper.doi || researchResources.length > 0) && (
