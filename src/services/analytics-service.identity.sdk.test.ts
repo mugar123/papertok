@@ -96,8 +96,14 @@ test('turning analytics off where PostHog never loaded removes the identity it s
   assert.ok(jar.cookie.includes(firstId), 'the cookie carries the browser identity');
 
   // A new page: the module never loaded PostHog, and the reader turns analytics off.
+  local.setItem('papertok_analytics_consent_changes', '1');
+  local.setItem('papertok_theme', 'dark');
   assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), true);
   assert.deepEqual(stored(), []);
+  // Only PostHog's state goes: the choice, its change count and the app's own keys stay.
+  assert.equal(local.getItem(ANALYTICS_CONSENT_KEY), ANALYTICS_CONSENT.DENIED);
+  assert.equal(local.getItem('papertok_analytics_consent_changes'), '2');
+  assert.equal(local.getItem('papertok_theme'), 'dark');
 
   local.setItem(ANALYTICS_CONSENT_KEY, ANALYTICS_CONSENT.ENABLED);
   const after = new PostHog();
@@ -107,6 +113,10 @@ test('turning analytics off where PostHog never loaded removes the identity it s
   // Analytics was turned off under an earlier build that left the identity
   // behind; the next start removes it although no one turns analytics off again.
   assert.ok(stored().length > 0, 'the new start stored an identity again');
+  // While analytics is on, the cleanup leaves the identity alone.
+  const whileEnabled = stored();
+  clearStoredIdentityWhileAnalyticsOff();
+  assert.deepEqual(stored(), whileEnabled);
   local.setItem(ANALYTICS_CONSENT_KEY, ANALYTICS_CONSENT.DENIED);
   clearStoredIdentityWhileAnalyticsOff();
   assert.deepEqual(stored(), []);
