@@ -253,7 +253,7 @@ type FigureBlock = Extract<Block, { t: 'figure' }>;
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
 
-function BlockView({ block }: { block: Block }): ReactNode {
+function BlockView({ block, figureWidth }: { block: Block; figureWidth: number }): ReactNode {
   const id = 'id' in block && block.id ? anchor(block.id) : undefined;
   switch (block.t) {
     case 'heading': {
@@ -278,7 +278,7 @@ function BlockView({ block }: { block: Block }): ReactNode {
       return (
         <figure id={id} tabIndex={-1} className="ft-figure">
           {block.images.map((image, index) => (
-            <img key={index} src={image.src} alt={figureAlt(block, index)} loading="lazy" referrerPolicy="no-referrer" />
+            <img key={index} src={image.src} alt={figureAlt(block, index)} width={image.width} height={image.height} style={image.width ? { '--ft-share': image.width / figureWidth } : undefined} loading="lazy" referrerPolicy="no-referrer" />
           ))}
           <figcaption><Label text={block.label} /><Inlines content={block.caption} /></figcaption>
         </figure>
@@ -330,6 +330,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
   }, [wantsKatex]);
 
   const references = useMemo(() => new Map(doc.references.map(reference => [reference.id, reference])), [doc]);
+  const figureWidth = useMemo(() => Math.max(0, ...[...doc.abstract, ...doc.body].flatMap(block => (block.t === 'figure' ? block.images.map(image => image.width ?? 0) : []))), [doc]);
 
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
@@ -361,13 +362,13 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
   const abstract = useMemo(() => showAbstract && doc.abstract.length > 0 && (
     <section className="ft-abstract" aria-labelledby="ft-abstract-title">
       <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} />)}</div>
+      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} />)}</div>
     </section>
-  ), [doc, showAbstract]);
+  ), [doc, showAbstract, figureWidth]);
   const body = useMemo(() => (
     <>
         {/* The paper's language marks its own text, not the reader's labels. */}
-        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} />)}</div>
+        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} />)}</div>
         {doc.notes.length > 0 && (
           <section className="ft-notes" aria-labelledby="ft-notes-title">
             <h2 id="ft-notes-title" className="ft-section" tabIndex={-1}>Notes</h2>
@@ -394,7 +395,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
           </section>
         )}
     </>
-  ), [doc]);
+  ), [doc, figureWidth]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>

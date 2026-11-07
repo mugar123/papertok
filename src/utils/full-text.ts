@@ -10,7 +10,7 @@ export type Inline =
   | { t: 'math'; mathml: string; tex?: string }
   | { t: 'formula-image'; src: string };
 
-export type FigureImage = { src: string; alt?: string };
+export type FigureImage = { src: string; alt?: string; width?: number; height?: number };
 
 export type Cell = { header: boolean; colSpan: number; rowSpan: number; content: Inline[] };
 
@@ -372,7 +372,10 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
           const src = absoluteUrl(img.getAttribute('src'), url);
           if (src && new URL(src).origin !== new URL(url).origin) return [];
           const alt = img.getAttribute('alt')?.trim();
-          return src ? [{ src, alt: alt && alt !== 'Refer to caption' ? alt : undefined }] : [];
+          const width = Number(img.getAttribute('width'));
+          const height = Number(img.getAttribute('height'));
+          const size = Number.isFinite(width + height) && width > 0 && height > 0 ? { width, height } : {};
+          return src ? [{ src, alt: alt && alt !== 'Refer to caption' ? alt : undefined, ...size }] : [];
         });
         if (images.length) body.push({ t: 'figure', id: child.id || undefined, label: label(caption), images, caption: caption ? inlines(withoutTag(caption), rules) : [] });
         else walk(child);
