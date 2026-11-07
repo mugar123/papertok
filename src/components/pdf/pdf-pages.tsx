@@ -41,13 +41,17 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
   // the ones on screen ever counted as near (measured 2026-10-09: 2 of 15).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   // Pages that fail to draw while none has been drawn and none is still
-  // drawing are a PDF this phone cannot show: hand it off rather than leave
-  // blank sheets.
+  // drawing are a PDF this phone may not be able to show: a page further down
+  // is drawn even off screen, and the PDF is handed off rather than left as
+  // blank sheets once enough distinct pages have failed (see page-draws.ts).
   const [draws] = useState(createPageDraws);
-  const handleDrawSettled = useCallback((outcome: DrawOutcome) => {
-    if (draws.settle(outcome)) onUndrawable?.();
+  const [forcedPage, setForcedPage] = useState(0);
+  const handleDrawSettled = useCallback((number: number, outcome: DrawOutcome) => {
+    const verdict = draws.settle(number, pageCount, outcome);
+    if (verdict === 'hand-off') onUndrawable?.();
+    else if (verdict !== null) setForcedPage(verdict);
     if (outcome === 'drawn') onDrawn?.();
-  }, [draws, onDrawn, onUndrawable]);
+  }, [draws, pageCount, onDrawn, onUndrawable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +90,7 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
         number={number}
         count={pageCount}
         placeholderRatio={firstPageRatio}
+        forced={number === forcedPage}
         onDrawStart={draws.start}
         onDrawSettled={handleDrawSettled}
       />,
@@ -105,10 +110,14 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
   );
 }
 
-function PdfPage({ doc, root, number, count, placeholderRatio, onDrawStart, onDrawSettled }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawStart: () => void; onDrawSettled: (outcome: DrawOutcome) => void }) {
+/**
+ * A `forced` page draws at once, wherever it is, and keeps its drawing: it is
+ * a probe for whether the PDF can be drawn at all, not a page near the screen.
+ */
+function PdfPage({ doc, root, number, count, placeholderRatio, forced, onDrawStart, onDrawSettled }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; forced: boolean; onDrawStart: () => void; onDrawSettled: (number: number, outcome: DrawOutcome) => void }) {
   // Read at draw time, so a new callback never redraws the page.
   const reportDrawStart = useEffectEvent(() => onDrawStart());
-  const reportDrawSettled = useEffectEvent((outcome: DrawOutcome) => onDrawSettled(outcome));
+  const reportDrawSettled = useEffectEvent((outcome: DrawOutcome) => onDrawSettled(number, outcome));
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -184,6 +193,10 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawStart, onDr
       }
     };
 
+    if (forced) {
+      void draw();
+      return release;
+    }
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) void draw();
       else release();
@@ -193,7 +206,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawStart, onDr
       observer.disconnect();
       release();
     };
-  }, [doc, root, number]);
+  }, [doc, root, number, forced]);
 
   return (
     <section

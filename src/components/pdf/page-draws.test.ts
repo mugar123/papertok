@@ -6,28 +6,46 @@ test('a page failing while another is still drawing does not hand the PDF off', 
   const draws = createPageDraws();
   draws.start();
   draws.start();
-  assert.equal(draws.settle('failed'), false);
-  assert.equal(draws.settle('drawn'), false);
+  assert.equal(draws.settle(1, 10, 'failed'), null);
+  assert.equal(draws.settle(2, 10, 'drawn'), null);
 });
 
-test('the PDF is handed off once every started draw has failed', () => {
+test('when the only page drawn fails, the next untried page is drawn before handing off', () => {
+  const draws = createPageDraws();
+  draws.start();
+  assert.equal(draws.settle(1, 10, 'failed'), 2);
+  draws.start();
+  assert.equal(draws.settle(2, 10, 'failed'), 3);
+  draws.start();
+  assert.equal(draws.settle(3, 10, 'failed'), 'hand-off');
+});
+
+test('a page drawn after the first failures keeps the PDF', () => {
+  const draws = createPageDraws();
+  draws.start();
+  assert.equal(draws.settle(1, 10, 'failed'), 2);
+  draws.start();
+  assert.equal(draws.settle(2, 10, 'drawn'), null);
+});
+
+test('a PDF with fewer pages than the limit is handed off once all of them fail', () => {
   const draws = createPageDraws();
   draws.start();
   draws.start();
-  assert.equal(draws.settle('failed'), false);
-  assert.equal(draws.settle('failed'), true);
+  assert.equal(draws.settle(1, 2, 'failed'), null);
+  assert.equal(draws.settle(2, 2, 'failed'), 'hand-off');
 });
 
 test('a failure after a page was drawn does not hand the PDF off', () => {
   const draws = createPageDraws();
   draws.start();
-  assert.equal(draws.settle('drawn'), false);
+  assert.equal(draws.settle(1, 10, 'drawn'), null);
   draws.start();
-  assert.equal(draws.settle('failed'), false);
+  assert.equal(draws.settle(2, 10, 'failed'), null);
 });
 
 test('a cancelled draw is not a failure', () => {
   const draws = createPageDraws();
   draws.start();
-  assert.equal(draws.settle('cancelled'), false);
+  assert.equal(draws.settle(1, 10, 'cancelled'), null);
 });
