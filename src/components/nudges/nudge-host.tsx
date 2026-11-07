@@ -15,6 +15,7 @@ import {
   chooseVisitNotice,
   emailNudgeProblem,
   feedCardsStay,
+  heldAccountNotice,
   loadAccountNotice,
   modalIsOpen,
   noticeOnScreen,
@@ -187,12 +188,9 @@ export default function NudgeHost() {
   const tabVisible = useSyncExternalStore(subscribeToTabVisibility, () => document.visibilityState === 'visible', () => false);
   const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, tabVisible, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
-  // Open, the version counts as told for the rest of the visit too, whatever
-  // this browser and the account then manage to keep, so leaving the feed with
-  // the dialog open and coming back does not open it again.
-  if (dialogOpen && uid && (accountNotice?.uid !== uid || accountNotice.version !== PRIVACY_POLICY_VERSION)) {
-    setAccountNotice({ uid, version: PRIVACY_POLICY_VERSION });
-  }
+  // Open, the version counts as told for the rest of the visit too.
+  const heldNotice = heldAccountNotice({ dialogOpen, uid, version: PRIVACY_POLICY_VERSION, account: accountNotice });
+  if (heldNotice !== accountNotice) setAccountNotice(heldNotice);
 
   // The cards under the open dialog stop counting their time on screen. When
   // the reader closes it, they count again. When it

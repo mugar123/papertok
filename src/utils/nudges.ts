@@ -184,6 +184,18 @@ export function adoptAccountNotice(uid: string, version: string | null, storage?
 }
 
 /**
+ * The record NudgeHost holds once the privacy dialog is open: `version` counts
+ * as told for the rest of the visit, whatever this browser and the account then
+ * manage to keep, so leaving the feed with the dialog open and coming back does
+ * not open it again. Before it opens, without an account, or once held, it is
+ * `account` itself, so the render that calls it settles.
+ */
+export function heldAccountNotice({ dialogOpen, uid, version, account }: { dialogOpen: boolean; uid: string | null | undefined; version: string; account: AccountNoticeRecord | null }): AccountNoticeRecord | null {
+  if (!dialogOpen || !uid || (account?.uid === uid && account.version === version)) return account;
+  return { uid, version };
+}
+
+/**
  * Asks the account for its record (`read`) and adopts the answer
  * (adoptAccountNotice). Null when there is nothing to go by: a failed read,
  * which is reported and never taken for an account with no record, or an

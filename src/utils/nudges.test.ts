@@ -12,6 +12,7 @@ import {
   emailNudgeProblem,
   feedCardsStay,
   forgetPrivacyNotice,
+  heldAccountNotice,
   loadAccountNotice,
   noticeOnScreen,
   pickNudge,
@@ -599,8 +600,16 @@ test('closing the dialog any way never brings it back: not this visit, not after
   assert.equal(arrive({ user: reader, storage: blocked, account: { uid: reader.uid, version: NEXT_VERSION } }).dialogOpen, false, 'after a reload the account record keeps it shut');
 
   // Left open for another route instead: once it opened, NudgeHost holds the version as told for the visit.
-  const heldOnceOpen = { uid: reader.uid, version: NEXT_VERSION };
-  const owedOnReturn = statusOf({ user: reader, storage: blocked, account: heldOnceOpen }) === 'owed';
+  const unread = { uid: reader.uid, version: null };
+  const hold = (dialogOpen: boolean, account: AccountNoticeRecord | null, uid: string | null = reader.uid) =>
+    heldAccountNotice({ dialogOpen, uid, version: NEXT_VERSION, account });
+  assert.equal(hold(false, unread), unread, 'nothing is held before it opens');
+  assert.equal(hold(true, null, null), null, 'nor without an account');
+  const held = hold(true, unread);
+  assert.deepEqual(held, { uid: reader.uid, version: NEXT_VERSION }, 'opening holds the version shown');
+  assert.equal(hold(true, held), held, 'and holding it again changes nothing, so the render settles');
+  assert.deepEqual(hold(true, { uid: 'reader-b', version: NEXT_VERSION }), held, 'a record of another account is replaced');
+  const owedOnReturn = statusOf({ user: reader, storage: blocked, account: held }) === 'owed';
   assert.equal(owedOnReturn, false);
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: true, pathname: '/feed', privacyOwed: owedOnReturn, dialogOpen: false }), null, 'back on the feed it does not open again');
 });
