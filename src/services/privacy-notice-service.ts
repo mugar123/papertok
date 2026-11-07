@@ -1,5 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase.ts';
+import { patientRead } from '../utils/bounded-read.ts';
+import { documentIsAuthoritative } from '../utils/cache-authority.ts';
 
 /**
  * The account's own record of the newest privacy policy version whose change
@@ -20,10 +22,17 @@ export function privacyNoticeRecord(version: string) {
 
 /**
  * The version the account's record holds, or null when it holds none. A
- * failed read rejects, so it is never mistaken for an account with no record.
+ * failed or timed-out read rejects, so it is never mistaken for an account
+ * with no record, and an absence only the local cache vouches for is not an
+ * answer (patientRead asks again): it would open the notice for an account
+ * whose record the server holds.
  */
-export async function readAccountPrivacyNotice(uid: string) {
-  const snapshot = await getDoc(privacyNoticeDoc(uid));
+export async function readAccountPrivacyNotice(uid: string, signal: AbortSignal) {
+  const snapshot = await patientRead(() => getDoc(privacyNoticeDoc(uid)), {
+    label: 'privacy notice',
+    isAnswer: documentIsAuthoritative,
+    signal,
+  });
   const version: unknown = snapshot.get('shownVersion');
   return typeof version === 'string' ? version : null;
 }

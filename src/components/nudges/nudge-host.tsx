@@ -11,11 +11,11 @@ import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
   VISIT_START,
-  adoptAccountNotice,
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
   feedCardsStay,
+  loadAccountNotice,
   modalIsOpen,
   noticeOnScreen,
   privacyCardsCover,
@@ -148,12 +148,11 @@ export default function NudgeHost() {
   // again); an answer that lands after the account changed is dropped.
   useEffect(() => {
     if (!askAccount || !uid) return undefined;
-    let current = true;
-    readAccountPrivacyNotice(uid).then(
-      version => { if (current) setAccountNotice(adoptAccountNotice(uid, version)); },
-      (error: unknown) => console.warn('Could not read whether the privacy notice was shown', error),
-    );
-    return () => { current = false; };
+    const controller = new AbortController();
+    void loadAccountNotice({ uid, read: readAccountPrivacyNotice, signal: controller.signal }).then(record => {
+      if (record) setAccountNotice(record);
+    });
+    return () => controller.abort();
   }, [askAccount, uid]);
 
   // Picked during render rather than in an effect: this derives state from
@@ -188,6 +187,12 @@ export default function NudgeHost() {
   const tabVisible = useSyncExternalStore(subscribeToTabVisibility, () => document.visibilityState === 'visible', () => false);
   const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, tabVisible, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
+  // Open, the version counts as told for the rest of the visit too, whatever
+  // this browser and the account then manage to keep, so leaving the feed with
+  // the dialog open and coming back does not open it again.
+  if (dialogOpen && uid && (accountNotice?.uid !== uid || accountNotice.version !== PRIVACY_POLICY_VERSION)) {
+    setAccountNotice({ uid, version: PRIVACY_POLICY_VERSION });
+  }
 
   // The cards under the open dialog stop counting their time on screen. When
   // the reader closes it, they count again. When it

@@ -12,6 +12,7 @@ import {
   emailNudgeProblem,
   feedCardsStay,
   forgetPrivacyNotice,
+  loadAccountNotice,
   noticeOnScreen,
   pickNudge,
   pickVisitNotice,
@@ -596,6 +597,12 @@ test('closing the dialog any way never brings it back: not this visit, not after
   assert.equal(chooseVisitNotice(readingMinutePassed(closed), facts).picked, null, 'not picked again this visit, back from another route included');
   assert.equal(noticeOnScreen({ picked: closed.picked, signedIn: true, pathname: '/feed', privacyOwed: true }), null);
   assert.equal(arrive({ user: reader, storage: blocked, account: { uid: reader.uid, version: NEXT_VERSION } }).dialogOpen, false, 'after a reload the account record keeps it shut');
+
+  // Left open for another route instead: once it opened, NudgeHost holds the version as told for the visit.
+  const heldOnceOpen = { uid: reader.uid, version: NEXT_VERSION };
+  const owedOnReturn = statusOf({ user: reader, storage: blocked, account: heldOnceOpen }) === 'owed';
+  assert.equal(owedOnReturn, false);
+  assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: true, pathname: '/feed', privacyOwed: owedOnReturn, dialogOpen: false }), null, 'back on the feed it does not open again');
 });
 
 test('a new account, one still onboarding and a guest are not told, and their account is not asked', () => {
@@ -622,12 +629,45 @@ test('an account record read for one account never decides for the next', () => 
   assert.equal(statusOf({ user: createdBefore('reader-a'), storage }), 'settled', 'which settles A');
 });
 
-test('a failed account read shows nothing on a guess, and a failed save is reported without breaking the visit', async (t) => {
+test('the account is asked once: a failed read is reported and gives nothing to go by, and an answer after an account change is dropped', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => undefined);
+  const storage = fakeStorage();
+  const asked: string[] = [];
+  const answers = (version: string | null) => (uid: string, signal: AbortSignal) => {
+    asked.push(uid);
+    assert.equal(signal.aborted, false, 'the read can be stopped');
+    return Promise.resolve(version);
+  };
+  const live = () => new AbortController().signal;
+
+  assert.deepEqual(await loadAccountNotice({ uid: 'reader-a', read: answers(NEXT_VERSION), signal: live(), storage }), { uid: 'reader-a', version: NEXT_VERSION });
+  assert.equal(readPrivacyNoticeAck('reader-a', storage), NEXT_VERSION, "the answer is kept as this browser's copy");
+  assert.deepEqual(await loadAccountNotice({ uid: 'reader-b', read: answers(null), signal: live(), storage }), { uid: 'reader-b', version: null });
+  assert.equal(readPrivacyNoticeAck('reader-b', storage), null, 'an account with no record leaves no copy');
+  assert.deepEqual(asked, ['reader-a', 'reader-b'], 'each account is asked for itself');
+
+  const failed = await loadAccountNotice({ uid: 'reader-c', read: () => Promise.reject(new Error('unavailable')), signal: live(), storage });
+  assert.equal(failed, null, 'a failed read is no record at all, not an empty one');
+  assert.equal(warn.mock.callCount(), 1, 'and it is reported');
+  assert.equal(arrive({ user: createdBefore('reader-c'), storage, account: failed }).dialogOpen, false, 'so the dialog stays shut until the next visit asks again');
+
+  // The reader signs out or switches account while the read is out: NudgeHost aborts it.
+  const controller = new AbortController();
+  let answer: (version: string | null) => void = () => undefined;
+  const late = loadAccountNotice({ uid: 'reader-d', read: () => new Promise(resolve => { answer = resolve; }), signal: controller.signal, storage });
+  controller.abort();
+  answer(NEXT_VERSION);
+  assert.equal(await late, null, 'the late answer is dropped');
+  assert.equal(readPrivacyNoticeAck('reader-d', storage), null, 'and not kept');
+  const stopped = new AbortController();
+  stopped.abort();
+  assert.equal(await loadAccountNotice({ uid: 'reader-e', read: () => Promise.reject(new Error('stopped')), signal: stopped.signal, storage }), null);
+  assert.equal(warn.mock.callCount(), 1, 'a read stopped on purpose is not reported');
+});
+
+test('with storage blocked the account record decides, and a failed save is reported without breaking the visit', async (t) => {
   const reader = createdBefore('reader-a');
   const storage = fakeStorage();
-  const unread = arrive({ user: reader, storage, account: null });
-  assert.equal(unread.dialogOpen, false, 'a read that failed leaves no record, so it stays shut until the next visit asks again');
-  assert.equal(storage.map.size, 0);
   assert.equal(statusOf({ user: reader, storage: brokenStorage(), account: { uid: reader.uid, version: NEXT_VERSION } }), 'settled', 'with storage blocked, the account record settles it');
   assert.equal(statusOf({ user: reader, storage: brokenStorage(), account: { uid: reader.uid, version: null } }), 'owed', 'and tells it');
 

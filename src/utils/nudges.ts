@@ -184,6 +184,23 @@ export function adoptAccountNotice(uid: string, version: string | null, storage?
 }
 
 /**
+ * Asks the account for its record (`read`) and adopts the answer
+ * (adoptAccountNotice). Null when there is nothing to go by: a failed read,
+ * which is reported and never taken for an account with no record, or an
+ * answer that lands after `signal` was aborted (the reader signed out or
+ * switched account, or the host unmounted), which is dropped unadopted.
+ */
+export async function loadAccountNotice({ uid, read, signal, storage }: { uid: string; read: (uid: string, signal: AbortSignal) => Promise<string | null>; signal: AbortSignal; storage?: NudgeStorage | null }): Promise<AccountNoticeRecord | null> {
+  try {
+    const version = await read(uid, signal);
+    return signal.aborted ? null : adoptAccountNotice(uid, version, storage);
+  } catch (error) {
+    if (!signal.aborted) console.warn('Could not read whether the privacy notice was shown', error);
+    return null;
+  }
+}
+
+/**
  * Where the privacy notice stands for the signed-in reader, from what NudgeHost
  * knows: `settled` (not owed), `ask-account` (only the account's own record can
  * tell) or `owed`. Kept here so the arguments that decide who is told are

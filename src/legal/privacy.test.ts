@@ -133,6 +133,8 @@ test('the page promises the in-app announcement to signed-in accounts and says h
   assert.match(html, /The announcement of the 7 November 2026 change is no longer shown, including to accounts that had not seen it/);
   // users/{uid}/settings/privacyNotice (src/services/privacy-notice-service.ts) is listed with the account's data.
   assert.match(html, /<td>The latest version of this policy whose change announcement you were shown<\/td>/);
+  // Account deletion removes users/{uid}/settings, where the record lives (USER_SUBCOLLECTIONS in worker/account-deletion.ts).
+  assert.match(html, /That deletes [^.]*the record of the policy announcements you were shown/);
 });
 
 test('the in-app notice announces the version this page is dated', () => {
