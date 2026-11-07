@@ -49,6 +49,9 @@ import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { analyticsSessionContext } from '../../services/analytics-session.ts';
+import { documentVisibility } from '../pdf/viewer-outcome.ts';
+import { startReaderTime } from './reader-time.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { journalExplorerLink } from '../../utils/explorer-paths.ts';
 import { Link } from 'react-router-dom';
@@ -375,7 +378,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
-  const { trackEvent } = useAnalyticsConsent();
+  const { trackEvent, consent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
   const copy = COPY.en;
   const kindLabels = KIND_LABELS.en;
@@ -632,32 +635,31 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     return () => clearTimeout(timer);
   }, [open, prefersReducedMotion]);
 
-  // Time with the reader on screen, sent when it closes. A hidden tab's time
-  // is left out: a reader forgotten in a background tab was not being read.
+  // Time with the reader on screen, sent when it closes (reader-time.ts).
   // Keyed on the paper's identity: a new object for the same paper is not a
-  // second reading.
-  const paperTitle = paper.title;
-  const reportReaderTime = useEffectEvent((seconds: number, id: string, title: string | undefined) => {
-    void trackEvent('reader_time', { level, seconds, paper_id: id, paper_title: title });
+  // second reading. A change of consent or account while open drops it:
+  // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks
+  // again at each send.
+  const reportReaderTime = useEffectEvent((seconds: number, id: string, stillValid: () => boolean) => {
+    void trackEvent('reader_time', { level, seconds, paper_id: id }, stillValid);
   });
+  const readerTimeRef = useRef<ReturnType<typeof startReaderTime> | null>(null);
   useEffect(() => {
-    let visibleSince: number | null = document.hidden ? null : Date.now();
-    let seconds = 0;
-    const pause = () => {
-      if (visibleSince !== null) seconds += (Date.now() - visibleSince) / 1000;
-      visibleSince = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) pause();
-      else visibleSince ??= Date.now();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
+    readerTimeRef.current?.check();
+  }, [consent, uid]);
+  useEffect(() => {
+    const session = startReaderTime({
+      now: Date.now,
+      visibility: documentVisibility,
+      context: analyticsSessionContext,
+      send: (seconds, stillValid) => reportReaderTime(seconds, paperId, stillValid),
+    });
+    readerTimeRef.current = session;
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      pause();
-      reportReaderTime(seconds, paperId, paperTitle);
+      session.stop();
+      readerTimeRef.current = null;
     };
-  }, [paperId, paperTitle]);
+  }, [paperId]);
 
   useEffect(() => {
     if (!coversFeed) return undefined;

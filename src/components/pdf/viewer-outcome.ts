@@ -55,7 +55,7 @@ export function viewerOutcome(state: ViewerState): ViewerOutcome | null {
   return state.embedTimedOut ? instead('timeout') : null;
 }
 
-type Visibility = { hidden: () => boolean; subscribe: (listener: () => void) => () => void };
+export type Visibility = { hidden: () => boolean; subscribe: (listener: () => void) => () => void };
 
 export const documentVisibility: Visibility = {
   hidden: () => document.hidden,
@@ -64,6 +64,21 @@ export const documentVisibility: Visibility = {
     return () => document.removeEventListener('visibilitychange', listener);
   },
 };
+
+/**
+ * Fixes the analytics consent and account a session opened under. The returned
+ * check is true until `context` first differs from that opening value, and
+ * false from then on, even if the context later returns to it (a sign-out and
+ * back in, say). The reader's `reader_time` keeps to the same rule.
+ */
+export function pinAnalyticsContext(context: () => string) {
+  const openedWith = context();
+  let dropped = false;
+  return () => {
+    if (context() !== openedWith) dropped = true;
+    return !dropped;
+  };
+}
 
 type ViewerEvent = Extract<ProductAnalyticsEvent, 'viewer_open' | 'viewer_content' | 'viewer_time'>;
 
@@ -85,12 +100,7 @@ export function startViewerTracking({ now, visibility, context, send }: {
   context: () => string;
   send: (name: ViewerEvent, params: Record<string, unknown>, stillValid: () => boolean) => void;
 }) {
-  const openedWith = context();
-  let dropped = false;
-  const check = () => {
-    if (context() !== openedWith) dropped = true;
-    return !dropped;
-  };
+  const check = pinAnalyticsContext(context);
   const sendEvent = (name: ViewerEvent, params: Record<string, unknown>) => send(name, params, check);
   const openedAt = now();
   let visibleSince: number | null = visibility.hidden() ? null : openedAt;
