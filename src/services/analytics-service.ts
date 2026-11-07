@@ -153,6 +153,12 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
+  // The in-app paper viewer (components/pdf/viewer-outcome.ts).
+  viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
+  viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
+  viewer_text_status: new Set(['shown', 'none', 'failed']),
+  viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'render_failed', 'not_relayable', 'no_open_copy']),
+  full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -220,6 +226,21 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
+  // The in-app paper viewer, apart from the AI reader above: that it opened,
+  // what it first showed (or why it fell back), and its visible time, of which
+  // `text_seconds` was on the text. Fixed labels and times only, never a URL.
+  // Visible time is not reading time. The card under the viewer keeps counting
+  // its paper_dwell, so viewer time is part of it and must not be added to it;
+  // a viewer still open when the tab closes sends no viewer_time.
+  // No paper_id: a bioRxiv id is a DOI, and the viewer's records do not need to
+  // name the paper. Viewer events are matched to `paper_open` by session and
+  // time order, so the paper is known only when that `paper_open` carries its
+  // identifier.
+  viewer_open: {},
+  viewer_content: {
+    content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration',
+  },
+  viewer_time: { content: 'viewer_time_content', seconds: 'seconds', text_seconds: 'seconds' },
   // A card's Connections (the citation graph) and Similar papers, counted
   // apart: opening one, then what the reader does in the graph. Which paper is
   // not sent; `graph_available` says whether it has a DOI to draw a graph from.
@@ -304,13 +325,29 @@ export function readAnalyticsConsent(storage?: AnalyticsStorage | null): Consent
   return readStoredAnalyticsConsent(storage) ?? ANALYTICS_CONSENT.ENABLED;
 }
 
+const ANALYTICS_CONSENT_CHANGES_KEY = 'papertok_analytics_consent_changes';
+
+function storedConsentChanges(storage: AnalyticsStorage | null = getBrowserStorage()) {
+  try {
+    return Number(storage?.getItem(ANALYTICS_CONSENT_CHANGES_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function persistAnalyticsConsent(value: string, storage?: AnalyticsStorage | null) {
   if (!Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return false;
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   let persisted = false;
   try {
+    const previous = targetStorage?.getItem(ANALYTICS_CONSENT_KEY);
     targetStorage?.setItem(ANALYTICS_CONSENT_KEY, value);
     persisted = targetStorage?.getItem(ANALYTICS_CONSENT_KEY) === value;
+    // Counts changes of the choice for `analyticsConsentState`. A count only:
+    // it holds no personal data and is never sent anywhere.
+    if (persisted && previous !== value) {
+      targetStorage?.setItem(ANALYTICS_CONSENT_CHANGES_KEY, String(storedConsentChanges(targetStorage) + 1));
+    }
   } catch {
     // Continue with the cookie fallback for browsers that restrict localStorage.
   }
@@ -445,8 +482,22 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // a send that failed (offline, say), whenever its retry queue gets through.
 // A PostHog that never loaded in this tab (or was blocked) cannot reset itself,
 // so the identity an earlier visit stored is removed from storage directly.
+let consentChanges = 0;
+
+/**
+ * The analytics choice as a session must see it: the stored level, how many
+ * times any tab changed it (read from storage now, so a change made in another
+ * tab counts before its storage event reaches this one), and how many times this
+ * tab wrote it (for browsers without storage). Turning analytics off and on
+ * again leaves the level as it was, but not this value.
+ */
+export function analyticsConsentState() {
+  return `${readAnalyticsConsent()}#${storedConsentChanges()}#${consentChanges}`;
+}
+
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
+  consentChanges++;
   const denied = value === ANALYTICS_CONSENT.DENIED;
   if (denied) clearConsentScopedAnalyticsState();
   if (denied && !analyticsClient) clearStoredPostHogIdentity();
@@ -574,6 +625,29 @@ const POSTHOG_PROPERTIES = new Set([
   '$device_type',
 ]);
 
+const USER_AGENT_PART = /^[A-Za-z][A-Za-z0-9 .-]{0,31}$/;
+
+function userAgentPart(value: unknown) {
+  return typeof value === 'string' && USER_AGENT_PART.test(value) ? value : undefined;
+}
+
+/**
+ * PostHog files an event without `$raw_user_agent` as automated traffic, and
+ * the browser's own string names exact versions and, on Android, the phone
+ * model. Send a short one built only from fields that already leave, such as
+ * `Chrome/130 (Mac OS X)`. `Mozilla` is the SDK's name for a browser it could
+ * not identify, and PostHog reads a bare `Mozilla/5.0` as a headless browser.
+ */
+function reducedUserAgent({ $browser, $browser_version, $os }: Record<string, unknown>) {
+  const browser = userAgentPart($browser);
+  if (!browser || /^mozilla$/i.test(browser)) return undefined;
+  const major = typeof $browser_version === 'number' || typeof $browser_version === 'string'
+    ? /^\d{1,5}/.exec(String($browser_version))?.[0]
+    : undefined;
+  const os = userAgentPart($os);
+  return `${browser}${major ? `/${major}` : ''}${os ? ` (${os})` : ''}`;
+}
+
 /**
  * Apply the event and property allowlists to every capture, including SDK
  * identity events. Error messages and raw URLs can contain private content.
@@ -588,12 +662,14 @@ export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent 
   const kept = Object.fromEntries(
     Object.entries(properties).filter(([key]) => POSTHOG_PROPERTIES.has(key)),
   );
+  const userAgent = reducedUserAgent(properties);
   return {
     uuid: capture.uuid,
     event,
     timestamp: capture.timestamp,
     properties: {
       ...kept,
+      ...(userAgent && { $raw_user_agent: userAgent }),
       ...(exception ?? sanitizeProductEventParams(event, properties, consent)),
       $current_url: currentUrl,
       $pathname: new URL(currentUrl, 'https://papertok.app').pathname,
@@ -683,9 +759,11 @@ function canSendAnalytics() {
 // as a batched transport can honestly report. The callers' bookkeeping
 // (`activation`, `day_7_return`, the guest demo) relies on it never being true
 // for an event that was dropped.
-async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
+async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>, stillValid?: () => boolean) {
   if (!canSendAnalytics()) return false;
   const client = await loadAnalyticsClient();
+  // The SDK can take long to load; the sender may have been invalidated meanwhile.
+  if (stillValid && !stillValid()) return false;
   return Boolean(client?.capture(eventName, properties));
 }
 
@@ -704,11 +782,12 @@ export async function trackPageView(pathname: string) {
   return sendAnalyticsEvent('$pageview', { $current_url: url });
 }
 
-export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}) {
+/** `stillValid` is asked once more after the SDK has loaded, just before capture. */
+export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}, stillValid?: () => boolean) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
-  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
+  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent), stillValid);
 }
 
 function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {

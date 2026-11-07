@@ -2141,6 +2141,24 @@ export async function readPapersByIds(env: StoreEnv, paperIds: string[]) {
   });
 }
 
+/**
+ * The most cited papers each of these leaves' lanes holds published since
+ * `since`, at most `perLeaf` a leaf, the newer first among equals, with the
+ * leaf that holds each. An unknown citation count sorts below a confirmed
+ * zero. The weekly email of a reader who follows nothing it covers reads its
+ * "From your interests" here: the corpus only, no source is asked (ENG-163).
+ */
+export async function readLeafHighlights(env: Pick<StoreEnv, 'PAPER_STORE'>, leaves: string[], since: string, perLeaf: number) {
+  const asked = [...new Set(leaves)].filter(leaf => LEAF_IDS.has(leaf));
+  if (asked.length === 0) return [];
+  const db = database(env);
+  const answers = await db.batch<{ lane: string; paper: string }>(asked.map(leaf => db.prepare(`SELECT l.lane, w.paper
+    FROM work_lanes l JOIN works w ON w.id = l.work_id
+    WHERE l.lane = ? AND l.published >= ?
+    ORDER BY COALESCE(json_extract(w.paper, '$.citationCount'), -1) DESC, l.published DESC LIMIT ?`).bind(leaf, since, perLeaf)));
+  return answers.flatMap(({ results }) => results.map(row => ({ leaf: row.lane, paper: JSON.parse(row.paper) as Paper })));
+}
+
 export const FEED_LAST_PAGE = FEED_MAX_PAGE;
 
 // ─── Keeping D1 busy (ENG-116) ───

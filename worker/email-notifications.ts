@@ -16,10 +16,12 @@ type PaperInput = Partial<Record<keyof Paper | 'publishedDate' | 'area', unknown
   matches?: FollowInput[];
 };
 type SourceReportInput = Partial<Omit<SourceReport, 'bySource'>> & { bySource?: Record<string, Partial<SourceCounts>> };
-export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[] };
+// `interest` names the leaf a paper of the "From your interests" section came
+// from: the reader follows nothing the digest covers (ENG-163).
+export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[]; interest?: string };
 type IdentityPaper = Pick<PaperInput, 'title' | 'authors' | 'doi' | 'id'>;
 type PreferencesInput = Partial<Record<'maxPapers' | 'enabled' | 'frequency' | 'language', unknown>>;
-type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[] };
+type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[]; interests?: unknown };
 type Preferences = ReturnType<typeof sanitizePreferences>;
 interface SourceCounts { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }
 export interface SourceReport extends SourceCounts {
@@ -36,7 +38,13 @@ interface DeliveryState {
 }
 export interface Subscription extends Partial<Preferences>, DeliveryState {
   uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
+  /** The reader's chosen leaf categories, read only while `follows` is empty. */
+  interests?: string[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
+  /** The reader's object's version this copy was read at; never stored. */
+  version?: number;
+  /** Phase 1 KV record only: the object version the save that wrote it reopened. */
+  revision?: number;
 }
 type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
@@ -77,17 +85,19 @@ import type { WorkerEnv } from './env.ts';
 import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
+import { CATEGORIES, getAllLeafCategories, getAreaLeaves, getCategoryLabel } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
+import type { SubscriptionSlot, SubscriptionStorePayload } from './email-subscription-store.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { openAlexCostFor } from './openalex-api.ts';
 import { reserveOpenAlexBudget } from './provider-runtime.ts';
+import { readLeafHighlights } from './paper-store.ts';
 import { takeArxivSeat } from './arxiv-api.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
@@ -127,6 +137,10 @@ const DIGEST_ABSTRACT_MAX_LENGTH = 600;
 const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
 const DELIVERY_STATE_TTL_SECONDS = 120 * 24 * 60 * 60;
+// The shortest `cacheTtl` Workers KV accepts on a read.
+const KV_MIN_CACHE_TTL_SECONDS = 30;
+// Writers that keep losing the race to the same reader's object give up.
+const SUBSCRIPTION_WRITE_ATTEMPTS = 3;
 const DELIVERY_PENDING_RETRY_MIN_AGE_MS = 5 * 60 * 1000;
 const DELIVERY_PENDING_RETRY_WINDOW_MS = 25 * 60 * 1000;
 const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
@@ -147,6 +161,12 @@ const EXPLORATION_PAPER_MIN_SCORE = 70;
 const EXPLORATION_MIN_CITATIONS = 3;
 const MAX_ARXIV_DIGEST_CATEGORIES = 24;
 const MAX_ARXIV_DIGEST_RESULTS = 40;
+// A reader who follows nothing the digest covers gets the week's notable
+// papers of the leaves they chose, read from the paper store (ENG-163).
+const MAX_DIGEST_INTERESTS = 24;
+const INTEREST_DIGEST_DAYS = 7;
+const INTEREST_PAPERS_PER_LEAF = 10;
+const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
 const ARXIV_CATEGORY_PREFIXES = [
   'cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ',
   'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph',
@@ -580,6 +600,19 @@ function sanitizePreferences(input: PreferencesInput = {}) {
   };
 }
 
+/** The leaf category ids among `value`, sorted, so an unchanged set compares equal. */
+function sanitizeInterests(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(leaf => cleanText(leaf, 80)).filter(leaf => LEAF_IDS.has(leaf)))]
+    .sort()
+    .slice(0, MAX_DIGEST_INTERESTS);
+}
+
+/** Whether a subscription has something to build an edition from: follows, or else interests. */
+function hasDigestSource(subscription: Subscription | null | undefined) {
+  return Boolean(subscription?.follows?.length || subscription?.interests?.length);
+}
+
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
@@ -903,20 +936,258 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
     follow.metadata?.query || '',
     [...new Set(followCategoryIds(follow))].sort(),
   ])).sort();
-  return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
+  // Interests only choose an edition while there are no follows; added last,
+  // so a held edition of a reader with follows keeps the key it was held under.
+  const interests = follows.length ? [] : sanitizeInterests(subscription.interests);
+  return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows, ...(interests.length ? [interests] : [])]);
 }
 
-async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+function subscriptionUid(key: string) {
+  const name = String(key || '');
+  return name.startsWith(SUBSCRIPTION_PREFIX) ? name.slice(SUBSCRIPTION_PREFIX.length) : name;
+}
+
+type StoredSlot = SubscriptionSlot<Subscription>;
+
+async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: SubscriptionStorePayload) {
+  const namespace = env.EMAIL_SUBSCRIPTIONS;
+  if (!namespace) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const response = await namespace.get(namespace.idFromName(uid)).fetch('https://papertok.internal/email-subscription', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const slot = await response.json<StoredSlot>().catch(() => null);
+  if ((!response.ok && response.status !== 409) || !slot || !Number.isInteger(slot.version)) {
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  }
+  return { accepted: response.ok, slot };
+}
+
+/**
+ * Where the subscription is the record. The deploy has two phases
+ * (worker/README.md#email-digest-subscription-deploy): while
+ * `EMAIL_SUBSCRIPTION_SOURCE` is `kv` (phase 1, set in wrangler.toml), the KV
+ * record is the subscription, as before the object existed, and the reader's
+ * object only learns every unsubscribe, deletion and re-subscription, so that
+ * phase 2 (`object`) never moves in a record that was cancelled.
+ */
+function subscriptionInKv(env: WorkerEnv) {
+  return cleanText(env.EMAIL_SUBSCRIPTION_SOURCE, 20).toLowerCase() === 'kv';
+}
+
+/**
+ * Tells the reader's object that the KV record is cancelled (`migratable:
+ * false`, before the record is deleted) or live again (`true`, before a save
+ * writes it). Strongly consistent, unlike the KV delete that follows.
+ */
+async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean) {
+  await callSubscriptionStore(env, uid, { action: 'mark', migratable });
+}
+
+/**
+ * Phase 1: the KV record, with the object version its save reopened as its
+ * version, or `null` when KV holds no record (only the index phase 2 leaves, or nothing).
+ * `revision` is the object version the save that wrote it reopened (0 for a
+ * record no phase 1 save wrote): a KV read whose revision is behind the object
+ * may be an older record than the last save.
+ */
+async function readKvRecord(env: WorkerEnv, uid: string, cacheTtl?: number): Promise<(StoredSlot & { revision: number }) | null> {
+  const store = env.NOTIFICATION_STORE;
+  if (!store) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const record = await (cacheTtl ? store.get<Subscription>(key, { type: 'json', cacheTtl }) : store.get<Subscription>(key, 'json'));
+  return record?.unsubscribeToken
+    ? { version: Number(record.version) || 0, subscription: storedRecord(record), migratable: true, revision: Number(record.revision) || 0 }
+    : null;
+}
+
+/**
+ * Phase 1 reads a reader that phase 2 already moved (KV holds only the index)
+ * from their object, and never moves them back: a phase 1 Worker still running
+ * beside phase 2, or one a rollback brought back, would otherwise empty the
+ * object that phase 2 reads, and a stale KV read there would lose the reader.
+ *
+ * A KV record is also checked against the object: an object a cancellation
+ * closed means the record is a stale copy, so it reads as no subscription and
+ * a sync, the digest or a retry cannot act on it. A phase 1 save reopens the
+ * object before it writes KV, so a real re-subscription is never hidden.
+ */
+async function readPhase1Slot(env: WorkerEnv, uid: string) {
+  const first = await readKvRecord(env, uid);
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  // A record written before the last cancellation is a cached copy of the
+  // cancelled subscription, even once a save reopened the object: it reads as a
+  // miss, so its token and settings never answer for the re-subscription.
+  const sinceCancelled = (record: typeof first) => (record && record.revision >= (slot.cancelledAt || 0) ? record : null);
+  let kv = sinceCancelled(first);
+  // A miss over an object a save reopened may be a cached miss of the record
+  // that save wrote: read once more with the shortest cache KV allows.
+  if (!kv && !slot.subscription && slot.migratable && slot.version > 0) kv = sinceCancelled(await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS));
+
+  // A reader phase 2 moved is read from their object even when a cached KV copy
+  // still holds the full record: acting on that copy would reopen and empty it.
+  if (kv && !slot.subscription) {
+    const cancelled = !slot.migratable && !slot.subscription;
+    // `behind`: the record may be older than the last save (see readKvRecord),
+    // so the last check before a send would cancel a digest prepared from it.
+    return {
+      slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv,
+      inKv: true,
+      objectVersion: slot.version,
+      behind: !cancelled && kv.revision !== slot.version,
+    };
+  }
+  // No KV record, yet a save reopened the object: that read may be a cached
+  // miss of a record the save wrote, so the reader is held, not absent. A
+  // cancellation closes the object, so a cancelled reader never reads as held.
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: !slot.subscription && slot.migratable && slot.version > 0 };
+}
+
+/**
+ * Phase 1: closes the reader's object before a cancellation deletes the KV
+ * record, even when this read finds no record, since it may be a stale one.
+ * Returns what the reader held first, because closing drops the object's copy.
+ * The KV record is deleted here, whatever the read found: once the object is
+ * closed, every later phase 1 read treats a KV record as a stale copy.
+ */
+async function closeBeforeCancelling(env: WorkerEnv, uid: string) {
+  if (!subscriptionInKv(env)) {
+    // Phase 2: a record that reads as missing may be a cached miss of one a
+    // Worker from before the object saved. A cancellation closes the object
+    // whatever was read, so no later read moves that record in.
+    const slot = await readSubscriptionSlot(env, uid);
+    if (slot.migratable) await markSubscription(env, uid, false);
+    return slot.subscription;
+  }
+  const { slot } = await readPhase1Slot(env, uid);
+  await markSubscription(env, uid, false);
+  await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
+  return slot.subscription;
+}
+
+/**
+ * The reader's subscription as their object holds it (email-subscription-store.ts).
+ * An object that is still open (never written, never closed by a Worker that
+ * handled an unsubscribe) takes, once, the KV record that a Worker from before
+ * the object saved; from then on the object is the only record, and a KV copy
+ * of any age is never read again. An object a cancellation closed never takes
+ * one, however stale the KV copy that still holds it.
+ *
+ * KV reads can be stale: an unsubscribe a Worker from before phase 1 handled
+ * deletes the KV record, and a copy cached here can still hold it, without any
+ * mark in the object. The record is read with the shortest cache KV allows and
+ * read again after the move; when it is gone by then, the move is undone. That
+ * only narrows the case phase 1 exists for: phase 2 follows once no Worker from
+ * before phase 1 runs (see worker/README.md). A KV read older than the last
+ * phase 1 save is not moved either: until a read returns that save's record,
+ * the reader reads as not subscribed and nothing is moved.
+ */
+async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
+  if (subscriptionInKv(env)) return (await readPhase1Slot(env, uid)).slot;
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  const store = env.NOTIFICATION_STORE;
+  if (!slot.migratable || !store) return slot;
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const readLegacy = () => store.get<Subscription>(key, { type: 'json', cacheTtl: KV_MIN_CACHE_TTL_SECONDS });
+  const legacy = await readLegacy();
+  if (!legacy?.unsubscribeToken) {
+    // A record without a token cannot be moved or unsubscribed from; drop the
+    // personal copy and keep only what an index holds.
+    if (legacy && Object.keys(legacy).some(field => field !== 'uid')) await store.delete(key);
+    return slot;
+  }
+  // Only the record the last phase 1 save wrote moves: its revision is the
+  // object version that save reached (0 before any save). Any other revision is
+  // a stale KV read of an older record, so the reader moves on a later read.
+  if ((Number(legacy.revision) || 0) !== slot.version) return slot;
+  const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: slot.version, subscription: storedRecord(legacy) });
+  if (!moved.accepted) return moved.slot;
+  if (!await readLegacy()) {
+    const undone = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: moved.slot.version, subscription: null });
+    return undone.slot;
+  }
+  // Leave KV only the index a save writes, not a second copy of the record.
+  await store.put(key, JSON.stringify({ uid }));
+  return moved.slot;
+}
+
+function withVersion(slot: StoredSlot): Subscription | null {
+  return slot.subscription ? { ...slot.subscription, version: slot.version } : null;
+}
+
+function storedRecord(subscription: Subscription) {
+  const record = { ...subscription };
+  delete record.version;
+  delete record.revision;
+  return record;
+}
+
+/**
+ * Writes what `next` makes of the reader's current subscription: a record,
+ * `null` to delete it, or `undefined` to leave it. A write that lost the race
+ * to another one is computed again from the record that won.
+ */
+async function changeSubscription(
+  env: WorkerEnv,
+  uid: string,
+  next: (current: Subscription | null, behind: boolean) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
+) {
+  let phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
+  let slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
+  for (let attempt = 0; phase1?.inKv && attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
+    // Phase 1: KV is the record. The object hears first, so no later read sees
+    // the record as anything but what this write makes it. Reopening it lands
+    // only on the object version this record was computed from: a cancellation
+    // in between closed it, and the write is computed again from what it left.
+    // A reader phase 2 moved stays in their object and is written below.
+    const previous = slot.subscription;
+    const record = await next(previous, phase1.behind);
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
+    const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+    if (record === null) {
+      await markSubscription(env, uid, false);
+      await env.NOTIFICATION_STORE!.delete(key);
+      return { changed: true, previous, subscription: null, inKv: true };
+    }
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
+    if (reopened.accepted) {
+      // The object's version, not one past the KV read: that read may be stale,
+      // and two saves computed from it would write the same version.
+      const version = reopened.slot.version;
+      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: version }));
+      return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
+    }
+    phase1 = await readPhase1Slot(env, uid);
+    slot = phase1.slot;
+  }
+  if (phase1?.inKv) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
+    const previous = slot.subscription;
+    const record = await next(previous, false);
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: false };
+    const result = await callSubscriptionStore(env, uid, {
+      action: 'write',
+      expectedVersion: slot.version,
+      subscription: record && storedRecord(record),
+    });
+    if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot), inKv: false };
+    slot = result.slot;
+  }
+  throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+}
+
+/** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
+async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>) {
+  const phase1 = read ?? (subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null);
+  const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
   const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
-  return { subscription, state, stateKey };
+  return { subscription, state, stateKey, behind: Boolean(phase1?.behind) };
 }
 
-async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
-  const record = await loadSubscriptionRecord(env, key);
-  if (!record) return null;
+function subscriptionWithState(record: NonNullable<Awaited<ReturnType<typeof loadSubscriptionRecord>>>) {
   return {
     ...record.subscription,
     ...deliveryStateFromSubscription(record.subscription),
@@ -924,8 +1195,13 @@ async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
   };
 }
 
+async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
+  const record = await loadSubscriptionRecord(env, key);
+  return record && subscriptionWithState(record);
+}
+
 async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscription: Subscription | null, buildPatch: (state: DeliveryState, subscription: Subscription) => DeliveryState) {
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+  const subscription = withVersion(await readSubscriptionSlot(env, subscriptionUid(key)));
   if (!subscription) return null;
   if (
     expectedSubscription
@@ -946,15 +1222,45 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
   return { ...subscription, ...mergedState };
 }
 
+/**
+ * Deletes the reader's subscription in their object first, so no later read
+ * finds it, then the KV indexes and delivery state that pointed at it. A save
+ * from another tab can land between the two steps, and its index write can
+ * come before this delete, so the index is put back when the object holds a
+ * subscription again; without it the schedule would skip that reader.
+ */
 async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const held = await closeBeforeCancelling(env, uid);
+  const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  const deleted = previous || held || subscription;
   await Promise.all([
-    env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
-    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription)),
-    subscription?.unsubscribeToken
-      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
+    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
+    deleted?.unsubscribeToken
+      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${deleted.unsubscribeToken}`)
       : Promise.resolve(),
   ]);
+  await deleteScheduleIndex(env, uid);
+}
+
+/**
+ * Removes the reader's schedule index, then puts it back when their object
+ * holds an enabled subscription again: a save from another tab can write its
+ * index just before this delete, and the schedule would skip that reader.
+ */
+async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
+  const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
+  // In phase 1 a key that holds the record itself is not an index. In phase 2
+  // it may still be one while the object is open: the record has not moved in
+  // yet, and a read that missed it may be a stale one, so a later window moves it.
+  if (subscriptionInKv(env)) {
+    if (await readKvRecord(env, uid)) return;
+  } else if ((await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable) {
+    return;
+  }
+  await env.NOTIFICATION_STORE!.delete(indexKey);
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
 }
 
 /**
@@ -966,15 +1272,30 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
-  keys.add(key).add(deliveryStateKey(uid, subscription || { uid }));
-  if (subscription?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`);
+  // A KV record that a closed object hides (one a Worker from before the
+  // object saved) still names its token and delivery state, which the reads
+  // below treat as cancelled and do not return. Phase 1 reads it first, since
+  // closeBeforeCancelling deletes it; phase 2's object steps never delete the
+  // KV key, so it is read after them there, and a failed KV read cannot stop
+  // a deleted account's subscription being cleared from its object.
+  const collectHiddenRecord = async () => {
+    const raw = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+    if (raw?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${raw.unsubscribeToken}`).add(deliveryStateKey(uid, raw));
+  };
+  if (subscriptionInKv(env)) await collectHiddenRecord();
+  const held = await closeBeforeCancelling(env, uid);
+  const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  if (!subscriptionInKv(env)) await collectHiddenRecord();
+  const previous = changed || held;
+  keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
+  if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
   await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
   return { purged: true };
 }
 
 async function saveSubscription(request: Request, env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const store = env.NOTIFICATION_STORE;
   const body = await readBoundedJson(request);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
@@ -983,21 +1304,12 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // `sync` marks the app's background refresh of follows and previews. The tab
   // that sends it may have loaded before the reader unsubscribed or changed the
   // digest elsewhere, so a sync never creates or re-enables a subscription and
-  // keeps the stored settings.
+  // keeps the stored settings. The reader's object orders it after every write
+  // it follows, so a sync that lands after an unsubscribe finds nothing to refresh.
   const sync = body.sync === true;
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
-  const existingRecord = await loadSubscriptionRecord(env, key);
-  const existingRaw = existingRecord?.subscription || null;
-  const existing = existingRaw ? {
-    ...existingRaw,
-    ...deliveryStateFromSubscription(existingRaw),
-    ...(existingRecord!.state || {}),
-  } : null;
-
-  if (sync) {
-    if (!existing?.enabled) return publicSubscription(existing, identity.email);
-  } else if (!preferences.enabled) {
-    await deleteSubscription(env, identity.uid, existing);
+  if (!sync && !preferences.enabled) {
+    await deleteSubscription(env, identity.uid, null);
     return publicSubscription(null, identity.email);
   }
 
@@ -1007,60 +1319,85 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   const previewItems = Array.isArray(body.previewItems)
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
-  if (!follows.length) {
-    throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  }
-  const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
-  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`;
-  const selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
-    ...existingRaw,
-    ...(sync ? {} : preferences),
-    email: identity.email,
-    follows,
-  });
-  // A subscriber's app syncs on every open, usually with nothing new, and each
-  // write costs two KV puts. The token index is still checked: a save whose
-  // index put failed leaves an enabled subscription whose unsubscribe link
-  // answers 400, and this sync may be the only retry that save gets.
-  if (
-    sync
-    && existingRaw?.unsubscribeToken
-    && existingRaw.email === identity.email
-    && existingRaw.displayName === identity.displayName
-    && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
-    && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
-    && !selectionChanged
-  ) {
-    if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
-      await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+  const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
+  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind) => {
+    // Phase 1 read no record over an object a save reopened (see
+    // readPhase1Slot): answering that the digest is off would turn it off in
+    // the app while the record may still send, so the app keeps its state and retries.
+    if (sync && !current && behind) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    if (sync && !current?.enabled) return undefined;
+    read.state = current ? await store.get<DeliveryState>(deliveryStateKey(key, current), 'json') : null;
+    const existing = current ? { ...current, ...deliveryStateFromSubscription(current), ...(read.state || {}) } : null;
+    // The reader's chosen categories fill the edition while nothing it covers
+    // is followed (ENG-163); with neither there is nothing to send. Only an
+    // explicit list replaces them: a client that omits the field, because it
+    // predates interests or has not confirmed the profile yet, keeps the stored ones.
+    const interests = sanitizeInterests(Array.isArray(body.interests) ? body.interests : current?.interests);
+    if (!follows.length && !interests.length) {
+      throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
     }
-    return publicSubscription(existing, identity.email);
-  }
-  const now = new Date().toISOString();
-  const persistedBase = existingRecord?.state
-    ? stripDeliveryState(existingRaw!)
-    : (existingRaw || {});
-  const subscription = {
-    ...persistedBase,
-    ...(sync ? {} : preferences),
-    uid: identity.uid,
-    email: identity.email,
-    displayName: identity.displayName,
-    follows,
-    previewItems,
-    unsubscribeToken,
-    ...(!existingRaw ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  };
+    // A sync keeps the stored settings, except from a phase 1 KV record behind
+    // the object: that copy may predate the save the tab's settings came from,
+    // so the tab's settings are kept, and only `enabled` stays the stored one.
+    const settings = !sync ? preferences : behind ? { ...preferences, enabled: current!.enabled } : {};
+    read.selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
+      ...current,
+      ...settings,
+      email: identity.email,
+      follows,
+      interests,
+    });
+    // A subscriber's app syncs on every open, usually with nothing new. In
+    // phase 1 a KV record behind the object (a save whose KV write failed after
+    // it reopened the object) is written again even so: the schedule holds it
+    // until a save does, while Settings shows the digest as on.
+    if (
+      sync
+      && !behind
+      && current!.unsubscribeToken
+      && current!.email === identity.email
+      && current!.displayName === identity.displayName
+      && JSON.stringify(current!.follows) === JSON.stringify(follows)
+      && JSON.stringify(current!.previewItems) === JSON.stringify(previewItems)
+      && JSON.stringify(current!.interests || []) === JSON.stringify(interests)
+    ) {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    return {
+      ...(read.state && current ? stripDeliveryState(current) : (current || {})),
+      ...settings,
+      uid: identity.uid,
+      email: identity.email,
+      displayName: identity.displayName,
+      follows,
+      previewItems,
+      interests,
+      unsubscribeToken: current?.unsubscribeToken || crypto.randomUUID().replace(/-/g, ''),
+      ...(!current ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
+      createdAt: current?.createdAt || now,
+      updatedAt: now,
+    };
+  });
+  if (!subscription?.enabled) return publicSubscription(subscription, identity.email);
+
+  // The schedule finds subscribers by the KV index, and the unsubscribe link by
+  // the token's. Both only point at the object, which a stale copy cannot
+  // override. A sync that changes nothing still checks them: a save whose
+  // index write failed would leave a subscriber the schedule never reaches or
+  // whose unsubscribe link answers 400, and this sync may be its only retry.
+  // An index left after an unsubscribe points at no subscription; the schedule removes it.
+  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+  // While KV holds the record (phase 1) the schedule's key is the record itself.
+  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? true : store.get(key), store.get(unsubscribeKey)]);
   await Promise.all([
-    env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
-    env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
+    indexed || inKv ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
   ]);
-  if (selectionChanged) {
+  if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }
-  return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
+  return publicSubscription({ ...subscription, ...(read.state || {}) }, identity.email);
 }
 
 function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
@@ -1427,14 +1764,63 @@ function rethrowTestOpenAlexBudgetError(results: PromiseSettledResult<unknown>[]
   }
 }
 
+/**
+ * The edition of a reader who follows nothing the digest covers: the most
+ * cited papers of the week in each leaf they chose, one leaf after another so
+ * that each is heard, from the paper store alone (ENG-163). No interests, no
+ * papers.
+ */
+async function collectInterestPapers(subscription: Subscription, env: WorkerEnv, { test = false, now = Date.now() }: DeliveryOptions = {}) {
+  const sourceReport = createSourceReport();
+  const interests = sanitizeInterests(subscription.interests);
+  if (!interests.length) return { papers: [] as DigestPaper[], sourceReport };
+  let rows;
+  try {
+    rows = await trackDigestSource(sourceReport, 'paper-store', () => readLeafHighlights(
+      env,
+      interests,
+      new Date(now - INTEREST_DIGEST_DAYS * DAY_MS).toISOString(),
+      INTEREST_PAPERS_PER_LEAF,
+    ));
+  } catch {
+    sourceReport.requiredFailed = 1;
+    throw new EmailDigestTransientError(sourceReport);
+  }
+  const byLeaf = interests.map(leaf => rows
+    .filter(row => row.leaf === leaf)
+    .map(row => sanitizePaper({ ...row.paper, area: areaKeyForPaper(row.paper) } as PaperInput))
+    .filter((paper): paper is NonNullable<typeof paper> => Boolean(paper?.url && paper.authors.length))
+    .map(paper => ({ ...paper, interest: leaf })));
+  const taken = test ? new Set<string>() : new Set(subscription.sentPaperKeys || []);
+  const maximum = subscription.maxPapers || 5;
+  const papers: DigestPaper[] = [];
+  // Each turn, every leaf adds its next paper not yet sent or taken.
+  const next = byLeaf.map(() => 0);
+  for (let added = true; added && papers.length < maximum;) {
+    added = false;
+    byLeaf.forEach((leafPapers, leaf) => {
+      while (next[leaf] < leafPapers.length && papers.length < maximum) {
+        const paper = leafPapers[next[leaf]++];
+        const keys = paperIdentityKeys(paper);
+        if (keys.some(key => taken.has(key))) continue;
+        keys.forEach(key => taken.add(key));
+        papers.push(paper);
+        added = true;
+        break;
+      }
+    });
+  }
+  return { papers, sourceReport };
+}
+
 async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   test = false,
   now = Date.now(),
   openAlexRequests = null,
 }: CollectOptions = {}) {
   const follows = digestFollowsForWindow(subscription.follows, now);
+  if (!follows.length) return collectInterestPapers(subscription, env, { test, now });
   const sourceReport = createSourceReport();
-  if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
   // A test fails whole on its first refusal and the ledger remembers none: a
@@ -1736,6 +2122,8 @@ const EMAIL_COPY = {
   paperCount: (count: number) => (count === 1 ? '1 new paper' : `${count} new papers`),
   emptyHeadline: 'Your email is ready',
   introduction: 'Welcome to your weekly selection of papers we think you might find interesting.',
+  interestsIntroduction: 'You do not follow a topic, author, institution or project yet, so these are notable new papers this week in the subjects you chose.',
+  fromInterests: 'From your interests',
   outsideFollows: 'Outside your follows',
   alsoInEdition: 'More to read',
   leadLabel: 'Start here',
@@ -1868,7 +2256,13 @@ function renderScientificExcerpt(value: unknown, maxLength = DIGEST_EXCERPT_LENG
 }
 
 function isDiscovery(paper: DigestPaper) {
-  return !(paper.matches || []).length;
+  return !(paper.matches || []).length && !paper.interest;
+}
+
+/** What a paper's tag says: the subject an interest paper came from, or that a discovery is outside the follows. */
+function storyTag(paper: DigestPaper) {
+  if (paper.interest) return getCategoryLabel(paper.interest);
+  return isDiscovery(paper) ? EMAIL_COPY.outsideFollows : '';
 }
 
 function fieldLabel(area = '') {
@@ -1918,13 +2312,13 @@ const STORY_FRAME = `border:1px solid ${EMAIL_PALETTE.frame};border-radius:3px`;
 
 function storyDetails(paper: DigestPaper, { lead = false } = {}) {
   return `<p style="margin:${lead ? 0 : '8px 0 0'};font:400 14px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper, { lead }))}</p>
-${isDiscovery(paper) ? `<p style="margin:10px 0 0"><span style="display:inline-block;padding:3px 7px;border:1px solid ${EMAIL_PALETTE.frame};border-radius:2px;${monoStyle({ size: 10, color: EMAIL_PALETTE.secondary })}">${EMAIL_COPY.outsideFollows}</span></p>` : ''}`;
+${storyTag(paper) ? `<p style="margin:10px 0 0"><span style="display:inline-block;padding:3px 7px;border:1px solid ${EMAIL_PALETTE.frame};border-radius:2px;${monoStyle({ size: 10, color: EMAIL_PALETTE.secondary })}">${escapeHtml(storyTag(paper))}</span></p>` : ''}`;
 }
 
-function renderLeadStory(paper: DigestPaper) {
+function renderLeadStory(paper: DigestPaper, label: string) {
   const excerpt = renderScientificExcerpt(paper.abstract);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:36px 0 40px">
-${sectionHeading(EMAIL_COPY.leadLabel)}
+${sectionHeading(label)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${STORY_FRAME}"><tr><td class="pt-card" style="padding:24px 26px 26px">
 <h3 class="pt-lead" style="margin:0 0 14px;font:600 26px/1.2 ${EMAIL_FONTS.serif};letter-spacing:-0.015em;color:${EMAIL_PALETTE.ink}">${storyLink(paper)}</h3>
 ${excerpt.html ? `<p style="margin:0 0 16px;font:400 17px/1.55 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${excerpt.html}</p>` : ''}
@@ -1958,6 +2352,10 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
   const dateline = editionDate(now);
   // collectDigestPapers ranks the followed papers first, the discovery last.
   const lead = papers[0] || null;
+  // collectInterestPapers fills the whole edition when nothing it covers is followed.
+  const fromInterests = Boolean(lead?.interest);
+  const leadLabel = fromInterests ? EMAIL_COPY.fromInterests : EMAIL_COPY.leadLabel;
+  const introduction = fromInterests ? EMAIL_COPY.interestsIntroduction : EMAIL_COPY.introduction;
   const rest = papers.filter(paper => paper !== lead);
   const others = [...rest.filter(paper => !isDiscovery(paper)), ...rest.filter(isDiscovery)];
   const subject = test ? EMAIL_COPY.testSubject : EMAIL_COPY.subject(editionWeek(now));
@@ -1974,7 +2372,7 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
 </td></tr></table></td></tr></table>`
     : '';
   const stories = lead
-    ? `${renderLeadStory(lead)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
+    ? `${renderLeadStory(lead, leadLabel)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
     : `<p style="margin:0;padding:30px 0;font:400 16px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
 
   const html = `<!doctype html><html lang="en"><head>
@@ -2005,7 +2403,7 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
 <div style="margin:18px 0 0;border-top:2px solid ${ink};height:0;line-height:0;font-size:0">&nbsp;</div>
 <p style="margin:32px 0 0;font:italic 400 19px/1.4 ${serif};color:${secondary}">${escapeHtml(greeting)}</p>
 <h1 class="pt-h1" style="margin:6px 0 0;font:600 40px/1.08 ${serif};letter-spacing:-0.025em;color:${ink}">${escapeHtml(headline)}</h1>
-${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.introduction)}</p>` : ''}
+${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(introduction)}</p>` : ''}
 ${index ? `<p style="margin:6px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(index)}</p>` : ''}
 ${testNotice}
 ${stories}
@@ -2028,15 +2426,15 @@ ${emailButton(PAPER_TOK_URL, EMAIL_COPY.openInbox)}
       if (excerpt) lines.push(excerpt);
     }
     lines.push(paperByline(paper, { lead: isLead }));
-    if (isDiscovery(paper)) lines.push(EMAIL_COPY.outsideFollows);
+    if (storyTag(paper)) lines.push(storyTag(paper));
     lines.push(paper.url || PAPER_TOK_URL);
     return lines.join('\n');
   };
   const blocks = [
     `${EMAIL_COPY.nameplate.toUpperCase()}\n${dateline}`,
-    [greeting, headline, ...(lead ? [EMAIL_COPY.introduction] : []), ...(index ? [index] : [])].join('\n'),
+    [greeting, headline, ...(lead ? [introduction] : []), ...(index ? [index] : [])].join('\n'),
     ...(test ? [`${EMAIL_COPY.testKicker.toUpperCase()}\n${EMAIL_COPY.testBody}`] : []),
-    ...(lead ? [`${EMAIL_COPY.leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
+    ...(lead ? [`${leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
     ...(others.length ? [`${EMAIL_COPY.alsoInEdition.toUpperCase()} (${others.length})`, ...others.map(paper => storyText(paper))] : []),
     `${lead ? `${EMAIL_COPY.closingTitle} ` : ''}${EMAIL_COPY.closingBody}\n${EMAIL_COPY.openInbox}: ${PAPER_TOK_URL}\n\n${EMAIL_COPY.footer}\n${EMAIL_COPY.unsubscribe}: ${unsubscribeUrl}`,
   ];
@@ -2174,9 +2572,11 @@ function papersForCurrentSubscription(papers: DigestPaper[], subscription: Subsc
   const followKeys = new Set((subscription.follows || []).map(follow => (
     `${follow.type}:${follow.canonicalId}`
   )));
+  const interests = new Set(sanitizeInterests(subscription.interests));
   return papers.filter(paper => (
     !paperIdentityKeys(paper).some(key => sentKeys.has(key))
     && (!(paper.matches || []).length || getPaperFollowKeys(paper).some(key => followKeys.has(key)))
+    && (!paper.interest || (!followKeys.size && interests.has(paper.interest)))
   )).slice(0, subscription.maxPapers || 5);
 }
 
@@ -2197,6 +2597,7 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], e
     },
     content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt }),
     unsubscribeUrl,
+    subscriptionVersion: subscription.version ?? 0,
     delivery: {
       kind: test ? 'test' : 'digest',
       sentAt: new Date(now).toISOString(),
@@ -2244,6 +2645,39 @@ function deliveryAlreadySettled(subscription: Subscription, deliveredAt?: string
   return Number.isFinite(settled) && Number.isFinite(delivered) && settled >= delivered;
 }
 
+/**
+ * Whether a draft was prepared from the subscription as it stands. Every write
+ * to the reader's subscription raises its version, so any change since cancels
+ * it. A draft without a version (0: reserved before drafts carried one, or
+ * prepared from a KV record no phase 1 save has written yet) matches only a
+ * record no save has versioned since, so a later address or follows change
+ * cancels it too; and every draft goes only to the address held now. A Brevo
+ * draft is never sent, only recorded as uncertain, so nothing needs to match.
+ */
+function draftMatchesSubscription(draft: { provider?: string; subscriptionVersion?: number; recipient?: { email?: string } }, subscription: Subscription) {
+  if (draft.provider !== 'resend') return true;
+  return (draft.subscriptionVersion || 0) === (subscription.version || 0)
+    && draft.recipient?.email === subscription.email;
+}
+
+/**
+ * The last check before a reserved draft goes to Resend; the caller sends with
+ * no other await in between. The reader's object is read last, so a save or an
+ * unsubscribe that lands before that read cancels the draft. In phase 1 the KV
+ * record counts only while its revision is the object's version: a KV read can
+ * return the record from before the last save, and a save reopens the object,
+ * raising its version, before it writes KV.
+ */
+async function draftStillCurrent(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0]) {
+  const uid = subscriptionUid(key);
+  const kv = subscriptionInKv(env) ? await readKvRecord(env, uid) : null;
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  const current = slot.subscription ? slot
+    : kv && slot.migratable && kv.revision === slot.version ? kv : null;
+  const subscription = current && withVersion(current);
+  return Boolean(subscription?.enabled) && draftMatchesSubscription(draft, subscription!);
+}
+
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
@@ -2263,7 +2697,7 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
 
     const latest = await loadSubscriptionWithState(env, key);
     if (!latest?.enabled) return { pending: true, cancelled: true };
-    if (!(latest.follows || []).length) return { pending: true, invalid: true };
+    if (!hasDigestSource(latest)) return { pending: true, invalid: true };
     const draft = existing.draft;
     if (!draft?.delivery) return { pending: true };
     const reservedAt = Date.parse(existing.reservedAt || '');
@@ -2280,9 +2714,19 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
       if (deliveryAlreadySettled(latest, draft.delivery.sentAt)) continue;
       return { reconciled: true, uncertain: true, delivery: draft.delivery };
     }
+    // The draft holds the address and papers of the version it was prepared
+    // from. Once the reader has changed anything, it is not sent again.
+    if (!draftMatchesSubscription(draft, latest)) return { pending: true, cancelled: true };
 
     const reservation = await reserveEmailDelivery(env, reservationId, ledgerTime);
     if (!reservation.retry || !reservation.draft) return { pending: true };
+    // The last check, after the reservation and right before the send: an
+    // unsubscribe or a change saved before it cancels this retry and gives the
+    // reservation back.
+    if (!await draftStillCurrent(env, key, reservation.draft)) {
+      await releaseEmailDelivery(env, reservationId, ledgerTime);
+      return { pending: true, cancelled: true };
+    }
     return deliverReservedDraft(env, reservationId, reservation.draft, now, { ledgerTime });
   }
   return null;
@@ -2299,7 +2743,7 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const reservationId = await buildDeliveryReservationId(subscription, { test, now });
   const latest = await loadSubscriptionWithState(env, key);
-  if (!latest?.enabled || !(latest.follows || []).length) {
+  if (!latest?.enabled || !hasDigestSource(latest)) {
     return { cancelled: true, invalid: Boolean(latest?.enabled) };
   }
   if (!test && !isSubscriptionDue(latest, new Date(now))) {
@@ -2322,18 +2766,15 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     }
     if (!reservation.retry) return { pending: true };
   }
-  if (!reservation.duplicate) {
-    const beforeDelivery = await loadSubscriptionWithState(env, key);
-    if (
-      !beforeDelivery?.enabled
-      || subscriptionGeneration(beforeDelivery) !== subscriptionGeneration(latest)
-      || beforeDelivery.updatedAt !== latest.updatedAt
-    ) {
-      await releaseEmailDelivery(env, reservationId, now);
-      return { cancelled: true };
-    }
-  }
   const reservedDraft = reservation.draft || draft;
+  // The last check, right before the send: a draft goes out only while the
+  // subscription is the version it was prepared from. A new address, a follow
+  // removed or an unsubscribe since then cancels it.
+  if (!await draftStillCurrent(env, key, reservedDraft)) {
+    if (reservation.duplicate) return { pending: true };
+    await releaseEmailDelivery(env, reservationId, now);
+    return { cancelled: true };
+  }
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
 
@@ -2362,7 +2803,7 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
-  if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
+  if (!hasDigestSource(subscription)) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   const now = Date.now();
   await reserveTestEmail(env, identity.uid, now);
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
@@ -2516,12 +2957,24 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   const uid = await env.NOTIFICATION_STORE.get(`${UNSUBSCRIBE_PREFIX}${token}`);
   if (!uid) return invalidLinkPage();
   const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
-  if (!subscription || subscription.unsubscribeToken !== token) {
+  // The token index names this reader but their record reads as missing: a
+  // cached miss of a record just saved, unless their object says a cancellation
+  // closed it. Only a closed object makes the link spent; otherwise the link
+  // still works, and an unsubscribe cancels whatever the record turns out to be.
+  const unread = !subscription && (await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable;
+  if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
+    // A second POST from the same link (a double click, or a mail client's
+    // one-click POST before the reader's) may read a stale KV copy of the token
+    // index and record; the object a cancellation closed says it already worked.
+    if (!subscription && request.method === 'POST') {
+      return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
+    }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
     return invalidLinkPage();
   }
   if (request.method === 'POST') {
     await deleteSubscription(env, uid, subscription);
+    if (unread) await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
   }
 
   const title = request.method === 'POST' ? copy.disabledTitle : copy.confirmTitle;
@@ -2792,10 +3245,36 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 }
 
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
-  const subscription = await loadSubscriptionWithState(env, key.name);
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key.name)) : undefined;
+  const record = await loadSubscriptionRecord(env, key.name, phase1);
+  const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
+  // A listed key whose KV read returned nothing counts too, when the object
+  // holds a reopened reader (see readPhase1Slot): a cached miss must not make
+  // the window look clean.
+  if (!phase1?.behind) return outcome;
+  // Phase 1: a KV record behind the object is held until a save writes it
+  // again. Counted in every window, enabled or not and due or not, so a window
+  // without held readers shows none remain (worker/README.md, phase 2 step 0).
+  const failureCodes = { ...outcome.failureCodes };
+  failureCodes.EMAIL_SUBSCRIPTION_HELD = (failureCodes.EMAIL_SUBSCRIPTION_HELD || 0) + 1;
+  return { ...outcome, failureCodes };
+}
+
+async function processLoadedSubscription(
+  env: WorkerEnv,
+  key: { name: string },
+  now: Date,
+  openAlexRequests: OpenAlexRequests,
+  record: Awaited<ReturnType<typeof loadSubscriptionRecord>>,
+): Promise<ScheduledOutcome> {
+  const subscription = record && subscriptionWithState(record);
+  // An index a save wrote just after an unsubscribe points at no subscription.
+  // In phase 1 the key is the record itself, and a read that missed it may be
+  // a stale one, so only a cancellation deletes it.
+  if (!subscription && !subscriptionInKv(env)) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
-  if (!(subscription.follows || []).length) {
+  if (!hasDigestSource(subscription)) {
     const code = 'EMAIL_SUBSCRIPTION_INVALID';
     // Recorded once. Only a save can give the record follows, so writing the same
     // outcome again in every window spent a KV write per window and changed
@@ -2831,6 +3310,9 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
       return { skipped: true };
     }
+    // Phase 1: preparing a digest from a held record would only call providers
+    // for a send the last check cancels.
+    if (record?.behind) return { skipped: true };
 
     const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
@@ -3091,6 +3573,7 @@ export const emailNotificationInternals = {
   fetchOpenAlexUpdates,
   fetchOpenAlexDigestPayload,
   saveSubscription,
+  loadSubscriptionWithState,
   mergePapers,
   arxivCategoriesForFollow,
   parseArxivDigestFeed,

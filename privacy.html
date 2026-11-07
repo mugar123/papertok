@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 5 November 2026.</p>
+      <p class="lp-updated">Last updated 7 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -233,11 +233,16 @@
       <h2>Email updates</h2>
       <p>
         If you turn them on, PaperTok emails you what is new from the authors, topics,
-        institutions and projects you follow. For that
-        it stores your email address, your sending preferences and an unsubscribe
-        identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
+        institutions and projects you follow, or, while you follow none of them, the
+        notable new papers in the subjects you chose. For that
+        it stores your email address, your sending preferences, what you follow, the
+        identifiers of the subjects you chose and an unsubscribe
+        identifier in <strong>Cloudflare Workers KV</strong> or, as it moves, in a
+        <strong>Cloudflare Durable Object</strong> of your account, and
+        your account identifier and that unsubscribe identifier in
+        <strong>Cloudflare Workers KV</strong>. If a sending limit delays
         an edition, PaperTok also stores its selected papers, abstracts and reasons
-        they matched your follows. That selection is removed after delivery, a
+        they matched your follows or subjects. That selection is removed after delivery, a
         change to your follows or a later edition that is processed; otherwise its delivery record
         expires after 120 days. <strong>Resend</strong> sends
         the emails. To limit test emails, Cloudflare counts them under a hashed account
@@ -263,12 +268,20 @@
         by their identifier, how long cards and the reader stay on screen, the authors,
         topics or institutions you follow by their identifier, that you followed a journal
         but not which one, search types and result
-        counts, and the outcome of sign-in and AI explanation requests. They also record
+        counts, and the outcome of sign-in and AI explanation requests. When you open a
+        paper in the app's viewer, they record whether it showed the paper's text (and from
+        which archive), its PDF, a link or nothing, why a PDF could not be shown, and how
+        long the viewer stays on screen. Product events also record
         when you open a paper's connections or its similar papers, and what you do in the
         connections map, such as switching to the list or centring the graph on another
         paper. Feed diagnostics record load starts, duration, result, initial loads versus
         refreshes or additional pages, automatic retries, and the web and server versions.
-        They contain no paper identifiers or interests. Events include browser, operating system, device type and session identifiers.
+        They contain no paper identifiers or interests.
+        Events include the browser and its version, the operating system and its version,
+        the device type, and session and tab identifiers. They also carry a short browser label
+        built only from the browser, its major version and the operating system (for example
+        "Chrome/130 (Mac OS X)"), so PostHog can tell people from automated traffic; this label
+        never contains the full user agent your browser sends.
       </p>
       <p>
         PaperTok does not send your name, email address, search text, notes, paper titles
@@ -404,7 +417,7 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
-        <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
         <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
       </ul>
@@ -439,7 +452,7 @@
       <h2>Storage in your browser</h2>
       <p>
         PaperTok keeps a few things in your own browser, and no server reads them: the light
-        or dark theme, the language, your choice about analytics, a session cache so the
+        or dark theme, the language, your choice about analytics and how many times it has changed, a session cache so the
         application does not reload from scratch when you come back, the last 500 papers your
         account viewed in this browser, or highly cited papers the feed passed over because
         you had already liked, saved, read or dismissed them, so a reload skips them, and the

@@ -1,113 +1,152 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import type * as PostHogModule from 'posthog-js';
-import { ANALYTICS_CONSENT, ANALYTICS_CONSENT_KEY, clearStoredIdentityWhileAnalyticsOff, setAnalyticsConsent, startAnalyticsClient } from './analytics-service.ts';
+import { gunzipSync } from 'node:zlib';
+import type { PostHog } from 'posthog-js';
+import { ANALYTICS_CONSENT, sanitizeAnalyticsCapture, startAnalyticsClient } from './analytics-service.ts';
 
-// The installed SDK, run against a minimal browser: the storage names
-// `removePostHogIdentity` clears are the ones this posthog-js really writes.
-// This file runs in its own process, so the SDK's globals stay here.
-
-function memoryStorage() {
-  const values = new Map<string, string>();
-  return {
-    values,
-    get length() { return values.size; },
-    key: (index: number) => [...values.keys()][index] ?? null,
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, String(value)); },
-    removeItem: (key: string) => { values.delete(key); },
-    clear: () => { values.clear(); },
-  };
-}
-
-// Cookies are kept per name and domain, as a browser does, and a domain that
-// is a public suffix (`.app`) is refused, so the SDK settles on `.papertok.app`.
-function cookieJar(hostname: string) {
-  const cookies = new Map<string, { name: string; value: string; domain: string }>();
-  return {
-    cookies,
-    get cookie() { return [...cookies.values()].map(({ name, value }) => `${name}=${value}`).join('; '); },
-    set cookie(written: string) {
-      const [pair, ...attributes] = written.split(';').map(part => part.trim());
-      const name = pair.slice(0, pair.indexOf('='));
-      const value = pair.slice(pair.indexOf('=') + 1);
-      const attribute = (key: string) => attributes.find(part => part.toLowerCase().startsWith(`${key}=`))?.slice(key.length + 1);
-      const domain = (attribute('domain') ?? '').replace(/^\./, '').toLowerCase();
-      if (domain && (!domain.includes('.') || !`.${hostname}`.endsWith(`.${domain}`))) return;
-      const key = `${name}@${domain || hostname}`;
-      const expired = attribute('max-age') === '0' || /1970/.test(attribute('expires') ?? '');
-      if (expired) cookies.delete(key);
-      else cookies.set(key, { name, value, domain: domain || hostname });
-    },
-  };
-}
-
-test('turning analytics off where PostHog never loaded removes the identity it stored, and the next start is a new browser', async t => {
-  // The SDK's flush and session timers would otherwise keep the process open.
-  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-  const local = memoryStorage();
-  const session = memoryStorage();
-  const jar = cookieJar('www.papertok.app');
-  const location = { hostname: 'www.papertok.app', host: 'www.papertok.app', protocol: 'https:', href: 'https://www.papertok.app/feed', origin: 'https://www.papertok.app', pathname: '/feed', search: '', hash: '' };
-  const document = Object.assign(jar, {
-    location, referrer: '', title: '', readyState: 'complete', visibilityState: 'visible',
-    addEventListener() {}, removeEventListener() {},
-    createElement: () => ({ style: {}, setAttribute() {} }),
-    querySelector: () => null, querySelectorAll: () => [], getElementsByTagName: () => [],
-    body: { appendChild() {} }, head: { appendChild() {} },
+/*
+ * The installed posthog-js, started with the app's own options, in a browser
+ * made of stubs. The SDK reads `window`, `navigator` and `fetch` once, when its
+ * module loads, so they are stubbed before the import, in this file's own
+ * process. Requests go to the stubbed `fetch` and `sendBeacon`: nothing leaves.
+ * The SDK keeps timers running for as long as the page lives; they are unref'd
+ * so this process can end.
+ */
+for (const name of ['setTimeout', 'setInterval'] as const) {
+  const schedule: (callback: () => void, delay?: number) => NodeJS.Timeout = globalThis[name];
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value: (callback: () => void, delay?: number) => schedule(callback, delay).unref(),
   });
-  const navigator = { userAgent: 'Mozilla/5.0', language: 'en', onLine: true };
-  const window = {
-    document, location, navigator, localStorage: local, sessionStorage: session, screen: {}, innerWidth: 1, innerHeight: 1,
-    addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval,
-  };
-  const globals = { window, document, location, navigator, localStorage: local, sessionStorage: session, fetch: async () => new Response('{}') };
-  for (const [name, value] of Object.entries(globals)) {
-    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
-    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
-    t.after(() => {
-      if (previous) Object.defineProperty(globalThis, name, previous);
-      else Reflect.deleteProperty(globalThis, name);
-    });
+}
+
+const browser = { userAgent: '', webdriver: false };
+const store = new Map<string, string>();
+const storage = {
+  getItem: (key: string) => store.get(key) ?? null,
+  setItem: (key: string, value: string) => { store.set(key, String(value)); },
+  removeItem: (key: string) => { store.delete(key); },
+  clear: () => { store.clear(); },
+  key: (index: number) => [...store.keys()][index] ?? null,
+  get length() { return store.size; },
+};
+const location = { hostname: 'papertok.app', host: 'papertok.app', protocol: 'https:', origin: 'https://papertok.app', href: 'https://papertok.app/feed', pathname: '/feed', search: '', hash: '' };
+const unloadHandlers: Array<() => void> = [];
+const requests: Array<{ url: string; body: Promise<Buffer> }> = [];
+const element = () => ({ style: {}, setAttribute() {} });
+const browserGlobals = {
+  window: {
+    location,
+    addEventListener(type: string, handler: () => void) { if (type === 'pagehide' || type === 'beforeunload' || type === 'unload') unloadHandlers.push(handler); },
+    removeEventListener() {},
+    screen: { width: 1440, height: 900 },
+    innerWidth: 1440,
+    innerHeight: 900,
+  },
+  navigator: {
+    get userAgent() { return browser.userAgent; },
+    get webdriver() { return browser.webdriver; },
+    language: 'en-GB',
+    languages: ['en-GB'],
+    onLine: true,
+    vendor: 'Google Inc.',
+    sendBeacon(url: string, body: Blob) {
+      requests.push({ url, body: body.arrayBuffer().then(buffer => Buffer.from(buffer)) });
+      return true;
+    },
+  },
+  // The exception autocapture appends its script tag here, and nothing loads it.
+  document: {
+    cookie: '', location, referrer: '', title: 'PaperTok', readyState: 'complete', visibilityState: 'visible',
+    addEventListener() {}, removeEventListener() {}, querySelector: () => null, querySelectorAll: () => [],
+    createElement: element, head: { appendChild() {} }, body: { appendChild() {} },
+  },
+  location,
+  localStorage: storage,
+  sessionStorage: storage,
+  fetch: (url: string, init: { body: BodyInit }) => {
+    requests.push({ url, body: new Response(init.body).arrayBuffer().then(buffer => Buffer.from(buffer)) });
+    return Promise.resolve(new Response('{}'));
+  },
+};
+for (const [name, value] of Object.entries(browserGlobals)) {
+  Object.defineProperty(browserGlobals.window, name, { configurable: true, value });
+  if (name !== 'window') Object.defineProperty(globalThis, name, { configurable: true, value });
+}
+Object.defineProperty(globalThis, 'window', { configurable: true, value: browserGlobals.window });
+
+const DESKTOP = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.91 Safari/537.36';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36';
+
+/**
+ * The SDK reads the user agent it reports when its module loads, while its
+ * bot check reads the navigator at every capture. Each browser gets its own
+ * copy of the module. Node resolves `posthog-js` to its CommonJS build
+ * (`dist/main.js`); the app's browser bundle uses `dist/module.mjs` of the
+ * same release.
+ */
+const requireModule = createRequire(import.meta.url);
+function startSdk(userAgent: string) {
+  browser.userAgent = userAgent;
+  Reflect.deleteProperty(requireModule.cache, requireModule.resolve('posthog-js'));
+  const { posthog } = requireModule('posthog-js') as { posthog: PostHog };
+  startAnalyticsClient(posthog, ANALYTICS_CONSENT.ENABLED);
+  return posthog;
+}
+
+const desktop = startSdk(DESKTOP);
+const android = startSdk(ANDROID);
+
+/** Leave the page so the SDK sends its queue, and read what it sent. */
+async function leavePage() {
+  for (const handler of unloadHandlers) handler();
+  const sent = await Promise.all(requests.splice(0).map(async ({ url, body }) => {
+    const bytes = await body;
+    return { url, text: (bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString('utf8') };
+  }));
+  return sent;
+}
+
+function captureAs(sdk: typeof desktop, userAgent: string, webdriver = false) {
+  browser.userAgent = userAgent;
+  browser.webdriver = webdriver;
+  sdk.capture('$pageview');
+}
+
+test('the SDK runs the app\'s filter, and only the reduced user agent leaves the browser', async () => {
+  for (const [sdk, userAgent, reduced] of [[desktop, DESKTOP, 'Chrome/130 (Mac OS X)'], [android, ANDROID, 'Chrome/130 (Android)']] as const) {
+    assert.equal(sdk.config.before_send, sanitizeAnalyticsCapture, 'the app\'s options are the ones in use');
+    captureAs(sdk, userAgent);
+    const sent = await leavePage();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].url, /^\/ingest\//, 'to the app\'s own proxy path, here a stub');
+    const events = (JSON.parse(sent[0].text) as { batch: Array<{ event: string; properties: Record<string, unknown> }> }).batch;
+    assert.deepEqual(events.map(event => [event.event, event.properties.$raw_user_agent]), [['$pageview', reduced]]);
+    for (const part of [userAgent, 'Mozilla', 'Macintosh', '10_15_7', 'AppleWebKit', 'KHTML', '6723', 'Android 14', 'SM-S918B', 'UP1A']) {
+      assert.ok(!sent[0].text.includes(part), `"${part}" left the browser`);
+    }
   }
+});
 
-  const { PostHog } = createRequire(import.meta.url)('posthog-js') as typeof PostHogModule;
-  const before = new PostHog();
-  startAnalyticsClient(before, ANALYTICS_CONSENT.ENABLED);
-  before.capture('paper_open', { surface: 'feed' });
-  const firstId = before.get_distinct_id();
+test('the SDK still drops a webdriver or headless browser before the app\'s filter sees it', async () => {
+  const filter = desktop.config.before_send;
+  let filtered = 0;
+  desktop.config.before_send = capture => {
+    filtered += 1;
+    return sanitizeAnalyticsCapture(capture);
+  };
+  try {
+    captureAs(desktop, DESKTOP, true);
+    captureAs(desktop, DESKTOP.replace('Chrome/', 'HeadlessChrome/'));
+    assert.equal(filtered, 0, 'the bot check reads the browser\'s navigator, not the reduced string');
+    assert.deepEqual(await leavePage(), []);
 
-  const token = /^ph_(.+)_posthog$/.exec([...local.values.keys()].find(key => key.startsWith('ph_')) ?? '')?.[1];
-  assert.ok(token, 'PostHog stored its state in local storage');
-  const stored = () => [
-    ...[...local.values.keys()].filter(key => key.includes(token)).map(key => `local:${key}`),
-    ...[...session.values.keys()].filter(key => key.includes(token)).map(key => `session:${key}`),
-    ...[...jar.cookies.values()].filter(({ name }) => name.includes(token)).map(({ name, domain }) => `cookie:${name}@${domain}`),
-  ].sort();
-  assert.deepEqual(stored(), [
-    `cookie:ph_${token}_posthog@papertok.app`,
-    `local:__ph_opt_in_out_${token}`,
-    `local:ph_${token}_posthog`,
-    `session:ph_${token}_posthog`,
-    `session:ph_${token}_session_registered_properties`,
-    `session:ph_${token}_window_id`,
-  ]);
-  assert.ok(jar.cookie.includes(firstId), 'the cookie carries the browser identity');
-
-  // A new page: the module never loaded PostHog, and the reader turns analytics off.
-  assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), true);
-  assert.deepEqual(stored(), []);
-
-  local.setItem(ANALYTICS_CONSENT_KEY, ANALYTICS_CONSENT.ENABLED);
-  const after = new PostHog();
-  startAnalyticsClient(after, ANALYTICS_CONSENT.ENABLED);
-  assert.notEqual(after.get_distinct_id(), firstId);
-
-  // Analytics was turned off under an earlier build that left the identity
-  // behind; the next start removes it although no one turns analytics off again.
-  assert.ok(stored().length > 0, 'the new start stored an identity again');
-  local.setItem(ANALYTICS_CONSENT_KEY, ANALYTICS_CONSENT.DENIED);
-  clearStoredIdentityWhileAnalyticsOff();
-  assert.deepEqual(stored(), []);
+    captureAs(desktop, DESKTOP);
+    assert.equal(filtered, 1, 'a person in the same browser still reaches the filter');
+    const [sent] = await leavePage();
+    assert.match(sent.text, /"\$raw_user_agent":"Chrome\/130 \(Mac OS X\)"/);
+  } finally {
+    desktop.config.before_send = filter;
+  }
 });

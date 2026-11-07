@@ -74,7 +74,7 @@ export function PrivacyProvider({ children }: PropsWithChildren) {
     return () => window.removeEventListener('storage', syncPreference);
   }, [updateConsent]);
 
-  const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
+  const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>, stillValid?: () => boolean) => trackProductEvent(eventName, params, stillValid), []);
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(

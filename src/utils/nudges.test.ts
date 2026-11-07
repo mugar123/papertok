@@ -555,7 +555,9 @@ test('a notice shown in another tab puts away the one this tab picked and has no
   assert.equal(shownIn(storage, '/feed'), false, 'back on the feed after the other tab showed it');
 
   const newer = fakeStorage();
-  rememberPrivacyNotice(reader.uid, `${PRIVACY_POLICY_VERSION}.2`, newer);
+  // The same day's next suffix, whether or not the current version has one.
+  const [day, suffix = '1'] = PRIVACY_POLICY_VERSION.split('.');
+  rememberPrivacyNotice(reader.uid, `${day}.${Number(suffix) + 1}`, newer);
   assert.equal(shownIn(newer, '/feed'), false, 'a tab on a newer bundle settled a later version');
 
   assert.equal(

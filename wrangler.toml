@@ -90,6 +90,10 @@ PUBLIC_LIST_USER_DAILY_LIMIT = "60"
 PUBLIC_LIST_GLOBAL_DAILY_LIMIT = "2000"
 WORKER_PUBLIC_URL = "https://api.papertok.app"
 EMAIL_DAILY_SEND_LIMIT = "100"
+# Where a reader's digest subscription is the record: "kv" (phase 1 of the deploy, the
+# object only hears every cancellation) or "object" (phase 2). Order and rollback:
+# worker/README.md#email-digest-subscription-deploy.
+EMAIL_SUBSCRIPTION_SOURCE = "kv"
 # The sender is public (every email shows it), so it lives here rather than in a secret.
 # Its domain must be verified in Resend; /health/email checks it against Resend's domain list.
 RESEND_FROM_EMAIL = "Nico de PaperTok <noreply@updates.papertok.app>"
@@ -227,6 +231,12 @@ class_name = "PaperHarvestWorkflow"
 name = "EMAIL_DELIVERY_LEDGER"
 class_name = "EmailDeliveryLedger"
 
+# One object per Firebase uid holds that reader's digest subscription
+# (worker/email-subscription-store.ts).
+[[durable_objects.bindings]]
+name = "EMAIL_SUBSCRIPTIONS"
+class_name = "EmailSubscriptionStore"
+
 [[durable_objects.bindings]]
 name = "REQUEST_QUOTA_LEDGER"
 class_name = "RequestQuotaLedger"
@@ -254,6 +264,10 @@ new_sqlite_classes = ["PaperRewriteSession"]
 [[migrations]]
 tag = "v5"
 deleted_classes = ["KimiBudgetLedger"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["EmailSubscriptionStore"]
 
 [triggers]
 # Digests every 20 minutes in the morning; the paper harvest once a day; and,
