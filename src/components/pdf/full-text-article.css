@@ -184,6 +184,10 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
+.ft-figure img[width] {
+  box-sizing: content-box;
+  width: calc(var(--ft-share) * (100% - 2 * var(--space-3) - 2px));
+}
 .ft-figure figcaption, .ft-table figcaption {
   font-size: var(--fs-sm);
   line-height: 1.5;
