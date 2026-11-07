@@ -5,6 +5,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 // The legacy build carries its own polyfills for about 60 KB more.
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { createPageDraws, type DrawOutcome } from './page-draws.ts';
 import ViewerLoading from './viewer-loading.tsx';
 import './pdf-pages.css';
 
@@ -39,16 +40,14 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
   // nothing: the pages live inside this scroller, which clips them, so only
   // the ones on screen ever counted as near (measured 2026-10-09: 2 of 15).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
-  // A page that cannot be drawn before any page was is a PDF this phone cannot
-  // show: hand it off rather than leave blank sheets.
-  const anyDrawn = useRef(false);
-  const handleDrawn = useCallback(() => {
-    anyDrawn.current = true;
-    onDrawn?.();
-  }, [onDrawn]);
-  const handleDrawFailed = useCallback(() => {
-    if (!anyDrawn.current) onUndrawable?.();
-  }, [onUndrawable]);
+  // Pages that fail to draw while none has been drawn and none is still
+  // drawing are a PDF this phone cannot show: hand it off rather than leave
+  // blank sheets.
+  const [draws] = useState(createPageDraws);
+  const handleDrawSettled = useCallback((outcome: DrawOutcome) => {
+    if (draws.settle(outcome)) onUndrawable?.();
+    if (outcome === 'drawn') onDrawn?.();
+  }, [draws, onDrawn, onUndrawable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,8 +86,8 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
         number={number}
         count={pageCount}
         placeholderRatio={firstPageRatio}
-        onDrawn={handleDrawn}
-        onDrawFailed={handleDrawFailed}
+        onDrawStart={draws.start}
+        onDrawSettled={handleDrawSettled}
       />,
     );
   }
@@ -106,10 +105,10 @@ export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDr
   );
 }
 
-function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn, onDrawFailed }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawn: () => void; onDrawFailed: () => void }) {
+function PdfPage({ doc, root, number, count, placeholderRatio, onDrawStart, onDrawSettled }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; onDrawStart: () => void; onDrawSettled: (outcome: DrawOutcome) => void }) {
   // Read at draw time, so a new callback never redraws the page.
-  const reportDrawn = useEffectEvent(() => onDrawn());
-  const reportDrawFailed = useEffectEvent(() => onDrawFailed());
+  const reportDrawStart = useEffectEvent(() => onDrawStart());
+  const reportDrawSettled = useEffectEvent((outcome: DrawOutcome) => onDrawSettled(outcome));
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -140,7 +139,14 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn, onDrawFa
 
     const draw = async () => {
       const mine = ++generation;
-      let painted = false;
+      reportDrawStart();
+      // Every started draw reports one outcome; the first one counts.
+      let settled = false;
+      const settle = (outcome: DrawOutcome) => {
+        if (settled) return;
+        settled = true;
+        reportDrawSettled(outcome);
+      };
       try {
         const page = await doc.getPage(number);
         if (mine !== generation) return;
@@ -159,9 +165,8 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn, onDrawFa
         });
         await renderTask.promise;
         if (mine !== generation) return;
-        painted = true;
         setDrawn(true);
-        reportDrawn();
+        settle('drawn');
         node.style.setProperty('--total-scale-factor', String(viewport.scale));
         textLayer = new TextLayer({
           textContentSource: page.streamTextContent(),
@@ -171,9 +176,11 @@ function PdfPage({ doc, root, number, count, placeholderRatio, onDrawn, onDrawFa
         await textLayer.render();
       } catch {
         // A cancelled render (the page scrolled away, so `generation` moved on)
-        // is not a failure. A page that cannot be drawn leaves the empty box,
-        // and the document goes unavailable if no page has been drawn yet.
-        if (mine === generation && !painted) reportDrawFailed();
+        // is not a failure. A page that cannot be drawn leaves the empty box;
+        // a failing text layer after the drawing changes nothing.
+        settle(mine === generation ? 'failed' : 'cancelled');
+      } finally {
+        settle('cancelled');
       }
     };
 
