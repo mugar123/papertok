@@ -115,7 +115,7 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
         isRead: fromCard.isRead(),
         aboutHint: 'Status, topics, funding and links',
         onAbout: () => setView('about'),
-        onToggleRead: () => { if (signedIn) fromCard.toggleRead(); else onLeave(fromCard.toggleRead); },
+        onToggleRead: () => { if (signedIn && fromCard.isRead()) fromCard.toggleRead(); else onLeave(fromCard.toggleRead); },
         onNotInterested: () => onLeave(fromCard.notInterested),
       })}
       open={view === 'actions' || view === 'about'}
