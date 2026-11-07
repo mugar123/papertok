@@ -129,6 +129,21 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 }
 .ft-list { padding-left: var(--space-6); }
 
+/* A long paper is tens of thousands of nodes; the browser lays out and paints only
+   the blocks near the screen, which is what keeps scrolling smooth on a phone.
+   Blocks count as an estimate until drawn, so this waits for scroll anchoring to
+   hold the text still. Tables are left out: they are wider than the column.
+   WebKit is left out too, recognised by Apple's own system font keyword: its
+   content-visibility stutters and can leave revealed blocks blank
+   (bugs.webkit.org 318216 and 321501). Drop that condition once both are fixed. */
+@supports (overflow-anchor: auto) and (not (font: -apple-system-body)) {
+  .ft-article :is(.ft-p, .ft-list, .ft-equation, .ft-figure, .ft-notes li, .ft-references li) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 160px;
+    overflow-clip-margin: var(--space-2);
+  }
+}
+
 .ft-article a { color: var(--text-primary); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
 .ft-article a[href^="#"] { --ft-link: var(--accent-teal); text-decoration-line: underline; text-decoration-color: color-mix(in srgb, var(--ft-link) 45%, transparent); text-decoration-thickness: 1.5px; }
 .ft-article a[data-cites] { --ft-link: var(--accent-secondary); }
