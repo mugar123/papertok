@@ -7,6 +7,7 @@ import {
   ANALYTICS_CONSENT,
   ANALYTICS_CONSENT_COOKIE_KEY,
   ANALYTICS_CONSENT_KEY,
+  analyticsConsentState,
   inferAcquisitionChannel,
   identifyAnalyticsUser,
   markActivation,
@@ -777,6 +778,25 @@ test('time on a paper is whole seconds, and a tab left open counts four hours at
   assert.equal(sanitizeProductEventParams('reader_time', { seconds: -3 }).seconds, 0);
 });
 
+test('the paper viewer sends fixed labels and times, never the paper id, its title, URL or DOI', () => {
+  const leaks = { paper_id: '10.1101/2024.01.01.123456', paper_title: 'A private title', url: 'https://arxiv.org/pdf/2401.00001', doi: '10.1234/private', reason: 'anything' };
+  assert.deepEqual(sanitizeProductEventParams('viewer_open', { ...leaks }, ANALYTICS_CONSENT.ENABLED), {});
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1234.6, ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1235 });
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'loading', text_status: 'partial', pdf_issue: 'https://example.com', text_source: 'openalex', duration_ms: 'soon',
+  }), {});
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', {
+    content: 'loading', seconds: 19.4, text_seconds: 15.2, ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'loading', seconds: 19, text_seconds: 15 });
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', { content: 'pdf' }), {});
+
+  const capture = postHogCapture('viewer_content', { paper_id: 'W2741809807' });
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED)?.event, 'viewer_content');
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+});
+
 test('preserves previous refusals of persistent tracking and restores previous detailed preferences', () => {
   for (const value of ['granted', 'denied']) {
     assert.equal(readAnalyticsConsent(memoryStorage({ [ANALYTICS_CONSENT_KEY]: value })), 'denied');
@@ -863,6 +883,28 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
     trackProductEvent('paper_open', { surface: 'feed' }),
   ]);
   assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
+
+  capturedAccounts.length = 0;
+  const before = analyticsConsentState();
+  const guarded = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === before);
+  await setAnalyticsConsent('denied');
+  await setAnalyticsConsent('enabled');
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), before, 'off and on again is a different session');
+  assert.equal(await guarded, false);
+  assert.deepEqual(capturedAccounts, [], 'an event queued before the withdrawal is not captured after it');
+
+  // Another tab turns analytics off and on again; this tab has not had its storage events yet.
+  const stable = analyticsConsentState();
+  assert.equal(analyticsConsentState(), stable, 'reading the state does not move it');
+  const beforeOtherTab = analyticsConsentState();
+  const fromOtherTab = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === beforeOtherTab);
+  persistAnalyticsConsent('denied', storage);
+  persistAnalyticsConsent('enabled', storage);
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), beforeOtherTab, 'a round trip in another tab is a different session before this tab hears of it');
+  assert.equal(await fromOtherTab, false);
+  assert.deepEqual(capturedAccounts, []);
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

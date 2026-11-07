@@ -153,6 +153,12 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
+  // The in-app paper viewer (components/pdf/viewer-outcome.ts).
+  viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
+  viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
+  viewer_text_status: new Set(['shown', 'none', 'failed']),
+  viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'render_failed', 'not_relayable', 'no_open_copy']),
+  full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -220,6 +226,21 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
+  // The in-app paper viewer, apart from the AI reader above: that it opened,
+  // what it first showed (or why it fell back), and its visible time, of which
+  // `text_seconds` was on the text. Fixed labels and times only, never a URL.
+  // Visible time is not reading time. The card under the viewer keeps counting
+  // its paper_dwell, so viewer time is part of it and must not be added to it;
+  // a viewer still open when the tab closes sends no viewer_time.
+  // No paper_id: a bioRxiv id is a DOI, and the viewer's records do not need to
+  // name the paper. Viewer events are matched to `paper_open` by session and
+  // time order, so the paper is known only when that `paper_open` carries its
+  // identifier.
+  viewer_open: {},
+  viewer_content: {
+    content: 'viewer_content', text_status: 'viewer_text_status', pdf_issue: 'viewer_pdf_issue', text_source: 'full_text_source', duration_ms: 'duration',
+  },
+  viewer_time: { content: 'viewer_time_content', seconds: 'seconds', text_seconds: 'seconds' },
   // A card's Connections (the citation graph) and Similar papers, counted
   // apart: opening one, then what the reader does in the graph. Which paper is
   // not sent; `graph_available` says whether it has a DOI to draw a graph from.
@@ -304,13 +325,29 @@ export function readAnalyticsConsent(storage?: AnalyticsStorage | null): Consent
   return readStoredAnalyticsConsent(storage) ?? ANALYTICS_CONSENT.ENABLED;
 }
 
+const ANALYTICS_CONSENT_CHANGES_KEY = 'papertok_analytics_consent_changes';
+
+function storedConsentChanges(storage: AnalyticsStorage | null = getBrowserStorage()) {
+  try {
+    return Number(storage?.getItem(ANALYTICS_CONSENT_CHANGES_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function persistAnalyticsConsent(value: string, storage?: AnalyticsStorage | null) {
   if (!Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return false;
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   let persisted = false;
   try {
+    const previous = targetStorage?.getItem(ANALYTICS_CONSENT_KEY);
     targetStorage?.setItem(ANALYTICS_CONSENT_KEY, value);
     persisted = targetStorage?.getItem(ANALYTICS_CONSENT_KEY) === value;
+    // Counts changes of the choice for `analyticsConsentState`. A count only:
+    // it holds no personal data and is never sent anywhere.
+    if (persisted && previous !== value) {
+      targetStorage?.setItem(ANALYTICS_CONSENT_CHANGES_KEY, String(storedConsentChanges(targetStorage) + 1));
+    }
   } catch {
     // Continue with the cookie fallback for browsers that restrict localStorage.
   }
@@ -443,8 +480,22 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
+let consentChanges = 0;
+
+/**
+ * The analytics choice as a session must see it: the stored level, how many
+ * times any tab changed it (read from storage now, so a change made in another
+ * tab counts before its storage event reaches this one), and how many times this
+ * tab wrote it (for browsers without storage). Turning analytics off and on
+ * again leaves the level as it was, but not this value.
+ */
+export function analyticsConsentState() {
+  return `${readAnalyticsConsent()}#${storedConsentChanges()}#${consentChanges}`;
+}
+
 export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
+  consentChanges++;
   if (value === ANALYTICS_CONSENT.DENIED) clearConsentScopedAnalyticsState();
   // Persisting the preference must not wait for an SDK that a blocker can stall.
   // Read the latest choice when it arrives, rather than applying a stale toggle.
@@ -628,9 +679,11 @@ function canSendAnalytics() {
 // as a batched transport can honestly report. The callers' bookkeeping
 // (`activation`, `day_7_return`, the guest demo) relies on it never being true
 // for an event that was dropped.
-async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
+async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>, stillValid?: () => boolean) {
   if (!canSendAnalytics()) return false;
   const client = await loadAnalyticsClient();
+  // The SDK can take long to load; the sender may have been invalidated meanwhile.
+  if (stillValid && !stillValid()) return false;
   return Boolean(client?.capture(eventName, properties));
 }
 
@@ -649,11 +702,12 @@ export async function trackPageView(pathname: string) {
   return sendAnalyticsEvent('$pageview', { $current_url: url });
 }
 
-export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}) {
+/** `stillValid` is asked once more after the SDK has loaded, just before capture. */
+export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}, stillValid?: () => boolean) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
-  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
+  return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent), stillValid);
 }
 
 function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
