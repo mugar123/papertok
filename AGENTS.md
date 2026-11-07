@@ -141,14 +141,15 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
   resets its identity. Every product event is registered in `EVENT_PARAMETER_SCHEMAS`, and
   each parameter is a typed field: a boolean, a bounded number, a fixed list of labels, a
   pattern-checked build version or an `identifier`. Never put paper titles, search text,
-  interests (the subjects a reader chose), free text, error messages, unsanitized URLs or
-  account identifiers in an event's parameters: the account reaches PostHog only through
-  the identify call and the SDK's own identity fields. The `identifier` type checks no
-  pattern, so only a paper ID or a verified provider ID (OpenAlex, ORCID or ROR) of a
-  followed author, institution or topic may go through it; never a project's or journal's
-  ID, a name, text from a route or any other text. Changing what analytics or error reports
-  (browser or Worker) send or identify needs authorization (see above), and the same change
-  updates `privacy.html` wherever it no longer matches.
+  interests (the subjects saved in onboarding or Settings), free text, error messages,
+  unsanitized URLs or account identifiers in an event's parameters: the account reaches
+  PostHog only through the identify call and the SDK's own identity fields. The
+  `identifier` type checks no pattern, so only a paper ID, or the ID of a followed author,
+  institution or topic that is a verified OpenAlex, ORCID or ROR ID or one of the app's
+  category IDs (`src/data/category-taxonomy.ts`), may go through it; never a project's or
+  journal's ID, a name, text from a route or any other text. Changing what analytics or
+  error reports (browser or Worker) send or identify needs authorization (see above), and
+  the same change updates `privacy.html` wherever it no longer matches.
 
 ## Accessibility and interface
 
