@@ -26,6 +26,8 @@ function jumpTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
   if (element) landOn(element, element.offsetHeight > window.innerHeight * 0.8 ? 'start' : 'center');
 }
 
+const katexOutput = typeof CSS !== 'undefined' && CSS.supports('font', '-apple-system-body') ? 'mathml' : 'htmlAndMathml';
+
 const MAX_CACHED_FORMULAS = 2000;
 const renderedFormulas = new Map<string, string | null>();
 
@@ -36,7 +38,7 @@ function katexHtml(tex: string | undefined, display: boolean) {
   if (!renderedFormulas.has(key)) {
     let html: string | null;
     try {
-      html = katex.renderToString(tex, { displayMode: display, throwOnError: true, strict: 'ignore', trust: false });
+      html = katex.renderToString(tex, { displayMode: display, output: katexOutput, throwOnError: true, strict: 'ignore', trust: false });
     } catch {
       html = null;
     }
