@@ -41,3 +41,14 @@ export function documentIsAuthoritative(snapshot: { exists?: boolean | (() => bo
   if (typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists) return true;
   return snapshot.metadata?.fromCache !== true;
 }
+
+/**
+ * True only for a document snapshot the server sent. The exception to the rule
+ * above, for a record whose content, not just its absence, decides something
+ * the reader would see twice: an older version of the privacy notice record
+ * kept in the cache would show again a notice another device already showed
+ * (services/privacy-notice-service.ts).
+ */
+export function documentIsFromServer(snapshot: { metadata?: { fromCache?: boolean } } | null | undefined) {
+  return snapshot?.metadata?.fromCache === false;
+}

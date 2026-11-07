@@ -628,6 +628,23 @@ test('a new account, one still onboarding and a guest are not told, and their ac
   assert.equal(guest.map.size, 0, 'nothing is recorded without an account');
 });
 
+test('the visit keeps its choice while the account is asked, so a minute that passes first does not spend it', () => {
+  // A later version: a tab suspended during the account read resumes after the minute of reading is due.
+  const reader = createdBefore('reader-a');
+  const pending = statusOf({ user: reader });
+  assert.equal(pending, 'ask-account');
+  const facts = (status: string) => ({ gates: ON_FEED, privacyOwed: status === 'owed', privacyPending: status === 'ask-account', eligible: ['email-down'] });
+  const minuteFirst = chooseVisitNotice(readingMinutePassed(VISIT_START), facts(pending));
+  assert.equal(minuteFirst.choiceMade, false, 'neither the nudge nor nothing takes the visit while the answer is out');
+  const answered = statusOf({ user: reader, account: { uid: reader.uid, version: null } });
+  assert.equal(chooseVisitNotice(minuteFirst, facts(answered)).picked, PRIVACY_NOTICE_ID, 'the answer that it is owed still picks it');
+  const settled = statusOf({ user: reader, account: { uid: reader.uid, version: NEXT_VERSION } });
+  assert.equal(chooseVisitNotice(minuteFirst, facts(settled)).picked, 'email-down', 'an answer that it is not owed lets the nudge have the visit');
+  const offFeed = { gates: { nudge: false, privacy: false }, privacyOwed: false, privacyPending: true, eligible: ['email-down'] };
+  assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), offFeed).choiceMade, false, 'off the feed nothing is chosen either way');
+  assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), { ...facts('settled'), privacyPending: false }).picked, 'email-down', 'with nothing to ask, the nudge is chosen after its minute as before');
+});
+
 test('an account record read for one account never decides for the next', () => {
   const storage = fakeStorage();
   const readerB = createdBefore('reader-b');

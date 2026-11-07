@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { documentIsAuthoritative, queryIsAuthoritative } from './cache-authority.ts';
+import { documentIsAuthoritative, documentIsFromServer, queryIsAuthoritative } from './cache-authority.ts';
 
 /**
  * Measured against the live backend with the connection down and a target the
@@ -56,4 +56,13 @@ test('a snapshot with no metadata is trusted, because only the SDK omits it', ()
   // "cache-served" would make every stubbed read look unavailable.
   assert.equal(queryIsAuthoritative({ empty: true, size: 0 }), true);
   assert.equal(documentIsAuthoritative({ exists: () => false }), true);
+});
+
+test('a record whose content decides what the reader sees counts only when the server sent it', () => {
+  assert.equal(documentIsFromServer(document(true, false)), true, 'present, from the server');
+  assert.equal(documentIsFromServer(document(false, false)), true, 'absent, from the server');
+  assert.equal(documentIsFromServer(document(true, true)), false, 'an older copy the cache kept is not an answer');
+  assert.equal(documentIsFromServer(document(false, true)), false, 'nor is an absence only the cache vouches for');
+  assert.equal(documentIsFromServer({}), false, 'a snapshot that does not say where it came from');
+  assert.equal(documentIsFromServer(null), false);
 });

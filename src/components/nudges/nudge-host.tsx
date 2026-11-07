@@ -162,6 +162,7 @@ export default function NudgeHost() {
   const chosen = chooseVisitNotice(visit, {
     gates,
     privacyOwed,
+    privacyPending: askAccount,
     eligible: emailProblem ? ['email-down'] : [],
     dismissed,
   });

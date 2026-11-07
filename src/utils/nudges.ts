@@ -375,11 +375,17 @@ export function readingMinutePassed(visit: VisitNotices): VisitNotices {
  * a re-render, a navigation or the email health answer landing cannot start a
  * second one. Each notice is a candidate only where its gate is open
  * (visitChoiceGates), so a route or state where only the other one may be
- * chosen does not spend the visit's choice.
+ * chosen does not spend the visit's choice. While the account is still being
+ * asked whether the privacy notice is owed (`privacyPending`, privacyNoticeStatus's
+ * `ask-account`), it may yet be, so the choice waits for the answer instead of
+ * going to a nudge or to nothing, as when the minute of reading passes in a tab
+ * that was suspended during the read. A read that fails keeps it waiting for
+ * the rest of the visit.
  */
-export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
+export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, privacyPending = false, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; privacyPending?: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
   const owed = gates.privacy && privacyOwed;
-  if (visit.choiceMade || !visitChoiceDue({ privacyOwed: owed, dwellDone: gates.nudge && visit.dwellDone })) return visit;
+  if (visit.choiceMade || (gates.privacy && privacyPending)) return visit;
+  if (!visitChoiceDue({ privacyOwed: owed, dwellDone: gates.nudge && visit.dwellDone })) return visit;
   return { ...visit, choiceMade: true, picked: pickVisitNotice({ privacyOwed: owed, eligible, dismissed, random }) };
 }
 
