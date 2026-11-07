@@ -992,10 +992,11 @@ async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean
  * record no phase 1 save wrote): a KV read whose revision is behind the object
  * may be an older record than the last save.
  */
-async function readKvRecord(env: WorkerEnv, uid: string): Promise<(StoredSlot & { revision: number }) | null> {
+async function readKvRecord(env: WorkerEnv, uid: string, cacheTtl?: number): Promise<(StoredSlot & { revision: number }) | null> {
   const store = env.NOTIFICATION_STORE;
   if (!store) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const record = await store.get<Subscription>(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const record = await (cacheTtl ? store.get<Subscription>(key, { type: 'json', cacheTtl }) : store.get<Subscription>(key, 'json'));
   return record?.unsubscribeToken
     ? { version: Number(record.version) || 0, subscription: storedRecord(record), migratable: true, revision: Number(record.revision) || 0 }
     : null;
@@ -1013,8 +1014,11 @@ async function readKvRecord(env: WorkerEnv, uid: string): Promise<(StoredSlot & 
  * object before it writes KV, so a real re-subscription is never hidden.
  */
 async function readPhase1Slot(env: WorkerEnv, uid: string) {
-  const kv = await readKvRecord(env, uid);
+  let kv = await readKvRecord(env, uid);
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  // A miss over an object a save reopened may be a cached miss of the record
+  // that save wrote: read once more with the shortest cache KV allows.
+  if (!kv && !slot.subscription && slot.migratable && slot.version > 0) kv = await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS);
   // A reader phase 2 moved is read from their object even when a cached KV copy
   // still holds the full record: acting on that copy would reopen and empty it.
   if (kv && !slot.subscription) {
@@ -1299,6 +1303,10 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     : [];
   const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
   const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind) => {
+    // Phase 1 read no record over an object a save reopened (see
+    // readPhase1Slot): answering that the digest is off would turn it off in
+    // the app while the record may still send, so the app keeps its state and retries.
+    if (sync && !current && behind) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
     if (sync && !current?.enabled) return undefined;
     read.state = current ? await store.get<DeliveryState>(deliveryStateKey(key, current), 'json') : null;
     const existing = current ? { ...current, ...deliveryStateFromSubscription(current), ...(read.state || {}) } : null;

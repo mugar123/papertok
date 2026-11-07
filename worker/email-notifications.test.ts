@@ -1543,6 +1543,40 @@ test('phase 1 unsubscribe link cancels a record its KV read has not seen yet, an
   assert.equal(kv.values.has(indexKey), false);
 });
 
+test('phase 1 sync that cannot read a record a save wrote is retried, not answered as off', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const saved = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  const miss = cachedMissOf(kv, SYNC_READER_KEY);
+
+  await assert.rejects(
+    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase1, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  miss.show();
+  assert.deepEqual(await kv.get<Subscription>(SYNC_READER_KEY, 'json'), saved, 'the sync changed the record');
+  assert.equal((await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase1, SYNC_READER)).enabled, true);
+});
+
+test('phase 1 reads a missed record again with the shortest KV cache before treating it as unread', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const read = kv.get.bind(kv);
+  kv.get = (async (name: string, options?: unknown) => (
+    name === SYNC_READER_KEY && !(options as { cacheTtl?: number } | undefined)?.cacheTtl ? null : read(name, options as never)
+  )) as typeof kv.get;
+
+  assert.equal((await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase1, SYNC_READER)).enabled, true);
+});
+
+test('phase 1 sync of a reader whose object was never reopened still answers that the digest is off', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  assert.equal((await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase1, SYNC_READER)).enabled, false);
+});
+
 test('phase 1 counts a reader whose KV read returned nothing after a save as held, so the window is not clean', async () => {
   const kv = createMemoryKv();
   const { phase1 } = twoPhases(kv);
