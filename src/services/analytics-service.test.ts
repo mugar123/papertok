@@ -761,10 +761,10 @@ test('enables persistent analytics with curated events and no session recordings
   assert.equal(config?.capture_performance, false);
 });
 
-test('leaves an enabled SDK identity intact on reload and disables a previously enabled SDK on opt-out', () => {
+test('leaves an enabled SDK identity intact on reload and resets the SDK on opt-out whatever its stored opt-in says', () => {
   assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.ENABLED, true).calls, []);
   assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED, true).calls, [['reset', true], ['disable']]);
-  assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED).calls, []);
+  assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED).calls, [['reset', true], ['disable']]);
 });
 
 test('preserves the account merge event while stripping automatic profile properties', () => {

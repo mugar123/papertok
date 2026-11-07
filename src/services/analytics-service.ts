@@ -718,14 +718,14 @@ export function startAnalyticsClient(client: ConsentControls & { init(token: str
 }
 
 // Do not opt in again on reload: the SDK must retain its browser identity.
+// Withdrawing always resets: the SDK reads its opt-in from shared storage, which
+// another tab's opt-out may already have removed while this tab still holds the
+// identity in memory.
 function applyConsent(client: ConsentControls, consent: Consent) {
-  const enabled = consent === ANALYTICS_CONSENT.ENABLED;
-  if (enabled === client.has_opted_in_capturing()) return;
-  if (enabled) client.opt_in_capturing({ captureEventName: false });
-  else {
+  if (consent === ANALYTICS_CONSENT.DENIED) {
     client.reset(true);
     client.opt_out_capturing();
-  }
+  } else if (!client.has_opted_in_capturing()) client.opt_in_capturing({ captureEventName: false });
 }
 
 export interface AnalyticsUser { uid: string }
