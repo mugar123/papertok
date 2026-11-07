@@ -1295,9 +1295,13 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     if (!follows.length && !interests.length) {
       throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
     }
+    // A sync keeps the stored settings, except from a phase 1 KV record behind
+    // the object: that copy may predate the save the tab's settings came from,
+    // so the tab's settings are kept, and only `enabled` stays the stored one.
+    const settings = !sync ? preferences : behind ? { ...preferences, enabled: current!.enabled } : {};
     read.selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
       ...current,
-      ...(sync ? {} : preferences),
+      ...settings,
       email: identity.email,
       follows,
       interests,
@@ -1321,7 +1325,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     const now = new Date().toISOString();
     return {
       ...(read.state && current ? stripDeliveryState(current) : (current || {})),
-      ...(sync ? {} : preferences),
+      ...settings,
       uid: identity.uid,
       email: identity.email,
       displayName: identity.displayName,

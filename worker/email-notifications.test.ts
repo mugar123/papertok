@@ -2730,6 +2730,23 @@ test('a phase 1 sync that changes nothing writes again a KV record behind the la
   });
 });
 
+test('a phase 1 sync that reads the KV record from before the last save keeps the settings that save chose', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  // The reader picks 10 papers; the sync after it reads the cached record from before.
+  const before = kv.values.get(SYNC_READER_KEY)!;
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), phase1, SYNC_READER);
+  kv.values.set(SYNC_READER_KEY, before);
+
+  const answer = await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10, sync: true }), phase1, SYNC_READER);
+
+  assert.equal(answer.maxPapers, 10);
+  const written = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  assert.equal(written?.maxPapers, 10);
+  assert.equal(written?.enabled, true);
+});
+
 test('phase 2 does not move a stale KV read from before the last phase 1 save of a new address', async () => {
   const kv = createMemoryKv();
   const { phase1, phase2 } = twoPhases(kv);
