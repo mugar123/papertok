@@ -26,11 +26,12 @@ const RENDER_MARGIN = '150% 0px';
  * one page (iOS) or none (Android), so the pages are drawn here instead.
  *
  * `onUnavailable` is called when the document cannot be read at all — the
- * relay refused it, it is not a PDF, it is too large — or no page of it could
- * be drawn, so the viewer can offer the browser's own viewer instead of a blank
- * sheet. `onDrawn` is called when a page has been drawn, not just measured.
+ * relay refused it, it is not a PDF, it is too large — and `onUndrawable` when
+ * it was read but no page of it could be drawn, so the viewer can offer the
+ * browser's own viewer instead of a blank sheet and tell the two apart.
+ * `onDrawn` is called when a page has been drawn, not just measured.
  */
-export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: string; title: string; onUnavailable?: () => void; onDrawn?: () => void }) {
+export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDrawn }: { src: string; title: string; onUnavailable?: () => void; onUndrawable?: () => void; onDrawn?: () => void }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [firstPageRatio, setFirstPageRatio] = useState(Math.SQRT2);
@@ -39,15 +40,15 @@ export default function PdfPages({ src, title, onUnavailable, onDrawn }: { src: 
   // the ones on screen ever counted as near (measured 2026-10-09: 2 of 15).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   // A page that cannot be drawn before any page was is a PDF this phone cannot
-  // show: hand it off as unavailable rather than leave blank sheets.
+  // show: hand it off rather than leave blank sheets.
   const anyDrawn = useRef(false);
   const handleDrawn = useCallback(() => {
     anyDrawn.current = true;
     onDrawn?.();
   }, [onDrawn]);
   const handleDrawFailed = useCallback(() => {
-    if (!anyDrawn.current) onUnavailable?.();
-  }, [onUnavailable]);
+    if (!anyDrawn.current) onUndrawable?.();
+  }, [onUndrawable]);
 
   useEffect(() => {
     let cancelled = false;

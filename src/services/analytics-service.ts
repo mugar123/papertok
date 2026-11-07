@@ -157,7 +157,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
   viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
   viewer_text_status: new Set(['shown', 'none', 'failed']),
-  viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'not_relayable', 'no_open_copy']),
+  viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'render_failed', 'not_relayable', 'no_open_copy']),
   full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
 });
 

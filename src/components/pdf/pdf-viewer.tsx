@@ -99,8 +99,11 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const canEmbed = Boolean(pdfUrl) && !coarsePointer && showsPdf;
   const relayUrl = coarsePointer && showsPdf ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
   const [relayFailed, setRelayFailed] = useState(false);
-  const drawsPages = Boolean(relayUrl) && !relayFailed;
+  // The relay delivered a PDF, but this device could draw no page of it.
+  const [drawFailed, setDrawFailed] = useState(false);
+  const drawsPages = Boolean(relayUrl) && !relayFailed && !drawFailed;
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
+  const handlePagesUndrawable = useCallback(() => setDrawFailed(true), []);
   const [pagesDrawn, setPagesDrawn] = useState(false);
   const handlePagesDrawn = useCallback(() => setPagesDrawn(true), []);
   const showPdf = () => {
@@ -183,6 +186,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     embedTimedOut: showFallback,
     pagesDrawn,
     relayFailed,
+    drawFailed,
     hasLink: Boolean(externalUrl),
   });
   useEffect(() => {
@@ -277,7 +281,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
               <Suspense fallback={(
                 <ViewerLoading label={'Loading PDF...'} />
               )}>
-                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} onDrawn={handlePagesDrawn} />
+                <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} onUndrawable={handlePagesUndrawable} onDrawn={handlePagesDrawn} />
               </Suspense>
             )}
 
@@ -285,7 +289,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
                 browser's own viewer, the one that can page it, gets it. */}
             {coarsePointer && showsPdf && !drawsPages && fullTextUrl && (
               <div className="pdf-fallback pdf-handoff" role="status">
-                <p>{relayFailed
+                <p>{relayFailed || drawFailed
                   ? 'The PDF could not be loaded in the app.'
                   : 'This PDF is hosted somewhere PaperTok cannot display it on a phone.'}</p>
                 <a href={fullTextUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">

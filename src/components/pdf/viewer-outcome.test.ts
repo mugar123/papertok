@@ -13,6 +13,7 @@ const desktopNoText = {
   embedTimedOut: false,
   pagesDrawn: false,
   relayFailed: false,
+  drawFailed: false,
   hasLink: true,
 };
 const phoneNoText = { ...desktopNoText, coarsePointer: true };
@@ -32,6 +33,7 @@ test('the viewer outcome is the first thing shown, or why the PDF was not drawn 
     ['phone, pages measured but not drawn', { ...phoneNoText, textFailed: true }, null],
     ['phone, pages drawn', { ...phoneNoText, pagesDrawn: true, textFailed: true }, { content: 'pdf_pages', text_status: 'failed' }],
     ['phone, relay failed', { ...phoneNoText, relayFailed: true }, { content: 'external_link', text_status: 'none', pdf_issue: 'relay_failed' }],
+    ['phone, PDF delivered but no page drawn', { ...phoneNoText, drawFailed: true }, { content: 'external_link', text_status: 'none', pdf_issue: 'render_failed' }],
     ['phone, host not relayed', { ...phoneNoText, relayable: false }, { content: 'external_link', text_status: 'none', pdf_issue: 'not_relayable' }],
     ['phone, no open copy', { ...phoneNoText, hasPdf: false, relayable: false }, { content: 'external_link', text_status: 'none', pdf_issue: 'no_open_copy' }],
   ];

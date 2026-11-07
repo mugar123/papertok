@@ -2,7 +2,7 @@ import type { FullTextSource } from '../../models/full-text.ts';
 import type { ProductAnalyticsEvent } from '../../services/analytics-service.ts';
 
 export type ViewerContent = 'text' | 'pdf_embed' | 'pdf_pages' | 'external_link' | 'none';
-type PdfIssue = 'not_embeddable' | 'timeout' | 'relay_failed' | 'not_relayable' | 'no_open_copy';
+type PdfIssue = 'not_embeddable' | 'timeout' | 'relay_failed' | 'render_failed' | 'not_relayable' | 'no_open_copy';
 
 export type ViewerOutcome = {
   content: ViewerContent;
@@ -25,7 +25,10 @@ type ViewerState = {
   embedTimedOut: boolean;
   /** The first page of the relayed PDF has been drawn, not just measured. */
   pagesDrawn: boolean;
+  /** The relay could not deliver a readable PDF. */
   relayFailed: boolean;
+  /** The relay delivered the PDF, but no page of it could be drawn here. */
+  drawFailed: boolean;
   /** Something opens in a new tab: the PDF, the DOI or the OpenAlex page. */
   hasLink: boolean;
 };
@@ -44,6 +47,7 @@ export function viewerOutcome(state: ViewerState): ViewerOutcome | null {
   if (state.coarsePointer) {
     if (!state.relayable) return instead('not_relayable');
     if (state.relayFailed) return instead('relay_failed');
+    if (state.drawFailed) return instead('render_failed');
     return state.pagesDrawn ? { content: 'pdf_pages', text_status } : null;
   }
   if (!state.embeddable) return instead('not_embeddable');
