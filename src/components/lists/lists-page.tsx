@@ -1,5 +1,6 @@
 import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OwnList } from '../../utils/own-lists.ts';
 import type { MetadataRequest } from '../../utils/list-paper-metadata-plan.ts';
 import type { SyncState } from '../../services/public-list-sync.ts';
@@ -253,7 +254,7 @@ function publicBadgeState(status: string | undefined) {
 /** A paper in one list: what the row's remove dialog and phone sheet act on. */
 type RowTarget = { listId: string; listName?: string; paperId: string; paper: Partial<Paper> };
 
-export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper) => void; onEditPaper: (paper: Paper) => void }) {
+export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu) => void; onEditPaper: (paper: Paper) => void }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -2057,7 +2058,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             onNotInterested={(paper) => { void markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkReadInCard}
-            onOpenPdf={(paper) => onOpenPdf?.(paper)}
+            onOpenPdf={(paper, _surface, menu) => onOpenPdf?.(paper, menu)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}

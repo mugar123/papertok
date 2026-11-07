@@ -4,6 +4,7 @@ import type { ExternalToast } from 'sonner';
 import type { Shared } from './share-targets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
+export interface ReaderMenu { about: () => ReactNode; links: () => ReactNode; isRead: () => boolean; notInterested: () => void; toggleRead: () => void }
 export interface PaperMenuPanel { id: string; title: string; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 
 import { cloneElement, useEffect, useRef, useState } from 'react';
@@ -16,9 +17,9 @@ import { paperShareData } from '../../utils/share-link.ts';
 import { INSTAGRAM_NOTE, NETWORKS, copyLink } from './share-targets.ts';
 import './share-panel.css';
 
-export default function PaperMenu({ title, url, onShared, actions, trigger, open, onOpenChange, panel }: {
-  title: string; url?: string | null; onShared?: Shared; actions: PaperMenuAction[]; trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
-  open: boolean; onOpenChange: (open: boolean) => void; panel?: PaperMenuPanel | null;
+export function PaperMenuBody({ title, url, onShared, actions, open, onClose, panel, renderTitle, ShareHeading }: {
+  title: string; url?: string | null; onShared?: Shared; actions: PaperMenuAction[];
+  open: boolean; onClose: () => void; panel?: PaperMenuPanel | null; renderTitle: (heading: string) => ReactNode; ShareHeading: 'h3' | 'h4';
 }) {
   const isPhone = useIsPhone();
   const listRef = useRef<HTMLUListElement>(null);
@@ -35,22 +36,19 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
     }
     const back = leftPanel.current;
     leftPanel.current = null;
-    if (back) listRef.current?.querySelector<HTMLElement>(`[data-action="${back}"]`)?.focus();
-  }, [panel]);
-  const stop = (event: SyntheticEvent) => event.stopPropagation();
+    if (back && open) listRef.current?.querySelector<HTMLElement>(`[data-action="${back}"]`)?.focus();
+  }, [panel, open]);
   const position: ExternalToast['position'] = isPhone ? 'top-center' : undefined;
   const { text = '' } = url ? paperShareData({ title, url }) : {};
   const shown = url?.replace(/^https?:\/\//, '') ?? '';
-  const pick = (run: () => void) => () => { onOpenChange(false); run(); };
-  // One level under the title: an h2 in the dialog, an h3 in the sheet.
-  const ShareHeading = isPhone ? 'h4' : 'h3';
+  const pick = (run: () => void) => () => { onClose(); run(); };
 
   const rows = (
     <>
       <ul ref={listRef} className="pc-menu-group" aria-label="Paper actions">
         {actions.map(({ id, label, hint, Icon, onSelect }) => (
           <li key={id}>
-            <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { onOpenChange(false); onSelect(event); }}>
+            <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { onClose(); onSelect(event); }}>
               <span className="pc-menu-item-icon">
                 <Icon size={20} aria-hidden="true" />
               </span>
@@ -92,15 +90,8 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
     </>
   );
 
-  const opener = cloneElement(trigger, {
-    'aria-haspopup': 'dialog',
-    'aria-expanded': open,
-    onClick: (event: MouseEvent) => { event.stopPropagation(); onOpenChange(true); },
-  });
-
-  const heading = panel?.title ?? 'Paper options';
   const enter = panel ? 'forward' : cameBack ? 'back' : undefined;
-  const body = (
+  return (
     <div key={panel?.id ?? 'actions'} className="pc-menu-stage" data-enter={enter}>
       <div className="pc-menu-head">
         {panel && (
@@ -108,14 +99,42 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
-        {isPhone
-          ? <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{heading}</DrawerTitle>
-          : <DialogTitle className="pc-share-sheet-title">{heading}</DialogTitle>}
+        {renderTitle(panel?.title ?? 'Paper options')}
       </div>
       <div className={cn('pc-menu-view', panel?.className)} style={panel?.style}>
         {panel ? panel.content : rows}
       </div>
     </div>
+  );
+}
+
+export default function PaperMenu({ title, url, onShared, actions, trigger, open, onOpenChange, panel }: {
+  title: string; url?: string | null; onShared?: Shared; actions: PaperMenuAction[]; trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
+  open: boolean; onOpenChange: (open: boolean) => void; panel?: PaperMenuPanel | null;
+}) {
+  const isPhone = useIsPhone();
+  const stop = (event: SyntheticEvent) => event.stopPropagation();
+
+  const opener = cloneElement(trigger, {
+    'aria-haspopup': 'dialog',
+    'aria-expanded': open,
+    onClick: (event: MouseEvent) => { event.stopPropagation(); onOpenChange(true); },
+  });
+
+  const body = (
+    <PaperMenuBody
+      title={title}
+      url={url}
+      onShared={onShared}
+      actions={actions}
+      open={open}
+      onClose={() => onOpenChange(false)}
+      panel={panel}
+      ShareHeading={isPhone ? 'h4' : 'h3'}
+      renderTitle={heading => (isPhone
+        ? <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{heading}</DrawerTitle>
+        : <DialogTitle className="pc-share-sheet-title">{heading}</DialogTitle>)}
+    />
   );
 
   return (

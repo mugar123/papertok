@@ -1,4 +1,4 @@
-import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { ComponentProps, MouseEvent, ReactNode, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
@@ -18,7 +18,7 @@ export interface PaperCardProps {
   onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
-  onOpenPdf?: (paper: Paper, surface?: string) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
@@ -55,17 +55,14 @@ import {
   Building,
   CaretDown,
   ChartBar,
-  CheckCircle,
   CircleNotch,
   DotsThree,
-  DownloadSimple,
   ClockCounterClockwise,
   Code,
   Cpu,
   CurrencyCircleDollar,
   Database,
   Dna,
-  Eye,
   FileText,
   Files,
   Flask,
@@ -74,7 +71,6 @@ import {
   Graph,
   Heart,
   Heartbeat,
-  Info,
   Lightning,
   Lock,
   LockKey,
@@ -82,7 +78,6 @@ import {
   NotePencil,
   Package,
   Planet,
-  Prohibit,
   Sigma,
   TestTube,
   Intersect,
@@ -116,8 +111,9 @@ import AbstractSheet from './abstract-sheet.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
+import type { ReaderMenu } from './paper-menu.tsx';
+import { paperActions, paperShareUrl, shareMethod } from './paper-actions.ts';
 import { followReasonLabels } from '../../utils/follow-reasons.ts';
-import { downloadCitationFile } from '../../utils/reading-library.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
@@ -185,7 +181,7 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { trackVisibleTime } from '../../utils/visible-time.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
-import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
+import { getPublicEntityPath } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
 
@@ -1288,6 +1284,10 @@ const PaperCard = memo(function PaperCard({
     }),
   ], [categoryLabel, paperTopicTags, primaryTopic]);
 
+  const goTo = useCallback((event: MouseEvent, path: string) => {
+    if (event.currentTarget.closest('.pc-about--reader')) window.open(path, '_blank', 'noopener');
+    else navigate(path);
+  }, [navigate]);
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
     const path = topicExplorerPath(topic, publicMode);
@@ -1296,8 +1296,8 @@ const PaperCard = memo(function PaperCard({
       surface: analyticsSurface,
       position,
     });
-    if (path) navigate(path);
-  }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+    if (path) goTo(event, path);
+  }, [analyticsSurface, goTo, position, publicMode, trackEvent]);
   const [menuView, setMenuView] = useState<'closed' | 'actions' | 'about'>('closed');
   const topicsList = (
     <ul className="pc-topics-pop-list">
@@ -1423,13 +1423,24 @@ const PaperCard = memo(function PaperCard({
     else setShowRelated(false);
   };
 
-  const handleNotInterested = (e: MouseEvent) => {
-    e.stopPropagation();
+  const notInterested = () => {
     if (publicMode) {
       requireAuthentication('not_interested');
       return;
     }
     void onNotInterested(paper);
+  };
+  const handleNotInterested = (e: MouseEvent) => {
+    e.stopPropagation();
+    notInterested();
+  };
+  const readerRef = useRef<{ about: ReactNode; links: ReactNode; isRead: boolean; notInterested: () => void; toggleRead: () => void }>({ about: null, links: null, isRead: false, notInterested: () => {}, toggleRead: () => {} });
+  const readerMenu: ReaderMenu = {
+    about: () => readerRef.current.about,
+    links: () => readerRef.current.links,
+    isRead: () => readerRef.current.isRead,
+    notInterested: () => readerRef.current.notInterested(),
+    toggleRead: () => readerRef.current.toggleRead(),
   };
 
   // Created once, so a re-render between the hold and its click keeps the
@@ -1553,7 +1564,7 @@ const PaperCard = memo(function PaperCard({
     // este botón ofrece -- el clic terminaba ahí, en silencio.
     const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, libraryAccess), {
       inline: (target) => {
-        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true }, analyticsSurface);
+        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true }, analyticsSurface, readerMenu);
         return true;
       },
       external: (url) => openExternalUrl(url),
@@ -1566,7 +1577,7 @@ const PaperCard = memo(function PaperCard({
       const fullText = await resolveWithin(getFullText(paper), FULL_TEXT_PRESS_WAIT_MS, null);
       setIsResolvingAccess(false);
       if (fullText?.doc) {
-        void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) });
+        void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}) }, undefined, readerMenu);
         return;
       }
     }
@@ -1603,23 +1614,10 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
-  // Never the library link: it only opens for readers at that institution.
-  const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
-    || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
-    || safeExternalUrl(paper.openAccessPdfUrl)
-    || safeExternalUrl(paper.pdfUrl)
-    || safeExternalUrl(paper.landingPageUrl)
-    || safeDoiUrl(paper.doi);
-  const shareUrl = getPublicPaperUrl(paper)
-    || bestAvailableUrl
-    || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
+  const shareUrl = paperShareUrl(paper, resolvedOpenCopy);
 
-  // Every way the link leaves the share panel (PaperMenu): `clipboard`,
-  // `instagram` (which copies) or a network's id, reported in the analytics
-  // `method` vocabulary, which has no network names.
   const handleShared = (method: string) => {
-    const reported = method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other';
-    void trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
+    void trackEvent('share', { method: shareMethod(method), content_type: 'paper', surface: analyticsSurface });
   };
   // What the button says from the paper's own record.
   const recordActionLabel = resolvedOpenCopy
@@ -1717,10 +1715,52 @@ const PaperCard = memo(function PaperCard({
       surface: analyticsSurface,
       position,
     });
-    if (path) navigate(path);
+    if (path) goTo(event, path);
   };
 
-  const aboutSections = (
+  const aboutLinks = (paper.doi || researchResources.length > 0) && (
+              <div className="pc-chips">
+    {paper.doi && (
+      <a
+        className="pc-chip pc-chip--link"
+        href={safeDoiUrl(paper.doi)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title={'Open the DOI record'}
+      >
+        <ArrowSquareOut size={12} /> DOI
+      </a>
+    )}
+
+    <AnimatePresence initial={false}>
+      {researchResources.map((resource) => {
+        const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
+        const ResourceIcon = config.Icon;
+        const resourceLabel = config.label[language];
+        return (
+          <motion.a
+            key={resource.id || `${resource.kind}:${resource.url || resource.title}`}
+            className={`pc-chip pc-chip--link pc-linked-resource--${resource.kind}`}
+            href={safeExternalUrl(resource.url) || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            title={resource.title}
+            aria-label={`${resourceLabel}: ${resource.title}`}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+            animate={{ opacity: 1, transform: 'scale(1)' }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.1 : 0.24, ease: EASE_OUT_EXPO }}
+          >
+            <ResourceIcon size={12} /> {resourceLabel}
+          </motion.a>
+        );
+      })}
+    </AnimatePresence>
+              </div>
+  );
+  const aboutBody = (
     <>
           <section className="pc-about-section">
             <h3 className="pc-about-heading">{'Status'}</h3>
@@ -1785,53 +1825,20 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </section>
           )}
-          {(paper.doi || researchResources.length > 0) && (
+    </>
+  );
+  const aboutSections = (
+    <>
+      {aboutBody}
+          {aboutLinks && (
             <section className="pc-about-section">
               <h3 className="pc-about-heading">{'Links'}</h3>
-              <div className="pc-chips">
-    {paper.doi && (
-      <a
-        className="pc-chip pc-chip--link"
-        href={safeDoiUrl(paper.doi)}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        title={'Open the DOI record'}
-      >
-        <ArrowSquareOut size={12} /> DOI
-      </a>
-    )}
-
-    <AnimatePresence initial={false}>
-      {researchResources.map((resource) => {
-        const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
-        const ResourceIcon = config.Icon;
-        const resourceLabel = config.label[language];
-        return (
-          <motion.a
-            key={resource.id || `${resource.kind}:${resource.url || resource.title}`}
-            className={`pc-chip pc-chip--link pc-linked-resource--${resource.kind}`}
-            href={safeExternalUrl(resource.url) || undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(event) => event.stopPropagation()}
-            title={resource.title}
-            aria-label={`${resourceLabel}: ${resource.title}`}
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-            animate={{ opacity: 1, transform: 'scale(1)' }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : 0.24, ease: EASE_OUT_EXPO }}
-          >
-            <ResourceIcon size={12} /> {resourceLabel}
-          </motion.a>
-        );
-      })}
-    </AnimatePresence>
-              </div>
+              {aboutLinks}
             </section>
           )}
     </>
   );
+  useLayoutEffect(() => { readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, notInterested, toggleRead: handleMarkAsRead }; });
 
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
@@ -2364,19 +2371,14 @@ const PaperCard = memo(function PaperCard({
             style: { '--area-accent': areaAccentForPaper(paper) },
             onBack: () => setMenuView('actions'),
           } : null}
-          actions={[
-            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
-            {
-              id: 'read',
-              label: isReadActive ? 'Mark as unread' : 'Mark as read',
-              hint: isReadActive ? 'Take it out of your reading history' : 'Add it to your reading history',
-              Icon: isReadActive ? CheckCircle : Eye,
-              onSelect: handleMarkAsRead,
-            },
-            { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: handleNotInterested },
-            { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
-            { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
-          ]}
+          actions={paperActions({
+            paper,
+            isRead: isReadActive,
+            aboutHint: 'Status, topics, funding and links',
+            onAbout: () => setMenuView('about'),
+            onToggleRead: handleMarkAsRead,
+            onNotInterested: handleNotInterested,
+          })}
           trigger={(
             <button
               type="button"
