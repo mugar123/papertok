@@ -1994,6 +1994,54 @@ test('in phase 1 a link whose object holds no token is left to a retry when the 
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
 });
 
+test('in phase 1 an earlier link is spent where the object holds no token and KV shows the new subscription\'s record', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const { current, token, oldToken, show } = await resubscribedOverStaleCopy(kv, phase1);
+  show();
+  // The re-subscription's reopen came from a Worker from before tokens were recorded there.
+  const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+  const object = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+  const oldIndexKey = `notification:unsubscribe:${oldToken}`;
+  const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+
+  // This location still caches the old link's index; the record it reads is the new one.
+  kv.values.set(oldIndexKey, SYNC_READER.uid);
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink), phase1)).status, 400);
+  kv.values.set(oldIndexKey, SYNC_READER.uid);
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), phase1)).status, 400);
+  assert.equal(kv.values.get(SYNC_READER_KEY), current, 'the old link cancelled the new subscription');
+  assert.equal(kv.values.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the old link removed the new one');
+  assert.deepEqual(await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }), object, 'the old link changed the object');
+});
+
+test('in phase 1 a link checked against its token is left to a retry when a Worker from before ENG-193 subscribes the reader again before its close', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
+  const newToken = 'beforeeng193resubscribe01';
+  const stores = interceptedStores(phase1.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'mark' && payload.migratable === false, async () => {
+    // What such a Worker does for Settings off and on: marks that name no token, and a new record.
+    const off = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: false });
+    kv.values.delete(SYNC_READER_KEY);
+    const on = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: off.version });
+    kv.values.set(SYNC_READER_KEY, JSON.stringify({ ...digestSubscription({ uid: SYNC_READER.uid, unsubscribeToken: newToken }), version: on.version, revision: on.version }));
+    kv.values.set(`notification:unsubscribe:${newToken}`, SYNC_READER.uid);
+  });
+  const link = `https://example.com/notifications/unsubscribe?token=${token}`;
+  const page = await handleEmailUnsubscribe(new Request(link, { method: 'POST' }), { ...phase1, EMAIL_SUBSCRIPTIONS: stores });
+
+  assert.ok(stores.intercepted);
+  assert.equal(page.status, 503);
+  assert.equal((JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription).unsubscribeToken, newToken, 'the link cancelled the new subscription');
+  assert.equal(kv.values.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the link lost its index before the retry');
+  // The retry reads the new subscription's record, which names another token.
+  assert.equal((await handleEmailUnsubscribe(new Request(link, { method: 'POST' }), phase1)).status, 400);
+  assert.equal((JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription).unsubscribeToken, newToken);
+});
+
 test('the link of a subscription saved before phase 1 still cancels it', async () => {
   const kv = createMemoryKv({
     [SYNC_READER_KEY]: digestSubscription({ uid: SYNC_READER.uid, unsubscribeToken: 'beforephase1token0001' }),

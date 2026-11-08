@@ -2996,20 +2996,20 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // before ENG-193 (or never written by phase 1), so it cannot tell this link's
   // subscription from an earlier, cancelled one. The record KV returns has to:
   // one that names this link and was written since the object's last
-  // cancellation belongs to the current subscription, and the close then lands
-  // only on the object version this check read (`proved`). One from before that
+  // cancellation belongs to the current subscription. One from before that
   // cancellation is a copy of the cancelled subscription (readPhase1Slot), so the
   // link is spent. One since the cancellation that names another token is the
-  // current subscription's, so this link is not. A miss, or a cancelled copy of
-  // another subscription, proves nothing (ENG-193).
-  let proved: number | undefined;
+  // current subscription's, so this link is not. A miss, even with the shortest
+  // KV cache, or a cancelled copy of another subscription, proves nothing
+  // (ENG-193).
+  let proved = false;
   const legacy = object.migratable && !object.token && !object.subscription;
   if (legacy) {
-    const kvRecord = await readKvRecord(env, uid);
+    const kvRecord = (await readKvRecord(env, uid)) ?? await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS);
     const names = kvRecord?.subscription?.unsubscribeToken === token;
     const sinceCancelled = Boolean(kvRecord && kvRecord.revision >= (object.cancelledAt || 0));
     if (!kvRecord || (!names && !sinceCancelled)) return tryAgainPage();
-    if (names && sinceCancelled) proved = object.version;
+    proved = names && sinceCancelled;
   }
   // Otherwise a cached miss of a record just saved still works while the object
   // names this link's token. A subscription keeps one token for all its emails,
@@ -3017,7 +3017,7 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // recent, still matches; only the links of an earlier, cancelled subscription
   // stop working.
   const valid = legacy
-    ? proved !== undefined
+    ? proved
     : subscription ? subscription.unsubscribeToken === token : object.migratable && object.token === token;
   if (!valid) {
     // A second POST from the same link (a double click, or a mail client's
@@ -3030,12 +3030,20 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
     return invalidLinkPage();
   }
   if (request.method === 'POST') {
-    // The object cancels only while it still holds this link's subscription,
-    // so a save that subscribed the reader again after the check above keeps
-    // that subscription, and the link answers as spent. After a legacy proof
-    // any change to the object since the check leaves the link to a retry.
-    if (!await deleteSubscription(env, uid, subscription, token, proved)) {
-      if (proved !== undefined) return tryAgainPage();
+    // The close lands only on the object version this check read, and only
+    // while the object still holds this link's subscription. When anything
+    // changed the object since the check, it is read again: a cancellation
+    // already did what the link asks; another subscription's token makes the
+    // link spent; anything else, such as a Worker from before ENG-193 reopening
+    // it without a token, leaves the link to a retry, with nothing written.
+    if (!await deleteSubscription(env, uid, subscription, token, object.version)) {
+      const now = (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
+      // Closed and empty is cancelled; a phase 2 object that holds a record is closed too.
+      if (!now.migratable && !now.subscription) {
+        return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
+      }
+      const holder = now.token ?? now.subscription?.unsubscribeToken;
+      if (holder === undefined || holder === token) return tryAgainPage();
       await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
       return invalidLinkPage();
     }
