@@ -2119,6 +2119,43 @@ test('a one-click unsubscribe still lands when a save of the same subscription m
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
 });
 
+test('a link\'s second close, after a save of the same subscription, keeps a re-subscription that lands before it', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
+  const newToken = 'beforeeng193resubscribe03';
+  // Before the first close, a save of the same subscription; before the
+  // second, a Worker from before ENG-193 turns the digest off and on.
+  const before = [
+    async () => { await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase1, SYNC_READER); },
+    async () => {
+      const off = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: false });
+      kv.values.delete(SYNC_READER_KEY);
+      const on = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: off.version });
+      kv.values.set(SYNC_READER_KEY, JSON.stringify({ ...digestSubscription({ uid: SYNC_READER.uid, unsubscribeToken: newToken }), version: on.version, revision: on.version }));
+      kv.values.set(`notification:unsubscribe:${newToken}`, SYNC_READER.uid);
+    },
+  ];
+  const stores = phase1.EMAIL_SUBSCRIPTIONS!;
+  const closes = {
+    idFromName: (name: string) => stores.idFromName(name),
+    get: (id: DurableObjectId) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        const payload = JSON.parse(String(init.body)) as { action?: string; migratable?: boolean; token?: string };
+        if (payload.action === 'mark' && payload.migratable === false && payload.token) await before.shift()?.();
+        return stores.get(id).fetch(url, init);
+      },
+    }),
+  } as WorkerEnv['EMAIL_SUBSCRIPTIONS'];
+  const link = `https://example.com/notifications/unsubscribe?token=${token}`;
+  const page = await handleEmailUnsubscribe(new Request(link, { method: 'POST' }), { ...phase1, EMAIL_SUBSCRIPTIONS: closes });
+
+  assert.equal(before.length, 0, 'the link did not close twice');
+  assert.equal(page.status, 503);
+  assert.equal((JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription).unsubscribeToken, newToken, 'the second close cancelled the new subscription');
+});
+
 test('the link of a subscription saved before phase 1 still cancels it', async () => {
   const kv = createMemoryKv({
     [SYNC_READER_KEY]: digestSubscription({ uid: SYNC_READER.uid, unsubscribeToken: 'beforephase1token0001' }),
