@@ -515,14 +515,8 @@
   padding: var(--space-8);
   text-align: center;
   background: var(--bg-primary);
+  /* The focus entering the state ends this fade (FeedLandmark, ENG-175). */
   animation: fadeIn 0.4s ease-out;
-}
-
-/* A state that takes the focus as it arrives, as when a retry fails again and
-   the focus returns to Try again, is shown at once: a fade under the focus is
-   a ring no one can see (ENG-175). The focus moves before the first paint. */
-.feed-empty:focus-within {
-  animation: none;
 }
 
 /* No .feed-empty override at 768px, for the same reason as .feed-wrapper

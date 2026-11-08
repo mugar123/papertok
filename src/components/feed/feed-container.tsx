@@ -1,4 +1,4 @@
-import type { AnimationEvent, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
+import type { AnimationEvent, FocusEventHandler, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { ReaderMenu } from './paper-menu.tsx';
 import type { Paper } from '../../models/paper.ts';
@@ -182,6 +182,8 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
 }
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
+// Whether the veil's heading holds the focus, read as the veil's exit starts.
+const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
 // into every return: the Similar layer renders a feed too, and it is an
@@ -190,8 +192,6 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
 // esqueleto, error, vacío y el vacío que trae la fuente— lo comparten, porque
 // una pantalla sin papers sigue siendo la página y necesita su landmark y su
 // encabezado igual que la que los tiene.
-// Whether the veil's heading holds the focus, read as the veil's exit starts.
-const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 /**
  * How the atom gives way to the paper.
  *
@@ -238,6 +238,15 @@ const ATOM_VEIL_REDUCED_VARIANTS: Variants = {
 };
 // How long the status region is in the page, empty, before its first words.
 const STATUS_REGION_SETTLE_MS = 300;
+// The empty states fade in (`.feed-empty`). The focus entering one ends the
+// fade at once, as when a retry fails again and the focus returns to Try
+// again before the first paint: a fade under the focus is a ring no one can
+// see (ENG-175). A finished fade stays finished while the state keeps its
+// class, so the state does not fade in again when the focus leaves, which a
+// `:focus-within` rule would do.
+const endFade: FocusEventHandler<HTMLElement> = (event) => {
+  for (const fade of event.currentTarget.getAnimations()) fade.finish();
+};
 
 // `className` porque los estados vacíos NO son `.feed-wrapper`: son
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
@@ -264,10 +273,10 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
   }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
-    return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
+    return <div ref={nodeRef} className={className} onFocus={endFade}>{statusRegion}{children}</div>;
   }
   return (
-    <main ref={nodeRef} className={className} aria-label={landmark.label}>
+    <main ref={nodeRef} className={className} aria-label={landmark.label} onFocus={endFade}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {statusRegion}
       {children}
