@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { focusMovedOut, rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
+import { focusMovedOut, rowAfterOverlay, rowsTakingFocus } from './rows-taking-focus.ts';
 
 const none: ReadonlyMap<string, string | null> = new Map();
 const anyRow = () => true;
@@ -47,29 +47,40 @@ test('nothing changes when no row left', () => {
   assert.equal(takers, none);
 });
 
-test('a row that comes back, at the end of the list, still names the row that took its place', () => {
-  // Liked again on its card: Favorites adds it last, and the card hands focus
-  // to the row at the reader's place rather than to the far end of the list.
-  const left = rowsTakingFocus(none, ['a', 'b', 'c', 'd'], ['a', 'c', 'd'], anyRow);
-  const back = rowsTakingFocus(left, ['a', 'c', 'd'], ['a', 'c', 'd', 'b'], anyRow);
-  assert.equal(back.get('b'), 'c');
+test('an overlay whose row left while it was open hands focus to the row now at its place', () => {
+  // The remove dialog, or the desktop Edit window when Save unticks Read later.
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['a', 'c'], anyRow), 'c');
+  assert.equal(rowAfterOverlay('c', ['a', 'b', 'c'], ['a', 'b'], anyRow), 'b');
+  assert.equal(rowAfterOverlay('a', ['a'], [], anyRow), null);
 });
 
-test('an overlay whose row left while it was open hands focus to the row that took over', () => {
-  // The desktop Edit window: Save unticks Read later, the row leaves, and the
-  // window closes afterwards.
-  const takers = rowsTakingFocus(none, ['a', 'b', 'c'], ['a', 'c'], anyRow);
-  const shown = { listId: '__read_later__', paperIds: ['a', 'c'] };
-  assert.equal(rowHasLeft({ listId: '__read_later__', paperId: 'b' }, shown, takers), true);
-  assert.equal(takers.get('b'), 'c');
+test('an overlay whose row keeps its place returns focus to that row', () => {
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['a', 'b', 'c'], anyRow), 'b');
+  // Rows around it left or arrived from another device.
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['b'], anyRow), 'b');
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['x', 'a', 'b', 'c', 'y'], anyRow), 'b');
+  // The only row, unliked and liked again on its card.
+  assert.equal(rowAfterOverlay('a', ['a'], ['a'], anyRow), 'a');
 });
 
-test('an overlay whose row is still there, came back or belongs to another list returns focus to its opener', () => {
-  const takers = rowsTakingFocus(none, ['a', 'b', 'c'], ['a', 'c'], anyRow);
-  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'a' }, { listId: 'list_1', paperIds: ['a', 'c'] }, takers), false);
-  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_1', paperIds: ['a', 'b', 'c'] }, takers), false);
-  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_2', paperIds: ['a', 'c'] }, takers), false);
-  assert.equal(rowHasLeft(null, { listId: 'list_1', paperIds: ['a', 'c'] }, takers), false);
+test('a row that came back elsewhere while its card was open gives focus to the row now at its place', () => {
+  // Favorites adds a paper liked again last; Reading history puts it first.
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c', 'd'], ['a', 'c', 'd', 'b'], anyRow), 'c');
+  assert.equal(rowAfterOverlay('c', ['a', 'b', 'c', 'd'], ['c', 'a', 'b', 'd'], anyRow), 'd');
+  // Last in Favorites, it comes back where it was; first in Reading history too.
+  assert.equal(rowAfterOverlay('d', ['a', 'b', 'c', 'd'], ['a', 'b', 'c', 'd'], anyRow), 'd');
+  assert.equal(rowAfterOverlay('a', ['a', 'b', 'c'], ['a', 'b', 'c'], anyRow), 'a');
+  // Unliked, liked and unliked again: gone, and the place is still the same.
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c', 'd'], ['a', 'c', 'd'], anyRow), 'c');
+});
+
+test('an overlay whose row left passes over rows without a control and rows that left too', () => {
+  const loaded = (paperId: string) => paperId !== 'c';
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c', 'd'], ['a', 'c', 'd'], loaded), 'd');
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c', 'd'], ['a', 'd'], anyRow), 'd');
+  // No other row has a control yet: the row itself, still shown elsewhere.
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['a', 'c', 'b'], (paperId) => paperId === 'b'), 'b');
+  assert.equal(rowAfterOverlay('b', ['a', 'b', 'c'], ['a', 'c'], (paperId) => paperId === 'b'), null);
 });
 
 test('a closing overlay leaves focus where the reader moved it, out of the overlay', () => {

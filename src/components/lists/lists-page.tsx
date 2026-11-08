@@ -35,7 +35,7 @@ import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
-import { focusMovedOut, rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
+import { focusMovedOut, rowAfterOverlay, rowsTakingFocus } from './rows-taking-focus.ts';
 import { writeNewList } from './write-new-list.ts';
 import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
@@ -258,6 +258,9 @@ type RowTarget = { listId: string; listName?: string; paperId: string; paper: Pa
 /** A row of the open list, by the id the paper is stored under. */
 const rowElement = (papers: HTMLElement | null, paperId: string) => Array.from(papers?.children ?? [])
   .find((node): node is HTMLElement => node instanceof HTMLElement && node.dataset.paperId === paperId);
+/** A row's remove control, its Actions button on a phone. */
+const rowControl = (papers: HTMLElement | null, paperId: string | null | undefined) => (paperId == null ? undefined : rowElement(papers, paperId))
+  ?.querySelector<HTMLElement>('[data-removal-focus]');
 
 export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu) => void; onEditPaper: (paper: Paper, finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus']) => void }) {
   const { user } = useAuth();
@@ -419,10 +422,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const rowTakers = useRef<ReadonlyMap<string, string | null>>(new Map());
   // The row the remove dialog, the row sheet, the Edit window or the card was
   // last opened from. Not `removing` or `rowSheet`: those clear as the overlay
-  // finishes closing, which is when it hands focus back. `element` is the
-  // row as it was then: a row that leaves and comes back while the overlay is
-  // open is a new element, and the control focus came from left with the old.
-  const overlayRow = useRef<(RowTarget & { element?: HTMLElement }) | null>(null);
+  // finishes closing, which is when it hands focus back. `shown` is the open
+  // list as it was then, and `element` the row: a row that leaves and comes
+  // back while the overlay is open is a new element, and the control focus
+  // came from left with the old one.
+  const overlayRow = useRef<(RowTarget & { shown: typeof shownRows.current; element?: HTMLElement }) | null>(null);
   const removalPopupRef = useRef<HTMLDivElement | null>(null);
   const rowSheetPopupRef = useRef<HTMLDivElement | null>(null);
   // Whether this session has had one authoritative answer about which lists
@@ -1210,17 +1214,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     ));
   };
 
-  // Where focus goes from a row that has left the open list: the remove
-  // control of the row that took its place, or the list heading when no row
-  // is left to take it.
-  const removedRowFocus = (paperId: string) => {
-    const taker = rowTakers.current.get(paperId);
-    const row = taker == null ? undefined : rowElement(papersRef.current, taker);
-    return row?.querySelector<HTMLElement>('[data-removal-focus]') ?? listHeadingRef.current;
-  };
+  // Where focus goes from a row that has left the open list: the control of
+  // the row that took its place, or the list heading when no row is left to
+  // take it.
+  const removedRowFocus = (paperId: string) => rowControl(papersRef.current, rowTakers.current.get(paperId)) ?? listHeadingRef.current;
   // Records the row an overlay opens from (`overlayRow`).
   const openFromRow = (target: RowTarget) => {
-    overlayRow.current = { ...target, element: rowElement(papersRef.current, target.paperId) };
+    overlayRow.current = { ...target, shown: shownRows.current, element: rowElement(papersRef.current, target.paperId) };
     return target;
   };
 
@@ -1251,26 +1251,23 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (rowSheetOpen && rowSheetStep !== 'edit' && rowSheet?.listId === expandedList && left(rowSheet.paperId)) setRowSheetOpen(false);
   }, [expandedList, openPaperIds, getPaper, rowSheet, rowSheetOpen, rowSheetStep]);
 
-  // An overlay opened from a row gives focus back to the row's own control or,
-  // once the row has left, to the control that took its place. The removal
-  // can be accepted while the overlay is still closing. Refs only: the Edit
-  // window keeps the callback it was given when it opened. `overlay` is the
-  // closing window: focus the reader has moved out of it, into Search opened
-  // during the close for one, stays where it is (`focusMovedOut`). A row that
-  // left and came back while the overlay was open, liked again on its card
-  // for one, is a new element, and it may come back at the other end of the
-  // list (Favorites adds it last). Focus keeps the reader's place: the row
-  // that took over when it left, or the row itself when none did.
+  // An overlay opened from a row gives focus back to the row's own control
+  // while the row keeps its place or, once it has left it, to the control of
+  // the row now at that place (`rowAfterOverlay`). The removal can be accepted
+  // while the overlay is still closing. Refs only: the Edit window keeps the
+  // callback it was given when it opened. `overlay` is the closing window:
+  // focus the reader has moved out of it, into Search opened during the close
+  // for one, stays where it is (`focusMovedOut`).
   const focusAfterRowOverlay = (overlay: HTMLElement | null) => {
     if (focusMovedOut(document.activeElement, document.body, overlay)) return false;
     const row = overlayRow.current;
-    if (row && rowHasLeft(row, shownRows.current, rowTakers.current)) return removedRowFocus(row.paperId) ?? true;
-    if (row?.element?.isConnected !== false) return true;
-    const cameBack = rowElement(papersRef.current, row.paperId);
-    if (!cameBack) return true;
-    const taker = rowTakers.current.get(row.paperId);
-    const place = taker ? rowElement(papersRef.current, taker) : undefined;
-    return (place ?? cameBack).querySelector<HTMLElement>('[data-removal-focus]') ?? true;
+    const shown = shownRows.current;
+    if (!row || row.shown.listId !== shown.listId) return true;
+    const hasControl = (paperId: string) => Boolean(rowControl(papersRef.current, paperId));
+    const target = rowAfterOverlay(row.paperId, row.shown.paperIds, shown.paperIds, hasControl);
+    // The opener is still there, unless the row left and came back as a new element.
+    if (target === row.paperId && row.element?.isConnected !== false) return true;
+    return rowControl(papersRef.current, target) ?? listHeadingRef.current ?? true;
   };
 
   // The open card's toggles take a mark off at once, as they do in the feed.
