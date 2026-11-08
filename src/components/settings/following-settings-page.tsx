@@ -118,11 +118,13 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   }, []);
   // Where focus goes once a confirmed unfollow's question has left: the key
   // of the row whose Unfollow button takes it, or null for the type control
-  // above the list (the page's current tab, the sheet's select). The row's
-  // own button, where the question would return it, leaves with the row.
-  // Undefined while no unfollow is under way, and the question returns focus
-  // as usual. The effect below moves it in the commit that takes the row out
-  // of the list, so focus never rests on a control that is leaving. Two
+  // (the page's current tab, the sheet's select). The row's own button, where
+  // the question would return it, leaves with the row. Set only from
+  // finishUnfollow until the commit that follows; undefined otherwise, and
+  // the question returns focus as usual. The effect below moves it in the
+  // commit that takes the row out of the list, so focus never rests on a
+  // control that is leaving, and goes to the type control if the row's
+  // button has gone or been disabled since finishUnfollow chose it. Two
   // orderings hold this up. Base UI reports the question's close
   // (finishUnfollow) in the same synchronous pass that unmounts it, before it
   // reads finalFocus; were the report a pass later, focus would go back to the
@@ -137,7 +139,7 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     if (focusKey === undefined) return;
     unfollowFocus.current = undefined;
     const nextRow = focusKey === null ? undefined : unfollowButtons.current.get(focusKey);
-    (nextRow ?? typeControl.current)?.focus();
+    (nextRow && !nextRow.disabled ? nextRow : typeControl.current)?.focus();
   });
 
   const pressStart = (press: 'unfollow' | 'undo') => followsListPress({ press, inOpenSheet: sheetOpen !== undefined && inView.current });
@@ -210,7 +212,8 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     if (isOpen) return;
     const unfollow = unfollowOnLeave({ confirmedAt, unfollowing });
     if (unfollow) {
-      unfollowFocus.current = focusAfterUnfollow(visibleEntities.map(getRowKey), getRowKey(unfollow.entity));
+      const pendingKeys = new Set(visibleEntities.filter(entity => following.isFollowPending(entity)).map(getRowKey));
+      unfollowFocus.current = focusAfterUnfollow(visibleEntities.map(getRowKey), getRowKey(unfollow.entity), pendingKeys);
       void handleUnfollow(unfollow.entity, unfollow.startedAt);
     }
     setConfirmedAt(null);
