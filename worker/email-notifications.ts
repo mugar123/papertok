@@ -1043,7 +1043,10 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // No KV record, yet a save reopened the object: that read may be a cached
   // miss of a record the save wrote, so the reader is held, not absent. A
   // cancellation closes the object, so a cancelled reader never reads as held.
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: !slot.subscription && slot.migratable && slot.version > 0 };
+  // `token` is the unsubscribe token that save gave the subscription, so a
+  // save computed from this miss keeps the links of its earlier emails.
+  const behind = !slot.subscription && slot.migratable && slot.version > 0;
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
 }
 
 /**
@@ -1135,7 +1138,7 @@ function storedRecord(subscription: Subscription) {
 async function changeSubscription(
   env: WorkerEnv,
   uid: string,
-  next: (current: Subscription | null, behind: boolean) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
+  next: (current: Subscription | null, behind: boolean, token?: string) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
 ) {
   let phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
   let slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
@@ -1146,7 +1149,7 @@ async function changeSubscription(
     // in between closed it, and the write is computed again from what it left.
     // A reader phase 2 moved stays in their object and is written below.
     const previous = slot.subscription;
-    const record = await next(previous, phase1.behind);
+    const record = await next(previous, phase1.behind, phase1.token);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
     const key = `${SUBSCRIPTION_PREFIX}${uid}`;
     if (record === null) {
@@ -1336,7 +1339,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
   const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
-  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind) => {
+  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind, heldToken) => {
     // Phase 1 read no record over an object a save reopened (see
     // readPhase1Slot): answering that the digest is off would turn it off in
     // the app while the record may still send, so the app keeps its state and retries.
@@ -1389,7 +1392,9 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
       follows,
       previewItems,
       interests,
-      unsubscribeToken: current?.unsubscribeToken || crypto.randomUUID().replace(/-/g, ''),
+      // A phase 1 read that missed the record keeps the token the object holds
+      // for it: every email of a subscription carries the same link (ENG-193).
+      unsubscribeToken: current?.unsubscribeToken || heldToken || crypto.randomUUID().replace(/-/g, ''),
       ...(!current ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
       createdAt: current?.createdAt || now,
       updatedAt: now,

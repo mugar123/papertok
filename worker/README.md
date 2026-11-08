@@ -996,7 +996,9 @@ headline, one ink action), errors included, and every one carries the same `no-s
 subscription carries the same link, so a link from any of them, not only the most recent, works
 until that subscription is cancelled. A link that was already used, cut short or issued for an
 earlier, cancelled subscription answers `400` with a page that says the link did not change the
-reader's email settings and sends them to Settings, where they can turn email updates off; a
+reader's email settings and sends them to Settings, where they can turn email updates off (a
+second `POST` from a link that just worked, while KV still holds its index, shows the
+confirmation again); a
 missing `NOTIFICATION_STORE` binding answers `503`. In phase 1 an earlier subscription's link
 can still cancel the current one in a case left from before ENG-193, described in
 [Email digest subscription deploy](#email-digest-subscription-deploy). The CSP admits no web

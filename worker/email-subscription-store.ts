@@ -24,6 +24,12 @@ const CLOSED_KEY = 'closed';
 const CANCELLED_AT_KEY = 'cancelledAt';
 const TOKEN_KEY = 'token';
 
+// The unsubscribe token of a subscription record the object holds.
+function recordToken(record: unknown) {
+  if (typeof record !== 'object' || record === null || !('unsubscribeToken' in record)) return undefined;
+  return typeof record.unsubscribeToken === 'string' ? record.unsubscribeToken : undefined;
+}
+
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -52,6 +58,8 @@ function json(payload: unknown, status = 200) {
  * A closing mark that names a token is an unsubscribe link's: it lands only
  * while the object holds that token or none, so a save that reopened the
  * object for another subscription after the link was checked is not cancelled.
+ * Once a write raised the version past the reopening mark, the token that
+ * counts is the one of the subscription the object holds, if any.
  */
 export class EmailSubscriptionStore {
   declare state: { storage: LedgerStorage };
@@ -89,11 +97,14 @@ export class EmailSubscriptionStore {
       const token = issued?.version === version && typeof issued.token === 'string' ? issued.token : undefined;
       if (!write && !mark) return { status: 200, slot: { version, subscription, migratable, cancelledAt, token } };
       if (mark) {
+        // The subscription a closing mark would cancel: the one the last
+        // reopening mark named, or the record a later write left.
+        const current = token ?? recordToken(subscription);
         if (
           (payload.expectedVersion !== undefined && payload.expectedVersion !== version)
-          // A cancellation for one link's subscription, after a save reopened
-          // the object for another one.
-          || (!payload.migratable && payload.token !== undefined && token !== undefined && token !== payload.token)
+          // A cancellation for one link's subscription, after a save subscribed
+          // the reader again with another one.
+          || (!payload.migratable && payload.token !== undefined && current !== undefined && current !== payload.token)
         ) {
           return { status: 409, slot: { version, subscription, migratable, cancelledAt, token } };
         }
