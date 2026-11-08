@@ -2989,9 +2989,14 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // one token for all its emails, so a link from any email of the current
   // subscription, not only the most recent, still matches; only the links of an
   // earlier, cancelled subscription stop working. An object a Worker from
-  // before that reopened names no token, and the link still works there.
+  // before that reopened names no token. There the record KV returns decides:
+  // one from before the object's last cancellation that names this link is a
+  // copy of the cancelled subscription (readPhase1Slot), so the link is spent;
+  // after a cached miss the link still works.
   const object = subscription ? null : (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
-  const unread = Boolean(object?.migratable && (!object.token || object.token === token));
+  const kvRecord = object?.migratable && !object.token ? await readKvRecord(env, uid) : null;
+  const cancelledCopy = Boolean(kvRecord && kvRecord.subscription?.unsubscribeToken === token && kvRecord.revision < (object?.cancelledAt || 0));
+  const unread = Boolean(object?.migratable && (!object.token || object.token === token) && !cancelledCopy);
   if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
     // A second POST from the same link (a double click, or a mail client's
     // one-click POST before the reader's) may read a stale KV copy of the token
