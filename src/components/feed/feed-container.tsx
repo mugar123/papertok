@@ -1,4 +1,4 @@
-import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
+import type { AnimationEvent, FocusEventHandler, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { ReaderMenu } from './paper-menu.tsx';
 import type { Paper } from '../../models/paper.ts';
@@ -27,7 +27,7 @@ interface FeedContainerProps {
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useReducer, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check, Warning } from '@phosphor-icons/react';
@@ -182,6 +182,8 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
 }
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
+// Whether the veil's heading holds the focus, read as the veil's exit starts.
+const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
 // into every return: the Similar layer renders a feed too, and it is an
@@ -202,25 +204,49 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  * card arrives with. Labels rather than objects on the children: inside a
  * variant tree a child animates on the parent's label, not on an object of
  * its own, so the atom's `gone` plays the frame the veil's does.
+ *
+ * Except while the veil's heading holds a retry's focus (useWaitFocus): a
+ * fading heading is a focus no one can see, and a card under a fading veil
+ * is covered, so neither can hold the focus during the cross-fade (ENG-175).
+ * Then the ground and the copy stay whole while the atom leaves, the card
+ * composes underneath (its arrival, --motion-base, is shorter than the
+ * atom's exit), and the veil goes in the commit that moves the focus to the
+ * card. AnimatePresence hands `gone` the heading's ref as `custom`.
  */
 const ATOM_VEIL_VARIANTS: Variants = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } },
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? { opacity: 1 }
+    : { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } }),
 };
 const ATOM_VARIANTS = {
   shown: { opacity: 1, transform: 'translateY(0px) scale(1)' },
   gone: { opacity: 0, transform: 'translateY(-16px) scale(0.62)', transition: { duration: 0.36, ease: EASE_OUT_EXPO } },
 };
-const ATOM_COPY_VARIANTS = {
-  shown: { opacity: 1, transform: 'translateY(0px)' },
-  gone: { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } },
+const ATOM_COPY_SHOWN = { opacity: 1, transform: 'translateY(0px)' };
+const ATOM_COPY_VARIANTS: Variants = {
+  shown: ATOM_COPY_SHOWN,
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? ATOM_COPY_SHOWN
+    : { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } }),
 };
-const ATOM_VEIL_REDUCED_VARIANTS = {
+const ATOM_VEIL_REDUCED_VARIANTS: Variants = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.12 } },
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? { opacity: 1 }
+    : { opacity: 0, transition: { duration: 0.12 } }),
 };
 // How long the status region is in the page, empty, before its first words.
 const STATUS_REGION_SETTLE_MS = 300;
+// The empty states fade in (`.feed-empty`). The focus entering one ends the
+// fade at once, as when a retry fails again and the focus returns to Try
+// again before the first paint: a fade under the focus is a ring no one can
+// see (ENG-175). A finished fade stays finished while the state keeps its
+// class, so the state does not fade in again when the focus leaves, which a
+// `:focus-within` rule would do.
+const endFade: FocusEventHandler<HTMLElement> = (event) => {
+  for (const fade of event.currentTarget.getAnimations()) fade.finish();
+};
 
 // `className` porque los estados vacíos NO son `.feed-wrapper`: son
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
@@ -247,10 +273,10 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
   }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
-    return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
+    return <div ref={nodeRef} className={className} onFocus={endFade}>{statusRegion}{children}</div>;
   }
   return (
-    <main ref={nodeRef} className={className} aria-label={landmark.label}>
+    <main ref={nodeRef} className={className} aria-label={landmark.label} onFocus={endFade}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {statusRegion}
       {children}
@@ -1126,9 +1152,23 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
+  // The veil stays in the page while it leaves over the cards, so the focus
+  // waits on its heading until the veil has gone, rather than land on a
+  // control the veil still covers (ENG-175, WCAG 2.4.11); the veil keeps that
+  // heading in sight meanwhile (ATOM_VEIL_VARIANTS). AnimatePresence removes
+  // the veil in a render of its own; `veilLeft` renders the feed again then,
+  // so the focus moves on.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const [, veilLeft] = useReducer((exits: number) => exits + 1, 0);
+  // A refresh under the veil has no cards to dip: the veil already covers
+  // it, and the cards it leaves over must be whole when a retry's focus lands
+  // on them. Kept until the refresh ends, which can come after the veil has
+  // gone.
+  const [refreshUnderVeil, setRefreshUnderVeil] = useState(false);
+  if (isRefreshing && atomVeil !== null && !refreshUnderVeil) setRefreshUnderVeil(true);
+  if (!isRefreshing && refreshUnderVeil) setRefreshUnderVeil(false);
   const retryButtonRef = useWaitFocus(
-    () => (atomVeil ? veilHeadingRef.current : null),
+    () => veilHeadingRef.current,
     () => feedRef.current?.querySelector<HTMLElement>(
       `.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) ${CARD_CONTROL}`,
     ) ?? null,
@@ -1419,7 +1459,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <p className="feed-last-visit" aria-hidden="true">{lastVisitShown}</p>
       )}
       <div
-        className={`feed-container${isRefreshing ? ' feed-container--refreshing' : ''}`}
+        className={`feed-container${isRefreshing && !refreshUnderVeil ? ' feed-container--refreshing' : ''}`}
         ref={attachFeed}
         onScroll={handleScroll}
       >
@@ -1530,7 +1570,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           land, the cards mount underneath and this recedes over them. Not a
           live region: it is inserted with its words, which a region does not
           speak, and the landmark's status announces the wait instead. */}
-      <AnimatePresence>
+      <AnimatePresence custom={veilHeadingRef} onExitComplete={veilLeft}>
         {atomVeil && (
           <motion.div
             key="atom-veil"
