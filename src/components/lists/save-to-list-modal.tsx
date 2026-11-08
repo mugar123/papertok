@@ -98,6 +98,7 @@ export default function SaveToListModal({
   embedded = false,
   titleId,
   closeGuardRef,
+  finalFocus,
 }: {
   paper: Paper;
   /** The surface of the card that opened the picker, which its save reports (forYouCardNotable). */
@@ -107,6 +108,12 @@ export default function SaveToListModal({
   /** The title's id, for a host sheet that labels itself with it (embedded). */
   titleId?: string;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
+  /**
+   * Asked on close where focus goes: an element, or true for the button that
+   * opened the window. The lists page needs it when Save took the paper out
+   * of the open list and that button leaves with its row.
+   */
+  finalFocus?: () => HTMLElement | true;
 }) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -421,9 +428,9 @@ export default function SaveToListModal({
    * the window can go. Flipping `open` is all it takes: Base UI marks the
    * popup `data-closed`, waits for `dialogOut` to finish (or for nothing,
    * under `prefers-reduced-motion`, where the stylesheet sets the animation
-   * to `none`), hands focus back to the button that opened the window, and
-   * only then reports `onOpenChangeComplete(false)` — the one place the
-   * parent is told.
+   * to `none`), hands focus back to the button that opened the window (or to
+   * `finalFocus`), and only then reports `onOpenChangeComplete(false)` — the
+   * one place the parent is told.
    */
   const closeDialog = () => (embedded ? onClose() : setOpen(false));
 
@@ -709,7 +716,7 @@ export default function SaveToListModal({
     animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
   }, [creatingList, reduceMotion]);
   const frame = (children: ReactNode) => (isPhone ? (
-    <DrawerContent className="save-modal--sheet">
+    <DrawerContent className="save-modal--sheet" finalFocus={finalFocus}>
       {children}
     </DrawerContent>
   ) : (
@@ -718,6 +725,7 @@ export default function SaveToListModal({
       overlayClassName="save-modal-scrim"
       showClose={false}
       closeLabel={copy.close}
+      finalFocus={finalFocus}
     >
       {children}
     </DialogContent>
