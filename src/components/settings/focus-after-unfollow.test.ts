@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { focusAfterUnfollow } from './focus-after-unfollow.ts';
+import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
 
 const ROWS = ['journal:S1', 'journal:S2', 'journal:S3'];
 const NONE = new Set<string>();
@@ -40,4 +40,32 @@ test('no row takes focus when every other row is pending', () => {
 
 test('the removed row is found even if it is pending itself', () => {
   assert.equal(focusAfterUnfollow(ROWS, 'journal:S2', new Set(['journal:S2'])), 'journal:S3');
+});
+
+// A stand-in for DOM nodes: each contains itself and the nodes listed under it.
+interface Spot { name: string; contains(other: Spot | null): boolean }
+function spot(name: string, inside: Spot[] = []): Spot {
+  const node: Spot = { name, contains: other => other === node || inside.some(child => child.contains(other)) };
+  return node;
+}
+const body = spot('body');
+const rowButton = spot('Unfollow Barbara Sample');
+const questionButton = spot('Unfollow');
+const question = spot('question', [questionButton]);
+
+test('an unfollow hands focus on while nothing, the question or its row holds it', () => {
+  assert.equal(focusLeftByQuestion(null, { body, rowButton, question: null }), true);
+  assert.equal(focusLeftByQuestion(body, { body, rowButton, question: null }), true);
+  assert.equal(focusLeftByQuestion(rowButton, { body, rowButton, question }), true);
+  assert.equal(focusLeftByQuestion(questionButton, { body, rowButton, question }), true);
+  assert.equal(focusLeftByQuestion(question, { body, rowButton, question }), true);
+});
+
+// ENG-170 review: opening search while the question closed sent focus from
+// the search field to the row behind the palette.
+test('focus the reader moved during the close stays where it is', () => {
+  const searchField = spot('Search');
+  assert.equal(focusLeftByQuestion(searchField, { body, rowButton, question }), false);
+  assert.equal(focusLeftByQuestion(searchField, { body, rowButton, question: null }), false);
+  assert.equal(focusLeftByQuestion(spot('Unfollow Ada Example'), { body, rowButton: undefined, question: null }), false);
 });

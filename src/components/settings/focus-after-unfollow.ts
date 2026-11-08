@@ -13,3 +13,18 @@ export function focusAfterUnfollow(keys: readonly string[], removed: string, pen
   if (index === -1) return null;
   return rows[index + 1] ?? rows[index - 1] ?? null;
 }
+
+/**
+ * Whether focus is still where a closing unfollow question leaves it, so the
+ * unfollow may hand it on: on nothing (the page's `body`, or null, as when
+ * the question's popup is removed with focus inside it), on the Unfollow
+ * button of the row it asked about, or inside the question. Focus the reader
+ * has moved anywhere else during the close, such as into the search palette,
+ * stays there.
+ */
+export function focusLeftByQuestion<T extends { contains(other: T | null): boolean }>(
+  focused: T | null,
+  { body, rowButton, question }: { body: T | null; rowButton: T | undefined; question: T | null },
+) {
+  return focused === null || focused === body || focused === rowButton || (question?.contains(focused) ?? false);
+}

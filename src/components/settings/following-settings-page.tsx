@@ -24,7 +24,7 @@ import { followRefusal, refusalShownTo, sayFollowRefused } from '../following/fo
 import type { ActionStart } from '../ui/toast.ts';
 import { sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
-import { focusAfterUnfollow } from './focus-after-unfollow.ts';
+import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -116,29 +116,30 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     clearTimeout(releaseTimer.current);
     inView.current = false;
   }, []);
-  // Where focus goes once a confirmed unfollow's question has left: the key
-  // of the row whose Unfollow button takes it, or null for the type control
-  // (the page's current tab, the sheet's select). The row's own button, where
-  // the question would return it, leaves with the row. Set only from
-  // finishUnfollow until the commit that follows; undefined otherwise, and
-  // the question returns focus as usual. The effect below moves it in the
-  // commit that takes the row out of the list, so focus never rests on a
-  // control that is leaving, and goes to the type control if the row's
-  // button has gone or been disabled since finishUnfollow chose it. Two
-  // orderings hold this up. Base UI reports the question's close
-  // (finishUnfollow) in the same synchronous pass that unmounts it, before it
-  // reads finalFocus; were the report a pass later, focus would go back to the
-  // leaving button. toggleFollow takes the row out before its first await, so
-  // when the opening tab empties and the page switches tabs, the tab it
-  // switches to is the one that takes focus.
-  const unfollowFocus = useRef<string | null | undefined>(undefined);
+  // Where focus goes once a confirmed unfollow's question has left: from the
+  // row it asked about to the row whose Unfollow button takes it, or to null
+  // for the type control (the page's current tab, the sheet's select). The
+  // row's own button, where the question would return it, leaves with the
+  // row, so a confirmed question returns no focus (finalFocus is false from
+  // the press) and the effect below moves it instead, in the commit that
+  // follows finishUnfollow. It moves focus only while focus is still where the
+  // question leaves it, never off a control the reader moved to during the
+  // close, and goes to the type control if the chosen row's button has gone
+  // or been disabled since. A cancelled question keeps Base UI's own return,
+  // which also leaves moved focus alone. toggleFollow takes the row out
+  // before its first await, so when the opening tab empties and the page
+  // switches tabs, the tab it switches to is the one that takes focus.
+  const unfollowFocus = useRef<{ from: string; to: string | null } | undefined>(undefined);
   const unfollowButtons = useRef(new Map<string, HTMLButtonElement>());
   const typeControl = useRef<HTMLButtonElement | null>(null);
+  const question = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
-    const focusKey = unfollowFocus.current;
-    if (focusKey === undefined) return;
+    const handOff = unfollowFocus.current;
+    if (!handOff) return;
     unfollowFocus.current = undefined;
-    const nextRow = focusKey === null ? undefined : unfollowButtons.current.get(focusKey);
+    const { activeElement, body } = document;
+    if (!focusLeftByQuestion(activeElement, { body, rowButton: unfollowButtons.current.get(handOff.from), question: question.current })) return;
+    const nextRow = handOff.to === null ? undefined : unfollowButtons.current.get(handOff.to);
     (nextRow && !nextRow.disabled ? nextRow : typeControl.current)?.focus();
   });
 
@@ -212,9 +213,15 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     if (isOpen) return;
     const unfollow = unfollowOnLeave({ confirmedAt, unfollowing });
     if (unfollow) {
+      const from = getRowKey(unfollow.entity);
       const pendingKeys = new Set(visibleEntities.filter(entity => following.isFollowPending(entity)).map(getRowKey));
-      unfollowFocus.current = focusAfterUnfollow(visibleEntities.map(getRowKey), getRowKey(unfollow.entity), pendingKeys);
+      unfollowFocus.current = { from, to: focusAfterUnfollow(visibleEntities.map(getRowKey), from, pendingKeys) };
       void handleUnfollow(unfollow.entity, unfollow.startedAt);
+    } else if (released && unfollowing) {
+      // Confirmed, but the account changed during the leave and the row
+      // stays: its own button takes focus back, which the question did not.
+      const from = getRowKey(unfollowing);
+      unfollowFocus.current = { from, to: from };
     }
     setConfirmedAt(null);
     setUnfollowing(null);
@@ -236,8 +243,7 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     released,
     confirmUnfollow,
     finishUnfollow,
-    // The question returns focus itself unless an unfollow takes it elsewhere.
-    unfollowReturnsFocus: () => unfollowFocus.current === undefined,
+    question,
     unfollowButtons,
     typeControl,
   };
@@ -358,7 +364,7 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
  * which keeps its list and its scroll behind it.
  */
 function UnfollowConfirm({ view }: { view: FollowedView }) {
-  const { unfollowing, unfollowOpen, setUnfollowOpen, released, confirmUnfollow, finishUnfollow, unfollowReturnsFocus } = view;
+  const { unfollowing, unfollowOpen, setUnfollowOpen, released, confirmUnfollow, finishUnfollow, question } = view;
   const isPhone = useIsPhone();
   const unfollowName = unfollowing ? getFollowDisplayName(unfollowing) : '';
   const unfollowTitle = unfollowing ? `Unfollow "${unfollowName}"?` : 'Unfollow?';
@@ -378,7 +384,7 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
       onOpenChange={setUnfollowOpen}
       onOpenChangeComplete={finishUnfollow}
     >
-      <DrawerContent className="pc-share-sheet following-unfollow-drawer" finalFocus={unfollowReturnsFocus}>
+      <DrawerContent ref={question} className="pc-share-sheet following-unfollow-drawer" finalFocus={!released}>
         <DrawerHandle />
         <div className="following-unfollow-sheet">
           {petri}
@@ -397,7 +403,7 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
       onOpenChange={setUnfollowOpen}
       onOpenChangeComplete={finishUnfollow}
     >
-      <AlertDialogContent className="following-unfollow-dialog" finalFocus={unfollowReturnsFocus}>
+      <AlertDialogContent ref={question} className="following-unfollow-dialog" finalFocus={!released}>
         {petri}
         <AlertDialogTitle>{unfollowTitle}</AlertDialogTitle>
         <AlertDialogDescription>{unfollowDescription}</AlertDialogDescription>
