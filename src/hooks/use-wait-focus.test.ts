@@ -56,8 +56,11 @@ test('the focus goes back to Try again when the error comes back', () => {
   assert.equal(view.active(), again);
 });
 
-// PR #425 browser check (ENG-175): the focus landed on the first card's
-// control while the veil still covered it, then the veil faded out.
+// The feed keeps its veil's heading as the wait while the veil fades out over
+// the papers (ENG-175). This pins what that relies on here: a wait still in
+// the page holds the focus even once nothing loads. The feed's side, the wait
+// lasting through the exit and the render when the veil leaves, has no DOM
+// test and is checked in the browser.
 test('the focus goes to the card shown once the veil over it has left', () => {
   const { view, memory, heading } = pressedTryAgain();
   memory.settle(heading, noCard, true);
