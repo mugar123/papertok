@@ -96,6 +96,7 @@ export default function SaveToListModal({
   surface,
   onClose,
   embedded = false,
+  titleId,
   closeGuardRef,
 }: {
   paper: Paper;
@@ -103,6 +104,8 @@ export default function SaveToListModal({
   surface?: string;
   onClose: () => void;
   embedded?: boolean;
+  /** The title's id, for a host sheet that labels itself with it (embedded). */
+  titleId?: string;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
 }) {
   const { user } = useAuth();
@@ -725,7 +728,7 @@ export default function SaveToListModal({
           {isPhone && !embedded && <DrawerHandle />}
           {/* No header: the X alone, in the corner. The title still names the
               window for assistive tech. */}
-          <Title className="visually-hidden">{copy.title}</Title>
+          <Title id={titleId} className="visually-hidden">{copy.title}</Title>
           {/* The sections morph: the one leaving blurs out over the one
               arriving (`popLayout` lifts it out of the flow, so the window's
               height already reads the new one), in the direction of travel —

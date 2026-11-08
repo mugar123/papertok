@@ -7,7 +7,7 @@ import type { SyncState } from '../../services/public-list-sync.ts';
 import type { PublicPaperInput } from '../../services/public-list-payload.ts';
 import type { ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { db } from '../../services/firebase.ts';
 import {
@@ -395,6 +395,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [rowSheet, setRowSheet] = useState<RowTarget | null>(null);
   const [rowSheetOpen, setRowSheetOpen] = useState(false);
   const [rowSheetStep, setRowSheetStep] = useState<'menu' | 'remove' | 'edit'>('menu');
+  // The sheet names itself after the visible step's title by id. Base UI
+  // labels a drawer with the last title that mounted and clears that label
+  // when a title unmounts, and the leaving step unmounts after its exit
+  // animation, once the arriving step's title has mounted: the sheet would be
+  // left with no name.
+  const rowSheetTitleId = useId();
   const rowSheetFrom = useRef<number | null>(null);
   const rowSheetStepRef = useRef<HTMLElement | null>(null);
   const setRowSheetStepRef = (node: HTMLElement | null) => { if (node) rowSheetStepRef.current = node; };
@@ -2085,7 +2091,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             if (!isOpen) { setRowSheet(null); setRowSheetStep('menu'); editGuardRef.current = null; }
           }}
         >
-          <DrawerContent className={`pc-share-sheet lists-row-sheet${rowSheetStep === 'edit' ? ' save-modal--sheet' : ''}`}>
+          <DrawerContent
+            className={`pc-share-sheet lists-row-sheet${rowSheetStep === 'edit' ? ' save-modal--sheet' : ''}`}
+            aria-labelledby={`${rowSheetTitleId}-${rowSheetStep}`}
+          >
             <DrawerHandle />
             <AnimatePresence initial={false} mode="popLayout">
             <motion.div
@@ -2110,7 +2119,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             >
               {rowSheetStep === 'menu' ? (
                 <>
-                  <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'More actions'}</DrawerTitle>
+                  <DrawerTitle id={`${rowSheetTitleId}-menu`} render={<h3 />} className="pc-share-sheet-title">{'More actions'}</DrawerTitle>
                   <ul className="pc-share-list">
                     <li>
                       <button type="button" className="pc-share-row" onClick={() => switchRowSheetStep('edit')}>
@@ -2137,6 +2146,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               ) : rowSheetStep === 'edit' ? (
                 <SaveToListModal
                   embedded
+                  titleId={`${rowSheetTitleId}-edit`}
                   paper={{ ...rowSheet!.paper, id: rowSheet!.paperId } as Paper}
                   closeGuardRef={editGuardRef}
                   onClose={() => setRowSheetOpen(false)}
@@ -2144,7 +2154,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               ) : (
                 <div className="lists-remove-sheet">
                   <Petri pose="letGo" className="lists-remove-petri" />
-                  <DrawerTitle render={<h3 />} className="lists-remove-title">
+                  <DrawerTitle id={`${rowSheetTitleId}-remove`} render={<h3 />} className="lists-remove-title">
                     {`Remove from ${rowSheet?.listName || 'this list'}?`}
                   </DrawerTitle>
                   <p className="lists-remove-paper"><ScientificText>{rowSheet?.paper?.title || ''}</ScientificText></p>
