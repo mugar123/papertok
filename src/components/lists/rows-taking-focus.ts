@@ -44,3 +44,14 @@ export function rowHasLeft(
 ): boolean {
   return row !== null && row.listId === shown.listId && takers.has(row.paperId) && !shown.paperIds.includes(row.paperId);
 }
+
+/**
+ * Whether the reader has moved focus out of a closing overlay to another
+ * element, such as Search opened while the overlay was closing. Base UI leaves
+ * focus there, but not when `finalFocus` is a function: it counts as an
+ * explicit target and skips that check, so the function makes it. Focus on the
+ * page body, or still inside the overlay, has not been moved.
+ */
+export function focusMovedOut<T>(focused: T | null, body: T, overlay: { contains(node: T): boolean } | null): boolean {
+  return focused !== null && focused !== body && !overlay?.contains(focused);
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
+import { focusMovedOut, rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
 
 const none: ReadonlyMap<string, string | null> = new Map();
 const anyRow = () => true;
@@ -62,4 +62,19 @@ test('an overlay whose row is still there, came back or belongs to another list 
   assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_1', paperIds: ['a', 'b', 'c'] }, takers), false);
   assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_2', paperIds: ['a', 'c'] }, takers), false);
   assert.equal(rowHasLeft(null, { listId: 'list_1', paperIds: ['a', 'c'] }, takers), false);
+});
+
+test('a closing overlay leaves focus where the reader moved it, out of the overlay', () => {
+  // The phone row sheet is closing when the reader taps Search.
+  const sheet = { contains: (node: string) => node === 'cancel' || node === 'remove' };
+  assert.equal(focusMovedOut('search input', 'body', sheet), true);
+  assert.equal(focusMovedOut('another row', 'body', sheet), true);
+});
+
+test('a closing overlay still hands focus over from inside it or from the page body', () => {
+  const sheet = { contains: (node: string) => node === 'cancel' || node === 'remove' };
+  assert.equal(focusMovedOut('cancel', 'body', sheet), false);
+  // A press on the backdrop, or the focused control leaving, puts focus on the body.
+  assert.equal(focusMovedOut('body', 'body', sheet), false);
+  assert.equal(focusMovedOut(null, 'body', sheet), false);
 });
