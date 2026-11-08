@@ -1778,7 +1778,8 @@ test('in phase 1 a second POST from the same unsubscribe link that reads stale K
 async function resubscribedOverStaleCopy(kv: ReturnType<typeof createMemoryKv>, phase1: WorkerEnv) {
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
   const before = kv.values.get(SYNC_READER_KEY)!;
-  await unsubscribeWithLink(phase1, (JSON.parse(before) as Subscription).unsubscribeToken);
+  const oldToken = (JSON.parse(before) as Subscription).unsubscribeToken;
+  await unsubscribeWithLink(phase1, oldToken);
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
   const current = kv.values.get(SYNC_READER_KEY)!;
   const read = kv.get.bind(kv);
@@ -1786,8 +1787,43 @@ async function resubscribedOverStaleCopy(kv: ReturnType<typeof createMemoryKv>, 
   kv.get = (async (name: string, options?: unknown) => (
     stale && name === SYNC_READER_KEY ? JSON.parse(before) : read(name, options as never)
   )) as typeof kv.get;
-  return { current, token: (JSON.parse(current) as Subscription).unsubscribeToken, show: () => { stale = false; } };
+  return { current, token: (JSON.parse(current) as Subscription).unsubscribeToken, oldToken, show: () => { stale = false; } };
 }
+
+test('in phase 1 a link from before an earlier unsubscribe does not cancel the new subscription where KV caches the old record and link', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const { current, token, oldToken, show } = await resubscribedOverStaleCopy(kv, phase1);
+  const oldIndexKey = `notification:unsubscribe:${oldToken}`;
+  const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+
+  // Each request's location still caches the old link's index, which the unsubscribe deleted.
+  kv.values.set(oldIndexKey, SYNC_READER.uid);
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink), phase1)).status, 400);
+  kv.values.set(oldIndexKey, SYNC_READER.uid);
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), phase1)).status, 400);
+  assert.equal(kv.values.get(SYNC_READER_KEY), current, 'the old link cancelled the new subscription');
+  assert.equal(kv.values.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the old link removed the new one');
+
+  await unsubscribeWithLink(phase1, token);
+  show();
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+});
+
+test('in phase 1 the link of a subscription whose object never learned its token still cancels it where KV caches an older record', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const { token, show } = await resubscribedOverStaleCopy(kv, phase1);
+  // The object's last reopen came from a Worker from before tokens were recorded there.
+  const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+
+  await unsubscribeWithLink(phase1, token);
+  show();
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+});
 
 test('in phase 1 the new unsubscribe link still works where KV caches the record from before an earlier unsubscribe', async () => {
   const kv = createMemoryKv();

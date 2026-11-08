@@ -1150,7 +1150,9 @@ async function changeSubscription(
       await env.NOTIFICATION_STORE!.delete(key);
       return { changed: true, previous, subscription: null, inKv: true };
     }
-    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
+    // The object keeps the record's token, which the unsubscribe link checks
+    // while KV may still return the index and record of a cancelled subscription.
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken });
     if (reopened.accepted) {
       // The object's version, not one past the KV read: that read may be stale,
       // and two saves computed from it would write the same version.
@@ -2961,12 +2963,16 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // cached miss of a record just saved, unless their object says a cancellation
   // closed it. Only a closed object makes the link spent; otherwise the link
   // still works, and an unsubscribe cancels whatever the record turns out to be.
-  const unread = !subscription && (await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable;
+  // When the object knows the token of the save that reopened it, a link with
+  // another token is from a subscription a cancellation ended: KV may still
+  // return that link's index here, but the link no longer works (ENG-193).
+  const object = subscription ? null : (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
+  const unread = Boolean(object?.migratable && (!object.token || object.token === token));
   if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
     // A second POST from the same link (a double click, or a mail client's
     // one-click POST before the reader's) may read a stale KV copy of the token
     // index and record; the object a cancellation closed says it already worked.
-    if (!subscription && request.method === 'POST') {
+    if (object && !object.migratable && request.method === 'POST') {
       return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
     }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
