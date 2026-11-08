@@ -10,8 +10,10 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * a KV record written before it is a copy of a cancelled subscription.
  * `token` is the unsubscribe token the last `mark` with `migratable: true`
  * reopened the object for, present only while nothing has raised the version
- * since: an unsubscribe link with another token belongs to a subscription a
- * cancellation ended, whatever a stale KV read still returns (ENG-193).
+ * since. A subscription keeps one token for all its emails, so a link from any
+ * of them matches it; an unsubscribe link with another token belongs to an
+ * earlier subscription a cancellation ended, whatever a stale KV read still
+ * returns (ENG-193).
  */
 export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string }
 export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown }

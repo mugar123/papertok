@@ -2160,7 +2160,7 @@ const EMAIL_COPY = {
   unavailable: 'Service unavailable',
   unavailableBody: 'Your email settings could not be reached. Please try this link again later.',
   invalidLink: 'Invalid unsubscribe link',
-  invalidLinkBody: 'If you have already unsubscribed, there is nothing more to do. Otherwise, turn off email updates in Settings.',
+  invalidLinkBody: 'This link is not valid or no longer works, so it did not change your email settings. In Settings you can see whether email updates are on and turn them off.',
   openSettings: 'Open Settings',
   confirmTitle: 'Confirm unsubscribe',
   confirmBody: 'Do you want to stop receiving PaperTok updates by email?',
@@ -2959,8 +2959,11 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
       action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok),
     });
   }
-  // Already used, replaced by a newer email or cut short: the link cannot say
-  // which, so the page names the likely case and the way to the setting.
+  // Cut short, already used, or from an earlier subscription that a
+  // cancellation ended (every email of the current subscription carries the
+  // same link, and it keeps working): the page cannot tell which, nor whether
+  // the reader is still subscribed, so it says the link changed nothing and
+  // leads to the setting.
   const invalidLinkPage = () => unsubscribePage(400, {
     title: copy.invalidLink,
     body: copy.invalidLinkBody,
@@ -2977,8 +2980,11 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // cached miss of a record just saved, unless their object says the link is
   // spent. It is spent when a cancellation closed the object, or when the save
   // that reopened it named another token: KV may still return the index of a
-  // link whose subscription a cancellation ended (ENG-193). An object a Worker
-  // from before that reopened names no token, and the link still works there.
+  // link whose subscription a cancellation ended (ENG-193). A subscription keeps
+  // one token for all its emails, so a link from any email of the current
+  // subscription, not only the most recent, still matches; only the links of an
+  // earlier, cancelled subscription stop working. An object a Worker from
+  // before that reopened names no token, and the link still works there.
   const object = subscription ? null : (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
   const unread = Boolean(object?.migratable && (!object.token || object.token === token));
   if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
