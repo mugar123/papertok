@@ -56,14 +56,21 @@ test('the focus goes back to Try again when the error comes back', () => {
   assert.equal(view.active(), again);
 });
 
-test('the focus goes to the card shown when the papers arrive', () => {
+// PR #425 browser check (ENG-175): the focus landed on the first card's
+// control while the veil still covered it, then the veil faded out.
+test('the focus goes to the card shown once the veil over it has left', () => {
   const { view, memory, heading } = pressedTryAgain();
   memory.settle(heading, noCard, true);
   const firstControl = view.element();
 
-  // The veil is still fading out with the focus on its heading.
-  memory.settle(null, () => firstControl, false);
+  // The papers are in and the veil fades out over them, with its heading
+  // still in the page and the focus on it.
+  memory.settle(heading, () => firstControl, false);
+  assert.equal(view.active(), heading);
 
+  // The veil leaves with its heading, and the focus falls to the page.
+  view.blur();
+  memory.settle(null, () => firstControl, false);
   assert.equal(view.active(), firstControl);
 });
 

@@ -27,7 +27,7 @@ interface FeedContainerProps {
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useReducer, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check, Warning } from '@phosphor-icons/react';
@@ -1126,9 +1126,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
+  // The veil stays in the page while it fades out over the cards, so the
+  // focus waits on its heading until the veil has gone, rather than land on
+  // a control the veil still covers (ENG-175, WCAG 2.4.11). AnimatePresence
+  // removes the veil in a render of its own; `veilLeft` renders the feed
+  // again then, so the focus moves on.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const [, veilLeft] = useReducer((exits: number) => exits + 1, 0);
   const retryButtonRef = useWaitFocus(
-    () => (atomVeil ? veilHeadingRef.current : null),
+    () => veilHeadingRef.current,
     () => feedRef.current?.querySelector<HTMLElement>(
       `.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) ${CARD_CONTROL}`,
     ) ?? null,
@@ -1530,7 +1536,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           land, the cards mount underneath and this recedes over them. Not a
           live region: it is inserted with its words, which a region does not
           speak, and the landmark's status announces the wait instead. */}
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={veilLeft}>
         {atomVeil && (
           <motion.div
             key="atom-veil"
