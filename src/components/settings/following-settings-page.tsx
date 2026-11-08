@@ -122,7 +122,13 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   // own button, where the question would return it, leaves with the row.
   // Undefined while no unfollow is under way, and the question returns focus
   // as usual. The effect below moves it in the commit that takes the row out
-  // of the list, so focus never rests on a control that is leaving.
+  // of the list, so focus never rests on a control that is leaving. Two
+  // orderings hold this up. Base UI reports the question's close
+  // (finishUnfollow) in the same synchronous pass that unmounts it, before it
+  // reads finalFocus; were the report a pass later, focus would go back to the
+  // leaving button. toggleFollow takes the row out before its first await, so
+  // when the opening tab empties and the page switches tabs, the tab it
+  // switches to is the one that takes focus.
   const unfollowFocus = useRef<string | null | undefined>(undefined);
   const unfollowButtons = useRef(new Map<string, HTMLButtonElement>());
   const typeControl = useRef<HTMLButtonElement | null>(null);
