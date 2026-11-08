@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rowsTakingFocus } from './rows-taking-focus.ts';
+import { rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
 
 const none: ReadonlyMap<string, string | null> = new Map();
 const anyRow = () => true;
@@ -45,4 +45,21 @@ test('a row whose successor leaves later passes focus to that successor\'s succe
 test('nothing changes when no row left', () => {
   const takers = rowsTakingFocus(none, ['a', 'b'], ['a', 'b', 'c'], anyRow);
   assert.equal(takers, none);
+});
+
+test('an overlay whose row left while it was open hands focus to the row that took over', () => {
+  // The desktop Edit window: Save unticks Read later, the row leaves, and the
+  // window closes afterwards.
+  const takers = rowsTakingFocus(none, ['a', 'b', 'c'], ['a', 'c'], anyRow);
+  const shown = { listId: '__read_later__', paperIds: ['a', 'c'] };
+  assert.equal(rowHasLeft({ listId: '__read_later__', paperId: 'b' }, shown, takers), true);
+  assert.equal(takers.get('b'), 'c');
+});
+
+test('an overlay whose row is still there, came back or belongs to another list returns focus to its opener', () => {
+  const takers = rowsTakingFocus(none, ['a', 'b', 'c'], ['a', 'c'], anyRow);
+  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'a' }, { listId: 'list_1', paperIds: ['a', 'c'] }, takers), false);
+  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_1', paperIds: ['a', 'b', 'c'] }, takers), false);
+  assert.equal(rowHasLeft({ listId: 'list_1', paperId: 'b' }, { listId: 'list_2', paperIds: ['a', 'c'] }, takers), false);
+  assert.equal(rowHasLeft(null, { listId: 'list_1', paperIds: ['a', 'c'] }, takers), false);
 });

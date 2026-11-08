@@ -31,3 +31,16 @@ export function rowsTakingFocus(
   for (const [paperId, taker] of leaving) next.set(paperId, taker);
   return next;
 }
+
+/**
+ * Whether the row an overlay was opened from has left the list now shown, so
+ * the overlay hands focus to the row in `takers` rather than back to its own
+ * opener. A row of another list, or one that came back, has not.
+ */
+export function rowHasLeft(
+  row: { listId: string; paperId: string } | null,
+  shown: { listId: string | null; paperIds: readonly string[] },
+  takers: ReadonlyMap<string, string | null>,
+): boolean {
+  return row !== null && row.listId === shown.listId && takers.has(row.paperId) && !shown.paperIds.includes(row.paperId);
+}

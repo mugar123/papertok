@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { ComponentProps, MouseEvent } from 'react'
 import type { Paper } from './models/paper.ts'
 import type { ReaderMenu } from './components/feed/paper-menu.tsx'
 
@@ -115,8 +115,9 @@ function AppContent() {
   // it does on a desktop (2026-10-09).
   const openPdf = useCallback((paper: Paper, menu: ReaderMenu) => setPdfOpen({ paper, menu }), [])
   // The paper the list picker is open for, with the surface of the card that
-  // opened it: the picker's save carries it (forYouCardNotable).
-  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string } | null>(null)
+  // opened it: the picker's save carries it (forYouCardNotable). The lists
+  // page also says where focus goes on close (`finalFocus`).
+  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string; finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus'] } | null>(null)
   const openSaveModal = useCallback((paper: Paper, surface?: string) => setSaveModal({ paper, surface }), [])
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
@@ -399,7 +400,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={openPdf} onEditPaper={openSaveModal} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={(paper, finalFocus) => setSaveModal({ paper, finalFocus })} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -601,6 +602,7 @@ function AppContent() {
           <SaveToListModal
             paper={saveModal.paper}
             surface={saveModal.surface}
+            finalFocus={saveModal.finalFocus}
             onClose={() => setSaveModal(null)}
           />
         )}

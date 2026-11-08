@@ -5,7 +5,7 @@ import type { OwnList } from '../../utils/own-lists.ts';
 import type { MetadataRequest } from '../../utils/list-paper-metadata-plan.ts';
 import type { SyncState } from '../../services/public-list-sync.ts';
 import type { PublicPaperInput } from '../../services/public-list-payload.ts';
-import type { ReactElement } from 'react';
+import type { ComponentProps, ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -35,7 +35,7 @@ import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
 import { removePaperFromMarkList } from './remove-paper-from-mark-list.ts';
 import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
-import { rowsTakingFocus } from './rows-taking-focus.ts';
+import { rowHasLeft, rowsTakingFocus } from './rows-taking-focus.ts';
 import { writeNewList } from './write-new-list.ts';
 import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
@@ -255,7 +255,7 @@ function publicBadgeState(status: string | undefined) {
 /** A paper in one list: what the row's remove dialog and phone sheet act on. */
 type RowTarget = { listId: string; listName?: string; paperId: string; paper: Partial<Paper> };
 
-export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu) => void; onEditPaper: (paper: Paper) => void }) {
+export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu) => void; onEditPaper: (paper: Paper, finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus']) => void }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -413,9 +413,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const listHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const shownRows = useRef<{ listId: string | null; paperIds: readonly string[] }>({ listId: null, paperIds: [] });
   const rowTakers = useRef<ReadonlyMap<string, string | null>>(new Map());
-  // The row the remove dialog or the row sheet was last opened from. Not
-  // `removing` or `rowSheet`: those clear as the overlay finishes closing,
-  // which is when it hands focus back.
+  // The row the remove dialog, the row sheet or the Edit window was last
+  // opened from. Not `removing` or `rowSheet`: those clear as the overlay
+  // finishes closing, which is when it hands focus back.
   const overlayRow = useRef<RowTarget | null>(null);
   // Whether this session has had one authoritative answer about which lists
   // exist. Until it has, `lists` is a seed or a guess, and persisting it could
@@ -1213,9 +1213,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     return row?.querySelector<HTMLElement>('[data-removal-focus]') ?? listHeadingRef.current;
   };
 
-  // A row leaves once its removal is accepted, whichever control or device
-  // asked for it. Focus still on it, or the menu sheet opened from it, would
-  // be left on a row about to go, and focus would fall to the page.
+  // A row leaves once its removal is accepted, here or from another device.
+  // Focus still on the row would fall to the page when it goes. The remove
+  // dialog, the row sheet and the desktop Edit window hand focus over as they
+  // close (`focusAfterRowOverlay`); the card opened from a row does not yet.
   const openPaperIds = displayLists.find((list) => list.id === expandedList)?.paperIds;
   useLayoutEffect(() => {
     const before = shownRows.current;
@@ -1232,17 +1233,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const focused = document.activeElement;
     const holder = papersRef.current?.contains(focused) ? focused?.closest<HTMLElement>('[data-paper-id]')?.dataset.paperId : undefined;
     if (holder !== undefined && left(holder)) removedRowFocus(holder)?.focus();
-    // Only the menu acts on the row. The edit step stays open: closing it
-    // would discard a note being written, and it hands focus over on close.
-    if (rowSheetOpen && rowSheetStep === 'menu' && rowSheet?.listId === expandedList && left(rowSheet.paperId)) setRowSheetOpen(false);
+    // A sheet left on the menu or the remove step would act on a paper that is
+    // gone: Remove would like it again in Favorites. The edit step stays open:
+    // closing it would discard a note being written, and it hands focus over
+    // on close.
+    if (rowSheetOpen && rowSheetStep !== 'edit' && rowSheet?.listId === expandedList && left(rowSheet.paperId)) setRowSheetOpen(false);
   }, [expandedList, openPaperIds, getPaper, rowSheet, rowSheetOpen, rowSheetStep]);
 
   // An overlay opened from a row gives focus back to the row's own control or,
   // once the row has left, to the control that took its place. The removal
-  // can be accepted while the overlay is still closing.
+  // can be accepted while the overlay is still closing. Refs only: the Edit
+  // window keeps the callback it was given when it opened.
   const focusAfterRowOverlay = () => {
     const row = overlayRow.current;
-    return row && row.listId === expandedList && rowTakers.current.has(row.paperId) && !openPaperIds?.includes(row.paperId)
+    return row && rowHasLeft(row, shownRows.current, rowTakers.current)
       ? (removedRowFocus(row.paperId) ?? true)
       : true;
   };
@@ -1901,7 +1905,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId } as Paper); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                overlayRow.current = { listId: list.id, listName: list.name, paperId, paper };
+                                onEditPaper?.({ ...paper, id: paperId } as Paper, () => focusAfterRowOverlay());
+                              }}
                               aria-label={'Edit note and tags'}
                               title={'Edit note and tags'}
                             >
