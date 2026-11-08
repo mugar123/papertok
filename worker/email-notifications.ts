@@ -3003,9 +3003,14 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // KV cache, or a cancelled copy of another subscription, proves nothing
   // (ENG-193).
   let proved = false;
-  const legacy = object.migratable && !object.token && !object.subscription;
+  const legacy = object.migratable && !object.token;
   if (legacy) {
-    const kvRecord = (await readKvRecord(env, uid)) ?? await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS);
+    // As readPhase1Slot reads: a miss, or a copy from before the cancellation,
+    // is read again with the shortest KV cache.
+    const first = await readKvRecord(env, uid);
+    const kvRecord = first && first.revision >= (object.cancelledAt || 0)
+      ? first
+      : (await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS)) ?? first;
     const names = kvRecord?.subscription?.unsubscribeToken === token;
     const sinceCancelled = Boolean(kvRecord && kvRecord.revision >= (object.cancelledAt || 0));
     if (!kvRecord || (!names && !sinceCancelled)) return tryAgainPage();
@@ -3034,18 +3039,25 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
     // while the object still holds this link's subscription. When anything
     // changed the object since the check, it is read again: a cancellation
     // already did what the link asks; another subscription's token makes the
-    // link spent; anything else, such as a Worker from before ENG-193 reopening
-    // it without a token, leaves the link to a retry, with nothing written.
-    if (!await deleteSubscription(env, uid, subscription, token, object.version)) {
+    // link spent; a save of the same subscription (the object still names this
+    // link) gets one more close on the version just read, since a mail
+    // provider's one-click POST is seldom retried; anything else, such as a
+    // Worker from before ENG-193 reopening it without a token, leaves the link
+    // to a retry, with nothing written.
+    let closed = await deleteSubscription(env, uid, subscription, token, object.version);
+    if (!closed) {
       const now = (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
       // Closed and empty is cancelled; a phase 2 object that holds a record is closed too.
       if (!now.migratable && !now.subscription) {
         return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
       }
       const holder = now.token ?? now.subscription?.unsubscribeToken;
-      if (holder === undefined || holder === token) return tryAgainPage();
-      await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
-      return invalidLinkPage();
+      if (holder !== undefined && holder !== token) {
+        await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
+        return invalidLinkPage();
+      }
+      if (holder === token) closed = await deleteSubscription(env, uid, subscription, token, now.version);
+      if (!closed) return tryAgainPage();
     }
     if (!subscription) await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
   }

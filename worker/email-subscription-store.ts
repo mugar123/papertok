@@ -122,6 +122,9 @@ export class EmailSubscriptionStore {
       const next = version + 1;
       await transaction.put(VERSION_KEY, next);
       await transaction.put(CLOSED_KEY, true);
+      // The record carries its own token from here on; a reopening mark's copy
+      // would only outlive an unsubscribe or an account deletion.
+      await transaction.delete(TOKEN_KEY);
       if (record === null) await transaction.delete(SUBSCRIPTION_KEY);
       else await transaction.put(SUBSCRIPTION_KEY, record);
       return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt } };
