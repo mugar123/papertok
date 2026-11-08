@@ -5,26 +5,31 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
-import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
   PRIVACY_NOTICE_ID,
   VISIT_START,
+  accountAnswerPending,
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
   feedCardsStay,
+  heldAccountNotice,
+  loadAccountNotice,
   modalIsOpen,
   noticeOnScreen,
   privacyCardsCover,
   privacyDialogOpen,
-  privacyOwedFor,
+  privacyNoticeStatus,
   readDismissedNudges,
   readingMinutePassed,
   recordPrivacyNoticeShown,
   rememberNudgeDismissal,
   visitChoiceGates,
   visitReaderReady,
+  type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
@@ -43,9 +48,12 @@ import PrivacyNotice from './privacy-notice.tsx';
 // A privacy policy change takes the visit's turn before any nudge. Only
 // signed-in accounts are told, in a dialog that opens once the feed shows its
 // first cards, never over its loading or error screen; utils/nudges.ts decides
-// who is owed it. Once the dialog is open on screen the version is recorded as
-// told for the account (recordPrivacyNoticeShown), so it does not return on a
-// later visit however it was closed. It stays open until the reader closes it,
+// who is owed it, and when that takes the account's own record, the dialog
+// and the visit's choice of a notice wait for the read (a failed read releases
+// the choice). Once the dialog is open on screen the version is recorded
+// as told for the account, in the account and in this browser
+// (recordPrivacyNoticeShown), so it does not return on a later visit or another
+// device however it was closed. It stays open until the reader closes it,
 // and any close spends the visit's turn (answerPrivacyNotice). Both are picked
 // on the feed, a nudge where it was before the notice existed
 // (visitChoiceGates). The dialog is shown on the feed only, and leaving the
@@ -116,13 +124,44 @@ export default function NudgeHost() {
     return () => window.clearTimeout(timer);
   }, [signedIn, dwellDone]);
 
+  // The account's record of the version it was shown, once read. Kept with its
+  // uid, so a read for one account never decides for the next.
+  const [accountNotice, setAccountNotice] = useState<AccountNoticeRecord | null>(null);
+  // The uid whose read failed in this visit, so the visit stops waiting for it.
+  const [accountReadFailedFor, setAccountReadFailedFor] = useState<string | null>(null);
+  const uid = user?.uid;
+
   // Read again on every render and whenever another tab writes storage, so a
   // notice shown in another tab puts away the one waiting here as well.
-  const privacyOwed = useSyncExternalStore(
+  const privacyStatus = useSyncExternalStore(
     subscribeToOtherTabs,
-    () => privacyOwedFor({ user, signedIn, version: PRIVACY_POLICY_VERSION, effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT }),
-    () => false,
+    () => privacyNoticeStatus({
+      user,
+      signedIn,
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+      account: accountNotice,
+    }),
+    () => 'settled' as const,
   );
+  const privacyOwed = privacyStatus === 'owed';
+  // Whether the account is being asked and its read for this uid has not failed.
+  const privacyPending = accountAnswerPending({ status: privacyStatus, uid, failedFor: accountReadFailedFor });
+
+  // Asked only when nothing else settles it, and not again in this visit once a
+  // read for the uid has failed (a profile retry included): the notice stays
+  // unshown until the next visit asks again. An answer that lands after the
+  // account changed is dropped.
+  useEffect(() => {
+    if (!privacyPending || !uid) return undefined;
+    const controller = new AbortController();
+    void loadAccountNotice({ uid, read: readAccountPrivacyNotice, signal: controller.signal }).then(answer => {
+      if (answer === 'failed') setAccountReadFailedFor(uid);
+      else if (answer) setAccountNotice(answer);
+    });
+    return () => controller.abort();
+  }, [privacyPending, uid]);
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
@@ -130,6 +169,7 @@ export default function NudgeHost() {
   const chosen = chooseVisitNotice(visit, {
     gates,
     privacyOwed,
+    privacyPending,
     eligible: emailProblem ? ['email-down'] : [],
     dismissed,
   });
@@ -156,6 +196,9 @@ export default function NudgeHost() {
   const tabVisible = useSyncExternalStore(subscribeToTabVisibility, () => document.visibilityState === 'visible', () => false);
   const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, tabVisible, wasOpen: privacyOpen });
   if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
+  // Open, the version counts as told for the rest of the visit too.
+  const heldNotice = heldAccountNotice({ dialogOpen, uid, version: PRIVACY_POLICY_VERSION, account: accountNotice });
+  if (heldNotice !== accountNotice) setAccountNotice(heldNotice);
 
   // The cards under the open dialog stop counting their time on screen. When
   // the reader closes it, they count again. When it
@@ -178,9 +221,8 @@ export default function NudgeHost() {
   // closes) instead of closing the dialog; it was already recorded, so it does
   // not return. Only the full-screen reader, PDF viewer and Similar layer
   // borrow an entry (use-overlay-history.ts).
-  const uid = user?.uid;
   useEffect(() => {
-    recordPrivacyNoticeShown({ uid, dialogOpen, version: PRIVACY_POLICY_VERSION });
+    recordPrivacyNoticeShown({ uid, dialogOpen, version: PRIVACY_POLICY_VERSION, saveToAccount: saveAccountPrivacyNotice });
   }, [uid, dialogOpen]);
 
   const closePrivacy = useCallback(() => setVisit(answerPrivacyNotice), []);
