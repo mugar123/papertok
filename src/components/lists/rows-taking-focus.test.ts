@@ -47,6 +47,14 @@ test('nothing changes when no row left', () => {
   assert.equal(takers, none);
 });
 
+test('a row that comes back, at the end of the list, still names the row that took its place', () => {
+  // Liked again on its card: Favorites adds it last, and the card hands focus
+  // to the row at the reader's place rather than to the far end of the list.
+  const left = rowsTakingFocus(none, ['a', 'b', 'c', 'd'], ['a', 'c', 'd'], anyRow);
+  const back = rowsTakingFocus(left, ['a', 'c', 'd'], ['a', 'c', 'd', 'b'], anyRow);
+  assert.equal(back.get('b'), 'c');
+});
+
 test('an overlay whose row left while it was open hands focus to the row that took over', () => {
   // The desktop Edit window: Save unticks Read later, the row leaves, and the
   // window closes afterwards.

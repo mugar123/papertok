@@ -1258,13 +1258,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // closing window: focus the reader has moved out of it, into Search opened
   // during the close for one, stays where it is (`focusMovedOut`). A row that
   // left and came back while the overlay was open, liked again on its card
-  // for one, gets focus on its new element's control.
+  // for one, is a new element, and it may come back at the other end of the
+  // list (Favorites adds it last). Focus keeps the reader's place: the row
+  // that took over when it left, or the row itself when none did.
   const focusAfterRowOverlay = (overlay: HTMLElement | null) => {
     if (focusMovedOut(document.activeElement, document.body, overlay)) return false;
     const row = overlayRow.current;
     if (row && rowHasLeft(row, shownRows.current, rowTakers.current)) return removedRowFocus(row.paperId) ?? true;
-    const cameBack = row?.element?.isConnected === false ? rowElement(papersRef.current, row.paperId) : undefined;
-    return cameBack?.querySelector<HTMLElement>('[data-removal-focus]') ?? true;
+    if (row?.element?.isConnected !== false) return true;
+    const cameBack = rowElement(papersRef.current, row.paperId);
+    if (!cameBack) return true;
+    const taker = rowTakers.current.get(row.paperId);
+    const place = taker ? rowElement(papersRef.current, taker) : undefined;
+    return (place ?? cameBack).querySelector<HTMLElement>('[data-removal-focus]') ?? true;
   };
 
   // The open card's toggles take a mark off at once, as they do in the feed.
