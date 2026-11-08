@@ -109,11 +109,12 @@ export default function SaveToListModal({
   titleId?: string;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
   /**
-   * Asked on close where focus goes: an element, or true for the button that
-   * opened the window. The lists page needs it when Save took the paper out
-   * of the open list and that button leaves with its row.
+   * Asked on close where focus goes, given the closing window: an element,
+   * true for the button that opened the window, or false to leave focus
+   * alone. The lists page needs it when Save took the paper out of the open
+   * list and that button leaves with its row.
    */
-  finalFocus?: () => HTMLElement | true;
+  finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean;
 }) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -715,8 +716,9 @@ export default function SaveToListModal({
     if (from == null || !sheet || reduceMotion) return;
     animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
   }, [creatingList, reduceMotion]);
+  const finalFocusFromSheet = finalFocus && (() => finalFocus(sheetOf() ?? null));
   const frame = (children: ReactNode) => (isPhone ? (
-    <DrawerContent className="save-modal--sheet" finalFocus={finalFocus}>
+    <DrawerContent className="save-modal--sheet" finalFocus={finalFocusFromSheet}>
       {children}
     </DrawerContent>
   ) : (
@@ -725,7 +727,7 @@ export default function SaveToListModal({
       overlayClassName="save-modal-scrim"
       showClose={false}
       closeLabel={copy.close}
-      finalFocus={finalFocus}
+      finalFocus={finalFocusFromSheet}
     >
       {children}
     </DialogContent>
