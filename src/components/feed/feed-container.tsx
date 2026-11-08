@@ -1458,10 +1458,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       {lastVisitShown && papers.length > 0 && (
         <p className="feed-last-visit" aria-hidden="true">{lastVisitShown}</p>
       )}
+      {/* Not a tab stop while the veil covers it. Chrome makes an overflowing
+          scroller with nothing focusable inside a tab stop, and under the veil
+          this one holds only the loading tail and the sentinel, so the
+          keyboard landed here with the ring hidden under the veil and the
+          navigation bar (ENG-175). */}
       <div
         className={`feed-container${isRefreshing && !refreshUnderVeil ? ' feed-container--refreshing' : ''}`}
         ref={attachFeed}
         onScroll={handleScroll}
+        tabIndex={atomVeil ? -1 : undefined}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (
