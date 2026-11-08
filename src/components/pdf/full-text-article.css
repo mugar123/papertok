@@ -160,7 +160,7 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-equation .ft-math, .ft-equation .ft-formula-image, .ft-equation .ft-tex { flex: 1; text-align: center; }
 /* A browser does not break MathML across lines as KaTeX's markup breaks, so a
    long inline formula scrolls on its own rather than widening the page. */
-:not(.ft-equation) > .ft-math:has(> math, > .katex > math) {
+:not(.ft-equation) > .ft-math:has(> math) {
   display: inline-block;
   max-width: 100%;
   padding-block: 0.15em;
@@ -168,6 +168,9 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
   overflow-y: hidden;
   vertical-align: middle;
 }
+.ft-math > math { font-size: 1.09em; }
+.ft-equation .ft-math > math { font-size: 1.13em; }
+.ft-math .tml-eqn::before { content: none; }
 .ft-formula-image { display: inline-block; max-height: 2.4em; vertical-align: middle; }
 .ft-equation .ft-formula-image { max-height: none; max-width: 100%; }
 .ft-copy { flex-shrink: 0; color: var(--text-tertiary); }
