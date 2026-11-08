@@ -1,5 +1,6 @@
 import type { Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
@@ -37,7 +38,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: Paper; onClose: () => void; closeRef?: Ref<() => void> | null }) {
+export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -117,8 +118,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef<number | null>(null);
 
-  // Every way out — the X, Escape — lands here, so the bounce is counted
-  // once, whichever it was.
+  // The X and Escape land here, so the bounce is counted once, whichever it was.
   const handleClose = useCallback(() => {
     if (!open) return;
     const elapsed = (Date.now() - startTimeRef.current!) / 1000;
@@ -127,6 +127,12 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     }
     setOpen(false);
   }, [open, paper, trackPdfBounce]);
+  const afterClose = useRef<(() => void) | null>(null);
+  const leaveThen = useCallback((then: () => void) => {
+    if (!open) return;
+    afterClose.current = then;
+    setOpen(false);
+  }, [open]);
 
   useEffect(() => {
     startTimeRef.current = Date.now();
@@ -205,7 +211,11 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}
-      onOpenChangeComplete={(nextOpen) => { if (!nextOpen) onClose(); }}
+      onOpenChangeComplete={(nextOpen) => {
+        if (nextOpen) return;
+        onClose();
+        afterClose.current?.();
+      }}
     >
       <DialogContent
         className="pdf-overlay"
@@ -259,7 +269,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
 
             {/* The tools are the loaded paper's: none of them shows while it is asked for. */}
             {fullText !== undefined && (
-            <PaperDock paper={paper} doc={fullText} scroll={showsText ? textScroll : null} contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
+            <PaperDock paper={paper} doc={fullText} scroll={showsText ? textScroll : null} fromCard={menu} onLeave={leaveThen} contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
                 {showsText && (fullText?.abstract.length ?? 0) > 0 && (
                   <Toggle className="pdf-dock-toggle" pressed={abstractShown} onPressedChange={setAbstractShown} aria-label="Abstract" title={abstractShown ? 'Hide the abstract' : 'Show the abstract'}>
                     {abstractShown ? <Eye size={18} aria-hidden="true" /> : <EyeSlash size={18} aria-hidden="true" />}

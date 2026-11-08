@@ -1,5 +1,6 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import type { Project } from '../../services/open-aire-service.ts';
 import type { RecentImpact } from '../../services/open-alex-service.ts';
@@ -372,17 +373,18 @@ export default function EntityExplorer({
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [pdfPaperToView, setPdfPaperToView] = useState<Paper | null>(null);
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
+  const pdfPaperToView = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfPaperToView(null)` is
+  // reports back only when its leave has played; `setPdfOpen(null)` is
   // just the fallback for the sub-frame gap before PDFViewer's own
   // `useImperativeHandle` has populated the ref — this import (above) is
   // plain, not lazy, so there is no chunk boundary to blame it on here.
   const pdfCloseRef = useRef<(() => void) | null>(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
-    else setPdfPaperToView(null);
+    else setPdfOpen(null);
   }, []);
   useOverlayHistory(Boolean(pdfPaperToView), requestPdfClose, 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
@@ -775,7 +777,7 @@ export default function EntityExplorer({
     resetForEntityRef.current = visitKey;
     const timer = setTimeout(() => {
       setSelectedPaper(null);
-      setPdfPaperToView(null);
+      setPdfOpen(null);
       setActiveTab('papers');
       setAuthorsOpened(false);
       setExpandedSummary(false);
@@ -2792,7 +2794,7 @@ export default function EntityExplorer({
             onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper) => setPdfPaperToView(paper)}
+            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -2805,8 +2807,8 @@ export default function EntityExplorer({
         )}
       </PaperOverlay>
 
-      {pdfPaperToView && (
-        <PDFViewer paper={pdfPaperToView} closeRef={pdfCloseRef} onClose={() => setPdfPaperToView(null)} />
+      {pdfOpen && (
+        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
       )}
     </div>
   );

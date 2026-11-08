@@ -1,5 +1,6 @@
 import type { Variants } from 'framer-motion';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { PaperCardProps } from '../feed/paper-card.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -60,7 +61,7 @@ export default function PublicPaperPage({
   onSaveToList,
   isAuthenticated = false,
 }: Pick<PaperCardProps, 'onAuthRequired'> & {
-  onOpenPdf?: (paper: Paper) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   onPaperShown?: () => void;
   onSaveToList?: (paper: Paper) => void;
   isAuthenticated?: boolean;
@@ -261,9 +262,9 @@ export default function PublicPaperPage({
     interactionIdFor,
   ), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
   const marks = paper && isAuthenticated ? getInteractionState(paper) : null;
-  const handleOpenPdf = useCallback((candidate: Paper) => {
+  const handleOpenPdf = useCallback((candidate: Paper, _surface: string | undefined, menu: ReaderMenu) => {
     if (isAuthenticated) void trackPdfOpened(candidate);
-    onOpenPdf?.(candidate);
+    onOpenPdf?.(candidate, menu);
   }, [isAuthenticated, onOpenPdf, trackPdfOpened]);
 
   return (
