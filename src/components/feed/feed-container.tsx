@@ -1160,6 +1160,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // so the focus moves on.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const [, veilLeft] = useReducer((exits: number) => exits + 1, 0);
+  // The veil's element while it is in the page, through its exit and until
+  // it unmounts, also when the feed gives way to the error or empty state
+  // midway. The feed under it is inert meanwhile, so the keyboard cannot
+  // reach the container or a card the veil still covers (ENG-175).
+  const [veilElement, setVeilElement] = useState<HTMLDivElement | null>(null);
   // A refresh under the veil has no cards to dip: the veil already covers
   // it, and the cards it leaves over must be whole when a retry's focus lands
   // on them. Kept until the refresh ends, which can come after the veil has
@@ -1458,16 +1463,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       {lastVisitShown && papers.length > 0 && (
         <p className="feed-last-visit" aria-hidden="true">{lastVisitShown}</p>
       )}
-      {/* Not a tab stop while the veil covers it. Chrome makes an overflowing
-          scroller with nothing focusable inside a tab stop, and under the veil
-          this one holds only the loading tail and the sentinel, so the
-          keyboard landed here with the ring hidden under the veil and the
-          navigation bar (ENG-175). */}
+      {/* Inert while the veil is in the page (`veilElement`). During the wait
+          the container holds only the loading tail and the sentinel, an
+          overflowing scroller with nothing focusable that Chrome makes a tab
+          stop; as the veil leaves, the cards' controls stay under it until
+          it has gone. Either way a focus there could not be seen. */}
       <div
         className={`feed-container${isRefreshing && !refreshUnderVeil ? ' feed-container--refreshing' : ''}`}
         ref={attachFeed}
         onScroll={handleScroll}
-        tabIndex={atomVeil ? -1 : undefined}
+        inert={veilElement !== null}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (
@@ -1580,6 +1585,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         {atomVeil && (
           <motion.div
             key="atom-veil"
+            ref={setVeilElement}
             className="feed-empty feed-empty--veil"
             variants={prefersReducedMotion ? ATOM_VEIL_REDUCED_VARIANTS : ATOM_VEIL_VARIANTS}
             initial={false}
