@@ -1372,7 +1372,7 @@ async function unsubscribeWithLink(env: WorkerEnv, token: string | undefined) {
 }
 
 // The reader's objects, with `before` run ahead of the first call that `when` picks.
-function interceptedStores(stores: WorkerEnv['EMAIL_SUBSCRIPTIONS'], when: (payload: { action?: string }) => boolean, before: () => Promise<void>) {
+function interceptedStores(stores: WorkerEnv['EMAIL_SUBSCRIPTIONS'], when: (payload: { action?: string; migratable?: boolean }) => boolean, before: () => Promise<void>) {
   let done = false;
   return {
     idFromName: (name: string) => stores!.idFromName(name),
@@ -1809,6 +1809,54 @@ test('in phase 1 a link from before an earlier unsubscribe does not cancel the n
   show();
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
   assert.equal(kv.values.has(SYNC_READER_KEY), false);
+});
+
+// The reader turns the digest off in the app and on again while a link's POST
+// is between accepting its token and cancelling: `cancels` picks that call.
+async function resubscribedDuringLink(env: WorkerEnv, kv: ReturnType<typeof createMemoryKv>, cancels: (payload: { action?: string; migratable?: boolean }) => boolean, init?: RequestInit) {
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER);
+  const oldToken = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!.unsubscribeToken!;
+  let token = '';
+  const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, cancels, async () => {
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), env, SYNC_READER);
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER);
+    token = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!.unsubscribeToken!;
+  });
+  const link = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+  const page = await handleEmailUnsubscribe(new Request(link, { method: 'POST', ...init }), { ...env, EMAIL_SUBSCRIPTIONS: stores });
+  assert.ok(stores.intercepted);
+  assert.notEqual(token, oldToken);
+  return { page, token, records: new Map(kv.values) };
+}
+
+const ONE_CLICK_POST = { headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' };
+
+for (const [name, init] of [['the page\'s', undefined], ['a mail client\'s one-click', ONE_CLICK_POST]] as const) {
+  test(`in phase 1 a re-subscription that lands between an old link's check and ${name} POST is not cancelled`, async () => {
+    const kv = createMemoryKv();
+    const { phase1 } = twoPhases(kv);
+    const { page, token, records } = await resubscribedDuringLink(phase1, kv, payload => payload.action === 'mark' && payload.migratable === false, init);
+
+    assert.equal((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.unsubscribeToken, token, 'the old link cancelled the new subscription');
+    assert.ok(records.has(SYNC_READER_KEY), 'the old link deleted the new record');
+    assert.equal(records.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the old link removed the new one');
+    assert.equal(page.status, 400);
+
+    await unsubscribeWithLink(phase1, token);
+    assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+    assert.equal(kv.values.size, 0);
+  });
+}
+
+test('a re-subscription that lands between an old link\'s check and its cancellation is not cancelled where the object is the record', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  const { page, token, records } = await resubscribedDuringLink(phase2, kv, payload => payload.action === 'write');
+
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, token, 'the old link cancelled the new subscription');
+  assert.deepEqual(JSON.parse(records.get(SYNC_READER_KEY)!), { uid: SYNC_READER.uid }, 'the old link took the reader off the schedule');
+  assert.equal(records.get(`notification:unsubscribe:${token}`), SYNC_READER.uid, 'the old link removed the new one');
+  assert.equal(page.status, 400);
 });
 
 test('in phase 1 the link of a subscription whose object never learned its token still cancels it where KV caches an older record', async () => {

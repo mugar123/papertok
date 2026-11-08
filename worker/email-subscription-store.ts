@@ -47,6 +47,9 @@ function json(payload: unknown, status = 200) {
  * A reopening mark also names the subscription's unsubscribe token, which the
  * object keeps with the version that mark reached; a mark from a Worker that
  * names none, or any later write, leaves the object without a current token.
+ * A closing mark that names a token is an unsubscribe link's: it lands only
+ * while the object holds that token or none, so a save that reopened the
+ * object for another subscription after the link was checked is not cancelled.
  */
 export class EmailSubscriptionStore {
   declare state: { storage: LedgerStorage };
@@ -84,7 +87,12 @@ export class EmailSubscriptionStore {
       const token = issued?.version === version && typeof issued.token === 'string' ? issued.token : undefined;
       if (!write && !mark) return { status: 200, slot: { version, subscription, migratable, cancelledAt, token } };
       if (mark) {
-        if (payload.expectedVersion !== undefined && payload.expectedVersion !== version) {
+        if (
+          (payload.expectedVersion !== undefined && payload.expectedVersion !== version)
+          // A cancellation for one link's subscription, after a save reopened
+          // the object for another one.
+          || (!payload.migratable && payload.token !== undefined && token !== undefined && token !== payload.token)
+        ) {
           return { status: 409, slot: { version, subscription, migratable, cancelledAt, token } };
         }
         const next = version + 1;
