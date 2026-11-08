@@ -50,7 +50,8 @@ export function rowHasLeft(
  * element, such as Search opened while the overlay was closing. Base UI leaves
  * focus there, but not when `finalFocus` is a function: it counts as an
  * explicit target and skips that check, so the function makes it. Focus on the
- * page body, or still inside the overlay, has not been moved.
+ * page body, or still inside the overlay, has not been moved. With no overlay
+ * element, any focused element but the body counts as moved, as in Base UI.
  */
 export function focusMovedOut<T>(focused: T | null, body: T, overlay: { contains(node: T): boolean } | null): boolean {
   return focused !== null && focused !== body && !overlay?.contains(focused);

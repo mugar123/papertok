@@ -69,6 +69,9 @@ test('a closing overlay leaves focus where the reader moved it, out of the overl
   const sheet = { contains: (node: string) => node === 'cancel' || node === 'remove' };
   assert.equal(focusMovedOut('search input', 'body', sheet), true);
   assert.equal(focusMovedOut('another row', 'body', sheet), true);
+  // Without the overlay element, as Base UI does without its popup.
+  assert.equal(focusMovedOut('cancel', 'body', null), true);
+  assert.equal(focusMovedOut('body', 'body', null), false);
 });
 
 test('a closing overlay still hands focus over from inside it or from the page body', () => {
