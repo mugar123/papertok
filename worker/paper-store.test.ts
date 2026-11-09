@@ -425,8 +425,9 @@ test("a full lane keeps a paper filed late for two weeks past its limit, and tri
     insertLane.run('quant-ph', id, published);
   };
   db.exec('BEGIN');
-  // The limit's papers, all published in the last twelve hours.
-  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) add(id, new Date(NOW - id * 10_000).toISOString());
+  // The limit's papers, all published the day before: inside a day, a daily
+  // page orders by publication date.
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) add(id, new Date(NOW - 4 * 3_600_000 - id * 10_000).toISOString());
   // Past the limit, with the lane's first load: no arrival.
   add(FEED_CANDIDATE_LIMIT + 1, '2026-08-30T00:00:00.000Z');
   db.exec('COMMIT');
@@ -780,6 +781,42 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
 
 // A paper filed only under the lanes given, by its own title.
 const lanePaper = (id: string, title: string, published = '2026-10-15T00:00:00.000Z') => ({ ...arxivRecord, id, arxivId: id, title, published, allCategories: [], categories: [] });
+
+// A feed shows a paper on the first day any of its lanes held it: a followed
+// author's lane listing it days after the category did does not bring it back on top.
+test('a daily page places a paper several of its lanes hold on the earliest day they got it', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00071', 'A surface code decoder', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph', 'author:A1'] },
+    { paper: lanePaper('2610.00072', 'A bosonic code', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph', 'author:A1'] },
+  ], { now: NOW });
+  const setArrival = (paperId: string, lane: string, daysBefore: number) => db.prepare(`UPDATE work_lanes SET arrived = ? WHERE lane = ?
+    AND work_id = (SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}')`).run(new Date(NOW - daysBefore * 86_400_000).toISOString(), lane);
+  setArrival('2610.00071', 'quant-ph', 5);
+  setArrival('2610.00071', 'author:A1', 0);
+  setArrival('2610.00072', 'quant-ph', 2);
+  setArrival('2610.00072', 'author:A1', 2);
+  const author = { type: 'author', canonicalId: 'https://openalex.org/A1', displayName: 'Ana Pérez' };
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(env, parseFeedRequest({ ...body, order: 'daily' }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await served({ categories: ['quant-ph'], follows: [author] }), ['2610.00072', '2610.00071'], 'the category had it five days ago');
+  assert.deepEqual(await served({ categories: [], follows: [author] }), ['2610.00071', '2610.00072'], 'the author lane alone got it today');
+});
+
+// Each lane's harvest stamps its own instant: inside a day, a reader without
+// likes gets the day's papers newest publication first, not a lane's block.
+test('inside a day of a daily page, papers of several lanes come by publication date, not by the instant each lane was harvested', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00081', 'A quantum walk', '2026-10-10T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00082', 'A quantum channel', '2026-10-12T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00083', 'A string vacuum', '2026-10-11T00:00:00.000Z'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00084', 'A holographic dual', '2026-10-13T00:00:00.000Z'), lanes: ['hep-th'] },
+  ], { now: NOW + 3_600_000 });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph', 'hep-th'], order: 'daily' }), { now: NOW + 7_200_000 });
+  assert.deepEqual(page.map(item => item.id), ['2610.00084', '2610.00082', '2610.00083', '2610.00081']);
+});
 
 test('an exact request reads the lanes it names and nothing beside them', async () => {
   const { env } = corpus();

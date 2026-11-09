@@ -107,7 +107,7 @@ const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // with likes still sees this week's papers ahead of last month's lookalikes.
 // Relevance order is for a reader whose views lean older: no recency at all.
 // Daily order goes day by day by arrival (`rankCandidates`), and within a day
-// by similarity alone.
+// by similarity alone, then by publication date.
 const RECENCY_WEIGHT = { recent: 0.15, relevance: 0, daily: 0 } as const;
 const RECENCY_HALF_LIFE_DAYS = 7;
 const DAY_MS = 86_400_000;
@@ -1226,7 +1226,9 @@ export async function keepLiked(db: D1Database, workIds: number[], now = Date.no
     .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
 }
 
-interface Candidate { workId: number; published: string; lanes: string[] }
+// `arrival`, read only for a daily page: the earliest of the candidate's
+// arrivals in the asked lanes (`readCandidates`).
+interface Candidate { workId: number; published: string; lanes: string[]; arrival?: string }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
@@ -1236,8 +1238,9 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 // share their date, and take turns between the areas instead of following the
 // order the lanes were asked in.
 // `byArrival`, each lane's newest arrivals instead, through `work_lanes_arrival`:
-// the candidate's date is when it entered the lane, or its publication date
-// when it came with the lane's first load.
+// the candidate's `arrival` is when it entered the lane, or its publication
+// date when it came with the lane's first load, and `published` stays its
+// publication date.
 async function readCandidates(db: D1Database, lanes: string[], byArrival: boolean): Promise<Candidate[]> {
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
   const share = (lane: string) => (AREA_LANES.has(lane)
@@ -1258,7 +1261,7 @@ async function readCandidates(db: D1Database, lanes: string[], byArrival: boolea
   return mergeLaneRows(lanes, perLane.map(({ results }) => ({
     results: results
       .sort((a, b) => b.arrival.localeCompare(a.arrival) || b.published.localeCompare(a.published))
-      .map(row => ({ work_id: row.work_id, published: row.arrival })),
+      .map(row => ({ work_id: row.work_id, published: row.published, arrival: row.arrival })),
   })));
 }
 
@@ -1322,19 +1325,22 @@ function daySlice<T extends { published: string }>(rows: T[], offset: number) {
 }
 
 // The lanes' rows in turns, each lane's in its own order: a work listed by
-// several lanes comes once, at its first turn, with every lane and its newest date.
-function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_id: number; published: string }> }>): Candidate[] {
-  const byWork = new Map<number, { published: string; lanes: string[] }>();
+// several lanes comes once, at its first turn, with every lane, its newest
+// date and, read by arrival, its earliest arrival: the first day any of the
+// lanes held it.
+function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_id: number; published: string; arrival?: string }> }>): Candidate[] {
+  const byWork = new Map<number, { published: string; lanes: string[]; arrival?: string }>();
   const longest = Math.max(...perLane.map(({ results }) => results.length));
   for (let position = 0; position < longest; position += 1) {
     perLane.forEach(({ results }, index) => {
       const row = results[position];
       if (!row) return;
       const candidate = byWork.get(row.work_id);
-      if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]] });
+      if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]], ...(row.arrival === undefined ? {} : { arrival: row.arrival }) });
       else {
         candidate.lanes.push(lanes[index]);
         if (row.published > candidate.published) candidate.published = row.published;
+        if (row.arrival !== undefined && row.arrival < candidate.arrival!) candidate.arrival = row.arrival;
       }
     });
   }
@@ -1992,9 +1998,10 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const ranks = interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
     .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight));
   // A daily page goes day by day, the newest arrival's day first (UTC, by the
-  // candidate's date); within a day, the ranks keep the order above (a stable sort).
+  // candidate's `arrival`); within a day, the ranks keep the order above (a
+  // stable sort): with no recency, by score, then by publication date.
   if (query.order === 'daily') {
-    const dayOf = new Map(offered.map(candidate => [candidate.workId, candidate.published.slice(0, 10)]));
+    const dayOf = new Map(offered.map(candidate => [candidate.workId, candidate.arrival!.slice(0, 10)]));
     ranks.sort((a, b) => dayOf.get(b.workId)!.localeCompare(dayOf.get(a.workId)!));
   }
   // The closest notable papers first, without recency: they are years old by
