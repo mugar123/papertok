@@ -42,12 +42,16 @@ export class CustomFeedError extends Error {
 const FEED_ID = /^[a-z0-9]{8,24}$/;
 const TOPIC_ID = /^[TC]\d+$/;
 const AUTHOR_ID = /^A\d+$/;
-const OPENALEX_URL = /^https?:\/\/openalex\.org\//i;
+const OPENALEX_URL = /^https?:\/\/(?:api\.)?openalex\.org\//i;
 const ORDERS = new Set<unknown>(['newest', 'best']);
 const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
 
 const nameLength = (name: string) => [...name.trim()].length;
-const openAlexId = (value: unknown) => (typeof value === 'string' ? value.trim().replace(OPENALEX_URL, '') : '');
+/** An OpenAlex id, its URL (`https://openalex.org/A1`, `https://api.openalex.org/authors/A1`) read as its last segment. */
+function openAlexId(value: unknown) {
+  const id = typeof value === 'string' ? value.trim() : '';
+  return OPENALEX_URL.test(id) ? id.split('/').pop()! : id;
+}
 
 function cleanLabel(value: unknown) {
   const label = typeof value === 'string' ? value.trim() : '';
@@ -60,7 +64,12 @@ function cleanKeyword(value: unknown) {
   return query.length <= MAX_KEYWORD_LENGTH && createQueryTopic(query) ? query : null;
 }
 
-function parseIngredient(raw: unknown): FeedIngredient | null {
+/**
+ * One ingredient as this module stores it, normalised (an OpenAlex URL read as
+ * its id, a keyword lowercased and single-spaced, a label trimmed), or null
+ * when it is not one.
+ */
+export function parseFeedIngredient(raw: unknown): FeedIngredient | null {
   if (!raw || typeof raw !== 'object') return null;
   const { kind, id, label, query } = raw as Record<string, unknown>;
   if (kind === 'area') return typeof id === 'string' && getAreaLeaves(id) ? { kind, id } : null;
@@ -106,7 +115,7 @@ function parseFeed(raw: unknown): CustomFeed | null {
   if (!ORDERS.has(order)) return null;
   const parsed = new Map<string, FeedIngredient>();
   for (const item of Array.isArray(ingredients) ? ingredients : []) {
-    const ingredient = parseIngredient(item);
+    const ingredient = parseFeedIngredient(item);
     if (ingredient && !parsed.has(ingredientKey(ingredient))) parsed.set(ingredientKey(ingredient), ingredient);
   }
   return { id, name: name.trim(), order: order as CustomFeedOrder, ingredients: [...parsed.values()].slice(0, MAX_FEED_INGREDIENTS) };
@@ -202,7 +211,9 @@ export function corpusRequestOf(feed: CustomFeed): { categories: string[]; areas
     if (ingredient.kind === 'area') areas.push(ingredient.id);
     else if (ingredient.kind === 'category') categories.push(ingredient.id);
     else if (ingredient.kind === 'keyword') {
-      follows.push({ type: 'topic', canonicalId: createQueryTopic(ingredient.query)!.id, displayName: ingredient.query, metadata: { query: ingredient.query } });
+      // A feed may arrive here without having been parsed: a keyword no search can be made of is left out.
+      const queryTopic = createQueryTopic(ingredient.query);
+      if (queryTopic) follows.push({ type: 'topic', canonicalId: queryTopic.id, displayName: ingredient.query, metadata: { query: ingredient.query } });
     } else follows.push({ type: ingredient.kind, canonicalId: ingredient.id, displayName: ingredient.label });
   }
   return { categories, areas, follows, order: feed.order === 'newest' ? 'daily' : 'relevance' };
@@ -216,10 +227,10 @@ export function corpusRequestOf(feed: CustomFeed): { categories: string[]; areas
  */
 export function ingredientFromFollow(entity: { type: string; id?: string; canonicalId?: string; displayName?: string; metadata?: { query?: string; categoryIds?: string[] } }): FeedIngredient | null {
   const id = entity.canonicalId ?? entity.id ?? '';
-  if (entity.type === 'author') return parseIngredient({ kind: 'author', id, label: entity.displayName });
+  if (entity.type === 'author') return parseFeedIngredient({ kind: 'author', id, label: entity.displayName });
   if (entity.type !== 'topic' && entity.type !== 'concept') return null;
   if (getAreaLeaves(id)) return { kind: 'area', id };
   if (LEAF_IDS.has(id)) return { kind: 'category', id };
-  if (TOPIC_ID.test(openAlexId(id))) return parseIngredient({ kind: 'topic', id, label: entity.displayName });
-  return parseIngredient({ kind: 'keyword', query: entity.metadata?.query || entity.displayName });
+  if (TOPIC_ID.test(openAlexId(id))) return parseFeedIngredient({ kind: 'topic', id, label: entity.displayName });
+  return parseFeedIngredient({ kind: 'keyword', query: entity.metadata?.query || entity.displayName });
 }

@@ -9,6 +9,7 @@ import {
   ingredientLabel,
   ingredientProblem,
   parseCustomFeeds,
+  parseFeedIngredient,
   withFeedAdded,
   withFeedChanged,
   withFeedMoved,
@@ -69,6 +70,8 @@ test('an OpenAlex id may arrive as its URL, and a label must name something', ()
   const [feed] = parseCustomFeeds([feedOf('abcd1234', [
     { kind: 'author', id: 'https://openalex.org/A5023888391', label: ' Aiko Sato ' },
     { kind: 'topic', id: 'https://openalex.org/C121332964', label: 'Physics' },
+    { kind: 'author', id: 'https://api.openalex.org/authors/A5000000001', label: 'Ben Ito' },
+    { kind: 'topic', id: 'https://openalex.org/topics/T10020', label: 'Quantum computing' },
     { kind: 'topic', id: 'T10020', label: '   ' },
     { kind: 'topic', id: 'X10020', label: 'Not a topic' },
     { kind: 'author', id: 'A1', label: 'x'.repeat(201) },
@@ -76,7 +79,18 @@ test('an OpenAlex id may arrive as its URL, and a label must name something', ()
   assert.deepEqual(feed.ingredients, [
     { kind: 'author', id: 'A5023888391', label: 'Aiko Sato' },
     { kind: 'topic', id: 'C121332964', label: 'Physics' },
+    { kind: 'author', id: 'A5000000001', label: 'Ben Ito' },
+    { kind: 'topic', id: 'T10020', label: 'Quantum computing' },
   ]);
+});
+
+test('one ingredient is validated and normalised on its own', () => {
+  assert.deepEqual(parseFeedIngredient({ kind: 'area', id: 'physics' }), { kind: 'area', id: 'physics' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'category', id: 'quant-ph' }), { kind: 'category', id: 'quant-ph' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'topic', id: 'https://openalex.org/T10020', label: ' Quantum computing ' }), { kind: 'topic', id: 'T10020', label: 'Quantum computing' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'author', id: 'https://api.openalex.org/authors/A5023888391', label: 'Aiko Sato' }), { kind: 'author', id: 'A5023888391', label: 'Aiko Sato' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'keyword', query: ' Surface  Code ' }), { kind: 'keyword', query: 'surface code' });
+  assert.equal(parseFeedIngredient({ kind: 'journal', id: 'S123' }), null);
 });
 
 test('a name is counted by the characters a reader sees', () => {
@@ -115,6 +129,11 @@ test('every follow a feed asks for is served from a lane', () => {
   ]), order: 'best' });
   assert.equal(request.order, 'relevance');
   assert.deepEqual(request.follows.map(followLane), ['author:A5023888391', 'topic:T10020', 'concept:C121332964', 'query:surface code']);
+});
+
+test('a keyword no search can be made of is left out of the request', () => {
+  const request = corpusRequestOf(feedOf('abcd1234', [keyword('?'), keyword('surface code')]));
+  assert.deepEqual(request.follows.map(follow => follow.displayName), ['surface code']);
 });
 
 test('adding the ninth feed is refused; moving the first feed left changes nothing', () => {
