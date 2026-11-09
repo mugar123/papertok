@@ -608,6 +608,25 @@ test("an area's journal lane asks one page of 200 a night, and two on its first 
   assert.equal(urls.length, 3, 'a later run reads the newest page only');
 });
 
+test("a lane's first harvest files its papers with no arrival; a paper a later harvest brings arrives at that run", async t => {
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const article = (id: string) => ({ ...closedPhysicsArticle, id: `https://openalex.org/W${id}`, doi: `https://doi.org/10.1/${id}`, title: `Journal article ${id} on high-harmonic spectroscopy` });
+  let listed = [article('7000001'), article('7000002')];
+  const { env } = relay(t, () => ({ results: listed }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const arrivals = () => (db.prepare("SELECT w.paper ->> '$.id' AS id, l.arrived FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'area:physics' ORDER BY id").all() as Array<{ id: string; arrived: string | null }>)
+    .map(row => [row.id, row.arrived]);
+  await harvestLane(store, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(arrivals(), [['openalex:W7000001', null], ['openalex:W7000002', null]]);
+  const later = first + 86_400_000;
+  t.mock.timers.setTime(later);
+  listed = [article('7000003'), ...listed];
+  await harvestLane(store, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(arrivals(), [['openalex:W7000001', null], ['openalex:W7000002', null], ['openalex:W7000003', new Date(later).toISOString()]]);
+});
+
 // ─── ChemRxiv's Chemistry preprints ───
 
 // As OpenAlex returned it on 2026-10-27 (trimmed, its abstract shortened): one
@@ -1683,6 +1702,17 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   terms.length = 0;
   await backfillLane(store, job);
   assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
+});
+
+test("a lane's backfill files the older papers it reads with no arrival", async t => {
+  const { env } = pubmedListing(t);
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+  await backfillLane(store, { source: 'pubmed', lane: 'bio.zoo' });
+  const arrivals = (db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'bio.zoo'").all() as Array<{ arrived: string | null }>).map(row => row.arrived);
+  assert.ok(arrivals.length > 0, 'filed under the lane');
+  assert.deepEqual(arrivals, arrivals.map(() => null));
 });
 
 // `/sources/pubmed` turns away a query over 500 characters (`safeSourceQuery`).
