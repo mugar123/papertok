@@ -1401,13 +1401,15 @@ export interface FeedQuery {
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
+  // An exact request reads the area lanes of the areas it asks for whatever this says.
   areaLanes: boolean;
   // The page reads exactly the lanes the request names: its categories, the
   // leaves and area lanes of the areas it asks for whole (`areas`), and the
   // working-paper series only for an asked area that has it; no lane inferred
   // from a category's area. It removes only `excludedIds`: the liked and
   // rejected papers still rank it, and stay on it. One group holds every
-  // category. The answer names the follows still loading.
+  // category, and it reads no notable papers. The answer names the follows
+  // still loading.
   exact: boolean;
   // The areas an exact request asks for whole; none for any other request.
   areas: string[];
@@ -2234,7 +2236,8 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     skipsSeen,
     pastLastPage: skipsSeen && page > FEED_MAX_PAGE,
     continues: skipsSeen && body?.continues === true,
-    notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
+    // An exact request reads no notable lanes: one per leaf of its areas.
+    notable: seen && !exact ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
     // Not for the follows' request, even when no follow has a lane of its own
     // (a category topic): there the categories stand for followed topics
     // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.

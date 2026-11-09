@@ -889,6 +889,13 @@ test('two exact walks that differ only in their categories go on from their own 
   assert.deepEqual(await page('hep-th'), ['2610.00064']);
 });
 
+// An exact request can name every leaf of its areas: their notable lanes would
+// be up to 149 reads of about 1,000 rows.
+test('an exact request asks for no notable papers', () => {
+  const body = { categories: ['quant-ph'], seen: feedSeenFilter([]), notable: 3 };
+  assert.deepEqual([parseFeedRequest({ ...body, exact: true }).notable, parseFeedRequest(body).notable], [0, 3]);
+});
+
 test('an exact request reads up to twenty categories; any other request still reads twelve', () => {
   const thirteen = getAllLeafCategories().slice(0, 13).map(leaf => leaf.id);
   assert.equal(parseFeedRequest({ categories: thirteen, exact: true }).categories.length, 13);
