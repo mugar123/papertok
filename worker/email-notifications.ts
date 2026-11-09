@@ -1135,11 +1135,14 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
   // Only the record the last phase 1 save wrote moves: its revision is the
   // object version that save reached (0 before any save). Any other revision is
   // a stale KV read of an older record, so the reader moves on a later read.
-  // `unmoved` is only for a cancellation, to remove that record's token and
-  // delivery state (closeBeforeCancelling).
+  // `unmoved` lets a cancellation remove that record's token and delivery
+  // state (closeBeforeCancelling), and a save of the same subscription keep
+  // them (changeSubscription).
   if ((Number(legacy.revision) || 0) !== slot.version) return { ...slot, unmoved: legacy };
   const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: slot.version, subscription: storedRecord(legacy) });
-  if (!moved.accepted) return moved.slot;
+  // A phase 1 save that reopened the object first (while two versions run
+  // during the switch) makes what was read an older copy too.
+  if (!moved.accepted) return moved.slot.subscription || !moved.slot.migratable ? moved.slot : { ...moved.slot, unmoved: legacy };
   if (!await readLegacy()) {
     const undone = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: moved.slot.version, subscription: null });
     return undone.slot;
@@ -1219,7 +1222,9 @@ async function changeSubscription(
       subscription: record && storedRecord(record),
     });
     if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot), inKv: false };
-    slot = result.slot;
+    // A phase 1 save that reopened the object in between (while two versions
+    // run during the switch) leaves the copy this write read an older one.
+    slot = result.slot.subscription || !result.slot.migratable ? result.slot : { ...result.slot, unmoved: slot.unmoved };
   }
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
