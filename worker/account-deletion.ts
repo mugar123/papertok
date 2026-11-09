@@ -300,8 +300,7 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   throw new AccountDeletionError('AUTH_DELETE_FAILED', 502);
 }
 
-async function purgeAfterAuthDelete(env: WorkerEnv, uid: string) {
-  const keys = new Set<string>();
+async function purgeAfterAuthDelete(env: WorkerEnv, uid: string, keys: Set<string>) {
   try {
     await purgeEmailSubscription(env, uid, keys);
   } catch {
@@ -346,7 +345,10 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   if (await deleteUserTree(admin, uid)) {
     return { complete: false, stage: 'userTree' };
   }
-  await purgeEmailSubscription(env, uid);
+  // The sweep after the Auth delete removes these keys again: a save in flight
+  // during this purge can write its link's index back after it.
+  const subscriptionKeys = new Set<string>();
+  await purgeEmailSubscription(env, uid, subscriptionKeys);
   await deleteAuthAccount(env, idToken, { fetchImpl });
   // The session stays valid until the line above returns, so anything the client
   // wrote after the sweep walked past it is an orphan nobody — not even its own
@@ -359,7 +361,7 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // only says which cleanup failed and why: it names no account, subscription
   // or share, so whatever that cleanup missed stays behind untraced.
   const [purge, sweep] = await Promise.allSettled([
-    purgeAfterAuthDelete(env, uid),
+    purgeAfterAuthDelete(env, uid, subscriptionKeys),
     deleteUserTree(admin, uid),
   ]);
   for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep]] as const) {
