@@ -1932,26 +1932,18 @@ async function storedState(kv: ReturnType<typeof createMemoryKv>) {
   return { kv: new Map(kv.values), object: await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) };
 }
 
-test('in phase 1 a Settings save that reads a cached miss writes nothing and is retried, and keeps the subscription\'s link and delivery state once KV shows the record', async () => {
+test('in phase 1 a Settings save that reads a cached miss keeps the link of the subscription\'s earlier emails', async () => {
   const kv = createMemoryKv();
   const { phase1 } = twoPhases(kv);
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
-  const { unsubscribeToken: token, stateId } = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!;
-  const before = await storedState(kv);
+  const token = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
   const miss = cachedMissOf(kv, SYNC_READER_KEY);
-
-  await assert.rejects(
-    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase1, SYNC_READER),
-    { code: 'EMAIL_UNAVAILABLE', status: 503 },
-  );
-  assert.deepEqual(await storedState(kv), before, 'the save wrote over a record it could not read');
-  miss.show();
   await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase1, SYNC_READER);
+  miss.show();
 
   const saved = await loadSubscriptionWithState(phase1, SYNC_READER_KEY);
   assert.equal(saved?.maxPapers, 3);
   assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
-  assert.equal(saved?.stateId, stateId, 'the save gave the subscription a new delivery state');
   await unsubscribeWithLink(phase1, token);
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
 });
@@ -1983,6 +1975,23 @@ test('a phase 2 Settings save whose KV read returns an older record of the subsc
   assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
   await unsubscribeWithLink(phase2, token);
   assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+});
+
+test('a phase 2 Settings save whose KV read returns an older record writes nothing where the object names no token', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await unmovedInPhase2(kv, phase1, 'older');
+  // A Worker from before ENG-193 reopened the object without a token, so
+  // nothing shows that the older record is the subscription it reopened.
+  const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+  const before = await storedState(kv);
+
+  await assert.rejects(
+    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  assert.deepEqual(await storedState(kv), before);
 });
 
 for (const read of ['miss', 'older'] as const) {
@@ -2061,37 +2070,148 @@ test('a phase 2 sync that changes nothing replaces the KV record a move left whe
   assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
 });
 
+// The ways a phase 1 save can reopen a reader's object and leave KV without
+// its record (worker/README.md, the unresolved case).
+const LOST_RECORDS = [
+  'the KV write of a first save failed',
+  'the object\'s answer to a first save was lost',
+  'the KV record of the last save was lost',
+  'the KV record of the last save was lost where the object names no token',
+] as const;
+
+// The reader's objects, losing the answer of the first reopening mark after it lands.
+function losingReopenAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>) {
+  let lost = false;
+  return {
+    idFromName: (name: string) => stores.idFromName(name),
+    get: (id: DurableObjectId) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        const response = await stores.get(id).fetch(url, init);
+        const payload = JSON.parse(String(init.body)) as { action?: string; migratable?: boolean };
+        if (!lost && payload.action === 'mark' && payload.migratable === true) {
+          lost = true;
+          throw new Error('Durable Object answer lost');
+        }
+        return response;
+      },
+    }),
+  } as WorkerEnv['EMAIL_SUBSCRIPTIONS'];
+}
+
+// Leaves the reader's object reopened by a phase 1 save and KV holding nothing
+// of theirs. Returns the token the object names, if any, and the lost record's.
+async function lostRecordOf(kv: ReturnType<typeof createMemoryKv>, phase1: WorkerEnv, lost: typeof LOST_RECORDS[number]) {
+  if (lost === 'the KV write of a first save failed') {
+    const write = kv.put.bind(kv);
+    kv.put = async (key: string, value: string) => {
+      if (key === SYNC_READER_KEY) throw new Error('KV PUT failed: 503');
+      return write(key, value);
+    };
+    await assert.rejects(saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER), /KV PUT failed/);
+    kv.put = write;
+  } else if (lost === 'the object\'s answer to a first save was lost') {
+    const losing = { ...phase1, EMAIL_SUBSCRIPTIONS: losingReopenAnswer(phase1.EMAIL_SUBSCRIPTIONS!) };
+    await assert.rejects(saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), losing, SYNC_READER), /answer lost/);
+  } else {
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  }
+  const { version, token } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) as { version: number; token?: string };
+  if (lost === 'the KV record of the last save was lost where the object names no token') {
+    // A Worker from before ENG-193 reopened the object without a token.
+    await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+  }
+  // The record never landed, or its KV write was lost with the link's index.
+  kv.values.clear();
+  const named = (await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) as { version: number; token?: string }).token;
+  return { token: named, recordToken: token! };
+}
+
+// worker/README.md: phase 1 cannot tell a lost record from a cached miss
+// either, so a sync answers 503, but the reader's own save writes it again.
+for (const lost of LOST_RECORDS) {
+  test(`phase 1: a sync of a reader whose record was lost (${lost}) answers 503 and writes nothing, and their next save subscribes them again`, async () => {
+    const kv = createMemoryKv();
+    const { phase1 } = twoPhases(kv);
+    const { token } = await lostRecordOf(kv, phase1, lost);
+    const before = await storedState(kv);
+
+    await assert.rejects(saveSubscription(preferencesPut(SYNC_WITH_NEW_FOLLOW), phase1, SYNC_READER), { code: 'EMAIL_UNAVAILABLE', status: 503 });
+    assert.deepEqual(await storedState(kv), before, 'the sync subscribed the reader without the lost record');
+    assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER)).enabled, true);
+
+    const saved = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!;
+    // Where the object names the subscription's token, the links of its emails keep working.
+    if (token) assert.equal(saved.unsubscribeToken, token, 'the save gave the subscription a new link');
+    await unsubscribeWithLink(phase1, saved.unsubscribeToken);
+    assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+  });
+}
+
 // worker/README.md, phase 2: a record that is really lost cannot be told from
 // a cached miss, so its reader's saves keep answering 503 (unresolved).
-for (const source of ['kv', 'object'] as const) {
-  for (const objectToken of ['names the token', 'names no token'] as const) {
-    test(`phase ${source === 'kv' ? 1 : 2}: a save or sync of a reader whose record was lost where the object ${objectToken} answers 503 and writes nothing`, async () => {
-      const kv = createMemoryKv();
-      const { phase1 } = twoPhases(kv);
-      const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
-      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
-      const oldToken = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
-      if (objectToken === 'names no token') {
-        // A Worker from before ENG-193 reopened the object without a token.
-        const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
-        await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
-      }
-      // The KV write of the last save was lost, and so was the link's index.
-      kv.values.clear();
-      const before = await storedState(kv);
+for (const lost of LOST_RECORDS) {
+  test(`phase 2: a save or sync of a reader whose record was lost (${lost}) answers 503 and writes nothing`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const { token, recordToken } = await lostRecordOf(kv, phase1, lost);
+    const before = await storedState(kv);
 
-      for (const body of [SUBSCRIBE_ONE_FOLLOW, { ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }, SYNC_WITH_NEW_FOLLOW]) {
-        await assert.rejects(saveSubscription(preferencesPut(body), env, SYNC_READER), { code: 'EMAIL_UNAVAILABLE', status: 503 });
+    for (const body of [SUBSCRIBE_ONE_FOLLOW, { ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }, SYNC_WITH_NEW_FOLLOW]) {
+      await assert.rejects(saveSubscription(preferencesPut(body), phase2, SYNC_READER), { code: 'EMAIL_UNAVAILABLE', status: 503 });
+    }
+    assert.deepEqual(await storedState(kv), before, 'a save subscribed the reader without the lost record');
+    assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+    kv.values.set(`notification:unsubscribe:${recordToken}`, SYNC_READER.uid);
+    const link = `https://example.com/notifications/unsubscribe?token=${recordToken}`;
+    const page = await handleEmailUnsubscribe(new Request(link, { method: 'POST' }), phase2);
+    // A link with the token the object names still cancels; without one, nothing proves the link.
+    assert.equal(page.status, token ? 200 : 503);
+  });
+}
+
+// The reader's objects, whose reads fail before they reach them.
+function failingReads(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>) {
+  return {
+    idFromName: (name: string) => stores.idFromName(name),
+    get: (id: DurableObjectId) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        if ((JSON.parse(String(init.body)) as { action?: string }).action === 'read') throw new Error('Durable Object read failed');
+        return stores.get(id).fetch(url, init);
+      },
+    }),
+  } as WorkerEnv['EMAIL_SUBSCRIPTIONS'];
+}
+
+for (const source of ['kv', 'object'] as const) {
+  test(`phase ${source === 'kv' ? 1 : 2}: a save or sync whose KV read or object call fails answers with that error and writes nothing, even over a lost record`, async () => {
+    for (const reader of ['subscribed', 'lost'] as const) {
+      for (const failing of ['KV', 'object'] as const) {
+        const kv = createMemoryKv();
+        const { phase1 } = twoPhases(kv);
+        await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+        if (reader === 'lost') kv.values.clear();
+        const before = await storedState(kv);
+        const get = kv.get.bind(kv);
+        if (failing === 'KV') {
+          kv.get = (async (name: string, options?: unknown) => {
+            if (name === SYNC_READER_KEY) throw new Error('KV GET failed: 503');
+            return get(name, options as never);
+          }) as typeof kv.get;
+        }
+        const env = {
+          ...phase1,
+          EMAIL_SUBSCRIPTION_SOURCE: source,
+          ...(failing === 'object' ? { EMAIL_SUBSCRIPTIONS: failingReads(phase1.EMAIL_SUBSCRIPTIONS!) } : {}),
+        };
+
+        for (const body of [SUBSCRIBE_ONE_FOLLOW, { ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }, SYNC_WITH_NEW_FOLLOW]) {
+          await assert.rejects(saveSubscription(preferencesPut(body), env, SYNC_READER), /KV GET failed|Durable Object read failed/, `${reader}, ${failing}`);
+        }
+        kv.get = get;
+        assert.deepEqual(await storedState(kv), before, `a save or sync wrote after its ${failing} read failed (${reader})`);
       }
-      assert.deepEqual(await storedState(kv), before, 'a save subscribed the reader without the lost record');
-      assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
-      kv.values.set(`notification:unsubscribe:${oldToken}`, SYNC_READER.uid);
-      const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
-      const page = await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), env);
-      // A link with the token the object names still cancels; without one, nothing proves the link.
-      assert.equal(page.status, objectToken === 'names the token' ? 200 : 503);
-    });
-  }
+    }
+  });
 }
 
 test('a save of a reader whose lost record a Settings switch-off cancelled subscribes them again with a new link', async () => {
