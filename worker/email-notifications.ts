@@ -979,10 +979,13 @@ function subscriptionInKv(env: WorkerEnv) {
 /**
  * Tells the reader's object that the KV record is cancelled (`migratable:
  * false`, before the record is deleted) or live again (`true`, before a save
- * writes it). Strongly consistent, unlike the KV delete that follows.
+ * writes it). Strongly consistent, unlike the KV delete that follows. An
+ * unsubscribe link's `token` makes the close land only while the object holds
+ * that token or none (email-subscription-store.ts), and `expectedVersion` only
+ * on the version its check read; false when it did not.
  */
-async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean) {
-  await callSubscriptionStore(env, uid, { action: 'mark', migratable });
+async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean, token?: string, expectedVersion?: number) {
+  return (await callSubscriptionStore(env, uid, { action: 'mark', migratable, token, expectedVersion })).accepted;
 }
 
 /**
@@ -1041,7 +1044,10 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // No KV record, yet a save reopened the object: that read may be a cached
   // miss of a record the save wrote, so the reader is held, not absent. A
   // cancellation closes the object, so a cancelled reader never reads as held.
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind: !slot.subscription && slot.migratable && slot.version > 0 };
+  // `token` is the unsubscribe token that save gave the subscription, so a
+  // save computed from this miss keeps the links of its earlier emails.
+  const behind = !slot.subscription && slot.migratable && slot.version > 0;
+  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
 }
 
 /**
@@ -1050,20 +1056,23 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
  * Returns what the reader held first, because closing drops the object's copy.
  * The KV record is deleted here, whatever the read found: once the object is
  * closed, every later phase 1 read treats a KV record as a stale copy.
+ * With an unsubscribe link's `token`, nothing is closed or deleted when a save
+ * reopened the object for another subscription, or, with `expectedVersion`,
+ * when anything changed the object since the link's check (`closed: false`).
  */
-async function closeBeforeCancelling(env: WorkerEnv, uid: string) {
+async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string, expectedVersion?: number) {
   if (!subscriptionInKv(env)) {
     // Phase 2: a record that reads as missing may be a cached miss of one a
     // Worker from before the object saved. A cancellation closes the object
     // whatever was read, so no later read moves that record in.
     const slot = await readSubscriptionSlot(env, uid);
-    if (slot.migratable) await markSubscription(env, uid, false);
-    return slot.subscription;
+    const closed = !slot.migratable || await markSubscription(env, uid, false, token, expectedVersion);
+    return { closed, held: closed ? slot.subscription : null };
   }
   const { slot } = await readPhase1Slot(env, uid);
-  await markSubscription(env, uid, false);
+  if (!await markSubscription(env, uid, false, token, expectedVersion)) return { closed: false, held: null };
   await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
-  return slot.subscription;
+  return { closed: true, held: slot.subscription };
 }
 
 /**
@@ -1131,7 +1140,7 @@ function storedRecord(subscription: Subscription) {
 async function changeSubscription(
   env: WorkerEnv,
   uid: string,
-  next: (current: Subscription | null, behind: boolean) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
+  next: (current: Subscription | null, behind: boolean, token?: string) => Subscription | null | undefined | Promise<Subscription | null | undefined>,
 ) {
   let phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
   let slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
@@ -1142,7 +1151,7 @@ async function changeSubscription(
     // in between closed it, and the write is computed again from what it left.
     // A reader phase 2 moved stays in their object and is written below.
     const previous = slot.subscription;
-    const record = await next(previous, phase1.behind);
+    const record = await next(previous, phase1.behind, phase1.token);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
     const key = `${SUBSCRIPTION_PREFIX}${uid}`;
     if (record === null) {
@@ -1150,7 +1159,9 @@ async function changeSubscription(
       await env.NOTIFICATION_STORE!.delete(key);
       return { changed: true, previous, subscription: null, inKv: true };
     }
-    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion });
+    // The object keeps the record's token, which the unsubscribe link checks
+    // while KV may still return the index and record of a cancelled subscription.
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken });
     if (reopened.accepted) {
       // The object's version, not one past the KV read: that read may be stale,
       // and two saves computed from it would write the same version.
@@ -1228,11 +1239,21 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
  * from another tab can land between the two steps, and its index write can
  * come before this delete, so the index is put back when the object holds a
  * subscription again; without it the schedule would skip that reader.
+ *
+ * An unsubscribe link passes its `token`: the object then cancels only the
+ * subscription that holds it, in the same request that checks it, and a save
+ * that subscribed the reader again since the link was checked is left alone.
+ * Returns false when that save's subscription holds the object, or when the
+ * object moved past `expectedVersion`.
  */
-async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
+async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null, token?: string, expectedVersion?: number) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const held = await closeBeforeCancelling(env, uid);
-  const { previous } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  const { closed, held } = await closeBeforeCancelling(env, uid, token, expectedVersion);
+  if (!closed) return false;
+  const { changed, previous } = await changeSubscription(env, uid, current => (
+    current && (!token || current.unsubscribeToken === token) ? null : undefined
+  ));
+  if (!changed && previous) return false;
   const deleted = previous || held || subscription;
   await Promise.all([
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
@@ -1241,6 +1262,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
       : Promise.resolve(),
   ]);
   await deleteScheduleIndex(env, uid);
+  return true;
 }
 
 /**
@@ -1283,7 +1305,7 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
     if (raw?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${raw.unsubscribeToken}`).add(deliveryStateKey(uid, raw));
   };
   if (subscriptionInKv(env)) await collectHiddenRecord();
-  const held = await closeBeforeCancelling(env, uid);
+  const { held } = await closeBeforeCancelling(env, uid);
   const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
   if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
@@ -1320,7 +1342,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
   const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
-  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind) => {
+  const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind, heldToken) => {
     // Phase 1 read no record over an object a save reopened (see
     // readPhase1Slot): answering that the digest is off would turn it off in
     // the app while the record may still send, so the app keeps its state and retries.
@@ -1373,7 +1395,9 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
       follows,
       previewItems,
       interests,
-      unsubscribeToken: current?.unsubscribeToken || crypto.randomUUID().replace(/-/g, ''),
+      // A phase 1 read that missed the record keeps the token the object holds
+      // for it: every email of a subscription carries the same link (ENG-193).
+      unsubscribeToken: current?.unsubscribeToken || heldToken || crypto.randomUUID().replace(/-/g, ''),
       ...(!current ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
       createdAt: current?.createdAt || now,
       updatedAt: now,
@@ -2144,7 +2168,7 @@ const EMAIL_COPY = {
   unavailable: 'Service unavailable',
   unavailableBody: 'Your email settings could not be reached. Please try this link again later.',
   invalidLink: 'Invalid unsubscribe link',
-  invalidLinkBody: 'If you have already unsubscribed, there is nothing more to do. Otherwise, turn off email updates in Settings.',
+  invalidLinkBody: 'This link is not valid or no longer works, so it did not change your email settings. In Settings you can see whether email updates are on and turn them off.',
   openSettings: 'Open Settings',
   confirmTitle: 'Confirm unsubscribe',
   confirmBody: 'Do you want to stop receiving PaperTok updates by email?',
@@ -2943,8 +2967,11 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
       action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok),
     });
   }
-  // Already used, replaced by a newer email or cut short: the link cannot say
-  // which, so the page names the likely case and the way to the setting.
+  // Cut short, already used, or from an earlier subscription that a
+  // cancellation ended (every email of the current subscription carries the
+  // same link, and it keeps working): the page cannot tell which, nor whether
+  // the reader is still subscribed, so it says the link changed nothing and
+  // leads to the setting.
   const invalidLinkPage = () => unsubscribePage(400, {
     title: copy.invalidLink,
     body: copy.invalidLinkBody,
@@ -2957,24 +2984,82 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   const uid = await env.NOTIFICATION_STORE.get(`${UNSUBSCRIBE_PREFIX}${token}`);
   if (!uid) return invalidLinkPage();
   const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
-  // The token index names this reader but their record reads as missing: a
-  // cached miss of a record just saved, unless their object says a cancellation
-  // closed it. Only a closed object makes the link spent; otherwise the link
-  // still works, and an unsubscribe cancels whatever the record turns out to be.
-  const unread = !subscription && (await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable;
-  if (!unread && (!subscription || subscription.unsubscribeToken !== token)) {
+  const object = (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
+  // Nothing proves or disproves the link yet: the page changes nothing and
+  // asks to try again once KV has caught up.
+  const tryAgainPage = () => unsubscribePage(503, {
+    title: copy.unavailable,
+    body: copy.unavailableBody,
+    action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok),
+  });
+  // An open object that names no token was last reopened by a Worker from
+  // before ENG-193 (or never written by phase 1), so it cannot tell this link's
+  // subscription from an earlier, cancelled one. The record KV returns has to:
+  // one that names this link and was written since the object's last
+  // cancellation belongs to the current subscription. One from before that
+  // cancellation is a copy of the cancelled subscription (readPhase1Slot), so the
+  // link is spent. One since the cancellation that names another token is the
+  // current subscription's, so this link is not. A miss, even with the shortest
+  // KV cache, or a cancelled copy of another subscription, proves nothing
+  // (ENG-193).
+  let proved = false;
+  const legacy = object.migratable && !object.token;
+  if (legacy) {
+    // As readPhase1Slot reads: a miss, or a copy from before the cancellation,
+    // is read again with the shortest KV cache.
+    const first = await readKvRecord(env, uid);
+    const kvRecord = first && first.revision >= (object.cancelledAt || 0)
+      ? first
+      : (await readKvRecord(env, uid, KV_MIN_CACHE_TTL_SECONDS)) ?? first;
+    const names = kvRecord?.subscription?.unsubscribeToken === token;
+    const sinceCancelled = Boolean(kvRecord && kvRecord.revision >= (object.cancelledAt || 0));
+    if (!kvRecord || (!names && !sinceCancelled)) return tryAgainPage();
+    proved = names && sinceCancelled;
+  }
+  // Otherwise a cached miss of a record just saved still works while the object
+  // names this link's token. A subscription keeps one token for all its emails,
+  // so a link from any email of the current subscription, not only the most
+  // recent, still matches; only the links of an earlier, cancelled subscription
+  // stop working.
+  const valid = legacy
+    ? proved
+    : subscription ? subscription.unsubscribeToken === token : object.migratable && object.token === token;
+  if (!valid) {
     // A second POST from the same link (a double click, or a mail client's
     // one-click POST before the reader's) may read a stale KV copy of the token
     // index and record; the object a cancellation closed says it already worked.
-    if (!subscription && request.method === 'POST') {
+    if (!subscription && !object.migratable && request.method === 'POST') {
       return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
     }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
     return invalidLinkPage();
   }
   if (request.method === 'POST') {
-    await deleteSubscription(env, uid, subscription);
-    if (unread) await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
+    // The close lands only on the object version this check read, and only
+    // while the object still holds this link's subscription. When anything
+    // changed the object since the check, it is read again: a cancellation
+    // already did what the link asks; another subscription's token makes the
+    // link spent; a save of the same subscription (the object still names this
+    // link) gets one more close on the version just read, since a mail
+    // provider's one-click POST is seldom retried; anything else, such as a
+    // Worker from before ENG-193 reopening it without a token, leaves the link
+    // to a retry, with nothing written.
+    let closed = await deleteSubscription(env, uid, subscription, token, object.version);
+    if (!closed) {
+      const now = (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
+      // Closed and empty is cancelled; a phase 2 object that holds a record is closed too.
+      if (!now.migratable && !now.subscription) {
+        return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
+      }
+      const holder = now.token ?? now.subscription?.unsubscribeToken;
+      if (holder !== undefined && holder !== token) {
+        await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
+        return invalidLinkPage();
+      }
+      if (holder === token) closed = await deleteSubscription(env, uid, subscription, token, now.version);
+      if (!closed) return tryAgainPage();
+    }
+    if (!subscription) await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
   }
 
   const title = request.method === 'POST' ? copy.disabledTitle : copy.confirmTitle;
