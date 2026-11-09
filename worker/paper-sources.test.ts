@@ -900,6 +900,20 @@ test('a journal article that adds a coauthor, an institution, a topic or a conce
   }
 });
 
+test("a lane a journal article's upgrade adds arrives with the listing that brought the article, or with no arrival on the lane's first load", async () => {
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  const article = mapOpenAlexWork({ ...gmmArticle, authorships: [...gmmArticle.authorships, { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] }] })!;
+  const workingPaper = mapOpenAlexWork({ ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' })!;
+  for (const [firstLoad, arrived] of [[false, new Date(first + 86_400_000).toISOString()], [true, null]] as const) {
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5000000777', ?)").run(new Date(first).toISOString());
+    await ingestPapers(store, [{ paper: workingPaper, lanes: ['series:working-papers'] }], { now: first });
+    await ingestPapers(store, [{ paper: article, lanes: ['econ.EM'] }], { now: first + 86_400_000, firstLoad });
+    assert.deepEqual((db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'author:A5000000777'").all() as Array<{ arrived: string | null }>).map(row => row.arrived), [arrived], `firstLoad: ${firstLoad}`);
+  }
+});
+
 // The 14-day refresh can recover a working paper's abstract from Semantic
 // Scholar. An article without one leaves that text on the upgraded row, and
 // the credit the card's attribution reads stays with it.
@@ -1859,6 +1873,18 @@ test('a paper a reader liked, looked up by id, stays for them whatever its age, 
   assert.deepEqual(db.prepare('SELECT lane FROM work_lanes').all(), [], "neither its author's nor its topic's readers are offered it");
   await evictExpired(store, now + 86_400_000);
   assert.equal(db.prepare('SELECT id FROM works').all().length, 1, 'the next eviction keeps it');
+});
+
+test("a recent paper a reader liked, looked up by id, is filed under its lanes with no arrival, so it does not top other readers' day-by-day feeds", async t => {
+  const now = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const { env } = relay(t, () => splicingWork);
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as WorkerEnv;
+  await ingestPaperIds(store, ['W7222916812'], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, now), now });
+  const lanes = db.prepare('SELECT lane, arrived FROM work_lanes').all() as Array<{ lane: string; arrived: string | null }>;
+  assert.ok(lanes.length > 0, 'filed under its lanes');
+  assert.deepEqual(lanes.map(row => row.arrived), lanes.map(() => null));
 });
 
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's

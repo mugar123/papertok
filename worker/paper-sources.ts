@@ -1014,7 +1014,8 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), deadlineMs));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
-  const stored = await ingestPapers(env, found, { keepUntil, now });
+  // One reader's like must not put an older paper on top of every reader's day-by-day feed.
+  const stored = await ingestPapers(env, found, { keepUntil, now, firstLoad: true });
   if (found.length) {
     const db = database(env);
     await keepLiked(db, [...new Set((await findWorks(db, paperIds)).values())], now);

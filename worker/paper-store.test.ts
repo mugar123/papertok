@@ -2168,6 +2168,21 @@ test("an enrichment that names an old paper's topic does not file it under that 
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
+test("a lane an enrichment adds takes the paper's earliest arrival, or none when a lane holds it with none", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  const [earlier, later] = [new Date(NOW - 86_400_000).toISOString(), new Date(NOW).toISOString()];
+  db.prepare("UPDATE work_lanes SET arrived = CASE lane WHEN 'cs.CL' THEN ? ELSE ? END").run(earlier, later);
+  const enrich = async (topicId: string) => {
+    const [stored] = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) }));
+    await rewriteWorks(env, [{ ...stored, after: { ...stored.before, primaryTopic: { id: `https://openalex.org/${topicId}`, display_name: `Topic ${topicId}` } } }], NOW);
+    return rows(db, `SELECT arrived FROM work_lanes WHERE lane = 'topic:${topicId}'`).map(row => row.arrived);
+  };
+  assert.deepEqual(await enrich('T10604'), [earlier]);
+  db.prepare("UPDATE work_lanes SET arrived = NULL WHERE lane = 'cs.LG'").run();
+  assert.deepEqual(await enrich('T10605'), [null], 'a lane that holds it with no arrival dates it by its publication');
+});
+
 test('an erratum the enrichment reveals leaves every lane; a letter stays', async () => {
   const { env, db } = corpus();
   const record = { ...arxivRecord, allCategories: [], categories: [] };

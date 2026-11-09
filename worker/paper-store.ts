@@ -436,11 +436,13 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
  * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
  * record of `articles` was filed under (by the article's work id or DOI) the
  * journal's reviewed row, with its date in every lane it holds, and filed
- * under the lanes the article's record adds (`recordLanes`). An upgraded row
- * is no working paper, so the step applies once whatever the order of the
- * records and however often they are listed. Returns how many rows changed.
+ * under the lanes the article's record adds (`recordLanes`), which it enters
+ * with the listing's arrival (`arrived`, as `ingestPapers` gives a new lane).
+ * An upgraded row is no working paper, so the step applies once whatever the
+ * order of the records and however often they are listed. Returns how many
+ * rows changed.
  */
-async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number) {
+async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrived: string | null) {
   if (articles.length === 0) return 0;
   const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
   const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
@@ -484,11 +486,8 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
         kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
       db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
         WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
-      // A lane the row is new to takes the earliest arrival of the lanes it holds.
       db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
-        SELECT l.value, j.value ->> 'id', j.value ->> 'published',
-          (SELECT min(held.arrived) FROM work_lanes held WHERE held.work_id = j.value ->> 'id')
-        FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published', ? FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(arrived, chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
         .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
@@ -695,7 +694,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   const candidates = articles.filter(article => workingPaperGroups.has(groupOfKey.get(`id:${article.id.toLowerCase()}`)!));
-  return rows.length + await upgradeWorkingPapers(db, candidates, now);
+  return rows.length + await upgradeWorkingPapers(db, candidates, now, arrived);
 }
 
 /**
@@ -738,10 +737,12 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),
-      // A lane the paper is new to takes the earliest arrival of the lanes it holds.
+      // A lane the paper is new to takes the earliest arrival of the lanes it
+      // holds: none (its publication date) if one holds it with none, or if
+      // it is in no lane yet.
       db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
         SELECT l.value, j.value ->> 'id', j.value ->> 'published',
-          (SELECT min(held.arrived) FROM work_lanes held WHERE held.work_id = j.value ->> 'id')
+          (SELECT CASE WHEN count(*) = count(held.arrived) THEN min(held.arrived) END FROM work_lanes held WHERE held.work_id = j.value ->> 'id')
         FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
