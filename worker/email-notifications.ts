@@ -982,10 +982,11 @@ function subscriptionInKv(env: WorkerEnv) {
  * writes it). Strongly consistent, unlike the KV delete that follows. An
  * unsubscribe link's `token` makes the close land only while the object holds
  * that token or none (email-subscription-store.ts), and `expectedVersion` only
- * on the version its check read; false when it did not.
+ * on the version its check read; `accepted` is false when it did not. A mark
+ * that deleted a record the object held answers with the cleanup journal.
  */
 async function markSubscription(env: WorkerEnv, uid: string, migratable: boolean, token?: string, expectedVersion?: number) {
-  return (await callSubscriptionStore(env, uid, { action: 'mark', migratable, token, expectedVersion })).accepted;
+  return callSubscriptionStore(env, uid, { action: 'mark', migratable, token, expectedVersion });
 }
 
 /**
@@ -1032,10 +1033,13 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // still holds the full record: acting on that copy would reopen and empty it.
   if (kv && !slot.subscription) {
     const cancelled = !slot.migratable && !slot.subscription;
+    // The object's cleanup journal goes with the KV record: a cancellation
+    // removes what it lists before the schedule key (deleteScheduleIndex).
+    const cleanup = slot.cleanup ? { cleanup: slot.cleanup } : {};
     // `behind`: the record may be older than the last save (see readKvRecord),
     // so the last check before a send would cancel a digest prepared from it.
     return {
-      slot: cancelled ? { ...kv, subscription: null, migratable: false } : kv,
+      slot: cancelled ? { ...kv, subscription: null, migratable: false, ...cleanup } : { ...kv, ...cleanup },
       inKv: true,
       objectVersion: slot.version,
       behind: !cancelled && kv.revision !== slot.version,
@@ -1054,14 +1058,17 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
  * Phase 1: closes the reader's object before a cancellation deletes the KV
  * record, even when this read finds no record, since it may be a stale one.
  * Returns what the reader held first, because closing drops the object's copy.
- * The KV record is deleted here, whatever the read found: once the object is
- * closed, every later phase 1 read treats a KV record as a stale copy.
+ * The KV record is deleted here, whatever the read found, unless the journal
+ * lists entries (`indexKept`): once the object is closed, every later phase 1
+ * read treats a KV record as a stale copy.
  * With an unsubscribe link's `token`, nothing is closed or deleted when a save
  * reopened the object for another subscription, or, with `expectedVersion`,
  * when anything changed the object since the link's check (`closed: false`).
  * Account deletion passes `keys`, which gets the link index and delivery state
  * of what the cancellation ends before the close: a retry after the close
  * answer was lost finds the object closed and empty.
+ * `indexKept`: phase 1 left the KV key for the caller to delete once the
+ * object's cleanup journal is empty (deleteScheduleIndex).
  */
 async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string, expectedVersion?: number, keys?: Set<string>) {
   const keep = (ending: Subscription | null) => {
@@ -1088,17 +1095,22 @@ async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string
         : null;
       const ending = slot.subscription ?? unmoved;
       keep(ending);
-      const closed = !slot.migratable || await markSubscription(env, uid, false, token, expectedVersion ?? slot.version);
+      const closed = !slot.migratable || (await markSubscription(env, uid, false, token, expectedVersion ?? slot.version)).accepted;
       if (!closed && expectedVersion === undefined) continue;
-      return { closed, held: closed ? ending : null };
+      return { closed, held: closed ? ending : null, indexKept: false };
     }
     throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   }
   const { slot } = await readPhase1Slot(env, uid);
   keep(slot.subscription);
-  if (!await markSubscription(env, uid, false, token, expectedVersion)) return { closed: false, held: null };
-  await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
-  return { closed: true, held: slot.subscription };
+  const close = await markSubscription(env, uid, false, token, expectedVersion);
+  if (!close.accepted) return { closed: false, held: null, indexKept: false };
+  // While the cleanup journal lists entries (the read's, or the one this mark
+  // added for a record the object held), the schedule key is how a later
+  // request finds this reader: it goes once they are removed (deleteScheduleIndex).
+  const indexKept = Boolean((close.slot.cleanup ?? slot.cleanup)?.length);
+  if (!indexKept) await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
+  return { closed: true, held: slot.subscription, indexKept };
 }
 
 /**
@@ -1194,9 +1206,10 @@ async function changeSubscription(
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true, slot };
     const key = `${SUBSCRIPTION_PREFIX}${uid}`;
     if (record === null) {
-      await markSubscription(env, uid, false);
-      await env.NOTIFICATION_STORE!.delete(key);
-      return { changed: true, previous, subscription: null, inKv: true, slot };
+      // The key stays while the cleanup journal lists entries, as in closeBeforeCancelling.
+      const cleanup = (await markSubscription(env, uid, false)).slot.cleanup ?? slot.cleanup;
+      if (!cleanup?.length) await env.NOTIFICATION_STORE!.delete(key);
+      return { changed: true, previous, subscription: null, inKv: true, slot: { ...slot, cleanup }, indexKept: Boolean(cleanup?.length) };
     }
     // The object keeps the record's token, which the unsubscribe link checks
     // while KV may still return the index and record of a cancelled subscription.
@@ -1300,11 +1313,12 @@ async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscrip
  */
 async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null, token?: string, expectedVersion?: number) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const { closed, held } = await closeBeforeCancelling(env, uid, token, expectedVersion);
+  const { closed, held, indexKept } = await closeBeforeCancelling(env, uid, token, expectedVersion);
   if (!closed) return false;
-  const { changed, previous } = await changeSubscription(env, uid, current => (
+  const change = await changeSubscription(env, uid, current => (
     current && (!token || current.unsubscribeToken === token) ? null : undefined
   ));
+  const { changed, previous } = change;
   if (!changed && previous) {
     // A save subscribed the reader again after the close landed, so the link
     // leaves that subscription alone. The close still ended the link's
@@ -1323,15 +1337,16 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
   const keys = new Set((ended.length ? ended : [null]).map(record => deliveryStateKey(uid, record)));
   ended.forEach(record => { if (record.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${record.unsubscribeToken}`); });
   await Promise.all([...keys].map(key => env.NOTIFICATION_STORE!.delete(key)));
-  // Also deletes and acknowledges what the object's cleanup journal lists, this write's entry included.
-  await deleteScheduleIndex(env, uid, keys);
+  // Also deletes and acknowledges what the object's cleanup journal lists,
+  // this cancellation's entry included, before the schedule key.
+  await deleteScheduleIndex(env, uid, keys, { slot: change.slot, indexKept: indexKept || Boolean(change.indexKept) });
   return true;
 }
 
 /**
  * Deletes the KV keys that the reader's object lists in its cleanup journal
  * (`CleanupEntry`, email-subscription-store.ts): the delivery state and link
- * index of each record a deleting write removed, whose request may have failed
+ * index of each record the object deleted, whose request may have failed
  * before it deleted them. Never the keys of the subscription `slot` holds, and
  * not those in `deleted`, which this request removed already. Returns the
  * entries to acknowledge once deleted; a failed delete throws, so none is, and
@@ -1350,39 +1365,49 @@ async function deleteJournaledKeys(env: WorkerEnv, uid: string, slot: StoredSlot
   return entries.map(entry => entry.at);
 }
 
-/** Removes the entries `done` names from the object's journal; sends nothing when there are none. */
+/**
+ * Removes the entries `done` names from the object's journal and returns what
+ * the object holds afterwards, entries added since included; sends nothing,
+ * and returns null, when there are none.
+ */
 async function acknowledgeCleanup(env: WorkerEnv, uid: string, done: number[]) {
-  if (done.length) await callSubscriptionStore(env, uid, { action: 'read', ack: done });
+  return done.length ? (await callSubscriptionStore(env, uid, { action: 'read', ack: done })).slot : null;
 }
 
 /**
  * Removes the reader's schedule index, then puts it back when their object
  * holds an enabled subscription again: a save from another tab can write its
  * index just before this delete, and the schedule would skip that reader.
- * In phase 2 it also deletes what the object's cleanup journal lists (except
- * the keys in `deleted`, which the caller removed) and acknowledges it on the
- * read that follows the index delete, so a cancellation or a schedule window
- * that meets a leftover index needs no request of its own for it. Phase 1
- * adds an entry only when it deletes a record that a phase 2 Worker wrote
- * into the object, during the overlap; otherwise it closes an object with a
- * mark, which records none.
+ * First it deletes what the object's cleanup journal lists (except the keys in
+ * `deleted`, which the caller removed) and acknowledges it. The index stays
+ * while entries remain, since it is how a later request or the cron finds the
+ * reader again: a failed delete or acknowledgement throws before it goes.
+ * A cancellation passes the slot it read or wrote last (`known`), so an empty
+ * journal costs no request; the schedule reads the object here. In phase 2
+ * the index is put back when an entry appears after the delete. Phase 1
+ * deletes the KV key the cancellation kept (`indexKept`). That key may hold
+ * the record itself, so phase 1 keeps it when a save reopened the object
+ * since, and puts it back only for a reader whose record the object holds.
  */
-async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<string>) {
+async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<string>, known?: { slot: StoredSlot; indexKept: boolean }) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
-  let done: number[] = [];
-  // In phase 1 a key that holds the record itself is not an index. In phase 2
-  // it may still be one while the object is open: the record has not moved in
-  // yet, and a read that missed it may be a stale one, so a later window moves it.
-  if (subscriptionInKv(env)) {
+  const phase1 = subscriptionInKv(env);
+  const slot = known ? known.slot : (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
+  const after = await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, slot, deleted));
+  if (after?.cleanup?.length || (phase1 && after?.migratable)) return;
+  if (phase1) {
+    if (known?.indexKept) await env.NOTIFICATION_STORE!.delete(indexKey);
+    // In phase 1 a key that holds the record itself is not an index.
     if (await readKvRecord(env, uid)) return;
-  } else {
-    const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-    done = await deleteJournaledKeys(env, uid, slot, deleted);
-    if (slot.migratable) return acknowledgeCleanup(env, uid, done);
+  } else if (slot.migratable) {
+    // In phase 2 the key may still be a record while the object is open: it
+    // has not moved in yet, and a read that missed it may be a stale one, so
+    // a later window moves it.
+    return;
   }
   await env.NOTIFICATION_STORE!.delete(indexKey);
-  const { slot } = await callSubscriptionStore(env, uid, { action: 'read', ...(done.length ? { ack: done } : {}) });
-  if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
+  const { slot: now } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (now.subscription?.enabled || (!phase1 && now.cleanup?.length)) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
 }
 
 /**
@@ -1413,10 +1438,15 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   const previous = changed || held;
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
   if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
-  await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
-  // The object's cleanup journal, this purge's own deletion included, is
-  // acknowledged only after the deletes above, in one more request.
-  await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, slot, keys));
+  // While the object's cleanup journal lists entries (this purge's own
+  // deletion included), the schedule key stays until they are deleted and
+  // acknowledged, in one more request, and while any remain: it is how a
+  // later request or the cron finds them.
+  const journaled = Boolean(slot.cleanup?.length);
+  await Promise.all([...keys].filter(pending => !journaled || pending !== key).map(pending => env.NOTIFICATION_STORE!.delete(pending)));
+  if (!journaled) return { purged: true };
+  const after = await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, slot, keys));
+  if (!after?.cleanup?.length) await env.NOTIFICATION_STORE.delete(key);
   return { purged: true };
 }
 
@@ -3172,8 +3202,10 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
     let closed = await deleteSubscription(env, uid, subscription, token, object.version);
     if (!closed) {
       const now = (await callSubscriptionStore(env, uid, { action: 'read' })).slot;
-      // Closed and empty is cancelled; a phase 2 object that holds a record is closed too.
+      // Closed and empty is cancelled; a phase 2 object that holds a record is
+      // closed too. What a failed cancellation left goes as on a second POST.
       if (!now.migratable && !now.subscription) {
+        await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, now));
         return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
       }
       const holder = now.token ?? now.subscription?.unsubscribeToken;
@@ -3457,6 +3489,13 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
 async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
   const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key.name)) : undefined;
   const record = await loadSubscriptionRecord(env, key.name, phase1);
+  // Phase 1 removes what the object's cleanup journal lists for a reader
+  // without a subscription, as phase 2 does in deleteScheduleIndex: a
+  // cancellation that failed kept the schedule key for this. The key stays,
+  // since a read that missed a record may be a stale one.
+  if (phase1?.slot.cleanup?.length && !record) {
+    await acknowledgeCleanup(env, subscriptionUid(key.name), await deleteJournaledKeys(env, subscriptionUid(key.name), phase1.slot));
+  }
   const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
   // A listed key whose KV read returned nothing counts too, when the object
   // holds a reopened reader (see readPhase1Slot): a cached miss must not make

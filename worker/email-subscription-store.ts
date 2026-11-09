@@ -15,22 +15,24 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * of them matches it; an unsubscribe link with another token belongs to an
  * earlier subscription a cancellation ended, whatever a stale KV read still
  * returns (ENG-193).
- * `cleanup` lists the records a `write` deleted whose KV keys the Worker has
- * not confirmed deleting (see `CleanupEntry`); a `read` and a deleting `write`
- * return it, and only while it is not empty.
+ * `cleanup` lists the deleted records whose KV keys the Worker has not
+ * confirmed deleting (see `CleanupEntry`); a `read`, a deleting `write` and a
+ * `mark` that deleted a record return it, and only while it is not empty.
  */
 export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[] }
 export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown }
 /**
- * One record a `write` deleted, by the version that write reached (`at`): its
+ * One record the object deleted, by the version that step reached (`at`): its
  * delivery state id and unsubscribe token, which name the KV keys it leaves
- * (its delivery state and link index). Both are pseudonymous identifiers of the
- * reader's cancelled subscription, kept only so the Worker can delete those
- * keys: the answer to the write can be lost after it lands, and the record
- * that named them is gone. The token here never cancels anything. An entry
- * goes once a `read` acknowledges its `at` (`ack`), after the Worker deleted
- * its keys. A `mark` adds none: in phase 1 the KV record is deleted by the
- * request that closes the object.
+ * (its delivery state and link index). Both are pseudonymous identifiers tied
+ * to the reader's uid, kept only so the Worker can delete those keys: the
+ * answer to the step can be lost after it lands, and the record that named
+ * them is gone. The token here never cancels anything. A `write` that deletes
+ * the subscription adds an entry, and so does a `mark` over a record the object
+ * holds (a phase 1 Worker after a rollback, or during the switch); a mark over
+ * an object that holds none, as for every reader phase 2 never moved, adds
+ * none, since that reader's keys are in their KV record. An entry goes once a
+ * `read` acknowledges its `at` (`ack`), after the Worker deleted its keys.
  */
 export interface CleanupEntry { at: number; stateId?: string; token?: string }
 
@@ -116,6 +118,16 @@ export class EmailSubscriptionStore {
       const issued = await transaction.get<{ token?: unknown; version?: unknown }>(TOKEN_KEY);
       const token = issued?.version === version && typeof issued.token === 'string' ? issued.token : undefined;
       const pending = async () => (await transaction.get<CleanupEntry[]>(CLEANUP_KEY)) ?? [];
+      // Appends an entry for the record this step deletes, at the version it
+      // reaches: once the record is gone, only the entry names its KV keys.
+      const journal = async (at: number) => {
+        const cleanup = await pending();
+        const stateId = recordField(subscription, 'stateId');
+        const deletedToken = recordField(subscription, 'unsubscribeToken');
+        cleanup.push({ at, ...(stateId ? { stateId } : {}), ...(deletedToken ? { token: deletedToken } : {}) });
+        await transaction.put(CLEANUP_KEY, cleanup);
+        return cleanup;
+      };
       if (!write && !mark) {
         let cleanup = await pending();
         // An acknowledgement removes exactly the entries it names: one added
@@ -148,7 +160,11 @@ export class EmailSubscriptionStore {
         if (reopenedFor) await transaction.put(TOKEN_KEY, { token: reopenedFor, version: next });
         else await transaction.delete(TOKEN_KEY);
         await transaction.delete(SUBSCRIPTION_KEY);
-        return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable), cancelledAt: payload.migratable ? cancelledAt : next, token: reopenedFor } };
+        // A record the object held, which a phase 1 Worker reaches after a
+        // rollback, is journaled as a deleting write's is. A mark over an
+        // object that holds none reads no journal and answers without it.
+        const cleanup = subscription ? await journal(next) : [];
+        return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable), cancelledAt: payload.migratable ? cancelledAt : next, token: reopenedFor, ...(cleanup.length ? { cleanup } : {}) } };
       }
       if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription, migratable, cancelledAt, token } };
       const next = version + 1;
@@ -165,14 +181,7 @@ export class EmailSubscriptionStore {
       // from before it, which a phase 1 Worker may still read, is cancelled too.
       await transaction.delete(SUBSCRIPTION_KEY);
       await transaction.put(CANCELLED_AT_KEY, next);
-      // Once the record is gone, only this entry names its KV keys.
-      const cleanup = await pending();
-      if (subscription) {
-        const stateId = recordField(subscription, 'stateId');
-        const deletedToken = recordField(subscription, 'unsubscribeToken');
-        cleanup.push({ at: next, ...(stateId ? { stateId } : {}), ...(deletedToken ? { token: deletedToken } : {}) });
-        await transaction.put(CLEANUP_KEY, cleanup);
-      }
+      const cleanup = subscription ? await journal(next) : await pending();
       return { status: 200, slot: { version: next, subscription: null, migratable: false, cancelledAt: next, ...(cleanup.length ? { cleanup } : {}) } };
     });
     return json(outcome.slot, outcome.status);
