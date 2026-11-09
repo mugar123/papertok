@@ -860,6 +860,24 @@ test('an exact request keeps on the page the papers the reader liked', async () 
   assert.deepEqual(await served(['2610.00051']), ['2610.00052']);
 });
 
+// The request a custom feed sends.
+test('an exact daily request goes day by day by arrival and keeps the liked paper on its day', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00091', 'The liked paper', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00092', 'A paper of the first load', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  await ingestPapers(env, [{ paper: lanePaper('2610.00093', 'A paper that arrived today', '2026-10-05T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  insert.run(idOf('2610.00091'), vector([1, 0]));
+  insert.run(idOf('2610.00092'), vector([1, 0.05]));
+  insert.run(idOf('2610.00093'), vector([0, 1]));
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], exact: true, order: 'daily', positiveIds: ['2610.00091'] }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id), ['2610.00093', '2610.00092', '2610.00091']);
+});
+
 // A walk is kept by follows alone, which two exact feeds made only of
 // categories share: each would go on from the other's pages.
 test('two exact walks that differ only in their categories go on from their own pages', async () => {
