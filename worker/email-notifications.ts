@@ -1309,6 +1309,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
     // subscription, and nothing later names its delivery state, so it goes
     // now; the link removes its index (handleEmailUnsubscribe).
     const keys = new Set([held, subscription].filter(Boolean).map(record => deliveryStateKey(uid, record)));
+    // Defensive: no save after a close reuses the ended delivery state today; if one did, this keeps it.
     keys.delete(deliveryStateKey(uid, previous));
     await Promise.all([...keys].map(key => env.NOTIFICATION_STORE!.delete(key)));
     return false;

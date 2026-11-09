@@ -2247,6 +2247,29 @@ for (const source of ['kv', 'object'] as const) {
   });
 }
 
+test('phase 1: a save or sync whose second read of a missing record, with the shortest KV cache, fails answers with that error and writes nothing', async () => {
+  for (const reader of ['lost', 'cached miss'] as const) {
+    const kv = createMemoryKv();
+    const { phase1 } = twoPhases(kv);
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+    if (reader === 'lost') kv.values.clear();
+    const before = await storedState(kv);
+    const get = kv.get.bind(kv);
+    // The first read misses the record; only the second, shortest-cache one fails.
+    kv.get = (async (name: string, options?: unknown) => {
+      if (name !== SYNC_READER_KEY) return get(name, options as never);
+      if (typeof options === 'object' && options !== null && 'cacheTtl' in options) throw new Error('KV GET failed: 503');
+      return null;
+    }) as typeof kv.get;
+
+    for (const body of [SUBSCRIBE_ONE_FOLLOW, { ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }, SYNC_WITH_NEW_FOLLOW]) {
+      await assert.rejects(saveSubscription(preferencesPut(body), phase1, SYNC_READER), /KV GET failed/, reader);
+    }
+    kv.get = get;
+    assert.deepEqual(await storedState(kv), before, `a save or sync wrote after that read failed (${reader})`);
+  }
+});
+
 test('a save of a reader whose lost record a Settings switch-off cancelled subscribes them again with a new link', async () => {
   for (const source of ['kv', 'object'] as const) {
     const kv = createMemoryKv();
