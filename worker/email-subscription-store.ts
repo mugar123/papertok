@@ -16,8 +16,9 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * earlier subscription a cancellation ended, whatever a stale KV read still
  * returns (ENG-193).
  * `cleanup` lists the deleted records whose KV keys the Worker has not
- * confirmed deleting (see `CleanupEntry`); a `read`, a deleting `write` and a
- * `mark` that deleted a record return it, and only while it is not empty.
+ * confirmed deleting (see `CleanupEntry`); a `read`, a deleting `write`, a
+ * refused `write` and a `mark` that deleted a record return it, and only while
+ * it is not empty.
  */
 export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[] }
 export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown }
@@ -166,7 +167,13 @@ export class EmailSubscriptionStore {
         const cleanup = subscription ? await journal(next) : [];
         return { status: 200, slot: { version: next, subscription: null, migratable: Boolean(payload.migratable), cancelledAt: payload.migratable ? cancelledAt : next, token: reopenedFor, ...(cleanup.length ? { cleanup } : {}) } };
       }
-      if (payload.expectedVersion !== version) return { status: 409, slot: { version, subscription, migratable, cancelledAt, token } };
+      if (payload.expectedVersion !== version) {
+        // A refused writer may decide from this slot to answer success or to
+        // delete the schedule key, so it lists the journal too, with the
+        // entry of a cancellation that won.
+        const cleanup = await pending();
+        return { status: 409, slot: { version, subscription, migratable, cancelledAt, token, ...(cleanup.length ? { cleanup } : {}) } };
+      }
       const next = version + 1;
       await transaction.put(VERSION_KEY, next);
       await transaction.put(CLOSED_KEY, true);

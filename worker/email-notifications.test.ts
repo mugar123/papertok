@@ -6772,6 +6772,90 @@ test('after a rollback, a phase 1 link POST that finds the object cancelled by a
   assert.deepEqual(await journalOf(kv), []);
 });
 
+// Records how many entries the journal lists each time the schedule key is deleted.
+function entriesWhenScheduleKeyGoes(kv: ReturnType<typeof createMemoryKv>) {
+  const remove = kv.delete.bind(kv);
+  const entries: number[] = [];
+  kv.delete = async (key: string) => {
+    if (key === SYNC_READER_KEY) entries.push((await journalOf(kv)).length);
+    return remove(key);
+  };
+  return { entries, restore: () => { kv.delete = remove; } };
+}
+
+for (const cancel of ['a Settings switch-off', 'an account deletion purge'] as const) {
+  test(`phase 1 after a rollback: ${cancel} whose deleting write loses to a cancellation that lost its answer removes what both left, and the schedule key goes only once the journal is empty`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const a = await subscriberWithHeldEdition(kv, phase2);
+    let b: Awaited<ReturnType<typeof subscriberWithHeldEdition>> | undefined;
+    let reads = 0;
+    // While two versions overlap, a phase 2 Worker subscribes the reader again
+    // between this request's close and its next read of the object...
+    const resubscribing = interceptedStores(phase1.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'read' && ++reads === 2, async () => {
+      b = await subscriberWithHeldEdition(kv, phase2);
+    });
+    // ...and cancels that subscription, losing the answer, right before this request's deleting write.
+    const stores = interceptedStores(resubscribing, payload => payload.action === 'write', async () => {
+      await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+    });
+    const env = { ...phase1, EMAIL_SUBSCRIPTIONS: stores };
+    const keyWent = entriesWhenScheduleKeyGoes(kv);
+
+    if (cancel === 'a Settings switch-off') await switchDigestOff(env);
+    else await purgeEmailSubscription(env, SYNC_READER.uid, new Set());
+    keyWent.restore();
+
+    assert.ok(resubscribing.intercepted && stores.intercepted);
+    assert.deepEqual([a.stateKey, a.indexKey, b!.stateKey, b!.indexKey].filter(key => kv.values.has(key)), []);
+    assert.deepEqual(keysWithAddress(kv), []);
+    assert.deepEqual(await journalOf(kv), []);
+    assert.equal(kv.values.has(SYNC_READER_KEY), false);
+    assert.deepEqual(keyWent.entries.filter(entries => entries > 0), [], 'the schedule key went while the journal listed entries');
+  });
+}
+
+test('phase 2: a Settings switch-off whose deleting write loses to cancellations that lost their answers removes what they left before it answers', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  const a = await subscriberWithHeldEdition(kv, phase2);
+  let b: Awaited<ReturnType<typeof subscriberWithHeldEdition>> | undefined;
+  const losing = () => assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+  // Right before this request's deleting write, another tab cancels A and
+  // subscribes again with B, then cancels B; both cancellations lose their answers.
+  const stores = interceptedStores(phase2.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'write', async () => {
+    await losing();
+    b = await subscriberWithHeldEdition(kv, phase2);
+    await losing();
+  });
+
+  await switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: stores });
+
+  assert.ok(stores.intercepted);
+  assert.deepEqual([a.stateKey, a.indexKey, b!.stateKey, b!.indexKey].filter(key => kv.values.has(key)), []);
+  assert.deepEqual(keysWithAddress(kv), []);
+  assert.deepEqual(await journalOf(kv), []);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+});
+
+test('phase 2: an account deletion purge whose deleting write loses to a cancellation that lost its answer removes what the journal lists before the schedule key', async () => {
+  const kv = createMemoryKv();
+  const { phase2, leftovers } = await readerWithLeftover(kv);
+  // Right before the purge's deleting write, another device cancels B and loses the answer.
+  const stores = interceptedStores(phase2.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'write', async () => {
+    await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+  });
+  const keyWent = entriesWhenScheduleKeyGoes(kv);
+
+  await purgeEmailSubscription({ ...phase2, EMAIL_SUBSCRIPTIONS: stores }, SYNC_READER.uid, new Set());
+  keyWent.restore();
+
+  assert.ok(stores.intercepted);
+  assert.deepEqual(await journalOf(kv), []);
+  assert.deepEqual([...leftovers, SYNC_READER_KEY].filter(key => kv.values.has(key)), []);
+  assert.deepEqual(keyWent.entries.filter(entries => entries > 0), [], 'the schedule key went while the journal listed entries');
+});
+
 // The KV operations and object requests of a reader's requests, in order,
 // with each key named by what it holds.
 function recordingOperations(kv: ReturnType<typeof createMemoryKv>) {

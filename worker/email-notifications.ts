@@ -1244,7 +1244,9 @@ async function changeSubscription(
       subscription: record && storedRecord(record),
     });
     // A deleting write's answer lists what the object's cleanup journal holds,
-    // its own entry included (email-subscription-store.ts).
+    // its own entry included, and so does a refused write's, the entry of a
+    // cancellation that won included (email-subscription-store.ts), so the
+    // slot taken from it below still names that entry's keys.
     if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot), inKv: false, slot: result.slot };
     // A phase 1 save that reopened the object in between (while two versions
     // run during the switch) leaves the copy this write read an older one.
