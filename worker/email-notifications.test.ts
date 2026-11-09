@@ -1927,19 +1927,31 @@ test('a link of a subscription phase 2 saved still cancels it from phase 1, afte
   assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
 });
 
-test('in phase 1 a Settings save that reads a cached miss keeps the link of the subscription\'s earlier emails', async () => {
+// What a reader's KV and object hold, to show a request wrote nothing.
+async function storedState(kv: ReturnType<typeof createMemoryKv>) {
+  return { kv: new Map(kv.values), object: await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) };
+}
+
+test('in phase 1 a Settings save that reads a cached miss writes nothing and is retried, and keeps the subscription\'s link and delivery state once KV shows the record', async () => {
   const kv = createMemoryKv();
   const { phase1 } = twoPhases(kv);
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
-  const token = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
-  const read = kv.get.bind(kv);
-  kv.get = (async (name: string, options?: unknown) => (name === SYNC_READER_KEY ? null : read(name, options as never))) as typeof kv.get;
+  const { unsubscribeToken: token, stateId } = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!;
+  const before = await storedState(kv);
+  const miss = cachedMissOf(kv, SYNC_READER_KEY);
+
+  await assert.rejects(
+    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase1, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  assert.deepEqual(await storedState(kv), before, 'the save wrote over a record it could not read');
+  miss.show();
   await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase1, SYNC_READER);
-  kv.get = read;
 
   const saved = await loadSubscriptionWithState(phase1, SYNC_READER_KEY);
   assert.equal(saved?.maxPapers, 3);
   assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
+  assert.equal(saved?.stateId, stateId, 'the save gave the subscription a new delivery state');
   await unsubscribeWithLink(phase1, token);
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
 });
@@ -1958,22 +1970,79 @@ async function unmovedInPhase2(kv: ReturnType<typeof createMemoryKv>, phase1: Wo
   return { token: current.unsubscribeToken!, stateId: current.stateId!, show: () => { kv.get = get; } };
 }
 
+test('a phase 2 Settings save whose KV read returns an older record of the subscription keeps the link of its earlier emails', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  const { token, show } = await unmovedInPhase2(kv, phase1, 'older');
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
+  show();
+
+  const saved = await loadSubscriptionWithState(phase2, SYNC_READER_KEY);
+  assert.equal(saved?.maxPapers, 3);
+  assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
+  await unsubscribeWithLink(phase2, token);
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+});
+
 for (const read of ['miss', 'older'] as const) {
-  test(`a phase 2 Settings save whose KV read ${read === 'miss' ? 'misses the record' : 'returns an older record'} keeps the link of the subscription's earlier emails`, async () => {
+  test(`a phase 2 sync whose KV read ${read === 'miss' ? 'misses the record' : 'returns an older record'} of a reader not moved in yet writes nothing and is retried, not answered as off`, async () => {
     const kv = createMemoryKv();
     const { phase1, phase2 } = twoPhases(kv);
-    const { token, show } = await unmovedInPhase2(kv, phase1, read);
+    const { show } = await unmovedInPhase2(kv, phase1, read);
+    const before = await storedState(kv);
 
-    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
+    const sync = { ...SYNC_WITH_NEW_FOLLOW, maxPapers: 10 };
+    await assert.rejects(
+      saveSubscription(preferencesPut(sync), phase2, SYNC_READER),
+      { code: 'EMAIL_UNAVAILABLE', status: 503 },
+    );
+    assert.deepEqual(await storedState(kv), before);
     show();
-
-    const saved = await loadSubscriptionWithState(phase2, SYNC_READER_KEY);
-    assert.equal(saved?.maxPapers, 3);
-    assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
-    await unsubscribeWithLink(phase2, token);
-    assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+    const synced = await saveSubscription(preferencesPut(sync), phase2, SYNC_READER);
+    assert.equal(synced.enabled, true);
+    assert.equal(synced.maxPapers, 5, 'the sync replaced the stored size');
+    assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.follows?.length, 2);
   });
 }
+
+test('a phase 2 Settings save whose KV read misses the record of a reader not moved in yet writes nothing and is retried, and keeps the subscription\'s link and delivery state once KV shows it', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  const { token, stateId, show } = await unmovedInPhase2(kv, phase1, 'miss');
+  const before = await storedState(kv);
+
+  await assert.rejects(
+    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  assert.deepEqual(await storedState(kv), before, 'the save wrote over a record it could not read');
+  show();
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
+
+  const saved = await loadSubscriptionWithState(phase2, SYNC_READER_KEY);
+  assert.equal(saved?.maxPapers, 3);
+  assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
+  assert.equal(saved?.stateId, stateId, 'the save gave the subscription a new delivery state');
+});
+
+test('a Settings save of a brand-new subscriber, or of a reader whose object a cancellation closed, subscribes them with a new link in both phases', async () => {
+  for (const source of ['kv', 'object'] as const) {
+    const kv = createMemoryKv();
+    const env = { ...twoPhases(kv).phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+    // Never written: version 0.
+    assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER)).enabled, true);
+    const first = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!;
+    await unsubscribeWithLink(env, first.unsubscribeToken);
+    // Closed by that cancellation, while this location still caches its record.
+    kv.values.set(SYNC_READER_KEY, JSON.stringify(first));
+
+    assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER)).enabled, true, source);
+    const second = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!;
+    assert.notEqual(second.unsubscribeToken, first.unsubscribeToken, source);
+    assert.notEqual(second.stateId, first.stateId, source);
+  }
+});
 
 test('a phase 2 sync that changes nothing replaces the KV record a move left when its index write failed', async () => {
   const kv = createMemoryKv();
@@ -1992,23 +2061,53 @@ test('a phase 2 sync that changes nothing replaces the KV record a move left whe
   assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
 });
 
-test('a phase 2 save of a reader whose record was lost where the object names no token subscribes them again, and the old link does not cancel it', async () => {
-  const kv = createMemoryKv();
-  const { phase1, phase2 } = twoPhases(kv);
-  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
-  const oldToken = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
-  // A Worker from before ENG-193 reopened the object without a token, and its KV write was lost.
-  const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
-  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
-  kv.values.delete(SYNC_READER_KEY);
+// worker/README.md, phase 2: a record that is really lost cannot be told from
+// a cached miss, so its reader's saves keep answering 503 (unresolved).
+for (const source of ['kv', 'object'] as const) {
+  for (const objectToken of ['names the token', 'names no token'] as const) {
+    test(`phase ${source === 'kv' ? 1 : 2}: a save or sync of a reader whose record was lost where the object ${objectToken} answers 503 and writes nothing`, async () => {
+      const kv = createMemoryKv();
+      const { phase1 } = twoPhases(kv);
+      const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+      const oldToken = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
+      if (objectToken === 'names no token') {
+        // A Worker from before ENG-193 reopened the object without a token.
+        const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+        await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+      }
+      // The KV write of the last save was lost, and so was the link's index.
+      kv.values.clear();
+      const before = await storedState(kv);
 
-  assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase2, SYNC_READER)).enabled, true);
+      for (const body of [SUBSCRIBE_ONE_FOLLOW, { ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }, SYNC_WITH_NEW_FOLLOW]) {
+        await assert.rejects(saveSubscription(preferencesPut(body), env, SYNC_READER), { code: 'EMAIL_UNAVAILABLE', status: 503 });
+      }
+      assert.deepEqual(await storedState(kv), before, 'a save subscribed the reader without the lost record');
+      assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
+      kv.values.set(`notification:unsubscribe:${oldToken}`, SYNC_READER.uid);
+      const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+      const page = await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), env);
+      // A link with the token the object names still cancels; without one, nothing proves the link.
+      assert.equal(page.status, objectToken === 'names the token' ? 200 : 503);
+    });
+  }
+}
 
-  const token = (await loadSubscriptionWithState(phase2, SYNC_READER_KEY))!.unsubscribeToken!;
-  assert.notEqual(token, oldToken);
-  const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
-  assert.equal((await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), phase2)).status, 400);
-  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, token);
+test('a save of a reader whose lost record a Settings switch-off cancelled subscribes them again with a new link', async () => {
+  for (const source of ['kv', 'object'] as const) {
+    const kv = createMemoryKv();
+    const { phase1 } = twoPhases(kv);
+    const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+    const lost = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!;
+    kv.values.clear();
+
+    assert.equal((await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), env, SYNC_READER)).enabled, false);
+    assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER)).enabled, true, source);
+
+    assert.notEqual((await loadSubscriptionWithState(env, SYNC_READER_KEY))?.unsubscribeToken, lost.unsubscribeToken, source);
+  }
 });
 
 for (const cancel of ['a save with the digest off', 'an unsubscribe link', 'an account deletion'] as const) {
@@ -2136,26 +2235,33 @@ test('a phase 2 Settings save over an older KV copy keeps the subscription\'s de
   assert.deepEqual([...kv.values.keys()], [], 'a link or delivery state of the subscription was left');
 });
 
-test('a phase 2 Settings save over a stale KV copy of an earlier, cancelled subscription does not take that subscription\'s delivery state', async () => {
+test('a phase 2 Settings save over a stale KV copy of an earlier, cancelled subscription writes nothing, and never takes that subscription\'s delivery state', async () => {
   const kv = createMemoryKv();
   const { phase1, phase2 } = twoPhases(kv);
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
   const cancelled = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
   await unsubscribeWithLink(phase1, cancelled.unsubscribeToken);
   await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
-  const token = (JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription).unsubscribeToken!;
+  const { unsubscribeToken: token, stateId } = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
   kv.values.set(`${deliveryStatePrefix}${SYNC_READER.uid}:${cancelled.stateId}`, JSON.stringify({ sentPaperKeys: ['paper-1'] }));
+  const before = await storedState(kv);
   const get = kv.get.bind(kv);
   kv.get = (async (name: string, options?: unknown) => (
     name === SYNC_READER_KEY ? cancelled : get(name, options as never)
   )) as typeof kv.get;
 
-  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
+  await assert.rejects(
+    saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER),
+    { code: 'EMAIL_UNAVAILABLE', status: 503 },
+  );
+  assert.deepEqual(await storedState(kv), before);
   kv.get = get;
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
 
   const saved = (await loadSubscriptionWithState(phase2, SYNC_READER_KEY))!;
+  assert.equal(saved.maxPapers, 3);
   assert.equal(saved.unsubscribeToken, token);
-  assert.notEqual(saved.stateId, cancelled.stateId);
+  assert.equal(saved.stateId, stateId);
   assert.equal(saved.sentPaperKeys, undefined, 'the subscription took the cancelled one\'s sent papers');
 });
 
