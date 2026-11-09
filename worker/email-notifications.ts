@@ -1191,12 +1191,12 @@ async function changeSubscription(
     // A reader phase 2 moved stays in their object and is written below.
     const previous = slot.subscription;
     const record = await next(previous, phase1.behind, undefined, phase1.token);
-    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true };
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: true, slot };
     const key = `${SUBSCRIPTION_PREFIX}${uid}`;
     if (record === null) {
       await markSubscription(env, uid, false);
       await env.NOTIFICATION_STORE!.delete(key);
-      return { changed: true, previous, subscription: null, inKv: true };
+      return { changed: true, previous, subscription: null, inKv: true, slot };
     }
     // The object keeps the record's token, which the unsubscribe link checks
     // while KV may still return the index and record of a cancelled subscription.
@@ -1206,7 +1206,7 @@ async function changeSubscription(
       // and two saves computed from it would write the same version.
       const version = reopened.slot.version;
       await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: version }));
-      return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true };
+      return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true, slot: reopened.slot };
     }
     phase1 = await readPhase1Slot(env, uid);
     slot = phase1.slot;
@@ -1224,13 +1224,15 @@ async function changeSubscription(
     // and the papers it records as sent are not sent again.
     const sameSubscription = behind && slot.token && slot.unmoved?.unsubscribeToken === slot.token ? slot.unmoved : undefined;
     const record = await next(previous, behind, sameSubscription);
-    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: false };
+    if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: false, slot };
     const result = await callSubscriptionStore(env, uid, {
       action: 'write',
       expectedVersion: slot.version,
       subscription: record && storedRecord(record),
     });
-    if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot), inKv: false };
+    // A deleting write's answer lists what the object's cleanup journal holds,
+    // its own entry included (email-subscription-store.ts).
+    if (result.accepted) return { changed: true, previous, subscription: withVersion(result.slot), inKv: false, slot: result.slot };
     // A phase 1 save that reopened the object in between (while two versions
     // run during the switch) leaves the copy this write read an older one.
     slot = result.slot.subscription || !result.slot.migratable ? result.slot : { ...result.slot, unmoved: slot.unmoved };
@@ -1321,27 +1323,62 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
   const keys = new Set((ended.length ? ended : [null]).map(record => deliveryStateKey(uid, record)));
   ended.forEach(record => { if (record.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${record.unsubscribeToken}`); });
   await Promise.all([...keys].map(key => env.NOTIFICATION_STORE!.delete(key)));
-  await deleteScheduleIndex(env, uid);
+  // Also deletes and acknowledges what the object's cleanup journal lists, this write's entry included.
+  await deleteScheduleIndex(env, uid, keys);
   return true;
+}
+
+/**
+ * Deletes the KV keys that the reader's object lists in its cleanup journal
+ * (`CleanupEntry`, email-subscription-store.ts): the delivery state and link
+ * index of each record a deleting write removed, whose request may have failed
+ * before it deleted them. Never the keys of the subscription `slot` holds, and
+ * not those in `deleted`, which this request removed already. Returns the
+ * entries to acknowledge once deleted; a failed delete throws, so none is, and
+ * the next request that meets the reader deletes them again.
+ */
+async function deleteJournaledKeys(env: WorkerEnv, uid: string, slot: StoredSlot, deleted = new Set<string>()) {
+  const entries = slot.cleanup ?? [];
+  const live = new Set([slot.subscription?.unsubscribeToken, slot.token].filter(Boolean).map(token => `${UNSUBSCRIBE_PREFIX}${token}`));
+  if (slot.subscription) live.add(deliveryStateKey(uid, slot.subscription));
+  const keys = new Set(entries.flatMap(entry => [
+    deliveryStateKey(uid, { stateId: entry.stateId }),
+    ...(entry.token ? [`${UNSUBSCRIBE_PREFIX}${entry.token}`] : []),
+  ]));
+  await Promise.all([...keys].filter(key => !live.has(key) && !deleted.has(key)).map(key => env.NOTIFICATION_STORE!.delete(key)));
+  return entries.map(entry => entry.at);
+}
+
+/** Removes the entries `done` names from the object's journal; sends nothing when there are none. */
+async function acknowledgeCleanup(env: WorkerEnv, uid: string, done: number[]) {
+  if (done.length) await callSubscriptionStore(env, uid, { action: 'read', ack: done });
 }
 
 /**
  * Removes the reader's schedule index, then puts it back when their object
  * holds an enabled subscription again: a save from another tab can write its
  * index just before this delete, and the schedule would skip that reader.
+ * In phase 2 it also deletes what the object's cleanup journal lists (except
+ * the keys in `deleted`, which the caller removed) and acknowledges it on the
+ * read that follows the index delete, so a cancellation or a schedule window
+ * that meets a leftover index needs no request of its own for it. Phase 1
+ * adds no entries: it closes an object with a mark, which records none.
  */
-async function deleteScheduleIndex(env: WorkerEnv, uid: string) {
+async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<string>) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
+  let done: number[] = [];
   // In phase 1 a key that holds the record itself is not an index. In phase 2
   // it may still be one while the object is open: the record has not moved in
   // yet, and a read that missed it may be a stale one, so a later window moves it.
   if (subscriptionInKv(env)) {
     if (await readKvRecord(env, uid)) return;
-  } else if ((await callSubscriptionStore(env, uid, { action: 'read' })).slot.migratable) {
-    return;
+  } else {
+    const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+    done = await deleteJournaledKeys(env, uid, slot, deleted);
+    if (slot.migratable) return acknowledgeCleanup(env, uid, done);
   }
   await env.NOTIFICATION_STORE!.delete(indexKey);
-  const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
+  const { slot } = await callSubscriptionStore(env, uid, { action: 'read', ...(done.length ? { ack: done } : {}) });
   if (slot.subscription?.enabled) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
 }
 
@@ -1368,12 +1405,15 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   // `keys` gets what the close ends before it lands: a retry after the close
   // or a later step fails finds no record to learn its token and delivery state from.
   const { held } = await closeBeforeCancelling(env, uid, undefined, undefined, keys);
-  const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  const { previous: changed, slot } = await changeSubscription(env, uid, current => (current ? null : undefined));
   if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
   if (previous?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${previous.unsubscribeToken}`);
   await Promise.all([...keys].map(pending => env.NOTIFICATION_STORE!.delete(pending)));
+  // The object's cleanup journal, this purge's own deletion included, is
+  // acknowledged only after the deletes above, in one more request.
+  await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, slot, keys));
   return { purged: true };
 }
 
@@ -3106,7 +3146,11 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
     // The index goes too, in case it is not a stale copy but one a first POST
     // left when it failed after closing the object.
     if (!current && !object.migratable && request.method === 'POST') {
-      await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
+      const indexKey = `${UNSUBSCRIBE_PREFIX}${token}`;
+      await env.NOTIFICATION_STORE.delete(indexKey);
+      // A cancellation whose request failed after its write may have left its
+      // delivery state too; the object's cleanup journal names it.
+      await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, object, new Set([indexKey])));
       return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
     }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);

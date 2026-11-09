@@ -6180,16 +6180,15 @@ test('phase 2: a purge retried after that KV read failed still removes the delet
   assert.deepEqual([...kv.values.keys()], []);
 });
 
-// The reader's objects, losing the answer of the first close after it lands.
-function losingCloseAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>) {
+// The reader's objects, losing the answer of the first call `picked` chooses, after it lands.
+function losingAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>, picked: (payload: { action?: string; migratable?: boolean; subscription?: unknown }) => boolean) {
   let lost = false;
   return {
     idFromName: (name: string) => stores.idFromName(name),
     get: (id: DurableObjectId) => ({
       fetch: async (url: string, init: RequestInit) => {
         const response = await stores.get(id).fetch(url, init);
-        const payload = JSON.parse(String(init.body)) as { action?: string; migratable?: boolean };
-        if (!lost && payload.action === 'mark' && payload.migratable === false) {
+        if (!lost && picked(JSON.parse(String(init.body)))) {
           lost = true;
           throw new Error('Durable Object answer lost');
         }
@@ -6197,6 +6196,11 @@ function losingCloseAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>
       },
     }),
   } as WorkerEnv['EMAIL_SUBSCRIPTIONS'];
+}
+
+// The reader's objects, losing the answer of the first close after it lands.
+function losingCloseAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>) {
+  return losingAnswer(stores, payload => payload.action === 'mark' && payload.migratable === false);
 }
 
 test('phase 2: a purge retried after its close landed and the answer was lost still removes the link the object named', async () => {
@@ -6248,6 +6252,149 @@ test('phase 2: an unsubscribe link posted again after its first POST failed past
 
   assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
   assert.equal(kv.values.has(indexKey), false);
+});
+
+// A subscriber whose delivery state holds an edition a sending limit held,
+// with a selection key made of their email address.
+async function subscriberWithHeldEdition(kv: ReturnType<typeof createMemoryKv>, env: WorkerEnv) {
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER);
+  const { unsubscribeToken: token, stateId } = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!;
+  const stateKey = `${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`;
+  kv.values.set(stateKey, JSON.stringify({ heldDigest: { papers: [], selectedAt: '2026-08-10T06:00:00.000Z', selectionKey: JSON.stringify([SYNC_READER.email, 5, []]) } }));
+  return { token: token!, stateKey, indexKey: `notification:unsubscribe:${token}` };
+}
+
+// The KV keys whose value holds the reader's email address.
+function keysWithAddress(kv: ReturnType<typeof createMemoryKv>) {
+  return [...kv.values].filter(([, value]) => value.includes(SYNC_READER.email)).map(([key]) => key);
+}
+
+// The cancellations whose KV keys the reader's object still lists for cleanup.
+async function journalOf(kv: object) {
+  return (await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) as { cleanup?: Array<{ at: number }> }).cleanup ?? [];
+}
+
+function losingDeleteAnswer(stores: NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']>) {
+  return losingAnswer(stores, payload => payload.action === 'write' && payload.subscription === null);
+}
+
+const switchDigestOff = (env: WorkerEnv) => saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), env, SYNC_READER);
+const postLink = (env: WorkerEnv, token: string) => handleEmailUnsubscribe(new Request(`https://example.com/notifications/unsubscribe?token=${token}`, { method: 'POST' }), env);
+
+for (const next of ['a new POST of its link', 'an account deletion purge that knows none of its keys'] as const) {
+  test(`phase 2: after a cancellation whose answer was lost once the object had deleted the record, ${next} removes its delivery state and link`, async () => {
+    const kv = createMemoryKv();
+    const { phase2 } = twoPhases(kv);
+    const { token, stateKey, indexKey } = await subscriberWithHeldEdition(kv, phase2);
+    const losing = { ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) };
+    await assert.rejects(next === 'a new POST of its link' ? postLink(losing, token) : switchDigestOff(losing), /answer lost/);
+    assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null, 'the object kept the record');
+    assert.deepEqual(keysWithAddress(kv), [stateKey]);
+
+    if (next === 'a new POST of its link') await unsubscribeWithLink(phase2, token);
+    else await purgeEmailSubscription(phase2, SYNC_READER.uid, new Set());
+
+    assert.deepEqual(keysWithAddress(kv), [], 'the delivery state that holds the address was left');
+    assert.equal(kv.values.has(indexKey), false, 'the link index was left');
+    assert.deepEqual(await journalOf(kv), []);
+  });
+}
+
+for (const touch of ['a POST of its link', 'an account deletion purge'] as const) {
+  test(`phase 2: ${touch} whose KV delete of a key the journal lists fails keeps the entry, and the next request that meets the reader removes it`, async () => {
+    const kv = createMemoryKv();
+    const { phase2 } = twoPhases(kv);
+    const { token, stateKey, indexKey } = await subscriberWithHeldEdition(kv, phase2);
+    await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+    const remove = kv.delete.bind(kv);
+    kv.delete = async (key: string) => {
+      if (key === stateKey) throw new Error('KV DELETE failed: 503');
+      return remove(key);
+    };
+    const keys = new Set<string>();
+    await assert.rejects(touch === 'a POST of its link' ? postLink(phase2, token) : purgeEmailSubscription(phase2, SYNC_READER.uid, keys), /KV DELETE failed/);
+    kv.delete = remove;
+    assert.equal((await journalOf(kv)).length, 1, 'the entry went before its delivery state');
+    assert.equal(kv.values.has(stateKey), true);
+
+    // The cron window that meets the schedule index the switch-off left, or
+    // the account deletion's sweep after the Auth delete.
+    if (touch === 'a POST of its link') await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-10T08:00:00.000Z'));
+    else await purgeEmailSubscription(phase2, SYNC_READER.uid, keys);
+
+    assert.deepEqual([stateKey, indexKey, SYNC_READER_KEY].filter(key => kv.values.has(key)), []);
+    assert.deepEqual(await journalOf(kv), []);
+  });
+}
+
+test('phase 2: an acknowledgement removes only the entries it names, so a subscription made and cancelled before it is cleaned up by the next request', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  const first = await subscriberWithHeldEdition(kv, phase2);
+  await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+  let second: Awaited<ReturnType<typeof subscriberWithHeldEdition>> | undefined;
+  // Right before the link acknowledges the first entry, the reader subscribes
+  // again and that subscription's cancellation loses its answer too.
+  const stores = interceptedStores(phase2.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'read' && 'ack' in payload, async () => {
+    second = await subscriberWithHeldEdition(kv, phase2);
+    await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+  });
+
+  await unsubscribeWithLink({ ...phase2, EMAIL_SUBSCRIPTIONS: stores }, first.token);
+
+  assert.ok(stores.intercepted);
+  assert.deepEqual([first.stateKey, first.indexKey].filter(key => kv.values.has(key)), []);
+  assert.equal((await journalOf(kv)).length, 1, 'the acknowledgement removed an entry it did not name');
+  assert.deepEqual(keysWithAddress(kv), [second!.stateKey]);
+
+  // The reader's app retries the switch-off.
+  await switchDigestOff(phase2);
+
+  assert.deepEqual(keysWithAddress(kv), []);
+  assert.equal(kv.values.has(second!.indexKey), false);
+  assert.deepEqual(await journalOf(kv), []);
+});
+
+test('phase 2: cleaning up after a lost cancellation never touches the delivery state or links of a subscription saved meanwhile', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  const first = await subscriberWithHeldEdition(kv, phase2);
+  await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+  let second: Awaited<ReturnType<typeof subscriberWithHeldEdition>> | undefined;
+  let reads = 0;
+  // The retried switch-off reads the object to close it, to delete the record
+  // and, third, to remove the schedule index; another tab subscribes again
+  // right before that third read.
+  const stores = interceptedStores(phase2.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'read' && ++reads === 3, async () => {
+    second = await subscriberWithHeldEdition(kv, phase2);
+  });
+
+  await switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: stores });
+
+  assert.ok(stores.intercepted);
+  assert.deepEqual([first.stateKey, first.indexKey].filter(key => kv.values.has(key)), []);
+  assert.equal(kv.values.has(second!.stateKey), true, 'the cleanup deleted the delivery state of the current subscription');
+  assert.equal(kv.values.get(second!.indexKey), SYNC_READER.uid, 'the cleanup deleted the link of the current subscription');
+  assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, second!.token);
+  assert.deepEqual(await journalOf(kv), []);
+});
+
+test('a cancellation that completes leaves nothing in KV and nothing for its object to clean up, in both phases', async () => {
+  for (const source of ['kv', 'object'] as const) {
+    for (const cancel of ['link', 'Settings', 'account deletion'] as const) {
+      const kv = createMemoryKv();
+      const env = { ...twoPhases(kv).phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+      const { token } = await subscriberWithHeldEdition(kv, env);
+
+      if (cancel === 'link') await unsubscribeWithLink(env, token);
+      else if (cancel === 'Settings') await switchDigestOff(env);
+      else await purgeEmailSubscription(env, SYNC_READER.uid);
+
+      assert.deepEqual([...kv.values.keys()], [], `${source}, ${cancel}`);
+      assert.deepEqual(await journalOf(kv), [], `${source}, ${cancel}`);
+    }
+  }
 });
 
 // ENG-163 (Pablo, 2026-11-03): a reader whose digest is on and who follows
