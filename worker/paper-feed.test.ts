@@ -1354,6 +1354,17 @@ test("a follow's papers reach the next page of every reader who asked for it bef
   assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.50003']);
 });
 
+test('a follow whose lane has not finished its first harvest is named as loading, and no longer once it has', async () => {
+  const { db, ask } = store();
+  const follow = { type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' };
+  const first = await ask({ categories: ['cs.CL'], follows: [follow], exact: true });
+  assert.deepEqual(first.loading, [{ type: 'author', canonicalId: 'https://openalex.org/A123' }]);
+  assert.equal('loading' in await ask({ categories: ['cs.CL'], follows: [follow] }), false, 'not named to a request that does not ask');
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A123', '2026-10-22')").run();
+  const second = await ask({ categories: ['cs.CL'], follows: [follow], exact: true });
+  assert.equal(second.loading, undefined);
+});
+
 // Runs `work` once, right after the corpus's next batch of reads: a page's
 // candidates, read in one batch.
 function afterNextBatch(env: WorkerEnv, work: () => Promise<void>) {

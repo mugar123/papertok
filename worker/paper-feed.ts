@@ -258,7 +258,7 @@ export async function handleCorpusFeed(
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
-): Promise<{ papers: Paper[]; skipsSeen?: true }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true; loading?: Array<{ type: string; canonicalId: string }> }> {
   const bodyRead = Date.now();
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
@@ -298,7 +298,14 @@ export async function handleCorpusFeed(
     lanes.length ? readFollowedLanes(env, lanes).finally(() => timings?.since('follows', followsRead)) : [],
   ]);
   const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
-  if (query.page > FEED_LAST_PAGE) return { papers: [] };
+  // For a request that asks for it (`exact`), the asked follows with no papers
+  // yet because their lane, asked for the first time or still in its first
+  // harvest, had not finished it: named only when there are some.
+  const loading = query.exact
+    ? query.follows.filter(follow => !harvestedBefore.has(follow.lane)).map(({ type, canonicalId }) => ({ type, canonicalId }))
+    : [];
+  const loadingField = loading.length ? { loading } : {};
+  if (query.page > FEED_LAST_PAGE) return { papers: [], ...loadingField };
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
   const looksUp = query.page === 0 && query.follows.length === 0 && query.positiveIds.length > 0;
@@ -349,5 +356,5 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if ((kept?.[1].final || kept?.[1].decided !== undefined) && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
+  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}), ...loadingField };
 }

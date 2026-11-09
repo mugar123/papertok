@@ -1350,6 +1350,8 @@ export interface FeedQuery {
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
   areaLanes: boolean;
+  // The request asks for exactly the lanes it names; for now it only makes the answer name the follows still loading.
+  exact: boolean;
 }
 
 /**
@@ -2074,6 +2076,7 @@ const CATEGORY_ID = /^[\w.-]{1,32}$/;
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
   seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
+  exact?: unknown;
 }
 
 const categoryIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(text).filter(category => CATEGORY_ID.test(category)))];
@@ -2143,6 +2146,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     // (a category topic): there the categories stand for followed topics
     // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
     areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
+    exact: body?.exact === true,
   };
 }
 
