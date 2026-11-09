@@ -321,15 +321,20 @@ test('a paper filed after its lane was first loaded arrives the day it is filed;
 });
 
 // An author's first load can bring a paper new to the corpus, which its
-// categories file too: those lanes are not loading, and get it as news.
-test("a lane's first load files its papers with no arrival, and the paper's other lanes get them as arrivals", async () => {
-  const { env, db } = corpus();
-  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['author:A1'] }], { now: NOW, firstLoad: 'author:A1' });
-  assert.deepEqual(Object.fromEntries(rows(db, 'SELECT lane, arrived FROM work_lanes ORDER BY lane').map(row => [row.lane, row.arrived])), {
+// categories file too: those lanes are not loading, and get it as news when
+// it is this week's. One from further back is those lanes' past.
+test("a lane's first load files its papers with no arrival, and the paper's other lanes get this week's papers as arrivals", async () => {
+  const arrivals = async (published: string) => {
+    const { env, db } = corpus();
+    await ingestPapers(env, [{ paper: { ...arxivRecord, published }, lanes: ['author:A1'] }], { now: NOW, firstLoad: 'author:A1' });
+    return Object.fromEntries(rows(db, 'SELECT lane, arrived FROM work_lanes ORDER BY lane').map(row => [row.lane, row.arrived]));
+  };
+  assert.deepEqual(await arrivals(new Date(NOW - 2 * 86_400_000).toISOString()), {
     'author:A1': null,
     'cs.CL': new Date(NOW).toISOString(),
     'cs.LG': new Date(NOW).toISOString(),
   });
+  assert.deepEqual(await arrivals(new Date(NOW - 30 * 86_400_000).toISOString()), { 'author:A1': null, 'cs.CL': null, 'cs.LG': null });
 });
 
 // No arrival means the paper was already in the lane: a fold with such a row

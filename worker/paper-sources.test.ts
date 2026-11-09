@@ -973,21 +973,24 @@ test('a journal article that adds a coauthor, an institution, a topic or a conce
 
 test("a lane a journal article's upgrade adds arrives with the listing that brought the article, or with no arrival on the lane's first load", async () => {
   const first = Date.parse('2026-10-23T03:00:00Z');
-  const article = mapOpenAlexWork({ ...gmmArticle, authorships: [...gmmArticle.authorships, { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] }] })!;
   const workingPaper = mapOpenAlexWork({ ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' })!;
-  // The upgrade follows the listing: only the lane being loaded, or every lane, gives no arrival.
-  for (const [firstLoad, arrived] of [
-    [undefined, new Date(first + 86_400_000).toISOString()],
-    ['econ.EM', new Date(first + 86_400_000).toISOString()],
-    ['author:A5000000777', null],
-    [true, null],
+  // The upgrade follows the listing: the lane being loaded, or every lane,
+  // gives no arrival, and another lane's first load dates only this week's
+  // articles (gmmArticle is dated 2026-10-14, ten days before the listing).
+  for (const [firstLoad, published, arrived] of [
+    [undefined, '2026-10-14', new Date(first + 86_400_000).toISOString()],
+    ['econ.EM', '2026-10-22', new Date(first + 86_400_000).toISOString()],
+    ['econ.EM', '2026-10-14', null],
+    ['author:A5000000777', '2026-10-22', null],
+    [true, '2026-10-22', null],
   ] as const) {
+    const article = mapOpenAlexWork({ ...gmmArticle, publication_date: published, authorships: [...gmmArticle.authorships, { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] }] })!;
     const { binding, db } = testD1();
     const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
     db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5000000777', ?)").run(new Date(first).toISOString());
     await ingestPapers(store, [{ paper: workingPaper, lanes: ['series:working-papers'] }], { now: first });
     await ingestPapers(store, [{ paper: article, lanes: ['econ.EM'] }], { now: first + 86_400_000, firstLoad });
-    assert.deepEqual((db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'author:A5000000777'").all() as Array<{ arrived: string | null }>).map(row => row.arrived), [arrived], `firstLoad: ${firstLoad}`);
+    assert.deepEqual((db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'author:A5000000777'").all() as Array<{ arrived: string | null }>).map(row => row.arrived), [arrived], `firstLoad: ${firstLoad}, published ${published}`);
   }
 });
 

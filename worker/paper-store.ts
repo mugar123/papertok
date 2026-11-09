@@ -458,7 +458,7 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
  * once whatever the order of the records and however often they are listed.
  * Returns how many rows changed.
  */
-async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrivalIn: (lane: string) => string | null) {
+async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrivalIn: (lane: string, published: string) => string | null) {
   if (articles.length === 0) return 0;
   const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
   const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
@@ -491,7 +491,7 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
   const upgradedRows = upgrades.map(upgrade => ({ upgrade, paper: JSON.parse(upgrade.paper) as Paper }))
     .filter(({ upgrade, paper }) => upgrade.published >= since && isFeedPublication(paper));
   const followed = await followedLanesAmong(db, upgradedRows.flatMap(({ paper }) => followOnlyLanes(paper)));
-  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed).map(lane => ({ lane, arrived: arrivalIn(lane) }));
+  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed).map(lane => ({ lane, arrived: arrivalIn(lane, upgrade.published) }));
   // One batch a chunk: the row, its date in each of its lanes, its lanes,
   // keys and vector change together.
   for (let start = 0; start < upgrades.length; start += WRITE_CHUNK) {
@@ -557,8 +557,9 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * row is kept until `keepUntil`, the listing's own keeping date
  * (`listed_until`). A row new to a lane arrives at `now` (`arrived`), or with
  * no arrival when it comes with that lane's first load (`firstLoad` names the
- * lane), which the day-by-day feeds date by its publication; `firstLoad: true`
- * gives no arrival in any lane, for papers that are not news. Once the batch
+ * lane), which the day-by-day feeds date by its publication; the load's papers
+ * arrive in their other lanes only when published within LATE_ARRIVAL_DAYS.
+ * `firstLoad: true` gives no arrival in any lane, for papers that are not news. Once the batch
  * is saved, OpenAlex's journal articles in it upgrade the working-paper rows
  * they were filed under (`upgradeWorkingPapers`). Returns how many rows were
  * written, by either.
@@ -566,8 +567,12 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now(), firstLoad }: { keepUntil?: string; now?: number; firstLoad?: true | string } = {}) {
   const db = database(env);
   // A row new to its lane arrives now, unless it comes with that lane's first
-  // load; a row the lane already holds keeps its arrival.
-  const arrivalIn = (lane: string) => (firstLoad === true || firstLoad === lane ? null : new Date(now).toISOString());
+  // load; a row the lane already holds keeps its arrival. A first load reaches
+  // back 90 days: in the paper's other lanes, what it brings from before the
+  // last LATE_ARRIVAL_DAYS is their past, not news, and has no arrival either.
+  const announced = daysFromNow(-LATE_ARRIVAL_DAYS, now);
+  const arrivalIn = (lane: string, published: string) => (firstLoad === true || firstLoad === lane || (firstLoad !== undefined && published < announced)
+    ? null : new Date(now).toISOString());
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
@@ -661,7 +666,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       // A journal's listing names the type of its own record, which another record of the row can change.
       if (isJournalLane(lane) && !fitsJournalLane(paper)) continue;
-      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null, arrived: arrivalIn(lane) });
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null, arrived: arrivalIn(lane, published) });
     }
   }
 
