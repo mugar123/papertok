@@ -96,6 +96,58 @@ test('an OAI page yields its live records with v1 as the publication date', () =
   }]);
 });
 
+// arXiv announces a paper within about four days of its v1. A record the set
+// lists later is a revision, which brought a paper back to a full lane that had
+// trimmed it, dated today and kept two weeks on top of its day-by-day feed.
+test('an OAI record of a paper submitted more than a week before is filed with no arrival; a recent one arrives today', async t => {
+  // The start of a three-second period the harvest may take.
+  const now = Date.UTC(2026, 10, 3, 0, 0, 3);
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const day = 86_400_000;
+  const record = (arxivId: string, title: string, submitted: number) => `<record>
+      <header><identifier>oai:arXiv.org:${arxivId}</identifier><datestamp>2026-11-02</datestamp><setSpec>cs</setSpec></header>
+      <metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/">
+        <id>${arxivId}</id>
+        <version version="v1"><date>${new Date(submitted).toUTCString()}</date></version>
+        <version version="v2"><date>${new Date(now - day).toUTCString()}</date></version>
+        <title>${title}</title><authors>Ana Pérez</authors><categories>cs.LG</categories>
+        <abstract>We study ${title.toLowerCase()} in depth.</abstract>
+      </arXivRaw></metadata>
+    </record>`;
+  const revised = record('2609.01234', 'Gradient noise in wide networks', now - 50 * day);
+  const fresh = record('2611.00001', 'Sparse mixtures of experts', now - 2 * day);
+  t.mock.method(globalThis, 'fetch', async () => new Response(`<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>${revised}${fresh}</ListRecords></OAI-PMH>`));
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding } as Parameters<typeof harvestArxivPage>[0];
+  const evictAll = async () => {
+    let after: number | null = 0;
+    while (after !== null) after = await evictExpired(env, now, after);
+  };
+  const inLane = (arxivId: string) => db.prepare(`SELECT l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id
+    WHERE l.lane = 'cs.LG' AND k.key = 'arxiv:${arxivId}'`).all().map(row => (row as { arrived: string | null }).arrived);
+  // The revised paper, filed when it was announced, then trimmed from a full lane.
+  await ingestPapers(env, [{ paper: arxivRecordPaper(parseOaiPage(`<OAI-PMH><ListRecords>${revised}</ListRecords></OAI-PMH>`).papers[0]), lanes: [] }], { now: now - 49 * day });
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(now - id * 10_000).toISOString();
+    insertWork.run(1_000_000 + id, JSON.stringify({ id: `2611.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('cs.LG', 1_000_000 + id, published);
+  }
+  db.exec('COMMIT');
+  await evictAll();
+  assert.deepEqual(inLane('2609.01234'), [], 'trimmed from the full lane');
+
+  assert.equal((await harvestArxivPage(env, { set: 'cs', from: '2026-11-02' })).listed, 2);
+  assert.deepEqual(inLane('2609.01234'), [null], 'the revision is no arrival');
+  assert.deepEqual(inLane('2611.00001'), [new Date(now).toISOString()], 'a paper announced on time arrives today');
+  const daily = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], order: 'daily', pageSize: 2 }), { now });
+  assert.equal(daily.some(paper => paper.id === '2609.01234'), false, "the revision is not on top of the lane's day-by-day feed");
+  await evictAll();
+  assert.deepEqual(inLane('2609.01234'), [], 'the lane trims it again');
+});
+
 test('a page past the last record is empty rather than an error', () => {
   const xml = '<OAI-PMH><error code="noRecordsMatch">No records</error></OAI-PMH>';
   assert.deepEqual(parseOaiPage(xml), { papers: [], resumptionToken: '' });

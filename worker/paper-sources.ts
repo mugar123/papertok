@@ -29,7 +29,7 @@ import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, LATE_ARRIVAL_DAYS, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
@@ -199,7 +199,10 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
  * One OAI-PMH page of an arXiv set, filed under its categories. Only papers
  * first submitted within CORPUS_DAYS are kept: the set also lists revisions of
  * old papers, and a new paper is announced days after its v1 date, so `from`
- * alone would drop it.
+ * alone would drop it. arXiv announces a paper within about four days of its
+ * v1, so a record first submitted more than LATE_ARRIVAL_DAYS before is a
+ * revision: it is filed with no arrival in any lane, and a lane that had
+ * trimmed it does not put it on top of its day-by-day feed.
  */
 export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
   const url = new URL(OAI_ENDPOINT);
@@ -221,8 +224,11 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
   const since = daysFromNow(-CORPUS_DAYS);
+  const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
   const recent = page.papers.filter(paper => paper.published >= since);
-  const stored = await ingestPapers(env, recent.map(record => ({ paper: arxivRecordPaper(record), lanes: [] })));
+  const filed = (records: typeof recent) => records.map(record => ({ paper: arxivRecordPaper(record), lanes: [] }));
+  const stored = await ingestPapers(env, filed(recent.filter(paper => paper.published >= announced)))
+    + await ingestPapers(env, filed(recent.filter(paper => paper.published < announced)), { firstLoad: true });
   return { stored, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
 }
 

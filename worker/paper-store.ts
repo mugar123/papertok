@@ -46,8 +46,9 @@ export const FEED_CANDIDATE_LIMIT = 4_000;
 // A paper filed in a lane at least this long after its date was filed late:
 // one filed within a few days of its date (arXiv's weekend announcements run
 // to about four) is still near the lane's top by date, where its limit does
-// not reach it (`evictExpired`).
-const LATE_ARRIVAL_DAYS = 7;
+// not reach it (`evictExpired`). arXiv's listing of a paper first submitted
+// longer ago is a revision, not an arrival (`harvestArxivPage`).
+export const LATE_ARRIVAL_DAYS = 7;
 // A paper filed late stays in its lane past the lane's FEED_CANDIDATE_LIMIT
 // newest by date for this long after it was filed: it is still on the pages
 // that go day by day (`daily`) for two weeks, and then the limit takes it.
