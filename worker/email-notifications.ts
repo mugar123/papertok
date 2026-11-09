@@ -1388,6 +1388,7 @@ async function acknowledgeCleanup(env: WorkerEnv, uid: string, done: number[]) {
  * deletes the KV key the cancellation kept (`indexKept`). That key may hold
  * the record itself, so phase 1 keeps it when a save reopened the object
  * since, and puts it back only for a reader whose record the object holds.
+ * Phase 2 keeps it too while the object's latest answer shows it open.
  */
 async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<string>, known?: { slot: StoredSlot; indexKept: boolean }) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
@@ -1399,10 +1400,12 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<st
     if (known?.indexKept) await env.NOTIFICATION_STORE!.delete(indexKey);
     // In phase 1 a key that holds the record itself is not an index.
     if (await readKvRecord(env, uid)) return;
-  } else if (slot.migratable) {
+  } else if ((after ?? slot).migratable) {
     // In phase 2 the key may still be a record while the object is open: it
     // has not moved in yet, and a read that missed it may be a stale one, so
-    // a later window moves it.
+    // a later window moves it. The acknowledgement's answer is the latest: a
+    // phase 1 save during the switch may have reopened the object since the
+    // cancellation's write and put its record at this key.
     return;
   }
   await env.NOTIFICATION_STORE!.delete(indexKey);

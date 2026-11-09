@@ -6581,6 +6581,25 @@ test('phase 1 after a rollback: cancelling a subscription saved in phase 1 keeps
   assert.deepEqual(await journalOf(kv), []);
 });
 
+for (const cancel of ['Settings switch-off', 'link POST'] as const) {
+  test(`phase 1 after a rollback: a ${cancel} of a subscription saved in phase 1, with an entry an earlier cancellation left, deletes that subscription's record at the schedule key once the journal is empty`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const a = await subscriberWithHeldEdition(kv, phase2);
+    await assert.rejects(switchDigestOff({ ...phase2, EMAIL_SUBSCRIPTIONS: losingDeleteAnswer(phase2.EMAIL_SUBSCRIPTIONS!) }), /answer lost/);
+    // Phase 1 writes this subscription's record, with the address, at the schedule key.
+    const b = await subscriberWithHeldEdition(kv, phase1);
+    assert.equal((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken, b.token);
+
+    if (cancel === 'link POST') assert.equal((await postLink(phase1, b.token)).status, 200);
+    else await switchDigestOff(phase1);
+
+    assert.deepEqual([a.stateKey, a.indexKey, b.stateKey, b.indexKey, SYNC_READER_KEY].filter(key => kv.values.has(key)), []);
+    assert.deepEqual(keysWithAddress(kv), [], 'the cancelled record stayed at the schedule key');
+    assert.deepEqual(await journalOf(kv), []);
+  });
+}
+
 test('phase 1 after a rollback: a switch-off that also cancels a subscription saved right after its close keeps the schedule key while the journal lists entries', async () => {
   const kv = createMemoryKv();
   const { phase1, a, b, leftovers } = await readerWithLeftover(kv);
@@ -6654,6 +6673,31 @@ test('phase 2: an entry that appears after a cancellation deleted the schedule i
   assert.deepEqual([other!.stateKey, other!.indexKey, SYNC_READER_KEY].filter(key => kv.values.has(key)), []);
   assert.deepEqual(await journalOf(kv), []);
 });
+
+for (const cancel of ['Settings switch-off', 'link POST'] as const) {
+  test(`phase 2: a ${cancel} keeps the schedule key when a phase 1 save during the switch reopens the object before the acknowledgement`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const { token } = await subscriberWithHeldEdition(kv, phase2);
+    let saved: Awaited<ReturnType<typeof subscriberWithHeldEdition>> | undefined;
+    // While two versions overlap, a phase 1 Worker subscribes the reader again
+    // right before the cancellation acknowledges its journal entry, and writes
+    // that subscription's record at the schedule key.
+    const stores = interceptedStores(phase2.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'read' && 'ack' in payload, async () => {
+      saved = await subscriberWithHeldEdition(kv, phase1);
+    });
+    const env = { ...phase2, EMAIL_SUBSCRIPTIONS: stores };
+
+    if (cancel === 'link POST') assert.equal((await postLink(env, token)).status, 200);
+    else await switchDigestOff(env);
+
+    assert.ok(stores.intercepted);
+    assert.equal((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.unsubscribeToken, saved!.token, 'the cancellation deleted the record of the save made meanwhile');
+    assert.equal(kv.values.get(saved!.indexKey), SYNC_READER.uid);
+    assert.equal(kv.values.has(saved!.stateKey), true);
+    assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, saved!.token);
+  });
+}
 
 test('phase 1 after a rollback: an entry that appears before a cancellation acknowledges the journal stays, with the schedule key, for the next window', async () => {
   const kv = createMemoryKv();
