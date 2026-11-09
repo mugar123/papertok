@@ -451,18 +451,18 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
  * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
  * record of `articles` was filed under (by the article's work id or DOI) the
  * journal's reviewed row, with its date in every lane it holds, and filed
- * under the lanes the article's record adds (`recordLanes`), which it enters
- * with the listing's arrival (`arrived`, as `ingestPapers` gives a new lane).
- * An upgraded row is no working paper, so the step applies once whatever the
- * order of the records and however often they are listed. Returns how many
- * rows changed.
+ * under the lanes the article's record adds (`recordLanes`), each of which it
+ * enters with the listing's arrival in it (`arrivalIn`, as `ingestPapers`
+ * gives a new lane). An upgraded row is no working paper, so the step applies
+ * once whatever the order of the records and however often they are listed.
+ * Returns how many rows changed.
  */
-async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrived: string | null) {
+async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrivalIn: (lane: string) => string | null) {
   if (articles.length === 0) return 0;
   const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
   const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
   const works = await readWorks(db, [...new Set(found.values())]);
-  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: string[] }> = [];
+  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: Array<{ lane: string; arrived: string | null }> }> = [];
   const since = daysFromNow(-CORPUS_DAYS, now);
   // In id order, so the same records upgrade a row the same way in any order.
   for (const [id, work] of [...works].sort(([a], [b]) => a - b)) {
@@ -490,7 +490,7 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
   const upgradedRows = upgrades.map(upgrade => ({ upgrade, paper: JSON.parse(upgrade.paper) as Paper }))
     .filter(({ upgrade, paper }) => upgrade.published >= since && isFeedPublication(paper));
   const followed = await followedLanesAmong(db, upgradedRows.flatMap(({ paper }) => followOnlyLanes(paper)));
-  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed);
+  for (const { upgrade, paper } of upgradedRows) upgrade.lanes = recordLanes(paper, followed).map(lane => ({ lane, arrived: arrivalIn(lane) }));
   // One batch a chunk: the row, its date in each of its lanes, its lanes,
   // keys and vector change together.
   for (let start = 0; start < upgrades.length; start += WRITE_CHUNK) {
@@ -502,7 +502,7 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
       db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
         WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
-        SELECT l.value, j.value ->> 'id', j.value ->> 'published', ? FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(arrived, chunk),
+        SELECT l.value ->> 'lane', j.value ->> 'id', j.value ->> 'published', l.value ->> 'arrived' FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
         .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
@@ -555,13 +555,18 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * title or abstract drops the vector for the embedding pass. A notable lane's
  * row is kept until `keepUntil`, the listing's own keeping date
  * (`listed_until`). A row new to a lane arrives at `now` (`arrived`), or with
- * no arrival when it comes with the lane's first load (`firstLoad`), which the
- * day-by-day feeds date by its publication. Once the batch is saved, OpenAlex's
- * journal articles in it upgrade the working-paper rows they were filed under
- * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
+ * no arrival when it comes with that lane's first load (`firstLoad` names the
+ * lane), which the day-by-day feeds date by its publication; `firstLoad: true`
+ * gives no arrival in any lane, for papers that are not news. Once the batch
+ * is saved, OpenAlex's journal articles in it upgrade the working-paper rows
+ * they were filed under (`upgradeWorkingPapers`). Returns how many rows were
+ * written, by either.
  */
-export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now(), firstLoad = false } = {}) {
+export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now(), firstLoad }: { keepUntil?: string; now?: number; firstLoad?: true | string } = {}) {
   const db = database(env);
+  // A row new to its lane arrives now, unless it comes with that lane's first
+  // load; a row the lane already holds keeps its arrival.
+  const arrivalIn = (lane: string) => (firstLoad === true || firstLoad === lane ? null : new Date(now).toISOString());
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
@@ -601,7 +606,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
   const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
-  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
+  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null; arrived: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
   const withdrawn: number[] = [];
@@ -655,7 +660,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       // A journal's listing names the type of its own record, which another record of the row can change.
       if (isJournalLane(lane) && !fitsJournalLane(paper)) continue;
-      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null, arrived: arrivalIn(lane) });
     }
   }
 
@@ -698,18 +703,15 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
       SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
   }
-  // A row new to its lane arrives now, unless it comes with the lane's first
-  // load; a row the lane already holds keeps its arrival.
-  const arrived = firstLoad ? null : new Date(now).toISOString();
   for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
     statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until, arrived)
-      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil', ? FROM json_each(?) WHERE true
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil', value ->> 'arrived' FROM json_each(?) WHERE true
       ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
-        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(arrived, JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   const candidates = articles.filter(article => workingPaperGroups.has(groupOfKey.get(`id:${article.id.toLowerCase()}`)!));
-  return rows.length + await upgradeWorkingPapers(db, candidates, now, arrived);
+  return rows.length + await upgradeWorkingPapers(db, candidates, now, arrivalIn);
 }
 
 /**

@@ -889,7 +889,7 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
-    stored += await ingestPapers(env, result.items, { keepUntil, now, firstLoad: !reached });
+    stored += await ingestPapers(env, result.items, { keepUntil, now, firstLoad: reached ? undefined : lane });
     if (!spec.separateListings && (!result.full || (spec.dated && result.newest && result.newest < since))) break;
   }
   // Only the papers this run's pages filed in the lane carry OpenAlex's counts
@@ -964,7 +964,7 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       break;
     }
     try {
-      stored += await ingestPapers(env, result.items, { now, firstLoad: true });
+      stored += await ingestPapers(env, result.items, { now, firstLoad: lane });
     } catch (error) {
       throw new Error(`Backfill ${source} ${lane} page ${page} could not store ${result.items.length} records: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }

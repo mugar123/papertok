@@ -904,7 +904,13 @@ test("a lane a journal article's upgrade adds arrives with the listing that brou
   const first = Date.parse('2026-10-23T03:00:00Z');
   const article = mapOpenAlexWork({ ...gmmArticle, authorships: [...gmmArticle.authorships, { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] }] })!;
   const workingPaper = mapOpenAlexWork({ ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' })!;
-  for (const [firstLoad, arrived] of [[false, new Date(first + 86_400_000).toISOString()], [true, null]] as const) {
+  // The upgrade follows the listing: only the lane being loaded, or every lane, gives no arrival.
+  for (const [firstLoad, arrived] of [
+    [undefined, new Date(first + 86_400_000).toISOString()],
+    ['econ.EM', new Date(first + 86_400_000).toISOString()],
+    ['author:A5000000777', null],
+    [true, null],
+  ] as const) {
     const { binding, db } = testD1();
     const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
     db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5000000777', ?)").run(new Date(first).toISOString());

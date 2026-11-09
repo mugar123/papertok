@@ -320,6 +320,18 @@ test('a paper filed after its lane was first loaded arrives the day it is filed;
   assert.equal(arrived['arxiv:2610.00002'], new Date(later).toISOString());
 });
 
+// An author's first load can bring a paper new to the corpus, which its
+// categories file too: those lanes are not loading, and get it as news.
+test("a lane's first load files its papers with no arrival, and the paper's other lanes get them as arrivals", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['author:A1'] }], { now: NOW, firstLoad: 'author:A1' });
+  assert.deepEqual(Object.fromEntries(rows(db, 'SELECT lane, arrived FROM work_lanes ORDER BY lane').map(row => [row.lane, row.arrived])), {
+    'author:A1': null,
+    'cs.CL': new Date(NOW).toISOString(),
+    'cs.LG': new Date(NOW).toISOString(),
+  });
+});
+
 test('a fold of two rows of one lane keeps the earlier arrival', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
