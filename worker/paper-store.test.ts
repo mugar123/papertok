@@ -332,15 +332,23 @@ test("a lane's first load files its papers with no arrival, and the paper's othe
   });
 });
 
-test('a fold of two rows of one lane keeps the earlier arrival', async () => {
-  const { env, db } = corpus();
+// No arrival means the paper was already in the lane: a fold with such a row
+// is not news, whichever of the two rows it is.
+test('a fold of two rows of one lane keeps the earlier arrival, or none when either has none', async () => {
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
   const later = NOW + 86_400_000;
-  await ingestPapers(env, [{ paper: journal, lanes: ['bio.comp'] }], { now: NOW });
-  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['bio.comp'] }], { now: later });
-  // Another source's record of both folds the journal's row into the arXiv one.
-  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: later });
-  assert.deepEqual(rows(db, "SELECT arrived FROM work_lanes WHERE lane = 'bio.comp'").map(row => row.arrived), [new Date(NOW).toISOString()]);
+  for (const [journalLoad, arxivLoad, arrived] of [
+    [undefined, undefined, new Date(NOW).toISOString()],
+    [true, undefined, null],
+    [undefined, true, null],
+  ] as const) {
+    const { env, db } = corpus();
+    await ingestPapers(env, [{ paper: journal, lanes: ['bio.comp'] }], { now: NOW, firstLoad: journalLoad });
+    await ingestPapers(env, [{ paper: arxivRecord, lanes: ['bio.comp'] }], { now: later, firstLoad: arxivLoad });
+    // Another source's record of both folds the journal's row into the arXiv one.
+    await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: later });
+    assert.deepEqual(rows(db, "SELECT arrived FROM work_lanes WHERE lane = 'bio.comp'").map(row => row.arrived), [arrived], `journal ${journalLoad}, arXiv ${arxivLoad}`);
+  }
 });
 
 test('a daily page goes day by day by arrival, the closest to the likes first within a day', async () => {

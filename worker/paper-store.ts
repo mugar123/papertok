@@ -669,15 +669,16 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      // A lane both rows are in keeps the later notable listing date and the
-      // earlier arrival of the two that are not NULL.
+      // A lane both rows are in keeps the later notable listing date, and no
+      // arrival if either row has none (the paper was already in the lane),
+      // else the earlier one: SQLite's scalar min() is NULL when an argument is.
       db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until, arrived)
         SELECT lane, ?, published, listed_until, arrived FROM work_lanes WHERE work_id = ?
         ON CONFLICT (lane, work_id) DO UPDATE SET
           listed_until = CASE WHEN excluded.listed_until > work_lanes.listed_until THEN excluded.listed_until ELSE work_lanes.listed_until END,
-          arrived = COALESCE(min(work_lanes.arrived, excluded.arrived), work_lanes.arrived, excluded.arrived)
+          arrived = min(work_lanes.arrived, excluded.arrived)
           WHERE excluded.listed_until > work_lanes.listed_until
-            OR COALESCE(min(work_lanes.arrived, excluded.arrived), work_lanes.arrived, excluded.arrived) IS NOT work_lanes.arrived`).bind(into, from),
+            OR min(work_lanes.arrived, excluded.arrived) IS NOT work_lanes.arrived`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
