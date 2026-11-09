@@ -758,6 +758,86 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
 });
 
+// A paper filed only under the lanes given, by its own title.
+const lanePaper = (id: string, title: string, published = '2026-10-15T00:00:00.000Z') => ({ ...arxivRecord, id, arxivId: id, title, published, allCategories: [], categories: [] });
+
+test('an exact request reads the lanes it names and nothing beside them', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00031', 'An econometrics preprint'), lanes: ['econ.EM'] },
+    { paper: lanePaper('2610.00032', 'A working paper of a series'), lanes: ['series:working-papers'] },
+    { paper: lanePaper('2610.00033', 'An economics journal article'), lanes: ['area:econ'] },
+  ], { now: NOW });
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(env, parseFeedRequest(body), { now: NOW })).map(item => item.id).sort();
+  assert.deepEqual(await served({ categories: ['econ.EM'], exact: true }), ['2610.00031']);
+  assert.deepEqual(await served({ categories: ['econ.EM'] }), ['2610.00031', '2610.00032', '2610.00033'], "today's request");
+});
+
+test('an exact request for an area reads every leaf of it and the area lane, and no other area', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00041', 'A quantum error-correcting code'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00042', 'A string compactification'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00043', 'A physics journal article'), lanes: ['area:physics'] },
+    { paper: lanePaper('2610.00044', 'A learning-rate schedule'), lanes: ['cs.LG'] },
+  ], { now: NOW });
+  const page = await readFeedPage(env, parseFeedRequest({ areas: ['physics'], exact: true }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id).sort(), ['2610.00041', '2610.00042', '2610.00043']);
+});
+
+test('an exact request keeps on the page the papers the reader liked', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00051', 'The liked paper', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00052', 'Another paper of the lane', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  insert.run(idOf('2610.00051'), vector([1, 0]));
+  insert.run(idOf('2610.00052'), vector([0, 1]));
+  const served = async (excludedIds: string[]) => (await readFeedPage(env, parseFeedRequest({
+    categories: ['quant-ph'], exact: true, positiveIds: ['2610.00051'], excludedIds, order: 'relevance',
+  }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await served([]), ['2610.00051', '2610.00052']);
+  assert.deepEqual(await served(['2610.00051']), ['2610.00052']);
+});
+
+// A walk is kept by follows alone, which two exact feeds made only of
+// categories share: each would go on from the other's pages.
+test('two exact walks that differ only in their categories go on from their own pages', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00061', 'A quantum error-correcting code', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00062', 'A quantum walk on a graph', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00063', 'A string compactification', '2026-10-21T00:00:00.000Z'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00064', 'A holographic dual', '2026-10-20T00:00:00.000Z'), lanes: ['hep-th'] },
+  ], { now: NOW });
+  const orders = new Map<string, KeptRanking>();
+  const keep = async (key: string, ranking: KeptRanking) => { orders.set(key, ranking); };
+  const cache: RankingCache = { get: async key => orders.get(key) ?? null, put: keep, update: keep };
+  // Each feed's own seen papers and page numbers.
+  const seen = { 'quant-ph': new Set<string>(), 'hep-th': new Set<string>() };
+  const pages = { 'quant-ph': 0, 'hep-th': 0 };
+  const page = async (category: 'quant-ph' | 'hep-th') => {
+    const answer = (await readFeedPage(env, parseFeedRequest({
+      categories: [category], exact: true, page: pages[category]++, pageSize: 1, seen: feedSeenFilter(feedSeenIds(seen[category], true)), skipsSeen: true,
+    }), { now: NOW, cache })).map(item => item.id);
+    answer.forEach(id => seen[category].add(id));
+    return answer;
+  };
+  assert.deepEqual(await page('quant-ph'), ['2610.00061']);
+  assert.deepEqual(await page('hep-th'), ['2610.00063']);
+  assert.deepEqual(await page('quant-ph'), ['2610.00062']);
+  assert.deepEqual(await page('hep-th'), ['2610.00064']);
+});
+
+test('an exact request reads up to twenty categories; any other request still reads twelve', () => {
+  const thirteen = getAllLeafCategories().slice(0, 13).map(leaf => leaf.id);
+  assert.equal(parseFeedRequest({ categories: thirteen, exact: true }).categories.length, 13);
+  assert.equal(parseFeedRequest({ categories: thirteen }).categories.length, 12);
+});
+
 test("a Chemistry reader is served Chemistry's journal articles, which keep OpenAlex's classification, and a Chemical Engineering reader is not", async () => {
   const { env } = corpus();
   const chemistryArticle = mapOpenAlexWork({

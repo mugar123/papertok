@@ -59,6 +59,10 @@ const FEED_PAGE_SIZE = 15;
 // their retrieval budget. This bounds work, not the composition of a page.
 const AREA_CANDIDATE_LIMIT = 800;
 const FEED_MAX_CATEGORIES = 12;
+// An exact request's own categories, beside the leaves of the areas it asks
+// for whole, which have no limit but the taxonomy's 14 areas.
+const FEED_MAX_EXACT_CATEGORIES = 20;
+const FEED_MAX_AREAS = 14;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_EXCLUDED = 200;
 const DIVERSITY_POOL = 500;
@@ -1388,8 +1392,15 @@ export interface FeedQuery {
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
   areaLanes: boolean;
-  // The request asks for exactly the lanes it names; for now it only makes the answer name the follows still loading.
+  // The page reads exactly the lanes the request names: its categories, the
+  // leaves and area lanes of the areas it asks for whole (`areas`), and the
+  // working-paper series only for an asked area that has it; no lane inferred
+  // from a category's area. It removes only `excludedIds`: the liked and
+  // rejected papers still rank it, and stay on it. One group holds every
+  // category. The answer names the follows still loading.
   exact: boolean;
+  // The areas an exact request asks for whole; none for any other request.
+  areas: string[];
 }
 
 /**
@@ -1426,7 +1437,8 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * lanes in the same order, `order`, likes, rejections and interest groups
  * (`rankedBy`, a digest, so the entry holds no liked paper's id) serves the
  * next pages as it is. Otherwise a next page keeps the ranks served and the
- * ones walked past, less the papers liked or rejected since, and the notable
+ * ones walked past, less the papers liked or rejected since (an exact
+ * request's: excluded since), and the notable
  * papers walked past, and ranks the rest again; a page that skips seen papers
  * keeps of those the ones `keptPassed` keeps. With the ids the walks read
  * (`paperId`), the entry tells which ranks at the top of the reader's
@@ -1483,7 +1495,12 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
     positives: [...group.positiveIds].sort(),
     weight: Math.round(group.weight * 100) / 100,
   }));
-  const inputs = JSON.stringify({ lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups });
+  // An exact request ranks the liked and rejected papers among its own; any
+  // other request's inputs are as before it existed.
+  const inputs = JSON.stringify({
+    lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups,
+    ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
+  });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -1520,12 +1537,13 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache, timings }: { now?: number; cache?: RankingCache; timings?: FeedTimings } = {}) {
   const db = database(env);
-  const areas = new Set(LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
+  // An exact request's areas are the ones it asks for whole; another's, those of its categories.
+  const areas = new Set(query.exact ? query.areas : LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
   const readsEconomics = [...areas].some(area => WORKING_PAPER_AREAS.has(area));
   const lanes = [...new Set([
     ...query.categories,
     ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
-    ...(query.areaLanes ? AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane) : []),
+    ...(query.exact || query.areaLanes ? AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane) : []),
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
@@ -1539,7 +1557,10 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   // rejections change the ranking (`rankedBy`), not the walk, so a change
   // ranks again after the ranks the session passed rather than from the top.
   // A daily walk is a feed apart from that one, and keeps a walk of its own.
-  // Other pages keep an order per set of lanes and `order`.
+  // Other pages keep an order per set of lanes and `order`. An exact request
+  // keeps its orders apart from another's, and its walk per set of
+  // categories, which are what it asks for rather than a plan the app
+  // changes; any other request's key is as before it existed.
   const cacheKey = JSON.stringify({
     ...(query.skipsSeen
       ? { follows: [...new Set(query.follows.map(follow => follow.lane))].sort(), ...(query.order === 'daily' ? { order: query.order } : {}) }
@@ -1547,6 +1568,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     excluded: [...query.excludedIds].sort(),
     pageSize: query.pageSize,
     notable: query.notable > 0,
+    ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
+    ...(query.exact && query.skipsSeen ? { categories: [...query.categories].sort() } : {}),
   });
   const rankedBy = await rankingInputs(lanes, query);
   const goesOn = query.page > 0 || query.continues;
@@ -1576,7 +1599,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ({ decided } = ranked);
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
     // A page asked by number needs every rank served, empty ones included, at
-    // its place. A paper liked or rejected since leaves its rank empty: a page
+    // its place. A paper liked or rejected since (excluded since, on an exact
+    // request: `rankCandidates`) leaves its rank empty: a page
     // that finds nothing unseen falls back on these ranks, and would send it
     // again. A walk drops empty ranks, and the others past the limit it carries
     // (`keptPassed`), so its fallback page is counted over the ranks that remain
@@ -1919,9 +1943,13 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const groupLikes = groupedLikes.map(vectorsOf);
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
-  const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
+  const excludedIds = query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : []);
+  const excluded = new Set([...positiveIds, ...negativeIds, ...excludedIds]);
+  // An exact request ranks its liked and rejected papers among the others: of
+  // its ranks, and of the ones an order kept, only the excluded ones leave.
+  const unranked = query.exact ? new Set(excludedIds) : excluded;
   // A paper of the reader's notable lanes comes only as a notable card.
-  const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
+  const offered = candidates.filter(candidate => !unranked.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
   const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
@@ -1983,7 +2011,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   return {
     ranks,
     notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
-    excluded,
+    excluded: unranked,
     ...(everyRank ? {} : { decided: decidedRanks }),
   };
 }
@@ -2124,7 +2152,7 @@ const CATEGORY_ID = /^[\w.-]{1,32}$/;
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
   seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
-  exact?: unknown;
+  exact?: unknown; areas?: unknown;
 }
 
 const categoryIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(text).filter(category => CATEGORY_ID.test(category)))];
@@ -2149,9 +2177,15 @@ function parseFeedGroups(value: unknown): FeedGroup[] {
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
-  const asked = parseFeedGroups(body?.groups);
+  const exact = body?.exact === true;
+  // An exact request is one group, whatever groups it sends.
+  const asked = exact ? [] : parseFeedGroups(body?.groups);
+  // The areas an exact request asks for whole, each of the taxonomy's.
+  const areas = exact ? categoryIds(body?.areas).filter(area => AREAS.has(area)).slice(0, FEED_MAX_AREAS) : [];
   // A request without groups, from a bundle published before them, is one group.
-  const categories = (asked.length ? [...new Set(asked.flatMap(group => group.categories))] : categoryIds(body?.categories)).slice(0, FEED_MAX_CATEGORIES);
+  const categories = exact
+    ? [...new Set([...categoryIds(body?.categories).slice(0, FEED_MAX_EXACT_CATEGORIES), ...LEAVES.filter(leaf => areas.includes(leaf.area)).map(leaf => leaf.id)])]
+    : (asked.length ? [...new Set(asked.flatMap(group => group.categories))] : categoryIds(body?.categories)).slice(0, FEED_MAX_CATEGORIES);
   // At most 10 journals on top of 20 other follows, whatever a client stored.
   const follows = servedFollows(Array.isArray(body?.follows) ? body.follows : [])
     .map(({ follow, lane }) => ({
@@ -2194,7 +2228,8 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     // (a category topic): there the categories stand for followed topics
     // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
     areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
-    exact: body?.exact === true,
+    exact,
+    areas,
   };
 }
 

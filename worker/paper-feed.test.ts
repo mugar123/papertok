@@ -1365,6 +1365,35 @@ test('a follow whose lane has not finished its first harvest is named as loading
   assert.equal(second.loading, undefined);
 });
 
+test('an exact request that names only an area is a request', async () => {
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: paper('2610.90001', 'A quantum error-correcting code', 1), lanes: ['quant-ph'] }]);
+  const { papers } = await ask({ areas: ['physics'], exact: true });
+  assert.deepEqual(ids(papers), ['2610.90001']);
+});
+
+test('an exact request whose follows have no lane is no request, where any other request is served no papers', async () => {
+  const { ask } = store();
+  // A topic that is one of the app's categories has no lane of its own.
+  const categoryTopic = { type: 'topic', canonicalId: 'cs.CL', displayName: 'Computation and Language' };
+  await assert.rejects(ask({ follows: [categoryTopic], exact: true }), { code: 'LANES_REQUIRED' });
+  assert.deepEqual(await ask({ follows: [categoryTopic] }), { papers: [] });
+});
+
+test('an exact request keeps its order apart from the same request without it, whose key is unchanged', async t => {
+  const entries = rankingCaches(t);
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  const follow = { type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' };
+  // With a follow, a request reads no area lane: both read the same lanes.
+  await ask({ categories: ['cs.CL'], follows: [follow] }, 'reader-1');
+  const key = JSON.stringify({ lanes: ['author:A123', 'cs.CL'], order: 'recent', excluded: [], pageSize: 15, notable: false });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`reader-1\n${key}`));
+  assert.deepEqual([...entries.keys()], [`https://papertok.internal/cache/store-ranking-v5/${Buffer.from(digest).toString('hex')}`]);
+  await ask({ categories: ['cs.CL'], follows: [follow], exact: true }, 'reader-1');
+  assert.equal(entries.size, 2);
+});
+
 // Runs `work` once, right after the corpus's next batch of reads: a page's
 // candidates, read in one batch.
 function afterNextBatch(env: WorkerEnv, work: () => Promise<void>) {

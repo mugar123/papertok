@@ -282,8 +282,9 @@ export async function handleCorpusFeed(
   }
   const query = parseFeedRequest(body);
   if (query.categories.length === 0 && query.follows.length === 0) {
-    // Follows that are all categories, or name nothing a lane serves, have no papers of their own.
-    if (Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
+    // Follows that are all categories, or name nothing a lane serves, have no
+    // papers of their own. An exact request is served nothing else, so it asks for nothing.
+    if (!query.exact && Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
     throw new PaperStoreError('LANES_REQUIRED', 400);
   }
   // Two follows can name one lane, such as two authors known by the same name.
