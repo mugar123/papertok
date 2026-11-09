@@ -6300,7 +6300,8 @@ for (const next of ['a new POST of its link', 'an account deletion purge that kn
   });
 }
 
-for (const touch of ['a POST of its link', 'an account deletion purge'] as const) {
+// A Settings retry and a cron window run the journal in deleteScheduleIndex.
+for (const touch of ['a POST of its link', 'an account deletion purge', 'a Settings switch-off retry', 'the cron window'] as const) {
   test(`phase 2: ${touch} whose KV delete of a key the journal lists fails keeps the entry, and the next request that meets the reader removes it`, async () => {
     const kv = createMemoryKv();
     const { phase2 } = twoPhases(kv);
@@ -6312,15 +6313,28 @@ for (const touch of ['a POST of its link', 'an account deletion purge'] as const
       return remove(key);
     };
     const keys = new Set<string>();
-    await assert.rejects(touch === 'a POST of its link' ? postLink(phase2, token) : purgeEmailSubscription(phase2, SYNC_READER.uid, keys), /KV DELETE failed/);
+    const window = (at: string) => runEmailNotificationSchedule(emailEnvironment(kv), Date.parse(at));
+    if (touch === 'the cron window') {
+      // The window counts the reader as failed and goes on.
+      assert.equal((await window('2026-08-10T07:40:00.000Z')).failed, 1);
+    } else {
+      const request = {
+        'a POST of its link': () => postLink(phase2, token),
+        'an account deletion purge': () => purgeEmailSubscription(phase2, SYNC_READER.uid, keys),
+        'a Settings switch-off retry': () => switchDigestOff(phase2),
+      }[touch];
+      await assert.rejects(request(), /KV DELETE failed/);
+    }
     kv.delete = remove;
     assert.equal((await journalOf(kv)).length, 1, 'the entry went before its delivery state');
     assert.equal(kv.values.has(stateKey), true);
 
-    // The cron window that meets the schedule index the switch-off left, or
-    // the account deletion's sweep after the Auth delete.
-    if (touch === 'a POST of its link') await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-10T08:00:00.000Z'));
-    else await purgeEmailSubscription(phase2, SYNC_READER.uid, keys);
+    // The account deletion's sweep after the Auth delete, the app's next
+    // retry of the switch-off, or the cron window that meets the schedule
+    // index the switch-off left.
+    if (touch === 'an account deletion purge') await purgeEmailSubscription(phase2, SYNC_READER.uid, keys);
+    else if (touch === 'a Settings switch-off retry') await switchDigestOff(phase2);
+    else await window('2026-08-10T08:00:00.000Z');
 
     assert.deepEqual([stateKey, indexKey, SYNC_READER_KEY].filter(key => kv.values.has(key)), []);
     assert.deepEqual(await journalOf(kv), []);

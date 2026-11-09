@@ -102,6 +102,7 @@ export class EmailSubscriptionStore {
         !Number.isInteger(payload.expectedVersion)
         || (record !== null && (typeof record !== 'object' || Array.isArray(record)))
       ))
+      // The Worker acknowledges only with a read, by versions: another shape is a Worker bug, so it fails loudly instead of being ignored.
       || (payload.ack !== undefined && (payload.action !== 'read' || !Array.isArray(payload.ack) || !payload.ack.every(Number.isInteger)))
     ) {
       return json({ code: 'INVALID_REQUEST' }, 400);

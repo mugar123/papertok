@@ -1339,6 +1339,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
  */
 async function deleteJournaledKeys(env: WorkerEnv, uid: string, slot: StoredSlot, deleted = new Set<string>()) {
   const entries = slot.cleanup ?? [];
+  // Defensive: tokens and state ids are random, so no entry names a later subscription's keys today; if one did, this keeps them.
   const live = new Set([slot.subscription?.unsubscribeToken, slot.token].filter(Boolean).map(token => `${UNSUBSCRIBE_PREFIX}${token}`));
   if (slot.subscription) live.add(deliveryStateKey(uid, slot.subscription));
   const keys = new Set(entries.flatMap(entry => [
@@ -1362,7 +1363,9 @@ async function acknowledgeCleanup(env: WorkerEnv, uid: string, done: number[]) {
  * the keys in `deleted`, which the caller removed) and acknowledges it on the
  * read that follows the index delete, so a cancellation or a schedule window
  * that meets a leftover index needs no request of its own for it. Phase 1
- * adds no entries: it closes an object with a mark, which records none.
+ * adds an entry only when it deletes a record that a phase 2 Worker wrote
+ * into the object, during the overlap; otherwise it closes an object with a
+ * mark, which records none.
  */
 async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<string>) {
   const indexKey = `${SUBSCRIPTION_PREFIX}${uid}`;
