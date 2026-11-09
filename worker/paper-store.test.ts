@@ -305,6 +305,32 @@ test('a fold of two rows of one notable lane keeps the later listing date', asyn
   assert.deepEqual(rows(db, "SELECT listed_until FROM work_lanes WHERE lane = 'notable:cs.LG'").map(row => row.listed_until), [later]);
 });
 
+test('a paper filed after its lane was first loaded arrives the day it is filed; the first load keeps its publication date', async () => {
+  const { env, db } = corpus();
+  // Titles of their own: one title and author would make them one paper.
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [{ paper: paper('2610.00001', '2026-10-01T00:00:00.000Z'), lanes: ['author:A1'] }], { now: NOW, firstLoad: true });
+  const later = NOW + 3 * 86_400_000;
+  await ingestPapers(env, [
+    { paper: paper('2610.00002', '2026-10-02T00:00:00.000Z'), lanes: ['author:A1'] },
+    { paper: paper('2610.00001', '2026-10-01T00:00:00.000Z'), lanes: ['author:A1'] },
+  ], { now: later });
+  const arrived = Object.fromEntries(rows(db, `SELECT k.key, l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id WHERE k.key LIKE 'arxiv:2610.0000_'`).map(row => [row.key, row.arrived]));
+  assert.equal(arrived['arxiv:2610.00001'], null);
+  assert.equal(arrived['arxiv:2610.00002'], new Date(later).toISOString());
+});
+
+test('a fold of two rows of one lane keeps the earlier arrival', async () => {
+  const { env, db } = corpus();
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  const later = NOW + 86_400_000;
+  await ingestPapers(env, [{ paper: journal, lanes: ['bio.comp'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['bio.comp'] }], { now: later });
+  // Another source's record of both folds the journal's row into the arXiv one.
+  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: later });
+  assert.deepEqual(rows(db, "SELECT arrived FROM work_lanes WHERE lane = 'bio.comp'").map(row => row.arrived), [new Date(NOW).toISOString()]);
+});
+
 test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
   // Synthetic OpenAlex records as the harvest maps them, one harvest each, so
   // the stored row is the base of each later merge. OpenAlex's record of the

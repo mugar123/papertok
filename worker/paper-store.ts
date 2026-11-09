@@ -484,8 +484,11 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
         kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
       db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
         WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
-      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
-        SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
+      // A lane the row is new to takes the earliest arrival of the lanes it holds.
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published',
+          (SELECT min(held.arrived) FROM work_lanes held WHERE held.work_id = j.value ->> 'id')
+        FROM json_each(?) j, json_each(j.value -> 'lanes') l`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`)
         .bind(JSON.stringify(slice.map(({ id, paper }) => ({ id, keys: workKeys(JSON.parse(paper) as Paper) })))),
@@ -537,11 +540,13 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * replaces its title and abstract (`withOwnText`). A merge that changes the
  * title or abstract drops the vector for the embedding pass. A notable lane's
  * row is kept until `keepUntil`, the listing's own keeping date
- * (`listed_until`). Once the batch is saved, OpenAlex's journal articles in it
- * upgrade the working-paper rows they were filed under
+ * (`listed_until`). A row new to a lane arrives at `now` (`arrived`), or with
+ * no arrival when it comes with the lane's first load (`firstLoad`), which the
+ * day-by-day feeds date by its publication. Once the batch is saved, OpenAlex's
+ * journal articles in it upgrade the working-paper rows they were filed under
  * (`upgradeWorkingPapers`). Returns how many rows were written, by either.
  */
-export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
+export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now(), firstLoad = false } = {}) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
@@ -644,11 +649,15 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      // A lane both rows are in keeps the later notable listing date.
-      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
-        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
-        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
-          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
+      // A lane both rows are in keeps the later notable listing date and the
+      // earlier arrival of the two that are not NULL.
+      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until, arrived)
+        SELECT lane, ?, published, listed_until, arrived FROM work_lanes WHERE work_id = ?
+        ON CONFLICT (lane, work_id) DO UPDATE SET
+          listed_until = CASE WHEN excluded.listed_until > work_lanes.listed_until THEN excluded.listed_until ELSE work_lanes.listed_until END,
+          arrived = COALESCE(min(work_lanes.arrived, excluded.arrived), work_lanes.arrived, excluded.arrived)
+          WHERE excluded.listed_until > work_lanes.listed_until
+            OR COALESCE(min(work_lanes.arrived, excluded.arrived), work_lanes.arrived, excluded.arrived) IS NOT work_lanes.arrived`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
@@ -675,11 +684,14 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
       SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
   }
+  // A row new to its lane arrives now, unless it comes with the lane's first
+  // load; a row the lane already holds keeps its arrival.
+  const arrived = firstLoad ? null : new Date(now).toISOString();
   for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
-      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil' FROM json_each(?) WHERE true
+    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until, arrived)
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil', ? FROM json_each(?) WHERE true
       ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
-        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(arrived, JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   const candidates = articles.filter(article => workingPaperGroups.has(groupOfKey.get(`id:${article.id.toLowerCase()}`)!));
@@ -726,8 +738,11 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
       db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),
-      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
-        SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
+      // A lane the paper is new to takes the earliest arrival of the lanes it holds.
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published',
+          (SELECT min(held.arrived) FROM work_lanes held WHERE held.work_id = j.value ->> 'id')
+        FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
       // Sent only when needed: D1 counts each statement against the invocation.
