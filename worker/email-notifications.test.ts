@@ -1911,6 +1911,39 @@ test('a Settings re-subscription between a link\'s check and its close is kept w
   assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, newToken, 'the link cancelled the new subscription');
 });
 
+for (const source of ['kv', 'object'] as const) {
+  test(`phase ${source === 'kv' ? 1 : 2}: a link that a Settings re-subscription overtakes after its close still removes the cancelled subscription's delivery state`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const env = source === 'kv' ? phase1 : phase2;
+    // In phase 2, a reader not moved in yet, whose KV read returns an older record of the subscription.
+    const { token, stateId, show } = await unmovedInPhase2(kv, phase1, 'older');
+    if (source === 'kv') show();
+    const stateKey = `${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`;
+    kv.values.set(stateKey, JSON.stringify({ sentPaperKeys: ['paper-1'] }));
+    let closed = false;
+    let newToken = '';
+    const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, (payload) => {
+      if (payload.action === 'mark' && payload.migratable === false) closed = true;
+      else if (closed && payload.action === 'read') return true;
+      return false;
+    }, async () => {
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, SYNC_READER);
+      newToken = (await loadSubscriptionWithState(env, SYNC_READER_KEY))!.unsubscribeToken!;
+    });
+    const link = `https://example.com/notifications/unsubscribe?token=${token}`;
+    const page = await handleEmailUnsubscribe(new Request(link, { method: 'POST' }), { ...env, EMAIL_SUBSCRIPTIONS: stores });
+
+    assert.ok(stores.intercepted);
+    assert.equal(page.status, 400);
+    assert.notEqual(newToken, token);
+    assert.equal((await loadSubscriptionWithState(env, SYNC_READER_KEY))?.unsubscribeToken, newToken, 'the link cancelled the new subscription');
+    assert.equal(kv.values.has(stateKey), false, 'the cancelled subscription\'s delivery state was left');
+    assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false, 'the cancelled subscription\'s link was left');
+    assert.equal(kv.values.get(`notification:unsubscribe:${newToken}`), SYNC_READER.uid, 'the link removed the new subscription\'s');
+  });
+}
+
 test('a link of a subscription phase 2 saved still cancels it from phase 1, after the object held an earlier token', async () => {
   const kv = createMemoryKv();
   const { phase1, phase2 } = twoPhases(kv);

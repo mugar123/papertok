@@ -1303,7 +1303,16 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
   const { changed, previous } = await changeSubscription(env, uid, current => (
     current && (!token || current.unsubscribeToken === token) ? null : undefined
   ));
-  if (!changed && previous) return false;
+  if (!changed && previous) {
+    // A save subscribed the reader again after the close landed, so the link
+    // leaves that subscription alone. The close still ended the link's
+    // subscription, and nothing later names its delivery state, so it goes
+    // now; the link removes its index (handleEmailUnsubscribe).
+    const keys = new Set([held, subscription].filter(Boolean).map(record => deliveryStateKey(uid, record)));
+    keys.delete(deliveryStateKey(uid, previous));
+    await Promise.all([...keys].map(key => env.NOTIFICATION_STORE!.delete(key)));
+    return false;
+  }
   // What the cancellation ended: the record its write deleted, the one its
   // close dropped, and the link's. A save that lands between the close and the
   // write, where the record had not moved in, makes them two subscriptions.
