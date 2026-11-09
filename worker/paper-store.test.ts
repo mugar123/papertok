@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
   notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -329,6 +329,131 @@ test('a fold of two rows of one lane keeps the earlier arrival', async () => {
   // Another source's record of both folds the journal's row into the arXiv one.
   await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: later });
   assert.deepEqual(rows(db, "SELECT arrived FROM work_lanes WHERE lane = 'bio.comp'").map(row => row.arrived), [new Date(NOW).toISOString()]);
+});
+
+test('a daily page goes day by day by arrival, the closest to the likes first within a day', async () => {
+  const { env, db } = corpus();
+  // Titles of their own: one title and author would make them one paper.
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  // Liked, and two papers of the lane's first load.
+  await ingestPapers(env, [
+    { paper: paper('2610.00001', '2026-09-01T00:00:00.000Z'), lanes: [] },
+    { paper: paper('2610.00002', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00003', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  // Published weeks ago, filed today.
+  await ingestPapers(env, [{ paper: paper('2610.00004', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00001'), vector([1, 0]));
+  insert.run(idOf('2610.00002'), vector([1, 0.05]));
+  insert.run(idOf('2610.00003'), vector([0, 1]));
+  insert.run(idOf('2610.00004'), vector([0, 1]));
+  const ask = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', positiveIds, pageSize: 5 }), { now: NOW });
+  // Today's arrival first though it is the oldest by date and far from the like.
+  assert.deepEqual((await ask(['arxiv:2610.00001'])).map(item => item.id), ['2610.00004', '2610.00003', '2610.00002']);
+  assert.deepEqual((await ask([])).map(item => item.id), ['2610.00004', '2610.00003', '2610.00002']);
+});
+
+test('within a day of a daily page, the paper closest to the likes comes first', async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [{ paper: paper('2610.00001', '2026-09-01T00:00:00.000Z'), lanes: [] }], { now: NOW, firstLoad: true });
+  // Both arrive today: the one near the like was published before the other.
+  await ingestPapers(env, [
+    { paper: paper('2610.00002', '2026-10-05T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00003', '2026-10-15T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00001'), vector([1, 0]));
+  insert.run(idOf('2610.00002'), vector([1, 0.05]));
+  insert.run(idOf('2610.00003'), vector([0, 1]));
+  const ask = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', positiveIds, pageSize: 5 }), { now: NOW });
+  assert.deepEqual((await ask(['arxiv:2610.00001'])).map(item => item.id), ['2610.00002', '2610.00003']);
+  assert.deepEqual((await ask([])).map(item => item.id), ['2610.00003', '2610.00002'], 'without likes, the later publication first');
+});
+
+test("a daily page reads its candidates by arrival: today's arrival is one past a lane's newest by publication", async () => {
+  const { env, db } = corpus();
+  // A lane full of papers published after the one that arrives today.
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(NOW - 86_400_000 - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: `2610.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('quant-ph', id, published);
+  }
+  db.exec('COMMIT');
+  await ingestPapers(env, [{ paper: { ...arxivRecord, id: '2609.99999', arxivId: '2609.99999', title: 'Filed today', published: '2026-09-01T00:00:00.000Z' }, lanes: ['quant-ph'] }], { now: NOW });
+  const first = async (order: string) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order, pageSize: 1 }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await first('daily'), ['2609.99999']);
+  assert.deepEqual(await first('recent'), ['2610.00001']);
+});
+
+// A full lane that stays past its limit with nothing to trim: `evictAll`
+// returns rather than going round it again.
+test("a full lane keeps a paper filed late for two weeks past its limit, and trims one filed on time or with the lane's first load", async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const add = (id: number, published: string) => {
+    insertWork.run(id, JSON.stringify({ id: `2610.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('quant-ph', id, published);
+  };
+  db.exec('BEGIN');
+  // The limit's papers, all published in the last twelve hours.
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) add(id, new Date(NOW - id * 10_000).toISOString());
+  // Past the limit, with the lane's first load: no arrival.
+  add(FEED_CANDIDATE_LIMIT + 1, '2026-08-30T00:00:00.000Z');
+  db.exec('COMMIT');
+  // Filed today, past the limit: one published weeks before, one two days before.
+  await ingestPapers(env, [
+    { paper: { ...arxivRecord, id: '2609.99999', arxivId: '2609.99999', title: 'Filed late', published: '2026-09-01T00:00:00.000Z' }, lanes: ['quant-ph'] },
+    { paper: { ...arxivRecord, id: '2610.99998', arxivId: '2610.99998', title: 'Filed on time', published: new Date(NOW - 2 * 86_400_000).toISOString() }, lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const inLane = () => rows(db, "SELECT w.paper ->> '$.id' AS id FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'quant-ph' AND l.published < '2026-10-21'").map(row => row.id);
+  await evictAll(env, NOW);
+  assert.deepEqual(inLane(), ['2609.99999'], 'the paper filed late stays; the one filed on time and the one of the first load go');
+  assert.equal(rows(db, "SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'quant-ph'")[0].n, FEED_CANDIDATE_LIMIT + 1);
+  const daily = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', pageSize: 1 }), { now: NOW });
+  assert.deepEqual(daily.map(item => item.id), ['2609.99999']);
+  await evictAll(env, NOW + 15 * 86_400_000);
+  assert.deepEqual(inLane(), [], 'two weeks on, the lane is back to its limit');
+  assert.equal(rows(db, "SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'quant-ph'")[0].n, FEED_CANDIDATE_LIMIT);
+});
+
+// A walk is kept by follows alone (`readFeedPage`), so another order's walk
+// could go on from a daily one's: a page past the first would start at the
+// other order's ranks.
+test("a daily walk and another order's walk over the same lanes go on from their own pages", async () => {
+  const { env } = corpus();
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [
+    { paper: paper('2610.00001', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00002', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  await ingestPapers(env, [{ paper: paper('2610.00003', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const orders = new Map<string, KeptRanking>();
+  const keep = async (key: string, ranking: KeptRanking) => { orders.set(key, ranking); };
+  const cache: RankingCache = { get: async key => orders.get(key) ?? null, put: keep, update: keep };
+  // Each feed's own seen papers and page numbers.
+  const seen = { recent: new Set<string>(), daily: new Set<string>() };
+  const pages = { recent: 0, daily: 0 };
+  const page = async (order: 'recent' | 'daily') => {
+    const answer = (await readFeedPage(env, parseFeedRequest({
+      categories: ['quant-ph'], order, page: pages[order]++, pageSize: 1, seen: feedSeenFilter(feedSeenIds(seen[order], true)), skipsSeen: true,
+    }), { now: NOW, cache })).map(item => item.id);
+    answer.forEach(id => seen[order].add(id));
+    return answer;
+  };
+  assert.deepEqual(await page('recent'), ['2610.00001']);
+  assert.deepEqual(await page('daily'), ['2610.00003']);
+  assert.deepEqual(await page('recent'), ['2610.00002']);
+  assert.deepEqual(await page('daily'), ['2610.00001']);
 });
 
 test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
@@ -2991,6 +3116,20 @@ test('the ranks a page without likes decides are the ones a read of every vector
       }
     }
   }
+});
+
+// A daily page puts each day's ranks together, so the ranks the vectors of the
+// newest candidates decide by score are not its first ranks.
+test('a daily page without likes ranks what a read of every vector gives', async () => {
+  const { env, rejections } = coldPageCorpus();
+  const keptBy = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+    const kept: KeptRanking[] = [];
+    await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache: { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } } });
+    return kept[0].ranks.map(rank => rank && [rank.workId, rank.semanticScore]);
+  };
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, order: 'daily', pageSize: 30 };
+  const everyVector = await keptBy({ ...body, seen: feedSeenFilter([]), skipsSeen: true });
+  for (const page of [0, 3, 20]) assert.deepEqual(await keptBy({ ...body, page }), everyVector, `page ${page}`);
 });
 
 // A like ranks every candidate by its closeness, and a page that skips seen
