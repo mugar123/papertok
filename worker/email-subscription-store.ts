@@ -6,8 +6,9 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * has never been written. `migratable` is true until the object has been
  * written or marked as closed: only then may the KV record of a Worker from
  * before the object move in (see `EMAIL_SUBSCRIPTION_SOURCE`). `cancelledAt`
- * is the version the last `mark` with `migratable: false` reached (0 for none):
- * a KV record written before it is a copy of a cancelled subscription.
+ * is the version the last cancellation reached (0 for none): a `mark` with
+ * `migratable: false`, or a `write` that deletes the subscription. A KV record
+ * written before it is a copy of a cancelled subscription.
  * `token` is the unsubscribe token the last `mark` with `migratable: true`
  * reopened the object for, present only while nothing has raised the version
  * since. A subscription keeps one token for all its emails, so a link from any
@@ -125,9 +126,13 @@ export class EmailSubscriptionStore {
       // The record carries its own token from here on; a reopening mark's copy
       // would only outlive an unsubscribe or an account deletion.
       await transaction.delete(TOKEN_KEY);
-      if (record === null) await transaction.delete(SUBSCRIPTION_KEY);
-      else await transaction.put(SUBSCRIPTION_KEY, record);
-      return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt } };
+      if (record === null) {
+        // A cancellation where the object is the record (phase 2): a KV copy
+        // from before it, which a phase 1 Worker may still read, is cancelled too.
+        await transaction.delete(SUBSCRIPTION_KEY);
+        await transaction.put(CANCELLED_AT_KEY, next);
+      } else await transaction.put(SUBSCRIPTION_KEY, record);
+      return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt: record === null ? next : cancelledAt } };
     });
     return json(outcome.slot, outcome.status);
   }

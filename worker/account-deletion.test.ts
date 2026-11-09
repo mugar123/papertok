@@ -436,6 +436,26 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   }
 });
 
+test('an unsubscribe index a save in flight writes back after the purge is removed by the sweep after the Auth delete', async () => {
+  const store = kvStore({
+    [`notification:subscription:${UID}`]: JSON.stringify({ uid: UID, unsubscribeToken: 'tok-1', enabled: true }),
+    'notification:unsubscribe:tok-1': UID,
+  });
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
+
+  const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
+    idToken: TOKEN,
+    fetchImpl: async () => {
+      // A settings save that read the subscription before the purge writes its link's index after it.
+      store.data.set('notification:unsubscribe:tok-1', UID);
+      return new Response('{}', { status: 200 });
+    },
+  });
+
+  assert.equal(result.complete, true);
+  assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
+});
+
 // Only the deletion's own log lines are kept. Node 22 prints the experimental
 // MockTimers warning through console.error too, and that line still reaches
 // the real console.

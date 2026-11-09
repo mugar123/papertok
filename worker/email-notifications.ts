@@ -1064,10 +1064,23 @@ async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string
   if (!subscriptionInKv(env)) {
     // Phase 2: a record that reads as missing may be a cached miss of one a
     // Worker from before the object saved. A cancellation closes the object
-    // whatever was read, so no later read moves that record in.
-    const slot = await readSubscriptionSlot(env, uid);
-    const closed = !slot.migratable || await markSubscription(env, uid, false, token, expectedVersion);
-    return { closed, held: closed ? slot.subscription : null };
+    // whatever was read, so no later read moves that record in. The close
+    // lands only on the version read: a record another request moved in, or a
+    // save, since then is read again and cancelled with its token and delivery
+    // state instead of dropped unseen. A link's close is checked by the link.
+    for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
+      const slot = await readSubscriptionSlot(env, uid);
+      const closed = !slot.migratable || await markSubscription(env, uid, false, token, expectedVersion ?? slot.version);
+      if (!closed && expectedVersion === undefined) continue;
+      // An open object whose record has not moved in still names the token
+      // its last save gave the subscription, and a KV read too old to move in
+      // names its delivery state: the cancellation removes both with it.
+      const unmoved = slot.migratable && (slot.token || slot.unmoved)
+        ? { ...slot.unmoved, unsubscribeToken: slot.token || slot.unmoved?.unsubscribeToken }
+        : null;
+      return { closed, held: closed ? slot.subscription ?? unmoved : null };
+    }
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   }
   const { slot } = await readPhase1Slot(env, uid);
   if (!await markSubscription(env, uid, false, token, expectedVersion)) return { closed: false, held: null };
@@ -1092,7 +1105,7 @@ async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string
  * phase 1 save is not moved either: until a read returns that save's record,
  * the reader reads as not subscribed and nothing is moved.
  */
-async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot> {
+async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<StoredSlot & { unmoved?: Subscription }> {
   if (subscriptionInKv(env)) return (await readPhase1Slot(env, uid)).slot;
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   const store = env.NOTIFICATION_STORE;
@@ -1109,7 +1122,9 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
   // Only the record the last phase 1 save wrote moves: its revision is the
   // object version that save reached (0 before any save). Any other revision is
   // a stale KV read of an older record, so the reader moves on a later read.
-  if ((Number(legacy.revision) || 0) !== slot.version) return slot;
+  // `unmoved` is only for a cancellation, to remove that record's token and
+  // delivery state (closeBeforeCancelling).
+  if ((Number(legacy.revision) || 0) !== slot.version) return { ...slot, unmoved: legacy };
   const moved = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: slot.version, subscription: storedRecord(legacy) });
   if (!moved.accepted) return moved.slot;
   if (!await readLegacy()) {
@@ -1175,7 +1190,10 @@ async function changeSubscription(
   if (phase1?.inKv) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
     const previous = slot.subscription;
-    const record = await next(previous, false);
+    // An open object whose record has not moved in (its KV read missed it or
+    // returned an older copy) keeps the token its last phase 1 save gave the
+    // subscription, so a save keeps the links of its earlier emails.
+    const record = await next(previous, false, previous || !slot.migratable ? undefined : slot.token);
     if (record === undefined) return { changed: false, previous, subscription: withVersion(slot), inKv: false };
     const result = await callSubscriptionStore(env, uid, {
       action: 'write',
@@ -1254,13 +1272,13 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
     current && (!token || current.unsubscribeToken === token) ? null : undefined
   ));
   if (!changed && previous) return false;
-  const deleted = previous || held || subscription;
-  await Promise.all([
-    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, deleted)),
-    deleted?.unsubscribeToken
-      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${deleted.unsubscribeToken}`)
-      : Promise.resolve(),
-  ]);
+  // What the cancellation ended: the record its write deleted, the one its
+  // close dropped, and the link's. A save that lands between the close and the
+  // write, where the record had not moved in, makes them two subscriptions.
+  const ended = [previous, held, subscription].filter((record): record is Subscription => Boolean(record));
+  const keys = new Set((ended.length ? ended : [null]).map(record => deliveryStateKey(uid, record)));
+  ended.forEach(record => { if (record.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${record.unsubscribeToken}`); });
+  await Promise.all([...keys].map(key => env.NOTIFICATION_STORE!.delete(key)));
   await deleteScheduleIndex(env, uid);
   return true;
 }
@@ -1306,6 +1324,10 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   };
   if (subscriptionInKv(env)) await collectHiddenRecord();
   const { held } = await closeBeforeCancelling(env, uid);
+  // Kept before the write that deletes the record: a retry after a later step
+  // fails finds no record to learn its token and delivery state from.
+  if (held) keys.add(deliveryStateKey(uid, held));
+  if (held?.unsubscribeToken) keys.add(`${UNSUBSCRIBE_PREFIX}${held.unsubscribeToken}`);
   const { previous: changed } = await changeSubscription(env, uid, current => (current ? null : undefined));
   if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
@@ -1395,8 +1417,8 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
       follows,
       previewItems,
       interests,
-      // A phase 1 read that missed the record keeps the token the object holds
-      // for it: every email of a subscription carries the same link (ENG-193).
+      // A read that missed the record keeps the token the object holds for
+      // it: every email of a subscription carries the same link (ENG-193).
       unsubscribeToken: current?.unsubscribeToken || heldToken || crypto.randomUUID().replace(/-/g, ''),
       ...(!current ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
       createdAt: current?.createdAt || now,
@@ -1413,9 +1435,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // An index left after an unsubscribe points at no subscription; the schedule removes it.
   const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
   // While KV holds the record (phase 1) the schedule's key is the record itself.
-  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? true : store.get(key), store.get(unsubscribeKey)]);
+  // Otherwise a key that still holds a record, left by a move or a save whose
+  // index write failed, becomes the index too, so KV keeps no copy of it.
+  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
   await Promise.all([
-    indexed || inKv ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
     owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
   ]);
   if (changed && read.selectionChanged) {
@@ -3020,15 +3044,20 @@ export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   // names this link's token. A subscription keeps one token for all its emails,
   // so a link from any email of the current subscription, not only the most
   // recent, still matches; only the links of an earlier, cancelled subscription
-  // stop working.
+  // stop working. A record the object holds is the latest: another request
+  // may have moved it in after the read above.
+  const current = object.subscription ?? subscription;
   const valid = legacy
     ? proved
-    : subscription ? subscription.unsubscribeToken === token : object.migratable && object.token === token;
+    : current ? current.unsubscribeToken === token : object.migratable && object.token === token;
   if (!valid) {
     // A second POST from the same link (a double click, or a mail client's
     // one-click POST before the reader's) may read a stale KV copy of the token
     // index and record; the object a cancellation closed says it already worked.
-    if (!subscription && !object.migratable && request.method === 'POST') {
+    // The index goes too, in case it is not a stale copy but one a first POST
+    // left when it failed after closing the object.
+    if (!current && !object.migratable && request.method === 'POST') {
+      await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
       return unsubscribePage(200, { title: copy.disabledTitle, body: copy.disabledBody, action: pageButtonLink(PAPER_TOK_URL, copy.returnToPaperTok) });
     }
     await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);

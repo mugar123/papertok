@@ -1635,6 +1635,34 @@ test('rolling phase 2 back to phase 1 keeps what phase 2 saved, and phase 2 can 
   assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.maxPapers, 5);
 });
 
+test('rolled back to phase 1 after phase 2 cancelled a moved reader, the record from before the move never answers for their new subscription', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const beforeMove = kv.values.get(SYNC_READER_KEY)!;
+  const oldToken = (JSON.parse(beforeMove) as Subscription).unsubscribeToken!;
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, oldToken);
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), phase2, SYNC_READER);
+  // Back on phase 1 the reader subscribes again, where KV still caches the
+  // record from before the move and the cancelled link's index.
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const current = kv.values.get(SYNC_READER_KEY)!;
+  const token = (JSON.parse(current) as Subscription).unsubscribeToken!;
+  const get = kv.get.bind(kv);
+  kv.get = (async (name: string, options?: unknown) => (
+    name === SYNC_READER_KEY ? JSON.parse(beforeMove) : get(name, options as never)
+  )) as typeof kv.get;
+  kv.values.set(`notification:unsubscribe:${oldToken}`, SYNC_READER.uid);
+
+  assert.notEqual((await loadSubscriptionWithState(phase1, SYNC_READER_KEY))?.unsubscribeToken, oldToken, 'phase 1 read the cancelled subscription');
+  const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), phase1)).status, 400);
+  assert.equal(kv.values.get(SYNC_READER_KEY), current, 'the old link cancelled the new subscription');
+  await unsubscribeWithLink(phase1, token);
+  kv.get = get;
+  assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+});
+
 test('a phase 1 Worker beside phase 2 reads a moved reader without moving them back, so a stale KV read in phase 2 keeps them', async () => {
   const kv = createMemoryKv();
   const { phase1, phase2 } = twoPhases(kv);
@@ -1914,6 +1942,178 @@ test('in phase 1 a Settings save that reads a cached miss keeps the link of the 
   assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
   await unsubscribeWithLink(phase1, token);
   assert.equal(await loadSubscriptionWithState(phase1, SYNC_READER_KEY), null);
+});
+
+// A reader phase 1 saved twice, whose phase 2 KV reads miss the last save or
+// return the one before it, so phase 2 has not moved them in. `show` ends that.
+async function unmovedInPhase2(kv: ReturnType<typeof createMemoryKv>, phase1: WorkerEnv, read: 'miss' | 'older') {
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const older = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 4 }), phase1, SYNC_READER);
+  const current = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
+  const get = kv.get.bind(kv);
+  kv.get = (async (name: string, options?: unknown) => (
+    name === SYNC_READER_KEY ? (read === 'miss' ? null : older) : get(name, options as never)
+  )) as typeof kv.get;
+  return { token: current.unsubscribeToken!, stateId: current.stateId!, show: () => { kv.get = get; } };
+}
+
+for (const read of ['miss', 'older'] as const) {
+  test(`a phase 2 Settings save whose KV read ${read === 'miss' ? 'misses the record' : 'returns an older record'} keeps the link of the subscription's earlier emails`, async () => {
+    const kv = createMemoryKv();
+    const { phase1, phase2 } = twoPhases(kv);
+    const { token, show } = await unmovedInPhase2(kv, phase1, read);
+
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 3 }), phase2, SYNC_READER);
+    show();
+
+    const saved = await loadSubscriptionWithState(phase2, SYNC_READER_KEY);
+    assert.equal(saved?.maxPapers, 3);
+    assert.equal(saved?.unsubscribeToken, token, 'the save gave the subscription a new link');
+    await unsubscribeWithLink(phase2, token);
+    assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  });
+}
+
+test('a phase 2 sync that changes nothing replaces the KV record a move left when its index write failed', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const write = kv.put.bind(kv);
+  kv.put = async (key: string, value: string) => {
+    if (key === SYNC_READER_KEY) throw new Error('KV PUT failed: 503');
+    return write(key, value);
+  };
+  await assert.rejects(() => loadSubscriptionWithState(phase2, SYNC_READER_KEY), /KV PUT failed/);
+  kv.put = write;
+
+  assert.equal((await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true }), phase2, SYNC_READER)).enabled, true);
+
+  assert.deepEqual(await kv.get(SYNC_READER_KEY, 'json'), { uid: SYNC_READER.uid });
+});
+
+test('a phase 2 save of a reader whose record was lost where the object names no token subscribes them again, and the old link does not cancel it', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const oldToken = (await loadSubscriptionWithState(phase1, SYNC_READER_KEY))!.unsubscribeToken!;
+  // A Worker from before ENG-193 reopened the object without a token, and its KV write was lost.
+  const { version } = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' });
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'mark', migratable: true, expectedVersion: version });
+  kv.values.delete(SYNC_READER_KEY);
+
+  assert.equal((await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase2, SYNC_READER)).enabled, true);
+
+  const token = (await loadSubscriptionWithState(phase2, SYNC_READER_KEY))!.unsubscribeToken!;
+  assert.notEqual(token, oldToken);
+  const oldLink = `https://example.com/notifications/unsubscribe?token=${oldToken}`;
+  assert.equal((await handleEmailUnsubscribe(new Request(oldLink, { method: 'POST' }), phase2)).status, 400);
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.unsubscribeToken, token);
+});
+
+for (const cancel of ['a save with the digest off', 'an unsubscribe link', 'an account deletion'] as const) {
+  for (const read of ['miss', 'older'] as const) {
+    test(`phase 2 ${cancel} of a reader not moved in yet (KV read: ${read}) leaves no link, record or delivery state the read named`, async () => {
+      const kv = createMemoryKv();
+      const { phase1, phase2 } = twoPhases(kv);
+      const { token, stateId, show } = await unmovedInPhase2(kv, phase1, read);
+      const stateKey = `${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`;
+      kv.values.set(stateKey, JSON.stringify({ lastSentAt: '2026-08-03T07:00:00.000Z', sentPaperKeys: ['paper-1'] }));
+
+      if (cancel === 'a save with the digest off') {
+        await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), phase2, SYNC_READER);
+      } else if (cancel === 'an unsubscribe link') {
+        await unsubscribeWithLink(phase2, token);
+      } else {
+        await purgeEmailSubscription(phase2, SYNC_READER.uid);
+      }
+      show();
+
+      const object = await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'read' }) as { subscription: Subscription | null; token?: string };
+      assert.equal(object.subscription, null);
+      assert.equal(object.token, undefined);
+      assert.equal(kv.values.has(SYNC_READER_KEY), false);
+      assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false, 'the cancelled subscription\'s link was left');
+      // A read that missed the record cannot name its delivery state (worker/README.md, phase 2).
+      if (read === 'older') assert.equal(kv.values.has(stateKey), false, 'the delivery state was left');
+    });
+  }
+}
+
+// Another request (the app's sync, the schedule) moves the reader into their
+// object between this request's read of the object and its read of KV.
+function movedInDuringFirstRead(kv: ReturnType<typeof createMemoryKv>, phase2: WorkerEnv) {
+  const get = kv.get.bind(kv);
+  let moved = false;
+  kv.get = (async (name: string, options?: unknown) => {
+    if (name === SYNC_READER_KEY && !moved) {
+      moved = true;
+      assert.ok(await loadSubscriptionWithState(phase2, SYNC_READER_KEY));
+    }
+    return get(name, options as never);
+  }) as typeof kv.get;
+  return { get moved() { return moved; } };
+}
+
+test('a phase 2 unsubscribe link still cancels when another request moves the reader in while it reads them', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const token = (JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription).unsubscribeToken!;
+  const race = movedInDuringFirstRead(kv, phase2);
+
+  await unsubscribeWithLink(phase2, token);
+
+  assert.ok(race.moved);
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null, 'the page said unsubscribed and the subscription stayed');
+  assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false);
+});
+
+test('phase 2 Settings off cancels a record another request moves in while it reads the reader, with its link and delivery state', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
+  const { stateId } = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
+  kv.values.set(`${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`, JSON.stringify({ sentPaperKeys: ['paper-1'] }));
+  const race = movedInDuringFirstRead(kv, phase2);
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), phase2, SYNC_READER);
+
+  assert.ok(race.moved);
+  assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null);
+  assert.deepEqual([...kv.values.keys()], [], 'the moved record\'s link or delivery state was left');
+});
+
+test('phase 2 Settings off of a reader not moved in yet removes both subscriptions\' links when a re-subscription lands between its close and its delete', async () => {
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  const { token, stateId, show } = await unmovedInPhase2(kv, phase1, 'older');
+  kv.values.set(`${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`, JSON.stringify({ sentPaperKeys: ['paper-1'] }));
+  const stores = phase2.EMAIL_SUBSCRIPTIONS!;
+  let closed = false;
+  let resubscribed = '';
+  const afterClose = {
+    idFromName: (name: string) => stores.idFromName(name),
+    get: (id: DurableObjectId) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        if (closed && !resubscribed) {
+          await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase2, SYNC_READER);
+          resubscribed = (await storedRecordOf(kv, SYNC_READER_KEY))!.unsubscribeToken!;
+        }
+        const response = await stores.get(id).fetch(url, init);
+        const payload = JSON.parse(String(init.body)) as { action?: string; migratable?: boolean };
+        if (payload.action === 'mark' && payload.migratable === false && response.ok) closed = true;
+        return response;
+      },
+    }),
+  } as WorkerEnv['EMAIL_SUBSCRIPTIONS'];
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, enabled: false }), { ...phase2, EMAIL_SUBSCRIPTIONS: afterClose }, SYNC_READER);
+  show();
+
+  assert.ok(resubscribed && resubscribed !== token);
+  assert.equal(await storedRecordOf(kv, SYNC_READER_KEY), null);
+  assert.deepEqual([...kv.values.keys()], [], 'a link or delivery state of either subscription was left');
 });
 
 test('in phase 1 a link from before an earlier unsubscribe does not cancel a re-subscription a Worker from before tokens saved, where KV caches the old record and link', async () => {
@@ -5539,6 +5739,44 @@ test('phase 2: a KV read that fails while purging a deleted account still clears
   await assert.rejects(() => purgeEmailSubscription(env, 'moved'), /KV GET failed/);
 
   assert.equal((await callSubscriptionObject(kv, 'moved', { action: 'read' })).subscription, null);
+});
+
+test('phase 2: a purge retried after that KV read failed still removes the deleted account\'s link and delivery state', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase2, SYNC_READER);
+  const { stateId } = (await storedRecordOf(kv, SYNC_READER_KEY))!;
+  kv.values.set(`${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`, JSON.stringify({ lastSentAt: '2026-11-02T07:00:00Z' }));
+  const get = kv.get.bind(kv);
+  kv.get = async () => { throw new Error('KV GET failed: 503'); };
+  const keys = new Set<string>();
+
+  await assert.rejects(() => purgeEmailSubscription(phase2, SYNC_READER.uid, keys), /KV GET failed/);
+  kv.get = get;
+  await purgeEmailSubscription(phase2, SYNC_READER.uid, keys);
+
+  assert.deepEqual([...kv.values.keys()], []);
+});
+
+test('phase 2: an unsubscribe link posted again after its first POST failed past the cancellation removes the link it left', async () => {
+  const kv = createMemoryKv();
+  const { phase2 } = twoPhases(kv);
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase2, SYNC_READER);
+  const token = (await storedRecordOf(kv, SYNC_READER_KEY))!.unsubscribeToken!;
+  const indexKey = `notification:unsubscribe:${token}`;
+  const remove = kv.delete.bind(kv);
+  kv.delete = async (key: string) => {
+    if (key === indexKey) throw new Error('KV DELETE failed: 503');
+    return remove(key);
+  };
+  const link = `https://example.com/notifications/unsubscribe?token=${token}`;
+  await assert.rejects(() => handleEmailUnsubscribe(new Request(link, { method: 'POST' }), phase2), /KV DELETE failed/);
+  kv.delete = remove;
+
+  await unsubscribeWithLink(phase2, token);
+
+  assert.equal(await loadSubscriptionWithState(phase2, SYNC_READER_KEY), null);
+  assert.equal(kv.values.has(indexKey), false);
 });
 
 // ENG-163 (Pablo, 2026-11-03): a reader whose digest is on and who follows
