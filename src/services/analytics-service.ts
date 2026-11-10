@@ -52,6 +52,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/lists',
   '/login',
   '/onboarding',
+  '/recent',
   '/institution/verify',
   '/profile',
   '/report',
@@ -153,7 +154,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // screen means adding it here in the same commit. `connections` is a paper
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'custom_feed', 'other']),
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'custom_feed', 'recent', 'other']),
   // The in-app paper viewer (components/pdf/viewer-outcome.ts).
   viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
   viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),

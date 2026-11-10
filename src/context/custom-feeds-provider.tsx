@@ -55,7 +55,7 @@ export function CustomFeedsProvider({ children }: PropsWithChildren) {
   // What the last deletion was, for the status line below; numbered so the
   // same words said twice change the line and are announced again.
   const [deleted, setDeleted] = useState({ text: '', n: 0 });
-  const [refreshRequest, setRefreshRequest] = useState<{ feedId: string; n: number } | null>(null);
+  const [refreshRequest, setRefreshRequest] = useState<{ tab: string; n: number } | null>(null);
   // `retry` starting the listener again.
   const [listenAttempt, setListenAttempt] = useState(0);
   const [answers] = useState(createAnswerTracker);
@@ -147,8 +147,8 @@ export function CustomFeedsProvider({ children }: PropsWithChildren) {
   const announceDeleted = useCallback((name: string) => {
     setDeleted(current => ({ text: `Deleted ${name}.`, n: current.n + 1 }));
   }, []);
-  const requestRefresh = useCallback((feedId: string) => {
-    setRefreshRequest(current => ({ feedId, n: (current?.n ?? 0) + 1 }));
+  const requestRefresh = useCallback((tab: string) => {
+    setRefreshRequest(current => ({ tab, n: (current?.n ?? 0) + 1 }));
   }, []);
 
   const value = useMemo<CustomFeedsValue>(() => ({

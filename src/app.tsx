@@ -67,6 +67,7 @@ const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
+const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
 const CustomFeedPage = lazyWithPreload(() => import('./components/custom-feeds/custom-feed-page.tsx'))
 const SettingsPage = lazyWithPreload(() => import('./components/settings/settings-page.tsx'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/settings/following-settings-page.tsx'))
@@ -168,7 +169,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
+  const navbarRoutes = ['/feed', '/lists', '/recent', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -280,6 +281,7 @@ function AppContent() {
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
+      RecentFeedPage.preload().catch(() => {})
       // Settings is one tap from every screen, in the account menu. Fetched
       // on first visit instead, its chunk was what a deploy most often took
       // away from an open tab: a 404 on the chunk, the forced reload in
@@ -413,6 +415,19 @@ function AppContent() {
               the not-found page. */}
           <Route path="/research" element={<Navigate to="/feed" replace />} />
           <Route path="/report" element={<Navigate to="/feed" replace />} />
+          <Route
+            path="/recent"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <RecentFeedPage
+                    onOpenPdf={openPdf}
+                    onSaveToList={openSaveModal}
+                  />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/following"
             element={

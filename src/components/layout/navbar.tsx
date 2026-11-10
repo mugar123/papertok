@@ -13,7 +13,7 @@ import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
 import { useFeedTabs } from '../../hooks/use-feed-tabs.ts';
 import type { Icon } from '@phosphor-icons/react';
 import type { FeedTabEntry, FeedTabKey } from '../../utils/feed-tabs.ts';
-import { CaretDown, Check, MagnifyingGlass, Plus, Stack, UserCheck } from '@phosphor-icons/react';
+import { CaretDown, Check, ClockCounterClockwise, MagnifyingGlass, Plus, Stack, UserCheck } from '@phosphor-icons/react';
 import { customFeedIdFromPath } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
 import RailMenu from '../feed/rail-menu.tsx';
@@ -209,7 +209,7 @@ function useRevealActiveTab(rowRef: RefObject<HTMLDivElement | null>, tab: strin
  */
 let navbarHasArrived = false;
 
-const TAB_ICONS: Record<FeedTabKey, Icon> = { home: Stack, following: UserCheck };
+const TAB_ICONS: Record<FeedTabKey, Icon> = { home: Stack, recent: ClockCounterClockwise, following: UserCheck };
 
 const isFixedTab = (key: string): key is FeedTabKey => Object.hasOwn(TAB_ICONS, key);
 
@@ -411,14 +411,18 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
     const scrollLeft = linksRef.current?.scrollLeft ?? 0;
     touchRef.current = { tab: tab.key, x: event.clientX, y: event.clientY, at: Date.now(), scrollLeft };
   };
-  /** For you starts from its top mode; pressing the tab you are already on reloads its feed. */
+  /**
+   * For you starts from its top mode; pressing the tab you are already on
+   * reloads its feed. Most recent and the reader's feeds are asked through
+   * `requestRefresh`, by their tab key.
+   */
   const chooseTab = (tab: FeedTabEntry) => {
     if (tab.key === 'home') setFeedMode('top');
     if (pathname !== tab.path) return;
-    const customFeedId = customFeedIdFromPath(tab.path);
-    if (customFeedId) requestRefresh(customFeedId);
-    else if (tab.key === 'following') void followingUpdates.refresh();
-    else if (!isRefreshing) void refreshFeed();
+    if (tab.key === 'home') {
+      if (!isRefreshing) void refreshFeed();
+    } else if (tab.key === 'following') void followingUpdates.refresh();
+    else requestRefresh(tab.key);
   };
   const releasePress = () => {
     touchRef.current = null;

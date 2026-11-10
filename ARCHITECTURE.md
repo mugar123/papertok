@@ -111,6 +111,7 @@ flowchart TD
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
     Custom["Custom feed page · one feed's exact lanes"]
+    Recent["Most recent page · the reader's topics by day, unseen only"]
     Signals["Preferences, follows, likes, rejections and seen papers"]
     Search["Live paper search · arXiv + OpenAlex relevance"]
     UI["Feed cards, search results and reader"]
@@ -120,6 +121,7 @@ flowchart TD
     Corpus --> Vectors
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
+    API --> Recent --> UI
     Signals --> API
     Signals --> Feed
     Search --> UI
@@ -130,7 +132,7 @@ flowchart TD
     classDef view fill:#eff6ff,stroke:#2563eb,color:#172554
     class Trigger,Sources,Vectors source
     class Corpus,Signals data
-    class Harvest,API,Feed,Custom,Search logic
+    class Harvest,API,Feed,Custom,Recent,Search logic
     class UI view
 ```
 
@@ -208,6 +210,26 @@ loading. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
 hands the papers from useCustomFeedPapers to the shared
 [FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples and Not interested
 papers; it does not score the feed's papers.
+Most recent, at `/recent`, sends For You's main request with `order: 'daily'`
+and no notable papers, follows or exploration
+([recent-feed-pages.ts](src/utils/recent-feed-pages.ts)).
+[useRecentFeedPapers](src/components/recent/use-recent-feed-papers.ts) takes
+the reader's interest groups, Not interested papers and exclusions from
+FeedContext's `getInterestRunSignals` when a run starts. Each page's filter
+holds the papers the reader viewed on a card in any feed
+([viewedPaperIds](src/context/feed-viewed-papers.ts)), not the papers For You
+only loaded, and every paper the run already received. From a Worker that
+skips seen papers, the list ends when an answer brings a paper the filter held
+or brings no papers; a short page does not end it, because the Worker can drop
+a paper between walking the order and reading its rows. From a Worker that does
+not skip seen papers, a page shorter than 15 ends it. Its pages
+are kept for the session and forgotten at sign-out
+([account-session.ts](src/context/account-session.ts)). When the page opens
+with no kept pages for its account and topics, as after a reload, the list
+opens on its first card rather than on the card remembered for the tab. Most
+recent and custom feeds page through [useCorpusFeedPages](src/hooks/use-corpus-feed-pages.ts);
+pressing either tab again asks its page for a new run through `requestRefresh`
+with the tab's key.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
 live arXiv and OpenAlex results and applies search relevance.
 

@@ -22,17 +22,23 @@ import { parseFeedIngredient, type FeedIngredient } from './custom-feeds.ts';
 const paperOf = (id: string): Paper => ({ id, title: `Paper ${id}`, abstract: '', authors: [], sources: { primary: 'arxiv', enrichedBy: [] } });
 const paper = paperOf('2611.00001');
 
-test('a page with fewer papers than asked is the last; a paper already held is not added twice', () => {
-  const first = mergeFeedPage(null, { papers: Array.from({ length: 15 }, (_, index) => paperOf(`p${index}`)), loading: [] }, 0);
+test('a later page adds only the papers the list does not hold yet, and the list goes on as the caller says', () => {
+  const first = mergeFeedPage(null, { papers: Array.from({ length: 15 }, (_, index) => paperOf(`p${index}`)), hasMore: true, loading: [] }, 0);
   assert.equal(first.papers.length, 15);
   assert.equal(first.hasMore, true);
   assert.equal(first.page, 0);
 
-  const second = mergeFeedPage(first, { papers: [paperOf('p3'), paperOf('q1'), paperOf('q2')], loading: [] }, 1);
+  const second = mergeFeedPage(first, { papers: [paperOf('p3'), paperOf('q1'), paperOf('q2')], hasMore: false, loading: [] }, 1);
   assert.equal(second.papers.length, 17);
   assert.deepEqual(second.papers.slice(15).map(held => held.id), ['q1', 'q2']);
   assert.equal(second.hasMore, false);
   assert.equal(second.page, 1);
+});
+
+test('a full page the caller calls the last ends the list', () => {
+  const merged = mergeFeedPage(null, { papers: Array.from({ length: 15 }, (_, index) => paperOf(`p${index}`)), hasMore: false, loading: [] }, 0);
+  assert.equal(merged.papers.length, 15);
+  assert.equal(merged.hasMore, false);
 });
 
 test('a feed with no papers whose ingredients are loading is gathering; with none loading it has nothing; a failure with no papers is an error', () => {

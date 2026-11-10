@@ -22,8 +22,9 @@ export interface CustomFeedsValue {
    * without it, or when it finds nothing, focus goes back as after Cancel.
    */
   confirmDeleteFeed(id: string, options?: { focusAfterDelete?: () => HTMLElement | null }): void;
-  refreshRequest: { feedId: string; n: number } | null;
-  requestRefresh(feedId: string): void;
+  /** The reader's latest press on the tab they are on, by the tab's key (`FeedTabEntry.key`). */
+  refreshRequest: { tab: string; n: number } | null;
+  requestRefresh(tab: string): void;
   /** Listens again after an error or a wait that ran out; `loading` until the next answer or the grace. */
   retry(): void;
 }

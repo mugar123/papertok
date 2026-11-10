@@ -9,6 +9,7 @@ Disallow: /login
 Disallow: /lists
 Disallow: /research
 Disallow: /report
+Disallow: /recent
 Disallow: /following
 Disallow: /feeds
 Disallow: /search

@@ -16,6 +16,7 @@ interface FeedSource {
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
   endCard?: ReactNode;
+  /** The source's own empty state; a retry button of its own takes FeedRetryRefContext. */
   emptyState?: ReactNode;
   initialLoadPending?: boolean;
   /** "Not interested" removes the paper from this source only, instead of telling the account. */
@@ -44,6 +45,7 @@ import { getUiErrorMessage } from '../../utils/error-messages.ts';
 
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import useWaitFocus from '../../hooks/use-wait-focus.ts';
+import { FeedRetryRefContext } from './feed-retry-context.ts';
 import PaperCard from './paper-card.tsx';
 import SkeletonCard from './skeleton-card.tsx';
 import {
@@ -1369,7 +1371,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return (
+      <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark} className="feed-empty">
+        <FeedRetryRefContext.Provider value={retryButtonRef}>{source!.emptyState}</FeedRetryRefContext.Provider>
+      </FeedLandmark>
+    );
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil && error === FEED_EMPTY) {

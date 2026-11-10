@@ -14,10 +14,10 @@ export interface CustomFeedPages { papers: Paper[]; page: number; hasMore: boole
 
 /**
  * The feed's list once page `page` arrives: the first page starts it, a later
- * one adds the papers the list does not hold yet. A page with fewer papers
- * than a page holds is the last. `loading` is the latest answer's.
+ * one adds the papers the list does not hold yet. `hasMore` is the caller's:
+ * a page is merged, not judged. `loading` is the latest answer's.
  */
-export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; loading: LoadingFollow[] }, page: number): CustomFeedPages {
+export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] }, page: number): CustomFeedPages {
   const papers = page === 0 || !current ? [] : [...current.papers];
   const held = new Set(papers.map(paper => paper.id));
   for (const paper of incoming.papers) {
@@ -25,7 +25,7 @@ export function mergeFeedPage(current: CustomFeedPages | null, incoming: { paper
     held.add(paper.id);
     papers.push(paper);
   }
-  return { papers, page, hasMore: incoming.papers.length >= CUSTOM_FEED_PAGE_SIZE, loading: incoming.loading };
+  return { papers, page, hasMore: incoming.hasMore, loading: incoming.loading };
 }
 
 /**

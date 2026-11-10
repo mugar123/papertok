@@ -6,7 +6,16 @@ import { TAB_ORDER, lateralTabDirection } from './tab-direction.ts';
 const fresh = () => ({});
 
 test('the bar order is the order the navbar renders', () => {
-  assert.deepEqual(TAB_ORDER, ['/feed', '/following']);
+  assert.deepEqual(TAB_ORDER, ['/feed', '/recent', '/following']);
+});
+
+test('Most recent is a step right of For you and a step left of Following', () => {
+  const memory = fresh();
+  assert.equal(lateralTabDirection('/feed', memory), null);
+  assert.equal(lateralTabDirection('/recent', memory), 1);
+  assert.equal(lateralTabDirection('/following', memory), 1);
+  assert.equal(lateralTabDirection('/recent', memory), -1);
+  assert.equal(lateralTabDirection('/feed', memory), -1);
 });
 
 test('the first tab seen has nothing to compare against', () => {

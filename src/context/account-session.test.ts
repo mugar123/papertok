@@ -6,6 +6,7 @@ import { resetAccountWarmup } from '../services/account-warmup.ts';
 import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
 import { ownListsCache } from '../utils/profile-session-caches.ts';
+import { recentPagesCache, recentPagesKey, recentRunsCache } from '../utils/recent-feed-pages.ts';
 import { readSeenPaperIds, readStoredLists, readStoredOnboarding, saveSeenPaperIds, saveStoredLists, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
 function deviceStorage() {
@@ -103,6 +104,16 @@ test('a sign-out takes the pages of the account\'s custom feeds out of the sessi
   customFeedPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
   closeAccountSession('account-a', deviceStorage());
   assert.equal(customFeedPagesCache.get(key), undefined);
+});
+
+test('a sign-out takes the account\'s Most recent pages and run out of the session', t => {
+  freshSession(t);
+  const key = recentPagesKey('account-a', ['cs.AI']);
+  recentPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
+  recentRunsCache.set(key, { plan: { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] }, negativeIds: [], excludedIds: [], received: ['p1'] });
+  closeAccountSession('account-a', deviceStorage());
+  assert.equal(recentPagesCache.get(key), undefined);
+  assert.equal(recentRunsCache.get(key), undefined);
 });
 
 test('signing back in after a sign-out reads the account\'s lists again', async t => {

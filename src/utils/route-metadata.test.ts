@@ -6,6 +6,8 @@ test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/feed'), 'For you | PaperTok')
   assert.equal(routeTitle('/lists'), 'My lists | PaperTok')
   assert.equal(routeTitle('/following'), 'Following | PaperTok')
+  assert.equal(routeTitle('/recent'), 'Most recent | PaperTok')
+  assert.equal(routeLabel('/recent'), 'Most recent')
   assert.equal(routeTitle('/search'), 'Search | PaperTok')
 })
 
