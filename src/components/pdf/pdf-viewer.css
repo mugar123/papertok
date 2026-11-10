@@ -208,6 +208,7 @@
   translate: -50% 0;
   filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--text-primary) 14%, transparent));
 }
+[data-theme="dark"] .pdf-dock-root { filter: none; }
 @media (max-width: 767px) {
   .pdf-dock-root { transition: translate 220ms var(--ease-out-expo), opacity 150ms linear; }
   .pdf-dock-root[data-stowed]:not(:focus-within) { translate: -50% calc(100% + var(--space-8)); opacity: 0; pointer-events: none; }
