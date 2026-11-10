@@ -192,7 +192,7 @@ most on the first page and one in seven on a later one. The
 and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
-live arXiv and OpenAlex results and applies search relevance.
+live OpenAlex, arXiv and OpenReview results and applies search relevance.
 
 Missing scientific metadata stays unknown; normalization must preserve its
 provenance. See [the paper contract guidance](CONTRIBUTING.md#typescript-and-runtime-checks)

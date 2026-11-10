@@ -21,6 +21,19 @@ function list(value: unknown) {
     .filter(Boolean);
 }
 
+// Venues from 2026 on send each author as `{ username, fullname, institutions }`
+// where older ones send the name itself; `text` on the object printed
+// "[object Object]" on the card.
+function authorNamesOf(value: unknown) {
+  const unwrapped = unwrap(value);
+  return (Array.isArray(unwrapped) ? unwrapped : [unwrapped])
+    .map(item => {
+      const author = item && typeof item === 'object' ? item as { fullname?: unknown; name?: unknown } : null;
+      return text(author ? author.fullname || author.name : item);
+    })
+    .filter(Boolean);
+}
+
 function normalizeDoi(value: unknown) {
   return text(value).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').toLowerCase();
 }
@@ -85,7 +98,7 @@ export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: str
   const doi = normalizeDoi(content.doi);
   const keywords = [...new Set(list(content.keywords))];
   const published = timestampToIso(note?.pdate, note?.cdate, note?.tcdate);
-  const authorNames = list(content.authors);
+  const authorNames = authorNamesOf(content.authors);
   const authorIds = list(content.authorids);
 
   return PaperBuilder.create({

@@ -13,9 +13,12 @@ import assert from 'node:assert/strict';
 import {
   ARXIV_SEARCH_TIMEOUT_MS,
   DEFAULT_PAPER_SEARCH_PROVIDERS,
+  openReviewSearchPapers,
   searchPapersAcrossSources,
 } from './paper-search-service.ts';
 import { OPENALEX_SEARCH_TYPES } from '../utils/open-alex-work.ts';
+import type { OpenReviewNote } from './open-review-service.ts';
+import { mapOpenReviewNote } from './open-review-service.ts';
 
 const openAlexPaper = (id: string, title: string, extra: Partial<Paper> & { citations?: number } = {}): Paper => ({
   id: `openalex:${id}`,
@@ -237,4 +240,110 @@ test('a query in another script is filtered by its titles like a Latin one', asy
     ], arxiv: [] }),
   });
   assert.deepEqual(papers.map(paper => paper.id), ['openalex:W2']);
+});
+
+// What `/sources/openreview` answered on 2026-11-10 for this title, cut down
+// to the fields these tests need. Neither OpenAlex nor arXiv has the paper.
+const cognitiveSecurityNote: OpenReviewNote = {
+  id: '5pShDP8LSm',
+  forum: '5pShDP8LSm',
+  domain: 'ICLR.cc/2026/Workshop/AIWILD',
+  pdate: 1772406509750,
+  content: {
+    title: { value: 'Position: AI Development Should Prioritize Cognitive Security' },
+    venue: { value: 'ICLR 2026 AIWILD' },
+    venueid: { value: 'ICLR.cc/2026/Workshop/AIWILD' },
+  },
+};
+const openReviewPaper = (note: OpenReviewNote = cognitiveSecurityNote) => mapOpenReviewNote(note)!;
+
+test('a paper only OpenReview holds is found by its title', async () => {
+  const papers = await searchPapersAcrossSources('Position: AI Development Should Prioritize Cognitive Security', {
+    providers: {
+      searchOpenAlex: async () => ({ papers: [openAlexPaper('W3081459360', 'Automated influence and the challenge of cognitive security')] }),
+      searchArxiv: async () => [],
+      searchOpenReview: async () => [openReviewPaper()],
+    },
+  });
+  assert.deepEqual(papers.map(paper => paper.openReviewId), ['5pShDP8LSm']);
+});
+
+test('a slow OpenReview never holds the OpenAlex answer', async () => {
+  const papers = await searchPapersAcrossSources('segment anything', {
+    openReviewTimeoutMs: 10,
+    providers: {
+      searchOpenAlex: async () => ({ papers: [openAlexPaper('W1', 'Segment Anything')] }),
+      searchArxiv: async () => [],
+      searchOpenReview: () => new Promise(() => {}),
+    },
+  });
+  assert.deepEqual(papers.map(paper => paper.title), ['Segment Anything']);
+});
+
+test('a dead OpenReview leaves the other answers whole', async () => {
+  const papers = await searchPapersAcrossSources('segment anything', {
+    providers: {
+      searchOpenAlex: async () => ({ papers: [openAlexPaper('W1', 'Segment Anything')] }),
+      searchArxiv: async () => [],
+      searchOpenReview: async () => { throw new Error('/sources/openreview returned 502'); },
+    },
+  });
+  assert.equal(papers.length, 1);
+});
+
+test('a dead OpenAlex still shows what OpenReview found', async () => {
+  const papers = await searchPapersAcrossSources('Position: AI Development Should Prioritize Cognitive Security', {
+    providers: {
+      searchOpenAlex: async () => { throw new Error('OpenAlex rate limit is active'); },
+      searchArxiv: async () => [],
+      searchOpenReview: async () => [openReviewPaper()],
+    },
+  });
+  assert.equal(papers[0].openReviewId, '5pShDP8LSm');
+});
+
+test('a submission OpenReview and arXiv both hold is one paper', async () => {
+  const title = 'Llama 2: Open Foundation and Fine-Tuned Chat Models';
+  const papers = await searchPapersAcrossSources('llama 2', {
+    providers: {
+      searchOpenAlex: async () => ({ papers: [] }),
+      searchArxiv: async () => [arxivPaper('2307.09288', title)],
+      searchOpenReview: async () => [openReviewPaper({
+        ...cognitiveSecurityNote,
+        content: { title: { value: title }, arxiv: { value: '2307.09288' } },
+      })],
+    },
+  });
+  assert.deepEqual(papers.map(paper => [paper.arxivId, paper.openReviewId]), [['2307.09288', '5pShDP8LSm']]);
+});
+
+test('an identifier is not sent to OpenReview, whose search matches text', async () => {
+  const asked: string[] = [];
+  await searchPapersAcrossSources('10.48550/arXiv.2307.09288', {
+    providers: {
+      ...providersWith(),
+      searchOpenReview: async query => { asked.push(query); return []; },
+    },
+  });
+  assert.deepEqual(asked, []);
+});
+
+test('an archive copy filed under one profile is not a search result', () => {
+  // `/sources/openreview?q=llama 2` on 2026-11-10: the same paper twice, each
+  // under the one author whose profile archived it.
+  const archived = (id: string, author: string): OpenReviewNote => ({
+    id,
+    forum: id,
+    domain: 'OpenReview.net/Archive',
+    content: {
+      title: { value: 'Llama 2: Open Foundation and Fine-Tuned Chat Models' },
+      authors: { value: [author] },
+    },
+  });
+  const papers = openReviewSearchPapers([
+    archived('hGtV1kd9BA', 'Sharan Narang'),
+    archived('UYZJpVEkvq', 'Amjad Almahairi'),
+    cognitiveSecurityNote,
+  ]);
+  assert.deepEqual(papers.map(paper => paper.openReviewId), ['5pShDP8LSm']);
 });
