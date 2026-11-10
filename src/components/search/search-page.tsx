@@ -97,7 +97,7 @@ const OPENALEX_BUDGET_PAUSE_NOTE = "Searches resume by 00:00 UTC at the latest. 
 // topics fall back to the local taxonomy rather than fail.
 function pageSearchSources(language: string): SearchProviders {
   return {
-    // OpenAlex and arXiv, merged and ranked by title match
+    // OpenAlex, arXiv and OpenReview, merged and ranked by title match
     // (paper-search-service.ts): OpenAlex alone could not answer "llama 2".
     papers: (query, signal) => searchPapersAcrossSources(query, { signal }),
     authors: (query, signal) => searchAuthors(query, { signal, throwOnError: true })

@@ -58,3 +58,20 @@ test('an OpenReview note without a timestamp has no year', () => {
   const dated = mapOpenReviewNote({ id: 'note-4', forum: 'forum-4', cdate: Date.parse('2025-02-03T00:00:00Z'), content });
   assert.equal(dated!.year, 2025);
 });
+
+test('reads the names of authors sent as profile objects', () => {
+  // The shape `NeurIPS.cc/2026/Workshop/AI-Native_Academia` answered with on
+  // 2026-11-10.
+  const paper = mapOpenReviewNote({
+    id: 'note-objects',
+    forum: 'note-objects',
+    content: {
+      title: { value: 'A note from a 2026 venue' },
+      authors: { value: [
+        { username: '~Haotian_Zong1', fullname: 'Haotian Zong', institutions: [{ name: 'Johns Hopkins University' }] },
+        { username: '~Luhao_Zhang1', fullname: 'Luhao Zhang' },
+      ] },
+    },
+  });
+  assert.deepEqual(paper?.authors, [{ name: 'Haotian Zong' }, { name: 'Luhao Zhang' }]);
+});
