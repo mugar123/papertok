@@ -77,10 +77,12 @@ export function createWaitFocus(activeElement: () => unknown) {
  * useRetryFocus does not fit here: its heir is read when the button takes the
  * focus and must already be in the page, while the feed's wait has nothing
  * that outlives the button. Here the focus waits on `wait()`, the wait's
- * heading, while it is shown, then goes to the retry button that came back,
- * or to `landing()` when the papers did. A reader who moved the focus
+ * heading, while it is in the page, then goes to the retry button that came
+ * back, or to `landing()` when the papers did. A reader who moved the focus
  * elsewhere keeps it there. `loading` says whether a load still runs or is
- * due. Put the returned ref on every retry button.
+ * due. Put the returned ref on every retry button. The focus moves on in a
+ * commit of the calling component, so a wait that leaves in another
+ * component's commit needs the caller to render again then.
  */
 export default function useWaitFocus(wait: () => HTMLElement | null, landing: () => HTMLElement | null, loading: boolean) {
   const [memory] = useState(() => createWaitFocus(() => {

@@ -1,11 +1,13 @@
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 // The legacy build, on purpose: the modern one calls `Map.getOrInsertComputed`
 // and `Math.sumPrecise`, which the iPhones this viewer exists for do not have.
 // The legacy build carries its own polyfills for about 60 KB more.
 import { GlobalWorkerOptions, getDocument, TextLayer } from 'pdfjs-dist/legacy/build/pdf.min.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-import Petri from '../onboarding/petri.tsx';
+import { createPageDraws, type DrawOutcome } from './page-draws.ts';
+import { openPdf } from './open-pdf.ts';
+import ViewerLoading from './viewer-loading.tsx';
 import './pdf-pages.css';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -25,11 +27,13 @@ const RENDER_MARGIN = '150% 0px';
  * width. This is the touch-screen route of PDFViewer: a framed PDF there shows
  * one page (iOS) or none (Android), so the pages are drawn here instead.
  *
- * `onUnavailable` is called once when the document cannot be read at all —
- * the relay refused it, it is not a PDF, it is too large — so the viewer can
- * offer the browser's own viewer instead of a blank sheet.
+ * `onUnavailable` is called when the document cannot be read at all — the
+ * relay refused it, it is not a PDF, it is too large — and `onUndrawable` when
+ * it was read but no page of it could be drawn, so the viewer can offer the
+ * browser's own viewer instead of a blank sheet and tell the two apart.
+ * `onDrawn` is called when a page has been drawn, not just measured.
  */
-export default function PdfPages({ src, title, onUnavailable }: { src: string; title: string; onUnavailable?: () => void }) {
+export default function PdfPages({ src, title, onUnavailable, onUndrawable, onDrawn }: { src: string; title: string; onUnavailable?: () => void; onUndrawable?: () => void; onDrawn?: () => void }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [firstPageRatio, setFirstPageRatio] = useState(Math.SQRT2);
@@ -37,6 +41,18 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
   // nothing: the pages live inside this scroller, which clips them, so only
   // the ones on screen ever counted as near (measured 2026-10-09: 2 of 15).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  // Pages that fail to draw while none has been drawn and none is still
+  // drawing are a PDF this phone may not be able to show: a page further down
+  // is drawn even off screen, and the PDF is handed off rather than left as
+  // blank sheets once enough distinct pages have failed (see page-draws.ts).
+  const [draws] = useState(createPageDraws);
+  const [forcedPage, setForcedPage] = useState(0);
+  const handleDrawSettled = useCallback((number: number, outcome: DrawOutcome) => {
+    const verdict = draws.settle(number, pageCount, outcome);
+    if (verdict === 'hand-off') onUndrawable?.();
+    else if (verdict !== null) setForcedPage(verdict);
+    if (outcome === 'drawn') onDrawn?.();
+  }, [draws, pageCount, onDrawn, onUndrawable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,22 +63,22 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
       isEvalSupported: false,
       enableXfa: false,
     } as Parameters<typeof getDocument>[0] & { isEvalSupported: boolean });
-    task.promise.then(async (loaded) => {
-      const first = await loaded.getPage(1);
+    void openPdf(task.promise).then((opened) => {
       if (cancelled) return;
-      const { width, height } = first.getViewport({ scale: 1 });
-      setFirstPageRatio(height / width);
-      setPageCount(loaded.numPages);
-      setDoc(loaded);
-    }).catch(() => {
-      if (!cancelled) onUnavailable?.();
+      if (!opened) {
+        onUnavailable?.();
+        return;
+      }
+      if (opened.ratio !== null) setFirstPageRatio(opened.ratio);
+      setPageCount(opened.doc.numPages);
+      setDoc(opened.doc);
     });
     return () => {
       cancelled = true;
       void task.destroy();
     };
-    // `onUnavailable` is a stable callback in PDFViewer; were it not, a new
-    // one would reload the document, never miss a failure.
+    // The callback is stable in PDFViewer; were it not, a new one would
+    // reload the document, never miss a failure.
   }, [src, onUnavailable]);
 
   const pages = [];
@@ -75,6 +91,9 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
         number={number}
         count={pageCount}
         placeholderRatio={firstPageRatio}
+        forced={number === forcedPage}
+        onDrawStart={draws.start}
+        onDrawSettled={handleDrawSettled}
       />,
     );
   }
@@ -82,10 +101,7 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
   return (
     <div ref={setScroller} className="pdf-pages" tabIndex={0} role="document" aria-label={`PDF: ${title}`} aria-busy={!doc}>
       {!doc && (
-        <div className="pdf-loading" role="status">
-          <Petri pose="download" className="petri-loader" />
-          <p>{'Loading PDF...'}</p>
-        </div>
+        <ViewerLoading label={'Loading PDF...'} />
       )}
       {pages}
       <p className="visually-hidden" role="status">
@@ -95,7 +111,14 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
   );
 }
 
-function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number }) {
+/**
+ * A `forced` page draws at once, wherever it is, and keeps its drawing: it is
+ * a probe for whether the PDF can be drawn at all, not a page near the screen.
+ */
+function PdfPage({ doc, root, number, count, placeholderRatio, forced, onDrawStart, onDrawSettled }: { doc: PDFDocumentProxy | null; root: HTMLDivElement | null; number: number; count: number; placeholderRatio: number; forced: boolean; onDrawStart: () => void; onDrawSettled: (number: number, outcome: DrawOutcome) => void }) {
+  // Read at draw time, so a new callback never redraws the page.
+  const reportDrawStart = useEffectEvent(() => onDrawStart());
+  const reportDrawSettled = useEffectEvent((outcome: DrawOutcome) => onDrawSettled(number, outcome));
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
@@ -126,6 +149,14 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
 
     const draw = async () => {
       const mine = ++generation;
+      reportDrawStart();
+      // Every started draw reports one outcome; the first one counts.
+      let settled = false;
+      const settle = (outcome: DrawOutcome) => {
+        if (settled) return;
+        settled = true;
+        reportDrawSettled(outcome);
+      };
       try {
         const page = await doc.getPage(number);
         if (mine !== generation) return;
@@ -145,6 +176,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
         await renderTask.promise;
         if (mine !== generation) return;
         setDrawn(true);
+        settle('drawn');
         node.style.setProperty('--total-scale-factor', String(viewport.scale));
         textLayer = new TextLayer({
           textContentSource: page.streamTextContent(),
@@ -153,11 +185,19 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
         });
         await textLayer.render();
       } catch {
-        // A cancelled render (the page scrolled away) and a page that cannot
-        // be drawn both leave the empty box: the other pages still read.
+        // A cancelled render (the page scrolled away, so `generation` moved on)
+        // is not a failure. A page that cannot be drawn leaves the empty box;
+        // a failing text layer after the drawing changes nothing.
+        settle(mine === generation ? 'failed' : 'cancelled');
+      } finally {
+        settle('cancelled');
       }
     };
 
+    if (forced) {
+      void draw();
+      return release;
+    }
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) void draw();
       else release();
@@ -167,7 +207,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
       observer.disconnect();
       release();
     };
-  }, [doc, root, number]);
+  }, [doc, root, number, forced]);
 
   return (
     <section

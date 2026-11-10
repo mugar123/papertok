@@ -5,6 +5,12 @@ export interface EmailNotificationsContextValue {
   loading: boolean; saving: boolean; testing: boolean; error: unknown;
   health: Awaited<ReturnType<typeof getEmailNotificationHealth>>;
   notificationDataReady: boolean; hasFollows: boolean;
+  /** The digest has something to cover: a follow it lists, or else the reader's chosen categories (ENG-163). */
+  digestCovered: boolean;
+  /** Turning the digest on or sending a test may send the follows in hand: a follow it lists, or the server's own answer that there is none. */
+  digestSendReady: boolean;
+  /** The app turned the digest off this session because there was nothing left for it to cover. */
+  digestTurnedOff: boolean;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
@@ -26,7 +32,10 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
+import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -39,17 +48,18 @@ const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
 };
 
 export function EmailNotificationsProvider({ children }: PropsWithChildren) {
-  const { user, emailDigestPending, settleEmailDigestOptIn } = useAuth();
+  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
-  const { followedEntities, loading: followsLoading, error: followsError } = useFollowing();
+  const { followedEntities, loading: followsLoading, error: followsError, confirmed: followsConfirmed } = useFollowing();
   const { items, loading: updatesLoading } = useFollowingUpdates();
   const [preferences, setPreferences] = useState<Required<NotificationPreferences>>({ ...DEFAULT_PREFERENCES, language, email: userEmail });
   const [loading, setLoading] = useState(Boolean(user));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [digestTurnedOffFor, setDigestTurnedOffFor] = useState<string | null>(null);
   const [health, setHealth] = useState<Awaited<ReturnType<typeof getEmailNotificationHealth>>>({
     configured: false,
     available: false,
@@ -67,6 +77,41 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // journals are not in the email (emailFollowsNotice), and no save, sync or
   // opt-in sends an empty follow list.
   const hasFollows = hasDigestFollows(followedEntities);
+  // The reader's chosen categories fill the digest while nothing it covers is
+  // followed (ENG-163). Only their leaf ids reach the Worker.
+  // The profile is read once per session by AuthContext, so a tab left open
+  // would send categories changed since on another device, or shut the digest
+  // off on a list emptied there. The digest listens to the profile itself, like
+  // the follows, and trusts only the server's copy.
+  const [liveProfile, setLiveProfile] = useState<{ uid: string; interests: string[]; confirmed: boolean } | null>(null);
+  useEffect(() => {
+    if (!userId) return undefined;
+    return onSnapshot(doc(db, 'users', userId), { includeMetadataChanges: true }, (snapshot) => {
+      const next = digestProfileInterests(snapshot.data(), snapshot.metadata.fromCache);
+      // The same answer keeps the same object, so a metadata-only snapshot
+      // does not schedule another digest sync.
+      setLiveProfile(current => (
+        current?.uid === userId && current.confirmed === next.confirmed && current.interests.join() === next.interests.join()
+          ? current
+          : { uid: userId, ...next }
+      ));
+    }, (listenError) => {
+      console.warn('Could not follow the profile for the email digest', listenError);
+      setLiveProfile(current => (current?.uid === userId ? { ...current, confirmed: false } : null));
+    });
+  }, [userId]);
+  const profileForUser = liveProfile?.uid === userId ? liveProfile : null;
+  // Until the listener answers, the categories in hand only decide what the
+  // settings screen shows; nothing unconfirmed is sent.
+  const fallbackInterests = useMemo(() => digestProfileInterests({ preferences: userPreferences }, true).interests, [userPreferences]);
+  const interests = profileForUser ? profileForUser.interests : fallbackInterests;
+  const digestCovered = hasFollows || interests.length > 0;
+  const interestsConfirmed = profileForUser?.confirmed ?? false;
+  const sentInterests = digestInterestsToSend({ interests, interestsConfirmed });
+  // An empty follow list read from the cache must not replace the follows the
+  // Worker stores, whether a sync, a save that turns the digest on or a test
+  // sends it. Turning the digest off sends no follows to keep, so it stays open.
+  const digestSendReady = digestSyncAllowed({ hasFollows, followsConfirmed, interestsConfirmed });
 
   // The same reset `FollowingContext` does, and for the same reason: the tree
   // above is no longer rebuilt when the session resolves
@@ -127,9 +172,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
-    if (nextPreferences.enabled && !hasFollows) {
+    if (nextPreferences.enabled && !digestCovered) {
       throw new EmailNotificationServiceError('EMAIL_FOLLOWS_REQUIRED', 409);
     }
+    if (nextPreferences.enabled && !digestSendReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     setSaving(true);
     setError(null);
     try {
@@ -138,6 +184,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         { ...nextPreferences, language },
         followedEntities,
         items,
+        { interests: sentInterests },
       );
       return applySavedPreferences(saved, wasEnabled);
     } catch (saveError) {
@@ -146,11 +193,12 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     } finally {
       setSaving(false);
     }
-  }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences.enabled]);
+  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences.enabled]);
 
   const sendTest = useCallback(async (nextPreferences: NotificationPreferences = preferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
-    if (!hasFollows) throw new EmailNotificationServiceError('EMAIL_FOLLOWS_REQUIRED', 409);
+    if (!digestCovered) throw new EmailNotificationServiceError('EMAIL_FOLLOWS_REQUIRED', 409);
+    if (!digestSendReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     setTesting(true);
     setError(null);
     try {
@@ -159,6 +207,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         { ...nextPreferences, enabled: true, language },
         followedEntities,
         items,
+        { interests: sentInterests },
       );
       const normalized = applySavedPreferences(saved, wasEnabled);
       const result = await sendEmailNotificationTest();
@@ -172,12 +221,12 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     } finally {
       setTesting(false);
     }
-  }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences]);
+  }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences]);
 
-  // A yes from the guest welcome, carried out here: the account is created
-  // with no follows and the digest is built from them (the Worker refuses an
-  // empty subscription), so the subscription starts with the first follow
-  // other than a journal, to the address the account signs in with. Once per
+  // A yes from the guest welcome, carried out here, to the address the account
+  // signs in with: the subscription starts with the first follow other than a
+  // journal, as the welcome promised when the reader said yes, even though a
+  // digest turned on in Settings can run on chosen categories alone. Once per
   // session; a failure keeps the flag and the next session tries again. Once
   // it exists — or the reader already turned email on themselves — the flag is
   // spent, so a later unsubscribe in Settings is never undone.
@@ -219,7 +268,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       || followsLoading
       || followsError
       || updatesLoading
-      || !hasFollows
+      || !digestCovered
+      || !digestSendReady
       || loadedForUser.current !== userId
     ) return undefined;
     let cancelled = false;
@@ -230,7 +280,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       // this effect stops syncing. The answer skips applySavedPreferences:
       // the reader made no choice in this tab, so there is no
       // newsletter_change to report.
-      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items, { sync: true })
+      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items, { sync: true, interests: sentInterests })
         .then(saved => {
           if (cancelled) return;
           setPreferences(current => {
@@ -246,7 +296,37 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(syncTimeout);
     };
-  }, [followSignature, followedEntities, followsError, followsLoading, hasFollows, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
+  }, [digestCovered, digestSendReady, followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, sentInterests, updatesLoading, userEmail, userId]);
+
+  // Nothing left for the digest to cover with the digest on: no follow it
+  // lists and no chosen category. The Worker refuses an empty subscription and
+  // the sync above stops, so the stored one would keep emailing what was last
+  // synced (ENG-163). Turn it off through the same save the toggle uses, once,
+  // and only when the follows and the profile are the server's own answer.
+  const shutoffAttemptedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (digestCovered) {
+      shutoffAttemptedFor.current = null;
+      return;
+    }
+    if (!userId || loading || loadedForUser.current !== userId) return;
+    if (!digestShutoffDue({
+      enabled: preferences.enabled,
+      followsConfirmed,
+      interestsConfirmed,
+      digestCovered,
+      attempted: shutoffAttemptedFor.current === userId,
+    })) return;
+    shutoffAttemptedFor.current = userId;
+    saveEmailNotificationPreferences({ ...preferences, enabled: false, language }, followedEntities, items)
+      .then(saved => {
+        // Like the sync, this skips applySavedPreferences: the reader did not
+        // unsubscribe, so there is no newsletter_change to report.
+        setPreferences({ ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail });
+        setDigestTurnedOffFor(userId);
+      })
+      .catch(shutoffError => console.warn('Could not turn the digest off with nothing left for it to cover', shutoffError));
+  }, [digestCovered, followedEntities, followsConfirmed, interestsConfirmed, items, language, loading, preferences, userEmail, userId]);
 
   const localizedPreferences = useMemo(
     () => ({ ...preferences, language }),
@@ -262,9 +342,17 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     health,
     notificationDataReady,
     hasFollows,
+    digestCovered,
+    digestSendReady,
+    digestTurnedOff: digestShutoffNoticeShown({
+      turnedOffFor: digestTurnedOffFor,
+      userId,
+      enabled: localizedPreferences.enabled,
+      digestCovered,
+    }),
     savePreferences,
     sendTest,
-  }), [error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing]);
+  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

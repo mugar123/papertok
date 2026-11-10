@@ -412,7 +412,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const loadingMessage = activeSection === 'all' ? 'Searching all categories…' : `Searching ${copy[activeSection].toLowerCase()}…`;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
+    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${manualSelection ? '' : ' sc-sheet--untouched'}${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
       commandProps={{
         label: copy.placeholder,
         // Enter follows the first row until the user chooses another one.
@@ -486,7 +486,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
                     onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}><X size={14} /></Button>
                 </CommandItem>)}
               </CommandGroup>}
-              <CommandGroup heading={<span className="sc-heading">{copy.suggested}</span>}>
+              <CommandGroup aria-label={copy.suggested}>
                 {SUGGESTIONS.filter(item => activeSection === 'all' || item.section === activeSection).map(item => <CommandItem key={item.label} value={`suggestion-${item.label}`} onSelect={() => changeQuery(item.query)}>
                   <item.Icon size={14} className="sc-icon" /><span className="sc-label">{item.label}</span><span className="sc-suggestion-type">{item.type}</span>
                 </CommandItem>)}

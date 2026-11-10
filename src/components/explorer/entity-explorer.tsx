@@ -1,5 +1,6 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
+import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import type { Project } from '../../services/open-aire-service.ts';
 import type { RecentImpact } from '../../services/open-alex-service.ts';
@@ -11,7 +12,8 @@ import type { FollowInput } from '../../utils/following.ts';
 type ExplorerEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTopic & Project> & {
   _queryTopic?: boolean; _detailsPending?: boolean; query?: string;
   metadata?: { localizedNames?: Record<string, string>; query?: string; source?: string; categoryIds?: string[] };
-  ids?: { wikidata?: string; wikipedia?: string };
+  ids?: { wikidata?: string; wikipedia?: string; orcid?: string };
+  image_thumbnail_url?: string | null;
   categories?: string[]; primaryCategory?: string;
 };
 interface VisitRecord {
@@ -150,6 +152,12 @@ function ParticipantName({ name }: { name: string }) {
       <TooltipContent>{name}</TooltipContent>
     </Tooltip>
   );
+}
+
+function wikimediaImage(url: string | null | undefined) {
+  const safe = safeExternalUrl(url);
+  const host = safe ? new URL(safe).hostname : '';
+  return host === 'wikimedia.org' || host.endsWith('.wikimedia.org') ? safe : '';
 }
 
 // The last ten years of an author's output, from OpenAlex's per-year counts,
@@ -349,6 +357,8 @@ export default function EntityExplorer({
   const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || Boolean(cachedEntity) || (type === 'topic' && isOpaqueQueryTopicText(id));
   const [entity, setEntity] = useState<ExplorerEntity | null>(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState<string | null>(null);
+  // Whether the entity on screen is the answer for this route, not a search row or a cached copy it upgrades.
+  const [isEntityFetched, setIsEntityFetched] = useState(false);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
@@ -365,17 +375,18 @@ export default function EntityExplorer({
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [pdfPaperToView, setPdfPaperToView] = useState<Paper | null>(null);
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
+  const pdfPaperToView = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfPaperToView(null)` is
+  // reports back only when its leave has played; `setPdfOpen(null)` is
   // just the fallback for the sub-frame gap before PDFViewer's own
   // `useImperativeHandle` has populated the ref — this import (above) is
   // plain, not lazy, so there is no chunk boundary to blame it on here.
   const pdfCloseRef = useRef<(() => void) | null>(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
-    else setPdfPaperToView(null);
+    else setPdfOpen(null);
   }, []);
   useOverlayHistory(Boolean(pdfPaperToView), requestPdfClose, 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
@@ -589,6 +600,10 @@ export default function EntityExplorer({
   const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution);
   const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
+  // Wikipedia only lends a free image, so a non-free logo leaves it empty; the
+  // Wikimedia thumbnail OpenAlex links stands in once Wikipedia has answered.
+  const openAlexImage = wikimediaImage(entity?.image_thumbnail_url);
+  const heroImage = visibleWikiInfo?.thumbnail || (settledWikiRequestKey === wikiRequestKey ? openAlexImage : '');
   const safeRorUrl = safeExternalUrl(entity?.ror);
   const safeProjectWebsiteUrl = safeExternalUrl(entity?.websiteUrl);
   const safeHomepageUrl = safeExternalUrl(entity?.homepage_url);
@@ -600,7 +615,7 @@ export default function EntityExplorer({
     ...(safeHomepageUrl ? [{ label: 'Official website', href: safeHomepageUrl }] : []),
   ];
   const canLoadWikiInfo = Boolean(
-    entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
+    entityDisplayName && ['author', 'institution', 'concept', 'topic', 'source'].includes(type),
   );
   // Only what the Wikipedia block is looked up by. The entity object is
   // replaced whenever a later answer is folded into it, and the lookup must
@@ -609,13 +624,15 @@ export default function EntityExplorer({
   const entityIsLocalTopic = Boolean(entity?._localTopic);
   const entityWikidataId = entity?.ids?.wikidata || '';
   const entityWikipediaUrl = entity?.ids?.wikipedia || '';
+  // An author has no Wikidata id in OpenAlex; its ORCID finds the Wikidata item instead.
+  const entityOrcid = entity?.ids?.orcid || entity?.orcid || '';
   const wikiEntity = useMemo(() => ({
     _queryTopic: entityIsQueryTopic,
     _localTopic: entityIsLocalTopic,
-    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl },
-  }), [entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl]);
+    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl, orcid: entityOrcid },
+  }), [entityIsLocalTopic, entityIsQueryTopic, entityOrcid, entityWikidataId, entityWikipediaUrl]);
   const hasLoadedWikiImage = Boolean(
-    visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
+    heroImage && loadedWikiImageUrl === heroImage,
   );
 
   // The hero's body settles between its sizes instead of snapping. What it
@@ -762,7 +779,7 @@ export default function EntityExplorer({
     resetForEntityRef.current = visitKey;
     const timer = setTimeout(() => {
       setSelectedPaper(null);
-      setPdfPaperToView(null);
+      setPdfOpen(null);
       setActiveTab('papers');
       setAuthorsOpened(false);
       setExpandedSummary(false);
@@ -793,6 +810,7 @@ export default function EntityExplorer({
 
     async function loadEntity() {
       setEntityError(null);
+      setIsEntityFetched(false);
       const bornWith: ExplorerEntity | null = handedEntity || cachedEntity;
       if (bornWith) {
         setEntity(bornWith);
@@ -828,6 +846,7 @@ export default function EntityExplorer({
       if (type === 'topic' && isOpaqueQueryTopicText(id)) {
         setEntity(resolveQueryTopicRoute(id, searchParams));
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -838,6 +857,7 @@ export default function EntityExplorer({
       if (local) {
         setEntity(local);
         setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
 
@@ -862,7 +882,8 @@ export default function EntityExplorer({
         // pill's name if there was one and never a stand-in
         // (explorer-project-entity.ts says why).
         setEntity(projectEntityFromLookup({ routeId: id, name, funder, details }));
-        if (!isCancelled) setIsLoadingEntity(false);
+        setIsLoadingEntity(false);
+        setIsEntityFetched(true);
         return;
       }
       
@@ -913,6 +934,7 @@ export default function EntityExplorer({
       
       setEntity(data || handedEntity || cachedEntity);
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
 
       // Both follow-up requests declare themselves before either starts, in
       // the same batch as the entity, so the live hero mounts with the ORCID
@@ -988,6 +1010,7 @@ export default function EntityExplorer({
       setEntity(handedEntity || cachedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
+      setIsEntityFetched(true);
       setIsLoadingOrcid(false);
     });
     return () => {
@@ -996,7 +1019,9 @@ export default function EntityExplorer({
   }, [type, id, searchParams, entityReloadKey, handedEntity, cachedEntity]);
 
   useEffect(() => {
-    if (!canLoadWikiInfo) {
+    // Looked up once, by the fetched entity's identifiers: a lookup by the
+    // search row's would show its picture and then swap it for another.
+    if (!canLoadWikiInfo || !isEntityFetched) {
       return undefined;
     }
 
@@ -1041,6 +1066,7 @@ export default function EntityExplorer({
     afterPageArrival,
     canLoadWikiInfo,
     entityDisplayName,
+    isEntityFetched,
     language,
     localizedTopicEntity?.label,
     type,
@@ -2239,9 +2265,9 @@ export default function EntityExplorer({
                 {renderIcon()}
               </motion.div>
               <AnimatePresence>
-                {visibleWikiInfo?.thumbnail && (
+                {heroImage && (
                   <motion.div
-                    key={visibleWikiInfo.thumbnail}
+                    key={heroImage}
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
@@ -2249,9 +2275,10 @@ export default function EntityExplorer({
                     className="ehc-wiki-image"
                   >
                     <img
-                      src={visibleWikiInfo.thumbnail}
+                      src={heroImage}
                       alt={entityDisplayName}
-                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail!)}
+                      data-logo={/\.svg\b/i.test(heroImage) || undefined}
+                      onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
                   </motion.div>
@@ -2769,7 +2796,7 @@ export default function EntityExplorer({
             onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper) => setPdfPaperToView(paper)}
+            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -2782,8 +2809,8 @@ export default function EntityExplorer({
         )}
       </PaperOverlay>
 
-      {pdfPaperToView && (
-        <PDFViewer paper={pdfPaperToView} closeRef={pdfCloseRef} onClose={() => setPdfPaperToView(null)} />
+      {pdfOpen && (
+        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
       )}
     </div>
   );

@@ -44,7 +44,8 @@ export function followLane(follow: FollowLaneInput) {
   if (type === 'journal') return entity.startsWith('source:') ? entity : '';
   if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
   if (LEAF_IDS.has(canonicalId)) return '';
-  const query = text(type === 'topic' ? follow.metadata?.query || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
+  // A query of only whitespace is an empty one, so the name stands in for it.
+  const query = text(type === 'topic' ? text(follow.metadata?.query) || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
   if (!query) return '';
   return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
 }

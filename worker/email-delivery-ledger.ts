@@ -24,6 +24,8 @@ export interface DeliveryDraftInput {
   recipient?: { email?: unknown; displayName?: unknown };
   content?: { subject?: unknown; html?: unknown; text?: unknown };
   unsubscribeUrl?: unknown;
+  /** The version of the reader's subscription the draft was prepared from. */
+  subscriptionVersion?: unknown;
   delivery?: DeliveryInput;
 }
 
@@ -156,6 +158,7 @@ function sanitizeDraft(value: DeliveryDraftInput = {}) {
       text: boundedString(value.content?.text, 40_000),
     },
     unsubscribeUrl: boundedString(value.unsubscribeUrl, 1_000),
+    subscriptionVersion: positiveInteger(value.subscriptionVersion),
     delivery: sanitizeDelivery(value.delivery),
   };
 }

@@ -46,7 +46,8 @@
     "react-router-dom": "7.18.2",
     "satori": "0.32.0",
     "sonner": "^2.0.8",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "temml": "^0.14.0"
   },
   "devDependencies": {
     "@eslint-community/eslint-plugin-eslint-comments": "^4.8.1",

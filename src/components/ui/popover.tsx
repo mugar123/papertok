@@ -74,10 +74,37 @@ function PopoverContent({
   );
 }
 
+/**
+ * The parts `PopoverContent` composes, for a panel that sets its own look and
+ * motion (the reader's citation card, the viewer's bar card) or its own anchor.
+ */
+function PopoverPortal(props: ComponentProps<typeof PopoverPrimitive.Portal>) {
+  return <PopoverPrimitive.Portal {...props} />;
+}
+
+function PopoverPositioner(props: ComponentProps<typeof PopoverPrimitive.Positioner>) {
+  return <PopoverPrimitive.Positioner data-slot="popover-positioner" {...props} />;
+}
+
+function PopoverPopup(props: ComponentProps<typeof PopoverPrimitive.Popup>) {
+  return <PopoverPrimitive.Popup data-slot="popover-popup" {...props} />;
+}
+
+function PopoverClose(props: ComponentProps<typeof PopoverPrimitive.Close>) {
+  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
+}
+
+type PopoverChangeDetails = PopoverPrimitive.Root.ChangeEventDetails;
+
+export type { PopoverChangeDetails };
 export {
   Popover,
+  PopoverClose,
   PopoverContent,
   PopoverDescription,
+  PopoverPopup,
+  PopoverPortal,
+  PopoverPositioner,
   PopoverTitle,
   PopoverTrigger,
 };

@@ -1,5 +1,6 @@
-import type { MouseEvent } from 'react'
+import type { ComponentProps, MouseEvent } from 'react'
 import type { Paper } from './models/paper.ts'
+import type { ReaderMenu } from './components/feed/paper-menu.tsx'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
@@ -95,15 +96,16 @@ function LoginRedirect() {
 }
 
 function AppContent() {
-  const [pdfPaper, setPdfPaper] = useState<Paper | null>(null)
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null)
+  const pdfPaper = pdfOpen?.paper ?? null
   // Back closes the PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfPaper(null)` is just
+  // reports back only when its leave has played; `setPdfOpen(null)` is just
   // the fallback for before the lazy chunk has mounted.
   const pdfCloseRef = useRef<(() => void) | null>(null)
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current()
-    else setPdfPaper(null)
+    else setPdfOpen(null)
   }, [])
   useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf')
   // Every pointer opens the PDF here, in the viewer. A touch screen used to be
@@ -111,10 +113,11 @@ function AppContent() {
   // crippled there (2026-08-29); the viewer now draws the pages itself on a
   // touch screen (pdf-pages.tsx), so the paper stays in PaperTok on a phone as
   // it does on a desktop (2026-10-09).
-  const openPdf = setPdfPaper
+  const openPdf = useCallback((paper: Paper, menu: ReaderMenu) => setPdfOpen({ paper, menu }), [])
   // The paper the list picker is open for, with the surface of the card that
-  // opened it: the picker's save carries it (forYouCardNotable).
-  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string } | null>(null)
+  // opened it: the picker's save carries it (forYouCardNotable). The lists
+  // page also says where focus goes on close (`finalFocus`).
+  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string; finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus'] } | null>(null)
   const openSaveModal = useCallback((paper: Paper, surface?: string) => setSaveModal({ paper, surface }), [])
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
@@ -397,7 +400,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={openPdf} onEditPaper={openSaveModal} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={(paper, finalFocus) => setSaveModal({ paper, finalFocus })} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -589,8 +592,8 @@ function AppContent() {
           prefetch usually has it already) nothing flashes, and the rest of
           the screen stays interactive. */}
       <Suspense fallback={null}>
-        {pdfPaper && (
-          <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
+        {pdfOpen && (
+          <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
         )}
       </Suspense>
 
@@ -599,6 +602,7 @@ function AppContent() {
           <SaveToListModal
             paper={saveModal.paper}
             surface={saveModal.surface}
+            finalFocus={saveModal.finalFocus}
             onClose={() => setSaveModal(null)}
           />
         )}

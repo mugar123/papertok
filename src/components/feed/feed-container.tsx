@@ -1,5 +1,6 @@
-import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
+import type { AnimationEvent, FocusEventHandler, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
+import type { ReaderMenu } from './paper-menu.tsx';
 import type { Paper } from '../../models/paper.ts';
 
 interface FeedSource {
@@ -19,14 +20,14 @@ interface FeedSource {
   initialLoadPending?: boolean;
 }
 interface FeedContainerProps {
-  onOpenPdf?: (paper: Paper) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   /** Opens the list picker; `surface` is the card's (PaperCard's `onPickList`). */
   onSaveToList?: (paper: Paper, surface?: string) => void;
   source?: FeedSource | null;
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
 }
-import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useReducer, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check, Warning } from '@phosphor-icons/react';
@@ -55,7 +56,7 @@ import {
 } from '../../utils/feed-mount-window.ts';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, nextPageStatusText, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
+import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitNote, nextPageStatusText, showsLastVisit, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -181,6 +182,8 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
 }
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
+// Whether the veil's heading holds the focus, read as the veil's exit starts.
+const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
 // into every return: the Similar layer renders a feed too, and it is an
@@ -201,25 +204,49 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  * card arrives with. Labels rather than objects on the children: inside a
  * variant tree a child animates on the parent's label, not on an object of
  * its own, so the atom's `gone` plays the frame the veil's does.
+ *
+ * Except while the veil's heading holds a retry's focus (useWaitFocus): a
+ * fading heading is a focus no one can see, and a card under a fading veil
+ * is covered, so neither can hold the focus during the cross-fade (ENG-175).
+ * Then the ground and the copy stay whole while the atom leaves, the card
+ * composes underneath (its arrival, --motion-base, is shorter than the
+ * atom's exit), and the veil goes in the commit that moves the focus to the
+ * card. AnimatePresence hands `gone` the heading's ref as `custom`.
  */
 const ATOM_VEIL_VARIANTS: Variants = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } },
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? { opacity: 1 }
+    : { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } }),
 };
 const ATOM_VARIANTS = {
   shown: { opacity: 1, transform: 'translateY(0px) scale(1)' },
   gone: { opacity: 0, transform: 'translateY(-16px) scale(0.62)', transition: { duration: 0.36, ease: EASE_OUT_EXPO } },
 };
-const ATOM_COPY_VARIANTS = {
-  shown: { opacity: 1, transform: 'translateY(0px)' },
-  gone: { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } },
+const ATOM_COPY_SHOWN = { opacity: 1, transform: 'translateY(0px)' };
+const ATOM_COPY_VARIANTS: Variants = {
+  shown: ATOM_COPY_SHOWN,
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? ATOM_COPY_SHOWN
+    : { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } }),
 };
-const ATOM_VEIL_REDUCED_VARIANTS = {
+const ATOM_VEIL_REDUCED_VARIANTS: Variants = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.12 } },
+  gone: (heading: RefObject<HTMLElement | null>) => (holdsFocus(heading)
+    ? { opacity: 1 }
+    : { opacity: 0, transition: { duration: 0.12 } }),
 };
 // How long the status region is in the page, empty, before its first words.
 const STATUS_REGION_SETTLE_MS = 300;
+// The empty states fade in (`.feed-empty`). The focus entering one ends the
+// fade at once, as when a retry fails again and the focus returns to Try
+// again before the first paint: a fade under the focus is a ring no one can
+// see (ENG-175). A finished fade stays finished while the state keeps its
+// class, so the state does not fade in again when the focus leaves, which a
+// `:focus-within` rule would do.
+const endFade: FocusEventHandler<HTMLElement> = (event) => {
+  for (const fade of event.currentTarget.getAnimations()) fade.finish();
+};
 
 // `className` porque los estados vacíos NO son `.feed-wrapper`: son
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
@@ -246,10 +273,10 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
   }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
-    return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
+    return <div ref={nodeRef} className={className} onFocus={endFade}>{statusRegion}{children}</div>;
   }
   return (
-    <main ref={nodeRef} className={className} aria-label={landmark.label}>
+    <main ref={nodeRef} className={className} aria-label={landmark.label} onFocus={endFade}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {statusRegion}
       {children}
@@ -320,6 +347,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, []);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const nextPageRetriesRef = useRef<NextPageRetries>({ failedAt: null, used: 0 });
+  // Whether the next page on its way is an automatic retry of a failed one, so
+  // the tail's status keeps the failure's words (nextPageStatusText). Kept as
+  // state because the status reads it while rendering.
+  const [nextPageRetrying, setNextPageRetrying] = useState(false);
+  // Whether the reader asked again with the tail's Try again under the last
+  // visit's cards, so that attempt's failure is spoken (nextPageStatusText).
+  const [askedUnderLastVisit, setAskedUnderLastVisit] = useState(false);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
   // uses. It tracks the scroll position on every scroll, and the mount
@@ -744,8 +778,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const root = feedRef.current;
     if (!sentinelRef.current || !root) return;
 
+    const next: (attempt?: 'automatic_retry') => boolean = loadMore;
     const sentinel = createNextPageSentinel({
-      failed: Boolean(error), hasMore, loading, loadMore, retries: nextPageRetriesRef.current, page: document,
+      failed: Boolean(error), hasMore, loading, retries: nextPageRetriesRef.current, page: document,
+      loadMore: attempt => {
+        const started = next(attempt);
+        if (started) setNextPageRetrying(attempt === 'automatic_retry');
+        return started;
+      },
     });
     const observer = new IntersectionObserver(
       (entries) => sentinel.report(entries[0].isIntersecting),
@@ -983,9 +1023,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => clearTimeout(t);
   }, [heldEnd, pillOnScreen]);
 
-  const handleOpenPdf = useCallback((paper: Paper, surface?: string) => {
+  const handleOpenPdf = useCallback((paper: Paper, surface: string | undefined, menu: ReaderMenu) => {
     void trackPdfOpened(paper, surface);
-    onOpenPdf!(paper);
+    onOpenPdf!(paper, menu);
   }, [onOpenPdf, trackPdfOpened]);
 
   const handleSaveToList = useQuickSave(onSaveToList!, analyticsSurface);
@@ -1104,13 +1144,36 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, autoRetryPending });
-  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null });
+  const lastVisit = source ? null : feed.lastVisit;
+  const feedStatus = feedStatusText({ refreshStatus, veil: atomVeil !== null, lastVisit });
+  const lastVisitShown = lastVisitNote(lastVisit);
+  // A new stretch of the last visit's cards starts with nothing asked.
+  if (askedUnderLastVisit && !showsLastVisit(lastVisit)) setAskedUnderLastVisit(false);
   // Try again, Check again and Explore again leave as the reload they start
   // begins: the focus waits on the veil's heading, then lands on the retry
   // button if the wait ends in one, or on the shown card's first control.
+  // The veil stays in the page while it leaves over the cards, so the focus
+  // waits on its heading until the veil has gone, rather than land on a
+  // control the veil still covers (ENG-175, WCAG 2.4.11); the veil keeps that
+  // heading in sight meanwhile (ATOM_VEIL_VARIANTS). AnimatePresence removes
+  // the veil in a render of its own; `veilLeft` renders the feed again then,
+  // so the focus moves on.
   const veilHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const [, veilLeft] = useReducer((exits: number) => exits + 1, 0);
+  // The veil's element while it is in the page, through its exit and until
+  // it unmounts, also when the feed gives way to the error or empty state
+  // midway. The feed under it is inert meanwhile, so the keyboard cannot
+  // reach the container or a card the veil still covers (ENG-175).
+  const [veilElement, setVeilElement] = useState<HTMLDivElement | null>(null);
+  // A refresh under the veil has no cards to dip: the veil already covers
+  // it, and the cards it leaves over must be whole when a retry's focus lands
+  // on them. Kept until the refresh ends, which can come after the veil has
+  // gone.
+  const [refreshUnderVeil, setRefreshUnderVeil] = useState(false);
+  if (isRefreshing && atomVeil !== null && !refreshUnderVeil) setRefreshUnderVeil(true);
+  if (!isRefreshing && refreshUnderVeil) setRefreshUnderVeil(false);
   const retryButtonRef = useWaitFocus(
-    () => (atomVeil ? veilHeadingRef.current : null),
+    () => veilHeadingRef.current,
     () => feedRef.current?.querySelector<HTMLElement>(
       `.feed-snap-item:not(.feed-snap-item--pending):not(.feed-snap-item--tail) ${CARD_CONTROL}`,
     ) ?? null,
@@ -1395,10 +1458,21 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           </span>
         </button>
       )}
+      {/* The status region already speaks these words; this is their
+          visible copy, so it is hidden from screen readers (ENG-188). */}
+      {lastVisitShown && papers.length > 0 && (
+        <p className="feed-last-visit" aria-hidden="true">{lastVisitShown}</p>
+      )}
+      {/* Inert while the veil is in the page (`veilElement`). During the wait
+          the container holds only the loading tail and the sentinel, an
+          overflowing scroller with nothing focusable that Chrome makes a tab
+          stop; as the veil leaves, the cards' controls stay under it until
+          it has gone. Either way a focus there could not be seen. */}
       <div
-        className={`feed-container${isRefreshing ? ' feed-container--refreshing' : ''}`}
+        className={`feed-container${isRefreshing && !refreshUnderVeil ? ' feed-container--refreshing' : ''}`}
         ref={attachFeed}
         onScroll={handleScroll}
+        inert={veilElement !== null}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (
@@ -1478,7 +1552,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                 {tail === 'failed' ? 'Could not load more papers' : 'Loading more papers…'}
               </p>
               {tail === 'failed' && (
-                <Button ref={tailRetryRef} size="sm" onClick={() => loadMore()}>
+                <Button ref={tailRetryRef} size="sm" onClick={() => { if (loadMore()) { setNextPageRetrying(false); setAskedUnderLastVisit(showsLastVisit(lastVisit)); } }}>
                   <ArrowsClockwise size={16} aria-hidden="true" />
                   {'Try again'}
                 </Button>
@@ -1489,7 +1563,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   from the start would speak for waits that are not
                   happening. Under the veil there is no page to add to: the
                   landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed' })}</span>
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, lastVisit, asked: askedUnderLastVisit })}</span>
             </div>
           </div>
         )}
@@ -1507,10 +1581,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           land, the cards mount underneath and this recedes over them. Not a
           live region: it is inserted with its words, which a region does not
           speak, and the landmark's status announces the wait instead. */}
-      <AnimatePresence>
+      <AnimatePresence custom={veilHeadingRef} onExitComplete={veilLeft}>
         {atomVeil && (
           <motion.div
             key="atom-veil"
+            ref={setVeilElement}
             className="feed-empty feed-empty--veil"
             variants={prefersReducedMotion ? ATOM_VEIL_REDUCED_VARIANTS : ATOM_VEIL_VARIANTS}
             initial={false}

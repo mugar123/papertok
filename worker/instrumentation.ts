@@ -3,6 +3,7 @@ import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.ts';
 import handler from './index.ts';
 import { EmailDeliveryLedger as EmailLedger } from './email-delivery-ledger.ts';
+import { EmailSubscriptionStore as SubscriptionStore } from './email-subscription-store.ts';
 import { RequestQuotaLedger as QuotaLedger } from './request-quota-ledger.ts';
 import { PaperRewriteSession as RewriteSession } from './ai-rewrite-session.ts';
 import { runPaperHarvest } from './paper-harvest.ts';
@@ -18,6 +19,15 @@ export class EmailDeliveryLedger extends DurableObject<WorkerEnv> {
   }
   fetch(request: Request) { return trackErrors(this.env, this.ctx, 'durable_object', () => this.ledger.fetch(request)); }
   alarm() { return trackErrors(this.env, this.ctx, 'durable_object', () => this.ledger.alarm()); }
+}
+
+export class EmailSubscriptionStore extends DurableObject<WorkerEnv> {
+  private readonly store: SubscriptionStore;
+  constructor(ctx: DurableObjectState, env: WorkerEnv) {
+    super(ctx, env);
+    this.store = new SubscriptionStore(ctx);
+  }
+  fetch(request: Request) { return trackErrors(this.env, this.ctx, 'durable_object', () => this.store.fetch(request)); }
 }
 
 export class RequestQuotaLedger extends DurableObject<WorkerEnv> {

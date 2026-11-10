@@ -24,7 +24,7 @@ import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../src/utils/following.ts';
-import { handleHarvestArxiv } from './arxiv-api.ts';
+import { handleHarvestArxiv, nextOwnSeatSeconds, takeArxivSeat } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
@@ -210,6 +210,12 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
     url.searchParams.set('set', set);
     url.searchParams.set('from', from);
   }
+  // On the same beat as every export.arxiv.org call. A seat refused, or a
+  // ledger that cannot answer, is waited out like arXiv's own 503, until the
+  // next seat the harvest may take; without a ledger binding (local runs) the
+  // page goes unpaced.
+  const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, 'harvest');
+  if (!seat.accepted && !seat.code) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: nextOwnSeatSeconds(Date.now()) };
   const response = await fetchWithDeadline(url, { headers: { 'user-agent': USER_AGENT } }, OAI_TIMEOUT_MS);
   if (response.status === 503) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);

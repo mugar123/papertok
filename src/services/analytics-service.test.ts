@@ -7,6 +7,7 @@ import {
   ANALYTICS_CONSENT,
   ANALYTICS_CONSENT_COOKIE_KEY,
   ANALYTICS_CONSENT_KEY,
+  analyticsConsentState,
   inferAcquisitionChannel,
   identifyAnalyticsUser,
   markActivation,
@@ -532,7 +533,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; action?: string; view?: string; paper_id?: string; } & Record<string, unknown>) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -593,16 +594,62 @@ test('an event leaves with the normalized address and nothing that names a paper
   assert.equal(sent!.$set_once, undefined, 'no person properties travel');
 });
 
-test('preserves persistent identity and session fields without the raw user agent', () => {
+test('preserves persistent identity and session fields without the browser\'s own user agent', () => {
   const sent = sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.ENABLED);
   assert.equal(sent!.properties.token, 'phc_test');
   assert.equal(sent!.properties.distinct_id, 'browser-123');
   assert.equal(sent!.properties.$device_id, 'device-123');
   assert.equal(sent!.properties.$session_id, 'session-123');
   assert.equal(sent!.properties.$cookieless_mode, false);
-  assert.equal(sent!.properties.$raw_user_agent, undefined);
+  assert.equal(sent!.properties.$raw_user_agent, 'Chrome (Mac OS X)', 'no version is known, so none is written');
   assert.equal(sent!.properties.$host, 'papertok.app');
   assert.equal(sent!.uuid, '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d');
+});
+
+const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.91 Safari/537.36';
+const ANDROID_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36';
+
+test('the user agent that leaves is the browser, its major version and the system, and nothing of the original', () => {
+  const desktop = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: DESKTOP_USER_AGENT, $browser: 'Chrome', $browser_version: 130.0, $os: 'Mac OS X',
+  }), ANALYTICS_CONSENT.ENABLED);
+  const android = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: ANDROID_USER_AGENT, $browser: 'Chrome', $browser_version: 130, $os: 'Android', $device_type: 'Mobile',
+  }), ANALYTICS_CONSENT.ENABLED);
+  const safari = sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $browser: 'Mobile Safari', $browser_version: 18.1, $os: 'iOS',
+  }), ANALYTICS_CONSENT.ENABLED);
+
+  assert.equal(desktop!.properties.$raw_user_agent, 'Chrome/130 (Mac OS X)');
+  assert.equal(android!.properties.$raw_user_agent, 'Chrome/130 (Android)');
+  assert.equal(safari!.properties.$raw_user_agent, 'Mobile Safari/18 (iOS)', 'the major version only');
+  for (const [sent, original] of [[desktop, DESKTOP_USER_AGENT], [android, ANDROID_USER_AGENT]] as const) {
+    const payload = JSON.stringify(sent);
+    for (const part of [original, 'Mozilla', 'Macintosh', 'Intel', '10_15_7', 'AppleWebKit', 'KHTML', 'Gecko', '6723', 'Safari/', 'Linux', 'Android 14', 'SM-S918B', 'UP1A']) {
+      assert.ok(!payload.includes(part), `"${part}" left with the event`);
+    }
+  }
+});
+
+test('no user agent is invented without a browser name, and a hostile one is dropped', () => {
+  const userAgent = (properties: Record<string, unknown>) => sanitizeAnalyticsCapture(
+    postHogCapture('$pageview', { $browser: undefined, $os: undefined, ...properties }),
+    ANALYTICS_CONSENT.ENABLED,
+  )!.properties.$raw_user_agent;
+
+  assert.equal(userAgent({ $browser_version: 130, $os: 'Windows' }), undefined);
+  assert.equal(userAgent({ $browser: '', $os: 'Windows' }), undefined);
+  for (const browser of ['Chrome (evil)', 'Chrome\nX-Injected: 1', 'Mozilla/5.0', 'Mozilla', 'C'.repeat(65), 42, { name: 'Chrome' }]) {
+    assert.equal(userAgent({ $browser: browser, $browser_version: 5, $os: 'Linux' }), undefined, JSON.stringify(browser));
+  }
+  assert.equal(userAgent({ $browser: 'Firefox', $browser_version: '131.0; rv:131', $os: 'Windows) (Injected' }), 'Firefox/131');
+  assert.equal(userAgent({ $browser: 'Firefox', $browser_version: 'x131', $os: 'O'.repeat(65) }), 'Firefox');
+});
+
+test('no user agent leaves once analytics is off', () => {
+  assert.equal(sanitizeAnalyticsCapture(postHogCapture('$pageview', {
+    $raw_user_agent: DESKTOP_USER_AGENT, $browser: 'Chrome', $browser_version: 130, $os: 'Mac OS X',
+  }), ANALYTICS_CONSENT.DENIED), null);
 });
 
 test('a page view on a paper is filed under the pattern, without the paper\'s title', () => {
@@ -714,10 +761,10 @@ test('enables persistent analytics with curated events and no session recordings
   assert.equal(config?.capture_performance, false);
 });
 
-test('leaves an enabled SDK identity intact on reload and disables a previously enabled SDK on opt-out', () => {
+test('leaves an enabled SDK identity intact on reload and resets the SDK on opt-out whatever its stored opt-in says', () => {
   assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.ENABLED, true).calls, []);
   assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED, true).calls, [['reset', true], ['disable']]);
-  assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED).calls, []);
+  assert.deepEqual(startedPostHog(ANALYTICS_CONSENT.DENIED).calls, [['reset', true], ['disable']]);
 });
 
 test('preserves the account merge event while stripping automatic profile properties', () => {
@@ -775,6 +822,25 @@ test('time on a paper is whole seconds, and a tab left open counts four hours at
   assert.equal(sanitizeProductEventParams('paper_dwell', { seconds: 12.4 }).seconds, 12);
   assert.equal(sanitizeProductEventParams('reader_time', { seconds: 1_000_000 }).seconds, 4 * 60 * 60);
   assert.equal(sanitizeProductEventParams('reader_time', { seconds: -3 }).seconds, 0);
+});
+
+test('the paper viewer sends fixed labels and times, never the paper id, its title, URL or DOI', () => {
+  const leaks = { paper_id: '10.1101/2024.01.01.123456', paper_title: 'A private title', url: 'https://arxiv.org/pdf/2401.00001', doi: '10.1234/private', reason: 'anything' };
+  assert.deepEqual(sanitizeProductEventParams('viewer_open', { ...leaks }, ANALYTICS_CONSENT.ENABLED), {});
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1234.6, ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'external_link', text_status: 'failed', pdf_issue: 'relay_failed', text_source: 'europepmc', duration_ms: 1235 });
+  assert.deepEqual(sanitizeProductEventParams('viewer_content', {
+    content: 'loading', text_status: 'partial', pdf_issue: 'https://example.com', text_source: 'openalex', duration_ms: 'soon',
+  }), {});
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', {
+    content: 'loading', seconds: 19.4, text_seconds: 15.2, ...leaks,
+  }, ANALYTICS_CONSENT.ENABLED), { content: 'loading', seconds: 19, text_seconds: 15 });
+  assert.deepEqual(sanitizeProductEventParams('viewer_time', { content: 'pdf' }), {});
+
+  const capture = postHogCapture('viewer_content', { paper_id: 'W2741809807' });
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ENABLED)?.event, 'viewer_content');
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
 });
 
 test('preserves previous refusals of persistent tracking and restores previous detailed preferences', () => {
@@ -863,6 +929,28 @@ test('identifies accounts by UID only, resets between accounts, and ignores stal
     trackProductEvent('paper_open', { surface: 'feed' }),
   ]);
   assert.deepEqual(capturedAccounts, ['next-account', null], 'events follow the essential identity coordinator across account changes');
+
+  capturedAccounts.length = 0;
+  const before = analyticsConsentState();
+  const guarded = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === before);
+  await setAnalyticsConsent('denied');
+  await setAnalyticsConsent('enabled');
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), before, 'off and on again is a different session');
+  assert.equal(await guarded, false);
+  assert.deepEqual(capturedAccounts, [], 'an event queued before the withdrawal is not captured after it');
+
+  // Another tab turns analytics off and on again; this tab has not had its storage events yet.
+  const stable = analyticsConsentState();
+  assert.equal(analyticsConsentState(), stable, 'reading the state does not move it');
+  const beforeOtherTab = analyticsConsentState();
+  const fromOtherTab = trackProductEvent('paper_open', { surface: 'feed' }, () => analyticsConsentState() === beforeOtherTab);
+  persistAnalyticsConsent('denied', storage);
+  persistAnalyticsConsent('enabled', storage);
+  assert.equal(readAnalyticsConsent(), 'enabled');
+  assert.notEqual(analyticsConsentState(), beforeOtherTab, 'a round trip in another tab is a different session before this tab hears of it');
+  assert.equal(await fromOtherTab, false);
+  assert.deepEqual(capturedAccounts, []);
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

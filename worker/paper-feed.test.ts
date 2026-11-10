@@ -1,6 +1,7 @@
 import type { PaperFollowMatch } from '../src/models/paper.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
@@ -221,7 +222,10 @@ const SLOW_LIKE = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`;
 
 test('a liked paper arXiv answers after 2 s is still filed by the lookup after the page, while an inline lookup keeps its 2 s', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // 1 s into a period that is not public, so the Worker's lookups take a seat
+  // at once, whatever the wall clock says.
+  const period = ARXIV_PACE_PERIOD_MS;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: (2 * Math.floor(Date.now() / (2 * period)) + 1) * period + 1_000 });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
@@ -271,11 +275,27 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   // seat on arXiv's beat, then up to ARXIV_UPSTREAM_TIMEOUT_MS for arXiv. Here
   // the cache read takes 0.3 s (in production, that read and the beat's
   // ledger round trips), the seat comes 0.1 s inside the longest wait, and
-  // arXiv answers 0.1 s inside its deadline.
+  // arXiv answers 0.1 s inside its deadline. The two searches ahead of it ask
+  // 0.1 s into a public period: the first goes out then, and the ledger counts
+  // it as sent 0.25 s later, for its answer's way back. The second takes the
+  // next (odd) seat once it begins, 3 s after that. The Worker's calls send
+  // only at once, so the lookup, which finds the next public seat too close to
+  // the second search, goes out when the odd seat after it begins.
   const cacheReadMs = 300;
   const period = ARXIV_PACE_PERIOD_MS;
-  const seatAsked = Math.floor(Date.now() / period) * period + 2 * period - ARXIV_PACE_MAX_WAIT_MS + 100;
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: seatAsked - 2 * cacheReadMs });
+  const nextPeriod = Math.floor(Date.now() / period) + 1;
+  const searchesAsk = (nextPeriod + (nextPeriod % 2)) * period + 100;
+  const seatAsked = searchesAsk + 3 * period - ARXIV_PACE_MAX_WAIT_MS;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: searchesAsk - cacheReadMs });
+  // The ledger hashes its subjects with `crypto.subtle`, which answers from a
+  // thread pool after however much real time the machine takes. The clock here
+  // is mocked and steps on, so on a slow runner the seat came late, its call
+  // was dropped and arXiv was asked twice. Hashed on the event loop, the ledger
+  // answers within the steps below, as it is meant to take no time here.
+  t.mock.method(crypto.subtle, 'digest', async (...[, data]: Parameters<typeof crypto.subtle.digest>) => {
+    const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data);
+    return new Uint8Array(createHash('sha256').update(bytes).digest()).buffer;
+  });
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
   let arxivAsked = 0;
@@ -296,7 +316,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
     else (globalThis as TestGlobals).caches = realCaches;
   });
-  // The ledger hashes subjects off the event loop; let it answer between ticks.
+  // Let the ledger answer between ticks.
   const flush = async () => {
     for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => setImmediate(resolve));
   };
@@ -324,6 +344,12 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     await new Promise(resolve => setImmediate(resolve));
   }
   await flush();
+  // In steps, so the second search wakes for its seat when it begins, as on
+  // the real clock: a caller woken past its longest wait does not send.
+  for (let elapsed = 0; elapsed < seatAsked - cacheReadMs - searchesAsk; elapsed += 100) {
+    t.mock.timers.tick(100);
+    await flush();
+  }
 
   const afterAnswer: Array<Promise<unknown>> = [];
   const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });

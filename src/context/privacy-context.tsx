@@ -5,7 +5,7 @@ import { AnalyticsContext } from './contexts.ts';
 import { loadOptionalModule } from '../utils/module-load-recovery.ts';
 import {
   ANALYTICS_CONSENT, ANALYTICS_CONSENT_KEY, readAnalyticsConsent, identifyAnalyticsUser,
-  removeLegacyGoogleAnalyticsCookies, setAnalyticsConsent,
+  clearStoredIdentityWhileAnalyticsOff, removeLegacyGoogleAnalyticsCookies, setAnalyticsConsent,
   trackProductEvent, markActivation as markAnalyticsActivation,
   type ProductAnalyticsEvent,
 } from '../services/analytics-service.ts';
@@ -50,7 +50,10 @@ export function PrivacyProvider({ children }: PropsWithChildren) {
 
 
 
-  useEffect(() => { removeLegacyGoogleAnalyticsCookies(); }, []);
+  useEffect(() => {
+    removeLegacyGoogleAnalyticsCookies();
+    clearStoredIdentityWhileAnalyticsOff();
+  }, []);
 
   const updateConsent = useCallback(async (value: string) => {
     if (!(Object.values(ANALYTICS_CONSENT) as string[]).includes(value)) return false;
@@ -71,7 +74,7 @@ export function PrivacyProvider({ children }: PropsWithChildren) {
     return () => window.removeEventListener('storage', syncPreference);
   }, [updateConsent]);
 
-  const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
+  const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>, stillValid?: () => boolean) => trackProductEvent(eventName, params, stillValid), []);
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(

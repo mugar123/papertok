@@ -96,14 +96,25 @@ export default function SaveToListModal({
   surface,
   onClose,
   embedded = false,
+  titleId,
   closeGuardRef,
+  finalFocus,
 }: {
   paper: Paper;
   /** The surface of the card that opened the picker, which its save reports (forYouCardNotable). */
   surface?: string;
   onClose: () => void;
   embedded?: boolean;
+  /** The title's id, for a host sheet that labels itself with it (embedded). */
+  titleId?: string;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
+  /**
+   * Asked on close where focus goes, given the closing window: an element,
+   * true for the button that opened the window, or false to leave focus
+   * alone. The lists page needs it when Save took the paper out of the open
+   * list and that button leaves with its row.
+   */
+  finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean;
 }) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -418,9 +429,9 @@ export default function SaveToListModal({
    * the window can go. Flipping `open` is all it takes: Base UI marks the
    * popup `data-closed`, waits for `dialogOut` to finish (or for nothing,
    * under `prefers-reduced-motion`, where the stylesheet sets the animation
-   * to `none`), hands focus back to the button that opened the window, and
-   * only then reports `onOpenChangeComplete(false)` — the one place the
-   * parent is told.
+   * to `none`), hands focus back to the button that opened the window (or to
+   * `finalFocus`), and only then reports `onOpenChangeComplete(false)` — the
+   * one place the parent is told.
    */
   const closeDialog = () => (embedded ? onClose() : setOpen(false));
 
@@ -705,8 +716,9 @@ export default function SaveToListModal({
     if (from == null || !sheet || reduceMotion) return;
     animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
   }, [creatingList, reduceMotion]);
+  const finalFocusFromSheet = finalFocus && (() => finalFocus(sheetOf() ?? null));
   const frame = (children: ReactNode) => (isPhone ? (
-    <DrawerContent className="save-modal--sheet">
+    <DrawerContent className="save-modal--sheet" finalFocus={finalFocusFromSheet}>
       {children}
     </DrawerContent>
   ) : (
@@ -715,6 +727,7 @@ export default function SaveToListModal({
       overlayClassName="save-modal-scrim"
       showClose={false}
       closeLabel={copy.close}
+      finalFocus={finalFocusFromSheet}
     >
       {children}
     </DialogContent>
@@ -725,7 +738,7 @@ export default function SaveToListModal({
           {isPhone && !embedded && <DrawerHandle />}
           {/* No header: the X alone, in the corner. The title still names the
               window for assistive tech. */}
-          <Title className="visually-hidden">{copy.title}</Title>
+          <Title id={titleId} className="visually-hidden">{copy.title}</Title>
           {/* The sections morph: the one leaving blurs out over the one
               arriving (`popLayout` lifts it out of the flow, so the window's
               height already reads the new one), in the direction of travel —
