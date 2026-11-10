@@ -2,12 +2,14 @@ import type { MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { PaperMenuAction } from './paper-menu.tsx';
 import { CheckCircle, DownloadSimple, Eye, Info, Prohibit } from '@phosphor-icons/react';
+import { ACCOUNT_DISMISSAL_HINT } from '../../utils/feed-dismissal.ts';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
 
 export const shareMethod = (method: string) => (method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other');
 
-export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotInterested }: {
-  paper: Paper; isRead: boolean; onAbout: () => void; onToggleRead: () => void; onNotInterested: (event: MouseEvent) => void;
+/** `notInterestedHint` is the feed's (feed-dismissal.ts); without one, the account's. */
+export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotInterested, notInterestedHint = ACCOUNT_DISMISSAL_HINT }: {
+  paper: Paper; isRead: boolean; onAbout: () => void; onToggleRead: () => void; onNotInterested: (event: MouseEvent) => void; notInterestedHint?: string;
 }): PaperMenuAction[] {
   return [
     { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: onAbout },
@@ -18,7 +20,7 @@ export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotIntere
       Icon: isRead ? CheckCircle : Eye,
       onSelect: onToggleRead,
     },
-    { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: onNotInterested },
+    { id: 'skip', label: 'Not interested', hint: notInterestedHint, Icon: Prohibit, onSelect: onNotInterested },
     { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
     { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
   ];

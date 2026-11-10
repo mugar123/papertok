@@ -28,8 +28,19 @@ const STORE_TIMEOUT_MS = 3_500;
 // and then shows the error, about 10 s after the token.
 const FIRST_SCREEN_TIMEOUT_MS = 10_000;
 
+/** A requested follow whose lane has not finished its first harvest, as the request named it. */
+export interface LoadingFollow { type: string; canonicalId: string }
+
 export interface CorpusPageRequest {
   categories?: string[];
+  /** Whole areas of the app's taxonomy, each served as its own lane. */
+  areas?: string[];
+  /**
+   * Serve exactly the lanes named, with the reader's liked and rejected papers
+   * left on the page: a custom feed. Its answer says which follows are still
+   * loading. A request that names nothing servable is refused (LANES_REQUIRED).
+   */
+  exact?: boolean;
   /**
    * The reader's interest groups (planInterestGroups), each ranked by its own
    * examples. With them, `categories` is their union and `positiveIds` names
@@ -42,6 +53,7 @@ export interface CorpusPageRequest {
   excludedIds?: string[];
   page: number;
   pageSize: number;
+  /** `recent` unless named; a custom feed asks for `daily` or `relevance` (corpusRequestOf). */
   order?: string;
   // The papers the reader has seen (`feedSeenIds`), sent with `skipsSeen`: a
   // Worker that skips them answers with the next papers of the reader's
@@ -92,11 +104,20 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown } | null;
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown } | null;
   // The Worker always answers a list, empty when nothing matches.
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
-  return { papers, skipsSeen: answer?.skipsSeen === true };
+  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading) };
+}
+
+/** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
+function loadingFollowsOf(value: unknown): LoadingFollow[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown) => {
+    const { type, canonicalId } = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+    return typeof type === 'string' && typeof canonicalId === 'string' ? [{ type, canonicalId }] : [];
+  });
 }
 
 /**
@@ -130,11 +151,17 @@ function cutFollowText<T>(value: T, max: number): T {
  * before it page by number. A request asks for it explicitly, so a Worker
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
+ * An `exact` request's answer says which of its follows are still `loading`;
+ * a Worker that does not say, none.
  */
-export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[] }>;
+export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
+export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
+    ...(areas.length ? { areas } : {}),
+    ...(exact ? { exact } : {}),
     // Only the follows the Worker reads travel (`servedFollows`): the first
     // MAX_FOLLOWED_JOURNALS journals and FEED_MAX_FOLLOWS other follows with a
     // lane. A topic follow that is one of the app's categories has none; it is asked for as that category. When no follow
@@ -185,7 +212,8 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       body.follows.pop();
     } else break;
   }
-  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  return exact ? answer : answer.then(({ papers, skipsSeen }) => ({ papers, skipsSeen }));
 }
 
 /**

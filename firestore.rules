@@ -302,6 +302,15 @@ service cloud.firestore {
           && request.resource.data.shownVersion.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}([.][0-9]{1,4})?');
       }
 
+      // Every custom feed this account defines, at most eight, in one document.
+      match /settings/customFeeds {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['feeds', 'updatedAt'])
+          && request.resource.data.feeds is list
+          && request.resource.data.feeds.size() <= 8;
+      }
+
       // `publicShareId` is the pointer from a private list to its public copy,
       // and after F11 only the Worker may move it: it sets the field in the same
       // commit that creates both public documents, and clears it in the same

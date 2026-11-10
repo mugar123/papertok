@@ -5,15 +5,20 @@ import { Menu } from '@base-ui/react/menu';
 import { useReducedMotion } from 'framer-motion';
 import { animateSize, EASE_OUT } from '../../utils/motion-curves.ts';
 import { ruleTransform } from '../../utils/nav-rule.ts';
+import { fadingEdges, lineScrollEvent, pressedStillLine, revealScrollLeft } from '../../utils/scroll-line.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
+import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
+import { useFeedTabs } from '../../hooks/use-feed-tabs.ts';
 import type { Icon } from '@phosphor-icons/react';
-import type { FeedTab, FeedTabKey } from '../../utils/feed-tabs.ts';
-import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
-import { FEED_TABS } from '../../utils/feed-tabs.ts';
+import type { FeedTabEntry, FeedTabKey } from '../../utils/feed-tabs.ts';
+import { CaretDown, Check, MagnifyingGlass, Plus, Stack, UserCheck } from '@phosphor-icons/react';
+import { customFeedIdFromPath } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
 import RailMenu from '../feed/rail-menu.tsx';
+import FeedTabMenu from '../custom-feeds/feed-tab-menu.tsx';
+import { holdOutcome } from '../../utils/feed-tab-menu.ts';
 import { DrawerClose } from '../ui/drawer.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
 
@@ -33,13 +38,24 @@ import './navbar.css';
  *
  * Now it is one element positioned with a transform the CSS transition
  * animates on the compositor, so it keeps moving whatever the main thread is
- * doing. This hook measures the active link — after every render, and again
- * when the row resizes (the active link is semibold, so activating one changes
- * its width and shifts its neighbours) — and returns the transform. The first
+ * doing. This hook measures the active link — when the active tab or the
+ * list of tabs changes, and again when the row or any link resizes (the
+ * active link is semibold, so activating one changes its width and shifts its
+ * neighbours) — and returns the transform. The first
  * measurement is applied without a transition, so the rule does not slide in
  * from the row's left edge on load.
+ *
+ * The row scrolls sideways once the reader's feeds no longer fit, and the rule
+ * is its child, so it scrolls with the tabs: the transform is in the row's
+ * content coordinates, which is why the row's left edge is taken back by its
+ * `scrollLeft`. Scrolling then changes nothing this measures, and the rule
+ * needs no re-measuring on scroll. The tabs changing (a feed created, renamed,
+ * moved or deleted) re-runs the effect, so the new links are observed too.
+ * A feed's tab is its menu's trigger rendered as the link itself
+ * (feed-tab-menu.tsx), so the line holds links alone and each is measured by
+ * its own box.
  */
-function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string, activeKey: string) {
+function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string, tabs: readonly FeedTabEntry[]) {
   const [rule, setRule] = useState({ transform: '', measured: false });
 
   useLayoutEffect(() => {
@@ -49,13 +65,13 @@ function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string,
       // By `data-tab` rather than `.active`: the hook is told which tab to
       // measure, so the caller owns that decision and this cannot drift from
       // the class the router appends.
-      const link = tab ? row.querySelector(`.navbar-link[data-tab="${tab}"]`) : null;
+      const link = tab ? tabLink(row, tab) : null;
       if (!link) {
         setRule(current => (current.transform ? { ...current, transform: '' } : current));
         return;
       }
       const inset = parseFloat(getComputedStyle(link).paddingLeft) || 0;
-      const transform = ruleTransform(link.getBoundingClientRect(), row.getBoundingClientRect().left, inset);
+      const transform = ruleTransform(link.getBoundingClientRect(), row.getBoundingClientRect().left - row.scrollLeft, inset);
       setRule(current => (current.transform === transform && current.measured ? current : { transform, measured: true }));
     };
     measure();
@@ -64,9 +80,122 @@ function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string,
     observer.observe(row);
     row.querySelectorAll('.navbar-link').forEach(link => observer.observe(link));
     return () => observer.disconnect();
-  }, [rowRef, tab, activeKey]);
+  }, [rowRef, tab, tabs]);
 
   return rule;
+}
+
+function tabLink(row: HTMLElement, tab: string) {
+  return row.querySelector<HTMLElement>(`.navbar-link[data-tab="${CSS.escape(tab)}"]`);
+}
+
+/**
+ * Which ends of the tab line have more tabs beyond them. navbar.css fades
+ * those ends, and only those: an end with nothing past it stays sharp.
+ * Re-read on scroll and whenever the row or a tab changes size.
+ */
+function useScrollLineEdges(rowRef: RefObject<HTMLDivElement | null>, tabs: readonly FeedTabEntry[]) {
+  const [edges, setEdges] = useState({ start: false, end: false });
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return undefined;
+    const measure = () => {
+      const next = fadingEdges(row.scrollLeft, row.scrollWidth, row.clientWidth);
+      setEdges(current => (current.start === next.start && current.end === next.end ? current : next));
+    };
+    measure();
+    row.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(row);
+    row.querySelectorAll('.navbar-link').forEach(link => observer?.observe(link));
+    return () => {
+      row.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [rowRef, tabs]);
+
+  return edges;
+}
+
+/**
+ * The time of the tab line's last `scroll` event, so a press can tell whether
+ * it landed on a line still gliding (see `pressedStillLine`).
+ *
+ * The line's own reveal of the current tab (`useRevealActiveTab`) is not the
+ * line gliding under a finger: it records the `scrollLeft` it heads for in
+ * `revealToRef`, and its events are not counted until the line gets there
+ * (`lineScrollEvent`) or stops (`scrollend`). A finger that touches the line
+ * meanwhile takes it over, so from that press on every event counts again.
+ */
+function useLineScrollClock(rowRef: RefObject<HTMLDivElement | null>) {
+  const lastScrollAtRef = useRef(-Infinity);
+  const revealToRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return undefined;
+    const tick = () => {
+      const event = lineScrollEvent(revealToRef.current, row.scrollLeft);
+      revealToRef.current = event.revealTo;
+      if (event.moved) lastScrollAtRef.current = Date.now();
+    };
+    const endReveal = () => { revealToRef.current = null; };
+    row.addEventListener('scroll', tick, { passive: true });
+    row.addEventListener('scrollend', endReveal);
+    row.addEventListener('pointerdown', endReveal, { capture: true, passive: true });
+    return () => {
+      row.removeEventListener('scroll', tick);
+      row.removeEventListener('scrollend', endReveal);
+      row.removeEventListener('pointerdown', endReveal, { capture: true });
+    };
+  }, [rowRef]);
+
+  return { lastScrollAtRef, revealToRef };
+}
+
+/**
+ * Brings the current tab into view inside the line when it changes, when it
+ * first appears (a feed's tab arrives after its page on a cold load), and when
+ * the tabs change around it so that it moves within the line (a feed before it
+ * renamed, created, moved or deleted): the position it was revealed at is kept
+ * with it. A tab that did not move is left where the reader scrolled it.
+ *
+ * Not `scrollIntoView`: that scrolls every scrollable ancestor too, and the
+ * page under a fixed bar must not move because a tab changed. This scrolls
+ * the line alone, by the least distance, keeping the fade's width clear
+ * (`scroll-padding-inline`, the same space keyboard focus keeps), and without
+ * motion on the first placement or when the reader asks for reduced motion.
+ * Where it heads goes in `revealToRef`, so the scroll clock knows the events
+ * that follow are the line's own.
+ */
+function useRevealActiveTab(rowRef: RefObject<HTMLDivElement | null>, tab: string, tabs: readonly FeedTabEntry[], revealToRef: RefObject<number | null>) {
+  const reduceMotion = useReducedMotion();
+  const revealedRef = useRef<{ tab: string; left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    if (!tab) {
+      if (revealedRef.current) revealedRef.current = { tab: '', left: 0, width: 0 };
+      return;
+    }
+    const link = tabLink(row, tab);
+    if (!link) return;
+    const rect = link.getBoundingClientRect();
+    const origin = row.getBoundingClientRect().left - row.scrollLeft;
+    const itemLeft = rect.left - origin;
+    const last = revealedRef.current;
+    if (last && last.tab === tab && Math.abs(last.left - itemLeft) < 1 && Math.abs(last.width - rect.width) < 1) return;
+    const first = last === null;
+    revealedRef.current = { tab, left: itemLeft, width: rect.width };
+    const padding = parseFloat(getComputedStyle(row).scrollPaddingLeft) || 0;
+    const left = revealScrollLeft(itemLeft, rect.width, row.scrollLeft, row.clientWidth, padding);
+    if (Math.abs(left - row.scrollLeft) < 1) return;
+    // Where the line can actually get to, or the reveal would never arrive.
+    revealToRef.current = Math.min(left, row.scrollWidth - row.clientWidth);
+    row.scrollTo({ left, behavior: first || reduceMotion ? 'instant' : 'smooth' });
+  }, [rowRef, tab, tabs, reduceMotion, revealToRef]);
 }
 
 /**
@@ -82,16 +211,35 @@ let navbarHasArrived = false;
 
 const TAB_ICONS: Record<FeedTabKey, Icon> = { home: Stack, following: UserCheck };
 
-function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRelease }: {
-  tab: FeedTab;
-  active: boolean;
-  onTabClick: (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => void;
-  onTabPress: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
-  onTabLift: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
-  onTabRelease: () => void;
-}) {
+const isFixedTab = (key: string): key is FeedTabKey => Object.hasOwn(TAB_ICONS, key);
+
+/**
+ * A tab's name. The fixed tabs carry their icon; a feed's tab is its name
+ * alone, as the reader wrote it: in its own direction (`dir="auto"` isolates
+ * a right-to-left name from the bar), cut with an ellipsis by navbar.css when
+ * long. The text stays whole, so the accessible name does.
+ */
+function TabName({ tab, iconSize }: { tab: FeedTabEntry; iconSize: number }) {
+  if (!isFixedTab(tab.key)) return <span className="navbar-link-label" dir="auto">{tab.label}</span>;
   const TabIcon = TAB_ICONS[tab.key];
-  return (
+  return <><TabIcon size={iconSize} aria-hidden="true" />{tab.label}</>;
+}
+
+/**
+ * A tab of the line. A feed's tab is also its menu's trigger (FeedTabMenu),
+ * rendered as this same link, so nothing wraps it in the line.
+ */
+function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRelease, onTabHold, onAnnounce }: {
+  tab: FeedTabEntry;
+  active: boolean;
+  onTabClick: (event: MouseEvent<HTMLAnchorElement>, tab: FeedTabEntry) => void;
+  onTabPress: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTabEntry) => void;
+  onTabLift: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTabEntry) => void;
+  onTabRelease: () => void;
+  onTabHold: (tab: FeedTabEntry) => ReturnType<typeof holdOutcome>;
+  onAnnounce: (text: string) => void;
+}) {
+  const link = (
     <NavLink
       to={tab.path}
       end
@@ -102,13 +250,15 @@ function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRele
       onPointerUp={(event) => onTabLift(event, tab)}
       onPointerCancel={onTabRelease}
     >
-      <TabIcon size={15} aria-hidden="true" />
-      {tab.label}
+      <TabName tab={tab} iconSize={15} />
     </NavLink>
   );
+  const feedId = customFeedIdFromPath(tab.path);
+  if (!feedId) return link;
+  return <FeedTabMenu feedId={feedId} name={tab.label} link={link} onHold={() => onTabHold(tab)} onAnnounce={onAnnounce} />;
 }
 
-function PagePicker({ search }: { search: string }) {
+function PagePicker({ search, tabs }: { search: string; tabs: readonly FeedTabEntry[] }) {
   const searchRow = `/search${search}`;
   return (
     <RailMenu
@@ -123,14 +273,11 @@ function PagePicker({ search }: { search: string }) {
       )}
       menu={(
         <>
-          {FEED_TABS.map(({ key, path, label }) => {
-            const TabIcon = TAB_ICONS[key];
-            return (
-              <Menu.LinkItem key={key} className="pc-share-menu-item" closeOnClick render={<Link to={path} />}>
-                <TabIcon size={16} aria-hidden="true" /> {label}
-              </Menu.LinkItem>
-            );
-          })}
+          {tabs.map(tab => (
+            <Menu.LinkItem key={tab.key} className="pc-share-menu-item" closeOnClick render={<Link to={tab.path} />}>
+              <TabName tab={tab} iconSize={16} />
+            </Menu.LinkItem>
+          ))}
           <Menu.LinkItem className="pc-share-menu-item navbar-page-row" closeOnClick aria-current="page" render={<Link to={searchRow} />}>
             <MagnifyingGlass size={16} aria-hidden="true" /> {'Search'}
             <Check size={15} aria-hidden="true" className="navbar-page-check" />
@@ -139,16 +286,13 @@ function PagePicker({ search }: { search: string }) {
       )}
       sheet={(
         <>
-          {FEED_TABS.map(({ key, path, label }) => {
-            const TabIcon = TAB_ICONS[key];
-            return (
-              <li key={key}>
-                <Link to={path} className="pc-share-row">
-                  <TabIcon size={20} aria-hidden="true" /> {label}
-                </Link>
-              </li>
-            );
-          })}
+          {tabs.map(tab => (
+            <li key={tab.key}>
+              <Link to={tab.path} className="pc-share-row">
+                <TabName tab={tab} iconSize={20} />
+              </Link>
+            </li>
+          ))}
           <li>
             <DrawerClose className="pc-share-row navbar-page-row" aria-current="page">
               <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
@@ -195,6 +339,10 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   };
   const { setFeedMode, refreshFeed, isRefreshing } = useFeed();
   const followingUpdates = useFollowingUpdates();
+  const { openFeedEditor, requestRefresh } = useCustomFeeds();
+  // The fixed tabs, then the reader's feeds once they have loaded; until then
+  // the line holds the fixed tabs and the "+".
+  const tabs = useFeedTabs();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -233,8 +381,10 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   // been marked current while this file claimed it was not. If a second feed
   // mode is ever added, this line and that `aria-current` have to be revisited
   // together: a `className` callback suppresses the appended class, but nothing
-  // in NavLink's plain API gates `aria-current`.
-  const activeTab = FEED_TABS.find(tab => tab.path === pathname)?.key ?? '';
+  // in NavLink's plain API gates `aria-current`. The reader's own feeds are
+  // tabs in the same list, and the same holds for them: a feed's tab is
+  // current when the pathname is its `/feeds/<id>`.
+  const activeTab = tabs.find(tab => tab.path === pathname)?.key ?? '';
   const linksRef = useRef<HTMLDivElement | null>(null);
   /**
    * The press is remembered only to decide, on `pointerup`, whether the finger
@@ -253,22 +403,33 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
    * is, so the mark slowed, sped up and eased again — the glitch the reader
    * saw. One measurement, one curve.
    */
-  const touchRef = useRef<{ tab: FeedTabKey; x: number; y: number; at: number } | null>(null);
-  const handledRef = useRef(0);
-  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
+  const touchRef = useRef<{ tab: string; x: number; y: number; at: number; scrollLeft: number } | null>(null);
+  const handledRef = useRef<{ tab: string; at: number } | null>(null);
+  const { lastScrollAtRef: lastLineScrollAtRef, revealToRef } = useLineScrollClock(linksRef);
+  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTabEntry) => {
     if (event.button !== 0 || event.pointerType !== 'touch') return;
-    touchRef.current = { tab: tab.key, x: event.clientX, y: event.clientY, at: Date.now() };
+    const scrollLeft = linksRef.current?.scrollLeft ?? 0;
+    touchRef.current = { tab: tab.key, x: event.clientX, y: event.clientY, at: Date.now(), scrollLeft };
   };
   /** For you starts from its top mode; pressing the tab you are already on reloads its feed. */
-  const chooseTab = (tab: FeedTab) => {
+  const chooseTab = (tab: FeedTabEntry) => {
     if (tab.key === 'home') setFeedMode('top');
     if (pathname !== tab.path) return;
-    if (tab.key === 'following') void followingUpdates.refresh();
+    const customFeedId = customFeedIdFromPath(tab.path);
+    if (customFeedId) requestRefresh(customFeedId);
+    else if (tab.key === 'following') void followingUpdates.refresh();
     else if (!isRefreshing) void refreshFeed();
   };
   const releasePress = () => {
     touchRef.current = null;
   };
+  /** Whether the line stayed still from a press until now (`pressedStillLine`). */
+  const pressedStillSince = (start: { at: number; scrollLeft: number }) => pressedStillLine({
+    pressedAt: start.at,
+    lastScrollAt: lastLineScrollAtRef.current,
+    scrollLeftAtPress: start.scrollLeft,
+    scrollLeftAtLift: linksRef.current?.scrollLeft ?? 0,
+  });
   /**
    * A finger that lifts on the tab it pressed navigates there, without waiting
    * for the click.
@@ -287,21 +448,50 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
    * within 12px and 1.5s of pressing it, so a drag that starts on the bar is
    * not a navigation. `handledRef` then swallows the click if the system does
    * synthesise one, or react-router would push the same route twice and Back
-   * would need two presses.
+   * would need two presses. It holds the tab it was set for, and swallows a
+   * click on that tab only: a tap on another tab right after is its own.
+   *
+   * The tabs scroll sideways once the reader's feeds fill the line, and two
+   * presses on it are not taps. A finger that drags the line: the browser
+   * takes the pan and sends `pointercancel`, which forgets the press, and a
+   * slower drag still fails the 12px test before it lifts. A finger that
+   * touches the line while it still glides from a fling, to stop it: no pan
+   * starts, so no `pointercancel` comes, and the browser suppresses the click
+   * instead. `pressedStillLine` (utils/scroll-line.ts) refuses that press, and
+   * any press during which the line moved, so it neither navigates nor reloads
+   * the tab under the finger; the click is swallowed too, in case one comes.
+   * A tap on a still line is unchanged.
    */
-  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
+  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTabEntry) => {
     const start = touchRef.current;
     touchRef.current = null;
     if (event.pointerType !== 'touch' || !start || start.tab !== tab.key) return;
     if (Date.now() - start.at > 1500) return;
     if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
-    handledRef.current = Date.now();
+    handledRef.current = { tab: tab.key, at: Date.now() };
+    if (!pressedStillSince(start)) return;
     chooseTab(tab);
     if (pathname !== tab.path) void navigate(tab.path);
   };
-  const handleTabClick = (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => {
-    if (Date.now() - handledRef.current <= 1500) {
-      handledRef.current = 0;
+  /**
+   * A feed's tab menu (FeedTabMenu) asks here whenever it opens. When a finger
+   * is pressing that tab, however the menu came to open, the press ends there,
+   * so the finger lifting neither chooses nor reloads the tab, and a click
+   * that follows is swallowed as after a tap; a press during which the line
+   * moved is refused, as such a tap is (`holdOutcome`).
+   */
+  const holdTab = (tab: FeedTabEntry) => {
+    const start = touchRef.current;
+    const outcome = holdOutcome(start?.tab ?? null, tab.key, () => start !== null && pressedStillSince(start));
+    if (outcome === 'none') return outcome;
+    touchRef.current = null;
+    handledRef.current = { tab: tab.key, at: Date.now() };
+    return outcome;
+  };
+  const handleTabClick = (event: MouseEvent<HTMLAnchorElement>, tab: FeedTabEntry) => {
+    const handled = handledRef.current;
+    if (handled?.tab === tab.key && Date.now() - handled.at <= 1500) {
+      handledRef.current = null;
       event.preventDefault();
       return;
     }
@@ -309,7 +499,15 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
     if (pathname === tab.path) event.preventDefault();
     chooseTab(tab);
   };
-  const rule = useActiveTabRule(linksRef, activeTab, activeTab);
+  // A move made from a tab's menu, said once it is saved; numbered so the same
+  // words said twice change the status line and are announced again.
+  const [moved, setMoved] = useState({ text: '', n: 0 });
+  const announceMove = useCallback((text: string) => {
+    setMoved(current => ({ text, n: current.n + 1 }));
+  }, []);
+  const rule = useActiveTabRule(linksRef, activeTab, tabs);
+  const edges = useScrollLineEdges(linksRef, tabs);
+  useRevealActiveTab(linksRef, activeTab, tabs, revealToRef);
 
   return (
     <nav
@@ -338,7 +536,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
           <span className="navbar-brand-word">Paper<span>Tok</span></span>
         </button>
 
-        {onSearchPage && <PagePicker search={location.search} />}
+        {onSearchPage && <PagePicker search={location.search} tabs={tabs} />}
 
         {/* Open, the bar holds the state it put the reader in. Without it you
             clicked a bar and a sheet appeared somewhere else, with nothing
@@ -361,7 +559,12 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
           </button>
         )}
 
-        <div className="navbar-links" ref={linksRef}>
+        <div
+          className="navbar-links"
+          ref={linksRef}
+          data-fade-start={edges.start || undefined}
+          data-fade-end={edges.end || undefined}
+        >
           <span
             className={`navbar-link-rule${rule.measured ? ' is-measured' : ''}`}
             aria-hidden="true"
@@ -384,7 +587,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
               nothing nested under /feed could ever mark this tab. React Router
               runs this onClick before its own and navigates unless it was
               defaultPrevented, so the mode reset rides along unchanged. */}
-          {FEED_TABS.map(tab => (
+          {tabs.map(tab => (
             <FeedTabLink
               key={tab.key}
               tab={tab}
@@ -393,8 +596,21 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
               onTabPress={pressTab}
               onTabLift={liftTab}
               onTabRelease={releasePress}
+              onTabHold={holdTab}
+              onAnnounce={announceMove}
             />
           ))}
+          {/* The last item of the line. Never current, so the rule never
+              comes here (it has no `data-tab`). */}
+          <button
+            type="button"
+            className="navbar-link navbar-link--add"
+            aria-label={'New feed'}
+            title={'New feed'}
+            onClick={() => openFeedEditor()}
+          >
+            <Plus size={15} aria-hidden="true" />
+          </button>
         </div>
 
         <div className="navbar-right">
@@ -417,6 +633,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
           )}
         </div>
       </div>
+      {/* Present before the first move: a live region speaks only when its
+          text changes. Every other announcement ends in a no-break space. */}
+      <p className="visually-hidden" role="status">{moved.n % 2 ? `${moved.text}\u00A0` : moved.text}</p>
     </nav>
   );
 }

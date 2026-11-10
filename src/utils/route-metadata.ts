@@ -2,6 +2,8 @@
 // (only for routes that do not title themselves) and the route-change
 // announcement for screen readers (all mapped routes).
 
+import { customFeedIdFromPath } from './feed-tabs.ts'
+
 const LABELS: Record<string, string> = {
   '/feed': 'For you',
   '/lists': 'My lists',
@@ -16,6 +18,7 @@ const LABELS: Record<string, string> = {
   '/settings/notifications': 'Notifications · Settings',
   '/settings/privacy': 'Privacy · Settings',
   '/settings/following': 'Following settings',
+  '/settings/feeds': 'Feeds settings',
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
   '/institution/verify': 'Verify your university email',
@@ -36,14 +39,19 @@ function normalize(pathname: string) {
   return pathname === '/' ? '/' : pathname.replace(/\/+$/, '')
 }
 
-export function routeLabel(pathname: string) {
+type NamedFeed = { id: string; name: string }
+
+/** A custom feed's page is called by the feed's name; an id the reader has no feed for has none. */
+export function routeLabel(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
+  const feedId = customFeedIdFromPath(normalized)
+  if (feedId !== null) return feeds.find(feed => feed.id === feedId)?.name ?? null
   return LABELS[normalized] || null
 }
 
-export function routeTitle(pathname: string) {
+export function routeTitle(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
   if (SELF_TITLED.has(normalized)) return null
-  const label = routeLabel(normalized)
+  const label = routeLabel(normalized, feeds)
   return label ? `${label} | PaperTok` : null
 }

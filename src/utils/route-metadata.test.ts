@@ -33,3 +33,15 @@ test('labels announce even self-titled routes', () => {
   assert.equal(routeLabel('/settings/privacy'), 'Privacy · Settings')
   assert.equal(routeLabel('/nonsense'), null)
 })
+
+test('a custom feed is called by its name', () => {
+  assert.equal(routeLabel('/feeds/abcd1234', [{ id: 'abcd1234', name: 'Thesis' }]), 'Thesis')
+  assert.equal(routeTitle('/feeds/abcd1234/', [{ id: 'abcd1234', name: 'Thesis' }]), 'Thesis | PaperTok')
+  assert.equal(routeLabel('/feeds/unknown', []), null)
+  assert.equal(routeTitle('/feeds/unknown', [{ id: 'abcd1234', name: 'Thesis' }]), null)
+})
+
+test('the page that manages the feeds has a name of its own', () => {
+  assert.equal(routeLabel('/settings/feeds'), 'Feeds settings')
+  assert.equal(routeTitle('/settings/feeds'), 'Feeds settings | PaperTok')
+})

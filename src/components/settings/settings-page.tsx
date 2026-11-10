@@ -25,6 +25,7 @@ import { toastError } from '../ui/toast.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
@@ -60,7 +61,7 @@ import './settings-page.css';
  */
 const SETTINGS_PAGES = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows and interests', Icon: Compass },
+  { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
@@ -95,6 +96,9 @@ const SETTINGS_COPY = {
   loadingFollowing: 'Loading the content you follow...',
   followingDescription: 'Entities that influence your recommendations',
   editFollowing: 'Edit follows',
+  feeds: 'Feeds',
+  feedsDescription: 'Feeds you made from topics, authors and keywords',
+  editFeeds: 'Edit feeds',
   interests: 'Interests',
   interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
@@ -394,6 +398,7 @@ function DiscoveryPage() {
   const navigate = useNavigate();
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
+  const { feeds: customFeeds, status: feedsStatus } = useCustomFeeds();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
   const [isFollowingOpen, setIsFollowingOpen] = useState(false);
   const isPhone = useIsPhone();
@@ -423,6 +428,17 @@ function DiscoveryPage() {
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editFollowing} text={copy.edit} onClick={() => { if (isPhone) setIsFollowingOpen(true); else void navigate('/settings/following'); }} />
+          </div>
+
+          <div className="settings-row settings-row-side">
+            <div className="settings-row-content">
+              <h3 className="settings-row-title-line">
+                {copy.feeds}{' '}
+                {feedsStatus === 'ready' && <span className="settings-count">({customFeeds.length})</span>}
+              </h3>
+              <p>{copy.feedsDescription}</p>
+            </div>
+            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => { void navigate('/settings/feeds'); }} />
           </div>
 
           <div className="settings-row settings-row-side">

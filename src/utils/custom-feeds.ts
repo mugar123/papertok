@@ -27,7 +27,7 @@ export type CustomFeedOrder = 'newest' | 'best';
 export interface CustomFeedInput { name: string; order: CustomFeedOrder; ingredients: FeedIngredient[] }
 export interface CustomFeed extends CustomFeedInput { id: string }
 
-type CustomFeedErrorCode = 'feed-limit' | 'missing' | 'invalid';
+type CustomFeedErrorCode = 'feed-limit' | 'taken' | 'missing' | 'invalid';
 
 export class CustomFeedError extends Error {
   readonly code: CustomFeedErrorCode;
@@ -53,8 +53,17 @@ function openAlexId(value: unknown) {
   return OPENALEX_URL.test(id) ? id.split('/').pop()! : id;
 }
 
+/**
+ * A label as it is stored: lone surrogates replaced as `toWellFormed()` does
+ * (`\p{Cs}` matches only a lone one under the `u` flag; the TypeScript lib is
+ * ES2023, which lacks `toWellFormed`), control characters removed, whitespace
+ * collapsed and trimmed. Each of those would otherwise travel as a six-byte
+ * JSON escape and could push a feed's follows out of the request.
+ */
 function cleanLabel(value: unknown) {
-  const label = typeof value === 'string' ? value.trim() : '';
+  const label = typeof value === 'string'
+    ? value.replace(/\p{Cs}/gu, '�').replace(/\p{Cc}/gu, char => (/\s/.test(char) ? ' ' : '')).replace(/\s+/g, ' ').trim()
+    : '';
   return label.length >= 1 && label.length <= MAX_LABEL_LENGTH ? label : null;
 }
 
@@ -177,15 +186,46 @@ export function ingredientProblem(ingredient: FeedIngredient, feed: FeedIngredie
   return !held.has(key) && held.size >= ceiling.max ? ceiling.problem : null;
 }
 
+/**
+ * What a one-press "Make it a feed" does with `ingredient`: a feed named
+ * `name` (trimmed and cut to the name limit as a reader counts characters)
+ * holding just that ingredient, newest first. `create` when the account can
+ * take it as it is; `edit`, with the same content, when the name is taken,
+ * the account already holds its eight feeds or the ingredient passes an
+ * account ceiling, so the feed window settles it.
+ */
+export function feedShortcutPlan(ingredient: FeedIngredient, name: string, feeds: CustomFeed[]):
+  | { kind: 'create'; input: CustomFeedInput }
+  | { kind: 'edit'; preset: Partial<CustomFeedInput> } {
+  const input: CustomFeedInput = {
+    name: [...name.trim()].slice(0, MAX_FEED_NAME_LENGTH).join('').trim(),
+    order: 'newest',
+    ingredients: [ingredient],
+  };
+  const fits = feedNameProblem(input.name, feeds) === null
+    && feeds.length < MAX_CUSTOM_FEEDS
+    && ingredientProblem(ingredient, [], feeds) === null;
+  return fits ? { kind: 'create', input } : { kind: 'edit', preset: input };
+}
+
 const feedOf = (id: string, input: CustomFeedInput): CustomFeed => ({ id, name: input.name.trim(), order: input.order, ingredients: [...input.ingredients] });
 
+/**
+ * The feeds with a feed `id` made of `input` added at the end. When the list
+ * already holds `id`, `input` replaces that feed in its place: a create
+ * retried after a write that outran its deadline but landed must not make a
+ * second feed, and the retry carries what the reader changed since.
+ */
 export function withFeedAdded(feeds: CustomFeed[], input: CustomFeedInput, id: string): CustomFeed[] {
+  if (feeds.some(feed => feed.id === id)) return withFeedChanged(feeds, id, input);
   if (feeds.length >= MAX_CUSTOM_FEEDS) throw new CustomFeedError('feed-limit');
+  if (feedNameProblem(input.name, feeds) === 'taken') throw new CustomFeedError('taken');
   return [...feeds, feedOf(id, input)];
 }
 
 export function withFeedChanged(feeds: CustomFeed[], id: string, input: CustomFeedInput): CustomFeed[] {
   if (!feeds.some(feed => feed.id === id)) throw new CustomFeedError('missing');
+  if (feedNameProblem(input.name, feeds, id) === 'taken') throw new CustomFeedError('taken');
   return feeds.map(feed => (feed.id === id ? feedOf(id, input) : feed));
 }
 
@@ -201,6 +241,29 @@ export function withFeedMoved(feeds: CustomFeed[], id: string, delta: -1 | 1): C
   const moved = [...feeds];
   [moved[from], moved[to]] = [moved[to], moved[from]];
   return moved;
+}
+
+/**
+ * Where a feed stands among the account's feeds, as the tab menu and
+ * Settings announce a saved move; empty for a feed that is not among them.
+ */
+export function feedPositionSentence(feeds: readonly Pick<CustomFeed, 'id' | 'name'>[], id: string): string {
+  const index = feeds.findIndex(feed => feed.id === id);
+  return index < 0 ? '' : `Moved ${feeds[index].name} to position ${index + 1} of ${feeds.length}.`;
+}
+
+/**
+ * The `custom_feed_create` event of a feed: how many of its ingredients are
+ * areas, categories and research topics, authors and keywords, and its order.
+ */
+export function customFeedCreateEvent(feed: CustomFeed) {
+  const count = (kinds: readonly FeedIngredient['kind'][]) => feed.ingredients.filter(ingredient => kinds.includes(ingredient.kind)).length;
+  return {
+    topic_count: count(['area', 'category', 'topic']),
+    author_count: count(['author']),
+    keyword_count: count(['keyword']),
+    feed_order: feed.order,
+  };
 }
 
 export function corpusRequestOf(feed: CustomFeed): { categories: string[]; areas: string[]; follows: FollowEntity[]; order: 'daily' | 'relevance' } {

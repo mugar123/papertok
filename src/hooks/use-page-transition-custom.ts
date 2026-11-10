@@ -1,7 +1,8 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
 import { directionForHistoryIndex } from '../utils/route-direction.ts';
 import { lateralTabDirection } from '../utils/tab-direction.ts';
+import { useFeedTabs } from './use-feed-tabs.ts';
 
 /**
  * Computed once, in `App`, and read from here by every `PageTransition`.
@@ -65,8 +66,11 @@ export function usePageTransitionCustom() {
   // push, so the index only ever grows and both going to Following and coming
   // back from it reported 1. The bar's order is what knows which way is which;
   // `lateralTabDirection` returns null for anything that is not a tab-to-tab
-  // move, and history keeps the question.
-  const lateral = lateralTabDirection(useLocation().pathname);
+  // move, and history keeps the question. The order is the bar's, the
+  // reader's custom feeds included.
+  const feedTabs = useFeedTabs();
+  const tabOrder = useMemo(() => feedTabs.map(tab => tab.path), [feedTabs]);
+  const lateral = lateralTabDirection(useLocation().pathname, undefined, tabOrder);
   // A navigation can ask for no transition at all: between a list and a
   // paper opened from it, one page simply replaces the other.
   if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true };

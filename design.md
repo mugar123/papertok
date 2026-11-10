@@ -415,6 +415,13 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
   ruled grid (`.ehc-stats-grid`).
+- **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
+  Discovery: a `New feed` button over the reader's feeds in tab order, as
+  ruled rows. Each row has the feed's name in the serif, its ingredients on one
+  mono line cut with an ellipsis, and ghost `Edit`, `Move up`, `Move down` and
+  `Delete` buttons, each named for its feed. These buttons do what the tab's
+  menu does, so no command needs a right click or a long press. A move at an
+  end is disabled, and a saved move is announced with the feed's new position.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -425,9 +432,15 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Navigation
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
-  active one marked by a sliding yellow rule (the brand thread). Pressing the
-  active feed tab reloads that feed, and on a touch screen a sideways swipe on
-  the feed moves between For you and Following. The search bar
+  active one marked by a sliding yellow rule (the brand thread): For you and
+  Following with their icons, then the reader's own feeds by name (cut with an
+  ellipsis at 12rem) in the reader's order, then a "+" that opens New feed.
+  The tabs are one scrolling line at every width (The One Scrolling Line
+  Rule): the line gives up its width before the search field does, the mark
+  and the account never shrink, an end fades only while more tabs lie past it, and the current tab is
+  scrolled into view. Pressing the active feed tab reloads that feed, and on a touch
+  screen a sideways swipe on the feed moves to the next or previous tab,
+  through every feed in the line. The search bar
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
   command palette, which grows from its own centre. On `/search` the bar holds
   the search page's own field and scope instead, and the shortcut focuses it;
@@ -435,6 +448,12 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
+- **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move
+  left, Move right and Delete feed, with Delete feed in `--accent-danger`. A
+  right click, the menu key or Shift+F10 opens it under the tab as a context
+  menu; on a phone a half-second hold opens the same four as a drawer of 52px
+  rows headed by the feed's name. Move left is disabled on the first custom
+  tab and Move right on the last.
 
 ### Overlays
 - **`dialog.tsx`:** the centred modal over the flat scrim; Base UI owns focus,
@@ -442,6 +461,23 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 - **`dropdown-menu.tsx` / Base UI Menu:** a `role="menu"` of commands, opening
   from its trigger. The share menu is the model: the link first, then each
   destination by name.
+- **`context-menu.tsx`:** the same menu, opened by a right click on its
+  trigger. A context menu is never the only way to an action: its commands
+  also live in a visible control elsewhere.
+- **The feed window** (`custom-feeds/feed-dialog.tsx`): New feed and Edit
+  feed are one form, a dialog on a desktop and a bottom drawer on a phone,
+  opening on the Name field. Below the name, the chosen ingredients are
+  removable chips, each with its kind in mono, above one search for topics,
+  authors and a keyword, and suggestions from the reader's own topics. The
+  order is two radio cards, Newest first and Best match for you. A limit or a
+  taken name is said in a line inside the form.
+- **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
+  dialog titled with the feed's name and one sentence saying likes and saved
+  papers stay, with `outline` Cancel and `destructive` Delete feed. While it
+  deletes, both buttons wait and nothing closes it; a refusal leaves it open
+  and says so in an error toast. Once deleted, focus goes to the tab or the
+  Settings row that takes the feed's place; a feed deleted while its page is
+  open sends the reader to For you.
 - **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
 - **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
@@ -515,6 +551,9 @@ Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
 like Like and Save; "Follow" is its name and its `title` says Following once on.
+On pages a feed can be made from (an area, a topic, a keyword search, an author
+with an OpenAlex id), the Explorer header also carries a text button after
+Share, `Make it a feed`: an `outline` `sm` button with a `Plus` glyph.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square

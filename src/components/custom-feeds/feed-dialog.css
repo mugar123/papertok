@@ -1,0 +1,292 @@
+/* The window that creates and edits a custom feed (feed-dialog.tsx): a Base
+   UI Dialog on a desktop, a bottom Drawer on a phone. The primitives bring
+   the scrim, the frame, the arrival and the leave; this sheet lays out the
+   form. A long list of results scrolls inside the body while the head and
+   the actions stay in view. */
+
+.feed-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(calc(100vw - var(--space-8)), 520px);
+  max-width: none;
+  max-height: min(88dvh, 760px);
+  padding: var(--space-5) 0 0;
+}
+
+/* No taps land on a window that is leaving. */
+.feed-dialog[data-closed] {
+  pointer-events: none;
+}
+
+.feed-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.feed-sheet {
+  overflow: hidden;
+}
+
+.feed-sheet,
+.feed-sheet-backdrop {
+  --drawer-enter-ms: var(--motion-sheet);
+  --drawer-enter-ease: cubic-bezier(0.25, 0.85, 0.3, 1);
+}
+
+.feed-sheet-head {
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+
+.feed-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) var(--space-5) var(--space-2);
+}
+
+.feed-sheet .feed-dialog-body {
+  padding-inline: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.feed-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+/* A field's caption: section labels are machine data (design.md, rule 1). */
+.feed-field-label,
+.feed-section-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.feed-field-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.feed-input {
+  width: 100%;
+}
+
+.feed-notice {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--tint-red-fg);
+}
+
+/* The chosen ingredients: hairline chips, the kind in mono beside the name. */
+.feed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.feed-kind {
+  flex: none;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.feed-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-chip-remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .feed-chip-remove:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+.feed-chip-remove:focus-visible,
+.feed-result:focus-visible,
+.feed-order:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The search's results and the suggestions: ruled rows, one button each. */
+.feed-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.feed-results-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.feed-results-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  text-align: left;
+  transition: background-color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .feed-result:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+.feed-result-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+/* Chosen: a tick in an ink box, not a colour alone. */
+.feed-result[aria-pressed='true'] .feed-result-mark {
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+}
+
+.feed-result-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.feed-result-label {
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-result-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+/* The two orders: card-shaped radios, the choice marked by an ink frame and
+   a sunken ground. */
+.feed-orders {
+  gap: var(--space-2);
+}
+
+.feed-order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.feed-order[data-checked] {
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--border-ink);
+}
+
+.feed-order-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.feed-order-description {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.feed-dialog-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.feed-sheet .feed-dialog-foot {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.feed-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.feed-sheet .feed-dialog-actions > * {
+  flex: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-chip-remove,
+  .feed-result,
+  .feed-order {
+    transition: none;
+  }
+}

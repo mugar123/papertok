@@ -14,6 +14,8 @@ export interface PaperCardProps {
    */
   onLike?: (paper: Paper, surface?: string) => void | Promise<void>;
   onNotInterested?: (paper: Paper) => void | Promise<void>;
+  /** The hint under "Not interested" in the card's menu: the feed's own (feed-dismissal.ts), else the account's. */
+  notInterestedHint?: string;
   onMarkAsRead?: (paper: Paper) => void | Promise<void>;
   onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
@@ -404,6 +406,7 @@ const PaperCard = memo(function PaperCard({
   isRead = false, 
   onLike = () => {},
   onNotInterested = () => {},
+  notInterestedHint,
   onMarkAsRead = () => {},
   onUnmarkAsRead = () => {},
   trackViewTime = () => {},
@@ -1850,7 +1853,7 @@ const PaperCard = memo(function PaperCard({
     </>
   );
   useLayoutEffect(() => {
-    readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, shareUrl, notInterested, toggleRead: handleMarkAsRead };
+    readerRef.current = { about: aboutBody, links: aboutLinks, isRead: isReadActive, shareUrl, notInterested, notInterestedHint, toggleRead: handleMarkAsRead };
     readerListeners.current.forEach(onChange => onChange());
   });
 
@@ -2393,6 +2396,7 @@ const PaperCard = memo(function PaperCard({
             onAbout: () => setMenuView('about'),
             onToggleRead: handleMarkAsRead,
             onNotInterested: handleNotInterested,
+            notInterestedHint,
           })}
           trigger={(
             <button
@@ -2549,6 +2553,7 @@ const PaperCard = memo(function PaperCard({
                 isRead={Boolean(selectedRelatedState.isRead)}
                 onLike={onLike}
                 onNotInterested={onNotInterested}
+                notInterestedHint={notInterestedHint}
                 onMarkAsRead={onMarkAsRead}
                 onUnmarkAsRead={onUnmarkAsRead}
                 trackViewTime={trackViewTime}

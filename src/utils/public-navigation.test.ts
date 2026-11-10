@@ -129,6 +129,10 @@ test('a new account from a paper page door is onboarded and a signed-in reader k
   }
 });
 
+test('a custom feed keeps the navbar', () => {
+  assert.ok(keepsNavbarPath('/feeds/abcd1234'));
+});
+
 /**
  * The Liked tab is keyed by the feed's `paper.id`, and for an OpenAlex or
  * PubMed card that id is `openalex:W…` or `pmid:…` with no DOI stored beside

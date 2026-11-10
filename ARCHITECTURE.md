@@ -110,6 +110,7 @@ flowchart TD
     Corpus[("D1 · papers, lanes and vectors")]
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
+    Custom["Custom feed page · one feed's exact lanes"]
     Signals["Preferences, follows, likes, rejections and seen papers"]
     Search["Live paper search · arXiv + OpenAlex relevance"]
     UI["Feed cards, search results and reader"]
@@ -118,6 +119,7 @@ flowchart TD
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
     Corpus --> API --> Feed --> UI
+    API --> Custom --> UI
     Signals --> API
     Signals --> Feed
     Search --> UI
@@ -128,7 +130,7 @@ flowchart TD
     classDef view fill:#eff6ff,stroke:#2563eb,color:#172554
     class Trigger,Sources,Vectors source
     class Corpus,Signals data
-    class Harvest,API,Feed,Search logic
+    class Harvest,API,Feed,Custom,Search logic
     class UI view
 ```
 
@@ -191,6 +193,21 @@ most on the first page and one in seven on a later one. The
 [paper-store contract](worker/README.md#paper-store) says how they are chosen
 and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.
+A custom feed reads the same corpus through `POST /store/papers`.
+[custom-feeds-store.ts](src/services/custom-feeds-store.ts) keeps an account's
+feeds, at most 8, in one document, `users/{uid}/settings/customFeeds`, which
+[firestore.rules](firestore.rules) lets only its owner read or write.
+[corpusRequestOf](src/utils/custom-feeds.ts) turns a feed into its categories,
+whole `areas` and follows (research topics, authors and keywords), with
+`order: 'daily'` for Newest first and `'relevance'` for Best match.
+[custom-feed-pages.ts](src/utils/custom-feed-pages.ts) builds it into an `exact`
+request and
+[useCustomFeedPapers](src/components/custom-feeds/use-custom-feed-papers.ts)
+sends it: the Worker serves only those lanes and says which follows are still
+loading. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
+hands the papers from useCustomFeedPapers to the shared
+[FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples and Not interested
+papers; it does not score the feed's papers.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
 live arXiv and OpenAlex results and applies search relevance.
 

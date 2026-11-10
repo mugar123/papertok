@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './account-session.ts';
 import { resetAccountWarmup } from '../services/account-warmup.ts';
+import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
 import { ownListsCache } from '../utils/profile-session-caches.ts';
 import { readSeenPaperIds, readStoredLists, readStoredOnboarding, saveSeenPaperIds, saveStoredLists, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
@@ -94,6 +95,14 @@ test('after A signs out, B signing in on the same device finds nothing of A\'s',
   });
   assert.equal(paintB, null, 'B has no remembered onboarding');
   assert.equal(ownListsCache.get('account-b'), undefined);
+});
+
+test('a sign-out takes the pages of the account\'s custom feeds out of the session', t => {
+  freshSession(t);
+  const key = feedPagesKey('account-a', { id: 'abcd1234', name: 'Thesis', order: 'newest', ingredients: [{ kind: 'category', id: 'quant-ph' }] });
+  customFeedPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
+  closeAccountSession('account-a', deviceStorage());
+  assert.equal(customFeedPagesCache.get(key), undefined);
 });
 
 test('signing back in after a sign-out reads the account\'s lists again', async t => {

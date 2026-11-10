@@ -1,4 +1,5 @@
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/account-warmup.ts';
+import { forgetCustomFeedPages } from '../utils/custom-feed-pages.ts';
 import { clearGuestInterests } from '../utils/guest-interests.ts';
 import { forgetOwnLists } from '../utils/profile-session-caches.ts';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
@@ -26,6 +27,7 @@ export function closeAccountSession(userId: string | undefined, storage?: Device
   clearGuestInterests(storage);
   clearUserScopedStorage(userId, storage);
   forgetOwnLists(userId);
+  forgetCustomFeedPages();
   resetAccountWarmup(userId);
 }
 
