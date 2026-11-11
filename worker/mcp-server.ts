@@ -171,7 +171,11 @@ function paperIdentity(value: unknown) {
   }
   const identity = getPaperIdentity(text, undefined);
   const separator = identity.indexOf(':');
-  return separator > 0 ? { type: identity.slice(0, separator), value: identity.slice(separator + 1) } : null;
+  // An OpenReview forum id is an address in the app, where the paper page
+  // asks OpenReview for it. `get_paper` asks OpenAlex and arXiv, which hold
+  // no such id, so here it is not an id at all.
+  if (separator <= 0 || identity.startsWith('openreview:')) return null;
+  return { type: identity.slice(0, separator), value: identity.slice(separator + 1) };
 }
 
 function doiArgument(value: unknown) {

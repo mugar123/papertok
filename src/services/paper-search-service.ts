@@ -8,8 +8,9 @@ import { searchPapers as searchArxivPapers } from './arxiv-service.ts';
 import { mapOpenReviewNote } from './open-review-service.ts';
 import { fetchWorkerSourceJson } from './worker-api-client.ts';
 import { mergeRankedPapers } from './paper-search-merge.ts';
+import { fetchOpenReviewPaper } from './paper-lookup.ts';
 import { normalizeSearchText } from '../utils/search-relevance.ts';
-import { getPaperKey } from '../utils/public-navigation.ts';
+import { getPaperKey, normalizeOpenReviewId } from '../utils/public-navigation.ts';
 import { settleWithin } from '../utils/async-timing.ts';
 
 /**
@@ -41,6 +42,12 @@ import { settleWithin } from '../utils/async-timing.ts';
  * and its failure costs only its own papers. An identifier is not sent to it:
  * its search matches text, and a DOI or an arXiv id names a paper the other
  * two resolve.
+ *
+ * A pasted OpenReview link or `openreview:` id is the reverse case: it names
+ * one submission that only OpenReview can answer for, so it is looked up by
+ * id and the other two are not asked, since they would match its text against
+ * titles. Its failure rejects, as there is nothing else to show, and names
+ * OpenReview as the provider that failed.
  */
 export const PAPER_SEARCH_LIMIT = 10;
 export const ARXIV_SEARCH_LIMIT = 10;
@@ -82,6 +89,7 @@ export const DEFAULT_PAPER_SEARCH_PROVIDERS = Object.freeze({
     const data = await fetchWorkerSourceJson<{ notes?: OpenReviewNote[] }>('/sources/openreview', { q: query, limit }, { timeoutMs: OPENREVIEW_SEARCH_TIMEOUT_MS });
     return openReviewSearchPapers(data?.notes || []);
   },
+  findOpenReviewPaper: (id: string) => fetchOpenReviewPaper(id, { timeoutMs: OPENREVIEW_SEARCH_TIMEOUT_MS }),
 });
 
 interface PaperSearchProviders {
@@ -89,6 +97,7 @@ interface PaperSearchProviders {
   searchArxiv(query: string, limit: number): Promise<Paper[] | { papers: Paper[] } | void>;
   // Optional so a caller that injects its own two sources asks nobody else.
   searchOpenReview?(query: string, limit: number): Promise<Paper[] | void>;
+  findOpenReviewPaper?(id: string): Promise<Paper | null>;
 }
 
 function papersFrom(value: Paper[] | { papers: Paper[] } | void) {
@@ -107,6 +116,16 @@ export async function searchPapersAcrossSources(query: unknown, {
 }: { signal?: AbortSignal; providers?: PaperSearchProviders; arxivTimeoutMs?: number; openAlexTimeoutMs?: number; openReviewTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
   const term = String(query || '').trim();
   if (!term) return [];
+
+  const openReviewId = normalizeOpenReviewId(term);
+  if (openReviewId) {
+    const paper = await Promise.resolve(providers.findOpenReviewPaper?.(openReviewId)).catch((error: unknown) => {
+      // The papers section is OpenAlex's in the outage notice (search-outage.ts);
+      // this answer was OpenReview's alone, and the notice has to say so.
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { searchSource: 'openreview' });
+    });
+    return paper ? [paper] : [];
+  }
 
   const openAlexController = new AbortController();
   const openAlexSignal = signal ? AbortSignal.any([signal, openAlexController.signal]) : openAlexController.signal;

@@ -11,7 +11,7 @@ Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker
 - `http.ts` owns JSON responses, allowed Origins and CORS headers.
 - `provider-runtime.ts` owns canonical cache keys, provider quota reservations and refunds, the shared OpenAlex budget with its tiers, the harvest's share, observed ceiling and report, the Semantic Scholar beat, the default upstream deadlines and `fetchWithDeadline`.
 - `arxiv-api.ts` owns the arXiv beat (`takeArxivSeat`, kept through `upstream-pace.ts`), which `share-route.ts` and the email digest also take (a request the router hands to `/arxiv` takes only every other seat, the digest only the others), and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
-- `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
+- `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers; `open-review-api.ts` owns OpenReview's sign-in and the lookup of one note by id. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
 - The paper corpus (see [Paper store](#paper-store)): `paper-store.ts` owns its rows, lanes, vectors and ranking; `paper-sources.ts` harvests each source by calling the provider handlers above in-process; `paper-enrichment.ts` enriches stored papers; `paper-harvest.ts` runs them as a Workflow; `paper-feed.ts` owns the reader routes.
 - `mcp-server.ts` owns the public MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process.
 - Existing feature modules own AI, accounts, institutions, notifications, lists and ledgers.
@@ -317,6 +317,8 @@ npx wrangler secret put UNPAYWALL_EMAIL # the contact Unpaywall is asked with, b
 npx wrangler secret put NAN_API_KEY # sk-... personal key from nan.builders; the primary AI provider since 2026-10-06
 npx wrangler secret put GEMINI_API_KEY # only used while AI_PROVIDER = "gemini"
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
+npx wrangler secret put OPENREVIEW_USERNAME # the email of an OpenReview account made for this Worker, with no second factor and no author, reviewer or chair role anywhere; with OPENREVIEW_PASSWORD, lets /sources/openreview?id= and share pages load a paper by its forum id
+npx wrangler secret put OPENREVIEW_PASSWORD # without both, a lookup by id answers 503 OPENREVIEW_NOT_CONFIGURED; the search is unaffected
 npx wrangler secret put NCBI_API_KEY # optional, raises PubMed E-utilities from 3 to 10 req/s
 npx wrangler secret put NASA_ADS_API_TOKEN # optional for the physics route, where INSPIRE answers until it is set; the ADS notable listing (harvest step 3) needs it
 npx wrangler secret put SCOPUS_PROXY_URL # https://<project>.deno.dev -- see proxy/README.md
@@ -426,7 +428,39 @@ The native workers.dev route is disabled and the frontend accepts only the custo
 domain in production. Publish a bundle configured with that domain before deploying
 this setting; see [Production Worker hostname](#production-worker-hostname).
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. Hugging Face and OpenReview's search are keyless discovery sources; OpenReview's lookup by id signs in (below). NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+
+`/sources/openreview` has two forms, both answering `{ notes, count }` and cached 30 minutes.
+`?q=` searches OpenReview's forum notes and drops imported records. `?id=` answers the one
+submission a forum id names (`GET /notes?id=` upstream), for the app's paper page and for an
+OpenReview link pasted into search: an empty list when OpenReview has no such note, when the id
+is a reply's, and for an imported record or an archive copy, which the search leaves out too; a
+400 before OpenReview is asked for an id outside `[A-Za-z0-9_-]{6,24}`. A refusal of the note
+fails as every source route does: 429 `UPSTREAM_RATE_LIMITED` with OpenReview's `retry-after`
+for an upstream 429, 502 with `upstreamStatus` for another status, 502 `UPSTREAM_TIMEOUT` for a
+stall. The cache key of the second form is the id alone.
+
+The two forms reach OpenReview differently (`worker/open-review-api.ts`). OpenReview answers an
+anonymous `GET /notes?id=` with a 403 `ChallengeRequiredError`, a bot check its page says a
+signed-in caller skips (measured through this Worker on 2026-11-11); `notes/search` is not
+checked and stays anonymous. So `?id=` signs in as OpenReview's Python client does: `POST
+https://api2.openreview.net/login` with the account in `OPENREVIEW_USERNAME` and
+`OPENREVIEW_PASSWORD`, then `Authorization: Bearer <token>`. The token is kept in memory per
+isolate, replaced after 50 minutes (the client documents an hour) and by one fresh sign-in when
+a kept token is answered 401. One deadline covers the sign-in and the note together. Without the
+two secrets `?id=` answers 503 `OPENREVIEW_NOT_CONFIGURED` and asks nobody. A sign-in OpenReview
+refuses (a wrong password, an account that asks for a second factor, any non-2xx, a body that is
+not JSON) is a plain 502 with no `upstreamStatus`, which the route reports as an error; a share
+page only logs it. It is not tried again for 60 seconds, or for as long as its `retry-after`
+asks when that is longer, so a failing account is not sent to OpenReview once per request.
+
+What the account is shown is cached and served to every reader, so the account must be one
+made for this Worker, with no role anywhere on OpenReview: an author, a reviewer or a chair is
+shown what is hidden from everyone else, such as the authors of a submission under double-blind
+review. As a second guard the Worker returns only a note whose `readers` include `everyone`,
+without the content fields whose own `readers` do not. Only `api2.openreview.net` is asked:
+a forum from a venue still on OpenReview's older API (`api.openreview.net`) is not found. None of
+the signed-in path was observed live before the secrets were set.
 
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
@@ -719,7 +753,10 @@ may spend is bounded before any provider is asked — 60 a minute and 1000 a day
 ledger periods), 120 arXiv calls an hour with the unit given back when no seat comes — and each
 billed OpenAlex call is then also reserved on the shared OpenAlex budget, in the enrichment tier
 (see the budget tiers under `/openalex/*` below). A lookup by DOI, work id, PMID or entity id is
-free and reserves nothing; only the arXiv landing-page lookup reserves a unit.
+free and reserves nothing; only the arXiv landing-page lookup reserves a unit. A paper
+keyed by an OpenReview forum id is read from OpenReview alone, signed in as `/sources/openreview?id=`
+is, under the share admission and no ceiling of its own; an id OpenReview does not have is final,
+a 404, and a Worker without the OpenReview account fails the lookup like any provider failure.
 Identical requests in one isolate share one lookup; a refused admission is not cached, and a
 failure never replaces a record another request found. Lists are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the

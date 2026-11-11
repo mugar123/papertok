@@ -26,9 +26,10 @@ import { getPublicPaperPath } from './public-navigation.ts';
  * whole paper to draw the row, so there is no reason to make the reader wait
  * for it to be fetched a second time.
  *
- * The key is built from a DOI or an arXiv id, which is what the public page can
- * resolve. A work with neither has no address in this app at all — it cannot be
- * shared or linked — so rather than a dead row it goes to the full search page,
+ * The key is built from an identifier the public page can resolve
+ * (`getPaperIdentity`): a DOI, an arXiv id, or a provider's own id. A work
+ * with none has no address in this app at all — it cannot be shared or
+ * linked — so rather than a dead row it goes to the full search page,
  * carrying the query, where the same paper opens in an overlay that needs no
  * identifier.
  *

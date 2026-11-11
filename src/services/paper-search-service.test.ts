@@ -347,3 +347,26 @@ test('an archive copy filed under one profile is not a search result', () => {
   ]);
   assert.deepEqual(papers.map(paper => paper.openReviewId), ['5pShDP8LSm']);
 });
+
+test('a pasted OpenReview link is looked up by its id, and nobody is asked to match its text', async () => {
+  const asked: string[] = [];
+  const providers = {
+    searchOpenAlex: async () => { asked.push('openalex'); return { papers: [openAlexPaper('W1', 'Unrelated')] }; },
+    searchArxiv: async () => { asked.push('arxiv'); return []; },
+    searchOpenReview: async () => { asked.push('openreview search'); return []; },
+    findOpenReviewPaper: async (id: string) => { asked.push(`openreview ${id}`); return id === '5pShDP8LSm' ? openReviewPaper() : null; },
+  };
+  const found = await searchPapersAcrossSources('https://openreview.net/forum?id=5pShDP8LSm', { providers });
+  assert.deepEqual(found.map(paper => paper.openReviewId), ['5pShDP8LSm']);
+  assert.deepEqual(await searchPapersAcrossSources('openreview:unknownNote', { providers }), []);
+  assert.deepEqual(asked, ['openreview 5pShDP8LSm', 'openreview unknownNote']);
+});
+
+test('an OpenReview that cannot be reached for a pasted link rejects and names itself as the provider', async () => {
+  await assert.rejects(
+    searchPapersAcrossSources('https://openreview.net/forum?id=5pShDP8LSm', {
+      providers: { ...providersWith(), findOpenReviewPaper: async () => { throw new Error('/sources/openreview returned 502'); } },
+    }),
+    (error: Error & { searchSource?: string }) => /returned 502/.test(error.message) && error.searchSource === 'openreview',
+  );
+});

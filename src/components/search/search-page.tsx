@@ -259,10 +259,10 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const handleSaveToList = useQuickSave(onSaveToList, 'search');
   
   // Seeded from the URL, so a search is a place you can be sent to. The
-  // palette needs this for a paper that carries neither a DOI nor an arXiv
-  // id: it has no public paper URL of its own, so the row hands the reader to
-  // this page with the query intact rather than to a dead link, and with the
-  // paper itself, which opens below.
+  // palette needs this for a paper with no identifier the paper page can
+  // resolve: it has no public paper URL of its own, so the row hands the
+  // reader to this page with the query intact rather than to a dead link, and
+  // with the paper itself, which opens below.
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
