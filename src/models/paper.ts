@@ -249,6 +249,17 @@ type StoredPaperInput = Omit<Partial<Paper>, 'id' | 'sources'> & {
   journalRef?: string;
 };
 
+/**
+ * The citation count a source gave, or null when none did. `PaperBuilder`
+ * writes 0 for a paper nobody counted, with `citationCountKnown: false`; that
+ * zero is not a number to print.
+ */
+export function knownCitationCount(paper: Pick<Paper, 'citationCount' | 'citationCountKnown'>) {
+  const count = paper.citationCount;
+  if (typeof count !== 'number') return null;
+  return paper.citationCountKnown || count > 0 ? count : null;
+}
+
 const ARXIV_ID_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
 
 /**

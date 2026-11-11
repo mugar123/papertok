@@ -306,7 +306,21 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     else setPdfOpen(null);
   }, []);
   useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
-  const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+  // The paper the reader came here for goes back where they chose it when it
+  // closes. Left here they were shown a results list they never asked for:
+  // they had picked the paper in the palette, over another page.
+  const [arrivedFor] = useState<Paper | null>(() => handedPaper ?? null);
+  // Once: two presses in one tick both see the paper still selected, and a
+  // second step back would leave the page the reader came from.
+  const wentBackRef = useRef(false);
+  const closeSelectedPaper = useCallback(() => {
+    if (selectedPaper && selectedPaper === arrivedFor && !wentBackRef.current) {
+      wentBackRef.current = true;
+      void navigate(-1);
+    }
+    // Cleared either way, so the overlay starts its leave at once.
+    setSelectedPaper(null);
+  }, [arrivedFor, navigate, selectedPaper]);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
   // sets `selectedPaper` to null to start the leave; if the card went with it,
@@ -1018,6 +1032,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
       {/* Paper Card Overlay */}
       <PaperOverlay
         open={Boolean(selectedPaper)}
+        arriving={Boolean(shownPaper) && shownPaper === arrivedFor}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        
@@ -1030,7 +1045,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
-            onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
+            onNotInterested={(paper) => { void markNotInterested(paper); closeSelectedPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
