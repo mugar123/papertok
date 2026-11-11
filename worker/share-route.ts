@@ -10,7 +10,7 @@ import { callerSubject } from './caller-quota.ts';
 import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
 import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { fetchOpenReviewNote } from './source-api.ts';
+import { fetchOpenReviewNote } from './open-review-api.ts';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.ts';
 import { createPhotoLoader, handleShareImage } from './share-image.ts';
 
@@ -111,7 +111,7 @@ function shareProviders(env: WorkerEnv): ShareProviders {
     },
     // No ceiling of its own: the share admission above bounds every miss, and
     // OpenReview publishes no quota to reserve against.
-    openReview: id => fetchOpenReviewNote(id, SHARE_UPSTREAM_TIMEOUT_MS),
+    openReview: id => fetchOpenReviewNote(env, id, SHARE_UPSTREAM_TIMEOUT_MS),
     async openAire(params) {
       const url = new URL(`${OPENAIRE_GRAPH_URL}/projects`);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);

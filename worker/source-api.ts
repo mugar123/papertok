@@ -12,6 +12,7 @@ interface HuggingFaceResources extends Record<string, unknown> {
 
 import { normalizeOpenReviewId } from '../src/utils/public-navigation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount } from './open-review-api.ts';
 import {
   cacheResponse,
   DEGRADED_CACHE_SECONDS,
@@ -261,47 +262,11 @@ function compactOpenReviewNote(note: OpenReviewNote) {
   };
 }
 
-function isOpenReviewSubmission(note: OpenReviewNote) {
-  const domain = String(note?.domain || '').toLowerCase();
-  return ![
-    'dblp.org',
-    'openreview.net/public_article',
-    'openreview.net/arxiv',
-    'openreview.net/orcid',
-  ].some(prefix => domain.startsWith(prefix));
-}
-
 // The date the card shows. `mapOpenReviewNote` builds `published` from `pdate`,
 // then `cdate`, then `tcdate`; an order that disagrees with the date printed on
 // the card reads as no order at all, so the Worker sorts by the same precedence.
 function openReviewNoteDate(note: OpenReviewNote) {
   return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
-}
-
-/**
- * The submission an OpenReview forum id names, or null when OpenReview has no
- * such note or the id is a reply's (a review, a comment), which is no paper.
- * `GET /notes?id=` answers `{ notes: [note] }` and a 404 for an id it does not
- * have; a submission's `forum` is its own id. Any other refusal throws.
- *
- * Null too for a record OpenReview imported (`isOpenReviewSubmission`) or one
- * a profile owner archived: the search leaves both out, since they copy a
- * paper published elsewhere, an archive copy often under its owner's name
- * alone, and the mapper would present either as an unreviewed preprint.
- */
-export async function fetchOpenReviewNote(id: string, timeoutMs?: number) {
-  const url = new URL('https://api2.openreview.net/notes');
-  url.searchParams.set('id', id);
-  let payload: { notes?: OpenReviewNote[] } | null;
-  try {
-    payload = await fetchJsonUpstream<{ notes?: OpenReviewNote[] }>(url, {}, timeoutMs);
-  } catch (error) {
-    if ((error as UpstreamError).status === 404) return null;
-    throw error;
-  }
-  const note = (payload?.notes || []).find(candidate => candidate?.id === id && (candidate.forum ?? id) === id);
-  const archived = String(note?.domain || '').toLowerCase().startsWith('openreview.net/archive');
-  return note && isOpenReviewSubmission(note) && !archived ? note : null;
 }
 
 export async function handleOpenReview(request: Request, env: WorkerEnv) {
@@ -314,8 +279,14 @@ export async function handleOpenReview(request: Request, env: WorkerEnv) {
   if (requestedId !== null) {
     const id = normalizeOpenReviewId(`openreview:${requestedId}`);
     if (!id) return json({ error: 'Invalid OpenReview id' }, 400, corsHeaders(context.origin, env));
+    // OpenReview answers a lookup by id only to a signed-in caller
+    // (open-review-api.ts). Without the account this is a Worker that was not
+    // provisioned, which is neither "no such paper" nor OpenReview failing.
+    if (!openReviewAccount(env)) {
+      return json({ error: 'OpenReview lookups are not configured', code: 'OPENREVIEW_NOT_CONFIGURED' }, 503, corsHeaders(context.origin, env));
+    }
     return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
-      const note = await fetchOpenReviewNote(id);
+      const note = await fetchOpenReviewNote(env, id);
       return { notes: note ? [compactOpenReviewNote(note)] : [], count: note ? 1 : 0 };
     }, { canonicalParams: { id } });
   }

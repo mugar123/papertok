@@ -254,11 +254,16 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(payload.notes[0].id, 'submission');
 });
 
-// Synthetic notes in the shape `/notes/search` returns; `GET /notes?id=` was
-// not observed live (OpenReview answers this project's machines with a bot check).
+// Synthetic notes in the shape `/notes/search` returns; a signed-in
+// `GET /notes?id=` was not observed live. The sign-in itself is covered in
+// open-review-api.test.ts.
+const OPENREVIEW_ACCOUNT = { OPENREVIEW_USERNAME: 'route-reader@papertok.test', OPENREVIEW_PASSWORD: 'not-a-real-password' };
+const openReviewToken = () => new Response(JSON.stringify({ token: 'token-1' }), { headers: { 'content-type': 'application/json' } });
+
 test('answers one OpenReview submission by its forum id', async () => {
   let upstreamUrl = '';
   const response = await withWorkerFetchMock(async url => {
+    if (String(url).endsWith('/login')) return openReviewToken();
     upstreamUrl = String(url);
     return new Response(JSON.stringify({
       notes: [{
@@ -271,7 +276,7 @@ test('answers one OpenReview submission by its forum id', async () => {
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?id=5pShDP8LSm',
     { headers: { origin: 'https://mugar123.github.io' } },
-  ), {}));
+  ), OPENREVIEW_ACCOUNT));
 
   assert.equal(response.status, 200);
   assert.equal(upstreamUrl, 'https://api2.openreview.net/notes?id=5pShDP8LSm');
@@ -281,12 +286,16 @@ test('answers one OpenReview submission by its forum id', async () => {
 });
 
 test('an OpenReview id that names no submission answers an empty list, and a malformed one is refused unasked', async () => {
-  const ask = (query: string, upstream: () => Response) => {
+  const ask = (query: string, upstream: () => Response, env: WorkerEnv = OPENREVIEW_ACCOUNT) => {
     let asked = 0;
-    return withWorkerFetchMock(async () => { asked += 1; return upstream(); }, () => reportApi.fetch(new Request(
+    return withWorkerFetchMock(async url => {
+      if (String(url).endsWith('/login')) return openReviewToken();
+      asked += 1;
+      return upstream();
+    }, () => reportApi.fetch(new Request(
       `https://papertok-report-api.example/sources/openreview?${query}`,
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), {})).then(async response => ({ status: response.status, body: await response.json<{ notes?: unknown[]; upstreamStatus?: number }>(), asked }));
+    ), env)).then(async response => ({ status: response.status, body: await response.json<{ notes?: unknown[]; upstreamStatus?: number; code?: string }>(), asked }));
   };
   const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -311,6 +320,12 @@ test('an OpenReview id that names no submission answers an empty list, and a mal
   const refused = await ask('id=refusedNote', () => jsonResponse({ name: 'ChallengeRequiredError', status: 403 }, 403));
   assert.equal(refused.status, 502);
   assert.equal(refused.body.upstreamStatus, 403);
+
+  // A Worker with no OpenReview account says so, and asks nobody.
+  const unprovisioned = await ask('id=5pShDP8LSm', () => jsonResponse({ notes: [] }), {});
+  assert.equal(unprovisioned.status, 503);
+  assert.equal(unprovisioned.body.code, 'OPENREVIEW_NOT_CONFIGURED');
+  assert.equal(unprovisioned.asked, 0);
 });
 
 // api2's search accepts `sort=cdate:desc` and does nothing with it: measured
