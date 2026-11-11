@@ -231,6 +231,19 @@ test('only what OpenReview shows everyone is returned, whatever the account may 
   );
 });
 
+test("a refused sign-in says why in OpenReview's words, without the account's name", async () => {
+  const env = account();
+  await withOpenReview(
+    () => json({ name: 'ForbiddenError', message: `The account ${env.OPENREVIEW_USERNAME} is not active yet`, status: 400 }, 400),
+    async () => {
+      await assert.rejects(
+        fetchOpenReviewNote(env, '5pShDP8LSm'),
+        { message: 'OpenReview sign-in answered 400 (ForbiddenError: The account <account> is not active yet)' },
+      );
+    },
+  );
+});
+
 test('an account that needs a second factor cannot sign in unattended', async () => {
   const env = account();
   await withOpenReview(

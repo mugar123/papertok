@@ -64,6 +64,19 @@ function signInFailure(reason: string) {
   return error;
 }
 
+// What OpenReview said about a refused sign-in, for the log: a wrong password
+// and an account that is not active yet are both a 400, and only its words
+// tell them apart. The account's name is taken out of them.
+function refusalReason(body: { name?: unknown; message?: unknown } | null, account: Account) {
+  const words = [body?.name, body?.message]
+    .filter(part => typeof part === 'string' && part)
+    .join(': ')
+    .replaceAll(account.username, '<account>')
+    .replace(/\s+/g, ' ')
+    .slice(0, 200);
+  return words ? ` (${words})` : '';
+}
+
 async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) {
   const refused = refusedSignIns.get(account.username);
   if (refused && refused.until > Date.now()) throw refused.error;
@@ -75,10 +88,10 @@ async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) 
     signal,
   }, timeoutMs);
   // A 2xx that is not JSON is a refusal like any other, and is remembered.
-  const body = response.ok ? await response.json<{ token?: unknown; mfaPending?: unknown }>().catch(() => null) : null;
-  if (typeof body?.token !== 'string' || !body.token) {
+  const body = await response.json<{ token?: unknown; mfaPending?: unknown; name?: unknown; message?: unknown }>().catch(() => null);
+  if (!response.ok || typeof body?.token !== 'string' || !body.token) {
     const error = signInFailure(
-      !response.ok ? `answered ${response.status}`
+      !response.ok ? `answered ${response.status}${refusalReason(body, account)}`
         : body?.mfaPending ? 'asks for a second factor'
           : 'answered no token',
     );
