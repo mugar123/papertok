@@ -43,9 +43,9 @@ function extractArxivId(content: Record<string, unknown>, pdfUrl: string) {
     unwrap(content?.arxiv),
     unwrap(content?.arxiv_id),
     unwrap(content?.external_id),
-    // Only a PDF arXiv hosts. OpenReview's own is `/pdf/<40 hex>.pdf`, and a
-    // hash that starts with seven digits reads as an old-style arXiv id.
-    /(?:^|\/\/|\.)arxiv\.org\//i.test(pdfUrl) ? pdfUrl : '',
+    // Only a PDF on an arxiv.org host. OpenReview's own is `/pdf/<40 hex>.pdf`,
+    // and a hash that starts with seven digits reads as an old-style arXiv id.
+    /^https?:\/\/(?:[\w-]+\.)*arxiv\.org\//i.test(pdfUrl) ? pdfUrl : '',
   ];
   for (const candidate of candidates) {
     const match = String(candidate || '').match(/(?:arxiv(?:\.org\/(?:abs|pdf)\/|:))?((?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?)/i);

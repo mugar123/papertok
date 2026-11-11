@@ -94,4 +94,9 @@ test("OpenReview's own PDF path is never read as an arXiv id", () => {
     content: { title: { value: 'A note whose PDF is on arXiv' }, pdf: { value: 'https://arxiv.org/pdf/2307.09288v2' } },
   });
   assert.equal(preprint?.arxivId, '2307.09288v2');
+
+  const pdfOf = (pdf: string) => mapOpenReviewNote({ id: 'note-host', forum: 'note-host', content: { title: { value: 'A note' }, pdf: { value: pdf } } });
+  assert.equal(pdfOf('http://export.arxiv.org/pdf/hep-th/9901001v3')?.arxivId, 'hep-th/9901001v3', 'any arxiv.org host, either scheme');
+  assert.equal(pdfOf('https://openreview.net/pdf?id=x&from=https://arxiv.org/abs/2307.09288')?.arxivId, undefined, 'arxiv.org in a query is not the host');
+  assert.equal(pdfOf('https://dl.acm.org/doi/pdf/10.1145/3534678.3539321')?.arxivId, undefined, 'digits in another publisher\'s path');
 });
