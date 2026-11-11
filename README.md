@@ -66,9 +66,25 @@ A paper can lead to your next one in two ways: **Similar papers** finds related 
 and the **citation map** shows references and citing papers when those records are
 available. Re-center the map on another paper or download the linked papers as BibTeX.
 
+<p align="center">
+  <a href="docs/assets/readme-tour/citation-map.jpg"><img src="docs/assets/readme-tour/citation-map.jpg" width="900" alt="Citation map for Why Most Published Research Findings Are False, with linked papers plotted by publication year and citation count"></a>
+</p>
+
+*Explore references and citing papers on the map, or switch to the list for all loaded
+connections. This local capture uses recorded [OpenAlex data](https://openalex.org/W2144981148).*
+
 ### Read the original or choose an explanation level
 
 **Read** opens the paper through the available original, PDF or library route.
+
+<p align="center">
+  <a href="docs/assets/readme-tour/original-reader.jpg"><img src="docs/assets/readme-tour/original-reader.jpg" width="900" alt="Original-article reader showing Why Most Published Research Findings Are False, its author, section index, text and reading controls"></a>
+</p>
+
+*The original article with its section index open. Shown: John P. A. Ioannidis,
+[Why Most Published Research Findings Are False](https://doi.org/10.1371/journal.pmed.0020124),
+PLOS Medicine (2005), distributed under a Creative Commons Attribution license.*
+
 **Read in plain words** uses AI to adapt supported full text to one of three levels:
 
 | Level | What to expect |
@@ -142,8 +158,13 @@ For release history, see the [release notes](https://github.com/mugar123/paperto
 The mobile feed, search and university screenshots were captured for version 0.3 with a
 disposable Firebase emulator account and live scholarly results. The desktop interest,
 reading-level and list-creation screenshots were captured from the app on November 11,
-2026 with a separate local emulator account. They show real interface states; no AI
-explanation or university entitlement was generated for these new screenshots.
+2026 with a separate local emulator account. The original-reader and citation-map
+screenshots were captured the same day in that local app: the reader renders the open
+article retrieved from [Europe PMC](https://europepmc.org/article/PMC/PMC1182327), and the
+map renders recorded public OpenAlex metadata. Reference and citation relationships were
+checked against those provider records. These captures show the actual interface, but do
+not exercise the live authenticated citation-graph endpoint. No AI explanation or
+university entitlement was generated for these desktop screenshots.
 
 </details>
 
