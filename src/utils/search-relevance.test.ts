@@ -13,6 +13,7 @@ import {
   resolvePreferredSearchSection,
   scorePaperSearchMatch,
   scoreSearchMatch,
+  paperRowNumbers,
 } from './search-relevance.ts';
 
 // --- scoring and filtering ---------------------------------------------------
@@ -647,4 +648,14 @@ test('a title in a spaced script keeps whole words and unfinished prefixes', () 
   assert.ok(scorePaperSearchMatch('машинное обуч', { title: 'Машинное обучение в бизнесе' }) >= 90, 'the last word is still being typed');
   assert.ok(scorePaperSearchMatch('учение', { title: 'Глубинное машинное обучение' }) < 80, 'the end of a word is not a phrase');
   assert.ok(scorePaperSearchMatch('машинное обучение', { title: 'Большие данные' }) < 80);
+});
+
+test('a palette row prints the citations a source counted, and none when nobody counted', () => {
+  assert.equal(paperRowNumbers({ year: 2017, citationCount: 152_340, citationCountKnown: true }), '2017 · 152,340 cit.');
+  assert.equal(paperRowNumbers({ year: 2026, citationCount: 0, citationCountKnown: true }), '2026 · 0 cit.', 'a confirmed zero');
+  // What `PaperBuilder` writes for a paper only OpenReview holds: nobody counts its citations.
+  assert.equal(paperRowNumbers({ year: 2026, citationCount: 0, citationCountKnown: false }), '2026');
+  assert.equal(paperRowNumbers({ year: 2026 }), '2026');
+  assert.equal(paperRowNumbers({ citationCount: 3 }), '3 cit.', 'a count with no flag came from a source');
+  assert.equal(paperRowNumbers({}), '');
 });
