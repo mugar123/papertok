@@ -428,6 +428,17 @@ this setting; see [Production Worker hostname](#production-worker-hostname).
 
 Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
+`/sources/openreview` has two forms, both answering `{ notes, count }` and cached 30 minutes.
+`?q=` searches OpenReview's forum notes and drops imported records. `?id=` answers the one
+submission a forum id names (`GET /notes?id=` upstream), for the app's paper page and for an
+OpenReview link pasted into search: an empty list when OpenReview answers 404, when the id is a
+reply's, and for an imported record or an archive copy, which the search leaves out too; a 400
+before OpenReview is asked for an id outside `[A-Za-z0-9_-]{6,24}`. Any other refusal fails as
+every source route does: 429 `UPSTREAM_RATE_LIMITED` for an upstream 429, 502 with
+`upstreamStatus` for another status, 502 `UPSTREAM_TIMEOUT` for a stall. The cache key of the
+second form is the id alone. The Worker asks api2 only; a forum from a venue still on
+OpenReview's first API may not be there, which was not checked.
+
 `/arxiv` relays arXiv's API at its published pace: one call every three seconds for the whole
 app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), with an uncached
 request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMITED`
@@ -719,7 +730,9 @@ may spend is bounded before any provider is asked — 60 a minute and 1000 a day
 ledger periods), 120 arXiv calls an hour with the unit given back when no seat comes — and each
 billed OpenAlex call is then also reserved on the shared OpenAlex budget, in the enrichment tier
 (see the budget tiers under `/openalex/*` below). A lookup by DOI, work id, PMID or entity id is
-free and reserves nothing; only the arXiv landing-page lookup reserves a unit.
+free and reserves nothing; only the arXiv landing-page lookup reserves a unit. A paper
+keyed by an OpenReview forum id is read from OpenReview alone (`GET /notes?id=`), under the share
+admission and no ceiling of its own; an id OpenReview does not have is final, a 404.
 Identical requests in one isolate share one lookup; a refused admission is not cached, and a
 failure never replaces a record another request found. Lists are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the

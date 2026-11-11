@@ -27,12 +27,13 @@ export const SECTION_SOURCES: Readonly<Record<string, string>> = Object.freeze({
 export const SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   openalex: 'OpenAlex',
   arxiv: 'arXiv',
+  openreview: 'OpenReview',
   ror: 'ROR',
   openaire: 'OpenAIRE',
 });
 
 /** Stable order, so a banner naming two providers never reshuffles them. */
-const SOURCE_ORDER = ['openalex', 'ror', 'openaire'];
+const SOURCE_ORDER = ['openalex', 'openreview', 'ror', 'openaire'];
 
 /**
  * What the banner has to say, as facts rather than sentences. Returns null when
@@ -56,16 +57,21 @@ const SOURCE_ORDER = ['openalex', 'ror', 'openaire'];
  * budget (`isOpenAlexBudgetRefusal`), not OpenAlex down. It promises no time,
  * because a new budget reading can reopen them at any moment, and it gives way
  * to `rateLimited`: once OpenAlex refuses the key, that is what the page says.
+ *
+ * `sectionSources` is who served each section in this answer, when it was not
+ * the usual provider: a pasted OpenReview link is answered by OpenReview alone
+ * in the papers section.
  */
 export function describeSearchOutage({
   sections = [],
+  sectionSources = SECTION_SOURCES,
   rateLimited = false,
   budgetPaused = false,
   retryAfterMs = 0,
   now = Date.now(),
-}: { sections?: string[]; rateLimited?: boolean; budgetPaused?: boolean; retryAfterMs?: number; now?: number } = {}) {
-  const failedSections = sections.filter(section => section in SECTION_SOURCES);
-  const affected = new Set(failedSections.map(section => SECTION_SOURCES[section]));
+}: { sections?: string[]; sectionSources?: Readonly<Record<string, string>>; rateLimited?: boolean; budgetPaused?: boolean; retryAfterMs?: number; now?: number } = {}) {
+  const failedSections = sections.filter(section => section in sectionSources);
+  const affected = new Set(failedSections.map(section => sectionSources[section]));
   if (rateLimited) affected.add('openalex');
 
   const sources = SOURCE_ORDER.filter(source => affected.has(source));
@@ -74,7 +80,7 @@ export function describeSearchOutage({
   const sectionsBySource: Record<string, string[]> = {};
   for (const source of sources) {
     sectionsBySource[source] = failedSections
-      .filter(section => SECTION_SOURCES[section] === source);
+      .filter(section => sectionSources[section] === source);
   }
 
   const usableRetry = Number.isFinite(retryAfterMs) && retryAfterMs > 0;
@@ -97,6 +103,8 @@ export function describeSearchOutage({
 export function outageAffectsFilter(outage: ReturnType<typeof describeSearchOutage>, filter: string) {
   if (!outage) return false;
   if (filter === 'all') return true;
+  // The section itself, for the answer another provider gave it.
+  if (outage.sections.includes(filter)) return true;
   const source = SECTION_SOURCES[filter];
   return Boolean(source) && outage.sources.includes(source);
 }

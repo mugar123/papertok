@@ -1,8 +1,8 @@
+import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
-interface OpenReviewNote extends Record<string, unknown> { content?: Record<string, unknown> }
 interface HuggingFaceEntry { paper?: { publishedAt?: string }; publishedAt?: string }
 interface HuggingFaceResources extends Record<string, unknown> {
   linkedModels?: Array<Record<string, unknown>>;
@@ -10,6 +10,7 @@ interface HuggingFaceResources extends Record<string, unknown> {
 }
 
 
+import { normalizeOpenReviewId } from '../src/utils/public-navigation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   cacheResponse,
@@ -277,9 +278,47 @@ function openReviewNoteDate(note: OpenReviewNote) {
   return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
 }
 
+/**
+ * The submission an OpenReview forum id names, or null when OpenReview has no
+ * such note or the id is a reply's (a review, a comment), which is no paper.
+ * `GET /notes?id=` answers `{ notes: [note] }` and a 404 for an id it does not
+ * have; a submission's `forum` is its own id. Any other refusal throws.
+ *
+ * Null too for a record OpenReview imported (`isOpenReviewSubmission`) or one
+ * a profile owner archived: the search leaves both out, since they copy a
+ * paper published elsewhere, an archive copy often under its owner's name
+ * alone, and the mapper would present either as an unreviewed preprint.
+ */
+export async function fetchOpenReviewNote(id: string, timeoutMs?: number) {
+  const url = new URL('https://api2.openreview.net/notes');
+  url.searchParams.set('id', id);
+  let payload: { notes?: OpenReviewNote[] } | null;
+  try {
+    payload = await fetchJsonUpstream<{ notes?: OpenReviewNote[] }>(url, {}, timeoutMs);
+  } catch (error) {
+    if ((error as UpstreamError).status === 404) return null;
+    throw error;
+  }
+  const note = (payload?.notes || []).find(candidate => candidate?.id === id && (candidate.forum ?? id) === id);
+  const archived = String(note?.domain || '').toLowerCase().startsWith('openreview.net/archive');
+  return note && isOpenReviewSubmission(note) && !archived ? note : null;
+}
+
 export async function handleOpenReview(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
+  // One paper by its forum id, for the paper page and a pasted OpenReview link.
+  // The same route as the search because it answers the same `{ notes }`; the
+  // key carries the id alone, so no search parameter can split one note.
+  const requestedId = context.requestUrl.searchParams.get('id');
+  if (requestedId !== null) {
+    const id = normalizeOpenReviewId(`openreview:${requestedId}`);
+    if (!id) return json({ error: 'Invalid OpenReview id' }, 400, corsHeaders(context.origin, env));
+    return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
+      const note = await fetchOpenReviewNote(id);
+      return { notes: note ? [compactOpenReviewNote(note)] : [], count: note ? 1 : 0 };
+    }, { canonicalParams: { id } });
+  }
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
   if (!query) return json({ error: 'Missing OpenReview query' }, 400, corsHeaders(context.origin, env));
 

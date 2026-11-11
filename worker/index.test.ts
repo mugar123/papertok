@@ -254,6 +254,65 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(payload.notes[0].id, 'submission');
 });
 
+// Synthetic notes in the shape `/notes/search` returns; `GET /notes?id=` was
+// not observed live (OpenReview answers this project's machines with a bot check).
+test('answers one OpenReview submission by its forum id', async () => {
+  let upstreamUrl = '';
+  const response = await withWorkerFetchMock(async url => {
+    upstreamUrl = String(url);
+    return new Response(JSON.stringify({
+      notes: [{
+        id: '5pShDP8LSm',
+        forum: '5pShDP8LSm',
+        domain: 'ICLR.cc/2026/Workshop/AIWILD',
+        content: { title: { value: 'Position: AI Development Should Prioritize Cognitive Security' }, _bibtex: { value: 'dropped' } },
+      }],
+    }), { headers: { 'content-type': 'application/json' } });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/openreview?id=5pShDP8LSm',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamUrl, 'https://api2.openreview.net/notes?id=5pShDP8LSm');
+  const payload = await response.json<{ notes: Array<{ id: string; content: Record<string, unknown> }> }>();
+  assert.deepEqual(payload.notes.map(note => note.id), ['5pShDP8LSm']);
+  assert.deepEqual(Object.keys(payload.notes[0].content), ['title']);
+});
+
+test('an OpenReview id that names no submission answers an empty list, and a malformed one is refused unasked', async () => {
+  const ask = (query: string, upstream: () => Response) => {
+    let asked = 0;
+    return withWorkerFetchMock(async () => { asked += 1; return upstream(); }, () => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/sources/openreview?${query}`,
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {})).then(async response => ({ status: response.status, body: await response.json<{ notes?: unknown[]; upstreamStatus?: number }>(), asked }));
+  };
+  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  const missing = await ask('id=missingNote1', () => jsonResponse({ name: 'NotFoundError', status: 404 }, 404));
+  assert.equal(missing.status, 200);
+  assert.deepEqual(missing.body.notes, []);
+
+  // A review or a comment has an id of its own and its submission's `forum`.
+  const reply = await ask('id=replyNote12', () => jsonResponse({ notes: [{ id: 'replyNote12', forum: '5pShDP8LSm', replyto: '5pShDP8LSm' }] }));
+  assert.deepEqual(reply.body.notes, []);
+
+  // What the search leaves out, a pasted link does not bring back.
+  for (const domain of ['DBLP.org/2026', 'OpenReview.net/Archive']) {
+    const copy = await ask('id=importedNote', () => jsonResponse({ notes: [{ id: 'importedNote', forum: 'importedNote', domain, content: { title: { value: 'Published elsewhere' } } }] }));
+    assert.deepEqual(copy.body.notes, [], domain);
+  }
+
+  const malformed = await ask('id=..%2Fgroups', () => jsonResponse({ notes: [] }));
+  assert.equal(malformed.status, 400);
+  assert.equal(malformed.asked, 0);
+
+  const refused = await ask('id=refusedNote', () => jsonResponse({ name: 'ChallengeRequiredError', status: 403 }, 403));
+  assert.equal(refused.status, 502);
+  assert.equal(refused.body.upstreamStatus, 403);
+});
+
 // api2's search accepts `sort=cdate:desc` and does nothing with it: measured
 // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all returned
 // the same sequence for three different queries (`tcdate`, `mdate` and `pdate`

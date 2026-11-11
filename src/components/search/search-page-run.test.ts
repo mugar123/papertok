@@ -5,6 +5,7 @@ import { searchEntities } from '../../services/entity-search-service.ts';
 import { OpenAlexRequestError } from '../../services/open-alex-client.ts';
 import type { SearchRun } from './search-page-run.ts';
 import { openSearchScope, scopeAnswerPaints, searchPageIssue } from './search-page-run.ts';
+import { outageAffectsFilter } from '../../utils/search-outage.ts';
 
 const author = { id: 'https://openalex.org/A1', display_name: 'Someone' };
 const institution = { id: 'https://ror.org/02f40zc51', display_name: 'University of Salamanca' };
@@ -128,4 +129,16 @@ test('a 429 from OpenAIRE does not name OpenAlex', () => {
   }], { rateLimited: false, retryAfterMs: 0 }, 1_000_000);
   assert.deepEqual(issue?.sources, ['openaire']);
   assert.equal(issue?.rateLimited, false);
+});
+
+test('a pasted OpenReview link that fails names OpenReview, not OpenAlex, even on a 429', () => {
+  const issue = searchPageIssue([{
+    section: 'papers', reason: 'error', failedAtMs: 1_000_000,
+    error: Object.assign(new Error('/sources/openreview returned 429'), { status: 429, searchSource: 'openreview' }),
+  }], { rateLimited: false, retryAfterMs: 0 }, 1_000_000);
+  assert.deepEqual(issue?.sources, ['openreview']);
+  assert.equal(issue?.involvesOpenAlex, false);
+  assert.equal(issue?.rateLimited, false);
+  assert.equal(outageAffectsFilter(issue, 'papers'), true, 'the Papers scope is the one it describes');
+  assert.equal(outageAffectsFilter(issue, 'authors'), false, 'OpenAlex answered the authors');
 });

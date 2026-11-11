@@ -38,10 +38,17 @@ test('a paper with no DOI and no arXiv id falls back to the search page, not to 
 });
 
 test('the paper rides along to the search page too, so it opens there instead of being listed again', () => {
-  // A paper only OpenReview holds: no DOI, no arXiv id, so no public page.
+  // Keyed by an id nobody can open, with no DOI and no arXiv id beside it.
+  const paper = { id: 's2:649def34f8be52c8b66281af98ae884c09aef38b', title: 'Long large character sums' };
+  const { path, state } = searchPaperDestination(paper, 'character sums');
+  assert.equal(path, '/search?q=character%20sums');
+  assert.equal(state!.paper, paper);
+});
+
+test('a paper only OpenReview holds has an address of its own', () => {
   const paper = { id: 'openreview:5pShDP8LSm', openReviewId: '5pShDP8LSm', title: 'Position: AI Development Should Prioritize Cognitive Security' };
   const { path, state } = searchPaperDestination(paper, 'cognitive security');
-  assert.equal(path, '/search?q=cognitive%20security');
+  assert.equal(decodePaperKey(decodeURIComponent(path.split('/').pop()!)), 'openreview:5pShDP8LSm');
   assert.equal(state!.paper, paper);
 });
 
