@@ -33,9 +33,16 @@ test('the paper rides along so the page paints before the network answers', () =
 });
 
 test('a paper with no DOI and no arXiv id falls back to the search page, not to a dead link', () => {
-  const { path, state } = searchPaperDestination({ title: 'Untitled work' }, 'character sums');
+  const { path } = searchPaperDestination({ title: 'Untitled work' }, 'character sums');
   assert.equal(path, '/search?q=character%20sums');
-  assert.equal(state, null);
+});
+
+test('the paper rides along to the search page too, so it opens there instead of being listed again', () => {
+  // A paper only OpenReview holds: no DOI, no arXiv id, so no public page.
+  const paper = { id: 'openreview:5pShDP8LSm', openReviewId: '5pShDP8LSm', title: 'Position: AI Development Should Prioritize Cognitive Security' };
+  const { path, state } = searchPaperDestination(paper, 'cognitive security');
+  assert.equal(path, '/search?q=cognitive%20security');
+  assert.equal(state!.paper, paper);
 });
 
 test('the fallback uses the title when there is no query to carry', () => {
@@ -45,6 +52,6 @@ test('the fallback uses the title when there is no query to carry', () => {
 
 test('a paper with nothing at all still lands on a real route', () => {
   for (const input of [null, undefined, {}, { title: '   ' }]) {
-    assert.equal(searchPaperDestination(input!).path, '/search');
+    assert.deepEqual(searchPaperDestination(input!), { path: '/search', state: null });
   }
 });

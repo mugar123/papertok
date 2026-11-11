@@ -31,6 +31,8 @@ import { getPublicPaperPath } from './public-navigation.ts';
  * shared or linked — so rather than a dead row it goes to the full search page,
  * carrying the query, where the same paper opens in an overlay that needs no
  * identifier.
+ *
+ * The paper rides along there too, and the search page opens it on arrival.
  */
 export function searchPaperDestination(paper: Partial<Paper>, query = '') {
   const path = getPublicPaperPath(paper);
@@ -39,6 +41,6 @@ export function searchPaperDestination(paper: Partial<Paper>, query = '') {
   const term = String(query || paper?.title || '').trim();
   return {
     path: term ? `/search?q=${encodeURIComponent(term)}` : '/search',
-    state: null,
+    state: paper?.title?.trim() ? { paper } : null,
   };
 }
