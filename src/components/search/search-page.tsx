@@ -1032,6 +1032,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
       {/* Paper Card Overlay */}
       <PaperOverlay
         open={Boolean(selectedPaper)}
+        arriving={Boolean(shownPaper) && shownPaper === arrivedFor}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        
