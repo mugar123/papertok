@@ -1,16 +1,16 @@
 import type { Paper } from '../../models/paper.ts';
 import type { CustomFeed, FeedIngredient } from '../../utils/custom-feeds.ts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useCorpusFeedPages } from '../../hooks/use-corpus-feed-pages.ts';
 import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
 import { fetchCorpusPage } from '../../services/paper-store-service.ts';
-import { MAX_DISMISSED_PER_FEED, readDismissed, saveDismissed } from '../../utils/custom-feed-dismissed.ts';
+import { changeDismissed, readDismissed, subscribeDismissed } from '../../utils/custom-feed-dismissed.ts';
 import {
-  CUSTOM_FEED_PAGE_SIZE,
   customFeedPagesCache,
   customFeedRunsCache,
+  feedPageOf,
   feedPageRequest,
   feedPagesKey,
   feedRunSignals,
@@ -39,7 +39,7 @@ const storedDismissed = (uid: string | null, feedId: string | undefined) => (uid
 export function useCustomFeedPapers(feed: CustomFeed | null): {
   papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
-  emptyKind: 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
+  emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
   dismiss: (paper: Paper) => void; restore: (paper: Paper) => void;
 } {
   const { user } = useAuth();
@@ -63,33 +63,28 @@ export function useCustomFeedPapers(feed: CustomFeed | null): {
   const key = uid && feed ? feedPagesKey(uid, feed) : null;
   const asksNothing = feed !== null && feedPageRequest(feed, NO_SIGNALS, 0) === null;
 
-  const owner = uid && feed ? `${uid}\n${feed.id}` : null;
-  const [removed, setRemoved] = useState(() => ({ owner, ids: storedDismissed(uid, feed?.id) }));
-  if (removed.owner !== owner) setRemoved({ owner, ids: storedDismissed(uid, feed?.id) });
-  const dismissed = removed.owner === owner ? removed.ids : NO_IDS;
-  // The list as the last dismiss or restore left it, before React renders it,
-  // so two of them in one render both land.
-  const removedRef = useRef(removed);
-  useEffect(() => {
-    removedRef.current = removed;
-  }, [removed]);
-  const currentDismissed = useCallback(
-    () => (removedRef.current.owner === owner ? removedRef.current.ids : storedDismissed(uid, feed?.id)),
-    [feed?.id, owner, uid],
+  // The papers removed from this feed as they are now: an Undo whose toast
+  // outlived an earlier visit changes what this visit shows too.
+  const feedId = feed?.id;
+  const subscribe = useCallback(
+    (onChange: () => void) => (uid && feedId ? subscribeDismissed(uid, feedId, onChange) : () => undefined),
+    [feedId, uid],
   );
+  // Stable, so a render that changed nothing does not read storage again after it commits.
+  const readRemoved = useCallback(() => storedDismissed(uid, feedId), [feedId, uid]);
+  const dismissed = useSyncExternalStore(subscribe, readRemoved);
 
   // A run's signals are taken from the reader's newest examples and the
   // feed's removed papers when its first page is asked for.
   const runFor = useCallback(
-    (run: FeedRunSignals | null, page: number) => feedRunSignals(run, page, { positiveIds: getPositiveExampleIds(), dismissed: currentDismissed() }),
-    [currentDismissed, getPositiveExampleIds],
+    (run: FeedRunSignals | null, page: number) => feedRunSignals(run, page, { positiveIds: getPositiveExampleIds(), dismissed: storedDismissed(uid, feedId) }),
+    [feedId, getPositiveExampleIds, uid],
   );
-  // A page with fewer papers than a page holds is the last.
   const ask = useCallback((signals: FeedRunSignals, page: number) => {
     const request = feed && feedPageRequest(feed, signals, page);
     // Not reached: the pages hook asks for nothing without a key (no feed) or when the feed asks for nothing.
     if (!request) return Promise.reject(new Error('The feed names nothing the corpus can serve.'));
-    return fetchCorpusPage(request).then(({ papers, loading }) => ({ papers, hasMore: papers.length >= CUSTOM_FEED_PAGE_SIZE, loading }));
+    return fetchCorpusPage(request).then(feedPageOf);
   }, [feed]);
   const shown = useCallback((papers: Paper[]) => {
     const kept = withoutNotInterested(papers, notInterestedIds);
@@ -100,21 +95,13 @@ export function useCustomFeedPapers(feed: CustomFeed | null): {
 
   const { pages, ...list } = useCorpusFeedPages({ key, ready: profileReady, press, asksNothing, runFor, ask, shown, caches: CACHES });
 
-  const changeDismissed = useCallback((change: (ids: string[]) => string[]) => {
-    if (!uid || !feed) return;
-    const ids = change(currentDismissed()).slice(-MAX_DISMISSED_PER_FEED);
-    removedRef.current = { owner, ids };
-    saveDismissed(uid, feed.id, ids);
-    setRemoved({ owner, ids });
-  }, [currentDismissed, feed, owner, uid]);
-
   const dismiss = useCallback((paper: Paper) => {
-    changeDismissed(ids => [...ids.filter(id => id !== paper.id), paper.id]);
-  }, [changeDismissed]);
+    if (uid && feedId) changeDismissed(uid, feedId, ids => [...ids.filter(id => id !== paper.id), paper.id]);
+  }, [feedId, uid]);
 
   const restore = useCallback((paper: Paper) => {
-    changeDismissed(ids => ids.filter(id => id !== paper.id));
-  }, [changeDismissed]);
+    if (uid && feedId) changeDismissed(uid, feedId, ids => ids.filter(id => id !== paper.id));
+  }, [feedId, uid]);
 
   const loadingIngredients = useMemo(() => (feed && pages ? loadingIngredientsOf(feed, pages.loading) : []), [feed, pages]);
 

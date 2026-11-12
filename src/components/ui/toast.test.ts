@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { actionStart, forgetAccountToasts, trackModalOverlay, listenForToastEscape, toastError } from './toast.ts';
+import { actionStart, forgetAccountToasts, trackModalOverlay, listenForToastEscape, toastError, toastForAccount } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -344,6 +344,47 @@ test('a toast with an action on screen when the account changes is put away, a p
   switchAccount();
   assert.deepEqual([undo, addToList].map(onScreen), [false, false], 'their actions were the account before');
   assert.ok(onScreen(plain), 'a toast without an action stays');
+  toast.dismiss();
+});
+
+// A custom feed's loading notice names its sources, such as the account's own
+// searches. A Toaster that mounts later is replayed what `toast.getToasts()`
+// returns (Sonner 2.0.8, Observer.subscribe), so a notice still listed there
+// would come back for the next reader.
+test('a toast shown for the account signed in is put away when the account changes, also by signing out', () => {
+  switchAccount();
+  toastForAccount(`reader-${readers}`, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-a' });
+  assert.ok(onScreen('loading:feed-a'), 'the notice is on screen for its account');
+  switchAccount();
+  assert.ok(!onScreen('loading:feed-a'), 'the reader signed in next does not see it');
+  switchAccount();
+  toastForAccount(`reader-${readers}`, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-b' });
+  forgetAccountToasts(null);
+  assert.ok(!onScreen('loading:feed-b'), 'nor does anyone once the reader signs out');
+});
+
+// The page's effect can still run for the previous account after auth has
+// named the next one, or nobody.
+test('a toast for an account that is no longer the one signed in is never shown', () => {
+  switchAccount();
+  const before = `reader-${readers}`;
+  switchAccount();
+  toastForAccount(before, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-c' });
+  assert.ok(!onScreen('loading:feed-c'), 'the reader signed in now does not see it');
+  toastForAccount(`reader-${readers}`, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-c2' });
+  assert.ok(onScreen('loading:feed-c2'), 'their own is shown');
+  toast.dismiss('loading:feed-c2');
+  forgetAccountToasts(null);
+  toastForAccount(before, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-d' });
+  assert.ok(!onScreen('loading:feed-d'), 'nor does anyone once signed out');
+});
+
+test('auth naming the same reader again keeps the toasts shown for them', () => {
+  switchAccount();
+  const reader = `reader-${readers}`;
+  toastForAccount(reader, 'Still gathering papers from your search "lattice QCD"', { id: 'loading:feed-e' });
+  forgetAccountToasts(reader);
+  assert.ok(onScreen('loading:feed-e'), 'the notice stays');
   toast.dismiss();
 });
 

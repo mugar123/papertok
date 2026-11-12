@@ -10,7 +10,7 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { Toggle } from '../ui/toggle.ts';
 import './pdf-viewer.css';
-import { safeDoiUrl } from '../../utils/external-url.ts';
+import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
 import { getFullText } from '../../services/full-text-service.ts';
 import type { FullText } from '../../utils/full-text.ts';
@@ -152,6 +152,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     || fullTextUrl
     || safeDoiUrl(paper.doi)
     || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
+  const dockUrl = (showsText && safeExternalUrl(fullText?.sourceUrl)) || externalUrl;
   const shouldShowFallback = showsPdf && (!pdfUrl || showFallback);
 
   // Fallback timeout
@@ -281,8 +282,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                     {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
                   </Button>
                 )}
-                {externalUrl && (
-                  <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={externalUrl} target="_blank" rel="noopener noreferrer" />}>
+                {dockUrl && (
+                  <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={dockUrl} target="_blank" rel="noopener noreferrer" />}>
                     <ArrowSquareOut size={18} aria-hidden="true" />
                   </Button>
                 )}

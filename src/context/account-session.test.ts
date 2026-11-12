@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './account-session.ts';
 import { resetAccountWarmup } from '../services/account-warmup.ts';
+import { changeDismissed, readDismissed } from '../utils/custom-feed-dismissed.ts';
 import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
 import { ownListsCache } from '../utils/profile-session-caches.ts';
@@ -114,6 +115,15 @@ test('a sign-out takes the account\'s Most recent pages and run out of the sessi
   closeAccountSession('account-a', deviceStorage());
   assert.equal(recentPagesCache.get(key), undefined);
   assert.equal(recentRunsCache.get(key), undefined);
+});
+
+test('a sign-out forgets the papers removed from a custom feed that storage could not keep', t => {
+  freshSession(t);
+  const full = { ...deviceStorage(), setItem: () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); } };
+  changeDismissed('account-a', 'abcd1234', () => ['p1'], full);
+  assert.deepEqual(readDismissed('account-a', 'abcd1234', full), ['p1'], 'kept for the session');
+  closeAccountSession('account-a', full);
+  assert.deepEqual(readDismissed('account-a', 'abcd1234', full), [], 'the next account on this device does not get it');
 });
 
 test('signing back in after a sign-out reads the account\'s lists again', async t => {

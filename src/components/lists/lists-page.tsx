@@ -1022,7 +1022,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    */
   const openPaperCard = (paper: Partial<Paper>) => {
     // The public paper page when the paper has an address there — a DOI, an
-    // arXiv id, the OpenAlex or PubMed id it was keyed by — with the stored
+    // arXiv id, the OpenAlex, PubMed or OpenReview id it was keyed by — with the stored
     // copy riding along so the page paints at once. A paper with no such
     // address (a Semantic Scholar hash saved before the adapter kept the DOI,
     // a Scopus eid) is still the paper the reader saved: its card opens right

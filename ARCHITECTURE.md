@@ -206,7 +206,11 @@ whole `areas` and follows (research topics, authors and keywords), with
 request and
 [useCustomFeedPapers](src/components/custom-feeds/use-custom-feed-papers.ts)
 sends it: the Worker serves only those lanes and says which follows are still
-loading. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
+loading. The list goes on while the answer's `more` is true, also past an empty
+page, and ends when it is false; from a Worker that does not send `more`, a
+page of fewer than 15 papers ends it. Like For you, the feed leaves out
+retracted papers and the types `isFeedPublication` rejects, and they still
+count toward their page. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
 hands the papers from useCustomFeedPapers to the shared
 [FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples and Not interested
 papers; it does not score the feed's papers.
@@ -231,7 +235,7 @@ recent and custom feeds page through [useCorpusFeedPages](src/hooks/use-corpus-f
 pressing either tab again asks its page for a new run through `requestRefresh`
 with the tab's key.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
-live arXiv and OpenAlex results and applies search relevance.
+live OpenAlex, arXiv and OpenReview results and applies search relevance.
 
 Missing scientific metadata stays unknown; normalization must preserve its
 provenance. See [the paper contract guidance](CONTRIBUTING.md#typescript-and-runtime-checks)

@@ -29,11 +29,15 @@ import './paper-overlay.css';
  * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
  * signal `PaperReader` and `SelectionMenu` already listen to.
  *
+ * `arriving` is for a card that is open when its page mounts because the
+ * reader came to the page for it: the frame is opaque from its first frame,
+ * so the page underneath is never seen through the fade.
+ *
  * `finalFocus` is asked on close where focus goes, given the closing popup: an
  * element, true for whatever opened the card, or false to leave focus alone.
  * The lists page needs it when the card's row left while the card was open.
  */
-export default function PaperOverlay({ open, onClose, onExitComplete, label, finalFocus, children }: PropsWithChildren<{ open: boolean; onClose: () => void; onExitComplete?: () => void; label?: string; finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean }>) {
+export default function PaperOverlay({ open, onClose, onExitComplete, label, finalFocus, arriving, children }: PropsWithChildren<{ open: boolean; onClose: () => void; onExitComplete?: () => void; label?: string; finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean; arriving?: boolean }>) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   return (
     <Dialog
@@ -42,7 +46,7 @@ export default function PaperOverlay({ open, onClose, onExitComplete, label, fin
       onOpenChangeComplete={(nextOpen) => { if (!nextOpen) onExitComplete?.(); }}
     >
       <DialogContent
-        className="paper-overlay"
+        className={arriving ? 'paper-overlay paper-overlay--arriving' : 'paper-overlay'}
         overlayClassName="paper-overlay-scrim"
         showClose={false}
         closeLabel={'Back'}

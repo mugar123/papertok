@@ -296,6 +296,10 @@ function AppContent() {
       EntityExplorer.preload().catch(() => {})
       import('./components/reader/paper-reader.tsx').catch(() => {})
       SearchCommand.preload().catch(() => {})
+      // The palette hands a paper with no public page to the search page,
+      // which opens it on arrival. Unpreloaded, the first one slid in an
+      // empty page and showed the paper afterwards.
+      SearchPage.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)

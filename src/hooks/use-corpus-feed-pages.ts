@@ -74,7 +74,7 @@ export function useCorpusFeedPages<Run>(options: {
 }): {
   pages: CustomFeedPages | null; papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
-  emptyKind: 'gathering' | 'nothing' | 'error' | null;
+  emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null;
 } {
   const { key, ready: profileReady, press, asksNothing, runFor, ask, shown, caches } = options;
   const { pages: pagesCache, runs: runsCache } = caches;

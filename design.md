@@ -502,10 +502,12 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   palette's or the list's line. Other errors, those of an action
   taken inside the open overlay, and those raised as an overlay plays its
   leave, appear at once. Signing out, or into another
-  account, puts away the error toasts on screen and those with an action,
-  such as an Undo, whose action would act for the reader now, and the
-  palette's and the Follows list's refusal line; the refusal of a press made
-  before it that settles later is not shown. An overlay opened while
+  account, puts away the error toasts on screen, those with an action,
+  such as an Undo, whose action would act for the reader now, the notice
+  that a custom feed's sources are still loading, which can name the
+  account's searches, and the palette's and the Follows list's refusal
+  line; the refusal of a press made before it that settles later is not
+  shown. An overlay opened while
   focus is in the toasts, as from "Add to list", keeps focus as they leave
   and returns it on close to the control used before the toasts. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do

@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 import type { CorpusPageRequest, LoadingFollow } from '../services/paper-store-service.ts';
+import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { corpusRequestOf, ingredientKey, type CustomFeed, type FeedIngredient } from './custom-feeds.ts';
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from './feed-interactions.ts';
 import { createSessionCache } from './session-cache.ts';
@@ -14,14 +15,17 @@ export interface CustomFeedPages { papers: Paper[]; page: number; hasMore: boole
 
 /**
  * The feed's list once page `page` arrives: the first page starts it, a later
- * one adds the papers the list does not hold yet. `hasMore` is the caller's:
- * a page is merged, not judged. `loading` is the latest answer's.
+ * one adds the papers the list does not hold yet, except those the feed does
+ * not show (`isFeedPublication`: a retracted paper, an erratum), as For You
+ * leaves them out. `hasMore` is the caller's, from the whole answer
+ * (`feedPageOf` for a custom feed): a page is merged, not judged, so the list
+ * goes on past the papers left out. `loading` is the latest answer's.
  */
 export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] }, page: number): CustomFeedPages {
   const papers = page === 0 || !current ? [] : [...current.papers];
   const held = new Set(papers.map(paper => paper.id));
   for (const paper of incoming.papers) {
-    if (held.has(paper.id)) continue;
+    if (held.has(paper.id) || !isFeedPublication(paper)) continue;
     held.add(paper.id);
     papers.push(paper);
   }
@@ -74,9 +78,21 @@ export function feedPageRequest(feed: CustomFeed, signals: FeedRunSignals, page:
 }
 
 /**
- * How many pages in a row a feed asks for by itself while every paper it was
- * given is one the reader took out; then it stops and shows itself empty,
- * and only a refresh asks again.
+ * The page a custom feed's list takes from the Worker's answer to
+ * `feedPageRequest` (`mergeFeedPage`). The list goes on while the answer's
+ * `more` says the Worker's ranking holds papers after this page, also past a
+ * page that is empty because the corpus dropped its works. From a Worker that
+ * does not send `more`, a page with fewer papers than a page holds is the
+ * last, counting the papers `mergeFeedPage` leaves out.
+ */
+export function feedPageOf(answer: { papers: Paper[]; loading: LoadingFollow[]; more?: boolean }): { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] } {
+  return { papers: answer.papers, hasMore: answer.more ?? answer.papers.length >= CUSTOM_FEED_PAGE_SIZE, loading: answer.loading };
+}
+
+/**
+ * How many pages in a row a feed asks for by itself while it has no paper to
+ * show; then it stops, and while it has more the reader asks for the next page
+ * (`feedEmptyKind`'s 'more').
  */
 export const MAX_EMPTY_AUTO_PAGES = 3;
 
@@ -95,14 +111,15 @@ export function loadingIngredientsOf(feed: CustomFeed, loading: CustomFeedPages[
 }
 
 /**
- * Why the feed shows no papers: some of its follows are still being gathered,
- * it has nothing, or it failed. Null while it has papers, or before its first
- * answer.
+ * Why the feed shows no papers: it failed, it has more pages it stopped asking
+ * for by itself, some of its follows are still being gathered, or it has
+ * nothing. Null while it has papers, or before its first answer.
  */
-export function feedEmptyKind(pages: CustomFeedPages | null, error: unknown): 'gathering' | 'nothing' | 'error' | null {
+export function feedEmptyKind(pages: CustomFeedPages | null, error: unknown): 'more' | 'gathering' | 'nothing' | 'error' | null {
   if (pages?.papers.length) return null;
   if (error) return 'error';
   if (!pages) return null;
+  if (pages.hasMore) return 'more';
   return pages.loading.length ? 'gathering' : 'nothing';
 }
 

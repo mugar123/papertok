@@ -104,11 +104,12 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown } | null;
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown } | null;
   // The Worker always answers a list, empty when nothing matches.
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
-  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading) };
+  const more = typeof answer?.more === 'boolean' ? answer.more : undefined;
+  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
 }
 
 /** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
@@ -151,10 +152,11 @@ function cutFollowText<T>(value: T, max: number): T {
  * before it page by number. A request asks for it explicitly, so a Worker
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
- * An `exact` request's answer says which of its follows are still `loading`;
- * a Worker that does not say, none.
+ * An `exact` request's answer says which of its follows are still `loading`,
+ * a Worker that does not say, none; and whether the Worker's ranking holds
+ * papers after this page (`more`), left unset unless the Worker sends a boolean.
  */
-export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[] }>;
+export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[]; more?: boolean }>;
 export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
 export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
