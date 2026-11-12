@@ -86,20 +86,21 @@
   color: var(--tint-red-fg);
 }
 
-/* The chosen ingredients: hairline chips, the kind in mono beside the name. */
+/* The chosen ingredients: hairline chips, the kind in mono beside the name.
+   The list stays mounted so the last chip can leave, and its height travels
+   as rows come and go (ingredient-picker.tsx). So that its height is all
+   that changes, each chip carries the space under its row and the list
+   gives the field's gap back: empty, it has no height and adds nothing.
+   Rows keep to the top, so a list taller than its chips mid-travel does not
+   stretch them. */
 .feed-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
+  align-content: flex-start;
+  column-gap: var(--space-2);
+  margin: 0 0 calc(-1 * var(--space-2));
   padding: 0;
   list-style: none;
-}
-
-/* Kept mounted so the last chip can leave (ingredient-picker.tsx); with
-   nothing in it, it takes no place in the field's gap. */
-.feed-chips:empty {
-  display: none;
 }
 
 .feed-chip {
@@ -108,6 +109,7 @@
   gap: var(--space-2);
   max-width: 100%;
   min-height: 32px;
+  margin-bottom: var(--space-2);
   padding: 0 var(--space-1) 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
