@@ -75,3 +75,28 @@ test('reads the names of authors sent as profile objects', () => {
   });
   assert.deepEqual(paper?.authors, [{ name: 'Haotian Zong' }, { name: 'Luhao Zhang' }]);
 });
+
+test("OpenReview's own PDF path is never read as an arXiv id", () => {
+  // Synthetic: a PDF hash that starts with seven digits, as about one in
+  // twenty-seven does, used to map to `arxiv:pdf/0123456`.
+  const paper = mapOpenReviewNote({
+    id: 'note-pdf',
+    forum: 'note-pdf',
+    content: { title: { value: 'A note with a digit-led PDF hash' }, pdf: { value: '/pdf/0123456789abcdef0123456789abcdef01234567.pdf' } },
+  });
+  assert.equal(paper?.id, 'openreview:note-pdf');
+  assert.equal(paper?.arxivId, undefined);
+  assert.equal(paper?.pdfUrl, 'https://openreview.net/pdf/0123456789abcdef0123456789abcdef01234567.pdf');
+
+  const preprint = mapOpenReviewNote({
+    id: 'note-arxiv',
+    forum: 'note-arxiv',
+    content: { title: { value: 'A note whose PDF is on arXiv' }, pdf: { value: 'https://arxiv.org/pdf/2307.09288v2' } },
+  });
+  assert.equal(preprint?.arxivId, '2307.09288v2');
+
+  const pdfOf = (pdf: string) => mapOpenReviewNote({ id: 'note-host', forum: 'note-host', content: { title: { value: 'A note' }, pdf: { value: pdf } } });
+  assert.equal(pdfOf('http://export.arxiv.org/pdf/hep-th/9901001v3')?.arxivId, 'hep-th/9901001v3', 'any arxiv.org host, either scheme');
+  assert.equal(pdfOf('https://openreview.net/pdf?id=x&from=https://arxiv.org/abs/2307.09288')?.arxivId, undefined, 'arxiv.org in a query is not the host');
+  assert.equal(pdfOf('https://dl.acm.org/doi/pdf/10.1145/3534678.3539321')?.arxivId, undefined, 'digits in another publisher\'s path');
+});

@@ -140,6 +140,22 @@ test('an area lane holds only what no leaf of the area holds: shipped rules file
   assert.equal(quantumPage.some(paper => paper.id === 'openalex:W1'), false, 'a filed article leaves the readers of other leaves');
 });
 
+test('an article moved from its area lane to a leaf keeps its arrival', async () => {
+  const store = corpus();
+  await arxivPapers(store, 'hep-th', 60, 0, 0);
+  await arxivPapers(store, 'quant-ph', 60, 1, 100);
+  await ingestPapers(store.env, [{ paper: journalArticle('W1'), lanes: ['area:physics'] }], { now: NOW });
+  store.setVector('id:openalex:w1', vector({ 0: 1 }, 1_001));
+  await storeLeafCentroids(store.env, NOW, PHYSICS_RULE);
+  const w1 = store.workOf('id:openalex:w1');
+  const arrived = '2026-10-20T03:00:00.000Z';
+  store.db.prepare("UPDATE work_lanes SET arrived = ? WHERE lane = 'area:physics' AND work_id = ?").run(arrived, w1);
+
+  await fileAreaPapers(store.env, PHYSICS_RULE);
+  assert.deepEqual(store.lane('area:physics'), []);
+  assert.deepEqual((store.db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'hep-th' AND work_id = ?").all(w1) as Array<{ arrived: string }>).map(row => row.arrived), [arrived]);
+});
+
 test('the evaluation files held-out arXiv papers against centroids of the others, and reports precision and coverage per area and rule', () => {
   const papers = (leaf: string, axes: (index: number) => Record<number, number>, seed: number) => Array.from({ length: 70 }, (_, index) => ({ leaf, vector: vector(axes(index), seed + index) }));
   // Two leaves whose papers overlap: each paper leans a random amount along

@@ -174,6 +174,8 @@ test('normalizes entity identifiers and strips query strings from analytics path
 test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/feeds'), '/settings/feeds');
+  assert.equal(normalizeAnalyticsPath('/recent'), '/recent');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
 });
 
@@ -190,6 +192,10 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a custom feed is recorded without its id', () => {
+  assert.equal(normalizeAnalyticsPath('/feeds/abcd1234'), '/feeds/:id');
 });
 
 test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
@@ -809,6 +815,17 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   }), { action: 'add', entity_type: 'journal', surface: 'other' });
 });
 
+test('a custom feed reaches analytics as counts and its order, never its name or id', () => {
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_create', {
+    topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', {
+    feed_order: 'best', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { feed_order: 'best' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_delete', { name: 'My thesis', feed_id: 'abcd1234' }, ANALYTICS_CONSENT.ENABLED), {});
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', { feed_order: 'daily' }), {});
+});
+
 test('a feed load error says why it failed with fixed labels only', () => {
   assert.deepEqual(sanitizeProductEventParams('app_error', {
     kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED', message: 'Paper store returned 400',
@@ -1016,8 +1033,8 @@ test('what a reader does in the connections map is one of six actions in the map
   assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
 });
 
-test('connections and similar are allowed surfaces for paper events', () => {
-  for (const surface of ['connections', 'similar']) {
+test('connections, similar and recent are allowed surfaces for paper events', () => {
+  for (const surface of ['connections', 'similar', 'recent']) {
     assert.deepEqual(sanitizeProductEventParams('paper_open', { surface, destination: 'pdf', position: 2 }), { surface, destination: 'pdf', position: 2 });
     assert.deepEqual(sanitizeProductEventParams('paper_view', { surface, position: 0 }), { surface, position: 0 });
     assert.deepEqual(sanitizeProductEventParams('paper_dwell', { surface, seconds: 9 }), { surface, seconds: 9 });

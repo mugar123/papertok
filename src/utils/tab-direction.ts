@@ -13,8 +13,8 @@
  * underline in `utils/nav-rule.ts` already moves along it.
  */
 
-/** In the order `navbar.tsx` renders them. */
-export const TAB_ORDER = ['/feed', '/following'];
+/** The fixed tabs, in the order `navbar.tsx` renders them; the reader's custom feeds follow them. */
+export const TAB_ORDER = ['/feed', '/recent', '/following'];
 
 /**
  * The last tab we were on, module scope for the same reason `routeDirection`'s
@@ -41,10 +41,13 @@ function normalize(pathname: string) {
  * mounts, both animate); without the latch the second render would see the tab
  * it had already recorded, conclude nothing had moved, and hand back `null`
  * halfway through — flipping the page's direction mid-animation.
+ *
+ * `order` is the bar's paths as it shows them, custom feeds included
+ * (`useFeedTabs`).
  */
-export function lateralTabDirection(pathname: string, memory = tabMemory) {
+export function lateralTabDirection(pathname: string, memory = tabMemory, order: readonly string[] = TAB_ORDER) {
   const path = normalize(pathname);
-  const index = path === null ? -1 : TAB_ORDER.indexOf(path);
+  const index = path === null ? -1 : order.indexOf(path);
 
   if (index === -1) {
     // Left the bar entirely (an entity, settings, the reader). Forget where we

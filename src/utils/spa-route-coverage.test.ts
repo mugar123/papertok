@@ -27,3 +27,16 @@ test('an address nobody declared is left to the 404 page', async () => {
     assert.ok(!matches(path), `${path} still gets the app with a 200`);
   }
 });
+
+test('Most recent has an address of its own', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/recent'));
+  assert.ok(!matches('/recently'));
+});
+
+test('a custom feed has an address of its own', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/feeds/abcd1234'));
+  assert.ok(!matches('/feeds'));
+  assert.ok(!matches('/feeds/abcd1234/extra'));
+});

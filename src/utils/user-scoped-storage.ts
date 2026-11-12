@@ -14,6 +14,7 @@ const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
 const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
+const CUSTOM_FEED_DISMISSED_KEY_PREFIX = 'papertok_customFeedDismissed:';
 // The comments a reporter chose not to see, from when the app had comments.
 // Nothing writes it any more; sign-out still sweeps it so a list left in a
 // browser does not outlive the feature.
@@ -247,6 +248,12 @@ export function saveStoredOnboarding(userId: string, state: { preferences?: unkn
   }
 }
 
+/** One key per account for the papers removed from each of its custom feeds (custom-feed-dismissed.ts). */
+export function getCustomFeedDismissedStorageKey(userId: string | null | undefined) {
+  if (!userId) return null;
+  return `${CUSTOM_FEED_DISMISSED_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
 // Written by the follow counters of the removed profile page. Nothing writes
 // it now; sign-out still sweeps it from devices that stored one.
 function getFollowStatsStorageKey(userId: string | null | undefined) {
@@ -289,6 +296,7 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getOwnListsStorageKey(userId),
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
+    getCustomFeedDismissedStorageKey(userId),
     getLocalHiddenStorageKey(userId),
     LEGACY_LOCAL_HIDDEN_KEY,
     `papertok_following_${safeUserId}`,

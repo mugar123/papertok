@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 7 November 2026.</p>
+      <p class="lp-updated">Last updated 12 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -117,6 +117,11 @@
               <td>Authors, institutions, topics and journals you follow</td>
               <td>Your use of the app</td>
               <td>Building your feed and, if you turn them on, your email updates, which leave out journals</td>
+            </tr>
+            <tr>
+              <td>Feeds you create: each feed's name and the areas, topics, authors and keywords you put in it</td>
+              <td>You choose them</td>
+              <td>Showing each feed as a tab after For you, Most recent and Following, and fetching each feed's papers. They are kept with your account and deleted with it</td>
             </tr>
             <tr>
               <td>Comments and content reports from earlier versions of PaperTok</td>
@@ -279,7 +284,10 @@
         long the viewer stays on screen. Product events also record
         when you open a paper's connections or its similar papers, and what you do in the
         connections map, such as switching to the list or centring the graph on another
-        paper. Feed diagnostics record load starts, duration, result, initial loads versus
+        paper. Creating or opening one of your feeds records the order it uses; creating
+        one also records how many areas or topics, authors and keywords it holds. Deleting
+        one records only that it happened. No event records a feed's name or what is in it.
+        Feed diagnostics record load starts, duration, result, initial loads versus
         refreshes or additional pages, automatic retries, and the web and server versions.
         They contain no paper identifiers or interests.
         Events include the browser and its version, the operating system and its version,
@@ -291,7 +299,7 @@
       <p>
         PaperTok does not send your name, email address, search text, notes, paper titles
         or full page addresses to product analytics. Page addresses have query strings,
-        fragments and individual paper, list and profile identifiers removed. PaperTok
+        fragments and individual paper, list, feed and profile identifiers removed. PaperTok
         does not record sessions or automatically capture clicks or heatmaps.
       </p>
       <p>
@@ -397,9 +405,15 @@
         order, not the list of papers you liked, saved or read at length. Deleting your
         account does not remove it sooner; it expires on its own. Apart from that order,
         which papers you liked, saved, opened or viewed is not stored there, and neither is
-        the filter. A paper you liked, saved or opened that the catalogue does not have yet
+        the filter. A request for a page of one of your own feeds sends instead that feed's
+        areas, categories, research topics, authors and keywords, the identifiers of up to 24
+        of the papers you most recently liked, saved or read at length, and the identifiers of
+        the papers you removed from that feed, so the page leaves them out. It sends no filter
+        of the papers you viewed; papers you marked Not interested are left out by your browser.
+        A paper you liked, saved or opened that the catalogue does not have yet
         is added to it without any link to you. An author, institution, topic, journal, search or
-        project you follow is added to the list of things the catalogue collects papers for, also
+        project you follow or put in one of your feeds is added to the list of things the
+        catalogue collects papers for, also
         without any link to you, and leaves that list within 16 days of the last time anybody
         asks for it, later only if the daily clean-up fails. Cloudflare Workers AI turns the
         titles and abstracts of the catalogue's papers into numeric vectors. When papers you
@@ -466,7 +480,12 @@
         uses to count a first visit per session, a first real use and a return a week later
         once each. They are cleared when you clear the site's
         data, the viewed papers also when you sign out, and the analytics marks also when
-        you turn analytics off. While usage analytics is enabled, PostHog also keeps an
+        you turn analytics off. This browser also keeps, for each of your own feeds, the
+        latest 200 papers you removed from it, under your account identifier. Unlike the
+        things above, these are sent to the server with each request for that feed, so the
+        feed leaves them out. They are cleared when you delete that feed in this browser,
+        when you sign out and when you clear the site's data. While usage analytics is
+        enabled, PostHog also keeps an
         identifier and your choice in a cookie and in local storage, as described under
         Analytics. When the browser blocks the Google or GitHub sign-in window, the tab goes
         to the provider and comes back; during that trip this tab's session storage briefly

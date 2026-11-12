@@ -6,6 +6,8 @@ test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/feed'), 'For you | PaperTok')
   assert.equal(routeTitle('/lists'), 'My lists | PaperTok')
   assert.equal(routeTitle('/following'), 'Following | PaperTok')
+  assert.equal(routeTitle('/recent'), 'Most recent | PaperTok')
+  assert.equal(routeLabel('/recent'), 'Most recent')
   assert.equal(routeTitle('/search'), 'Search | PaperTok')
 })
 
@@ -32,4 +34,22 @@ test('labels announce even self-titled routes', () => {
   assert.equal(routeLabel('/settings/profile'), 'Account · Settings')
   assert.equal(routeLabel('/settings/privacy'), 'Privacy · Settings')
   assert.equal(routeLabel('/nonsense'), null)
+})
+
+test('a custom feed is called by its name', () => {
+  assert.equal(routeLabel('/feeds/abcd1234', [{ id: 'abcd1234', name: 'Thesis' }]), 'Thesis')
+  assert.equal(routeTitle('/feeds/abcd1234/', [{ id: 'abcd1234', name: 'Thesis' }]), 'Thesis | PaperTok')
+  assert.equal(routeLabel('/feeds/unknown', []), null)
+})
+
+test('a custom feed this account\'s list does not name is titled "Your feed", so no earlier title stays', () => {
+  // Before the account's list answers, as after a switch of account, and for
+  // an id the list lacks.
+  assert.equal(routeTitle('/feeds/abcd1234', []), 'Your feed | PaperTok')
+  assert.equal(routeTitle('/feeds/unknown', [{ id: 'abcd1234', name: 'Thesis' }]), 'Your feed | PaperTok')
+})
+
+test('the page that manages the feeds has a name of its own', () => {
+  assert.equal(routeLabel('/settings/feeds'), 'Feeds settings')
+  assert.equal(routeTitle('/settings/feeds'), 'Feeds settings | PaperTok')
 })

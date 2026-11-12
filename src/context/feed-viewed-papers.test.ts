@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount, viewedPaperIds } from './feed-viewed-papers.ts';
 import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/user-scoped-storage.ts';
 import { MAX_VIEWED_IDS, createEmptyInteractionProfile, deserializeInteractionProfile, recordInteractionEvent, serializeInteractionProfile } from '../utils/interaction-profile.ts';
 import { feedSeenFilter, feedSeenIds, hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
@@ -152,4 +152,15 @@ test('the previous account\'s papers are cleared on a switch or a sign-out, not 
   assert.equal(leavesLoadedAccount('account-a', 'account-a'), false);
   // Nothing loaded yet: a profile that failed to load leaves the sets alone.
   assert.equal(leavesLoadedAccount(null, 'account-b'), false);
+});
+
+test('what an account viewed lists its aggregate oldest first, then this browser\'s views the aggregate does not list', () => {
+  const storage = memoryStorage();
+  const aggregate = createEmptyInteractionProfile();
+  // The aggregate lists them newest first: c, b, a.
+  ['a', 'b', 'c'].forEach(paperId => recordInteractionEvent(aggregate, { paperId, kind: 'viewTime', category: 'cs.AI', viewTime: 4 }));
+  // This browser's list, oldest first.
+  saveSeenPaperIds('account-a', ['x', 'b', 'y'], storage);
+
+  assert.deepEqual(viewedPaperIds('account-a', aggregate, storage), ['a', 'b', 'c', 'x', 'y']);
 });

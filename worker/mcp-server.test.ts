@@ -965,6 +965,8 @@ test('invalid arguments are a tool error and reach no provider', async () => {
       ['search_papers', { query: 'graphene', limit: 500 }],
       ['search_papers', { query: 'graphene', extra: true }],
       ['get_paper', { id: 'not an id' }],
+      // An address in the app, but no id OpenAlex or arXiv can answer.
+      ['get_paper', { id: 'https://openreview.net/forum?id=5pShDP8LSm' }],
       ['find_open_access', { doi: '2603.01234' }],
     ] as const) {
       const { answer } = await callTool(env, name, args);

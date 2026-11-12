@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 export interface ShareOptions { origin?: string; base?: string; includeName?: boolean; name?: string | null; paperKey?: string; }
 interface EntityInput { type?: string; id?: string; canonicalId?: string; code?: string; externalId?: string; displayName?: string; }
-type PaperInput = string | (Partial<Pick<Paper, 'id' | 'doi' | 'arxivId' | 'pmid'>> & { paperId?: string; paperKey?: string; key?: string; externalIds?: { DOI?: string | null; ArXiv?: string | null } }) | null | undefined;
+type PaperInput = string | (Partial<Pick<Paper, 'id' | 'doi' | 'arxivId' | 'pmid' | 'openReviewId'>> & { paperId?: string; paperKey?: string; key?: string; externalIds?: { DOI?: string | null; ArXiv?: string | null } }) | null | undefined;
 type ListInput = string | { shareId?: string; id?: string; token?: string } | null | undefined;
 
 import { encodeBase64Url, decodeBase64Url } from './base64-url.ts';
@@ -245,13 +245,30 @@ export function normalizePmid(value: unknown) {
 }
 
 /**
+ * An OpenReview forum id, only when it says so: the `openreview:` prefix the
+ * OpenReview mapper mints, or a forum or PDF URL on openreview.net. A bare id
+ * is ten letters and digits and could be anything. Case is kept: the ids are
+ * case-sensitive.
+ */
+export function normalizeOpenReviewId(value: unknown) {
+  const text = cleanText(value);
+  const prefixed = text.match(/^openreview:\s*(.+)$/i);
+  const linked = text.match(/^(?:https?:\/\/)?(?:www\.)?openreview\.net\/(?:forum|pdf)\?([^#]+)/i);
+  const id = prefixed ? prefixed[1] : linked ? new URLSearchParams(linked[1]).get('id') || '' : '';
+  return /^[A-Za-z0-9_-]{6,24}$/.test(id) ? id : '';
+}
+
+/**
  * The identity a public paper URL carries, in order of preference: DOI, arXiv
- * id, OpenAlex work id, PubMed id. Every one of them is loadable — a URL
- * nobody can open is worse than no URL — which is why a Semantic Scholar hash
- * or a Scopus id still yields nothing here.
+ * id, OpenAlex work id, PubMed id, OpenReview forum id. Every one of them is
+ * loadable — a URL nobody can open is worse than no URL — which is why a
+ * Semantic Scholar hash or a Scopus id still yields nothing here.
  *
- * The last two exist for the papers the feed keys by provider id: an OpenAlex
- * or PubMed paper liked from the feed is remembered under `openalex:W…` or
+ * The OpenReview id comes last because a submission that also has a DOI or an
+ * arXiv copy is the same paper the other providers hold, under their id.
+ *
+ * The OpenAlex and PubMed ids exist for the papers the feed keys by provider
+ * id: an OpenAlex or PubMed paper liked from the feed is remembered under `openalex:W…` or
  * `pmid:…`, and the Liked tab has nothing else to go on for it. Without an
  * identity for those ids, every such row was a label instead of a link.
  */
@@ -267,7 +284,10 @@ export function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): 
     if (fromId) return fromId;
 
     const pmid = normalizePmid(typeOrPaper.pmid ? `pmid:${typeOrPaper.pmid}` : '');
-    return pmid ? `pmid:${pmid}` : '';
+    if (pmid) return `pmid:${pmid}`;
+
+    const openReviewId = normalizeOpenReviewId(typeOrPaper.openReviewId ? `openreview:${typeOrPaper.openReviewId}` : '');
+    return openReviewId ? `openreview:${openReviewId}` : '';
   }
 
   if (identifier !== undefined) {
@@ -287,6 +307,10 @@ export function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): 
     if (type === 'pmid') {
       const pmid = normalizePmid(`pmid:${cleanText(identifier)}`);
       return pmid ? `pmid:${pmid}` : '';
+    }
+    if (type === 'openreview') {
+      const openReviewId = normalizeOpenReviewId(`openreview:${cleanText(identifier)}`);
+      return openReviewId ? `openreview:${openReviewId}` : '';
     }
     return '';
   }
@@ -324,6 +348,10 @@ export function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): 
   if (/^(?:pmid:|(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/)/i.test(value)) {
     const pmid = normalizePmid(value);
     return pmid ? `pmid:${pmid}` : '';
+  }
+  if (/^(?:openreview:|(?:https?:\/\/)?(?:www\.)?openreview\.net\/)/i.test(value)) {
+    const openReviewId = normalizeOpenReviewId(value);
+    return openReviewId ? `openreview:${openReviewId}` : '';
   }
   return '';
 }
@@ -451,11 +479,11 @@ export function isPublicRoutePath(path: string) {
 }
 
 /**
- * The pages that keep the signed-in navbar: a paper, a shared list and an
- * entity page.
+ * The pages that keep the signed-in navbar: a paper, a shared list, an
+ * entity page and a custom feed.
  */
 export function keepsNavbarPath(path: string) {
-  return [['paper'], ['public', 'list'], ['explorer']].some(prefix => startsWithSegments(path, prefix));
+  return [['paper'], ['public', 'list'], ['explorer'], ['feeds']].some(prefix => startsWithSegments(path, prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

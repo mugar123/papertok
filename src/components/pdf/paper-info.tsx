@@ -109,6 +109,7 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
         onAbout: () => setView('about'),
         onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
         onNotInterested: () => onLeave(card.notInterested),
+        notInterestedHint: card.notInterestedHint,
       })}
       open={view === 'actions' || view === 'about'}
       onClose={close}

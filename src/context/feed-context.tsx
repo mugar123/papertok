@@ -8,6 +8,7 @@ import type { FeedSnapshot } from './feed-snapshot.ts';
 import type { LastVisitStatus } from '../utils/feed-loading-state.ts';
 import type { LibraryEntry } from './library-entry.ts';
 import type { MarkWriteOptions } from './write-mark.ts';
+import type { InterestRunSignals } from '../utils/recent-feed-pages.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface RecommendationProfileSnapshot extends RecommendationContext {
   userId: string | null; ready: boolean; userPreferences: string[]; followedAuthors: string[];
@@ -42,6 +43,10 @@ export interface FeedContextValue {
   /** Whether a next-page load started, or waits for the commit of the load that just ended. */
   loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
+  /** The paper ids of the examples For You plans its ranking from (likes, saves, long reads), newest first. */
+  getPositiveExampleIds: () => string[];
+  /** What a new list of the reader's interests asks the corpus with (Most recent): read-only, a new identity only when the reader's topics change. */
+  getInterestRunSignals: () => InterestRunSignals;
   reportVisiblePaper: (id: string | null) => void;
   // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
   // own (PaperCard's `analyticsSurface`). Only a For You card's ('feed') counts
@@ -103,7 +108,7 @@ import {
   saveProfileDriftCheckedAt,
 } from '../utils/user-scoped-storage.ts';
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
-import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
+import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount, viewedPaperIds } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
 import { startFeedLoad, type FeedLoadType, type FeedLoadAttempt } from './feed-load-telemetry.ts';
@@ -2469,6 +2474,37 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     readPaperIds: Array.from(readPaperIdsRef.current),
   }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences, readerLean]);
 
+  // Read-only and stable: a reader of the examples never re-renders this context's consumers.
+  const getPositiveExampleIds = useCallback(() => profileSignals.current.positiveExamples.map(example => example.id), []);
+
+  // Read-only: loadPapers' plan inputs, rejections and exclusions, with what
+  // the reader viewed on a card in place of the session's seen set, which
+  // also holds what For you only loaded. A new identity only when the
+  // reader's topics change, the one input this context does not keep in a ref.
+  const getInterestRunSignals = useCallback((): InterestRunSignals => {
+    const profile = interactionProfile.current;
+    const viewed = viewedPaperIds(activeUserId.current, profile);
+    return {
+      plan: feedPlanFor(null, 0, {
+        // No topics plan no groups, so a new list asks for nothing, as For you loads nothing.
+        selected: userPreferences ?? [],
+        deselected: deselectedPreferences,
+        added: addedPreferences,
+        examples: profileSignals.current.positiveExamples,
+        exposure: profileSignals.current.categoryExposure,
+        affinities: profileSignals.current.categoryAffinities,
+      }),
+      negativeIds: curatedIds(profile, 'notInterested').slice(0, 24),
+      excludedIds: [...new Set([
+        ...[...viewed].reverse(),
+        ...curatedIds(profile, 'read'),
+        ...curatedIds(profile, 'liked'),
+        ...curatedIds(profile, 'saved'),
+      ])].slice(0, 200),
+      viewedIds: viewed,
+    };
+  }, [userPreferences, deselectedPreferences, addedPreferences]);
+
   // Every function key below is already `useCallback`-wrapped (or, for
   // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own
   // logic needs — papers/page/feedMode/hasMore — actually changes; see the
@@ -2504,7 +2540,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    getRecommendationProfileSnapshot,
+    getRecommendationProfileSnapshot, getPositiveExampleIds, getInterestRunSignals,
     reportVisiblePaper,
     toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
@@ -2517,7 +2553,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    getRecommendationProfileSnapshot,
+    getRecommendationProfileSnapshot, getPositiveExampleIds, getInterestRunSignals,
     reportVisiblePaper,
     toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,

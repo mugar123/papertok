@@ -36,8 +36,17 @@ export function createSessionCache<T = unknown>({ maxEntries = 16 } = {}) {
     delete(key: string) {
       entries.delete(key);
     },
+    /** Removes every entry whose key `matches`. */
+    deleteWhere(matches: (key: string) => boolean) {
+      for (const key of [...entries.keys()]) {
+        if (matches(key)) entries.delete(key);
+      }
+    },
     clear() {
       entries.clear();
     },
   };
 }
+
+/** A cache `createSessionCache` made, holding values of type `T`. */
+export type SessionCache<T> = ReturnType<typeof createSessionCache<T>>;

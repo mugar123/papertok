@@ -52,6 +52,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/lists',
   '/login',
   '/onboarding',
+  '/recent',
   '/institution/verify',
   '/profile',
   '/report',
@@ -59,6 +60,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/search',
   '/settings',
   '/settings/discovery',
+  '/settings/feeds',
   '/settings/following',
   '/settings/notifications',
   '/settings/privacy',
@@ -152,13 +154,15 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // screen means adding it here in the same commit. `connections` is a paper
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'custom_feed', 'recent', 'other']),
   // The in-app paper viewer (components/pdf/viewer-outcome.ts).
   viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
   viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
   viewer_text_status: new Set(['shown', 'none', 'failed']),
   viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'render_failed', 'not_relayable', 'no_open_copy']),
   full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
+  // A custom feed's order as the reader chose it: Newest first or Best match.
+  feed_order: new Set(['newest', 'best']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -247,6 +251,13 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   connections_open: { surface: 'surface', graph_available: 'boolean' },
   connections_interact: { action: 'connections_action', view: 'connections_view' },
   similar_open: { surface: 'surface' },
+  // Custom feeds: one created, deleted or opened. A created feed is sent as
+  // how many ingredients of each kind it holds (`customFeedCreateEvent`) and
+  // its order; never its name, its id or what its ingredients are. An edit
+  // sends nothing.
+  custom_feed_create: { topic_count: 'boundedNumber', author_count: 'boundedNumber', keyword_count: 'boundedNumber', feed_order: 'feed_order' },
+  custom_feed_delete: {},
+  custom_feed_open: { feed_order: 'feed_order' },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
@@ -390,6 +401,8 @@ export function normalizeAnalyticsPath(pathname = '/') {
   // app.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
+  // The account's own feed: its id stays out of the report.
+  if (/^\/feeds\/[^/]+$/.test(path)) return '/feeds/:id';
 
   return '/unknown';
 }

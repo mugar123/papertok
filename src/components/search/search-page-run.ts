@@ -56,7 +56,14 @@ export function openSearchScope(run: SearchRun | null, scope: SearchScope, paint
  */
 export function searchPageIssue(issues: SearchIssue[], health: { rateLimited: boolean; retryAfterMs: number }, now: number) {
   const failedSections = issues.map(issue => issue.section);
-  const openAlexIssues = issues.filter(issue => SECTION_SOURCES[issue.section] === 'openalex');
+  // A failure that names its own provider (`searchSource`, set by the paper
+  // search for a pasted OpenReview link) is not the section's usual one.
+  const sectionSources: Record<string, string> = { ...SECTION_SOURCES };
+  for (const issue of issues) {
+    const source = (issue.error as { searchSource?: unknown } | null)?.searchSource;
+    if (typeof source === 'string') sectionSources[issue.section] = source;
+  }
+  const openAlexIssues = issues.filter(issue => sectionSources[issue.section] === 'openalex');
   const keyRefused = (error: unknown) => isOpenAlexRateLimitError(error) && !isOpenAlexBudgetRefusal(error);
   const rateLimited = health.rateLimited
     || openAlexIssues.some(issue => keyRefused(issue.error));
@@ -69,5 +76,5 @@ export function searchPageIssue(issues: SearchIssue[], health: { rateLimited: bo
         : 0
     )),
   );
-  return describeSearchOutage({ sections: failedSections, rateLimited, budgetPaused, retryAfterMs: retryAtMs - now, now });
+  return describeSearchOutage({ sections: failedSections, sectionSources, rateLimited, budgetPaused, retryAfterMs: retryAtMs - now, now });
 }

@@ -249,7 +249,9 @@ function readBody<T>(request: Request) {
  * follows and likes, or with `ids`, the corpus's copies of those papers. A
  * page asked with `seen` and `skipsSeen` says `skipsSeen`: it passed over the
  * papers the filter holds, so the app has no later page to try for unseen
- * ones.
+ * ones. An exact page asked by number (without `skipsSeen`) says whether a
+ * later page can still bring papers (`more`): its order holds ranks past it,
+ * and the route serves a later page (FEED_LAST_PAGE).
  */
 export async function handleCorpusFeed(
   request: Request,
@@ -258,7 +260,7 @@ export async function handleCorpusFeed(
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
-): Promise<{ papers: Paper[]; skipsSeen?: true }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; loading?: Array<{ type: string; canonicalId: string }> }> {
   const bodyRead = Date.now();
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
@@ -282,8 +284,9 @@ export async function handleCorpusFeed(
   }
   const query = parseFeedRequest(body);
   if (query.categories.length === 0 && query.follows.length === 0) {
-    // Follows that are all categories, or name nothing a lane serves, have no papers of their own.
-    if (Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
+    // Follows that are all categories, or name nothing a lane serves, have no
+    // papers of their own. An exact request is served nothing else, so it asks for nothing.
+    if (!query.exact && Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
     throw new PaperStoreError('LANES_REQUIRED', 400);
   }
   // Two follows can name one lane, such as two authors known by the same name.
@@ -298,7 +301,15 @@ export async function handleCorpusFeed(
     lanes.length ? readFollowedLanes(env, lanes).finally(() => timings?.since('follows', followsRead)) : [],
   ]);
   const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
-  if (query.page > FEED_LAST_PAGE) return { papers: [] };
+  // For a request that asks for it (`exact`), the asked follows with no papers
+  // yet because their lane, asked for the first time or still in its first
+  // harvest, had not finished it: named only when there are some.
+  const loading = query.exact
+    ? query.follows.filter(follow => !harvestedBefore.has(follow.lane)).map(({ type, canonicalId }) => ({ type, canonicalId }))
+    : [];
+  const loadingField = loading.length ? { loading } : {};
+  const saysMore = query.exact && !query.skipsSeen;
+  if (query.page > FEED_LAST_PAGE) return { papers: [], ...(saysMore ? { more: false } : {}), ...loadingField };
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
   const looksUp = query.page === 0 && query.follows.length === 0 && query.positiveIds.length > 0;
@@ -316,6 +327,7 @@ export async function handleCorpusFeed(
   if (waitsForLikes) timings?.since('likesWait', waited);
   const cache = rankingCache(identity.uid);
   let kept: [string, KeptRanking, number] | null = null;
+  let ranksLeft = false;
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
@@ -335,6 +347,7 @@ export async function handleCorpusFeed(
       update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
     },
     timings,
+    ranksLeft: left => { ranksLeft = left; },
   });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
@@ -349,5 +362,10 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if ((kept?.[1].final || kept?.[1].decided !== undefined) && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
+  return {
+    papers,
+    ...(query.skipsSeen ? { skipsSeen: true as const } : {}),
+    ...(saysMore ? { more: ranksLeft && query.page < FEED_LAST_PAGE } : {}),
+    ...loadingField,
+  };
 }

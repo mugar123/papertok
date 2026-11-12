@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { paperLegacyAdapter, readArxivId } from './paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readArxivId } from './paper.ts';
 import { areaKeyForPaper, areaLabelForPaper } from '../utils/area-accent.ts';
 import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { accessTagForPaper } from '../utils/paper-status.ts';
@@ -149,4 +149,12 @@ test('a stored copy with neither a year nor a date shows no year', () => {
 test('a paper that already has the new shape passes through untouched', () => {
   const modern = { id: 'openalex:W1', sources: { primary: 'openalex', enrichedBy: [] }, title: 'T' };
   assert.equal(paperLegacyAdapter(modern), modern);
+});
+
+test("the builder's zero for a paper nobody counted is not a citation count", () => {
+  assert.equal(knownCitationCount({ citationCount: 0, citationCountKnown: false }), null);
+  assert.equal(knownCitationCount({ citationCount: 0 }), null);
+  assert.equal(knownCitationCount({}), null);
+  assert.equal(knownCitationCount({ citationCount: 0, citationCountKnown: true }), 0, 'a confirmed zero');
+  assert.equal(knownCitationCount({ citationCount: 12 }), 12);
 });

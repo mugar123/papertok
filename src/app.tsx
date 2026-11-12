@@ -29,6 +29,7 @@ import { SimilarFeedProvider } from './context/similar-feed-context.tsx'
 import { FollowingProvider } from './context/following-context.tsx'
 import { FollowingUpdatesProvider } from './context/following-updates-context.tsx'
 import { EmailNotificationsProvider } from './context/email-notifications-context.tsx'
+import { CustomFeedsProvider } from './context/custom-feeds-provider.tsx'
 import ProtectedRoute from './components/auth/protected-route.tsx'
 import FeedContainer from './components/feed/feed-container.tsx'
 import Navbar from './components/layout/navbar.tsx'
@@ -66,8 +67,11 @@ const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
+const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
+const CustomFeedPage = lazyWithPreload(() => import('./components/custom-feeds/custom-feed-page.tsx'))
 const SettingsPage = lazyWithPreload(() => import('./components/settings/settings-page.tsx'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/settings/following-settings-page.tsx'))
+const FeedsSettingsPage = lazyWithPreload(() => import('./components/settings/feeds-settings-page.tsx'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/public/public-paper-page.tsx'))
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
 const SearchCommand = lazyWithPreload(() => import('./components/search/search-command.tsx'))
@@ -165,7 +169,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
+  const navbarRoutes = ['/feed', '/lists', '/recent', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -277,6 +281,7 @@ function AppContent() {
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
+      RecentFeedPage.preload().catch(() => {})
       // Settings is one tap from every screen, in the account menu. Fetched
       // on first visit instead, its chunk was what a deploy most often took
       // away from an open tab: a 404 on the chunk, the forced reload in
@@ -291,6 +296,10 @@ function AppContent() {
       EntityExplorer.preload().catch(() => {})
       import('./components/reader/paper-reader.tsx').catch(() => {})
       SearchCommand.preload().catch(() => {})
+      // The palette hands a paper with no public page to the search page,
+      // which opens it on arrival. Unpreloaded, the first one slid in an
+      // empty page and showed the paper afterwards.
+      SearchPage.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
@@ -411,11 +420,38 @@ function AppContent() {
           <Route path="/research" element={<Navigate to="/feed" replace />} />
           <Route path="/report" element={<Navigate to="/feed" replace />} />
           <Route
+            path="/recent"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <RecentFeedPage
+                    onOpenPdf={openPdf}
+                    onSaveToList={openSaveModal}
+                  />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/following"
             element={
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingFeedPage
+                    onOpenPdf={openPdf}
+                    onSaveToList={openSaveModal}
+                  />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          {/* A custom feed of the account's, by its id. */}
+          <Route
+            path="/feeds/:feedId"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <CustomFeedPage
                     onOpenPdf={openPdf}
                     onSaveToList={openSaveModal}
                   />
@@ -496,6 +532,16 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingSettingsPage />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/feeds"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <FeedsSettingsPage />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -636,7 +682,9 @@ function UserScopedAppContent() {
     <FollowingProvider key={accountScopeKey(scope)}>
       <FollowingUpdatesProvider>
         <EmailNotificationsProvider>
-          <AppContent />
+          <CustomFeedsProvider>
+            <AppContent />
+          </CustomFeedsProvider>
         </EmailNotificationsProvider>
       </FollowingUpdatesProvider>
     </FollowingProvider>

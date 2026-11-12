@@ -176,6 +176,20 @@ test('a first page that goes on with the walk says so beside the filter, and is 
   assert.ok(!('continues' in byNumber), 'a page that does not skip seen papers has no walk to go on with');
 });
 
+// ENG-198: a Most recent page names its run, so two tabs keep two walks.
+// A Worker before it reads the same request without the name.
+test('a page names its run beside the filter, and is otherwise the same request; a page asked by number names none', async () => {
+  const { asked, options } = harness(answered([]));
+  const seen = new Set(['2610.00001']);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 1, pageSize: 15, order: 'daily', seen, walk: 'run-1' }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 1, pageSize: 15, order: 'daily', seen }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 1, pageSize: 15, order: 'daily', walk: 'run-1' }, options);
+  const [named, unnamed, byNumber] = asked.map(entry => entry.body as Record<string, unknown>);
+  assert.deepEqual(named, { ...unnamed, walk: 'run-1' });
+  assert.ok(!('walk' in unnamed), 'a page of no run names none');
+  assert.ok(!('walk' in byNumber), 'a page that does not skip seen papers has no walk to name');
+});
+
 test('a page returns whether the Worker passed over the papers the filter holds', async () => {
   const seen = new Set(['2610.00001']);
   const skipping = harness(async () => new Response(JSON.stringify({ papers: [STORED], skipsSeen: true }), { status: 200 }));
@@ -183,6 +197,33 @@ test('a page returns whether the Worker passed over the papers the filter holds'
   // A Worker from before PAP-103 reads the filter for notable papers only, and says nothing.
   const paging = harness(answered([STORED]));
   assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, paging.options), { papers: [STORED], skipsSeen: false });
+});
+
+test('a custom feed page asks for exactly its lanes and says which follows are still loading', async () => {
+  const follow: FollowEntity = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' };
+  const loading = [{ type: 'author', canonicalId: 'A5023888391' }];
+  const gathering = harness(async () => new Response(JSON.stringify({ papers: [], loading }), { status: 200 }));
+  const page = await fetchCorpusPage({
+    categories: ['quant-ph'], areas: ['physics'], follows: [follow], exact: true, positiveIds: ['2610.00001'], page: 0, pageSize: 15, order: 'daily',
+  }, gathering.options);
+  assert.deepEqual(gathering.asked[0].body, {
+    categories: ['quant-ph'],
+    areas: ['physics'],
+    follows: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', metadata: {} }],
+    exact: true,
+    positiveIds: ['2610.00001'],
+    page: 0,
+    pageSize: 15,
+    order: 'daily',
+  });
+  assert.deepEqual(page.loading, loading);
+  assert.deepEqual(page.papers, []);
+
+  // A Worker that does not know exact requests answers without the field.
+  const older = harness(answered([STORED]));
+  const served = await fetchCorpusPage({ categories: ['quant-ph'], exact: true, page: 0, pageSize: 15, order: 'daily' }, older.options);
+  assert.deepEqual(served.loading, []);
+  assert.deepEqual(served.papers, [STORED]);
 });
 
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {
