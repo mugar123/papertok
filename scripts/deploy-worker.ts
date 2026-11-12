@@ -431,7 +431,14 @@ async function deploy() {
     // Step 6.
     run('wrangler deploy', wrangler, ['deploy', join(output, 'instrumentation.js'), ...wranglerArgs, '--no-bundle', '--config', 'wrangler.toml']);
   } finally {
-    rmSync(output, { recursive: true, force: true });
+    // On Windows, another program holding a file in the folder open can make
+    // its removal fail. The folder is then named, and the command still ends
+    // as its steps did, so a deployed Worker is not reported as a failure.
+    try {
+      rmSync(output, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`worker:deploy: could not remove ${output}, which can be deleted (${error instanceof Error ? error.message : String(error)}).`);
+    }
   }
 }
 

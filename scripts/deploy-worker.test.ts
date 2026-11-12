@@ -5,7 +5,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { availableParallelism, tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // These tests run the real wrapper against a throwaway project whose node_modules
 // holds fake wrangler and posthog-cli bins. The fakes record every call and act
@@ -639,8 +639,8 @@ function readCalls(log: string): Call[] {
 // The arguments for wrangler, as `npm run worker:deploy -- --tag <sha>` passes them.
 const tagArgs = ['--tag', 'test'];
 
-async function deploy(p: Project, extra: Record<string, string> = {}, args = tagArgs) {
-  const child = spawn(process.execPath, [...process.execArgv, wrapper, ...args], {
+async function deploy(p: Project, extra: Record<string, string> = {}, args = tagArgs, nodeArgs: string[] = []) {
+  const child = spawn(process.execPath, [...process.execArgv, ...nodeArgs, wrapper, ...args], {
     cwd: p.dir,
     env: { ...p.env, ...extra },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -883,6 +883,30 @@ const gateRefusals: [string, Record<string, string>, 'inject' | 'upload', RegExp
   ['an inject that logs no credential line and ignores its closed input', { ...login, DEPLOY_WORKER_TEST_GATE: 'inject:hang' }, 'inject', /may still be running, without the bundle folder/],
 ];
 
+// Loaded into the wrapper before it starts, this module makes the removal of
+// its bundle folder fail as it can on Windows while another program holds a
+// file in that folder open.
+const removalFails = String.raw`import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const { rmSync } = fs;
+fs.rmSync = (path, options) => {
+  if (!String(path).includes('posthog-worker-')) return rmSync(path, options);
+  const error = new Error("EBUSY: resource busy or locked, rmdir '" + path + "'");
+  error.code = 'EBUSY';
+  throw error;
+};
+syncBuiltinESMExports();
+`;
+const removalFailures: [string, Record<string, string>, number, RegExp | null][] = [
+  ['a deploy', ci, 0, null],
+  [
+    'a failed final deploy',
+    { ...ci, DEPLOY_WORKER_TEST_FAIL: 'deploy', DEPLOY_WORKER_TEST_EXIT: '3' },
+    3,
+    /^worker:deploy: wrangler deploy failed \(exit code 3\); no later step ran\.$/m,
+  ],
+];
+
 // Every test owns its project directory, so they run side by side.
 describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, () => {
   test('login mode checks the CLI version and the stored session, then builds, injects, confirms, uploads and deploys', async (t) => {
@@ -1116,4 +1140,19 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     assert.equal(run.status, 3, describeRun(run));
     assertOwnFolderRemoved(p);
   });
+
+  for (const [name, extra, status, message] of removalFailures) {
+    test(`${name} keeps its exit code when its folder cannot be removed, and names the folder`, async (t) => {
+      const p = createProject(t);
+      const preload = join(p.root, 'removal-fails.mjs');
+      write(preload, removalFails);
+      const run = await deploy(p, extra, tagArgs, ['--import', pathToFileURL(preload).href]);
+      assert.deepEqual(run.steps, [...throughUpload, 'deploy'], describeRun(run));
+      assert.equal(run.status, status, describeRun(run));
+      if (message) assert.match(run.output, message);
+      const folder = relative(p.dir, callOf(run, 'build').outdir ?? '');
+      assert.ok(existsSync(join(p.dir, folder)), 'the folder is left behind');
+      assert.ok(run.output.includes(`worker:deploy: could not remove ${folder}, which can be deleted (EBUSY`), describeRun(run));
+    });
+  }
 });

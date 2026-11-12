@@ -91,7 +91,9 @@ later step runs:
    ID into each script and its source map. This run goes through the gate
    described below. The command removes that folder when it ends, whether it
    deployed or stopped; a command killed before then leaves it behind, and it
-   can be deleted.
+   can be deleted. If the removal fails, as when another program on Windows
+   holds one of its files open, the command names the folder and keeps the
+   exit code of its steps.
 4. Every script in that folder must have its source map with the same chunk ID,
    every map must belong to a script, and `instrumentation.js` must be one of
    them.
