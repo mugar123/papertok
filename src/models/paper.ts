@@ -378,8 +378,9 @@ const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) &&
  * Europe PMC, PubMed and the other specialist cards, a concept name on
  * OpenAlex's (PAP-60). Only an old copy stored under a bare arXiv id with a
  * list of arXiv categories is still evidence: the list is arXiv's own, primary
- * first. Every other old copy has no field until the paper page asks a
- * provider (`hydrateSeededPaper`).
+ * first. Every other old copy has no field until a provider is asked: by the
+ * paper page (`hydrateSeededPaper`), or by a list for a saved paper
+ * (`readPaperFields`).
  */
 export function readStoredClassification(copy: Omit<StoredPaperInput, 'sources'>) {
   // Only OpenAlex fills a topic, so it was never a requested category.
