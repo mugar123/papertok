@@ -28,7 +28,7 @@ const present = (value: unknown) => (Array.isArray(value)
   : !(value === undefined || value === null || (typeof value === 'string' && value.trim() === '')));
 
 // A stored summary that stops exactly at a cap was cut there, not finished.
-const summaryLooksCut = (text: string) => text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
+export const summaryLooksCut = (text: string) => text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
 
 /**
  * The abstract the page shows once the providers have answered, given the

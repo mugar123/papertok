@@ -705,35 +705,72 @@
   color: var(--text-tertiary);
 }
 
-/* The owner's own note, as a standfirst carrying the field rule down its edge
-   — the same shape the Explorer gives a Wikipedia excerpt. */
-.lists-paper-note {
+/* A row speaks in two voices. The paper's own text, its abstract, is set in
+   the serif at the reading size. What the owner added, the note and the tags,
+   sits apart in a well and in the sans, so a note is never read as a second
+   abstract. That is a deliberate exception to rule 1 (design.md), which would
+   set the note in the serif as prose. */
+.lists-paper-abstract {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 776px;
+  max-width: 40rem;
+  margin: var(--space-2) 0 0;
+}
+
+.lists-paper-abstract-text {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font: var(--fw-regular) 1rem/1.6 var(--font-serif);
+  color: var(--text-primary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lists-paper-abstract[data-open] .lists-paper-abstract-text {
+  display: block;
+}
+
+.lists-paper-note {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 40rem;
   margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+
+.lists-paper-note-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
 }
 
 .lists-paper-note-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
-  color: var(--text-tertiary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-primary);
 }
 
 .lists-paper-note-text {
   display: -webkit-box;
+  margin: 0;
   overflow: hidden;
-  font-family: var(--font-serif);
-  font-size: 0.9375rem;
-  font-style: italic;
-  line-height: 1.55;
-  color: var(--text-secondary);
+  font: var(--fw-regular) var(--fs-sm)/1.5 var(--font-body);
+  color: var(--text-primary);
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
 }
 
 .lists-paper-note[data-open] .lists-paper-note-text {
@@ -742,7 +779,7 @@
   overflow-wrap: anywhere;
 }
 
-.lists-paper-note-more {
+.lists-paper-more {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -757,47 +794,65 @@
   cursor: pointer;
 }
 
-.lists-paper-note-more::after {
+/* The whole note opens it, not only the words. The abstract keeps only its
+   button: a click on the abstract opens the paper, as it does on a row whose
+   abstract fits. */
+.lists-paper-note .lists-paper-more::after {
   content: '';
   position: absolute;
   inset: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .lists-paper-note.is-expandable:hover .lists-paper-note-more {
+  .lists-paper-note.is-expandable:hover > .lists-paper-more,
+  .lists-paper-more:hover {
     text-decoration: underline;
     text-underline-offset: 3px;
   }
 }
 
-.lists-paper-note-more svg {
+.lists-paper-more svg {
   transition: rotate 200ms var(--ease-out);
 }
 
-.lists-paper-note[data-open] .lists-paper-note-more svg {
+[data-open] > .lists-paper-more svg {
   rotate: 180deg;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lists-paper-note-more svg {
+  .lists-paper-more svg {
     transition: none;
   }
 }
 
+/* The owner's tags: neutral, because a tag is theirs and claims no field. */
 .lists-paper-tags {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin-top: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.lists-paper-tags span {
-  padding: 3px 7px;
-  border: 1px solid color-mix(in srgb, var(--area-accent, var(--text-secondary)) 22%, var(--bg-card));
+.lists-paper-note-head .lists-paper-tags {
+  margin-left: auto;
+}
+
+.lists-paper-tags li {
+  padding: 1px 7px;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 6%, var(--bg-card));
-  color: var(--area-accent, var(--text-secondary));
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
+}
+
+/* Sixteen on a phone, with a line more of room. */
+@media (max-width: 600px) {
+  .lists-paper-abstract-text {
+    -webkit-line-clamp: 3;
+  }
 }
 
 /* A list's own row actions wait for the pointer; search keeps its Follow
@@ -871,6 +926,36 @@
 .lists-skeleton-bar--meta {
   width: 34%;
   height: 21px;
+}
+
+/* The abstract's clamped lines, each 1.6rem tall once set, then its
+   "Read more": two lines, three on a phone. */
+.lists-skeleton-bar--abstract {
+  width: 92%;
+  max-width: 40rem;
+  height: 14px;
+  margin-top: 19px;
+}
+
+.lists-skeleton-bar--abstract + .lists-skeleton-bar--abstract {
+  width: 70%;
+  margin-top: 12px;
+}
+
+.lists-skeleton-bar--abstract-extra {
+  display: none;
+}
+
+.lists-skeleton-bar--more {
+  width: 76px;
+  height: 11px;
+  margin-top: 13px;
+}
+
+@media (max-width: 600px) {
+  .lists-skeleton-bar--abstract-extra {
+    display: block;
+  }
 }
 
 .lists-opening {
