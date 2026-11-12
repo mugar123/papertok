@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -11,7 +11,6 @@ const posthogHost = 'https://eu.i.posthog.com';
 // The log lines and file markers this script checks are those of this release.
 // Any other version stops the deploy until the checks are verified against it.
 const posthogCliVersion = 'posthog-cli 0.18.12';
-const output = '.wrangler/posthog-worker';
 const wranglerArgs = process.argv.slice(2);
 const { env } = process;
 const scriptExtensions = new Set(['.js', '.mjs', '.cjs']);
@@ -175,7 +174,7 @@ const credentialLineTimeoutMs = 20_000;
 const exitAfterTimeoutMs = 15_000;
 
 // Returns the lines of its log that it printed, which leave out the credential line.
-async function runGated(command: 'inject' | 'upload', posthogCli: string, release: string, expected: CredentialSource) {
+async function runGated(command: 'inject' | 'upload', posthogCli: string, release: string, expected: CredentialSource, output: string) {
   const step = `posthog-cli sourcemap ${command}`;
   const child = spawn(process.execPath, [posthogCli, ...sourceMaps(command, release)], {
     env: { ...posthogEnv, RUST_LOG: gatedRustLog },
@@ -323,7 +322,7 @@ function mapChunkId(map: string): unknown {
 // does. Inject writes the same id into a script (a `//# chunkId=` line) and its
 // map (`chunk_id`), so every script in the bundle folder must have a map with
 // its id, and every map a script.
-function countInjectedPairs(): number {
+function countInjectedPairs(output: string): number {
   const name = (path: string) => relative(process.cwd(), path);
   const files = readdirSync(output, { recursive: true, encoding: 'utf8' })
     .map((file) => resolve(output, file))
@@ -384,8 +383,8 @@ function uploadLogProblem(log: string, pairs: number): string | undefined {
 
 // Step 5, the real upload of the bundle's maps, separate from the credential
 // check in step 2. Its log, but for the credential line, is printed as it was written.
-async function uploadBundleMaps(posthogCli: string, release: string, pairs: number, expected: CredentialSource) {
-  const log = await runGated('upload', posthogCli, release, expected);
+async function uploadBundleMaps(posthogCli: string, release: string, pairs: number, expected: CredentialSource, output: string) {
+  const log = await runGated('upload', posthogCli, release, expected, output);
   const problem = uploadLogProblem(log.join(''), pairs);
   if (problem !== undefined) {
     fail(`posthog-cli sourcemap upload reported ${problem} for ${pairs} injected source map pairs; the Worker was not deployed.`);
@@ -414,18 +413,26 @@ async function deploy() {
 
   // The chunk id written into the bundle is what links an error report
   // to its source map, so the deployed bundle has to be the injected one.
-  // Without bundling, wrangler uploads every module in the folder, so it starts empty.
-  rmSync(output, { recursive: true, force: true });
-  // The arguments for wrangler come before this script's own flags. Wrangler
-  // keeps the last value of --dry-run or --bundle and refuses a second --outdir
-  // or --config, so no argument can make this build publish or the final
-  // deploy bundle again.
-  run('wrangler deploy --dry-run', wrangler, ['deploy', ...wranglerArgs, '--dry-run', '--outdir', output]);
-  await runGated('inject', posthogCli, release, expectedSource);
-  const pairs = countInjectedPairs();
-  await uploadBundleMaps(posthogCli, release, pairs, expectedSource);
-  // Step 6.
-  run('wrangler deploy', wrangler, ['deploy', `${output}/instrumentation.js`, ...wranglerArgs, '--no-bundle', '--config', 'wrangler.toml']);
+  // Without bundling, wrangler uploads every module in the folder, so each run
+  // bundles into a new, empty folder of its own and removes only that folder.
+  // Another deploy from this checkout then cannot replace or delete this
+  // run's bundle between its upload and step 6.
+  mkdirSync('.wrangler', { recursive: true });
+  const output = mkdtempSync(join('.wrangler', 'posthog-worker-'));
+  try {
+    // The arguments for wrangler come before this script's own flags. Wrangler
+    // keeps the last value of --dry-run or --bundle and refuses a second --outdir
+    // or --config, so no argument can make this build publish or the final
+    // deploy bundle again.
+    run('wrangler deploy --dry-run', wrangler, ['deploy', ...wranglerArgs, '--dry-run', '--outdir', output]);
+    await runGated('inject', posthogCli, release, expectedSource, output);
+    const pairs = countInjectedPairs(output);
+    await uploadBundleMaps(posthogCli, release, pairs, expectedSource, output);
+    // Step 6.
+    run('wrangler deploy', wrangler, ['deploy', join(output, 'instrumentation.js'), ...wranglerArgs, '--no-bundle', '--config', 'wrangler.toml']);
+  } finally {
+    rmSync(output, { recursive: true, force: true });
+  }
 }
 
 try {

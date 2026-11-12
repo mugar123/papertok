@@ -84,9 +84,14 @@ later step runs:
    derives from the machine's IP address, as it does for the events posthog-cli
    sends during inject and upload. The event never holds the key or the path of
    the credentials file.
-3. It bundles the Worker into `.wrangler/posthog-worker`. posthog-cli then
-   resolves the release in PostHog and writes a PostHog chunk ID into each
-   script and its source map. This run goes through the gate described below.
+3. It bundles the Worker into a new, empty folder of its own,
+   `.wrangler/posthog-worker-` followed by random characters, so another
+   deploy from the same checkout cannot replace or delete this run's bundle.
+   posthog-cli then resolves the release in PostHog and writes a PostHog chunk
+   ID into each script and its source map. This run goes through the gate
+   described below. The command removes that folder when it ends, whether it
+   deployed or stopped; a command killed before then leaves it behind, and it
+   can be deleted.
 4. Every script in that folder must have its source map with the same chunk ID,
    every map must belong to a script, and `instrumentation.js` must be one of
    them.
@@ -521,7 +526,7 @@ that it no longer lists), then read the schedules again.
 Placement is set in `wrangler.toml` (`[placement]`, see the paper store's
 placement above); a change made in the dashboard is undone by the next deploy.
 
-The deployment script bundles into `.wrangler/posthog-worker`, injects and uploads
+The deployment script bundles into a folder of its own under `.wrangler`, injects and uploads
 PostHog source maps, then uploads that bundle with `--no-bundle`. The `Data`
 rules in `wrangler.toml` match `.ttf` and `.png` files in both their source
 folders and the emitted directory, where filenames carry a hash prefix.

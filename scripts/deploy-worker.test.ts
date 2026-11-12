@@ -1,9 +1,10 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
-import { delimiter, dirname, join, relative, resolve } from 'node:path';
+import { delimiter, dirname, join, relative } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 // These tests run the real wrapper against a throwaway project whose node_modules
@@ -60,13 +61,16 @@ import { fileURLToPath } from 'node:url';
 //   one chunk more than it selected, `found-twice` logs its chunk count twice, `warning` also
 //   logs "nothing to upload", `killed` exits 0 before the summary, `too-large` and `empty-map`
 //   leave one chunk out of the summary's uploaded and present counts, `already-present`
-//   reports every chunk as already present.
+//   reports every chunk as already present;
+// - DEPLOY_WORKER_TEST_HOLD: a path. Before reading its entry, the final deploy writes
+//   `<path>.held` and waits until `<path>.release` exists.
 
 const wrapper = fileURLToPath(new URL('deploy-worker.ts', import.meta.url));
 const eu = 'https://eu.i.posthog.com';
 const project = '306340';
 const apiKey = 'phx_contract_test_key';
-const out = join('.wrangler', 'posthog-worker');
+// The folder every run bundled into before each run had a folder of its own.
+const sharedOut = join('.wrangler', 'posthog-worker');
 const posthogVariables = [
   'POSTHOG_CLI_API_KEY', 'POSTHOG_CLI_PROJECT_ID', 'POSTHOG_CLI_TOKEN', 'POSTHOG_CLI_ENV_ID',
   'POSTHOG_CLI_HOST', 'POSTHOG_CLI_DOTENV_FILE', 'POSTHOG_CLI_DRY_RUN', 'POSTHOG_HOME',
@@ -172,6 +176,11 @@ function isMarked(file) {
   return /^\/\/# chunkId=/m.test(fs.readFileSync(file, 'utf8'));
 }
 
+function chunkIdOf(file) {
+  const marker = /^\/\/# chunkId=(.+)$/m.exec(fs.readFileSync(file, 'utf8'));
+  return marker ? marker[1] : null;
+}
+
 function mapFor(file) {
   const reference = /^\/\/[#@] sourceMappingURL=(.+)$/m.exec(fs.readFileSync(file, 'utf8'));
   const candidates = [reference && path.join(path.dirname(file), reference[1].trim()), file + '.map'];
@@ -232,10 +241,28 @@ function wrangler() {
   }
   const script = argv.slice(1).find((arg) => /\.m?js$/.test(arg));
   const entry = script === undefined ? null : path.resolve(script);
-  record('deploy', { entry, entryInjected: entry !== null && fs.existsSync(entry) && isMarked(entry), bundle });
-  if (failure === 'deploy') stop('X [ERROR] A request to the Cloudflare API failed.');
-  if (entry === null || !fs.existsSync(entry)) stop('X [ERROR] The entry-point file was not found.', 1);
-  process.exit(0);
+  hold(() => {
+    const found = entry !== null && fs.existsSync(entry);
+    record('deploy', { entry, entryInjected: found && isMarked(entry), entryChunkId: found ? chunkIdOf(entry) : null, bundle });
+    if (failure === 'deploy') stop('X [ERROR] A request to the Cloudflare API failed.');
+    if (!found) stop('X [ERROR] The entry-point file was not found.', 1);
+    process.exit(0);
+  });
+}
+
+function hold(then) {
+  const file = env.DEPLOY_WORKER_TEST_HOLD;
+  if (!file) return then();
+  fs.writeFileSync(file + '.held', '');
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (fs.existsSync(file + '.release')) {
+      clearInterval(timer);
+      then();
+    } else if (Date.now() - started > 30000) {
+      stop('fake wrangler: never released', 1);
+    }
+  }, 20);
 }
 
 function credentialsFrom(lookup, source) {
@@ -330,6 +357,7 @@ function upload(directory, credentials, releaseMode) {
     log('warn', UPLOAD, 'No source map pairs with uploadable IDs were found; nothing to upload');
   }
   if (selected === 0) process.exit(0);
+  note({ chunkIds: uploadableIn(directory).map((pair) => chunkIdOf(pair.file)) });
   if (releaseMode === 'symbol-set') request('release', credentials);
   request('symbol-sets', credentials);
   // The npm launcher exits 0 when a signal kills the binary mid-upload.
@@ -511,7 +539,9 @@ interface Call {
   outdirBefore?: string[] | null;
   entry?: string | null;
   entryInjected?: boolean;
+  entryChunkId?: string | null;
   bundle?: boolean;
+  chunkIds?: string[];
   requests: Request[];
 }
 
@@ -567,9 +597,10 @@ function createTemplate() {
   write(join(dir, 'node_modules/wrangler/bin/wrangler.js'), fakeTool);
   write(join(dir, 'node_modules/@posthog/cli/package.json'), JSON.stringify({ name: '@posthog/cli', bin: { 'posthog-cli': 'run-posthog-cli.js' } }));
   write(join(dir, 'node_modules/@posthog/cli/run-posthog-cli.js'), fakeTool);
-  // A stale, already marked bundle from an earlier deploy, which the wrapper must clear.
-  write(join(dir, out, 'stale.js'), 'stale\n//# sourceMappingURL=stale.js.map\n//# chunkId=stale');
-  write(join(dir, out, 'stale.js.map'), '{"chunk_id":"stale","version":3,"sources":["stale.ts"],"names":[],"mappings":"AAAA"}');
+  // An already marked bundle that an earlier deploy left in the shared folder.
+  // A run must neither deploy it nor remove it.
+  write(join(dir, sharedOut, 'stale.js'), 'stale\n//# sourceMappingURL=stale.js.map\n//# chunkId=stale');
+  write(join(dir, sharedOut, 'stale.js.map'), '{"chunk_id":"stale","version":3,"sources":["stale.ts"],"names":[],"mappings":"AAAA"}');
 
   const env = isolatedEnv(root);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
@@ -701,8 +732,9 @@ function assertPipeline(p: Project, run: Run, userRustLog: string | null = null,
 
   // The arguments come first, so the wrapper's own flags have the last word.
   assert.deepEqual(withPath(build.argv, '--outdir'), ['deploy', ...args, '--dry-run', '--outdir', '<path>']);
-  assert.equal(relative(p.dir, build.outdir ?? ''), out);
-  assert.equal(build.outdirBefore, null, 'the output directory is removed before the build');
+  const folder = build.outdir ?? '';
+  assert.match(relative(p.dir, folder), /^\.wrangler[\\/]posthog-worker-[^\\/]+$/, 'the run bundles into a folder of its own');
+  assert.deepEqual(build.outdirBefore, [], 'the folder is empty before the build');
 
   // The folder comes on the input only, after the credential line.
   const sourceMaps = (command: string) => [
@@ -711,9 +743,9 @@ function assertPipeline(p: Project, run: Run, userRustLog: string | null = null,
   ];
   for (const [call, command] of [[inject, 'inject'], [upload, 'upload']] as const) {
     assert.deepEqual(call.argv, sourceMaps(command));
-    assert.equal(call.input, `${resolve(p.dir, out)}\n`, `${command} reads the bundle folder from its input`);
+    assert.equal(call.input, `${folder}\n`, `${command} reads the bundle folder from its input`);
     assert.equal(call.inputBeforeAuth, '', `${command} gets nothing before its credential line`);
-    assert.equal(relative(p.dir, call.directory ?? ''), out);
+    assert.equal(call.directory, folder);
     assert.equal(call.releaseMode, 'event');
   }
   assert.deepEqual(inject.requests, [{ kind: 'release', project }], 'inject resolves the release in project 306340');
@@ -722,14 +754,26 @@ function assertPipeline(p: Project, run: Run, userRustLog: string | null = null,
   assert.ok(run.output.includes(uploadLog), 'the upload log is passed through as written');
 
   assert.deepEqual([release.argv[0], ...release.argv.slice(2)], ['deploy', ...args, '--no-bundle', '--config', 'wrangler.toml']);
-  assert.equal(relative(p.dir, release.entry ?? ''), join(out, 'instrumentation.js'));
+  assert.equal(release.entry, join(folder, 'instrumentation.js'));
   assert.equal(release.entryInjected, true, 'the deployed bundle is the injected one');
+  assert.ok(
+    release.entryChunkId && upload.chunkIds?.includes(release.entryChunkId),
+    `the deployed bundle carries chunk ${release.entryChunkId}, but the upload sent ${JSON.stringify(upload.chunkIds)}`,
+  );
   assert.equal(release.bundle, false, 'the final deploy does not bundle again');
 
   for (const call of run.calls) {
     assert.ok(!call.argv.includes('--no-fail'), `${call.step} must not pass --no-fail`);
     assert.ok(!call.argv.some((arg) => arg.includes(apiKey)), `${call.step} must not receive the API key as an argument`);
   }
+  assertOwnFolderRemoved(p);
+}
+
+// A run removes the folder it bundled into, whether it deployed or stopped, and
+// leaves the rest of .wrangler as it found it.
+function assertOwnFolderRemoved(p: Project) {
+  assert.deepEqual(readdirSync(join(p.dir, '.wrangler')), ['posthog-worker'], 'only the shared folder is left in .wrangler');
+  assert.deepEqual(readdirSync(join(p.dir, sharedOut)).sort(), ['stale.js', 'stale.js.map'], 'the shared folder is left as it was');
 }
 
 const refusals: [string, Record<string, string>, RegExp][] = [
@@ -976,6 +1020,25 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     });
   }
 
+  test('two deploys from one checkout each deploy the bundle whose maps they uploaded', async (t) => {
+    const p = createProject(t);
+    const secondLog = join(p.root, 'second.jsonl');
+    const second: Project = { ...p, log: secondLog, env: { ...p.env, DEPLOY_WORKER_TEST_LOG: secondLog } };
+    // The first run waits between its upload and its final deploy while the second runs from start to end.
+    const hold = join(p.root, 'hold');
+    let firstEnded = false;
+    const pending = deploy(p, { ...ci, DEPLOY_WORKER_TEST_HOLD: hold }).finally(() => { firstEnded = true; });
+    while (!existsSync(`${hold}.held`) && !firstEnded) await delay(20);
+    const secondRun = await deploy(second, ci);
+    writeFileSync(`${hold}.release`, '');
+    const firstRun = await pending;
+    assert.equal(firstRun.status, 0, describeRun(firstRun));
+    assert.equal(secondRun.status, 0, describeRun(secondRun));
+    assertPipeline(p, firstRun);
+    assertPipeline(second, secondRun);
+    assert.notEqual(callOf(firstRun, 'build').outdir, callOf(secondRun, 'build').outdir);
+  });
+
   for (const [name, extra, message] of refusals) {
     test(`refuses before starting any process: ${name}`, async (t) => {
       const p = createProject(t);
@@ -1012,6 +1075,7 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
       if (message) assert.match(run.output, message);
       assert.doesNotMatch(run.output, /Caused by|While trying to read credentials|invalid value/, 'the CLI output is not echoed');
       assert.ok(!run.output.includes(apiKey) && !run.output.includes('not-a-personal-key'), 'the API key is never printed');
+      assertOwnFolderRemoved(p);
     });
   }
 
@@ -1028,6 +1092,7 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
       assert.match(wrapperMessage(run), message);
       assert.doesNotMatch(wrapperMessage(run), /[/\\]/, 'the message names no path');
       assertNoCredentialLine(p, run);
+      assertOwnFolderRemoved(p);
     });
   }
 
@@ -1040,6 +1105,7 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
       for (const call of run.calls) {
         for (const sent of call.requests) assert.equal(sent.project, project, `${call.step} sent to another project`);
       }
+      assertOwnFolderRemoved(p);
     });
   }
 
@@ -1048,5 +1114,6 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     const run = await deploy(p, { ...ci, DEPLOY_WORKER_TEST_FAIL: 'deploy', DEPLOY_WORKER_TEST_EXIT: '3' });
     assert.deepEqual(run.steps, [...throughUpload, 'deploy'], describeRun(run));
     assert.equal(run.status, 3, describeRun(run));
+    assertOwnFolderRemoved(p);
   });
 });
