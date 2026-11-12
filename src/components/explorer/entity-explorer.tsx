@@ -775,8 +775,8 @@ export default function EntityExplorer({
   const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
   // What "Make it a feed" puts in the feed, and the feed's name: null on pages
-  // no feed can be made of (institutions, projects, journals, an author
-  // without an OpenAlex id).
+  // no feed can be made of (institutions, projects, an author without an
+  // OpenAlex id, and the sources that offer no Follow).
   const feedSource = useMemo(() => {
     const followed = followEntity ? createFollowEntity(followEntity) : null;
     const ingredient = followed ? ingredientFromFollow(followed) : null;

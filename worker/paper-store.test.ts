@@ -847,6 +847,31 @@ test('an exact request for an area reads every leaf of it and the area lane, and
   assert.deepEqual(page.map(item => item.id).sort(), ['2610.00041', '2610.00042', '2610.00043']);
 });
 
+// A journal's lane holds only articles and reviews.
+const journalArticle = (id: string, title: string) => ({ ...lanePaper(id, title), publicationType: 'article' });
+const journalFollow = (sourceId: string) => ({ type: 'journal', canonicalId: sourceId, displayName: `Journal ${sourceId}` });
+
+test('an exact request with a category and a journal reads both, and nothing beside them', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00045', 'A quantum error-correcting code'), lanes: ['quant-ph'] },
+    { paper: journalArticle('2610.00046', 'A journal article'), lanes: ['source:S123'] },
+    { paper: lanePaper('2610.00047', 'A learning-rate schedule'), lanes: ['cs.LG'] },
+  ], { now: NOW });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], follows: [journalFollow('S123')], exact: true }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id).sort(), ['2610.00045', '2610.00046']);
+});
+
+test('an exact request with eleven journals reads the first ten', async () => {
+  const { env } = corpus();
+  const sources = Array.from({ length: 11 }, (_, index) => `S${2000 + index}`);
+  await ingestPapers(env, sources.map((source, index) => ({
+    paper: journalArticle(`2610.${String(100 + index).padStart(5, '0')}`, `An article of journal ${source}`), lanes: [`source:${source}`],
+  })), { now: NOW });
+  const page = await readFeedPage(env, parseFeedRequest({ follows: sources.map(journalFollow), exact: true }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id).sort(), sources.slice(0, 10).map((_, index) => `2610.${String(100 + index).padStart(5, '0')}`));
+});
+
 test('an exact request keeps on the page the papers the reader liked', async () => {
   const { env, db } = corpus();
   await ingestPapers(env, [

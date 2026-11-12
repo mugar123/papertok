@@ -8,6 +8,7 @@ import {
   type CustomFeedInput,
   type CustomFeedOrder,
   type FeedIngredient,
+  type IngredientProblem,
 } from './custom-feeds.ts';
 
 // The state behind the window that creates and edits a custom feed. The store
@@ -89,9 +90,9 @@ export function feedFormProblem(state: FeedFormState, feeds: CustomFeed[], ownId
  * The ingredients of a preset the form can hold, parsed and in order, given
  * the account's other feeds, and the first limit that kept one out.
  */
-export function admitIngredients(raw: readonly unknown[], otherFeeds: CustomFeed[]): { ingredients: FeedIngredient[]; refused: 'feed-full' | 'entities-full' | 'keywords-full' | null } {
+export function admitIngredients(raw: readonly unknown[], otherFeeds: CustomFeed[]): { ingredients: FeedIngredient[]; refused: Exclude<IngredientProblem, 'duplicate'> | null } {
   const ingredients: FeedIngredient[] = [];
-  let refused: 'feed-full' | 'entities-full' | 'keywords-full' | null = null;
+  let refused: Exclude<IngredientProblem, 'duplicate'> | null = null;
   for (const item of raw) {
     const ingredient = parseFeedIngredient(item);
     if (!ingredient) continue;

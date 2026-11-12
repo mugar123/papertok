@@ -173,6 +173,12 @@ test('the ingredients still loading are the ones the answer names', () => {
   ]);
 });
 
+test('a journal still loading is named by the source id the request sent', () => {
+  const nature = { kind: 'journal' as const, id: 'S137773608', label: 'Nature' };
+  const feed: CustomFeed = { id: 'abcd1234', name: 'Journals', order: 'newest', ingredients: [nature, { kind: 'journal', id: 'S4210194219', label: 'Physical Review X' }] };
+  assert.deepEqual(loadingIngredientsOf(feed, [{ type: 'journal', canonicalId: 'S137773608' }]), [nature]);
+});
+
 test('a run takes the reader\'s newest examples, at most 24, and its removed papers newest first', () => {
   const examples = Array.from({ length: 30 }, (_, index) => `2610.${String(index).padStart(5, '0')}`);
   assert.deepEqual(feedRunSignals(null, 0, { positiveIds: examples, dismissed: ['2610.00008', '2610.00009'] }), {

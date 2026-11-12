@@ -151,3 +151,15 @@ export function planLibraryBatches(ids: string[], size: number) {
   }
   return { batches, unfetchable };
 }
+
+/**
+ * The requested ids a query snapshot answered for. A server snapshot answers
+ * for every one: what it returned, and the absence of the rest. A snapshot
+ * from the local cache can be acted on when it holds documents
+ * (`queryIsAuthoritative`), but says nothing about the ones it lacks: offline,
+ * it holds only what this tab read before.
+ */
+export function answeredIds(requestedIds: string[], returnedIds: Iterable<string>, fromCache: boolean) {
+  const returned = new Set(returnedIds);
+  return fromCache ? requestedIds.filter((paperId) => returned.has(paperId)) : requestedIds;
+}

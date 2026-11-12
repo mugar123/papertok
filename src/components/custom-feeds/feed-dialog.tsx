@@ -46,7 +46,8 @@ const COPY = {
   failed: 'The feed could not be saved. Try again.',
   ingredient: {
     'feed-full': 'A feed holds up to 20. Remove one to add another.',
-    'entities-full': 'Your feeds can follow up to 30 authors and research topics.',
+    'journals-full': 'A feed holds up to 10 journals. Remove one to add another.',
+    'entities-full': 'Your feeds can follow up to 30 authors, research topics and journals.',
     'keywords-full': 'Your feeds can use up to 10 keywords.',
   },
 };

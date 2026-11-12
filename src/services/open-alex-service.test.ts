@@ -37,6 +37,7 @@ import {
   searchAuthors,
   searchConcepts,
   searchInstitutions,
+  searchJournals,
   searchLocalTopics,
   slimWorksPage,
 } from './open-alex-service.ts';
@@ -1681,4 +1682,62 @@ test('a DOI that cannot travel as a path is asked for as a one-work DOI list', a
   }
 
   assert.equal(await fetchPaperByWorkId('doi', '10.1234/a..b', { openAlexJson: async () => ({ results: [] }) }), null);
+});
+
+test('a journal search is one autocomplete call for journals that have works, in OpenAlex order, without working-paper series or unnamed rows, cut to the limit', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    // The Physical Review rows were captured from the live API on 2026-11-12,
+    // cut to the fields read; the working-paper series and the unnamed row are added.
+    return Response.json({ results: [
+      { id: 'https://openalex.org/S24807848', display_name: 'Physical Review Letters', hint: 'American Physical Society' },
+      { id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', hint: null },
+      { id: 'https://openalex.org/S4210234670', display_name: '', hint: 'Nature Portfolio' },
+      { id: 'https://openalex.org/S164566984', display_name: 'Physical Review A', hint: 'American Physical Society' },
+      { id: 'https://openalex.org/S4210174675', display_name: 'Physical review. B, Condensed matter', hint: null },
+    ] });
+  };
+  try {
+    const journals = await searchJournals('  Physical   REV| ', { limit: 2 });
+
+    assert.equal(urls.length, 1);
+    const url = new URL(urls[0]);
+    assert.equal(url.pathname, '/autocomplete/sources');
+    assert.equal(url.searchParams.get('q'), 'physical rev');
+    assert.equal(url.searchParams.get('filter'), 'type:journal,works_count:>0');
+    assert.equal(url.searchParams.has('search'), false);
+    assert.deepEqual(journals, [
+      { id: 'https://openalex.org/S24807848', display_name: 'Physical Review Letters', publisher: 'American Physical Society' },
+      { id: 'https://openalex.org/S164566984', display_name: 'Physical Review A', publisher: 'American Physical Society' },
+    ]);
+    assert.deepEqual((await searchJournals('physical rev b')).map(journal => journal.publisher), ['American Physical Society', 'American Physical Society', null]);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+test('a blank journal search asks nothing, and a failed or cancelled one is empty unless the caller wants the error', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  let calls = 0;
+  openAlexClient.fetchImpl = async () => {
+    calls += 1;
+    throw new TypeError('network down');
+  };
+  try {
+    assert.deepEqual(await searchJournals('   '), []);
+    assert.equal(calls, 0);
+
+    assert.deepEqual(await searchJournals('journal of failing requests'), []);
+    await assert.rejects(searchJournals('journal of failing requests again', { throwOnError: true }));
+
+    const controller = new AbortController();
+    controller.abort();
+    const before = calls;
+    await assert.rejects(searchJournals('journal of cancelled requests', { signal: controller.signal, throwOnError: true }), { code: 'aborted' });
+    assert.equal(calls, before);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
 });

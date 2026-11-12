@@ -39,6 +39,7 @@ import { focusMovedOut, rowAfterOverlay, rowsTakingFocus } from './rows-taking-f
 import { writeNewList } from './write-new-list.ts';
 import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
+import ListAbstract from './list-abstract.tsx';
 import ListNote from './list-note.tsx';
 import { ListRowAuthors, PaperListRow } from './list-row.tsx';
 import { Button } from '../ui/button.tsx';
@@ -61,7 +62,7 @@ import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/list-colors.ts';
 import ScientificText from '../scientific-text.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
-import { listPaper, mergeListPaperCopies } from './list-paper-copies.ts';
+import { listPaper, listPaperNeedsRead, mergeListPaperCopies } from '../../utils/list-paper-copies.ts';
 import {
   ArrowLeft,
   CircleNotch,
@@ -80,7 +81,7 @@ import {
 } from '@phosphor-icons/react';
 import { shareOrCopyLink } from '../../utils/share-link.ts';
 import { timeAgo } from '../../utils/time-ago.ts';
-import { downloadCitationFile } from '../../utils/reading-library.ts';
+import { copyOfRecordWithoutCopy, downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
@@ -111,12 +112,15 @@ import {
   readListPapers,
   rememberListPapers,
   rememberOwnLists,
+  rememberSavedAnswers,
+  savedAnswered,
 } from '../../utils/profile-session-caches.ts';
 import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
 import { queryIsAuthoritative } from '../../utils/cache-authority.ts';
 import {
   PAPER_METADATA_BATCH_SIZE,
+  answeredIds,
   planMetadataRequests,
   planRetryRequests,
 } from '../../utils/list-paper-metadata-plan.ts';
@@ -218,21 +222,28 @@ async function copyText(value: string) {
 }
 
 
+/** The lines of a paper row while it loads: field, title, authors, abstract and its "Read more". */
+function PaperRowSkeletonBars() {
+  return (
+    <>
+      <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract lists-skeleton-bar--abstract-extra" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--more" />
+    </>
+  );
+}
+
 /** A list paper from its `savedPapers` document or its lighter interaction record. */
 function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string, data: DocumentData) {
   return paperLegacyAdapter(source === 'saved'
     ? { id: paperId, ...data }
     : data.paper
       ? { id: paperId, ...data.paper }
-      // Without a copy, the record kept only the category its card showed,
-      // which the adapter cannot trust (PAP-60).
-      : {
-          id: paperId,
-          title: data.paperTitle || '',
-          authors: data.paperAuthors || [],
-          published: data.timestamp,
-          arxivId: paperId,
-        });
+      : copyOfRecordWithoutCopy(paperId, data));
 }
 
 /**
@@ -371,6 +382,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * loader already supports is visible rather than contradicted.
    */
   const [pendingPaperIds, setPendingPaperIds] = useState(() => new Set<string>());
+  /**
+   * The papers of the open list whose `savedPapers` read is still out. A row
+   * already painted from a copy without a field or a date keeps the line they
+   * take while it is, so the row does not grow when the document lands.
+   * `pendingPaperIds` cannot say it: a row stops waiting at the first
+   * collection's answer.
+   */
+  const [awaitingSavedIds, setAwaitingSavedIds] = useState(() => new Set<string>());
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -635,13 +654,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // The mount's library read now keeps what it fetches, so most lists open
     // with nothing missing at all — which is the difference between a list that
     // paints instantly and one that goes back out for every paper it holds.
-    const missingIds = paperIds.filter(
-      (paperId) => !savedPapers[paperId]
-        && !personalLibrary[paperId]?.paper
-        && !libraryPapers[paperId],
-    );
+    const missingIds = paperIds.filter((paperId) => listPaperNeedsRead(
+      [personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]],
+      savedAnswered(user?.uid, paperId),
+    ));
     // Whatever the last list left waiting is not this list's business.
     setPendingPaperIds(new Set());
+    setAwaitingSavedIds(new Set());
 
     if (missingIds.length === 0) {
       failedMetadataRequests.current.delete(list.id);
@@ -673,7 +692,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // ref below, and a fire that finds nothing waiting does nothing.
     clearTimeout(metadataBudgetTimer.current!);
     metadataBudgetTimer.current = setTimeout(() => {
-      if (metadataRequestId.current !== requestId || stillPending.size === 0) return;
+      if (metadataRequestId.current !== requestId) return;
+      setAwaitingSavedIds(new Set());
+      if (stillPending.size === 0) return;
       stillPending.clear();
       setPendingPaperIds(new Set());
       setMetadataError('LIST_METADATA_LOAD_FAILED');
@@ -684,6 +705,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       if (metadataRequestId.current !== requestId || ids.length === 0) return;
       ids.forEach((paperId) => stillPending.delete(paperId));
       setPendingPaperIds((current) => {
+        if (!ids.some((paperId) => current.has(paperId))) return current;
+        const next = new Set(current);
+        ids.forEach((paperId) => next.delete(paperId));
+        return next;
+      });
+    };
+
+    /** Stops a row keeping its field's line once its `savedPapers` read is settled. */
+    const dropAwaitingSaved = (ids: string[]) => {
+      if (metadataRequestId.current !== requestId || ids.length === 0) return;
+      setAwaitingSavedIds((current) => {
         if (!ids.some((paperId) => current.has(paperId))) return current;
         const next = new Set(current);
         ids.forEach((paperId) => next.delete(paperId));
@@ -726,6 +758,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // does not cover has nothing left coming for it. Without this those rows
       // would wait on a request that is never going to be made.
       dropPending(missingIds.filter((paperId) => !outstanding.has(paperId)));
+      setAwaitingSavedIds(new Set(requestDefinitions
+        .filter((requestDefinition) => requestDefinition.source === 'saved')
+        .flatMap((requestDefinition) => requestDefinition.paperIds)));
 
       const settleRequest = (requestDefinition: MetadataRequest) => {
         const exhausted: string[] = [];
@@ -735,11 +770,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           if (left <= 0) exhausted.push(paperId);
         });
         dropPending(exhausted);
+        if (requestDefinition.source === 'saved') dropAwaitingSaved(requestDefinition.paperIds);
       };
 
-      const resolvedIds = new Set<string>();
-      const mergeSnapshot = (source: MetadataRequest['source'], snapshot: QuerySnapshot) => {
+      // The ids some copy with a title came back for: what is left goes to
+      // arXiv when it is a legacy arXiv id.
+      const namedIds = new Set<string>();
+      // What this open's reads brought, merged as the screen's state merges it,
+      // to tell which ids are settled (`listPaperNeedsRead`).
+      let arrived: Record<string, Partial<Paper>> = {};
+      const isResolved = (paperId: string) => !listPaperNeedsRead(
+        [personalLibrary[paperId]?.paper, savedPapers[paperId], arrived[paperId], libraryPapers[paperId]],
+        savedAnswered(user.uid, paperId),
+      );
+      const mergeSnapshot = (requestDefinition: MetadataRequest, snapshot: QuerySnapshot) => {
         if (metadataRequestId.current !== requestId) return;
+        const { source } = requestDefinition;
         const loadedPapers: Record<string, Partial<Paper>> = {};
         snapshot.forEach((item) => {
           const data = item.data();
@@ -749,17 +795,23 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           const paper = paperFromMetadataDoc(source, paperId, data);
           loadedPapers[paperId] = paper;
           if (paper.title && paper.title !== paperId) {
-            resolvedIds.add(paperId);
+            namedIds.add(paperId);
           }
         });
+        // An answer only once its documents reach the screen: a superseded
+        // open's are dropped above, and recording them would block the read.
+        if (source === 'saved') {
+          rememberSavedAnswers(user.uid, answeredIds(requestDefinition.paperIds, Object.keys(loadedPapers), snapshot.metadata.fromCache));
+        }
 
         if (Object.keys(loadedPapers).length === 0) return;
+        arrived = mergeListPaperCopies(arrived, loadedPapers, source);
         // A row with data in hand stops waiting immediately; it does not sit
         // under a skeleton until the other collection also reports back.
         dropPending(Object.keys(loadedPapers));
         // Kept for the rest of the session, so leaving this list to read a
         // paper and coming back costs nothing.
-        rememberListPapers(user.uid, loadedPapers);
+        rememberListPapers(user.uid, loadedPapers, source);
         // savedPapers contains the canonical document and must win even if
         // the lighter interaction record finishes later; the record's
         // retraction stands either way.
@@ -804,11 +856,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
          * and settles it when it lands, exactly as before.
          */
         const settleLate = (lateSnapshot: QuerySnapshot) => {
-          mergeSnapshot(requestDefinition.source, lateSnapshot);
+          mergeSnapshot(requestDefinition, lateSnapshot);
           settleRequest(requestDefinition);
           if (
             metadataRequestId.current === requestId
-            && missingIds.every((paperId) => resolvedIds.has(paperId))
+            && missingIds.every(isResolved)
           ) {
             failedMetadataRequests.current.delete(list.id);
             setMetadataError(null);
@@ -825,7 +877,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           // Documents in hand are documents whatever their provenance; a
           // server saying "no such document" is an answer too, and the row
           // it covers stops waiting.
-          mergeSnapshot(requestDefinition.source, snapshot);
+          mergeSnapshot(requestDefinition, snapshot);
           settleRequest(requestDefinition);
           return { status: 'fulfilled', value: snapshot };
         }, (reason) => {
@@ -892,12 +944,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       );
       dropPending(missingIds.filter((paperId) => !stillAnswerable.has(paperId)));
 
-      const unresolvedIds = missingIds.filter((paperId) => !resolvedIds.has(paperId));
+      // An id whose copies have no field or date stays unresolved until its
+      // savedPapers read answers, so a failed one raises the banner and Retry.
+      const unresolvedIds = missingIds.filter((paperId) => !isResolved(paperId));
 
       // A legacy arXiv id (`hep-th/0603001`) saved or liked before document
       // names were encoded has no document to answer for it. arXiv names it;
       // a superseded open paints nothing.
-      const legacyMissing = unresolvedIds.filter((paperId) => !stillAnswerable.has(paperId));
+      // A row already named by a copy in hand is not asked of arXiv.
+      const legacyMissing = missingIds.filter((paperId) => !namedIds.has(paperId)
+        && !stillAnswerable.has(paperId)
+        && ![personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]]
+          .some((copy) => copy?.title && copy.title !== paperId));
       if (legacyMissing.length > 0) {
         setPendingPaperIds((current) => {
           const next = new Set(current);
@@ -909,8 +967,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           const named: Record<string, Partial<Paper>> = {};
           records.forEach(({ id, data }) => { named[id] = { ...data.paper, id }; });
           if (Object.keys(named).length > 0) {
-            rememberListPapers(user.uid, named);
-            setSavedPapers((current) => ({ ...named, ...current }));
+            rememberListPapers(user.uid, named, 'interaction');
+            setSavedPapers((current) => mergeListPaperCopies(current, named, 'interaction'));
           }
           dropPending(legacyMissing);
         }).catch(() => dropPending(legacyMissing));
@@ -932,6 +990,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         // Nothing is coming: a throw here means the requests were never
         // dispatched, and rows left in the pending set would wait forever.
         setPendingPaperIds(new Set());
+        setAwaitingSavedIds(new Set());
       }
     }
   }, [libraryPapers, personalLibrary, savedPapers, user]);
@@ -972,13 +1031,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           signal,
         }).then((snapshot) => {
           const loaded: Record<string, Partial<Paper>> = {};
+          const returned = new Set<string>();
           snapshot.forEach((item) => {
             const paperId = decodeFirestoreDocId(item.id);
+            returned.add(paperId);
             const paper = paperFromMetadataDoc(request.source, paperId, item.data());
             if (paper.title && paper.title !== paperId) loaded[paperId] = paper;
           });
-          if (signal.aborted || Object.keys(loaded).length === 0) return;
-          rememberListPapers(userId, loaded);
+          if (signal.aborted) return;
+          // Answered: kept below, or confirmed absent. An untitled document
+          // is not kept, so a list's open still reads it.
+          if (request.source === 'saved') {
+            rememberSavedAnswers(userId, answeredIds(request.paperIds, returned, snapshot.metadata.fromCache)
+              .filter((paperId) => loaded[paperId] || !returned.has(paperId)));
+          }
+          if (Object.keys(loaded).length === 0) return;
+          rememberListPapers(userId, loaded, request.source);
           setSavedPapers((current) => mergeListPaperCopies(current, loaded, request.source));
         }, (error) => {
           if (signal.aborted) return;
@@ -1863,16 +1931,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             behind it was still running, so every row still in
                             flight fell through to its raw id. */}
                         {pendingPaperIds.has(paperId) ? (
-                          // Three bars, not two, and each the height of the line
-                          // it stands in for: the field label, the title, the
-                          // authors. The old two-bar silhouette measured ~79px
-                          // against a finished row's ~100–140px, so the moment
-                          // the metadata landed every row in the list grew at
-                          // once and the page shoved itself down.
+                          // One bar for each line of a row with an abstract,
+                          // each the height of the line it stands in for. A
+                          // shorter silhouette (two bars, ~79px, against a
+                          // finished row's ~100–140px) made every row grow at
+                          // once when the metadata landed, and the page shoved
+                          // itself down. A paper with no abstract still ends
+                          // shorter than its skeleton.
                           <div className="lists-paper-skeleton">
-                            <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
-                            <span className="lists-skeleton-bar lists-skeleton-bar--title" />
-                            <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+                            <PaperRowSkeletonBars />
                           </div>
                         ) : (
                           <p className="list-row-title lists-paper-placeholder">
@@ -1887,6 +1954,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                         data-paper-id={paperId}
                         aria-busy={removalPending || undefined}
                         paper={paper}
+                        // A paper with no field or date after all loses the line.
+                        metaPlaceholder={awaitingSavedIds.has(paperId)
+                          ? <span className="lists-skeleton-bar lists-skeleton-bar--cat" aria-hidden="true" />
+                          : undefined}
                         onOpen={() => {
                           openFromRow({ listId: list.id, listName: list.name, paperId, paper });
                           openPaperCard(paper);
@@ -1966,18 +2037,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       >
                           {(paper.authors?.length ?? 0) > 0 && (
                             <ListRowAuthors
+                              byline
                               paper={paper}
                               onNavigate={() => {
                                 if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
                               }}
                             />
                           )}
-                          {(record?.tags?.length as number) > 0 && (
-                            <div className="lists-paper-tags">
-                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
-                            </div>
+                          <ListAbstract paper={paper} />
+                          {(record?.note || (record?.tags?.length as number) > 0) && (
+                            <ListNote note={record.note} tags={record.tags} />
                           )}
-                          {record?.note && <ListNote note={record.note} />}
                       </PaperListRow>
                     );
                   })}
@@ -2004,13 +2074,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           aria-busy="true"
           aria-label={'Opening list...'}
         >
-          {/* The same three-bar rhythm the finished rows have, so opening a
-              list settles into its content instead of swapping silhouettes. */}
+          {/* The same lines the finished rows have, so opening a list settles
+              into its content instead of swapping silhouettes. */}
           {[0, 1, 2, 3].map((slot) => (
             <div key={slot} className="lists-skeleton-row">
-              <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
-              <span className="lists-skeleton-bar lists-skeleton-bar--title" />
-              <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+              <PaperRowSkeletonBars />
             </div>
           ))}
         </motion.div>

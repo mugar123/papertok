@@ -57,8 +57,9 @@ export const PRIVACY_POLICY_VERSION = '2026-11-12';
  * Version 2026-11-12 adds custom feeds: the feeds a reader creates, kept with
  * the account; what a request for one of those feeds sends; the papers removed
  * from a feed, kept in the browser and sent with that feed's requests; that an
- * author, topic or keyword search put in a feed joins the list of things the
- * catalogue collects papers for, as a follow does; and the three usage events:
+ * author, topic, journal or keyword search put in a feed joins the list of
+ * things the catalogue collects papers for, as a follow does (journals joined
+ * the same day, without a version of their own); and the three usage events:
  * creating or opening a feed records its order, creating one also the counts of
  * what it holds, deleting one only that it happened, and none records its
  * name. The text ships with the frontend pull request of custom feeds
@@ -84,7 +85,7 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "Feeds you create are kept with your account, and their topics, authors and keywords are sent to the server to fetch their papers.",
+  "Feeds you create are kept with your account, and their topics, authors, journals and keywords are sent to the server to fetch their papers.",
   "Papers you remove from a feed are kept in your browser and sent with that feed's requests, so it leaves them out.",
   "Usage analytics also records when you create, open or delete a feed, never its name or what is in it. Its events also name your browser and system versions.",
 ];
@@ -107,9 +108,9 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   // notice does not announce.
   lead: 'Feeds you create',
   clauses: [
-    ['Feeds you create', /<td>Feeds you create: each feed's name and the areas, topics, authors and keywords you put in it<\/td>/],
+    ['Feeds you create', /<td>Feeds you create: each feed's name and the areas, topics, authors, journals and keywords you put in it<\/td>/],
     ['kept with your account', /They are kept with your account and deleted with it/],
-    ['their topics, authors and keywords are sent to the server', /A request for a page of one of your own feeds sends instead that feed's areas, categories, research topics, authors and keywords/],
+    ['their topics, authors, journals and keywords are sent to the server', /A request for a page of one of your own feeds sends instead that feed's areas, categories, research topics, authors, journals and keywords/],
     ['Papers you remove from a feed are kept in your browser', /This browser also keeps, for each of your own feeds, the latest 200 papers you removed from it/],
     ["sent with that feed's requests, so it leaves them out", /these are sent to the server with each request for that feed, so the feed leaves them out/],
     ['Usage analytics', /Usage analytics is enabled by default/],

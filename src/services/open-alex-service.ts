@@ -1,4 +1,4 @@
-import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from './adapters/open-alex-types.ts';
+import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexJournal, OpenAlexTopic } from './adapters/open-alex-types.ts';
 import type { OpenAlexJsonOptions } from './open-alex-client.ts';
 import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
 
@@ -26,7 +26,7 @@ import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER } from '../utils/publication-status.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER, isListedWorkingPaperSeries } from '../utils/publication-status.ts';
 import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../utils/following.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
@@ -694,6 +694,41 @@ export async function searchAuthors(query: string, options: RequestOptions = {})
     // Search authors failed
   }
   return [];
+}
+
+/** A row of OpenAlex's source autocomplete: `hint` is the host organization's name. */
+type JournalAutocompleteRow = { id?: string; display_name?: string; hint?: string | null };
+
+/**
+ * Journals by name, for the feed editor, in OpenAlex's order: one call to the
+ * source autocomplete. The editor asks at every pause in typing, so the last
+ * word is usually unfinished, and autocomplete matches it as a prefix where a
+ * search does not ("physical rev" finds Physical Review Letters). The relay
+ * also bills it as one list call instead of a ten-unit search. No name-score
+ * filter as authors get: there it reranks a hundred namesakes.
+ */
+export async function searchJournals(query: string, options: RequestOptions = {}): Promise<OpenAlexJournal[]> {
+  // The same normalisation as the author index, so variants share one cached URL.
+  const q = query.replaceAll('|', ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!q) return [];
+  const url = new URL('https://api.openalex.org/autocomplete/sources');
+  url.searchParams.set('q', q);
+  // A journal with no works would make an empty feed.
+  url.searchParams.set('filter', 'type:journal,works_count:>0');
+  try {
+    const data = await openAlexJson<OpenAlexPage<JournalAutocompleteRow>>(url.toString(), {
+      timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal: options.signal, priority: true,
+    });
+    // Autocomplete answers up to ten rows and takes no `per-page`.
+    return (data.results || []).flatMap(({ id, display_name, hint }) => (
+      // OpenAlex types the listed working-paper series as journals; the
+      // Explorer's Follow leaves them out by the same rule.
+      id && display_name && !isListedWorkingPaperSeries(id) ? [{ id, display_name, publisher: hint || null }] : []
+    )).slice(0, options.limit ?? 5);
+  } catch (error) {
+    if (options.throwOnError) throw error;
+    return [];
+  }
 }
 
 // ROR answers a search with one page of twenty. Asking for all of them and
