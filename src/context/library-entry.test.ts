@@ -7,7 +7,7 @@ import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { hydrateSeededPaper } from '../utils/paper-seed.ts';
-import { listPaperFromCopies } from '../components/lists/list-paper-copies.ts';
+import { listPaperFromCopies } from '../utils/list-paper-copies.ts';
 import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));

@@ -55,6 +55,23 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
   };
 }
 
+/**
+ * The copy an interaction record without a `paper` map yields. Saves before
+ * 2026-10-21 (PAP-60) kept only the title, three authors, the card's category
+ * and the start of its text. The category was often the one the feed asked
+ * for, so it gives no field, and the record's timestamp is when the paper was
+ * saved, so the publication date stays unknown. With neither, the lists read
+ * the paper's `savedPapers` document (`copyHoldsPaperMetadata`).
+ */
+export function copyOfRecordWithoutCopy(
+  id: string,
+  record: { paperTitle?: string; paperAuthors?: Paper['authors']; paperAbstract?: string },
+) {
+  return serializeLibraryPaper({
+    id, title: record.paperTitle || '', authors: record.paperAuthors || [], summary: record.paperAbstract || '',
+  });
+}
+
 function cleanBibValue(value: unknown) {
   return String(value || '')
     .replace(/\\/g, '\\\\')

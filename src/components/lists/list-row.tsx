@@ -11,6 +11,7 @@ import { authorExplorerPath } from '../../utils/explorer-paths.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import AuthorDots from '../feed/author-dots.tsx';
 import ScientificText from '../scientific-text.ts';
+import { bylineText } from './list-row-byline.ts';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import '../feed/share-panel.css';
 import './list-row.css';
@@ -18,6 +19,8 @@ import './list-row.css';
 type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
   /** The meta line: the first slot takes the field colour, the rest are muted; empty slots are skipped. */
   meta?: (string | null | undefined | false)[];
+  /** Stands in the meta line while it is empty and may still be filled, so the row does not grow when it is. */
+  metaPlaceholder?: ReactNode;
   title: ReactNode;
   titleLang?: string;
   onOpen: () => void;
@@ -26,13 +29,14 @@ type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
   children?: ReactNode;
 };
 
-export function ListRow({ meta, title, titleLang, onOpen, aside, actions, children, className, ...props }: ListRowProps) {
+export function ListRow({ meta, metaPlaceholder, title, titleLang, onOpen, aside, actions, children, className, ...props }: ListRowProps) {
   const items = (meta ?? []).map((text, slot) => ({ text, slot })).filter((item): item is { text: string; slot: number } => Boolean(item.text));
   return (
     <motion.div {...props} className={cn('list-row', className)} onClick={onOpen}>
       <div className="list-row-content">
-        {(items.length > 0 || aside) && (
+        {(items.length > 0 || aside || metaPlaceholder) && (
           <div className="list-row-head">
+            {items.length === 0 && metaPlaceholder}
             {items.map(({ text, slot }, index) => (
               <span key={slot} className={slot === 0 ? 'list-row-lead' : 'list-row-meta'}>
                 {index > 0 && <span aria-hidden="true">·</span>}
@@ -74,14 +78,16 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
 }
 
 /**
- * The first names of a byline, with how many more there are. The count sits
- * outside the names, so a narrow row cuts a name rather than the count.
+ * The first names of a byline, with how many more there are (`bylineText`).
+ * The count sits outside the names, so a narrow row cuts a name rather than
+ * the count.
  */
 function BylineLabel({ names }: { names: string[] }) {
+  const text = bylineText(names);
   return (
     <>
-      <span className="list-row-byline-names">{names.slice(0, 3).join(', ')}</span>
-      {names.length > 3 && <span className="list-row-byline-more">{` +${names.length - 3}`}</span>}
+      <span className="list-row-byline-names">{text.names}</span>
+      {text.more && <span className="list-row-byline-more">{text.more}</span>}
     </>
   );
 }
