@@ -111,11 +111,12 @@ later step runs:
 Arguments given after `npm run worker:deploy --`, such as `--tag`, are passed
 to wrangler in steps 3 and 6, ahead of the command's own `--dry-run --outdir`
 and `--no-bundle --config wrangler.toml`. Wrangler keeps the last value given
-for `--dry-run` or `--bundle`, however it is spelled, and refuses a second
-`--outdir` or `--config`, so no argument can make step 3 publish or step 6
-bundle again. The command refuses a further `--` among
-those arguments before step 1, because wrangler reads nothing after it as an
-option, the command's own flags included.
+for `--dry-run` or `--bundle`, however it is spelled, so no argument can make
+step 3 publish or step 6 bundle again. It refuses a second `--outdir` in step
+3; a `--config` is refused only in step 6, after the upload, because step 3
+passes none of its own. The command refuses a further `--` among those
+arguments before step 1, because wrangler reads nothing after it as an option,
+the command's own flags included.
 
 Each posthog-cli process reads the login once, when it starts, so a login to
 another project after step 2 would reach steps 3 and 5. The gate keeps such a

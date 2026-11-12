@@ -69,7 +69,7 @@ const wrapper = fileURLToPath(new URL('deploy-worker.ts', import.meta.url));
 const eu = 'https://eu.i.posthog.com';
 const project = '306340';
 const apiKey = 'phx_contract_test_key';
-// The folder every run bundled into before each run had a folder of its own.
+// The folder older versions of this script bundle into; a run must neither deploy nor remove it.
 const sharedOut = join('.wrangler', 'posthog-worker');
 const posthogVariables = [
   'POSTHOG_CLI_API_KEY', 'POSTHOG_CLI_PROJECT_ID', 'POSTHOG_CLI_TOKEN', 'POSTHOG_CLI_ENV_ID',
@@ -1024,7 +1024,7 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
 
   // Placed after the wrapper's flags, each of these would publish the build
   // before its maps are uploaded, or deploy a bundle the maps do not describe.
-  for (const extraArgs of [['--no-dry-run'], ['--dry-run=false'], ['--dry-run', 'false'], ['--dryRun=false'], ['--bundle'], ['--bundle=true']]) {
+  for (const extraArgs of [['--no-dry-run'], ['--dry-run=false'], ['--dry-run', 'false'], ['--dryRun=false'], ['--bundle'], ['--bundle=true'], ['--bundle', 'true'], ['--no-bundle=false']]) {
     test(`${extraArgs.join(' ')} neither publishes the build nor bundles the final deploy again`, async (t) => {
       const p = createProject(t);
       const args = [...tagArgs, ...extraArgs];
@@ -1033,6 +1033,14 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
       assertPipeline(p, run, null, args);
     });
   }
+
+  test('--env and --name reach both wrangler steps unchanged', async (t) => {
+    const p = createProject(t);
+    const args = [...tagArgs, '--env', 'staging', '--name', 'synthetic-worker'];
+    const run = await deploy(p, ci, args);
+    assert.equal(run.status, 0, describeRun(run));
+    assertPipeline(p, run, null, args);
+  });
 
   for (const args of [[...tagArgs, '--', '--no-dry-run'], ['--']]) {
     test(`refuses "--" before starting any process: ${args.join(' ')}`, async (t) => {
