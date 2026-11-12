@@ -2,8 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, Plus, X } from '@phosphor-icons/react';
 import { Input } from '../ui/input.tsx';
-import { searchAuthors, searchConcepts, searchLocalTopics } from '../../services/open-alex-service.ts';
-import type { OpenAlexAuthor, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
+import { searchAuthors, searchConcepts, searchJournals, searchLocalTopics } from '../../services/open-alex-service.ts';
+import type { OpenAlexAuthor, OpenAlexJournal, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import { ingredientKey, ingredientLabel, type FeedIngredient } from '../../utils/custom-feeds.ts';
 import { ingredientResults, searchFailureNotice } from '../../utils/feed-ingredient-search.ts';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, pulseIcon } from '../../utils/motion-curves.ts';
@@ -14,10 +14,11 @@ const TOPIC_LIMIT = 6;
 const COPY = {
   label: 'What goes in it',
   hint: 'A paper shows up if it matches any of these.',
-  search: 'Add a topic, author or keyword',
+  search: 'Add a topic, author, journal or keyword',
   suggestions: 'Start from one of your topics',
   topics: 'Topics',
   authors: 'Authors',
+  journals: 'Journals',
   keyword: 'Keyword',
   keywordHint: 'Any paper that mentions it',
   remove: (label: string) => `Remove ${label}`,
@@ -30,16 +31,22 @@ const KIND: Record<FeedIngredient['kind'], string> = {
   category: 'Category',
   topic: 'Topic',
   author: 'Author',
+  journal: 'Journal',
   keyword: 'Keyword',
 };
 
 /** A source's results, `failed` when its request failed, or null while it is asked. */
-type Answer = { term: string; topics: OpenAlexTopic[] | 'failed' | null; authors: OpenAlexAuthor[] | 'failed' | null };
+type Answer = {
+  term: string;
+  topics: OpenAlexTopic[] | 'failed' | null;
+  authors: OpenAlexAuthor[] | 'failed' | null;
+  journals: OpenAlexJournal[] | 'failed' | null;
+};
 
 /**
- * The remote half of the search: research topics and authors for `term`,
- * asked once the typing has paused, each source on its own so one that fails
- * or runs out of time leaves the other's results. A failure is kept as one,
+ * The remote half of the search: research topics, authors and journals for
+ * `term`, asked once the typing has paused, each source on its own so one
+ * that fails or runs out of time leaves the others' results. A failure is kept as one,
  * not as an empty list, so the picker can say so; typing again asks again.
  * Typing again also aborts the requests in flight, which then say nothing.
  * An answer is kept with the term it answers, so a late one never shows
@@ -54,13 +61,15 @@ function useRemoteResults(term: string) {
     const controller = new AbortController();
     const settle = (part: Partial<Answer>) => {
       if (controller.signal.aborted) return;
-      setAnswer(current => ({ ...(current?.term === term ? current : { term, topics: null, authors: null }), ...part }));
+      setAnswer(current => ({ ...(current?.term === term ? current : { term, topics: null, authors: null, journals: null }), ...part }));
     };
     const timer = window.setTimeout(() => {
       searchConcepts(term, { signal: controller.signal, limit: TOPIC_LIMIT, throwOnError: true })
         .then(topics => settle({ topics }), () => settle({ topics: 'failed' }));
       searchAuthors(term, { signal: controller.signal, typeahead: true, throwOnError: true })
         .then(authors => settle({ authors }), () => settle({ authors: 'failed' }));
+      searchJournals(term, { signal: controller.signal, throwOnError: true })
+        .then(journals => settle({ journals }), () => settle({ journals: 'failed' }));
     }, SEARCH_DELAY_MS);
     return () => {
       window.clearTimeout(timer);
@@ -72,12 +81,13 @@ function useRemoteResults(term: string) {
   return {
     topics: listOf(current?.topics),
     authors: listOf(current?.authors),
-    failed: { topics: current?.topics === 'failed', authors: current?.authors === 'failed' },
-    pending: !current || current.topics === null || current.authors === null,
+    journals: listOf(current?.journals),
+    failed: { topics: current?.topics === 'failed', authors: current?.authors === 'failed', journals: current?.journals === 'failed' },
+    pending: !current || current.topics === null || current.authors === null || current.journals === null,
   };
 }
 
-/** A search result, and the line under its name: an author's institution, or what a keyword does. */
+/** A search result, and the line under its name: an author's institution, a journal's publisher, or what a keyword does. */
 type ResultItem = { ingredient: FeedIngredient; hint?: string };
 
 function IngredientButton({ ingredient, chosen, onToggle, hint }: ResultItem & { chosen: boolean; onToggle: (ingredient: FeedIngredient) => void }) {
@@ -124,8 +134,8 @@ function ResultGroup({ title, items, chosen, onToggle }: { title: string; items:
 /**
  * "What goes in it": the chosen ingredients as removable chips, and one
  * search field that finds ingredients of every kind. Areas and categories
- * come from the app's own taxonomy as the reader types; research topics and
- * authors from OpenAlex once the typing pauses. With the field empty, the
+ * come from the app's own taxonomy as the reader types; research topics,
+ * authors and journals from OpenAlex once the typing pauses. With the field empty, the
  * reader's own topics are offered instead. A result already in the feed is
  * pressed, and pressing it takes it out. Whether an ingredient may join is
  * the window's call (`onToggle`), as is the sentence when it may not.
@@ -147,11 +157,11 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
   const remote = useRemoteResults(term);
   const local = useMemo(() => (term ? searchLocalTopics(term, TOPIC_LIMIT) : []), [term]);
   const results = useMemo(
-    () => ingredientResults({ text: term, topics: [...local, ...remote.topics], authors: remote.authors }),
-    [term, local, remote.topics, remote.authors],
+    () => ingredientResults({ text: term, topics: [...local, ...remote.topics], authors: remote.authors, journals: remote.journals }),
+    [term, local, remote.topics, remote.authors, remote.journals],
   );
   const chosen = useMemo(() => new Set(ingredients.map(ingredientKey)), [ingredients]);
-  const count = results.topics.length + results.authors.length + (results.keyword ? 1 : 0);
+  const count = results.topics.length + results.authors.length + results.journals.length + (results.keyword ? 1 : 0);
   const failure = remote.pending ? null : searchFailureNotice(remote.failed);
 
   // Reduced motion keeps the fade and drops the rise; MotionConfig only
@@ -243,7 +253,7 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
       />
       {notice && <p key={notice.n} id={noticeId} className="feed-notice" role="alert">{notice.text}</p>}
       <span className="visually-hidden" role="status">{term ? (remote.pending ? COPY.searching : [COPY.count(count), failure].filter(Boolean).join('. ')) : ''}</span>
-      {/* Until both sources have answered, rows of the results' shape stand
+      {/* Until every source has answered, rows of the results' shape stand
           in for them, so the list arrives once instead of growing under the
           reader's pointer. */}
       {term && remote.pending ? (
@@ -260,6 +270,7 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
         <div className="feed-results">
           <ResultGroup title={COPY.topics} items={results.topics.map(ingredient => ({ ingredient }))} chosen={chosen} onToggle={onToggle} />
           <ResultGroup title={COPY.authors} items={results.authors.map(({ ingredient, institution }) => ({ ingredient, hint: institution ?? undefined }))} chosen={chosen} onToggle={onToggle} />
+          <ResultGroup title={COPY.journals} items={results.journals.map(({ ingredient, publisher }) => ({ ingredient, hint: publisher ?? undefined }))} chosen={chosen} onToggle={onToggle} />
           <ResultGroup title={COPY.keyword} items={results.keyword ? [{ ingredient: results.keyword, hint: COPY.keywordHint }] : []} chosen={chosen} onToggle={onToggle} />
           {failure && <p className="feed-notice">{failure}</p>}
         </div>

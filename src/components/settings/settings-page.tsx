@@ -97,7 +97,7 @@ const SETTINGS_COPY = {
   followingDescription: 'Entities that influence your recommendations',
   editFollowing: 'Edit follows',
   feeds: 'Feeds',
-  feedsDescription: 'Feeds you made from topics, authors and keywords',
+  feedsDescription: 'Feeds you made from topics, authors, journals and keywords',
   editFeeds: 'Edit feeds',
   interests: 'Interests',
   interestsDescription: 'Subcategories used to train your feed',

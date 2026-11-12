@@ -84,6 +84,13 @@ export interface OpenAlexAuthor extends EntityMetrics {
   counts_by_year?: Array<{ year: number; works_count: number; cited_by_count?: number }>;
 }
 
+/** A journal found by name: `publisher` is the name of the organization hosting it. */
+export interface OpenAlexJournal {
+  id: string;
+  display_name: string;
+  publisher: string | null;
+}
+
 export interface OpenAlexTopic extends Partial<PaperSubject>, EntityMetrics {
   id: string;
   display_name: string;

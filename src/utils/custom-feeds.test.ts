@@ -28,6 +28,7 @@ const feedOf = (id: string, ingredients: FeedIngredient[], name = id): CustomFee
 const author = (n: number): FeedIngredient => ({ kind: 'author', id: `A${n}`, label: `Author ${n}` });
 const topic = (n: number): FeedIngredient => ({ kind: 'topic', id: `T${n}`, label: `Topic ${n}` });
 const keyword = (query: string): FeedIngredient => ({ kind: 'keyword', query });
+const journal = (n: number): FeedIngredient => ({ kind: 'journal', id: `S${n}`, label: `Journal ${n}` });
 
 test('a stored list keeps the feeds that are well formed and drops the rest', () => {
   const good = { id: 'abcd1234', name: 'Thesis', order: 'newest', ingredients: [{ kind: 'category', id: 'quant-ph' }] };
@@ -103,7 +104,25 @@ test('one ingredient is validated and normalised on its own', () => {
   assert.deepEqual(parseFeedIngredient({ kind: 'topic', id: 'https://openalex.org/T10020', label: ' Quantum computing ' }), { kind: 'topic', id: 'T10020', label: 'Quantum computing' });
   assert.deepEqual(parseFeedIngredient({ kind: 'author', id: 'https://api.openalex.org/authors/A5023888391', label: 'Aiko Sato' }), { kind: 'author', id: 'A5023888391', label: 'Aiko Sato' });
   assert.deepEqual(parseFeedIngredient({ kind: 'keyword', query: ' Surface  Code ' }), { kind: 'keyword', query: 'surface code' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'journal', id: 'https://openalex.org/S137773608', label: ' Nature ' }), { kind: 'journal', id: 'S137773608', label: 'Nature' });
+  assert.deepEqual(parseFeedIngredient({ kind: 'journal', id: 'https://api.openalex.org/sources/S4210194219', label: 'Physical Review X' }), { kind: 'journal', id: 'S4210194219', label: 'Physical Review X' });
   assert.equal(parseFeedIngredient({ kind: 'journal', id: 'S123' }), null);
+  assert.equal(parseFeedIngredient({ kind: 'institution', id: 'I123', label: 'Keio University' }), null);
+  assert.equal(parseFeedIngredient({ kind: 'journal', id: 'A123', label: 'Not a journal' }), null);
+  assert.equal(parseFeedIngredient({ kind: 'journal', id: '0028-0836', label: 'Nature' }), null);
+});
+
+test('a stored feed keeps its first ten journals', () => {
+  const eleven = Array.from({ length: 11 }, (_, index) => journal(index + 1));
+  const [feed] = parseCustomFeeds([feedOf('abcd1234', [...eleven, author(1)])]);
+  assert.deepEqual(feed.ingredients, [...eleven.slice(0, 10), author(1)]);
+});
+
+test('journals count with authors and research topics against the account\'s thirty', () => {
+  const first = feedOf('abcd1234', [...Array.from({ length: 10 }, (_, index) => journal(index + 1)), ...Array.from({ length: 10 }, (_, index) => author(index + 1))]);
+  const second = feedOf('abcd1235', [journal(1), ...Array.from({ length: 11 }, (_, index) => topic(index + 1))]);
+  const [, parsedSecond] = parseCustomFeeds([first, second]);
+  assert.deepEqual(parsedSecond.ingredients, [journal(1), ...Array.from({ length: 10 }, (_, index) => topic(index + 1))]);
 });
 
 test('a name is counted by the characters a reader sees', () => {
@@ -142,6 +161,12 @@ test('every follow a feed asks for is served from a lane', () => {
   ]), order: 'best' });
   assert.equal(request.order, 'relevance');
   assert.deepEqual(request.follows.map(followLane), ['author:A5023888391', 'topic:T10020', 'concept:C121332964', 'query:surface code']);
+});
+
+test('a journal is asked for as the follow of its OpenAlex source, served from the source lane', () => {
+  const request = corpusRequestOf(feedOf('abcd1234', [{ kind: 'journal', id: 'S137773608', label: 'Nature' }]));
+  assert.deepEqual(request.follows, [{ type: 'journal', canonicalId: 'S137773608', displayName: 'Nature' }]);
+  assert.deepEqual(request.follows.map(followLane), ['source:S137773608']);
 });
 
 test('a keyword no search can be made of is left out of the request', () => {
@@ -225,6 +250,21 @@ test('an ingredient is refused when it repeats, fills the feed or passes the acc
   assert.equal(ingredientProblem(keyword(WORDS[10]), [], ten), 'keywords-full');
   assert.equal(ingredientProblem(keyword(WORDS[0]), [], ten), null);
   assert.equal(ingredientProblem({ kind: 'category', id: 'quant-ph' }, [], [...thirty, ...ten]), null);
+  assert.equal(ingredientProblem(journal(1), [], thirty), 'entities-full');
+});
+
+test('a feed holds ten journals, and a journal counts once against the account\'s thirty', () => {
+  const tenJournals = Array.from({ length: 10 }, (_, index) => journal(index + 1));
+  assert.equal(ingredientProblem(journal(11), tenJournals, []), 'journals-full');
+  assert.equal(ingredientProblem(author(1), tenJournals, []), null);
+  assert.equal(ingredientProblem(journal(10), tenJournals.slice(0, 9), []), null);
+  // Another feed's ten journals leave this one free to hold ten of its own.
+  assert.equal(ingredientProblem(journal(11), [], [feedOf('abcd1234', tenJournals)]), null);
+
+  const thirty = [feedOf('abcd1234', [...tenJournals, ...Array.from({ length: 10 }, (_, index) => author(index + 1))]), feedOf('abcd1235', Array.from({ length: 10 }, (_, index) => topic(index + 1)))];
+  assert.equal(ingredientProblem(journal(11), [], thirty), 'entities-full');
+  assert.equal(ingredientProblem(author(11), [], thirty), 'entities-full');
+  assert.equal(ingredientProblem(journal(1), [], thirty), null);
 });
 
 test('an ingredient is known by its key and named by its label', () => {
@@ -235,6 +275,8 @@ test('an ingredient is known by its key and named by its label', () => {
   assert.equal(ingredientLabel({ kind: 'category', id: 'physics.retired' }), 'physics.retired');
   assert.equal(ingredientLabel(keyword('surface code')), 'surface code');
   assert.equal(ingredientLabel(author(1)), 'Author 1');
+  assert.equal(ingredientKey(journal(1)), 'journal:S1');
+  assert.equal(ingredientLabel(journal(1)), 'Journal 1');
 });
 
 test('a follow becomes the ingredient it names, or none', () => {
@@ -245,6 +287,10 @@ test('a follow becomes the ingredient it names, or none', () => {
   assert.deepEqual(ingredientFromFollow({ type: 'author', canonicalId: 'A5023888391', displayName: 'Aiko Sato' }), { kind: 'author', id: 'A5023888391', label: 'Aiko Sato' });
   assert.equal(ingredientFromFollow({ type: 'author', canonicalId: 'legacy:aiko sato', displayName: 'Aiko Sato' }), null);
   assert.equal(ingredientFromFollow({ type: 'institution', canonicalId: 'I1321305853', displayName: 'MIT' }), null);
+  assert.deepEqual(ingredientFromFollow({ type: 'journal', canonicalId: 'S137773608', displayName: 'Nature' }), { kind: 'journal', id: 'S137773608', label: 'Nature' });
+  assert.deepEqual(ingredientFromFollow({ type: 'journal', canonicalId: 'https://openalex.org/S137773608', displayName: 'Nature' }), { kind: 'journal', id: 'S137773608', label: 'Nature' });
+  assert.equal(ingredientFromFollow({ type: 'journal', canonicalId: '0028-0836', displayName: 'Nature' }), null);
+  assert.equal(ingredientFromFollow({ type: 'journal', displayName: 'Nature' }), null);
   assert.equal(ingredientFromFollow({ type: 'topic', canonicalId: 'query-1a2b3c4d', displayName: '?', metadata: { query: '?' } }), null);
 });
 
@@ -287,6 +333,7 @@ test('a created feed reaches analytics as how many ingredients of each kind it h
       { kind: 'author', id: 'A123', label: 'Vera Rubin' },
       { kind: 'keyword', query: 'dark matter' },
       { kind: 'keyword', query: 'lensing' },
+      { kind: 'journal', id: 'S137773608', label: 'Nature' },
     ],
   };
   const sent = sanitizeProductEventParams('custom_feed_create', customFeedCreateEvent(feed), ANALYTICS_CONSENT.ENABLED);
