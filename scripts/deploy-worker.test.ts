@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 //   POSTHOG_CLI_ENV_ID), then a --dotenv-file, then the `posthog-cli login` session,
 //   which each process reads again when it starts;
 // - with RUST_LOG enabling posthog_cli::utils::auth at debug, the chosen source
-//   is logged by tracing-subscriber, with ANSI colours unless NO_COLOR is set;
+//   is logged by tracing-subscriber, with ANSI colors unless NO_COLOR is set;
 // - with --stdin, inject and upload then read folder paths from their input until
 //   it ends, and only then act on the project their credentials name: inject fetches
 //   or creates the release, upload sends the maps. With no path, inject exits 1 with
@@ -73,7 +73,7 @@ const posthogVariables = [
   'POSTHOG_CLIENT_RATE_LIMIT', 'POSTHOG_RELEASE_MODE', 'POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY',
 ];
 // A raw line the fake upload writes to stderr, which the wrapper must pass through as written.
-const uploadLog = 'fake upload log: \u001b[1mcolour codes kept\u001b[0m';
+const uploadLog = 'fake upload log: \u001b[1mcolor codes kept\u001b[0m';
 
 const fakeTool = String.raw`'use strict';
 const fs = require('node:fs');
@@ -156,10 +156,10 @@ function formatted(name, target, message) {
   if (LEVELS.indexOf(level(target)) < LEVELS.indexOf(name)) return null;
   const label = name.toUpperCase().padStart(5);
   const time = new Date().toISOString();
-  const colour = { error: 31, warn: 33, info: 32, debug: 34, trace: 35 }[name];
+  const color = { error: 31, warn: 33, info: 32, debug: 34, trace: 35 }[name];
   return env.NO_COLOR
     ? time + ' ' + label + ' ' + target + ': ' + message
-    : '\u001b[2m' + time + '\u001b[0m \u001b[' + colour + 'm' + label + '\u001b[0m \u001b[2m' + target
+    : '\u001b[2m' + time + '\u001b[0m \u001b[' + color + 'm' + label + '\u001b[0m \u001b[2m' + target
       + '\u001b[0m\u001b[2m:\u001b[0m ' + message;
 }
 
@@ -803,7 +803,7 @@ const gateRefusals: [string, Record<string, string>, 'inject' | 'upload', RegExp
   ['the login changed between inject and upload', { ...login, DEPLOY_WORKER_TEST_RELOGIN: 'between:999999' }, 'upload', /found the posthog-cli login for project 999999\./],
   ['a credential line that goes on after a split at the project', { ...login, DEPLOY_WORKER_TEST_GATE: 'inject:longer' }, 'inject', /found the posthog-cli login for project 3063401\./],
   ['a credential line in another format', { ...login, DEPLOY_WORKER_TEST_GATE: 'inject:changed' }, 'inject', /found a credential line in another format\./],
-  ['a credential line with text after the project', { ...ci, DEPLOY_WORKER_TEST_GATE: 'upload:suffix' }, 'upload', /found POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID for project \(unrecognised\)\./],
+  ['a credential line with text after the project', { ...ci, DEPLOY_WORKER_TEST_GATE: 'upload:suffix' }, 'upload', /found POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID for project \(unrecognized\)\./],
   ['two credential lines', { ...login, DEPLOY_WORKER_TEST_GATE: 'inject:twice' }, 'inject', /found more than one credential line\./],
   ['env mode answered from the login session', { ...ci, DEPLOY_WORKER_TEST_GATE: 'inject:source' }, 'inject', /expected POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID for project 306340, found the posthog-cli login for project 306340\./],
   ['login mode answered from the environment', { ...login, DEPLOY_WORKER_TEST_GATE: 'upload:source' }, 'upload', /expected the posthog-cli login for project 306340, found POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID for project 306340\./],

@@ -133,12 +133,14 @@ The gate has limits:
 - posthog-cli sends its own telemetry to PostHog's CLI project, described in
   step 2, not to 306340. Inject queues a usage event before it reads its input,
   and a refused inject reports its error. Both carry the project ID that run
-  loaded and can leave even when the gate refuses.
+  loaded and can leave even when the gate refuses. The upload in step 5 also
+  sends a start event and a finish event with file counts, sizes, duration and
+  success; when the upload fails, the finish event holds the CLI's error text.
 - Killing the command or the npm launcher can leave the posthog-cli binary
   running. Its input then closes, so if it had not received the folder yet, it
   exits without a request to a project.
 
-Source maps are required: this procedure has no deploy without them.
+Source maps are required; this procedure cannot deploy without them.
 `npm run worker:deploy:dry-run` packages only and uploads nothing.
 
 Reporting captures exceptions that escape a request, schedule, Durable Object

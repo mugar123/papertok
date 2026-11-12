@@ -103,7 +103,7 @@ function checkCliVersion(posthogCli: string) {
 
 function describeSource(source: CredentialSource, project: string) {
   const credentials = source === 'login' ? 'the posthog-cli login' : 'POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID';
-  return `${credentials} for project ${/^\d+$/.test(project) ? project : '(unrecognised)'}`;
+  return `${credentials} for project ${/^\d+$/.test(project) ? project : '(unrecognized)'}`;
 }
 
 // Each posthog-cli process loads its credentials once, before its command runs,
