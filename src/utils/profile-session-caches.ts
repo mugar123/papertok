@@ -84,6 +84,17 @@ export function readListPapers(uid: string) {
 }
 
 /**
+ * The papers whose `savedPapers` document the lists screen has read this
+ * session, keyed by uid. Only such a paper is asked of a provider when it has
+ * no field: the document is where the answer is kept.
+ */
+const listSavedDocuments = createSessionCache<Set<string>>({ maxEntries: 2 });
+
+export function savedDocumentRead(uid: string | undefined, paperId: string) {
+  return Boolean(uid && listSavedDocuments.get(uid)?.has(paperId));
+}
+
+/**
  * Folds newly resolved papers into what the account already had.
  *
  * Merged rather than replaced: a list is opened one at a time, and replacing
@@ -95,6 +106,7 @@ export function readListPapers(uid: string) {
 export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>, source: 'saved' | 'interaction') {
   if (!uid || !papers || typeof papers !== 'object') return;
   listPapersCache.set(uid, mergeListPaperCopies(listPapersCache.get(uid) ?? {}, papers, source));
+  if (source === 'saved') listSavedDocuments.set(uid, new Set([...(listSavedDocuments.get(uid) ?? []), ...Object.keys(papers)]));
 }
 
 /**
@@ -112,4 +124,21 @@ export function rememberSavedAnswers(uid: string, paperIds: string[]) {
 
 export function savedAnswered(uid: string | undefined, paperId: string) {
   return Boolean(uid && listSavedAnswers.get(uid)?.has(paperId));
+}
+
+/**
+ * The papers the lists asked a provider the field of this session
+ * (`readPaperFields`) and got an answer for, keyed by uid, so a paper the
+ * provider does not name is not asked on every visit to its list. A paper
+ * whose arXiv request failed is left out and asked again.
+ */
+const listFieldAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
+
+export function rememberFieldAnswers(uid: string, paperIds: string[]) {
+  if (!uid || paperIds.length === 0) return;
+  listFieldAnswers.set(uid, new Set([...(listFieldAnswers.get(uid) ?? []), ...paperIds]));
+}
+
+export function fieldAnswered(uid: string | undefined, paperId: string) {
+  return Boolean(uid && listFieldAnswers.get(uid)?.has(paperId));
 }

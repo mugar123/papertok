@@ -8,7 +8,7 @@ import { reviewTagForPaper } from './paper-status.ts';
 import { sourceAttribution } from './source-attribution.ts';
 import { getCategoryLabel } from '../data/categories.ts';
 import { listAbstractText } from '../components/lists/list-abstract-text.ts';
-import { listPaper, listPaperFromCopies, listPaperNeedsRead, mergeListPaperCopies } from './list-paper-copies.ts';
+import { listPaper, listPaperFromCopies, listPaperNeedsFieldRead, listPaperNeedsRead, mergeListPaperCopies } from './list-paper-copies.ts';
 
 const recovered = 'The abstract Semantic Scholar holds for this journal article, in full.';
 const own = 'The abstract OpenAlex now lists for this journal article itself.';
@@ -179,6 +179,20 @@ test('a list paper with a field or a date of its own is not read again', () => {
   assert.equal(listPaperNeedsRead([undefined, undefined, interactionCopy({ ...legacyCard, categories: [], primaryCategory: '' })], false), false, 'a date alone');
 });
 
+// A paper liked from an OpenAlex card and saved, both before PAP-60: the
+// like's copy has a date and concept names for categories. Its document may
+// hold a field a provider gave since, so that document alone is read.
+test('a copy with a date and no field has its savedPapers document read for the field', () => {
+  const liked = throughFirestore({ id: 'openalex:W4410000003', title: 'A journal article', categories: ['Qubit'], primaryCategory: 'Qubit', published: '2025-05-09' });
+  assert.equal(listPaperNeedsRead([undefined, undefined, liked], false), false, 'the row is painted: not the whole read');
+  assert.equal(listPaperNeedsFieldRead([undefined, undefined, liked], false), true);
+  assert.equal(listPaperNeedsFieldRead([undefined, undefined, liked], true), false, 'answered: settled');
+  assert.equal(listPaperNeedsFieldRead([undefined, undefined, interactionCopy(legacyCard)], false), false, 'a copy with a field');
+  assert.equal(listPaperNeedsFieldRead([undefined, undefined, loadedRecord()], false), false, 'no field and no date: the whole read covers it');
+  const filled = paperLegacyAdapter({ id: liked.id, title: liked.title, primaryCategory: 'Qubit', published: liked.published, primaryTopic: { id: 'https://openalex.org/T10020', field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' } } });
+  assert.equal(listPaper(undefined, filled, liked)?.primaryTopic?.field?.display_name, 'Physics and Astronomy');
+});
+
 test('a record without a copy gives no publication year, no field, and the text it kept', () => {
   assert.deepEqual(row(listPaper(undefined, undefined, loadedRecord())), {
     field: null, year: null, text: legacyCard.summary, authors: 3,
@@ -203,4 +217,33 @@ test('a list paper takes the longest list of authors its copies hold', () => {
     const twice = mergeListPaperCopies(once, { [legacyCard.id]: copies[second] }, second);
     assert.deepEqual(row(twice[legacyCard.id]), { ...fullRow, authors: 3 }, `${first} then ${second}`);
   }
+});
+
+// The document a save wrote before 2026-10-21: one category, no list of them
+// and no version. It is not evidence of the field, so it reads back with none.
+const oldSavedDocument = () => paperLegacyAdapter(throughFirestore({
+  id: legacyCard.id, title: legacyCard.title, primaryCategory: 'quant-ph', published: legacyCard.published,
+  summary: legacyCard.summary, savedAt: '2026-09-20T10:00:00.000Z',
+}));
+
+test('a saved document with no field does not erase the field another copy holds', () => {
+  assert.equal(row(oldSavedDocument()).field, null, 'the document alone has no field');
+  // A like or a read mark made later, from a card that carried its categories.
+  const marked = interactionCopy(legacyCard);
+  assert.equal(row(listPaper(marked, oldSavedDocument(), undefined)).field, fullRow.field, 'under an entry with a copy');
+  assert.equal(row(listPaper(undefined, oldSavedDocument(), marked)).field, fullRow.field, 'over the copy the library loaded');
+  for (const [first, second] of [['saved', 'interaction'], ['interaction', 'saved']] as const) {
+    const copies = { saved: oldSavedDocument(), interaction: paperLegacyAdapter(marked) };
+    const once = mergeListPaperCopies({}, { [legacyCard.id]: copies[first] }, first);
+    const twice = mergeListPaperCopies(once, { [legacyCard.id]: copies[second] }, second);
+    assert.equal(row(twice[legacyCard.id]).field, fullRow.field, `${first} then ${second}`);
+  }
+});
+
+test('a category an old copy kept under another provider\'s id is still not a field', () => {
+  // An OpenAlex card liked before PAP-60: its categories were concept names.
+  const liked = throughFirestore({ id: 'openalex:W4410000003', title: 'A journal article', categories: ['Qubit'], primaryCategory: 'Qubit', published: '2025-05-09' });
+  const saved = paperLegacyAdapter({ id: liked.id, title: liked.title, primaryCategory: 'Qubit', published: liked.published });
+  assert.equal(row(listPaper(liked, saved, undefined)).field, null);
+  assert.equal(row(listPaper(undefined, saved, liked)).field, null);
 });

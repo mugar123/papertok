@@ -12,6 +12,7 @@ import {
   rememberSavedAnswers,
   reviseOwnLists,
   savedAnswered,
+  savedDocumentRead,
 } from './profile-session-caches.ts';
 
 /**
@@ -98,4 +99,15 @@ test('a savedPapers answer is kept for the account that read it', () => {
   assert.equal(savedAnswered('uid-j', '2501.00001'), true);
   assert.equal(savedAnswered('uid-k', '2505.06123'), false, 'another account');
   assert.equal(savedAnswered('uid-j', '2509.99999'), false, 'never asked');
+});
+
+// Only a paper whose savedPapers document was read is asked of a provider
+// for its field: the document is where the answer is kept.
+test('a savedPapers document read is recorded for its account, an interaction copy is not', () => {
+  rememberListPapers('uid-k', { '2505.06123': { id: '2505.06123', title: 'Saved' } }, 'saved');
+  rememberListPapers('uid-k', { '2505.06124': { id: '2505.06124', title: 'Liked' } }, 'interaction');
+  assert.equal(savedDocumentRead('uid-k', '2505.06123'), true);
+  assert.equal(savedDocumentRead('uid-k', '2505.06124'), false);
+  assert.equal(savedDocumentRead('uid-l', '2505.06123'), false, 'another account');
+  assert.equal(savedDocumentRead(undefined, '2505.06123'), false);
 });
