@@ -1,7 +1,6 @@
-import { execFileSync, spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -42,19 +41,23 @@ function stopAfter(step: string, result: Exit): never {
   fail(`${step} failed (${exitReason(result)}); no later step ran.`, result.status || 1);
 }
 
-function run(step: string, bin: string, args: readonly string[], childEnv: NodeJS.ProcessEnv = env) {
-  const result = spawnSync(process.execPath, [bin, ...args], { env: childEnv, stdio: 'inherit' });
+function run(step: string, bin: string, args: readonly string[]) {
+  const result = spawnSync(process.execPath, [bin, ...args], { stdio: 'inherit' });
   if (result.status !== 0) stopAfter(step, result);
 }
 
 // Anything other than unset, empty or "false" counts as on, so a doubtful value is refused.
 const isOn = (value: string | undefined) => value !== undefined && value !== '' && value !== 'false';
 
-// An empty POSTHOG_CLI_DRY_RUN means off here, but posthog-cli parses it as a
-// boolean and exits 2 on an empty value before running its command, so the
-// posthog-cli calls start without it (spawn leaves out a variable set to
-// undefined). The wrangler calls inherit the environment unchanged.
-const posthogEnv = env.POSTHOG_CLI_DRY_RUN === '' ? { ...env, POSTHOG_CLI_DRY_RUN: undefined } : env;
+// posthog-cli's argument parser reads these variables and exits 2 before running
+// its command when one is set to an empty value. An empty value means unset
+// here, so the posthog-cli calls start without it (spawn leaves out a variable
+// set to undefined). The wrangler calls inherit the environment unchanged.
+const parsedVariables = ['POSTHOG_CLI_DRY_RUN', 'POSTHOG_CLIENT_RATE_LIMIT', 'POSTHOG_RELEASE_MODE', 'POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY'];
+const posthogEnv: NodeJS.ProcessEnv = { ...env };
+for (const name of parsedVariables) {
+  if (env[name] === '') posthogEnv[name] = undefined;
+}
 
 // Step 0, before any process starts: which credentials posthog-cli has to use.
 function credentialMode(): CredentialSource {
@@ -103,29 +106,36 @@ function describeSource(source: CredentialSource, project: string) {
   return `${credentials} for project ${/^\d+$/.test(project) ? project : '(unrecognised)'}`;
 }
 
+// Each posthog-cli process loads its credentials once, before its command runs,
+// and logs where from at debug level under this target. The login's line holds
+// the path of the stored session, so these lines are never printed.
+const isCredentialLine = (line: string) => line.includes('posthog_cli::utils::auth') || line.includes('Using token from');
+
+function credentialsIn(line: string): { source: CredentialSource; project: string } | undefined {
+  const match = /Using token from(?: (environment) or --dotenv-file|: .+), for environment (.*)$/.exec(line);
+  return match ? { source: match[1] ? 'environment' : 'login', project: match[2] } : undefined;
+}
+
 // Step 1, the credential check. It uploads nothing and is separate from the
-// upload of the Worker's maps in step 6. On an empty folder, `sourcemap upload`
-// loads its credentials, logs their source and project at debug level, finds no
-// file and returns before it resolves a release or calls the PostHog API. Only
-// that log target is enabled and none of its output is printed; a missing line
-// or a line in another format stops the deploy.
+// upload of the Worker's maps in step 6. With --stdin and an input that is closed
+// from the start, `sourcemap upload` loads its credentials, logs their source and
+// project at debug level, reads no folder, logs "nothing to upload" and returns
+// before it resolves a release or calls the PostHog API. Only the credential log
+// target is enabled and none of its output is printed; a missing line or a line
+// in another format stops the deploy.
 // `posthog-cli api call --json project-get` would name the project too, but in
 // 0.18.12 it first reads GET /api/users/@me/, which needs the user:read scope
 // that `posthog-cli login` does not grant, so it exits 1 with "missing scope
 // user:read". The check reads the auth log line instead of adding that scope.
 function checkCredentials(posthogCli: string, expected: CredentialSource) {
-  const emptyDirectory = mkdtempSync(join(tmpdir(), 'papertok-posthog-check-'));
   const check = spawnSync(
     process.execPath,
-    [posthogCli, '--host', posthogHost, 'sourcemap', 'upload', '--directory', emptyDirectory],
+    [posthogCli, '--host', posthogHost, 'sourcemap', 'upload', '--stdin'],
     { encoding: 'utf8', env: { ...posthogEnv, RUST_LOG: 'posthog_cli::utils::auth=debug' }, stdio: ['ignore', 'ignore', 'pipe'] },
   );
-  rmSync(emptyDirectory, { recursive: true, force: true });
   const used = stripVTControlCharacters(check.stderr ?? '').split(/\r?\n/).flatMap((line) => {
-    const match = /Using token from(?: (environment) or --dotenv-file|: .+), for environment (.*)$/.exec(line);
-    if (!match) return [];
-    const source: CredentialSource = match[1] ? 'environment' : 'login';
-    return [{ source, project: match[2] }];
+    const credentials = credentialsIn(line);
+    return credentials ? [credentials] : [];
   });
   if (check.status === 0 && used.length === 1 && used[0].source === expected && used[0].project === projectId) return;
   const found = used.length === 1 ? describeSource(used[0].source, used[0].project)
@@ -135,10 +145,144 @@ function checkCredentials(posthogCli: string, expected: CredentialSource) {
   fail(`PostHog credential check expected ${describeSource(expected, projectId)}, found ${found}${exit}. ${action} Nothing was built or deployed.`);
 }
 
+// Steps 4 and 6 run behind a gate, because the login can change after the
+// credential check: inject resolves the release and upload sends the maps in
+// whichever project the login names when that process starts.
+// With --stdin and no --directory, posthog-cli 0.18.12 loads its credentials,
+// logs where from, then reads the folders to work on from its input until it
+// ends, and makes no request to the project those credentials name before that.
+// The script writes the bundle folder only after that process has logged the
+// expected source and project 306340. Otherwise it closes the input empty:
+// inject then exits 1 with "no source files found", upload exits 0 with
+// "nothing to upload", neither makes a request to that project, and the step
+// fails. The process is never killed for a mismatch; a timeout kills it only
+// after its input was closed. The explicit --release-mode keeps
+// POSTHOG_RELEASE_MODE from changing it.
 const sourceMaps = (command: string, release: string) => [
-  '--host', posthogHost, 'sourcemap', command, '--directory', output,
-  '--release-name', 'papertok-worker', '--release-version', release,
+  '--host', posthogHost, 'sourcemap', command, '--stdin',
+  '--release-name', 'papertok-worker', '--release-version', release, '--release-mode', 'event',
 ];
+// Info lines for the upload checks, and the credential line for the gate,
+// whatever RUST_LOG holds.
+const gatedRustLog = 'info,posthog_cli::utils::auth=debug';
+const credentialLineTimeoutMs = 20_000;
+const exitAfterTimeoutMs = 15_000;
+
+// Returns the lines of its log that it printed, which leave out the credential line.
+async function runGated(command: 'inject' | 'upload', posthogCli: string, release: string, expected: CredentialSource) {
+  const step = `posthog-cli sourcemap ${command}`;
+  const child = spawn(process.execPath, [posthogCli, ...sourceMaps(command, release)], {
+    env: { ...posthogEnv, RUST_LOG: gatedRustLog },
+    stdio: ['pipe', 'inherit', 'pipe'],
+  });
+  const printed: string[] = [];
+  let pending = '';
+  // Set from the child's events; the assertion keeps TypeScript from narrowing it to 'waiting'.
+  let gate = 'waiting' as 'waiting' | 'opened' | 'refused';
+  let found = '';
+  let laterCredentialLines = 0;
+  let inputError: Error | undefined;
+  let launcherExit: Exit | undefined;
+  let killed = false;
+  let credentialTimer: NodeJS.Timeout | undefined;
+  let exitTimer: NodeJS.Timeout | undefined;
+
+  // A refusal closes the input empty and leaves the process to exit by itself.
+  const refuse = (reason: string) => {
+    if (gate !== 'waiting') return;
+    gate = 'refused';
+    found = reason;
+    clearTimeout(credentialTimer);
+    child.stdin.end();
+  };
+  child.stdin.on('error', (error) => {
+    inputError = error;
+  });
+
+  // Only complete lines are judged, so a credential line split across reads counts as a whole.
+  const take = (chunk: string, ended: boolean) => {
+    pending += chunk;
+    const end = ended ? pending.length : pending.lastIndexOf('\n') + 1;
+    const complete = pending.slice(0, end);
+    pending = pending.slice(end);
+    if (complete === '') return;
+    const credentialLines: string[] = [];
+    let text = '';
+    for (const line of complete.split(/(?<=\n)/)) {
+      const plain = stripVTControlCharacters(line).replace(/\r?\n$/, '');
+      if (isCredentialLine(plain)) {
+        credentialLines.push(plain);
+      } else {
+        text += line;
+        printed.push(line);
+      }
+    }
+    if (text !== '' && !process.stderr.write(text)) {
+      child.stderr.pause();
+      process.stderr.once('drain', () => child.stderr.resume());
+    }
+    if (credentialLines.length === 0) return;
+    if (gate !== 'waiting') {
+      laterCredentialLines += credentialLines.length;
+      return;
+    }
+    const used = credentialLines.length === 1 ? credentialsIn(credentialLines[0]) : undefined;
+    if (credentialLines.length > 1) refuse('more than one credential line');
+    else if (!used) refuse('a credential line in another format');
+    else if (used.source !== expected || used.project !== projectId) refuse(describeSource(used.source, used.project));
+    else {
+      gate = 'opened';
+      clearTimeout(credentialTimer);
+      child.stdin.end(`${resolve(output)}\n`);
+    }
+  };
+
+  const result = await new Promise<Exit>((done) => {
+    // Killing the npm launcher does not stop the binary it started, which can
+    // keep the log pipe open, so after a kill the wait ends with the launcher.
+    const stopWaiting = (exit: Exit) => {
+      child.stderr.destroy();
+      done(exit);
+    };
+    credentialTimer = setTimeout(() => {
+      refuse(`no credential line within ${credentialLineTimeoutMs / 1000} s`);
+      exitTimer = setTimeout(() => {
+        killed = true;
+        if (launcherExit) stopWaiting(launcherExit);
+        else child.kill('SIGKILL');
+      }, exitAfterTimeoutMs);
+    }, credentialLineTimeoutMs);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => take(chunk, false));
+    // A last line without a newline is printed or dropped, but cannot open the gate.
+    child.stderr.on('end', () => {
+      refuse('no credential line');
+      take('', true);
+    });
+    child.on('error', (error) => done({ error, signal: null, status: null }));
+    child.on('close', (status, signal) => done({ signal, status }));
+    child.on('exit', (status, signal) => {
+      launcherExit = { signal, status };
+      refuse('no credential line');
+      if (killed) stopWaiting(launcherExit);
+    });
+  });
+  clearTimeout(credentialTimer);
+  clearTimeout(exitTimer);
+  refuse('no credential line');
+
+  if (killed) {
+    fail(`${step} logged no credential line within ${credentialLineTimeoutMs / 1000} s and did not exit within ${exitAfterTimeoutMs / 1000} s after its input was closed, so it was stopped. Its posthog-cli binary may still be running, without the bundle folder. The Worker was not deployed.`);
+  }
+  if (result.error) stopAfter(step, result);
+  if (gate === 'refused') {
+    fail(`${step} was not given the bundle folder: expected ${describeSource(expected, projectId)}, found ${found}. The Worker was not deployed.`);
+  }
+  if (result.status !== 0) stopAfter(step, result);
+  if (laterCredentialLines > 0) fail(`${step} logged another credential line after it was given the bundle folder; the Worker was not deployed.`);
+  if (inputError) fail(`${step} did not read the bundle folder from its input; the Worker was not deployed.`);
+  return printed;
+}
 
 // posthog-cli pairs a script with the map its last sourceMappingURL comment
 // names, or else with <script>.map, and skips a script whose reference does not decode.
@@ -213,12 +357,13 @@ const numbersIn = (lines: readonly string[], pattern: RegExp) => lines.flatMap((
 // - after its requests it logs "Upload summary: X chunk(s) uploaded, Y skipped
 //   (Z already present, W too large)". X + Z falls short when a chunk is too
 //   large or its map is empty, and the npm launcher exits 0 when the binary is
-//   killed by a signal, which leaves no summary.
+//   killed by a signal, which leaves no summary. A chunk already present counts:
+//   its ID derives from its script's content, so PostHog holds a map for the same code.
 function uploadLogProblem(log: string, pairs: number): string | undefined {
   const lines = stripVTControlCharacters(log).split(/\r?\n/);
   if (lines.some((line) => line.endsWith('nothing to upload'))) return '"nothing to upload"';
   const found = numbersIn(lines, /\bFound (\d+) chunks to upload$/);
-  if (found.length === 0) return 'no "Found N chunks to upload" line (RUST_LOG may hide it)';
+  if (found.length === 0) return 'no "Found N chunks to upload" line';
   if (found.length > 1) return 'more than one chunk count';
   if (found[0][0] !== pairs) return `${found[0][0]} chunks to upload`;
   const summaries = numbersIn(lines, /\bUpload summary: (\d+) chunk\(s\) uploaded, \d+ skipped \((\d+) already present, (\d+) too large\)$/);
@@ -232,24 +377,16 @@ function uploadLogProblem(log: string, pairs: number): string | undefined {
 }
 
 // Step 6, the real upload of the bundle's maps, separate from the credential
-// check in step 1. Its log is passed through as it was written.
-function uploadBundleMaps(posthogCli: string, release: string, pairs: number) {
-  const result = spawnSync(process.execPath, [posthogCli, ...sourceMaps('upload', release)], {
-    env: posthogEnv,
-    stdio: ['inherit', 'inherit', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  // stderr is null only when the process could not start.
-  const log = result.stderr ?? Buffer.alloc(0);
-  if (log.length > 0) process.stderr.write(log);
-  if (result.status !== 0) stopAfter('posthog-cli sourcemap upload', result);
-  const problem = uploadLogProblem(log.toString('utf8'), pairs);
+// check in step 1. Its log, but for the credential line, is printed as it was written.
+async function uploadBundleMaps(posthogCli: string, release: string, pairs: number, expected: CredentialSource) {
+  const log = await runGated('upload', posthogCli, release, expected);
+  const problem = uploadLogProblem(log.join(''), pairs);
   if (problem !== undefined) {
     fail(`posthog-cli sourcemap upload reported ${problem} for ${pairs} injected source map pairs; the Worker was not deployed.`);
   }
 }
 
-function deploy() {
+async function deploy() {
   const expectedSource = credentialMode();
 
   // npm installs these tools as .cmd shims on Windows, which spawning without a
@@ -271,15 +408,15 @@ function deploy() {
   rmSync(output, { recursive: true, force: true });
   run('wrangler deploy --dry-run', wrangler, ['deploy', '--dry-run', '--outdir', output, ...wranglerArgs]);
   // Step 4.
-  run('posthog-cli sourcemap inject', posthogCli, sourceMaps('inject', release), posthogEnv);
+  await runGated('inject', posthogCli, release, expectedSource);
   const pairs = countInjectedPairs();
-  uploadBundleMaps(posthogCli, release, pairs);
+  await uploadBundleMaps(posthogCli, release, pairs, expectedSource);
   // Step 7.
   run('wrangler deploy', wrangler, ['deploy', `${output}/instrumentation.js`, '--no-bundle', '--config', 'wrangler.toml', ...wranglerArgs]);
 }
 
 try {
-  deploy();
+  await deploy();
 } catch (error) {
   if (!(error instanceof Stop)) throw error;
   console.error(`worker:deploy: ${error.message}`);

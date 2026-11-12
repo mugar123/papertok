@@ -44,8 +44,10 @@ than empty or `false`, because posthog-cli would skip the upload. It also refuse
 when `POSTHOG_CLI_TOKEN`, `POSTHOG_CLI_ENV_ID`, `POSTHOG_CLI_DOTENV_FILE` or
 `POSTHOG_HOME` is set, even to an empty value, because posthog-cli can take
 credentials from each of them.
-An empty `POSTHOG_CLI_DRY_RUN` is left out of the posthog-cli calls, because
-posthog-cli rejects an empty value and exits before running its command.
+An empty `POSTHOG_CLI_DRY_RUN`, `POSTHOG_CLIENT_RATE_LIMIT`,
+`POSTHOG_RELEASE_MODE` or `POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY` is left out
+of the posthog-cli calls, because posthog-cli rejects an empty value and exits
+before running its command.
 `POSTHOG_CLI_HOST` has no effect: every call passes `--host https://eu.i.posthog.com`.
 
 The command then runs these steps. A failed step or check stops it, and no
@@ -55,11 +57,12 @@ later step runs:
    read the log lines and file markers of that version. After a CLI upgrade the
    command stops here until `scripts/deploy-worker.ts` has been checked against
    the new version and its `posthogCliVersion` updated.
-2. The credential check runs `posthog-cli sourcemap upload` on a new, empty
-   folder with only the CLI's authentication log enabled. It is not the upload
-   of the Worker's maps in step 5, and it uploads nothing: with no files, the CLI
-   loads its credentials and returns before it resolves a release or calls the
-   PostHog API. The script prints none of its output and goes on only if the run
+2. The credential check runs `posthog-cli sourcemap upload --stdin` with its
+   input closed from the start, so it gets no folder, and with only the CLI's
+   authentication log enabled. It is not the upload of the Worker's maps in
+   step 5, and it uploads nothing: with no folder, the CLI loads its credentials,
+   reports "nothing to upload" and returns before it resolves a release or calls
+   the PostHog API. The script prints none of its output and goes on only if the run
    exits 0 and its log names the expected source and project 306340. A missing
    line, or a line in another format, stops the command.
    When posthog-cli succeeds here, it sends nothing. When it fails, for example
@@ -75,21 +78,58 @@ later step runs:
    that trace. PostHog also records the location it derives from the machine's
    IP address, as it does for the events posthog-cli sends during inject and
    upload. The event never holds the key or the path of the credentials file.
-3. It bundles the Worker into `.wrangler/posthog-worker` and writes a PostHog
-   chunk ID into each script and its source map.
+3. It bundles the Worker into `.wrangler/posthog-worker`. posthog-cli then
+   resolves the release in PostHog and writes a PostHog chunk ID into each script
+   and its source map. This run goes through the gate described below.
 4. Every script in that folder must have its source map with the same chunk ID,
    every map must belong to a script, and `instrumentation.js` must be one of
    them.
-5. The upload of the bundle's maps, under the current Git commit as release. Its
-   log is printed as written. posthog-cli exits 0 even when it finds nothing to
-   upload, so the upload must also report `Found N chunks to upload` with N equal
-   to the scripts checked in step 4, and no "nothing to upload" warning. It must
-   then log `Upload summary: X chunk(s) uploaded, Y skipped (Z already
-   present, W too large)` where X + Z equals that count: a chunk too large or
-   with an empty map is not uploaded, and the npm launcher exits 0 when a signal
-   kills the posthog-cli binary before the summary. A `RUST_LOG` that hides info
-   lines therefore stops the command too.
+5. The upload of the bundle's maps, under the current Git commit as release,
+   also through the gate. Its log is printed as written, except the credential
+   line. posthog-cli exits 0 even when it finds nothing to upload, so the upload
+   must also report `Found N chunks to upload` with N equal to the scripts
+   checked in step 4, and no "nothing to upload" warning. It must then log
+   `Upload summary: X chunk(s) uploaded, Y skipped (Z already present, W too
+   large)` where X + Z equals that count: a chunk too large or with an empty map
+   is not uploaded, and the npm launcher exits 0 when a signal kills the
+   posthog-cli binary before the summary.
 6. It deploys that bundle without rebundling.
+
+Each posthog-cli process reads the login once, when it starts, so a login to
+another project after step 2 would reach steps 3 and 5. The gate keeps such a
+run from sending anything to that project. The command starts posthog-cli with
+`--stdin` and no folder. posthog-cli 0.18.12 loads its credentials, logs their
+source and project, then reads folder paths from its input until the input
+ends; it makes no request to the project its credentials name before that. The
+command writes the bundle folder to that input only after the log line names the
+expected source (the login, or the two variables) and project 306340. In every
+other case it closes the input without a folder and stops: another source or
+project, a line in another format, two credential lines at once, no line within
+20 seconds, or a process that exits first. A credential line logged after the
+folder was given stops the command once that run ends. With no folder, inject exits 1 with "no
+source files found" and upload exits 0 with "nothing to upload", and neither
+makes a request to that project. The command does not kill posthog-cli for a
+mismatch. A run that logs no line within 20 seconds and has not exited 15
+seconds after its input was closed is killed. The login's credential line holds
+the path of its file, so no credential line is printed.
+
+For these two runs the command sets `RUST_LOG` to
+`info,posthog_cli::utils::auth=debug`, whatever value you set, so the gate gets
+its line and step 5 gets the info lines it checks. Both runs also pass
+`--release-mode event`, so `POSTHOG_RELEASE_MODE` cannot change the mode.
+
+The gate has limits:
+
+- It relies on the order posthog-cli 0.18.12 follows internally, read from its
+  source code, not on a guarantee from PostHog. That order has to be checked
+  again before `posthogCliVersion` changes.
+- posthog-cli sends its own telemetry to PostHog's CLI project, described in
+  step 2, not to 306340. Inject queues a usage event before it reads its input,
+  and a refused inject reports its error. Both carry the project ID that run
+  loaded and can leave even when the gate refuses.
+- Killing the command or the npm launcher can leave the posthog-cli binary
+  running. Its input then closes, so if it had not received the folder yet, it
+  exits without a request to a project.
 
 If PostHog is unavailable and a fix cannot wait, `npx wrangler deploy` deploys
 without uploading maps; reports from that release then show bundle locations
