@@ -1,10 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, Plus, X } from '@phosphor-icons/react';
 import { Input } from '../ui/input.tsx';
 import { searchAuthors, searchConcepts, searchLocalTopics } from '../../services/open-alex-service.ts';
 import type { OpenAlexAuthor, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import { ingredientKey, ingredientLabel, type FeedIngredient } from '../../utils/custom-feeds.ts';
 import { ingredientResults, searchFailureNotice } from '../../utils/feed-ingredient-search.ts';
+import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, pulseIcon } from '../../utils/motion-curves.ts';
 
 const SEARCH_DELAY_MS = 320;
 const TOPIC_LIMIT = 6;
@@ -19,6 +21,7 @@ const COPY = {
   keyword: 'Keyword',
   keywordHint: 'Any paper that mentions it',
   remove: (label: string) => `Remove ${label}`,
+  searching: 'Searching',
   count: (n: number) => (n === 0 ? 'No results' : `${n} ${n === 1 ? 'result' : 'results'}`),
 };
 
@@ -74,12 +77,25 @@ function useRemoteResults(term: string) {
   };
 }
 
-function IngredientButton({ ingredient, chosen, onToggle, hint }: { ingredient: FeedIngredient; chosen: boolean; onToggle: (ingredient: FeedIngredient) => void; hint?: string }) {
+/** A search result, and the line under its name: an author's institution, or what a keyword does. */
+type ResultItem = { ingredient: FeedIngredient; hint?: string };
+
+function IngredientButton({ ingredient, chosen, onToggle, hint }: ResultItem & { chosen: boolean; onToggle: (ingredient: FeedIngredient) => void }) {
   const label = ingredient.kind === 'keyword' ? `“${ingredient.query}”` : ingredientLabel(ingredient);
+  // The mark gives under the press the way Follow's icon does, once the
+  // window has taken the ingredient in or out; a refused one does not move.
+  const markRef = useRef<HTMLSpanElement | null>(null);
+  const wasChosen = useRef(chosen);
+  const reducedMotion = useReducedMotion();
+  useEffect(() => {
+    if (wasChosen.current === chosen) return;
+    wasChosen.current = chosen;
+    if (!reducedMotion) pulseIcon(markRef.current, chosen);
+  }, [chosen, reducedMotion]);
   return (
     <li>
       <button type="button" className="feed-result" aria-pressed={chosen} onClick={() => onToggle(ingredient)}>
-        <span className="feed-result-mark" aria-hidden="true">{chosen ? <Check size={14} weight="bold" /> : <Plus size={14} />}</span>
+        <span className="feed-result-mark" aria-hidden="true" ref={markRef}>{chosen ? <Check size={14} weight="bold" /> : <Plus size={14} />}</span>
         <span className="feed-result-text">
           <span className="feed-result-label">{label}</span>
           {hint && <span className="feed-result-hint">{hint}</span>}
@@ -90,14 +106,14 @@ function IngredientButton({ ingredient, chosen, onToggle, hint }: { ingredient: 
   );
 }
 
-function ResultGroup({ title, ingredients, chosen, onToggle, hint }: { title: string; ingredients: FeedIngredient[]; chosen: Set<string>; onToggle: (ingredient: FeedIngredient) => void; hint?: string }) {
+function ResultGroup({ title, items, chosen, onToggle }: { title: string; items: ResultItem[]; chosen: Set<string>; onToggle: (ingredient: FeedIngredient) => void }) {
   const titleId = useId();
-  if (ingredients.length === 0) return null;
+  if (items.length === 0) return null;
   return (
     <div className="feed-results-group" role="group" aria-labelledby={titleId}>
       <span id={titleId} className="feed-section-label">{title}</span>
       <ul className="feed-results-list">
-        {ingredients.map(ingredient => (
+        {items.map(({ ingredient, hint }) => (
           <IngredientButton key={ingredientKey(ingredient)} ingredient={ingredient} chosen={chosen.has(ingredientKey(ingredient))} onToggle={onToggle} hint={hint} />
         ))}
       </ul>
@@ -138,8 +154,19 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
   const count = results.topics.length + results.authors.length + (results.keyword ? 1 : 0);
   const failure = remote.pending ? null : searchFailureNotice(remote.failed);
 
+  // Reduced motion keeps the fade and drops the rise; MotionConfig only
+  // stills framer's own transform values, not a `transform` string.
+  const chipOffset = useReducedMotion() ? 'none' : 'translateY(8px)';
+  // The chips close up only once a removed one has left. Without a
+  // dependency framer measures them on every render, and the window, centred
+  // and as tall as its content, would carry them on a slide of their own
+  // each time the results below change height.
+  const [departures, setDepartures] = useState(0);
+
   // A removed chip takes its button with it; focus goes to the chip that took
-  // its place, or to the search field when none is left.
+  // its place, or to the search field when none is left. It is found by its
+  // ingredient, not its position: the removed chip stays in the list while
+  // it leaves.
   const chipsRef = useRef<HTMLUListElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const focusAfterRemove = useRef<number | null>(null);
@@ -147,20 +174,34 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
     const index = focusAfterRemove.current;
     if (index === null) return;
     focusAfterRemove.current = null;
-    const buttons = chipsRef.current?.querySelectorAll('button');
-    const next = buttons?.[Math.min(index, buttons.length - 1)];
-    (next ?? searchRef.current)?.focus();
+    const next = ingredients[Math.min(index, ingredients.length - 1)];
+    const button = next && chipsRef.current?.querySelector<HTMLButtonElement>(`[data-ingredient="${CSS.escape(ingredientKey(next))}"] button`);
+    (button || searchRef.current)?.focus();
   }, [ingredients]);
 
   return (
     <div className="feed-field" role="group" aria-labelledby={labelId} aria-describedby={hintId}>
       <span id={labelId} className="feed-field-label">{COPY.label}</span>
-      {ingredients.length > 0 && (
-        <ul className="feed-chips" ref={chipsRef}>
+      {/* A chip rises into the list as its result is pressed and sinks out
+          when removed; the chips after it then close up. Two beats, as in
+          Following, so two chips never share a place. The list stays mounted
+          (hidden while empty) so the last chip can leave too. */}
+      <ul className="feed-chips" ref={chipsRef}>
+        <AnimatePresence initial={false} onExitComplete={() => setDepartures(n => n + 1)}>
           {ingredients.map((ingredient, index) => {
             const label = ingredientLabel(ingredient);
             return (
-              <li key={ingredientKey(ingredient)} className="feed-chip">
+              <motion.li
+                key={ingredientKey(ingredient)}
+                data-ingredient={ingredientKey(ingredient)}
+                className="feed-chip"
+                layout="position"
+                layoutDependency={departures}
+                initial={{ opacity: 0, transform: chipOffset }}
+                animate={{ opacity: 1, transform: 'none' }}
+                exit={{ opacity: 0, transform: chipOffset }}
+                transition={{ duration: MOTION_BASE_S, ease: EASE_OUT, layout: { duration: MOTION_BASE_S, ease: EASE_IN_OUT } }}
+              >
                 <span className="feed-kind">{KIND[ingredient.kind]}</span>
                 <span className="feed-chip-label">{label}</span>
                 <button
@@ -174,11 +215,11 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
                 >
                   <X size={12} weight="bold" aria-hidden="true" />
                 </button>
-              </li>
+              </motion.li>
             );
           })}
-        </ul>
-      )}
+        </AnimatePresence>
+      </ul>
       <p id={hintId} className="feed-field-hint">{COPY.hint}</p>
       <Input
         ref={searchRef}
@@ -201,12 +242,25 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
         }}
       />
       {notice && <p key={notice.n} id={noticeId} className="feed-notice" role="alert">{notice.text}</p>}
-      <span className="visually-hidden" role="status">{term && !remote.pending ? [COPY.count(count), failure].filter(Boolean).join('. ') : ''}</span>
-      {term ? (
+      <span className="visually-hidden" role="status">{term ? (remote.pending ? COPY.searching : [COPY.count(count), failure].filter(Boolean).join('. ')) : ''}</span>
+      {/* Until both sources have answered, rows of the results' shape stand
+          in for them, so the list arrives once instead of growing under the
+          reader's pointer. */}
+      {term && remote.pending ? (
+        <ul className="feed-results-list" aria-hidden="true">
+          {[0, 1, 2, 3].map(index => (
+            <li key={index} className="feed-skeleton-row">
+              <span className="feed-skeleton-mark" />
+              <span className="feed-skeleton-text"><span className="feed-skeleton-label" /><span className="feed-skeleton-hint" /></span>
+              <span className="feed-skeleton-kind" />
+            </li>
+          ))}
+        </ul>
+      ) : term ? (
         <div className="feed-results">
-          <ResultGroup title={COPY.topics} ingredients={results.topics} chosen={chosen} onToggle={onToggle} />
-          <ResultGroup title={COPY.authors} ingredients={results.authors} chosen={chosen} onToggle={onToggle} />
-          <ResultGroup title={COPY.keyword} ingredients={results.keyword ? [results.keyword] : []} chosen={chosen} onToggle={onToggle} hint={COPY.keywordHint} />
+          <ResultGroup title={COPY.topics} items={results.topics.map(ingredient => ({ ingredient }))} chosen={chosen} onToggle={onToggle} />
+          <ResultGroup title={COPY.authors} items={results.authors.map(({ ingredient, institution }) => ({ ingredient, hint: institution ?? undefined }))} chosen={chosen} onToggle={onToggle} />
+          <ResultGroup title={COPY.keyword} items={results.keyword ? [{ ingredient: results.keyword, hint: COPY.keywordHint }] : []} chosen={chosen} onToggle={onToggle} />
           {failure && <p className="feed-notice">{failure}</p>}
         </div>
       ) : suggestions.length > 0 && (
