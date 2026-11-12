@@ -101,6 +101,14 @@ later step runs:
    posthog-cli binary before the summary.
 6. It deploys that bundle without rebundling.
 
+Arguments given after `npm run worker:deploy --`, such as `--tag`, are passed
+to wrangler in steps 3 and 6, ahead of the command's own `--dry-run --outdir`
+and `--no-bundle --config wrangler.toml`. Wrangler keeps the last value of a
+flag and refuses a second `--outdir` or `--config`, so no argument can make
+step 3 publish or step 6 bundle again. The command refuses a further `--` among
+those arguments before step 1, because wrangler reads nothing after it as an
+option, the command's own flags included.
+
 Each posthog-cli process reads the login once, when it starts, so a login to
 another project after step 2 would reach steps 3 and 5. The gate keeps such a
 run from sending anything to that project. The command starts posthog-cli with

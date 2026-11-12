@@ -187,9 +187,28 @@ function uploadableIn(directory) {
   return pairsIn(directory).filter((pair) => isMarked(pair.file) || JSON.parse(fs.readFileSync(pair.map, 'utf8')).debugId);
 }
 
+// wrangler's argument parser, as far as the wrapper depends on it: "--" ends the
+// options, and a flag keeps the last value given in any spelling, such as
+// --dry-run, --dry-run=false, --dry-run false, --no-dry-run or --dryRun=false.
+function flag(name, fallback) {
+  const end = argv.indexOf('--');
+  const options = end === -1 ? argv : argv.slice(0, end);
+  const spellings = [name, name.replace(/-(\w)/g, (_, letter) => letter.toUpperCase())];
+  let value = fallback;
+  options.forEach((arg, index) => {
+    for (const spelling of spellings) {
+      if (arg === '--no-' + spelling) value = false;
+      else if (arg === '--' + spelling) value = options[index + 1] !== 'false';
+      else if (arg === '--' + spelling + '=true' || arg === '--' + spelling + '=false') value = arg.endsWith('=true');
+    }
+  });
+  return value;
+}
+
 function wrangler() {
   if (argv[0] !== 'deploy') stop('fake wrangler: unexpected command', 1);
-  if (argv.includes('--dry-run')) {
+  const bundle = flag('bundle', true);
+  if (flag('dry-run', false)) {
     const outdir = option('--outdir') === undefined ? null : path.resolve(option('--outdir'));
     record('build', { outdir, outdirBefore: outdir && fs.existsSync(outdir) ? fs.readdirSync(outdir) : null });
     if (failure === 'build') stop('X [ERROR] Build failed with 1 error');
@@ -213,7 +232,7 @@ function wrangler() {
   }
   const script = argv.slice(1).find((arg) => /\.m?js$/.test(arg));
   const entry = script === undefined ? null : path.resolve(script);
-  record('deploy', { entry, entryInjected: entry !== null && fs.existsSync(entry) && isMarked(entry) });
+  record('deploy', { entry, entryInjected: entry !== null && fs.existsSync(entry) && isMarked(entry), bundle });
   if (failure === 'deploy') stop('X [ERROR] A request to the Cloudflare API failed.');
   if (entry === null || !fs.existsSync(entry)) stop('X [ERROR] The entry-point file was not found.', 1);
   process.exit(0);
@@ -492,6 +511,7 @@ interface Call {
   outdirBefore?: string[] | null;
   entry?: string | null;
   entryInjected?: boolean;
+  bundle?: boolean;
   requests: Request[];
 }
 
@@ -585,8 +605,11 @@ function readCalls(log: string): Call[] {
   return [...calls.values()];
 }
 
-async function deploy(p: Project, extra: Record<string, string> = {}) {
-  const child = spawn(process.execPath, [...process.execArgv, wrapper, '--tag', 'test'], {
+// The arguments for wrangler, as `npm run worker:deploy -- --tag <sha>` passes them.
+const tagArgs = ['--tag', 'test'];
+
+async function deploy(p: Project, extra: Record<string, string> = {}, args = tagArgs) {
+  const child = spawn(process.execPath, [...process.execArgv, wrapper, ...args], {
     cwd: p.dir,
     env: { ...p.env, ...extra },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -648,7 +671,7 @@ function assertNoCredentialLine(p: Project, run: Run) {
 }
 
 // Asserts the calls of a deploy that reached the end, in order.
-function assertPipeline(p: Project, run: Run, userRustLog: string | null = null) {
+function assertPipeline(p: Project, run: Run, userRustLog: string | null = null, args = tagArgs) {
   assert.deepEqual(run.steps, ['version', 'check', 'build', 'inject', 'upload', 'deploy'], describeRun(run));
   const [version, check, build, inject, upload, release] = run.calls;
 
@@ -676,7 +699,8 @@ function assertPipeline(p: Project, run: Run, userRustLog: string | null = null)
   assert.equal(check.directory, null);
   assert.deepEqual(check.requests, [], 'the credential check sends nothing');
 
-  assert.deepEqual(withPath(build.argv, '--outdir'), ['deploy', '--dry-run', '--outdir', '<path>', '--tag', 'test']);
+  // The arguments come first, so the wrapper's own flags have the last word.
+  assert.deepEqual(withPath(build.argv, '--outdir'), ['deploy', ...args, '--dry-run', '--outdir', '<path>']);
   assert.equal(relative(p.dir, build.outdir ?? ''), out);
   assert.equal(build.outdirBefore, null, 'the output directory is removed before the build');
 
@@ -697,9 +721,10 @@ function assertPipeline(p: Project, run: Run, userRustLog: string | null = null)
   assert.ok((upload.uploadable ?? 0) > 0, 'upload receives the injected source maps');
   assert.ok(run.output.includes(uploadLog), 'the upload log is passed through as written');
 
-  assert.deepEqual([release.argv[0], ...release.argv.slice(2)], ['deploy', '--no-bundle', '--config', 'wrangler.toml', '--tag', 'test']);
+  assert.deepEqual([release.argv[0], ...release.argv.slice(2)], ['deploy', ...args, '--no-bundle', '--config', 'wrangler.toml']);
   assert.equal(relative(p.dir, release.entry ?? ''), join(out, 'instrumentation.js'));
   assert.equal(release.entryInjected, true, 'the deployed bundle is the injected one');
+  assert.equal(release.bundle, false, 'the final deploy does not bundle again');
 
   for (const call of run.calls) {
     assert.ok(!call.argv.includes('--no-fail'), `${call.step} must not pass --no-fail`);
@@ -928,6 +953,28 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     assert.equal(run.status, 0, describeRun(run));
     assertPipeline(p, run);
   });
+
+  // Placed after the wrapper's flags, each of these would publish the build
+  // before its maps are uploaded, or deploy a bundle the maps do not describe.
+  for (const extraArgs of [['--no-dry-run'], ['--dry-run=false'], ['--dry-run', 'false'], ['--dryRun=false'], ['--bundle'], ['--bundle=true']]) {
+    test(`${extraArgs.join(' ')} neither publishes the build nor bundles the final deploy again`, async (t) => {
+      const p = createProject(t);
+      const args = [...tagArgs, ...extraArgs];
+      const run = await deploy(p, ci, args);
+      assert.equal(run.status, 0, describeRun(run));
+      assertPipeline(p, run, null, args);
+    });
+  }
+
+  for (const args of [[...tagArgs, '--', '--no-dry-run'], ['--']]) {
+    test(`refuses "--" before starting any process: ${args.join(' ')}`, async (t) => {
+      const p = createProject(t);
+      const run = await deploy(p, ci, args);
+      assertFailed(run);
+      assert.deepEqual(run.steps, [], `no tool may run, ${describeRun(run)}`);
+      assert.match(wrapperMessage(run), /remove "--" from the arguments for wrangler\. Nothing was built or deployed\./);
+    });
+  }
 
   for (const [name, extra, message] of refusals) {
     test(`refuses before starting any process: ${name}`, async (t) => {

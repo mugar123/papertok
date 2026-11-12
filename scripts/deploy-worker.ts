@@ -393,6 +393,9 @@ async function uploadBundleMaps(posthogCli: string, release: string, pairs: numb
 }
 
 async function deploy() {
+  // Wrangler reads nothing after `--` as an option, so this script's own flags,
+  // which follow the arguments it was given, would have no effect.
+  if (wranglerArgs.includes('--')) fail('remove "--" from the arguments for wrangler. Nothing was built or deployed.');
   const expectedSource = credentialMode();
 
   // npm installs these tools as .cmd shims on Windows, which spawning without a
@@ -413,12 +416,16 @@ async function deploy() {
   // to its source map, so the deployed bundle has to be the injected one.
   // Without bundling, wrangler uploads every module in the folder, so it starts empty.
   rmSync(output, { recursive: true, force: true });
-  run('wrangler deploy --dry-run', wrangler, ['deploy', '--dry-run', '--outdir', output, ...wranglerArgs]);
+  // The arguments for wrangler come before this script's own flags. Wrangler
+  // keeps the last value of --dry-run or --bundle and refuses a second --outdir
+  // or --config, so no argument can make this build publish or the final
+  // deploy bundle again.
+  run('wrangler deploy --dry-run', wrangler, ['deploy', ...wranglerArgs, '--dry-run', '--outdir', output]);
   await runGated('inject', posthogCli, release, expectedSource);
   const pairs = countInjectedPairs();
   await uploadBundleMaps(posthogCli, release, pairs, expectedSource);
   // Step 6.
-  run('wrangler deploy', wrangler, ['deploy', `${output}/instrumentation.js`, '--no-bundle', '--config', 'wrangler.toml', ...wranglerArgs]);
+  run('wrangler deploy', wrangler, ['deploy', `${output}/instrumentation.js`, ...wranglerArgs, '--no-bundle', '--config', 'wrangler.toml']);
 }
 
 try {
