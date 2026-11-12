@@ -1,6 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 import { storedAbstractSource, storedClassification } from '../models/paper.ts';
-import { STORED_AUTHOR_CAP } from './reading-library.ts';
+import { SAVED_SUMMARY_CAP, STORED_AUTHOR_CAP } from './reading-library.ts';
 
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
@@ -26,8 +26,6 @@ import { STORED_AUTHOR_CAP } from './reading-library.ts';
  * codebase; it just was not here.
  */
 
-/** How much of the abstract the document keeps. The rules cap it at 1000; the app has always stored 500. */
-export const SAVED_SUMMARY_CAP = 500;
 /**
  * How many authors the document kept before it kept as many as an
  * interaction's copy (`STORED_AUTHOR_CAP`, which the rules allow). A stored

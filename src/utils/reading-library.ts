@@ -22,12 +22,17 @@ function authorName(author: Paper['authors'][number] | undefined) {
 export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;
 export const STORED_AUTHOR_CAP = 20;
+/**
+ * How much of the text a `savedPapers` document keeps (the rules allow 1,000),
+ * and an interaction record without a copy kept (`paperAbstract`).
+ */
+export const SAVED_SUMMARY_CAP = 500;
 
 /**
  * The text a stored copy or an interaction keeps of a paper: its `summary`
  * where one was built, else its `abstract`, all a corpus paper carries.
  */
-export function abstractExcerpt(paper: Partial<Paper> = {}, chars = 500) {
+export function abstractExcerpt(paper: Partial<Paper> = {}, chars = SAVED_SUMMARY_CAP) {
   return (paper.summary || paper.abstract || '').substring(0, chars);
 }
 
