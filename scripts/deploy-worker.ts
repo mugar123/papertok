@@ -421,9 +421,9 @@ async function deploy() {
   const output = mkdtempSync(join('.wrangler', 'posthog-worker-'));
   try {
     // The arguments for wrangler come before this script's own flags. Wrangler
-    // keeps the last value of --dry-run or --bundle and refuses a second --outdir
-    // or --config, so no argument can make this build publish or the final
-    // deploy bundle again.
+    // keeps the last value of --dry-run or --bundle, so no argument can make this
+    // build publish or the final deploy bundle again. It refuses a second
+    // --outdir here and a second --config in step 6.
     run('wrangler deploy --dry-run', wrangler, ['deploy', ...wranglerArgs, '--dry-run', '--outdir', output]);
     await runGated('inject', posthogCli, release, expectedSource, output);
     const pairs = countInjectedPairs(output);

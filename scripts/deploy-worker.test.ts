@@ -1022,8 +1022,10 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     assertPipeline(p, run);
   });
 
-  // Placed after the wrapper's flags, each of these would publish the build
-  // before its maps are uploaded, or deploy a bundle the maps do not describe.
+  // Placed after the wrapper's flags, each of these but the last would publish
+  // the build before its maps are uploaded, or deploy a bundle the maps do not
+  // describe. --no-bundle=false is a control: in Wrangler 4.122.0 it sets only a
+  // noBundle option that deploy never reads.
   for (const extraArgs of [['--no-dry-run'], ['--dry-run=false'], ['--dry-run', 'false'], ['--dryRun=false'], ['--bundle'], ['--bundle=true'], ['--bundle', 'true'], ['--no-bundle=false']]) {
     test(`${extraArgs.join(' ')} neither publishes the build nor bundles the final deploy again`, async (t) => {
       const p = createProject(t);
