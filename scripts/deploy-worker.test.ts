@@ -730,9 +730,10 @@ for (const [name, value] of Object.entries(otherSources)) {
   refusals.push([`${name} beside complete CI credentials`, { ...ci, [name]: value }, new RegExp(name)]);
 }
 // posthog-cli reads "no" as off and rejects "garbage", but only unset, empty or "false" is accepted.
+const dryRunRefused = /POSTHOG_CLI_DRY_RUN: only unset, empty or false is accepted/;
 for (const value of ['true', '1', 'no', 'garbage']) {
-  refusals.push([`POSTHOG_CLI_DRY_RUN=${value} beside a login session`, { ...login, POSTHOG_CLI_DRY_RUN: value }, /POSTHOG_CLI_DRY_RUN/]);
-  refusals.push([`POSTHOG_CLI_DRY_RUN=${value} beside complete CI credentials`, { ...ci, POSTHOG_CLI_DRY_RUN: value }, /POSTHOG_CLI_DRY_RUN/]);
+  refusals.push([`POSTHOG_CLI_DRY_RUN=${value} beside a login session`, { ...login, POSTHOG_CLI_DRY_RUN: value }, dryRunRefused]);
+  refusals.push([`POSTHOG_CLI_DRY_RUN=${value} beside complete CI credentials`, { ...ci, POSTHOG_CLI_DRY_RUN: value }, dryRunRefused]);
 }
 
 // The check names the parsed variables that are set, never their values.
@@ -754,10 +755,20 @@ const checkFailures: [string, Record<string, string>, RegExp | null][] = [
   ['POSTHOG_CLIENT_RATE_LIMIT=abc', { ...login, POSTHOG_CLIENT_RATE_LIMIT: 'abc' }, rejectedValue('POSTHOG_CLIENT_RATE_LIMIT')],
   ['POSTHOG_RELEASE_MODE=garbage', { ...login, POSTHOG_RELEASE_MODE: 'garbage' }, rejectedValue('POSTHOG_RELEASE_MODE')],
   ['POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY=0', { ...login, POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY: '0' }, rejectedValue('POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY')],
+  // The empty variable is left out of the call, so the message does not name it.
   [
-    'POSTHOG_CLIENT_RATE_LIMIT=abc beside accepted parsed variables in CI',
-    { ...ci, POSTHOG_CLI_DRY_RUN: 'false', POSTHOG_CLIENT_RATE_LIMIT: 'abc', POSTHOG_RELEASE_MODE: 'event' },
+    'POSTHOG_CLIENT_RATE_LIMIT=abc beside accepted and empty parsed variables in CI',
+    {
+      ...ci, POSTHOG_CLI_DRY_RUN: 'false', POSTHOG_CLIENT_RATE_LIMIT: 'abc', POSTHOG_RELEASE_MODE: 'event',
+      POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY: '',
+    },
     rejectedValue('POSTHOG_CLI_DRY_RUN', 'POSTHOG_CLIENT_RATE_LIMIT', 'POSTHOG_RELEASE_MODE'),
+  ],
+  // posthog-cli accepts the value and fails later, with exit code 1, so the advice is the login.
+  [
+    'no login session beside an accepted POSTHOG_CLIENT_RATE_LIMIT',
+    { POSTHOG_CLIENT_RATE_LIMIT: '10' },
+    /exit code 1\)\. Run `npx posthog-cli login` with access to project 306340\. Nothing/,
   ],
 ];
 

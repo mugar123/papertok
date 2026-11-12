@@ -70,19 +70,20 @@ later step runs:
    goes on only if the run exits 0 and its log names the expected source and
    project 306340. A missing line, or a line in another format, stops the
    command.
-   When posthog-cli succeeds here, it sends nothing. When it fails, for example
-   because no login session exists, it sends one error event to PostHog's own
-   telemetry for the CLI, hosted at `us.i.posthog.com` whatever `--host` says,
-   not to project 306340. Among other fields, the event holds the command, an
-   error category, its fingerprint and the depth of the error chain, the CLI and
-   client library versions, the operating system with its version and the
-   architecture, whether `CI` is set, whether the CLI's output is a terminal, an
-   ID made for that run, the project ID if one was already loaded, and the CLI's
-   stack trace. The stack trace includes the file paths of the posthog-cli
-   binary under this checkout's `node_modules` and of the system libraries on
-   that trace. PostHog also records the location it derives from the machine's
-   IP address, as it does for the events posthog-cli sends during inject and
-   upload. The event never holds the key or the path of the credentials file.
+   When posthog-cli succeeds here, it sends nothing. When it fails after reading
+   its options, for example because no login session exists, it sends one error
+   event to PostHog's own telemetry for the CLI, hosted at `us.i.posthog.com`
+   whatever `--host` says, not to project 306340. Among other fields, the event
+   holds the command, an error category, its fingerprint and the depth of the
+   error chain, the CLI and client library versions, the operating system with
+   its version and the architecture, whether `CI` is set, whether the CLI's
+   output is a terminal, an ID made for that run, the project ID if one was
+   already loaded, and the CLI's stack trace. The stack trace includes the file
+   paths of the posthog-cli binary under this checkout's `node_modules` and of
+   the system libraries on that trace. PostHog also records the location it
+   derives from the machine's IP address, as it does for the events posthog-cli
+   sends during inject and upload. The event never holds the key or the path of
+   the credentials file.
 3. It bundles the Worker into `.wrangler/posthog-worker`. posthog-cli then
    resolves the release in PostHog and writes a PostHog chunk ID into each
    script and its source map. This run goes through the gate described below.
@@ -137,8 +138,7 @@ The gate has limits:
   running. Its input then closes, so if it had not received the folder yet, it
   exits without a request to a project.
 
-A deploy without source maps is outside this procedure and needs an explicit,
-recorded decision by the person authorizing the deploy.
+Source maps are required: this procedure has no deploy without them.
 `npm run worker:deploy:dry-run` packages only and uploads nothing.
 
 Reporting captures exceptions that escape a request, schedule, Durable Object
