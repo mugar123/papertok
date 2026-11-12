@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, Plus, X } from '@phosphor-icons/react';
 import { Input } from '../ui/input.tsx';
@@ -6,7 +6,7 @@ import { searchAuthors, searchConcepts, searchJournals, searchLocalTopics } from
 import type { OpenAlexAuthor, OpenAlexJournal, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import { ingredientKey, ingredientLabel, type FeedIngredient } from '../../utils/custom-feeds.ts';
 import { ingredientResults, searchFailureNotice } from '../../utils/feed-ingredient-search.ts';
-import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, pulseIcon } from '../../utils/motion-curves.ts';
+import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, MOTION_FAST_S, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 
 const SEARCH_DELAY_MS = 320;
 const TOPIC_LIMIT = 6;
@@ -166,11 +166,14 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
 
   // Reduced motion keeps the fade and drops the rise; MotionConfig only
   // stills framer's own transform values, not a `transform` string.
-  const chipOffset = useReducedMotion() ? 'none' : 'translateY(8px)';
+  const reducedMotion = useReducedMotion();
+  const chipOffset = reducedMotion ? 'none' : 'translateY(8px)';
   // The chips close up only once a removed one has left. Without a
   // dependency framer measures them on every render, and the window, centred
   // and as tall as its content, would carry them on a slide of their own
-  // each time the results below change height.
+  // each time the results below change height. Counting the departures also
+  // renders the picker as the chip is taken out, which the list's travel
+  // below needs: AnimatePresence alone would render only itself.
   const [departures, setDepartures] = useState(0);
 
   // A removed chip takes its button with it; focus goes to the chip that took
@@ -179,6 +182,33 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
   // it leaves.
   const chipsRef = useRef<HTMLUListElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+
+  // The list travels to the height its chips leave it: a row gained by a new
+  // chip, or lost once a removed one has left. The window is as tall as its
+  // content and centred, so a list that changed height at once would move
+  // the whole window in one frame, a beat after the chip had faded. The
+  // height is read where the change starts, a press that may add a chip or
+  // a chip that has finished leaving, so it is the one on screen, mid-travel
+  // included. It opens on the curve the arriving chip fades on, and closes
+  // on the one the remaining chips move on.
+  const heightBefore = useRef<number | null>(null);
+  const noteHeight = () => {
+    heightBefore.current = chipsRef.current?.offsetHeight ?? null;
+  };
+  useLayoutEffect(() => {
+    const list = chipsRef.current;
+    const from = heightBefore.current;
+    heightBefore.current = null;
+    if (!list || from === null || reducedMotion) return;
+    list.getAnimations().forEach(travel => travel.cancel());
+    animateSize(list, 'height', from, MOTION_BASE_S * 1000, list.offsetHeight > from ? EASE_OUT : EASE_IN_OUT, { overflow: 'clip' });
+  });
+  // Only a press that may add a chip: one that takes a chip out changes
+  // nothing in the list until the chip has left.
+  const toggle = (ingredient: FeedIngredient) => {
+    if (!chosen.has(ingredientKey(ingredient))) noteHeight();
+    onToggle(ingredient);
+  };
   const focusAfterRemove = useRef<number | null>(null);
   useEffect(() => {
     const index = focusAfterRemove.current;
@@ -194,10 +224,18 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
       <span id={labelId} className="feed-field-label">{COPY.label}</span>
       {/* A chip rises into the list as its result is pressed and sinks out
           when removed; the chips after it then close up. Two beats, as in
-          Following, so two chips never share a place. The list stays mounted
-          (hidden while empty) so the last chip can leave too. */}
+          Following, so two chips never share a place; the leave is the short
+          one, so the list closes as soon as the chip can no longer be seen.
+          The list stays mounted, with no height while empty, so the last
+          chip can leave too. */}
       <ul className="feed-chips" ref={chipsRef}>
-        <AnimatePresence initial={false} onExitComplete={() => setDepartures(n => n + 1)}>
+        <AnimatePresence
+          initial={false}
+          onExitComplete={() => {
+            noteHeight();
+            setDepartures(n => n + 1);
+          }}
+        >
           {ingredients.map((ingredient, index) => {
             const label = ingredientLabel(ingredient);
             return (
@@ -209,7 +247,7 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
                 layoutDependency={departures}
                 initial={{ opacity: 0, transform: chipOffset }}
                 animate={{ opacity: 1, transform: 'none' }}
-                exit={{ opacity: 0, transform: chipOffset }}
+                exit={{ opacity: 0, transform: chipOffset, transition: { duration: MOTION_FAST_S, ease: EASE_OUT } }}
                 transition={{ duration: MOTION_BASE_S, ease: EASE_OUT, layout: { duration: MOTION_BASE_S, ease: EASE_IN_OUT } }}
               >
                 <span className="feed-kind">{KIND[ingredient.kind]}</span>
@@ -268,10 +306,10 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
         </ul>
       ) : term ? (
         <div className="feed-results">
-          <ResultGroup title={COPY.topics} items={results.topics.map(ingredient => ({ ingredient }))} chosen={chosen} onToggle={onToggle} />
-          <ResultGroup title={COPY.authors} items={results.authors.map(({ ingredient, institution }) => ({ ingredient, hint: institution ?? undefined }))} chosen={chosen} onToggle={onToggle} />
-          <ResultGroup title={COPY.journals} items={results.journals.map(({ ingredient, publisher }) => ({ ingredient, hint: publisher ?? undefined }))} chosen={chosen} onToggle={onToggle} />
-          <ResultGroup title={COPY.keyword} items={results.keyword ? [{ ingredient: results.keyword, hint: COPY.keywordHint }] : []} chosen={chosen} onToggle={onToggle} />
+          <ResultGroup title={COPY.topics} items={results.topics.map(ingredient => ({ ingredient }))} chosen={chosen} onToggle={toggle} />
+          <ResultGroup title={COPY.authors} items={results.authors.map(({ ingredient, institution }) => ({ ingredient, hint: institution ?? undefined }))} chosen={chosen} onToggle={toggle} />
+          <ResultGroup title={COPY.journals} items={results.journals.map(({ ingredient, publisher }) => ({ ingredient, hint: publisher ?? undefined }))} chosen={chosen} onToggle={toggle} />
+          <ResultGroup title={COPY.keyword} items={results.keyword ? [{ ingredient: results.keyword, hint: COPY.keywordHint }] : []} chosen={chosen} onToggle={toggle} />
           {failure && <p className="feed-notice">{failure}</p>}
         </div>
       ) : suggestions.length > 0 && (
@@ -279,7 +317,7 @@ export default function IngredientPicker({ ingredients, suggestions, notice, onT
           <span id={suggestionsId} className="feed-section-label">{COPY.suggestions}</span>
           <ul className="feed-results-list">
             {suggestions.map(ingredient => (
-              <IngredientButton key={ingredientKey(ingredient)} ingredient={ingredient} chosen={chosen.has(ingredientKey(ingredient))} onToggle={onToggle} />
+              <IngredientButton key={ingredientKey(ingredient)} ingredient={ingredient} chosen={chosen.has(ingredientKey(ingredient))} onToggle={toggle} />
             ))}
           </ul>
         </div>
