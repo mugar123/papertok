@@ -443,6 +443,7 @@ const PaperCard = memo(function PaperCard({
   // place (AbstractSheet): on a touch screen, or at phone width (useIsPhone,
   // 600px) whatever the pointer, where the unfolded panel is a few lines tall
   // and scrolls inside the card (2026-10-17). Wider windows unfold in place.
+  // There the title opens the same sheet, whether or not the abstract is clipped.
   const [showAbstractSheet, setShowAbstractSheet] = useState(false);
   const closeAbstractSheet = useCallback(() => setShowAbstractSheet(false), []);
   const coarsePointer = useMemo(() => {
@@ -1147,6 +1148,7 @@ const PaperCard = memo(function PaperCard({
   // The clipped abstract's door on a phone: the sheet, not the fold. Once the
   // panel is open (a fine pointer got it there) the toggle closes it as ever.
   const readsInSheet = (coarsePointer || isPhone) && abstractClipped === true && !expanded;
+  const titleOpensSheet = (coarsePointer || isPhone) && Boolean(abstractText);
   const openAbstract = (e: SyntheticEvent) => {
     if (readsInSheet) {
       e.stopPropagation();
@@ -2001,9 +2003,24 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
 
-        <TitleTag className="pc-title" lang="en">
-          <ScientificText>{paper.title}</ScientificText>
-        </TitleTag>
+        {/* On a phone the title opens the abstract sheet, which shows it
+            whole; only when there is an abstract to show under it. */}
+        {titleOpensSheet ? (
+          <TitleTag className="pc-title pc-title--opens" lang="en">
+            <button
+              type="button"
+              className="pc-title-btn"
+              aria-haspopup="dialog"
+              onClick={(event) => { event.stopPropagation(); setShowAbstractSheet(true); }}
+            >
+              <span className="pc-title-text"><ScientificText>{paper.title}</ScientificText></span>
+            </button>
+          </TitleTag>
+        ) : (
+          <TitleTag className="pc-title" lang="en">
+            <ScientificText>{paper.title}</ScientificText>
+          </TitleTag>
+        )}
 
         <div 
           className="pc-authors pc-authors--mobile-clickable"
