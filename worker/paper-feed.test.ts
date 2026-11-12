@@ -241,12 +241,18 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
     if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
     else (globalThis as TestGlobals).caches = realCaches;
   });
-  const asked = async (count: number) => {
-    for (let turn = 0; arxivAsked < count; turn += 1) {
-      if (turn > 1_000) throw new Error('arXiv was never asked');
+  // Before a lookup reaches arXiv, the ledger hashes its subjects with
+  // `crypto.subtle`, which answers from a thread pool after however much real
+  // time the machine takes, so a wait is on its condition and bounded in real
+  // time (`performance` is not mocked); the mocked clock stands still meanwhile.
+  const until = async (reached: () => boolean, otherwise: string) => {
+    const giveUp = performance.now() + 10_000;
+    while (!reached()) {
+      assert.ok(performance.now() < giveUp, `${otherwise} in 10 s of real time`);
       await new Promise(resolve => setImmediate(resolve));
     }
   };
+  const asked = (count: number) => until(() => arxivAsked >= count, 'arXiv was not asked');
 
   // After the page, the lookup waits for the answer. (Each case has its own
   // store: arXiv's beat would make the second request wait for a seat.)
@@ -264,8 +270,13 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
   // `{ ids }` answers inline, so it waits 2 s at most.
   const inline = store();
   const answer = inline.ask({ ids: ['2610.55555'] });
+  let answered = false;
+  answer.then(() => { answered = true; }, () => { answered = true; });
   await asked(2);
   t.mock.timers.tick(2_000);
+  // A lookup that waited for arXiv past its 2 s would never answer here: the
+  // clock moves no further until it has.
+  await until(() => answered, 'the inline lookup did not answer at its 2 s');
   assert.deepEqual((await answer).papers, []);
   t.mock.timers.tick(1_000);
 });
