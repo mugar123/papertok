@@ -119,6 +119,44 @@
   cursor: pointer;
 }
 
+/* The authors written out under the title: part of the paper's heading, in
+   the interface's sans, so the abstract below stays the only prose. Rule 1
+   (design.md) gives entity names the serif; this byline is an exception to it,
+   like the other ruled rows' bylines. */
+.list-row-byline-btn {
+  display: flex;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.list-row-byline-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row-byline-more {
+  flex: none;
+  white-space: pre;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-row-byline-btn:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
 .list-row-authors-sheet {
   max-height: 60dvh;
   overflow-y: auto;
