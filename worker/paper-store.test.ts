@@ -883,6 +883,20 @@ test('an exact daily request goes day by day by arrival and keeps the liked pape
   assert.deepEqual(page.map(item => item.id), ['2610.00093', '2610.00092', '2610.00091']);
 });
 
+// One ingest files its papers at one instant. An exact request for every area
+// reads 27 of a leaf's rows, and a read in arrival order alone would keep 27
+// of the tied rows in work id order, a hash of the paper id.
+test("an exact daily request for every area opens with the newest publications of a harvest that filed more than a leaf's share", async () => {
+  const { env } = corpus();
+  // Paper n is published n minutes before 23:00.
+  const papers = Array.from({ length: 80 }, (_, index) => lanePaper(`2610.${String(index + 1).padStart(5, '0')}`, `Harvested paper number ${index + 1} on a distinct subject`,
+    new Date(Date.parse('2026-10-21T23:00:00Z') - (index + 1) * 60_000).toISOString()));
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
+  const areas = [...new Set(getAllLeafCategories().map(leaf => leaf.area))];
+  const page = await readFeedPage(env, parseFeedRequest({ areas, exact: true, order: 'daily' }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id), papers.slice(0, 15).map(paper => paper.id));
+});
+
 // A walk is kept by follows alone, which two exact feeds made only of
 // categories share: each would go on from the other's pages.
 test('two exact walks that differ only in their categories go on from their own pages', async () => {

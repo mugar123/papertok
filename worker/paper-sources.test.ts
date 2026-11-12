@@ -627,6 +627,58 @@ test("a lane's first harvest files its papers with no arrival; a paper a later h
   assert.deepEqual(arrivals(), [['openalex:W7000001', null], ['openalex:W7000002', null], ['openalex:W7000003', new Date(later).toISOString()]]);
 });
 
+// A followed author's lane lists the author's newest papers every night. One a
+// busy category trimmed came back to that category as an arrival of the night:
+// kept past the lane's limit and on top of its day-by-day feed every 15 days.
+test("a followed author's nightly listing gives a paper a busy category trimmed no arrival there", async t => {
+  const day = 86_400_000;
+  const tonight = Date.parse('2026-11-01T03:00:00Z');
+  const paper = arxivRecordPaper({
+    arxivId: '2610.00500', title: 'Sparse attention for long documents', abstract: 'We make attention sparse for long documents and study its cost.',
+    authors: ['Ana Pérez'], categories: ['cs.LG'], doi: '10.1000/sparse', journalRef: null, comments: null,
+    published: '2026-10-01T12:00:00.000Z', updated: '2026-10-01T12:00:00.000Z',
+  });
+  const { env } = relay(t, () => ({ results: [{
+    id: 'https://openalex.org/W7000000500', doi: 'https://doi.org/10.1000/sparse', title: paper.title, type: 'preprint', publication_date: '2026-10-01', publication_year: 2026,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' }, institutions: [] }],
+    primary_location: { is_oa: true, landing_page_url: 'https://arxiv.org/abs/2610.00500', version: 'submittedVersion', is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv', type: 'repository', is_core: false } },
+    locations: [], open_access: { is_oa: true, oa_status: 'green', oa_url: 'https://arxiv.org/abs/2610.00500' }, cited_by_count: 0,
+  }] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const evictAll = async (now: number) => {
+    let after: number | null = 0;
+    while (after !== null) after = await evictExpired(store, now, after);
+  };
+  const inCategory = () => (db.prepare(`SELECT l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id
+    WHERE l.lane = 'cs.LG' AND k.key = 'arxiv:2610.00500'`).all() as Array<{ arrived: string | null }>).map(row => row.arrived);
+  // Announced on 10-03; the author's lane had its first load on 10-10.
+  await ingestPapers(store, [{ paper, lanes: [] }], { now: Date.parse('2026-10-03T03:00:00Z') });
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES ('author:A1', '2026-10-31T00:00:00.000Z', '2026-10-10T03:00:00.000Z')").run();
+  await ingestPapers(store, [{ paper, lanes: ['author:A1'] }], { now: Date.parse('2026-10-10T03:00:00Z'), firstLoad: 'author:A1' });
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A1', '2026-10-10T03:00:00.000Z')").run();
+  // cs.LG fills with newer papers and trims it.
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published, arrived) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(Date.parse('2026-10-05T00:00:00Z') + id * 500_000).toISOString();
+    insertWork.run(1_000_000 + id, JSON.stringify({ id: `2610.9${String(id).padStart(4, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('cs.LG', 1_000_000 + id, published, new Date(Date.parse(published) + 2 * day).toISOString());
+  }
+  db.exec('COMMIT');
+  await evictAll(Date.parse('2026-10-31T03:00:00Z'));
+  assert.deepEqual(inCategory(), [], 'trimmed from the full lane');
+
+  t.mock.timers.enable({ apis: ['Date'], now: tonight });
+  await harvestLane(store, { source: 'openalex-follows', lane: 'author:A1' });
+  assert.deepEqual(inCategory(), [null], 'filed again with no arrival');
+  await evictAll(tonight);
+  assert.deepEqual(inCategory(), [], 'and trimmed again');
+  const first = await readFeedPage(store, parseFeedRequest({ categories: ['cs.LG'], exact: true, order: 'daily', pageSize: 1 }), { now: tonight });
+  assert.deepEqual(first.map(item => item.id), [`2610.9${String(FEED_CANDIDATE_LIMIT).padStart(4, '0')}`], 'the newest arrival heads the day');
+});
+
 // ─── ChemRxiv's Chemistry preprints ───
 
 // As OpenAlex returned it on 2026-10-27 (trimmed, its abstract shortened): one

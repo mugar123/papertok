@@ -452,10 +452,13 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
  * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
  * record of `articles` was filed under (by the article's work id or DOI) the
  * journal's reviewed row, with its date in every lane it holds, and filed
- * under the lanes the article's record adds (`recordLanes`), each of which it
- * enters with the listing's arrival in it (`arrivalIn`, as `ingestPapers`
- * gives a new lane). An upgraded row is no working paper, so the step applies
- * once whatever the order of the records and however often they are listed.
+ * under the lanes the article's record adds (`recordLanes`). It enters each
+ * with the arrival `arrivalIn` gives a new paper's lane: the time of the
+ * ingest unless `firstLoad` says otherwise. The row was stored, but the rule
+ * that a stored paper enters a lane its listing was not asked for with an
+ * arrival only when published within LATE_ARRIVAL_DAYS does not apply to it.
+ * An upgraded row is no working paper, so the step applies once whatever the
+ * order of the records and however often they are listed.
  * Returns how many rows changed.
  */
 async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: number, arrivalIn: (lane: string, published: string) => string | null) {
@@ -558,7 +561,8 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * (`listed_until`). A row new to a lane arrives at `now` (`arrived`), or with
  * no arrival when it comes with that lane's first load (`firstLoad` names the
  * lane), which the day-by-day feeds date by its publication; the load's papers
- * arrive in their other lanes only when published within LATE_ARRIVAL_DAYS.
+ * arrive in their other lanes only when published within LATE_ARRIVAL_DAYS, as
+ * does a stored paper in a lane its listing was not asked for.
  * `firstLoad: true` gives no arrival in any lane, for papers that are not news. Once the batch
  * is saved, OpenAlex's journal articles in it upgrade the working-paper rows
  * they were filed under (`upgradeWorkingPapers`). Returns how many rows were
@@ -570,8 +574,12 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   // load; a row the lane already holds keeps its arrival. A first load reaches
   // back 90 days: in the paper's other lanes, what it brings from before the
   // last LATE_ARRIVAL_DAYS is their past, not news, and has no arrival either.
+  // The same holds for a stored paper in a lane its listing was not asked for:
+  // a followed author's lane lists the author's newest papers every night, and
+  // would give a busy lane that trimmed one of them that paper back as news.
   const announced = daysFromNow(-LATE_ARRIVAL_DAYS, now);
-  const arrivalIn = (lane: string, published: string) => (firstLoad === true || firstLoad === lane || (firstLoad !== undefined && published < announced)
+  const arrivalIn = (lane: string, published: string, otherLaneOfStored = false) => (firstLoad === true || firstLoad === lane
+    || ((firstLoad !== undefined || otherLaneOfStored) && published < announced)
     ? null : new Date(now).toISOString());
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
@@ -611,7 +619,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
-  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
+  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string>; stored: boolean }> = [];
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null; arrived: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
@@ -652,7 +660,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     // whether this record or the stored row says so. It is filed under no
     // lane, and leaves those it holds, a folded row's included.
     if (isFeedPublication(paper)) {
-      filings.push({ id, paper, published, lanes: group.lanes });
+      filings.push({ id, paper, published, lanes: group.lanes, stored: ids.length > 0 });
       if (!fitsJournalLane(paper) && stored.some(work => fitsJournalLane(work.paper))) leftJournals.push(id);
     } else {
       withdrawn.push(id);
@@ -662,11 +670,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   // Asked once the records are merged: a stored row names entities, such as
   // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
   const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
-  for (const { id, paper, published, lanes } of filings) {
+  for (const { id, paper, published, lanes, stored } of filings) {
     for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       // A journal's listing names the type of its own record, which another record of the row can change.
       if (isJournalLane(lane) && !fitsJournalLane(paper)) continue;
-      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null, arrived: arrivalIn(lane, published) });
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null, arrived: arrivalIn(lane, published, stored && !lanes.has(lane)) });
     }
   }
 
@@ -1257,17 +1265,14 @@ async function readCandidates(db: D1Database, lanes: string[], byArrival: boolea
     ).bind(lane, share(lane))));
     return mergeLaneRows(lanes, perLane);
   }
-  // Ordered by the index's expression alone: a second term in the ORDER BY
-  // sorts the lane's every row instead of stopping at the share. Papers that
-  // arrived at once (one harvest) come the later publication first.
+  // In the order of `work_lanes_arrival`, which reads only the share. One
+  // ingest files its papers at one instant (a page of arXiv's harvest, or
+  // every page of another source's harvest of a lane), and the share keeps
+  // the later publications of papers that arrived at once.
   const perLane = await db.batch<{ work_id: number; arrival: string; published: string }>(lanes.map(lane => db.prepare(
-    'SELECT work_id, COALESCE(arrived, published) AS arrival, published FROM work_lanes WHERE lane = ? ORDER BY COALESCE(arrived, published) DESC LIMIT ?',
+    'SELECT work_id, COALESCE(arrived, published) AS arrival, published FROM work_lanes WHERE lane = ? ORDER BY COALESCE(arrived, published) DESC, published DESC LIMIT ?',
   ).bind(lane, share(lane))));
-  return mergeLaneRows(lanes, perLane.map(({ results }) => ({
-    results: results
-      .sort((a, b) => b.arrival.localeCompare(a.arrival) || b.published.localeCompare(a.published))
-      .map(row => ({ work_id: row.work_id, published: row.published, arrival: row.arrival })),
-  })));
+  return mergeLaneRows(lanes, perLane);
 }
 
 /**
@@ -1418,6 +1423,11 @@ export interface FeedQuery {
   exact: boolean;
   // The areas an exact request asks for whole; none for any other request.
   areas: string[];
+  // The run a daily walk without `exact` belongs to (Most recent's): an id
+  // the app draws when a run starts and sends with each of its pages, so two
+  // runs of one reader, such as two tabs, keep two walks. '' on any other
+  // request, and when the request names no id of the expected form.
+  walk: string;
 }
 
 /**
@@ -1551,8 +1561,14 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * the next page. Past the last page it is none, as for a page asked by number
  * there. The paper ids the walk reads stay in the kept order, so a later page
  * reads only the ones no page has read.
+ *
+ * `ranksLeft` hears whether the order the page was served from holds ranks
+ * past the ones the page took: a work the corpus dropped since counts, so a
+ * page left short or empty by such works does not end the order.
  */
-export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache, timings }: { now?: number; cache?: RankingCache; timings?: FeedTimings } = {}) {
+export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache, timings, ranksLeft }: {
+  now?: number; cache?: RankingCache; timings?: FeedTimings; ranksLeft?: (left: boolean) => void;
+} = {}) {
   const db = database(env);
   // An exact request's areas are the ones it asks for whole; another's, those of its categories.
   const areas = new Set(query.exact ? query.areas : LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
@@ -1573,7 +1589,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   // which a session changes. Those, the order of the lanes, the likes and the
   // rejections change the ranking (`rankedBy`), not the walk, so a change
   // ranks again after the ranks the session passed rather than from the top.
-  // A daily walk is a feed apart from that one, and keeps a walk of its own.
+  // A daily walk is a feed apart from that one, and keeps a walk of its own,
+  // one per run when the request names its run (`walk`).
   // Other pages keep an order per set of lanes and `order`. An exact request
   // keeps its orders apart from another's, and its walk per set of
   // categories, which are what it asks for rather than a plan the app
@@ -1587,6 +1604,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notable: query.notable > 0,
     ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
     ...(query.exact && query.skipsSeen ? { categories: [...query.categories].sort() } : {}),
+    ...(query.walk ? { walk: query.walk } : {}),
   });
   const rankedBy = await rankingInputs(lanes, query);
   const goesOn = query.page > 0 || query.continues;
@@ -1677,9 +1695,10 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notableWalked: unseen ? passedFirst(notable, notableWalked, unseen) : notableWalked,
   };
   const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
+  const left = ranking.length > through;
+  ranksLeft?.(left);
   step = Date.now();
   if (rankedAgain && cache) {
-    const left = ranking.length > through;
     await cache.put(cacheKey, {
       ranks: ranking,
       served: (query.page + 1) * query.pageSize,
@@ -2170,8 +2189,11 @@ const CATEGORY_ID = /^[\w.-]{1,32}$/;
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
   seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
-  exact?: unknown; areas?: unknown;
+  exact?: unknown; areas?: unknown; walk?: unknown;
 }
+
+// A run's id as the app draws it (crypto.randomUUID()), or another short opaque token.
+const WALK_ID = /^[\w-]{8,64}$/;
 
 const categoryIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(text).filter(category => CATEGORY_ID.test(category)))];
 const paperIds = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(id => text(id).slice(0, 300)).filter(Boolean))];
@@ -2249,6 +2271,9 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
     exact,
     areas,
+    // Only a daily walk without `exact` (Most recent's) names its run. Any
+    // other request, and any other value, names none and keeps its key.
+    walk: skipsSeen && !exact && body?.order === 'daily' && typeof body.walk === 'string' && WALK_ID.test(body.walk) ? body.walk : '',
   };
 }
 
