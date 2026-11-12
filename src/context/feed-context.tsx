@@ -42,6 +42,8 @@ export interface FeedContextValue {
   /** Whether a next-page load started, or waits for the commit of the load that just ended. */
   loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
+  /** The paper ids of the examples For You plans its ranking from (likes, saves, long reads), newest first. */
+  getPositiveExampleIds: () => string[];
   reportVisiblePaper: (id: string | null) => void;
   // `surface` on a like, a save, a view, a skip and an opened PDF: the card's
   // own (PaperCard's `analyticsSurface`). Only a For You card's ('feed') counts
@@ -2469,6 +2471,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     readPaperIds: Array.from(readPaperIdsRef.current),
   }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences, readerLean]);
 
+  // Read-only and stable: a reader of the examples never re-renders this context's consumers.
+  const getPositiveExampleIds = useCallback(() => profileSignals.current.positiveExamples.map(example => example.id), []);
+
   // Every function key below is already `useCallback`-wrapped (or, for
   // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own
   // logic needs — papers/page/feedMode/hasMore — actually changes; see the
@@ -2504,7 +2509,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    getRecommendationProfileSnapshot,
+    getRecommendationProfileSnapshot, getPositiveExampleIds,
     reportVisiblePaper,
     toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
@@ -2517,7 +2522,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    getRecommendationProfileSnapshot,
+    getRecommendationProfileSnapshot, getPositiveExampleIds,
     reportVisiblePaper,
     toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,

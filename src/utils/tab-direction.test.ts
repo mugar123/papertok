@@ -65,3 +65,11 @@ test('the memory is per-caller, so one page cannot read another page position', 
   // `b` never saw the feed, so Following is its first tab and has no direction.
   assert.equal(lateralTabDirection('/following', b), null);
 });
+
+test('a custom feed tab sits where the order given puts it', () => {
+  const memory = {};
+  const order = ['/feed', '/following', '/feeds/abcd1234'];
+  assert.equal(lateralTabDirection('/following', memory, order), null);
+  assert.equal(lateralTabDirection('/feeds/abcd1234', memory, order), 1);
+  assert.equal(lateralTabDirection('/feed', memory, order), -1);
+});

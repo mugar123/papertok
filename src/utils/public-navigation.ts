@@ -479,11 +479,11 @@ export function isPublicRoutePath(path: string) {
 }
 
 /**
- * The pages that keep the signed-in navbar: a paper, a shared list and an
- * entity page.
+ * The pages that keep the signed-in navbar: a paper, a shared list, an
+ * entity page and a custom feed.
  */
 export function keepsNavbarPath(path: string) {
-  return [['paper'], ['public', 'list'], ['explorer']].some(prefix => startsWithSegments(path, prefix));
+  return [['paper'], ['public', 'list'], ['explorer'], ['feeds']].some(prefix => startsWithSegments(path, prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

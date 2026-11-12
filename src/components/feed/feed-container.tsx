@@ -18,6 +18,8 @@ interface FeedSource {
   endCard?: ReactNode;
   emptyState?: ReactNode;
   initialLoadPending?: boolean;
+  /** "Not interested" removes the paper from this source only, instead of telling the account. */
+  dismissal?: { hide: (paper: Paper) => void; restore: (paper: Paper) => void; label: string; hint: string };
 }
 interface FeedContainerProps {
   onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
@@ -26,6 +28,8 @@ interface FeedContainerProps {
   source?: FeedSource | null;
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
+  /** The navbar tab this feed is; without it, the tab its scroll key names, if any. */
+  tabPath?: string;
 }
 import { useRef, useEffect, useEffectEvent, useLayoutEffect, useCallback, useMemo, useReducer, useState, startTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -61,6 +65,8 @@ import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memor
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
+import { useFeedTabs } from '../../hooks/use-feed-tabs.ts';
+import { dismissalFor } from '../../utils/feed-dismissal.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
 import { createNextPageSentinel, type NextPageRetries } from './next-page-sentinel.ts';
 import './feed-container.css';
@@ -293,7 +299,7 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null }: FeedContainerProps) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null, tabPath: ownTabPath }: FeedContainerProps) {
   const feed = useFeed();
   const { user } = useAuth();
   // For You's place is the account's (forYouScrollKey).
@@ -318,6 +324,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
+  const dismissal = useMemo(() => dismissalFor(source, {
+    hide: paper => { void markNotInterested(paper); },
+    restore: (paper, atIndex) => { void undoNotInterested(paper, atIndex); },
+  }), [source, markNotInterested, undoNotInterested]);
   // Only the For You feed owns the context's list; Following and the Similar
   // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
@@ -632,14 +642,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // unseen. Put back in flow at once, the paper pushed that card away in one
   // frame and slid in over an empty background (measured 2026-10-21).
   // An exit still running when Undo arrives has not reached
-  // markNotInterested yet: dropping it is the whole undo.
+  // the dismissal yet: dropping it is the whole undo.
   const handleUndoNotInterested = useCallback((paper: Paper) => {
     const container = feedRef.current;
     const height = container?.clientHeight ?? 0;
     // The toast outlives the page: with the feed gone (or not yet measured)
     // there is nothing to animate, and the mark is still taken back.
     if (!container || height <= 0) {
-      void undoNotInterested(paper, null);
+      dismissal.restore(paper, null);
       return;
     }
     landReturn();
@@ -652,15 +662,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       setSkipExit(null);
       return;
     }
-    void undoNotInterested(paper, source ? null : Math.round(container.scrollTop / height));
-  }, [landReturn, source, undoNotInterested]);
+    dismissal.restore(paper, source ? null : Math.round(container.scrollTop / height));
+  }, [landReturn, source, dismissal]);
 
   const handleNotInterested = useCallback((paper: Paper) => {
-    beginSkipExit(paper?.id, () => { void markNotInterested(paper); });
-    toast('Marked as not interested', {
+    beginSkipExit(paper?.id, () => { dismissal.hide(paper); });
+    toast(dismissal.label, {
       action: { label: 'Undo', onClick: () => handleUndoNotInterested(paper) },
     });
-  }, [beginSkipExit, handleUndoNotInterested, markNotInterested]);
+  }, [beginSkipExit, handleUndoNotInterested, dismissal]);
 
   const handleSkip = useCallback((paper: Paper, surface?: string) => {
     source?.onPaperViewed?.(paper);
@@ -1282,7 +1292,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [feedNode, canPull, setPull, landPull]);
 
   const navigate = useNavigate();
-  const tabPath = feedTabPathForSurface(surfaceKey);
+  const tabPath = ownTabPath ?? feedTabPathForSurface(surfaceKey);
+  const feedTabs = useFeedTabs();
+  const tabPaths = useMemo(() => feedTabs.map(tab => tab.path), [feedTabs]);
   useEffect(() => {
     const el = swipeNode;
     if (!el || !tabPath) return undefined;
@@ -1297,6 +1309,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       if (!start || !touch || event.timeStamp - start.at >= LONG_PRESS_MS) return;
       const to = tabSwipeTarget({
         from: tabPath,
+        paths: tabPaths,
         startX: start.x,
         dx: touch.clientX - start.x,
         dy: touch.clientY - start.y,
@@ -1314,7 +1327,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onCancel);
     };
-  }, [swipeNode, tabPath, navigate]);
+  }, [swipeNode, tabPath, tabPaths, navigate]);
 
 
 
@@ -1496,6 +1509,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               isRead={readPaperIds?.has(interactionIdFor(paper)!)}
               onLike={toggleLike}
               onNotInterested={handleNotInterested}
+              notInterestedHint={dismissal.hint}
               onMarkAsRead={handleMarkAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}

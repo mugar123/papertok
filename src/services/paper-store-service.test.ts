@@ -185,6 +185,33 @@ test('a page returns whether the Worker passed over the papers the filter holds'
   assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, paging.options), { papers: [STORED], skipsSeen: false });
 });
 
+test('a custom feed page asks for exactly its lanes and says which follows are still loading', async () => {
+  const follow: FollowEntity = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' };
+  const loading = [{ type: 'author', canonicalId: 'A5023888391' }];
+  const gathering = harness(async () => new Response(JSON.stringify({ papers: [], loading }), { status: 200 }));
+  const page = await fetchCorpusPage({
+    categories: ['quant-ph'], areas: ['physics'], follows: [follow], exact: true, positiveIds: ['2610.00001'], page: 0, pageSize: 15, order: 'daily',
+  }, gathering.options);
+  assert.deepEqual(gathering.asked[0].body, {
+    categories: ['quant-ph'],
+    areas: ['physics'],
+    follows: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', metadata: {} }],
+    exact: true,
+    positiveIds: ['2610.00001'],
+    page: 0,
+    pageSize: 15,
+    order: 'daily',
+  });
+  assert.deepEqual(page.loading, loading);
+  assert.deepEqual(page.papers, []);
+
+  // A Worker that does not know exact requests answers without the field.
+  const older = harness(answered([STORED]));
+  const served = await fetchCorpusPage({ categories: ['quant-ph'], exact: true, page: 0, pageSize: 15, order: 'daily' }, older.options);
+  assert.deepEqual(served.loading, []);
+  assert.deepEqual(served.papers, [STORED]);
+});
+
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {
   for (const answer of [async () => new Response('{}', { status: 503 }), async () => { throw new TypeError('offline'); }]) {
     const { options } = harness(answer);

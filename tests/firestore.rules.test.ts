@@ -1557,3 +1557,21 @@ test('ENG-196: recording it changes nothing in the user document', async () => {
   await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01'), { merge: true }));
   assert.deepEqual((await getDoc(doc(asAlice(), 'users', ALICE))).data(), { onboardingComplete: true, preferences: ['cs.AI'] });
 });
+
+// =========================================================================
+// Custom feeds: every feed an account defines lives in one document.
+// =========================================================================
+
+test('custom feeds: the owner keeps up to eight feeds in one document, and nobody else reads or writes it', async () => {
+  await reset();
+  const feed = (n: number) => ({ id: `abcd123${n}`, name: `Feed ${n}`, order: 'newest', ingredients: [{ kind: 'category', id: 'quant-ph' }] });
+  const mine = doc(asAlice(), 'users', ALICE, 'settings', 'customFeeds');
+  await assertSucceeds(setDoc(mine, { feeds: [1, 2, 3, 4, 5, 6, 7, 8].map(feed), updatedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(mine));
+  await assertFails(setDoc(mine, { feeds: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(feed), updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(mine, { feeds: [], updatedAt: serverTimestamp(), extra: true }));
+  await assertFails(setDoc(mine, { feeds: 'none', updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds'), { feeds: [], updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(asGuest(), 'users', ALICE, 'settings', 'customFeeds')));
+});

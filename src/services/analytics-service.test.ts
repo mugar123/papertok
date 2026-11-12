@@ -174,6 +174,7 @@ test('normalizes entity identifiers and strips query strings from analytics path
 test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/feeds'), '/settings/feeds');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
 });
 
@@ -190,6 +191,10 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a custom feed is recorded without its id', () => {
+  assert.equal(normalizeAnalyticsPath('/feeds/abcd1234'), '/feeds/:id');
 });
 
 test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
@@ -807,6 +812,17 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   assert.deepEqual(sanitizeProductEventParams('follow_change', {
     action: 'add', entity_type: 'journal', surface: 'other', entity_name: 'American Economic Review',
   }), { action: 'add', entity_type: 'journal', surface: 'other' });
+});
+
+test('a custom feed reaches analytics as counts and its order, never its name or id', () => {
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_create', {
+    topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', {
+    feed_order: 'best', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { feed_order: 'best' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_delete', { name: 'My thesis', feed_id: 'abcd1234' }, ANALYTICS_CONSENT.ENABLED), {});
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', { feed_order: 'daily' }), {});
 });
 
 test('a feed load error says why it failed with fixed labels only', () => {

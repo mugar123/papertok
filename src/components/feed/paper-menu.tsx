@@ -4,7 +4,8 @@ import type { ExternalToast } from 'sonner';
 import type { Shared } from './share-targets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
-export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }
+/** `notInterestedHint`: the card's feed's own hint under Not interested (feed-dismissal.ts); without one, the account's. */
+export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested: () => void; notInterestedHint?: string; toggleRead: () => void }
 export interface ReaderMenu { snapshot: () => ReaderCard; subscribe: (onChange: () => void) => () => void }
 export interface PaperMenuPanel { id: string; title: string; subtitle?: ReactNode; aside?: ReactNode; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 

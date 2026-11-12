@@ -10,6 +10,7 @@ Disallow: /lists
 Disallow: /research
 Disallow: /report
 Disallow: /following
+Disallow: /feeds
 Disallow: /search
 Disallow: /profile
 Disallow: /settings

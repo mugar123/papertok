@@ -1,0 +1,14 @@
+/* The delete confirmation (delete-feed-dialog.tsx). */
+.delete-feed-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+}
+
+.delete-feed-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
