@@ -208,7 +208,8 @@ request and
 sends it: the Worker serves only those lanes and says which follows are still
 loading. The list goes on while the answer's `more` is true, also past an empty
 page, and ends when it is false; from a Worker that does not send `more`, a
-page of fewer than 15 papers ends it. Like For you, the feed leaves out
+page of fewer than 15 papers ends it
+([feedPageOf](src/utils/custom-feed-pages.ts)). Like For you, the feed leaves out
 retracted papers and the types `isFeedPublication` rejects, and they still
 count toward their page. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
 hands the papers from useCustomFeedPapers to the shared
@@ -222,7 +223,13 @@ the reader's interest groups, Not interested papers and exclusions from
 FeedContext's `getInterestRunSignals` when a run starts. Each page's filter
 holds the papers the reader viewed on a card in any feed
 ([viewedPaperIds](src/context/feed-viewed-papers.ts)), not the papers For You
-only loaded, and every paper the run already received. From a Worker that
+only loaded, and every paper the run already received. Each page also names
+its run with an id the run draws when it starts (`walk`), so the Worker keeps
+a walk of the daily order for each run: a run in another tab of the same
+reader does not move this one on. The id lives only in the tab's memory, with
+the run: paging, a return from a paper and Show older papers keep it; a press
+on the tab, Check again, a reload and new topics or another account start a
+new run with a new id. From a Worker that
 skips seen papers, the list ends when an answer brings a paper the filter held
 or brings no papers; a short page does not end it, because the Worker can drop
 a paper between walking the order and reading its rows. From a Worker that does
@@ -233,7 +240,11 @@ with no kept pages for its account and topics, as after a reload, the list
 opens on its first card rather than on the card remembered for the tab. Most
 recent and custom feeds page through [useCorpusFeedPages](src/hooks/use-corpus-feed-pages.ts);
 pressing either tab again asks its page for a new run through `requestRefresh`
-with the tab's key.
+with the tab's key. Like a custom feed, Most recent leaves out a paper no feed
+shows (`isFeedPublication`), which the Worker can still serve from a ranking it
+kept, and goes on past it. While either list shows nothing it asks for at most
+three more pages by itself; then, while it has more, its empty state offers the
+next pages instead of saying it is empty or caught up.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
 live OpenAlex, arXiv and OpenReview results and applies search relevance.
 

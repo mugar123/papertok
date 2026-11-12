@@ -1,11 +1,12 @@
 import type { ComponentProps } from 'react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { ArrowDown, ArrowsClockwise, CloudSlash, Hourglass, PencilSimple, Tray } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { toastForAccount } from '../ui/toast.ts';
 import FeedContainer from '../feed/feed-container.tsx';
+import { FeedRetryRefContext } from '../feed/feed-retry-context.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
@@ -17,6 +18,21 @@ import { customFeedPageState, feedFirstLoadPending, gatheringSentence, nextFeedO
 // Before the feed is known (the account's feeds not yet answered, or failed),
 // the page still needs its landmark and heading.
 const UNNAMED_LANDMARK = { label: 'Papers in your feed', heading: 'Your feed' };
+
+/**
+ * Show more papers. It takes the feed's retry ref, so while the pages load
+ * the focus waits on the feed's wait, then goes where Try again's does: to
+ * the first card, or back to this button when they brought nothing to show.
+ */
+function ShowMoreButton({ onClick }: { onClick: () => void }) {
+  const retryRef = useContext(FeedRetryRefContext);
+  return (
+    <Button ref={retryRef} size="sm" onClick={onClick}>
+      <ArrowDown size={16} aria-hidden="true" />
+      {'Show more papers'}
+    </Button>
+  );
+}
 
 /**
  * A custom feed's page, at `/feeds/:feedId`: the shared feed with the papers
@@ -92,10 +108,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
           title={'Nothing to show yet'}
           actions={(
             <>
-              <Button size="sm" onClick={loadMore}>
-                <ArrowDown size={16} aria-hidden="true" />
-                {'Show more papers'}
-              </Button>
+              <ShowMoreButton onClick={loadMore} />
               <Button size="sm" variant="outline" onClick={editFeed}>
                 <PencilSimple size={16} aria-hidden="true" />
                 {'Edit feed'}

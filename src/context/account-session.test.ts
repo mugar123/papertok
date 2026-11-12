@@ -111,7 +111,7 @@ test('a sign-out takes the account\'s Most recent pages and run out of the sessi
   freshSession(t);
   const key = recentPagesKey('account-a', ['cs.AI']);
   recentPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
-  recentRunsCache.set(key, { plan: { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] }, negativeIds: [], excludedIds: [], received: ['p1'] });
+  recentRunsCache.set(key, { plan: { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] }, negativeIds: [], excludedIds: [], received: ['p1'], walk: 'run-1' });
   closeAccountSession('account-a', deviceStorage());
   assert.equal(recentPagesCache.get(key), undefined);
   assert.equal(recentRunsCache.get(key), undefined);

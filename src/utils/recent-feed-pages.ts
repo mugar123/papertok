@@ -11,18 +11,23 @@ export const RECENT_PAGE_SIZE = 15;
 /** What a new list of the reader's interests asks the corpus with (FeedContext's `getInterestRunSignals`). */
 export interface InterestRunSignals { plan: FeedPlan; negativeIds: string[]; excludedIds: string[]; viewedIds: string[] }
 
-/** What every page of one run asks with, and every paper its answers brought (shown or not), oldest first. */
-export interface RecentRun { plan: FeedPlan; negativeIds: string[]; excludedIds: string[]; received: string[] }
+/**
+ * What every page of one run asks with, and every paper its answers brought
+ * (shown or not), oldest first. `walk` is the run's id, drawn when it starts:
+ * the corpus keeps a walk of the order for each id, so another run of the
+ * same reader, such as one in another tab, does not move this one on.
+ */
+export interface RecentRun { plan: FeedPlan; negativeIds: string[]; excludedIds: string[]; received: string[]; walk: string }
 
 /**
  * The run a page belongs to: a later page goes on with the run it continues,
- * whose groups, rejections and exclusions every page asks with (the corpus
- * keys its walk by them). A first page, or a later one with no run, starts a
- * new run from the latest signals.
+ * whose groups, rejections, exclusions and walk id every page asks with, so
+ * the corpus goes on with the same walk. A first page, or a later one with no
+ * run, starts a new run from the latest signals, with a new walk id.
  */
 export function recentRunFor(current: RecentRun | null, page: number, latest: InterestRunSignals): RecentRun {
   if (current && page > 0) return current;
-  return { plan: latest.plan, negativeIds: latest.negativeIds, excludedIds: latest.excludedIds, received: [] };
+  return { plan: latest.plan, negativeIds: latest.negativeIds, excludedIds: latest.excludedIds, received: [], walk: crypto.randomUUID() };
 }
 
 /**
@@ -43,8 +48,8 @@ export function recentSeenIds(viewedIds: string[], received: string[]) {
 
 /**
  * A Most recent page: For you's main request ordered by day, with no notable
- * cards, follows or exploration. A reader with no interest groups asks for
- * nothing.
+ * cards, follows or exploration, and named by its run's walk id. A reader
+ * with no interest groups asks for nothing.
  */
 export function recentPageRequest(run: RecentRun, page: number, seenIds: string[]): CorpusPageRequest | null {
   if (run.plan.groups.length === 0) return null;
@@ -55,6 +60,7 @@ export function recentPageRequest(run: RecentRun, page: number, seenIds: string[
     excludedIds: run.excludedIds,
     seen: new Set(seenIds),
     order: 'daily',
+    walk: run.walk,
     page,
     pageSize: RECENT_PAGE_SIZE,
   };

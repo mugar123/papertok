@@ -1,8 +1,8 @@
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useCallback, useContext, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowsClockwise, Checks } from '@phosphor-icons/react';
+import { ArrowDown, ArrowsClockwise, Checks, Tray } from '@phosphor-icons/react';
 import Petri from '../onboarding/petri.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
@@ -28,11 +28,12 @@ const END_CARD = (
 );
 
 /**
- * Check again, busy while its check runs and still focusable. It takes the
- * feed's retry ref, so when the check brings papers or fails, its focus goes
- * where Try again's does: to the first card, or to the error's Try again.
+ * Check again or Show older papers, busy while its check runs and still
+ * focusable. It takes the feed's retry ref, so when the check brings papers
+ * or fails, its focus goes where Try again's does: to the first card, or to
+ * the error's Try again.
  */
-function CheckAgainButton({ checking, onClick }: { checking: boolean; onClick: () => void }) {
+function CheckButton({ checking, onClick, children }: { checking: boolean; onClick: () => void; children: ReactNode }) {
   const retryRef = useContext(FeedRetryRefContext);
   return (
     <Button
@@ -44,8 +45,7 @@ function CheckAgainButton({ checking, onClick }: { checking: boolean; onClick: (
       focusableWhenDisabled
       aria-busy={checking || undefined}
     >
-      <ArrowsClockwise size={16} aria-hidden="true" />
-      {'Check again'}
+      {children}
     </Button>
   );
 }
@@ -60,22 +60,27 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
   const { markNotInterested, undoNotInterested } = useFeed();
   const { papers, loading, error, hasMore, loadMore, refresh, isRefreshing, hasTopics } = useRecentFeedPapers();
 
-  // Check again's load runs under the caught-up state, with the button busy
-  // and still holding the focus, instead of the feed's wait, which would take
-  // the button out of the page and drop its focus to the body. Its result is
-  // said in the state's own status (recentCheckStatus).
+  // Check again's and Show older papers' loads run under the empty state, with
+  // the button busy and still holding the focus, instead of the feed's wait,
+  // which would take the button out of the page and drop its focus to the
+  // body. The result is said in the state's own status (recentCheckStatus).
   const [check, setCheck] = useState<RecentCheck>('idle');
   const settledCheck = settleRecentCheck(check, { busy: loading || isRefreshing, hasPapers: papers.length > 0, error });
   if (settledCheck !== check) setCheck(settledCheck);
-  const checking = settledCheck === 'asked';
+  const checking = settledCheck === 'asked' || settledCheck === 'asked-older';
   const checkAgain = useCallback(() => {
     setCheck('asked');
     refresh();
   }, [refresh]);
+  // The same run goes on after the pages it stopped at. Check again would
+  // start from the newest papers and bring the same ones again.
+  const showOlder = useCallback(() => {
+    if (loadMore()) setCheck('asked-older');
+  }, [loadMore]);
 
   // Any other load counts as loading here: it may bring papers, so the list
   // is not called caught up while it is on its way.
-  const emptyKind = recentEmptyKind({ hasTopics, hasPapers: papers.length > 0, loading: !checking && (loading || isRefreshing), error });
+  const emptyKind = recentEmptyKind({ hasTopics, hasPapers: papers.length > 0, hasMore, loading: !checking && (loading || isRefreshing), error });
   const checkStatus = recentCheckStatus(settledCheck);
 
   const emptyState = useMemo(() => {
@@ -101,7 +106,10 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
           actions={(
             <>
               {goToForYou}
-              <CheckAgainButton checking={checking} onClick={checkAgain} />
+              <CheckButton checking={checking} onClick={checkAgain}>
+                <ArrowsClockwise size={16} aria-hidden="true" />
+                {'Check again'}
+              </CheckButton>
             </>
           )}
         >
@@ -111,9 +119,32 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
         </EmptyState>
       );
     }
+    if (emptyKind === 'more') {
+      // The list stopped asking by itself (MAX_EMPTY_AUTO_PAGES) before its end.
+      return (
+        <EmptyState
+          role="status"
+          icon
+          art={<Tray />}
+          title={'Nothing new so far'}
+          actions={(
+            <>
+              {goToForYou}
+              <CheckButton checking={checking} onClick={showOlder}>
+                <ArrowDown size={16} aria-hidden="true" />
+                {'Show older papers'}
+              </CheckButton>
+            </>
+          )}
+        >
+          {'The latest papers in your topics are ones you viewed or marked Not interested. Older ones may still be new to you.'}
+          {checkStatus ? ` ${checkStatus}` : null}
+        </EmptyState>
+      );
+    }
     // A failure with no cards is the container's error state, with Try again.
     return null;
-  }, [checkAgain, checkStatus, checking, emptyKind]);
+  }, [checkAgain, checkStatus, checking, emptyKind, showOlder]);
 
   // The account's Not interested, shown on this page. Undo passes no place:
   // with one, the paper would go back into For you's own list.
@@ -126,8 +157,8 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
 
   const source = useMemo(() => ({
     papers,
-    // Check again's load is not the feed's: the container would replace the
-    // caught-up state with its wait.
+    // A check's load is not the feed's: the container would replace the empty
+    // state with its wait.
     loading: loading && !checking,
     // The first wait is the feeds' discovery screen, until the first page
     // brings papers, an empty verdict or an error. A refresh from an empty

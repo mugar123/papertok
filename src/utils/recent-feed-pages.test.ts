@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import type { FeedPlan } from '../context/feed-corpus-requests.ts';
 import type { CustomFeedPages } from './custom-feed-pages.ts';
+import { fetchCorpusPage } from '../services/paper-store-service.ts';
 import {
   recentPageRequest,
   recentPagesKey,
@@ -34,6 +35,7 @@ const run = (overrides: Partial<RecentRun> = {}): RecentRun => ({
   negativeIds: ['rejected'],
   excludedIds: ['liked'],
   received: [],
+  walk: 'run-1',
   ...overrides,
 });
 
@@ -51,6 +53,7 @@ test('a Most recent page asks for the reader\'s groups by day, with nothing For 
   assert.deepEqual(request.negativeIds, ['rejected']);
   assert.deepEqual(request.excludedIds, ['liked']);
   assert.deepEqual([...(request.seen ?? [])], ['seen-a', 'seen-b']);
+  assert.equal(request.walk, 'run-1', 'the page names its run');
   for (const key of ['notable', 'continues', 'follows', 'categories', 'exact', 'areas']) {
     assert.equal(key in request, false, `the request carries no ${key}`);
   }
@@ -65,8 +68,49 @@ test('a later page goes on with its run; a first page starts a new one from the 
   const latest = { plan: plan([{ categories: ['math.AG'], exampleCategories: [], positiveIds: [], weight: 1 }]), negativeIds: ['new-rejected'], excludedIds: ['new-liked'], viewedIds: ['viewed'] };
 
   assert.equal(recentRunFor(current, 2, latest), current);
-  assert.deepEqual(recentRunFor(current, 0, latest), { plan: latest.plan, negativeIds: ['new-rejected'], excludedIds: ['new-liked'], received: [] });
-  assert.deepEqual(recentRunFor(null, 2, latest), { plan: latest.plan, negativeIds: ['new-rejected'], excludedIds: ['new-liked'], received: [] });
+  const restarted = recentRunFor(current, 0, latest);
+  assert.deepEqual(restarted, { plan: latest.plan, negativeIds: ['new-rejected'], excludedIds: ['new-liked'], received: [], walk: restarted.walk });
+  const forgotten = recentRunFor(null, 2, latest);
+  assert.deepEqual(forgotten, { plan: latest.plan, negativeIds: ['new-rejected'], excludedIds: ['new-liked'], received: [], walk: forgotten.walk });
+  // A new run names itself afresh.
+  assert.notEqual(restarted.walk, current.walk);
+  assert.notEqual(forgotten.walk, restarted.walk);
+});
+
+// ENG-198: two tabs of one reader start their runs from the same signals, and
+// the Worker keeps one walk of the order per request. Unless each run names
+// itself, one tab's pages move the other's walk on past papers it never showed.
+test('two tabs\' runs ask with the same request but for the run each names, which every page of a run keeps', async () => {
+  const latest = { plan: twoGroups, negativeIds: [], excludedIds: [], viewedIds: [] };
+  const asked: Array<Record<string, unknown>> = [];
+  const options = {
+    apiBase: 'https://papertok-report-api.example',
+    fetchWorker: async (_url: string, init: RequestInit) => {
+      asked.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ papers: [], skipsSeen: true }), { status: 200 });
+    },
+  };
+  const ask = (current: RecentRun, page: number) => fetchCorpusPage(recentPageRequest(current, page, [])!, options);
+  const tabA = recentRunFor(null, 0, latest);
+  const tabB = recentRunFor(null, 0, latest);
+  await ask(tabA, 0);
+  await ask(tabB, 0);
+  await ask(recentRunFor(tabB, 1, latest), 1);
+  // Tab A goes on later with the run the session kept, as when the reader comes back from a paper.
+  await ask(recentRunFor({ ...tabA, received: ['2611.00001'] }, 1, latest), 1);
+  // Check again in tab A starts a run of its own.
+  await ask(recentRunFor(tabA, 0, latest), 0);
+  const [a0, b0, b1, a1, again] = asked;
+
+  assert.deepEqual({ ...a0, walk: null }, { ...b0, walk: null });
+  assert.equal(typeof a0.walk, 'string');
+  assert.notEqual(a0.walk, b0.walk);
+  // The Worker reads a run's name only in this shape (WALK_ID, worker/paper-store.ts).
+  for (const body of [a0, b0]) assert.match(String(body.walk), /^[\w-]{8,64}$/);
+  assert.equal(b1.walk, b0.walk);
+  assert.equal(a1.walk, a0.walk);
+  assert.notEqual(again.walk, a0.walk);
+  assert.notEqual(again.walk, b0.walk);
 });
 
 test('the seen filter holds the viewed papers, then what the run received as the newest', () => {

@@ -50,8 +50,10 @@ const seeded = <Run>(caches: Caches<Run>, key: string | null, press: number | nu
  * belong to. A run (a first page or a refresh) starts only once the reader's
  * profile is `ready`, and every later page of it asks with what `runFor` gave
  * its first page. While the list shows nothing it asks for its next page by
- * itself, a few times in a row at most. A press on its tab starts a new run;
- * so does `refresh`, which waits for the profile when it is not ready yet.
+ * itself, a few times in a row at most; then `loadMore` goes on with the same
+ * run, and the list asks by itself as many times again. A press on its tab
+ * starts a new run; so does `refresh`, which waits for the profile when it is
+ * not ready yet.
  * An answer that arrives after a newer request, a new key or the unmount is
  * dropped. `caches` must keep its two caches' identities across renders.
  */
