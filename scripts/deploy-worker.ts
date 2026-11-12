@@ -42,13 +42,19 @@ function stopAfter(step: string, result: Exit): never {
   fail(`${step} failed (${exitReason(result)}); no later step ran.`, result.status || 1);
 }
 
-function run(step: string, bin: string, args: readonly string[]) {
-  const result = spawnSync(process.execPath, [bin, ...args], { stdio: 'inherit' });
+function run(step: string, bin: string, args: readonly string[], childEnv: NodeJS.ProcessEnv = env) {
+  const result = spawnSync(process.execPath, [bin, ...args], { env: childEnv, stdio: 'inherit' });
   if (result.status !== 0) stopAfter(step, result);
 }
 
 // Anything other than unset, empty or "false" counts as on, so a doubtful value is refused.
 const isOn = (value: string | undefined) => value !== undefined && value !== '' && value !== 'false';
+
+// An empty POSTHOG_CLI_DRY_RUN means off here, but posthog-cli parses it as a
+// boolean and exits 2 on an empty value before running its command, so the
+// posthog-cli calls start without it (spawn leaves out a variable set to
+// undefined). The wrangler calls inherit the environment unchanged.
+const posthogEnv = env.POSTHOG_CLI_DRY_RUN === '' ? { ...env, POSTHOG_CLI_DRY_RUN: undefined } : env;
 
 // Step 0, before any process starts: which credentials posthog-cli has to use.
 function credentialMode(): CredentialSource {
@@ -85,7 +91,7 @@ function binPath(manifestPath: string, name: string): string {
 // `--version` is answered by the argument parser, which exits before posthog-cli
 // loads credentials or runs a command.
 function checkCliVersion(posthogCli: string) {
-  const result = spawnSync(process.execPath, [posthogCli, '--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  const result = spawnSync(process.execPath, [posthogCli, '--version'], { encoding: 'utf8', env: posthogEnv, stdio: ['ignore', 'pipe', 'inherit'] });
   const printed = (result.stdout ?? '').replace(/\r?\n$/, '');
   if (result.status === 0 && printed === posthogCliVersion) return;
   const found = /^posthog-cli \S+$/.test(printed) ? printed : `no version (${exitReason(result)})`;
@@ -112,7 +118,7 @@ function checkCredentials(posthogCli: string, expected: CredentialSource) {
   const check = spawnSync(
     process.execPath,
     [posthogCli, '--host', posthogHost, 'sourcemap', 'upload', '--directory', emptyDirectory],
-    { encoding: 'utf8', env: { ...env, RUST_LOG: 'posthog_cli::utils::auth=debug' }, stdio: ['ignore', 'ignore', 'pipe'] },
+    { encoding: 'utf8', env: { ...posthogEnv, RUST_LOG: 'posthog_cli::utils::auth=debug' }, stdio: ['ignore', 'ignore', 'pipe'] },
   );
   rmSync(emptyDirectory, { recursive: true, force: true });
   const used = stripVTControlCharacters(check.stderr ?? '').split(/\r?\n/).flatMap((line) => {
@@ -229,6 +235,7 @@ function uploadLogProblem(log: string, pairs: number): string | undefined {
 // check in step 1. Its log is passed through as it was written.
 function uploadBundleMaps(posthogCli: string, release: string, pairs: number) {
   const result = spawnSync(process.execPath, [posthogCli, ...sourceMaps('upload', release)], {
+    env: posthogEnv,
     stdio: ['inherit', 'inherit', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -264,7 +271,7 @@ function deploy() {
   rmSync(output, { recursive: true, force: true });
   run('wrangler deploy --dry-run', wrangler, ['deploy', '--dry-run', '--outdir', output, ...wranglerArgs]);
   // Step 4.
-  run('posthog-cli sourcemap inject', posthogCli, sourceMaps('inject', release));
+  run('posthog-cli sourcemap inject', posthogCli, sourceMaps('inject', release), posthogEnv);
   const pairs = countInjectedPairs();
   uploadBundleMaps(posthogCli, release, pairs);
   // Step 7.

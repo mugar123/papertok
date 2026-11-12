@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 // holds fake wrangler and posthog-cli bins. The fakes record every call and act
 // like the real tools on the parts the wrapper depends on (posthog-cli 0.18.12):
 // - `--version` alone prints `posthog-cli 0.18.12` and exits before anything else;
+// - clap reads POSTHOG_CLI_DRY_RUN after the command line, so any call but `--version`
+//   exits 2 before its command when the value is not a boolean clap accepts, such as empty;
 // - every sourcemap command resolves credentials first, from POSTHOG_CLI_API_KEY
 //   (or the legacy POSTHOG_CLI_TOKEN) with POSTHOG_CLI_PROJECT_ID (or the legacy
 //   POSTHOG_CLI_ENV_ID), then a --dotenv-file, then the `posthog-cli login` session;
@@ -229,6 +231,10 @@ function posthog() {
   });
 
   const dryRun = globals['--dry-run'] !== undefined ? globals['--dry-run'] : env.POSTHOG_CLI_DRY_RUN;
+  // clap's boolean parser rejects any other value, an empty one included, before the command runs.
+  if (dryRun !== undefined && !/^(y|yes|t|true|on|1|n|no|f|false|off|0)$/i.test(dryRun)) {
+    stop("error: invalid value '" + dryRun + "' for '--dry-run[=<DRY_RUN>]'", 2);
+  }
   if (dryRun && /^(y|yes|t|true|on|1)$/i.test(dryRun)) {
     log('warn', 'posthog_cli::commands', 'Dry run enabled (--dry-run / POSTHOG_CLI_DRY_RUN): skipping the sourcemap step. Nothing was sent to PostHog and no credentials were used. Do not use --dry-run for release builds.');
     process.exit(0);
@@ -604,6 +610,16 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
     const run = await deploy(p, { ...login, POSTHOG_CLI_DRY_RUN: 'false' });
     assert.equal(run.status, 0, describeRun(run));
     assertPipeline(p, run);
+  });
+
+  test('POSTHOG_CLI_DRY_RUN set to empty is left out of every posthog-cli call, which would reject it', async (t) => {
+    const p = createProject(t);
+    const run = await deploy(p, { ...login, POSTHOG_CLI_DRY_RUN: '' });
+    assert.equal(run.status, 0, describeRun(run));
+    assertPipeline(p, run);
+    for (const call of run.calls) {
+      assert.equal(call.env.POSTHOG_CLI_DRY_RUN, call.tool === 'wrangler', `${call.tool} ${call.step}: only the wrangler calls inherit POSTHOG_CLI_DRY_RUN`);
+    }
   });
 
   for (const [name, extra, message] of refusals) {

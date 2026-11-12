@@ -35,14 +35,17 @@ of two places:
   is not used: both must be non-empty, with the project ID 306340, or the
   command stops before it runs anything.
 - The login, on a maintainer's machine with neither variable set: the session
-  `npx posthog-cli login` stored after you choose EU. The script never reads the
-  stored file; posthog-cli does.
+  `npx posthog-cli login` stored after you choose EU. On the authorization
+  page, choose the "Error tracking" preset, not the default "Agent CLI" one.
+  The script never reads the stored file; posthog-cli does.
 
 The command refuses to start when `POSTHOG_CLI_DRY_RUN` holds any value other
 than empty or `false`, because posthog-cli would skip the upload. It also refuses
 when `POSTHOG_CLI_TOKEN`, `POSTHOG_CLI_ENV_ID`, `POSTHOG_CLI_DOTENV_FILE` or
 `POSTHOG_HOME` is set, even to an empty value, because posthog-cli can take
 credentials from each of them.
+An empty `POSTHOG_CLI_DRY_RUN` is left out of the posthog-cli calls, because
+posthog-cli rejects an empty value and exits before running its command.
 `POSTHOG_CLI_HOST` has no effect: every call passes `--host https://eu.i.posthog.com`.
 
 The command then runs these steps. A failed step or check stops it, and no
