@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url';
 // - DEPLOY_WORKER_TEST_AUTH_SOURCE: `file` or `environment`, the source the CLI reports whatever it used;
 // - DEPLOY_WORKER_TEST_AUTH_LOG: `changed` words the debug line differently, `suffix` adds text
 //   after the project, `silent` drops it;
-// - DEPLOY_WORKER_TEST_GATE: `<inject|upload>:<mode>`, comma-separated, changes how that call
+// - DEPLOY_WORKER_TEST_GATE: `<check|inject|upload>:<mode>`, comma-separated, changes how that call
 //   logs its credentials: `late` waits 300 ms first, `split` writes the line in three pieces,
 //   `longer` writes it up to the project and then one more digit, `crlf` ends it with CRLF,
 //   `changed` words it differently, `suffix` adds text after the project, `twice` writes it
@@ -57,9 +57,10 @@ import { fileURLToPath } from 'node:url';
 //   another id into the map than into the script, `orphan-map` adds a map without a script,
 //   `no-pairs` exits 0 after removing every script and map;
 // - DEPLOY_WORKER_TEST_UPLOAD: `zero` selects no chunk although some are marked, `count` reports
-//   one chunk more than it selected, `warning` also logs "nothing to upload", `killed` exits 0
-//   before the summary, `too-large` and `empty-map` leave one chunk out of the summary's
-//   uploaded and present counts, `already-present` reports every chunk as already present.
+//   one chunk more than it selected, `found-twice` logs its chunk count twice, `warning` also
+//   logs "nothing to upload", `killed` exits 0 before the summary, `too-large` and `empty-map`
+//   leave one chunk out of the summary's uploaded and present counts, `already-present`
+//   reports every chunk as already present.
 
 const wrapper = fileURLToPath(new URL('deploy-worker.ts', import.meta.url));
 const eu = 'https://eu.i.posthog.com';
@@ -305,6 +306,7 @@ function upload(directory, credentials, releaseMode) {
   const selected = mode === 'zero' ? 0 : uploadableIn(directory).length;
   const count = mode === 'count' ? selected + 1 : selected;
   log('info', UPLOAD, 'Found ' + count + ' chunks to upload');
+  if (mode === 'found-twice') log('info', UPLOAD, 'Found ' + count + ' chunks to upload');
   if (selected === 0 || mode === 'warning') {
     log('warn', UPLOAD, 'No source map pairs with uploadable IDs were found; nothing to upload');
   }
@@ -733,6 +735,11 @@ for (const value of ['true', '1', 'no', 'garbage']) {
   refusals.push([`POSTHOG_CLI_DRY_RUN=${value} beside complete CI credentials`, { ...ci, POSTHOG_CLI_DRY_RUN: value }, /POSTHOG_CLI_DRY_RUN/]);
 }
 
+// The check names the parsed variables that are set, never their values.
+const rejectedValue = (...names: string[]) => new RegExp(
+  `exit code 2\\)\\. One of the PostHog variables posthog-cli parses as options holds a value it rejects; the ones set are ${names.join(', ')}\\. Nothing`,
+);
+
 const checkFailures: [string, Record<string, string>, RegExp | null][] = [
   ['no login session and no credentials', {}, null],
   ['a login session for another project', { DEPLOY_WORKER_TEST_LOGIN_PROJECT: '999999' }, /999999/],
@@ -741,11 +748,17 @@ const checkFailures: [string, Record<string, string>, RegExp | null][] = [
   ['a changed log line', { ...login, DEPLOY_WORKER_TEST_AUTH_LOG: 'changed' }, null],
   ['a log line with text after the project', { ...ci, DEPLOY_WORKER_TEST_AUTH_LOG: 'suffix' }, null],
   ['no log line', { ...ci, DEPLOY_WORKER_TEST_AUTH_LOG: 'silent' }, null],
+  ['a credential line logged twice', { ...login, DEPLOY_WORKER_TEST_GATE: 'check:twice' }, /found more than one credential source\./],
   ['an API key the CLI rejects after naming the right source', { ...ci, POSTHOG_CLI_API_KEY: 'not-a-personal-key' }, null],
   // posthog-cli's argument parser rejects these values and exits 2 before loading credentials.
-  ['POSTHOG_CLIENT_RATE_LIMIT=abc', { ...login, POSTHOG_CLIENT_RATE_LIMIT: 'abc' }, /exit code 2/],
-  ['POSTHOG_RELEASE_MODE=garbage', { ...login, POSTHOG_RELEASE_MODE: 'garbage' }, /exit code 2/],
-  ['POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY=0', { ...login, POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY: '0' }, /exit code 2/],
+  ['POSTHOG_CLIENT_RATE_LIMIT=abc', { ...login, POSTHOG_CLIENT_RATE_LIMIT: 'abc' }, rejectedValue('POSTHOG_CLIENT_RATE_LIMIT')],
+  ['POSTHOG_RELEASE_MODE=garbage', { ...login, POSTHOG_RELEASE_MODE: 'garbage' }, rejectedValue('POSTHOG_RELEASE_MODE')],
+  ['POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY=0', { ...login, POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY: '0' }, rejectedValue('POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY')],
+  [
+    'POSTHOG_CLIENT_RATE_LIMIT=abc beside accepted parsed variables in CI',
+    { ...ci, POSTHOG_CLI_DRY_RUN: 'false', POSTHOG_CLIENT_RATE_LIMIT: 'abc', POSTHOG_RELEASE_MODE: 'event' },
+    rejectedValue('POSTHOG_CLI_DRY_RUN', 'POSTHOG_CLIENT_RATE_LIMIT', 'POSTHOG_RELEASE_MODE'),
+  ],
 ];
 
 const throughInject: Call['step'][] = ['version', 'check', 'build', 'inject'];
@@ -764,6 +777,7 @@ const stepFailures: [string, Record<string, string>, Call['step'][]][] = [
   ['an upload that exits 0 after finding 0 chunks', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'zero' }, throughUpload],
   ['an upload that exits 0 with "nothing to upload"', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'warning' }, throughUpload],
   ['an upload that counts other chunks than the injected pairs', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'count' }, throughUpload],
+  ['an upload that logs its chunk count twice', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'found-twice' }, throughUpload],
   ['an upload that exits 0 without its summary, as after a signal', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'killed' }, throughUpload],
   ['an upload that skips a chunk as too large', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'too-large' }, throughUpload],
   ['an upload that leaves out a chunk with an empty map', { ...ci, DEPLOY_WORKER_TEST_UPLOAD: 'empty-map' }, throughUpload],
@@ -938,7 +952,7 @@ describe('scripts/deploy-worker.ts', { concurrency: availableParallelism() }, ()
       assertFailed(run);
       assert.deepEqual(run.steps, ['version', 'check'], `nothing may run after the check, ${describeRun(run)}`);
       if (message) assert.match(run.output, message);
-      assert.doesNotMatch(run.output, /Caused by|While trying to read credentials/, 'the CLI output is not echoed');
+      assert.doesNotMatch(run.output, /Caused by|While trying to read credentials|invalid value/, 'the CLI output is not echoed');
       assert.ok(!run.output.includes(apiKey) && !run.output.includes('not-a-personal-key'), 'the API key is never printed');
     });
   }

@@ -39,16 +39,20 @@ of two places:
   page, choose the "Error tracking" preset, not the default "Agent CLI" one.
   The script never reads the stored file; posthog-cli does.
 
-The command refuses to start when `POSTHOG_CLI_DRY_RUN` holds any value other
-than empty or `false`, because posthog-cli would skip the upload. It also refuses
-when `POSTHOG_CLI_TOKEN`, `POSTHOG_CLI_ENV_ID`, `POSTHOG_CLI_DOTENV_FILE` or
+For `POSTHOG_CLI_DRY_RUN`, only unset, empty or `false` is accepted; the
+command refuses to start with any other value. It also refuses when
+`POSTHOG_CLI_TOKEN`, `POSTHOG_CLI_ENV_ID`, `POSTHOG_CLI_DOTENV_FILE` or
 `POSTHOG_HOME` is set, even to an empty value, because posthog-cli can take
 credentials from each of them.
 An empty `POSTHOG_CLI_DRY_RUN`, `POSTHOG_CLIENT_RATE_LIMIT`,
 `POSTHOG_RELEASE_MODE` or `POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY` is left out
 of the posthog-cli calls, because posthog-cli rejects an empty value and exits
-before running its command.
-`POSTHOG_CLI_HOST` has no effect: every call passes `--host https://eu.i.posthog.com`.
+before running its command. When `POSTHOG_CLIENT_RATE_LIMIT`,
+`POSTHOG_RELEASE_MODE` or `POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY` holds
+another value posthog-cli rejects, the credential check in step 2 fails and
+names which of the four variables above are set, without their values.
+`POSTHOG_CLI_HOST` has no effect: every call that reaches PostHog passes
+`--host https://eu.i.posthog.com`.
 
 The command then runs these steps. A failed step or check stops it, and no
 later step runs:
@@ -60,11 +64,12 @@ later step runs:
 2. The credential check runs `posthog-cli sourcemap upload --stdin` with its
    input closed from the start, so it gets no folder, and with only the CLI's
    authentication log enabled. It is not the upload of the Worker's maps in
-   step 5, and it uploads nothing: with no folder, the CLI loads its credentials,
-   reports "nothing to upload" and returns before it resolves a release or calls
-   the PostHog API. The script prints none of its output and goes on only if the run
-   exits 0 and its log names the expected source and project 306340. A missing
-   line, or a line in another format, stops the command.
+   step 5, and it uploads nothing: with no folder, the CLI loads its
+   credentials, reports "nothing to upload" and returns before it resolves a
+   release or calls the PostHog API. The script prints none of its output and
+   goes on only if the run exits 0 and its log names the expected source and
+   project 306340. A missing line, or a line in another format, stops the
+   command.
    When posthog-cli succeeds here, it sends nothing. When it fails, for example
    because no login session exists, it sends one error event to PostHog's own
    telemetry for the CLI, hosted at `us.i.posthog.com` whatever `--host` says,
@@ -79,8 +84,8 @@ later step runs:
    IP address, as it does for the events posthog-cli sends during inject and
    upload. The event never holds the key or the path of the credentials file.
 3. It bundles the Worker into `.wrangler/posthog-worker`. posthog-cli then
-   resolves the release in PostHog and writes a PostHog chunk ID into each script
-   and its source map. This run goes through the gate described below.
+   resolves the release in PostHog and writes a PostHog chunk ID into each
+   script and its source map. This run goes through the gate described below.
 4. Every script in that folder must have its source map with the same chunk ID,
    every map must belong to a script, and `instrumentation.js` must be one of
    them.
@@ -101,17 +106,18 @@ run from sending anything to that project. The command starts posthog-cli with
 `--stdin` and no folder. posthog-cli 0.18.12 loads its credentials, logs their
 source and project, then reads folder paths from its input until the input
 ends; it makes no request to the project its credentials name before that. The
-command writes the bundle folder to that input only after the log line names the
-expected source (the login, or the two variables) and project 306340. In every
-other case it closes the input without a folder and stops: another source or
-project, a line in another format, two credential lines at once, no line within
-20 seconds, or a process that exits first. A credential line logged after the
-folder was given stops the command once that run ends. With no folder, inject exits 1 with "no
-source files found" and upload exits 0 with "nothing to upload", and neither
-makes a request to that project. The command does not kill posthog-cli for a
-mismatch. A run that logs no line within 20 seconds and has not exited 15
-seconds after its input was closed is killed. The login's credential line holds
-the path of its file, so no credential line is printed.
+command writes the bundle folder to that input only after the log line names
+the expected source (the login, or the two variables) and project 306340. In
+every other case it closes the input without a folder and stops: another source
+or project, a line in another format, two credential lines at once, no line
+within 20 seconds, or a process that exits first. A credential line logged
+after the folder was given stops the command once that run ends. With no
+folder, inject exits 1 with "no source files found" and upload exits 0 with
+"nothing to upload", and neither makes a request to that project. The command
+does not kill posthog-cli for a mismatch. A run that logs no line within 20
+seconds and has not exited 15 seconds after its input was closed is killed. The
+login's credential line holds the path of its file, so no credential line is
+printed.
 
 For these two runs the command sets `RUST_LOG` to
 `info,posthog_cli::utils::auth=debug`, whatever value you set, so the gate gets
@@ -131,9 +137,9 @@ The gate has limits:
   running. Its input then closes, so if it had not received the folder yet, it
   exits without a request to a project.
 
-If PostHog is unavailable and a fix cannot wait, `npx wrangler deploy` deploys
-without uploading maps; reports from that release then show bundle locations
-only. `npm run worker:deploy:dry-run` packages only and uploads nothing.
+A deploy without source maps is outside this procedure and needs an explicit,
+recorded decision by the person authorizing the deploy.
+`npm run worker:deploy:dry-run` packages only and uploads nothing.
 
 Reporting captures exceptions that escape a request, schedule, Durable Object
 call or Workflow run, failures the router, rewrites and scheduled delivery catch

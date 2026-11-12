@@ -59,10 +59,10 @@ for (const name of parsedVariables) {
   if (env[name] === '') posthogEnv[name] = undefined;
 }
 
-// Step 0, before any process starts: which credentials posthog-cli has to use.
+// Before step 1, while no process has started: which credentials posthog-cli has to use.
 function credentialMode(): CredentialSource {
   if (isOn(env.POSTHOG_CLI_DRY_RUN)) {
-    fail('unset POSTHOG_CLI_DRY_RUN: posthog-cli would skip the upload and the Worker would deploy without source maps.');
+    fail('unset POSTHOG_CLI_DRY_RUN: only unset, empty or false is accepted.');
   }
   // posthog-cli also takes credentials from the legacy token and project names,
   // from a dotenv file, or from another login folder.
@@ -91,8 +91,8 @@ function binPath(manifestPath: string, name: string): string {
   return join(dirname(manifestPath), entry);
 }
 
-// `--version` is answered by the argument parser, which exits before posthog-cli
-// loads credentials or runs a command.
+// Step 1. `--version` is answered by the argument parser, which exits before
+// posthog-cli loads credentials or runs a command.
 function checkCliVersion(posthogCli: string) {
   const result = spawnSync(process.execPath, [posthogCli, '--version'], { encoding: 'utf8', env: posthogEnv, stdio: ['ignore', 'pipe', 'inherit'] });
   const printed = (result.stdout ?? '').replace(/\r?\n$/, '');
@@ -116,8 +116,8 @@ function credentialsIn(line: string): { source: CredentialSource; project: strin
   return match ? { source: match[1] ? 'environment' : 'login', project: match[2] } : undefined;
 }
 
-// Step 1, the credential check. It uploads nothing and is separate from the
-// upload of the Worker's maps in step 6. With --stdin and an input that is closed
+// Step 2, the credential check. It uploads nothing and is separate from the
+// upload of the Worker's maps in step 5. With --stdin and an input that is closed
 // from the start, `sourcemap upload` loads its credentials, logs their source and
 // project at debug level, reads no folder, logs "nothing to upload" and returns
 // before it resolves a release or calls the PostHog API. Only the credential log
@@ -141,13 +141,19 @@ function checkCredentials(posthogCli: string, expected: CredentialSource) {
   const found = used.length === 1 ? describeSource(used[0].source, used[0].project)
     : used.length === 0 ? 'no credential source in its log' : 'more than one credential source';
   const exit = check.status === 0 ? '' : `, and posthog-cli failed (${exitReason(check)})`;
-  const action = expected === 'login' ? `Run \`npx posthog-cli login\` with access to project ${projectId}.` : 'Check POSTHOG_CLI_API_KEY.';
+  // Exit code 2 before any credential line means the argument parser rejected a
+  // value; with the arguments fixed, that points to one of these variables. Its
+  // message can hold the value, so only the names of those set are given.
+  const setParsed = parsedVariables.filter((name) => posthogEnv[name] !== undefined);
+  const action = check.status === 2 && used.length === 0 && setParsed.length > 0
+    ? `One of the PostHog variables posthog-cli parses as options holds a value it rejects; the ones set are ${setParsed.join(', ')}.`
+    : expected === 'login' ? `Run \`npx posthog-cli login\` with access to project ${projectId}.` : 'Check POSTHOG_CLI_API_KEY.';
   fail(`PostHog credential check expected ${describeSource(expected, projectId)}, found ${found}${exit}. ${action} Nothing was built or deployed.`);
 }
 
-// Steps 4 and 6 run behind a gate, because the login can change after the
-// credential check: inject resolves the release and upload sends the maps in
-// whichever project the login names when that process starts.
+// Inject in step 3 and upload in step 5 run behind a gate, because the login
+// can change after the credential check: inject resolves the release and upload
+// sends the maps in whichever project the login names when that process starts.
 // With --stdin and no --directory, posthog-cli 0.18.12 loads its credentials,
 // logs where from, then reads the folders to work on from its input until it
 // ends, and makes no request to the project those credentials name before that.
@@ -313,7 +319,7 @@ function mapChunkId(map: string): unknown {
   }
 }
 
-// Step 5. Upload sends only scripts that carry a chunk id and exits 0 when none
+// Step 4. Upload sends only scripts that carry a chunk id and exits 0 when none
 // does. Inject writes the same id into a script (a `//# chunkId=` line) and its
 // map (`chunk_id`), so every script in the bundle folder must have a map with
 // its id, and every map a script.
@@ -351,7 +357,7 @@ const numbersIn = (lines: readonly string[], pattern: RegExp) => lines.flatMap((
 });
 
 // The upload exits 0 in cases that leave maps out of PostHog, so its log has to
-// account for every pair counted in step 5:
+// account for every pair counted in step 4:
 // - before any request it logs "Found N chunks to upload" for the pairs it
 //   selected, or "nothing to upload" when it selected none;
 // - after its requests it logs "Upload summary: X chunk(s) uploaded, Y skipped
@@ -376,8 +382,8 @@ function uploadLogProblem(log: string, pairs: number): string | undefined {
   return undefined;
 }
 
-// Step 6, the real upload of the bundle's maps, separate from the credential
-// check in step 1. Its log, but for the credential line, is printed as it was written.
+// Step 5, the real upload of the bundle's maps, separate from the credential
+// check in step 2. Its log, but for the credential line, is printed as it was written.
 async function uploadBundleMaps(posthogCli: string, release: string, pairs: number, expected: CredentialSource) {
   const log = await runGated('upload', posthogCli, release, expected);
   const problem = uploadLogProblem(log.join(''), pairs);
@@ -399,19 +405,19 @@ async function deploy() {
   checkCliVersion(posthogCli);
   checkCredentials(posthogCli, expectedSource);
 
-  // Step 2. The commit names the release the maps are uploaded under.
+  // Step 3 bundles the Worker and injects chunk ids. The commit names the
+  // release the maps are uploaded under.
   const release = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 
-  // Step 3. The chunk id written into the bundle is what links an error report
+  // The chunk id written into the bundle is what links an error report
   // to its source map, so the deployed bundle has to be the injected one.
   // Without bundling, wrangler uploads every module in the folder, so it starts empty.
   rmSync(output, { recursive: true, force: true });
   run('wrangler deploy --dry-run', wrangler, ['deploy', '--dry-run', '--outdir', output, ...wranglerArgs]);
-  // Step 4.
   await runGated('inject', posthogCli, release, expectedSource);
   const pairs = countInjectedPairs();
   await uploadBundleMaps(posthogCli, release, pairs, expectedSource);
-  // Step 7.
+  // Step 6.
   run('wrangler deploy', wrangler, ['deploy', `${output}/instrumentation.js`, '--no-bundle', '--config', 'wrangler.toml', ...wranglerArgs]);
 }
 
