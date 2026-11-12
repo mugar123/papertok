@@ -133,9 +133,13 @@ The gate has limits:
 - posthog-cli sends its own telemetry to PostHog's CLI project, described in
   step 2, not to 306340. Inject queues a usage event before it reads its input,
   and a refused inject reports its error. Both carry the project ID that run
-  loaded and can leave even when the gate refuses. The upload in step 5 also
-  sends a start event and a finish event with file counts, sizes, duration and
-  success; when the upload fails, the finish event holds the CLI's error text.
+  loaded and can leave even when the gate refuses. Once the gate gives it the
+  folder, the upload in step 5 sends a start event with the file count and
+  total bytes, and a finish event that adds the duration, the uploaded and
+  skipped counts and whether it succeeded. When the upload fails, the finish
+  event holds the CLI's full error text, and the upload also reports its error
+  as in step 2. A switch to the standard S3 upload endpoint sends one more
+  event.
 - Killing the command or the npm launcher can leave the posthog-cli binary
   running. Its input then closes, so if it had not received the folder yet, it
   exits without a request to a project.
