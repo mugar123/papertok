@@ -39,6 +39,7 @@ import { focusMovedOut, rowAfterOverlay, rowsTakingFocus } from './rows-taking-f
 import { writeNewList } from './write-new-list.ts';
 import { createIndexReturn } from './lists-index-return.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
+import ListAbstract from './list-abstract.tsx';
 import ListNote from './list-note.tsx';
 import { ListRowAuthors, PaperListRow } from './list-row.tsx';
 import { Button } from '../ui/button.tsx';
@@ -217,6 +218,21 @@ async function copyText(value: string) {
   if (!copied) throw new Error('Clipboard access is unavailable.');
 }
 
+
+/** The lines of a paper row while it loads: field, title, authors, abstract and its "Read more". */
+function PaperRowSkeletonBars() {
+  return (
+    <>
+      <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--abstract lists-skeleton-bar--abstract-extra" />
+      <span className="lists-skeleton-bar lists-skeleton-bar--more" />
+    </>
+  );
+}
 
 /** A list paper from its `savedPapers` document or its lighter interaction record. */
 function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string, data: DocumentData) {
@@ -1863,16 +1879,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             behind it was still running, so every row still in
                             flight fell through to its raw id. */}
                         {pendingPaperIds.has(paperId) ? (
-                          // Three bars, not two, and each the height of the line
-                          // it stands in for: the field label, the title, the
-                          // authors. The old two-bar silhouette measured ~79px
-                          // against a finished row's ~100–140px, so the moment
-                          // the metadata landed every row in the list grew at
-                          // once and the page shoved itself down.
+                          // One bar for each line of a row with an abstract,
+                          // each the height of the line it stands in for. A
+                          // shorter silhouette (two bars, ~79px, against a
+                          // finished row's ~100–140px) made every row grow at
+                          // once when the metadata landed, and the page shoved
+                          // itself down. A paper with no abstract still ends
+                          // shorter than its skeleton.
                           <div className="lists-paper-skeleton">
-                            <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
-                            <span className="lists-skeleton-bar lists-skeleton-bar--title" />
-                            <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+                            <PaperRowSkeletonBars />
                           </div>
                         ) : (
                           <p className="list-row-title lists-paper-placeholder">
@@ -1966,18 +1981,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       >
                           {(paper.authors?.length ?? 0) > 0 && (
                             <ListRowAuthors
+                              byline
                               paper={paper}
                               onNavigate={() => {
                                 if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
                               }}
                             />
                           )}
-                          {(record?.tags?.length as number) > 0 && (
-                            <div className="lists-paper-tags">
-                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
-                            </div>
+                          <ListAbstract paper={paper} />
+                          {(record?.note || (record?.tags?.length as number) > 0) && (
+                            <ListNote note={record.note} tags={record.tags} />
                           )}
-                          {record?.note && <ListNote note={record.note} />}
                       </PaperListRow>
                     );
                   })}
@@ -2004,13 +2018,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           aria-busy="true"
           aria-label={'Opening list...'}
         >
-          {/* The same three-bar rhythm the finished rows have, so opening a
-              list settles into its content instead of swapping silhouettes. */}
+          {/* The same lines the finished rows have, so opening a list settles
+              into its content instead of swapping silhouettes. */}
           {[0, 1, 2, 3].map((slot) => (
             <div key={slot} className="lists-skeleton-row">
-              <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
-              <span className="lists-skeleton-bar lists-skeleton-bar--title" />
-              <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+              <PaperRowSkeletonBars />
             </div>
           ))}
         </motion.div>
