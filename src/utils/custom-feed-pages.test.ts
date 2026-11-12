@@ -21,9 +21,34 @@ import { parseFeedIngredient, type FeedIngredient } from './custom-feeds.ts';
 
 const paperOf = (id: string): Paper => ({ id, title: `Paper ${id}`, abstract: '', authors: [], sources: { primary: 'arxiv', enrichedBy: [] } });
 const paper = paperOf('2611.00001');
+const papersOf = (prefix: string, length: number) => Array.from({ length }, (_, index) => paperOf(`${prefix}${index}`));
+const quantFeed: CustomFeed = { id: 'abcd1234', name: 'Thesis', order: 'best', ingredients: [{ kind: 'category', id: 'quant-ph' }] };
 
-test('a page with fewer papers than asked is the last; a paper already held is not added twice', () => {
-  const first = mergeFeedPage(null, { papers: Array.from({ length: 15 }, (_, index) => paperOf(`p${index}`)), loading: [] }, 0);
+/** The answer the stand-in Worker gives each page number, and the pages it was asked for. */
+function workerAnswering(answers: unknown[]) {
+  const asked: number[] = [];
+  const fetchWorker = async (_url: string, init: RequestInit) => {
+    const { page } = JSON.parse(String(init.body)) as { page: number };
+    asked.push(page);
+    return new Response(JSON.stringify(answers[page] ?? { papers: [], more: false }), { status: 200 });
+  };
+  return { asked, options: { apiBase: 'https://papertok-report-api.example', fetchWorker } };
+}
+
+/** Asks for the feed's pages as the reader scrolling to its end does: the next one while the list has more. */
+async function readToTheEnd(answers: unknown[]) {
+  const { asked, options } = workerAnswering(answers);
+  const run = feedRunSignals(null, 0, { positiveIds: [], dismissed: [] });
+  let pages = mergeFeedPage(null, await fetchCorpusPage(feedPageRequest(quantFeed, run, 0)!, options), 0);
+  while (pages.hasMore && asked.length < 10) {
+    const page = pages.page + 1;
+    pages = mergeFeedPage(pages, await fetchCorpusPage(feedPageRequest(quantFeed, run, page)!, options), page);
+  }
+  return { asked, pages };
+}
+
+test('from a Worker that does not say `more`, a page with fewer papers than asked is the last; a paper already held is not added twice', () => {
+  const first = mergeFeedPage(null, { papers: papersOf('p', 15), loading: [] }, 0);
   assert.equal(first.papers.length, 15);
   assert.equal(first.hasMore, true);
   assert.equal(first.page, 0);
@@ -33,6 +58,59 @@ test('a page with fewer papers than asked is the last; a paper already held is n
   assert.deepEqual(second.papers.slice(15).map(held => held.id), ['q1', 'q2']);
   assert.equal(second.hasMore, false);
   assert.equal(second.page, 1);
+});
+
+test('the Worker\'s `more` decides whether the list goes on, whatever the page holds', () => {
+  assert.equal(mergeFeedPage(null, { papers: papersOf('p', 14), loading: [], more: true }, 0).hasMore, true);
+  assert.equal(mergeFeedPage(null, { papers: [], loading: [], more: true }, 0).hasMore, true);
+  assert.equal(mergeFeedPage(null, { papers: papersOf('p', 15), loading: [], more: false }, 0).hasMore, false);
+});
+
+test('an empty page the Worker says has more after it does not end the feed: every paper is shown and the end comes after the last page', async () => {
+  // Page 1's fifteen works were dropped from the corpus after the ranking was kept.
+  const { asked, pages } = await readToTheEnd([
+    { papers: papersOf('a', 15), more: true },
+    { papers: [], more: true },
+    { papers: papersOf('c', 15), more: true },
+    { papers: papersOf('d', 4), more: false },
+  ]);
+  assert.deepEqual(asked, [0, 1, 2, 3]);
+  assert.deepEqual(pages.papers.map(held => held.id), [...papersOf('a', 15), ...papersOf('c', 15), ...papersOf('d', 4)].map(held => held.id));
+  assert.equal(pages.hasMore, false);
+  assert.equal(pages.page, 3);
+});
+
+test('a `more` that is not a boolean is not read: the feed ends at the first short page, as with a Worker that does not send it', async () => {
+  for (const more of [undefined, 'true', 1, null]) {
+    const { asked, pages } = await readToTheEnd([
+      { papers: papersOf('a', 15), more },
+      { papers: papersOf('b', 14), more },
+      { papers: papersOf('c', 15), more },
+    ]);
+    assert.deepEqual(asked, [0, 1], String(more));
+    assert.equal(pages.papers.length, 29, String(more));
+    assert.equal(pages.hasMore, false, String(more));
+  }
+});
+
+test('a page leaves out the papers the feed does not show, retracted or of a type it skips, and the list goes on past them', async () => {
+  const retracted = { ...paperOf('a13'), publicationStatus: 'retracted' as const };
+  const erratum = { ...paperOf('a14'), publicationType: 'erratum' };
+  const first = mergeFeedPage(null, { papers: [...papersOf('a', 13), retracted, erratum], loading: [] }, 0);
+  assert.deepEqual(first.papers.map(held => held.id), papersOf('a', 13).map(held => held.id));
+  assert.equal(first.hasMore, true);
+
+  // Nor does a page of nothing but such papers end the list.
+  const second = mergeFeedPage(first, { papers: papersOf('b', 15).map(held => ({ ...held, publicationStatus: 'retracted' as const })), loading: [] }, 1);
+  assert.equal(second.papers.length, 13);
+  assert.equal(second.hasMore, true);
+
+  const { asked, pages } = await readToTheEnd([
+    { papers: [...papersOf('a', 13), retracted, erratum], more: true },
+    { papers: papersOf('c', 15), more: false },
+  ]);
+  assert.deepEqual(asked, [0, 1]);
+  assert.deepEqual(pages.papers.map(held => held.id), [...papersOf('a', 13), ...papersOf('c', 15)].map(held => held.id));
 });
 
 test('a feed with no papers whose ingredients are loading is gathering; with none loading it has nothing; a failure with no papers is an error', () => {
@@ -120,6 +198,13 @@ test('a feed showing nothing asks for its next page by itself three times in a r
   assert.deepEqual([0, 1, 2, 3].map(advances => advancesByItself(true, 0, advances)), [true, true, true, false]);
   assert.equal(advancesByItself(true, 1, 0), false, 'a paper to show');
   assert.equal(advancesByItself(false, 0, 0), false, 'no more pages');
+});
+
+test('a feed that stopped asking by itself while it shows nothing and has more offers to go on, rather than saying it has nothing', () => {
+  assert.equal(feedEmptyKind({ papers: [], page: 3, hasMore: true, loading: [] }, null), 'more');
+  assert.equal(feedEmptyKind({ papers: [], page: 3, hasMore: true, loading: [{ type: 'author', canonicalId: 'A1' }] }, null), 'more');
+  assert.equal(feedEmptyKind({ papers: [], page: 3, hasMore: false, loading: [] }, null), 'nothing');
+  assert.equal(feedEmptyKind({ papers: [], page: 3, hasMore: true, loading: [] }, new Error('boom')), 'error');
 });
 
 test('a feed page asks for exactly its lanes with its run\'s signals', () => {

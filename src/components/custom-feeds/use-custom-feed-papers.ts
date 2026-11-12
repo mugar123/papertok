@@ -70,7 +70,7 @@ const storedDismissed = (uid: string | null, feedId: string | undefined) => (uid
 export function useCustomFeedPapers(feed: CustomFeed | null): {
   papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
-  emptyKind: 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
+  emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
   dismiss: (paper: Paper) => void; restore: (paper: Paper) => void;
 } {
   const { user } = useAuth();

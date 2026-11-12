@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowsClockwise, CloudSlash, Hourglass, PencilSimple, Tray } from '@phosphor-icons/react';
+import { ArrowDown, ArrowsClockwise, CloudSlash, Hourglass, PencilSimple, Tray } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import FeedContainer from '../feed/feed-container.tsx';
@@ -78,6 +78,33 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
         </EmptyState>
       );
     }
+    if (emptyKind === 'more') {
+      // The pages the feed asked for by itself had no paper to show (the
+      // reader took them out, they were retracted or the corpus dropped
+      // them), and the feed has more.
+      return (
+        <EmptyState
+          role="status"
+          icon
+          art={<Tray />}
+          title={'Nothing to show yet'}
+          actions={(
+            <>
+              <Button size="sm" onClick={loadMore}>
+                <ArrowDown size={16} aria-hidden="true" />
+                {'Show more papers'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={editFeed}>
+                <PencilSimple size={16} aria-hidden="true" />
+                {'Edit feed'}
+              </Button>
+            </>
+          )}
+        >
+          {'None of the papers loaded so far can be shown, and this feed has more to load.'}
+        </EmptyState>
+      );
+    }
     if (emptyKind === 'nothing') {
       return (
         <EmptyState
@@ -115,7 +142,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
       );
     }
     return null;
-  }, [pageState.kind, emptyKind, loadingNames, editFeed, refresh, retry]);
+  }, [pageState.kind, emptyKind, loadingNames, editFeed, loadMore, refresh, retry]);
 
   const dismissal = useMemo(() => ({ hide: dismiss, restore, label: 'Removed from this feed', hint: 'Remove it from this feed' }), [dismiss, restore]);
   const source = useMemo(() => ({

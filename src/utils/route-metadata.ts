@@ -52,6 +52,8 @@ export function routeLabel(pathname: string, feeds: readonly NamedFeed[] = []) {
 export function routeTitle(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
   if (SELF_TITLED.has(normalized)) return null
-  const label = routeLabel(normalized, feeds)
+  // A feed this account's list does not name yet is "Your feed", as on its
+  // page: no title would keep the one before, another account's after a switch.
+  const label = routeLabel(normalized, feeds) ?? (customFeedIdFromPath(normalized) === null ? null : 'Your feed')
   return label ? `${label} | PaperTok` : null
 }

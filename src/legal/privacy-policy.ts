@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-10';
+export const PRIVACY_POLICY_VERSION = '2026-11-11';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -54,7 +54,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-10';
  * and this instant to the merge day before merging; once Vercel reports the
  * merge live, lower this instant to that success time.
  *
- * Version 2026-11-10 adds custom feeds: the feeds a reader creates, kept with
+ * Version 2026-11-11 adds custom feeds: the feeds a reader creates, kept with
  * the account; what a request for one of those feeds sends; the papers removed
  * from a feed, kept in the browser and sent with that feed's requests; that an
  * author, topic or keyword search put in a feed joins the list of things the
@@ -68,7 +68,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-10';
  * PRIVACY_POLICY_VERSION and this instant to the merge day before merging; once
  * Vercel reports the merge live, lower this instant to that success time.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-10T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-11T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
