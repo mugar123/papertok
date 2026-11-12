@@ -1,10 +1,10 @@
 import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { toast } from 'sonner';
 import { ArrowDown, ArrowsClockwise, CloudSlash, Hourglass, PencilSimple, Tray } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
+import { toastForAccount } from '../ui/toast.ts';
 import FeedContainer from '../feed/feed-container.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -35,14 +35,16 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
 
   const loadingNames = useMemo(() => loadingIngredients.map(ingredientLabel), [loadingIngredients]);
   // Once each time this feed starts having sources to load, not on every page.
+  // The notice names the account's sources, so it leaves with the account.
   const notifiedForRef = useRef<string | null>(null);
   const shownFeedId = feed?.id ?? null;
+  const uid = user?.uid ?? null;
   useEffect(() => {
-    if (!shownFeedId) return;
+    if (!shownFeedId || !uid) return;
     const { notifiedFor, notice } = nextLoadingNotice(notifiedForRef.current, shownFeedId, loadingNames);
     notifiedForRef.current = notifiedFor;
-    if (notice) toast(notice, { id: `custom-feed-loading:${shownFeedId}` });
-  }, [shownFeedId, loadingNames]);
+    if (notice) toastForAccount(uid, notice, { id: `custom-feed-loading:${shownFeedId}` });
+  }, [shownFeedId, loadingNames, uid]);
 
   // Once per visit to a feed: not again as its papers reload or after an
   // edit, and again for another feed or when the reader comes back.
