@@ -764,6 +764,33 @@ button.pc-topics-pop-item:focus-visible {
   overflow: hidden;
 }
 
+/* The title as a button (a phone: it opens the abstract sheet). The heading
+   stops clipping so the button's focus ring is not cut, and the clamp moves
+   to a span inside the button, at whatever count the title has here: WebKit
+   does not clamp a button that is itself the `-webkit-box`. */
+.pc-title--opens {
+  display: block;
+  overflow: visible;
+}
+
+.pc-title-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+  -webkit-line-clamp: inherit;
+}
+
+.pc-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: inherit;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ── Authors ── */
 .pc-authors {
   display: flex;
