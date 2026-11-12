@@ -78,6 +78,20 @@ export function addViewedPapers(sessionSeen: Set<string>, profile: InteractionPr
 }
 
 /**
+ * What the account viewed on a card, oldest first: its aggregate's views, then
+ * this browser's that the aggregate does not list. Never what a feed only
+ * loaded. The order is `addViewedPapers`'s: the aggregate lists its papers
+ * newest first, so they go in reversed, and this browser's list, oldest first,
+ * follows in its own order.
+ */
+export function viewedPaperIds(userId: string | null, profile: InteractionProfile, storage?: DeviceStorage) {
+  const viewed = viewedIds(profile).reverse();
+  const listed = new Set(viewed);
+  const others = [...readSeenPaperIds(userId, storage)].filter(paperId => !listed.has(paperId));
+  return [...viewed, ...others];
+}
+
+/**
  * Whether the account whose papers are on hand is left behind: switching
  * accounts, or signing out. A profile that merely failed to load leaves them.
  */

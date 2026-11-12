@@ -17,13 +17,11 @@ export interface CustomFeedPages { papers: Paper[]; page: number; hasMore: boole
  * The feed's list once page `page` arrives: the first page starts it, a later
  * one adds the papers the list does not hold yet, except those the feed does
  * not show (`isFeedPublication`: a retracted paper, an erratum), as For You
- * leaves them out. The list goes on while the answer's `more` says the
- * Worker's ranking holds papers after this page, also past a page that is
- * empty because the corpus dropped its works. From a Worker that does not send
- * `more`, a page with fewer papers than a page holds is the last, counting the
- * papers left out here. `loading` is the latest answer's.
+ * leaves them out. `hasMore` is the caller's, from the whole answer
+ * (`feedPageOf` for a custom feed): a page is merged, not judged, so the list
+ * goes on past the papers left out. `loading` is the latest answer's.
  */
-export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; loading: LoadingFollow[]; more?: boolean }, page: number): CustomFeedPages {
+export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] }, page: number): CustomFeedPages {
   const papers = page === 0 || !current ? [] : [...current.papers];
   const held = new Set(papers.map(paper => paper.id));
   for (const paper of incoming.papers) {
@@ -31,7 +29,7 @@ export function mergeFeedPage(current: CustomFeedPages | null, incoming: { paper
     held.add(paper.id);
     papers.push(paper);
   }
-  return { papers, page, hasMore: incoming.more ?? incoming.papers.length >= CUSTOM_FEED_PAGE_SIZE, loading: incoming.loading };
+  return { papers, page, hasMore: incoming.hasMore, loading: incoming.loading };
 }
 
 /**
@@ -77,6 +75,18 @@ export function feedPageRequest(feed: CustomFeed, signals: FeedRunSignals, page:
   const lanes = corpusRequestOf(feed);
   if (!lanes.categories.length && !lanes.areas.length && !lanes.follows.length) return null;
   return { ...lanes, exact: true, positiveIds: signals.positiveIds, excludedIds: signals.excludedIds, page, pageSize: CUSTOM_FEED_PAGE_SIZE };
+}
+
+/**
+ * The page a custom feed's list takes from the Worker's answer to
+ * `feedPageRequest` (`mergeFeedPage`). The list goes on while the answer's
+ * `more` says the Worker's ranking holds papers after this page, also past a
+ * page that is empty because the corpus dropped its works. From a Worker that
+ * does not send `more`, a page with fewer papers than a page holds is the
+ * last, counting the papers `mergeFeedPage` leaves out.
+ */
+export function feedPageOf(answer: { papers: Paper[]; loading: LoadingFollow[]; more?: boolean }): { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] } {
+  return { papers: answer.papers, hasMore: answer.more ?? answer.papers.length >= CUSTOM_FEED_PAGE_SIZE, loading: answer.loading };
 }
 
 /**

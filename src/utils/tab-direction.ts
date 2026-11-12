@@ -14,7 +14,7 @@
  */
 
 /** The fixed tabs, in the order `navbar.tsx` renders them; the reader's custom feeds follow them. */
-export const TAB_ORDER = ['/feed', '/following'];
+export const TAB_ORDER = ['/feed', '/recent', '/following'];
 
 /**
  * The last tab we were on, module scope for the same reason `routeDirection`'s

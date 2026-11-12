@@ -47,3 +47,6 @@ export function createSessionCache<T = unknown>({ maxEntries = 16 } = {}) {
     },
   };
 }
+
+/** A cache `createSessionCache` made, holding values of type `T`. */
+export type SessionCache<T> = ReturnType<typeof createSessionCache<T>>;

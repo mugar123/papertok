@@ -6,6 +6,7 @@ import { customFeedIdFromPath } from './feed-tabs.ts'
 
 const LABELS: Record<string, string> = {
   '/feed': 'For you',
+  '/recent': 'Most recent',
   '/lists': 'My lists',
   '/following': 'Following',
   '/search': 'Search',

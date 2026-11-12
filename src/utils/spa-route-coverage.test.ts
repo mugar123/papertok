@@ -28,6 +28,12 @@ test('an address nobody declared is left to the 404 page', async () => {
   }
 });
 
+test('Most recent has an address of its own', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/recent'));
+  assert.ok(!matches('/recently'));
+});
+
 test('a custom feed has an address of its own', async () => {
   const matches = await spaMatcher();
   assert.ok(matches('/feeds/abcd1234'));

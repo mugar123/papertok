@@ -10,6 +10,7 @@ import {
   customFeedRunsCache,
   feedEmptyKind,
   feedOpening,
+  feedPageOf,
   feedPageRequest,
   feedPagesKey,
   feedRunSignals,
@@ -35,35 +36,43 @@ function workerAnswering(answers: unknown[]) {
   return { asked, options: { apiBase: 'https://papertok-report-api.example', fetchWorker } };
 }
 
-/** Asks for the feed's pages as the reader scrolling to its end does: the next one while the list has more. */
+/** Asks for the feed's pages as the reader scrolling to its end does (useCustomFeedPapers): the next one while the list has more. */
 async function readToTheEnd(answers: unknown[]) {
   const { asked, options } = workerAnswering(answers);
   const run = feedRunSignals(null, 0, { positiveIds: [], dismissed: [] });
-  let pages = mergeFeedPage(null, await fetchCorpusPage(feedPageRequest(quantFeed, run, 0)!, options), 0);
+  let pages = mergeFeedPage(null, feedPageOf(await fetchCorpusPage(feedPageRequest(quantFeed, run, 0)!, options)), 0);
   while (pages.hasMore && asked.length < 10) {
     const page = pages.page + 1;
-    pages = mergeFeedPage(pages, await fetchCorpusPage(feedPageRequest(quantFeed, run, page)!, options), page);
+    pages = mergeFeedPage(pages, feedPageOf(await fetchCorpusPage(feedPageRequest(quantFeed, run, page)!, options)), page);
   }
   return { asked, pages };
 }
 
-test('from a Worker that does not say `more`, a page with fewer papers than asked is the last; a paper already held is not added twice', () => {
-  const first = mergeFeedPage(null, { papers: papersOf('p', 15), loading: [] }, 0);
+test('a later page adds only the papers the list does not hold yet, and the list goes on as the caller says', () => {
+  const first = mergeFeedPage(null, { papers: papersOf('p', 15), hasMore: true, loading: [] }, 0);
   assert.equal(first.papers.length, 15);
   assert.equal(first.hasMore, true);
   assert.equal(first.page, 0);
 
-  const second = mergeFeedPage(first, { papers: [paperOf('p3'), paperOf('q1'), paperOf('q2')], loading: [] }, 1);
+  const second = mergeFeedPage(first, { papers: [paperOf('p3'), paperOf('q1'), paperOf('q2')], hasMore: false, loading: [] }, 1);
   assert.equal(second.papers.length, 17);
   assert.deepEqual(second.papers.slice(15).map(held => held.id), ['q1', 'q2']);
   assert.equal(second.hasMore, false);
   assert.equal(second.page, 1);
 });
 
-test('the Worker\'s `more` decides whether the list goes on, whatever the page holds', () => {
-  assert.equal(mergeFeedPage(null, { papers: papersOf('p', 14), loading: [], more: true }, 0).hasMore, true);
-  assert.equal(mergeFeedPage(null, { papers: [], loading: [], more: true }, 0).hasMore, true);
-  assert.equal(mergeFeedPage(null, { papers: papersOf('p', 15), loading: [], more: false }, 0).hasMore, false);
+test('a full page the caller calls the last ends the list', () => {
+  const merged = mergeFeedPage(null, { papers: papersOf('p', 15), hasMore: false, loading: [] }, 0);
+  assert.equal(merged.papers.length, 15);
+  assert.equal(merged.hasMore, false);
+});
+
+test('the Worker\'s `more` decides whether a custom feed goes on, whatever the page holds; from a Worker that does not say, a page with fewer papers than asked is the last', () => {
+  assert.equal(feedPageOf({ papers: papersOf('p', 14), loading: [], more: true }).hasMore, true);
+  assert.equal(feedPageOf({ papers: [], loading: [], more: true }).hasMore, true);
+  assert.equal(feedPageOf({ papers: papersOf('p', 15), loading: [], more: false }).hasMore, false);
+  assert.equal(feedPageOf({ papers: papersOf('p', 15), loading: [] }).hasMore, true);
+  assert.equal(feedPageOf({ papers: papersOf('p', 14), loading: [] }).hasMore, false);
 });
 
 test('an empty page the Worker says has more after it does not end the feed: every paper is shown and the end comes after the last page', async () => {
@@ -96,12 +105,12 @@ test('a `more` that is not a boolean is not read: the feed ends at the first sho
 test('a page leaves out the papers the feed does not show, retracted or of a type it skips, and the list goes on past them', async () => {
   const retracted = { ...paperOf('a13'), publicationStatus: 'retracted' as const };
   const erratum = { ...paperOf('a14'), publicationType: 'erratum' };
-  const first = mergeFeedPage(null, { papers: [...papersOf('a', 13), retracted, erratum], loading: [] }, 0);
+  const first = mergeFeedPage(null, feedPageOf({ papers: [...papersOf('a', 13), retracted, erratum], loading: [] }), 0);
   assert.deepEqual(first.papers.map(held => held.id), papersOf('a', 13).map(held => held.id));
   assert.equal(first.hasMore, true);
 
   // Nor does a page of nothing but such papers end the list.
-  const second = mergeFeedPage(first, { papers: papersOf('b', 15).map(held => ({ ...held, publicationStatus: 'retracted' as const })), loading: [] }, 1);
+  const second = mergeFeedPage(first, feedPageOf({ papers: papersOf('b', 15).map(held => ({ ...held, publicationStatus: 'retracted' as const })), loading: [] }), 1);
   assert.equal(second.papers.length, 13);
   assert.equal(second.hasMore, true);
 

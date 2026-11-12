@@ -3,6 +3,7 @@ import { forgetSessionDismissed } from '../utils/custom-feed-dismissed.ts';
 import { forgetCustomFeedPages } from '../utils/custom-feed-pages.ts';
 import { clearGuestInterests } from '../utils/guest-interests.ts';
 import { forgetOwnLists } from '../utils/profile-session-caches.ts';
+import { forgetRecentPages } from '../utils/recent-feed-pages.ts';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
 type DeviceStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
@@ -29,6 +30,7 @@ export function closeAccountSession(userId: string | undefined, storage?: Device
   clearUserScopedStorage(userId, storage);
   forgetOwnLists(userId);
   forgetCustomFeedPages();
+  forgetRecentPages();
   forgetSessionDismissed();
   resetAccountWarmup(userId);
 }

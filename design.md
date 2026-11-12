@@ -432,9 +432,10 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Navigation
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
-  active one marked by a sliding yellow rule (the brand thread): For you and
-  Following with their icons, then the reader's own feeds by name (cut with an
-  ellipsis at 12rem) in the reader's order, then a "+" that opens New feed.
+  active one marked by a sliding yellow rule (the brand thread): For you, Most
+  recent (`ClockCounterClockwise`) and Following with their icons, then the
+  reader's own feeds by name (cut with an ellipsis at 12rem) in the reader's
+  order, then a "+" that opens New feed.
   The tabs are one scrolling line at every width (The One Scrolling Line
   Rule): the line gives up its width before the search field does, the mark
   and the account never shrink, an end fades only while more tabs lie past it, and the current tab is
@@ -562,6 +563,25 @@ An error, a not-found or an empty result is a glyph on a `56px` tinted square
 (`--tint-red-*` when a request failed, `--tint-neutral-*` when nothing did), a
 serif heading, one sentence saying what to do, and the way out as labelled
 `Button`s. Never an emoji, never a bare icon button as the only exit.
+
+Most recent (`recent/recent-feed-page.tsx`) has three states of its own. A
+reader with no topics gets Petri with the flask, "No topics yet" and an `Open
+Settings` button to Discovery. When nothing unseen is left, "You're all caught
+up" sits under a `Checks` glyph with `Go to For you` and an `outline` `Check
+again` that loads the list again. While it checks, the state stays, the button
+is busy and keeps the focus, and the sentence adds "Checking for new papers…",
+then "No new papers yet." if the check found none. The same heading, without
+Check again, ends a list that had cards. When the list stopped asking for pages
+by itself while it has more, "Nothing new so far" sits under a `Tray` glyph
+with `Go to For you` and an `outline` `Show older papers` that loads the next
+pages of the same list, busy in the same way, with "Loading older papers…",
+then "Those were not new to you either." if they brought none.
+
+When a custom feed (`custom-feeds/custom-feed-page.tsx`) stopped asking for
+pages by itself while it has more, it shows "Nothing to show yet" under a
+`Tray` glyph with `Show more papers` and an `outline` `Edit feed`. Its load runs
+under the feed's wait; the focus waits there, then goes to the first card, or
+back to the button while the feed still has more.
 
 The startup recovery screen in `index.html` is the one status screen drawn before
 the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the

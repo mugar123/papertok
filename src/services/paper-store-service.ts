@@ -65,6 +65,9 @@ export interface CorpusPageRequest {
   // With `seen`, a first page goes on with the walk of the order the Worker
   // kept for the same request (continuesWalk in src/context/feed-pagination.ts).
   continues?: boolean;
+  // With `seen`, the run a page belongs to (RecentRun's `walk`): a Worker that
+  // reads it keeps a walk of the daily order for each run. Others ignore it.
+  walk?: string;
   /**
    * Rank by the likes only once the corpus has fetched and embedded the ones
    * it lacks, which can take seconds: for More like this, never a feed page.
@@ -158,7 +161,7 @@ function cutFollowText<T>(value: T, max: number): T {
  */
 export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[]; more?: boolean }>;
 export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
-export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
@@ -186,7 +189,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     page,
     pageSize,
     order,
-    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}) } : {}),
+    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}), ...(walk ? { walk } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   };
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
