@@ -1889,6 +1889,27 @@ test("a project lane whose OpenAIRE answer is not a Graph page fails its turn in
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 0);
 });
 
+/**
+ * Lets `work` finish on the mocked clock. Real event-loop turns let work that
+ * takes real time finish (the quota ledger hashes its key on a thread pool).
+ * After each turn every pending mocked timer runs and the clock moves to the
+ * furthest, so `work` must wait on one timer at a time. Ticking the clock
+ * while turns pass counts a slow hash as waiting: a CI run measured 222 s for
+ * a lane that waits 60 s.
+ */
+async function settleOnMockedClock<T>(t: import('node:test').TestContext, work: Promise<T>) {
+  let settled = false;
+  work.then(() => { settled = true; }, () => { settled = true; });
+  // `performance` is not mocked: work that never settles fails here, by name.
+  const giveUp = performance.now() + 10_000;
+  while (!settled) {
+    assert.ok(performance.now() < giveUp, 'the work did not settle in 10 s of real time');
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.runAll();
+  }
+  return work;
+}
+
 test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const { urls, env } = relay(t, () => ({ esearchresult: { idlist: [] } }));
@@ -1896,15 +1917,8 @@ test("a lane whose source's minute is full waits for the next minute instead of 
   const { binding, db } = testD1();
   // A reader's PubMed search takes this minute's one request.
   assert.equal((await handlePubmed(new Request('https://papertok.internal/sources/pubmed?q=heart'), env)).status, 200);
-  let settled = false;
-  const harvest = harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' }).finally(() => { settled = true; });
-  // The route refuses with a 60 s retry-after; let the clock run until the
-  // lane settles, letting the ledger answer within each second.
-  for (let second = 0; !settled && second < 15 * 60; second += 1) {
-    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
-    t.mock.timers.tick(1_000);
-  }
-  await harvest;
+  // The route refuses with a 60 s retry-after, which the lane waits out.
+  await settleOnMockedClock(t, harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' }));
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all().map(row => ({ ...row })), [{ source: 'pubmed', lane: 'med.cardio' }]);
 });
@@ -1918,17 +1932,10 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: '1' });
   const { binding, db } = testD1();
   const started = Date.now();
-  let settled = false;
-  const harvest = harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' })
-    .then(() => null, (error: unknown) => error)
-    .finally(() => { settled = true; });
-  // The lane step's timeout (paper-harvest.ts) is ten minutes; run the clock
-  // past it, letting the ledger answer within each second.
-  for (let second = 0; !settled && second < 15 * 60; second += 1) {
-    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
-    t.mock.timers.tick(1_000);
-  }
-  const refusal = await harvest;
+  // The lane step's timeout (paper-harvest.ts) is ten minutes; the clock shows
+  // how long the lane waited before it ended.
+  const refusal = await settleOnMockedClock(t, harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' })
+    .then(() => null, (error: unknown) => error));
   assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
