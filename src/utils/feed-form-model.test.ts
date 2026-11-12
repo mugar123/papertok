@@ -76,6 +76,12 @@ test('a preset keeps the ingredients the account can hold and names the first ce
   assert.deepEqual(admitIngredients([quantPh], []), { ingredients: [quantPh], refused: null });
 });
 
+test('a preset with more than ten journals keeps the first ten and names the feed\'s journal limit', () => {
+  const journal = (n: number): FeedIngredient => ({ kind: 'journal', id: `S${n}`, label: `Journal ${n}` });
+  const eleven = Array.from({ length: 11 }, (_, n) => journal(n + 1));
+  assert.deepEqual(admitIngredients([...eleven, quantPh], []), { ingredients: [...eleven.slice(0, 10), quantPh], refused: 'journals-full' });
+});
+
 test('a new feed whose create landed after its deadline is the form\'s own: not taken, not over the limit or a ceiling', () => {
   const keyword = (n: number): FeedIngredient => ({ kind: 'keyword', query: `word ${n}` });
   const pending: CustomFeed = { id: 'pending00001', name: 'Thesis', order: 'newest', ingredients: Array.from({ length: 10 }, (_, n) => keyword(n)) };

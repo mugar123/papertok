@@ -1,15 +1,18 @@
 import { getAllLeafCategories, getAreaLeaves, getCategoryLabel } from '../data/category-taxonomy.ts';
-import type { FollowEntity } from './following.ts';
+import { MAX_FOLLOWED_JOURNALS, type FollowEntity } from './following.ts';
 import { createQueryTopic } from './topic-navigation.ts';
 
 // A custom feed: a named list of ingredients (whole areas, categories,
-// OpenAlex topics and authors, keywords) and an order, which the corpus serves
+// OpenAlex topics, authors and journals, keywords) and an order, which the corpus serves
 // as one request. This module validates what an account stores, holds its
 // limits and turns a feed into that request.
 
 export const MAX_CUSTOM_FEEDS = 8;
 export const MAX_FEED_INGREDIENTS = 20;
-/** Authors and research topics, counted once each across the account's feeds. */
+/**
+ * Authors, research topics and journals, counted once each across the
+ * account's feeds: each is a lane the nightly harvest lists.
+ */
 export const MAX_ACCOUNT_ENTITIES = 30;
 export const MAX_ACCOUNT_KEYWORDS = 10;
 export const MAX_FEED_NAME_LENGTH = 32;
@@ -22,6 +25,7 @@ export type FeedIngredient =
   | { kind: 'category'; id: string }
   | { kind: 'topic'; id: string; label: string }
   | { kind: 'author'; id: string; label: string }
+  | { kind: 'journal'; id: string; label: string }
   | { kind: 'keyword'; query: string };
 export type CustomFeedOrder = 'newest' | 'best';
 export interface CustomFeedInput { name: string; order: CustomFeedOrder; ingredients: FeedIngredient[] }
@@ -42,6 +46,8 @@ export class CustomFeedError extends Error {
 const FEED_ID = /^[a-z0-9]{8,24}$/;
 const TOPIC_ID = /^[TC]\d+$/;
 const AUTHOR_ID = /^A\d+$/;
+const JOURNAL_ID = /^S\d+$/;
+const ENTITY_IDS = { topic: TOPIC_ID, author: AUTHOR_ID, journal: JOURNAL_ID };
 const OPENALEX_URL = /^https?:\/\/(?:api\.)?openalex\.org\//i;
 const ORDERS = new Set<unknown>(['newest', 'best']);
 const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
@@ -83,10 +89,10 @@ export function parseFeedIngredient(raw: unknown): FeedIngredient | null {
   const { kind, id, label, query } = raw as Record<string, unknown>;
   if (kind === 'area') return typeof id === 'string' && getAreaLeaves(id) ? { kind, id } : null;
   if (kind === 'category') return typeof id === 'string' && LEAF_IDS.has(id) ? { kind, id } : null;
-  if (kind === 'topic' || kind === 'author') {
+  if (kind === 'topic' || kind === 'author' || kind === 'journal') {
     const entityId = openAlexId(id);
     const entityLabel = cleanLabel(label);
-    if (!entityLabel || !(kind === 'topic' ? TOPIC_ID : AUTHOR_ID).test(entityId)) return null;
+    if (!entityLabel || !ENTITY_IDS[kind].test(entityId)) return null;
     return { kind, id: entityId, label: entityLabel };
   }
   if (kind === 'keyword') {
@@ -111,7 +117,7 @@ export function ingredientLabel(ingredient: FeedIngredient): string {
 
 /** The account ceiling an ingredient counts against, or null when it counts against none. */
 function accountCeiling(ingredient: FeedIngredient) {
-  if (ingredient.kind === 'author' || ingredient.kind === 'topic') return { kinds: ['author', 'topic'], max: MAX_ACCOUNT_ENTITIES, problem: 'entities-full' as const };
+  if (ingredient.kind === 'author' || ingredient.kind === 'topic' || ingredient.kind === 'journal') return { kinds: ['author', 'topic', 'journal'], max: MAX_ACCOUNT_ENTITIES, problem: 'entities-full' as const };
   if (ingredient.kind === 'keyword') return { kinds: ['keyword'], max: MAX_ACCOUNT_KEYWORDS, problem: 'keywords-full' as const };
   return null;
 }
@@ -123,9 +129,13 @@ function parseFeed(raw: unknown): CustomFeed | null {
   if (typeof name !== 'string' || nameLength(name) < 1 || nameLength(name) > MAX_FEED_NAME_LENGTH) return null;
   if (!ORDERS.has(order)) return null;
   const parsed = new Map<string, FeedIngredient>();
+  let journals = 0;
   for (const item of Array.isArray(ingredients) ? ingredients : []) {
     const ingredient = parseFeedIngredient(item);
-    if (ingredient && !parsed.has(ingredientKey(ingredient))) parsed.set(ingredientKey(ingredient), ingredient);
+    if (!ingredient || parsed.has(ingredientKey(ingredient))) continue;
+    // The Worker reads only the first journals of a request (servedFollows).
+    if (ingredient.kind === 'journal' && journals++ >= MAX_FOLLOWED_JOURNALS) continue;
+    parsed.set(ingredientKey(ingredient), ingredient);
   }
   return { id, name: name.trim(), order: order as CustomFeedOrder, ingredients: [...parsed.values()].slice(0, MAX_FEED_INGREDIENTS) };
 }
@@ -133,9 +143,9 @@ function parseFeed(raw: unknown): CustomFeed | null {
 /**
  * The feeds an account stored, keeping only what is well formed: a feed whose
  * id, name or order is invalid goes, as does a later feed with an id already
- * seen. Within the limits, walking the feeds in order, an author, research
- * topic or keyword the account does not yet hold is dropped once its ceiling
- * is reached.
+ * seen. A feed keeps its first ten journals. Within the limits, walking the
+ * feeds in order, an author, research topic, journal or keyword the account
+ * does not yet hold is dropped once its ceiling is reached.
  */
 export function parseCustomFeeds(raw: unknown): CustomFeed[] {
   if (!Array.isArray(raw)) return [];
@@ -161,6 +171,8 @@ export function parseCustomFeeds(raw: unknown): CustomFeed[] {
   }));
 }
 
+export type IngredientProblem = 'duplicate' | 'feed-full' | 'journals-full' | 'entities-full' | 'keywords-full';
+
 export function feedNameProblem(name: string, feeds: CustomFeed[], exceptId?: string): 'empty' | 'too-long' | 'taken' | null {
   const length = nameLength(name);
   if (length === 0) return 'empty';
@@ -171,13 +183,16 @@ export function feedNameProblem(name: string, feeds: CustomFeed[], exceptId?: st
 
 /**
  * Why `ingredient` cannot join a feed being edited, whose ingredients are
- * `feed`, given the account's `otherFeeds`, or null when it can. An
- * ingredient another feed already holds counts once and passes the ceilings.
+ * `feed`, given the account's `otherFeeds`, or null when it can. A feed holds
+ * at most MAX_FOLLOWED_JOURNALS journals, since the Worker reads no more of a
+ * request. An ingredient another feed already holds counts once and passes
+ * the account ceilings.
  */
-export function ingredientProblem(ingredient: FeedIngredient, feed: FeedIngredient[], otherFeeds: CustomFeed[]): 'duplicate' | 'feed-full' | 'entities-full' | 'keywords-full' | null {
+export function ingredientProblem(ingredient: FeedIngredient, feed: FeedIngredient[], otherFeeds: CustomFeed[]): IngredientProblem | null {
   const key = ingredientKey(ingredient);
   if (feed.some(held => ingredientKey(held) === key)) return 'duplicate';
   if (feed.length >= MAX_FEED_INGREDIENTS) return 'feed-full';
+  if (ingredient.kind === 'journal' && feed.filter(held => held.kind === 'journal').length >= MAX_FOLLOWED_JOURNALS) return 'journals-full';
   const ceiling = accountCeiling(ingredient);
   if (!ceiling) return null;
   const held = new Set([...feed, ...otherFeeds.flatMap(other => other.ingredients)]
@@ -255,6 +270,7 @@ export function feedPositionSentence(feeds: readonly Pick<CustomFeed, 'id' | 'na
 /**
  * The `custom_feed_create` event of a feed: how many of its ingredients are
  * areas, categories and research topics, authors and keywords, and its order.
+ * Journals are counted in none of the three.
  */
 export function customFeedCreateEvent(feed: CustomFeed) {
   const count = (kinds: readonly FeedIngredient['kind'][]) => feed.ingredients.filter(ingredient => kinds.includes(ingredient.kind)).length;
@@ -284,13 +300,14 @@ export function corpusRequestOf(feed: CustomFeed): { categories: string[]; areas
 
 /**
  * The ingredient a followed entity names: one of the app's areas or
- * categories, an OpenAlex topic or concept, a free-text topic as a keyword, or
- * an author by OpenAlex id. Anything else, an author known by name only
+ * categories, an OpenAlex topic or concept, a free-text topic as a keyword, an
+ * author by OpenAlex id, or a journal by its OpenAlex source id. Anything
+ * else, an author known by name only or a journal without a source id
  * included, is null.
  */
 export function ingredientFromFollow(entity: { type: string; id?: string; canonicalId?: string; displayName?: string; metadata?: { query?: string; categoryIds?: string[] } }): FeedIngredient | null {
   const id = entity.canonicalId ?? entity.id ?? '';
-  if (entity.type === 'author') return parseFeedIngredient({ kind: 'author', id, label: entity.displayName });
+  if (entity.type === 'author' || entity.type === 'journal') return parseFeedIngredient({ kind: entity.type, id, label: entity.displayName });
   if (entity.type !== 'topic' && entity.type !== 'concept') return null;
   if (getAreaLeaves(id)) return { kind: 'area', id };
   if (LEAF_IDS.has(id)) return { kind: 'category', id };

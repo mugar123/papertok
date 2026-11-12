@@ -200,7 +200,7 @@ A custom feed reads the same corpus through `POST /store/papers`.
 feeds, at most 8, in one document, `users/{uid}/settings/customFeeds`, which
 [firestore.rules](firestore.rules) lets only its owner read or write.
 [corpusRequestOf](src/utils/custom-feeds.ts) turns a feed into its categories,
-whole `areas` and follows (research topics, authors and keywords), with
+whole `areas` and follows (research topics, authors, journals and keywords), with
 `order: 'daily'` for Newest first and `'relevance'` for Best match.
 [custom-feed-pages.ts](src/utils/custom-feed-pages.ts) builds it into an `exact`
 request and

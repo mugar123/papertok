@@ -469,7 +469,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   feed are one form, a dialog on a desktop and a bottom drawer on a phone,
   opening on the Name field. Below the name, the chosen ingredients are
   removable chips, each with its kind in mono, above one search for topics,
-  authors and a keyword, and suggestions from the reader's own topics. The
+  authors, journals and a keyword, and suggestions from the reader's own topics. The
   order is two radio cards, Newest first and Best match for you. A limit or a
   taken name is said in a line inside the form.
 - **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
@@ -555,7 +555,7 @@ an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
 like Like and Save; "Follow" is its name and its `title` says Following once on.
 On pages a feed can be made from (an area, a topic, a keyword search, an author
-with an OpenAlex id), the Explorer header also carries a text button after
+with an OpenAlex id, a followable journal), the Explorer header also carries a text button after
 Share, `Make it a feed`: an `outline` `sm` button with a `Plus` glyph.
 
 ### Status Screens (signature)

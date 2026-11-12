@@ -1443,6 +1443,16 @@ test('an exact request that names only an area is a request', async () => {
   assert.deepEqual(ids(papers), ['2610.90001']);
 });
 
+test('an exact request that names only a journal is a request, served that journal and no category', async () => {
+  const { env, ask } = store();
+  await ingestPapers(env, [
+    { paper: { ...paper('2610.90011', 'A journal article', 1), publicationType: 'article' }, lanes: ['source:S123'] },
+    { paper: paper('2610.90012', 'A preprint of a category', 1), lanes: ['cs.CL'] },
+  ]);
+  const { papers } = await ask({ follows: [{ type: 'journal', canonicalId: 'S123', displayName: 'A Journal' }], exact: true });
+  assert.deepEqual(ids(papers), ['2610.90011']);
+});
+
 test('an exact request whose follows have no lane is no request, where any other request is served no papers', async () => {
   const { ask } = store();
   // A topic that is one of the app's categories has no lane of its own.
