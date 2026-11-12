@@ -577,11 +577,11 @@ with `Go to For you` and an `outline` `Show older papers` that loads the next
 pages of the same list, busy in the same way, with "Loading older papers…",
 then "Those were not new to you either." if they brought none.
 
-A custom feed (`custom-feeds/custom-feed-page.tsx`) in that case shows "Nothing
-to show yet" under a `Tray` glyph with `Show more papers` and an `outline`
-`Edit feed`. Its load runs under the feed's wait; the focus waits there, then
-goes to the first card, or back to the button if the pages brought nothing to
-show.
+When a custom feed (`custom-feeds/custom-feed-page.tsx`) stopped asking for
+pages by itself while it has more, it shows "Nothing to show yet" under a
+`Tray` glyph with `Show more papers` and an `outline` `Edit feed`. Its load runs
+under the feed's wait; the focus waits there, then goes to the first card, or
+back to the button while the feed still has more.
 
 The startup recovery screen in `index.html` is the one status screen drawn before
 the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the
