@@ -1,7 +1,7 @@
 import type { OwnList } from './own-lists.ts';
 import type { Paper } from '../models/paper.ts';
 
-import { withRetractionOf } from '../models/paper.ts';
+import { mergeListPaperCopies } from './list-paper-copies.ts';
 import { createSessionCache } from './session-cache.ts';
 
 /**
@@ -88,15 +88,28 @@ export function readListPapers(uid: string) {
  *
  * Merged rather than replaced: a list is opened one at a time, and replacing
  * would throw away the previous list's papers on every visit — which is the
- * re-fetching this cache exists to stop. A newer copy of a paper replaces
- * the older one but keeps its retraction (`withRetractionOf`).
+ * re-fetching this cache exists to stop. Each copy is merged by the rule the
+ * screen's own state uses (`mergeListPaperCopies`), so the next visit is
+ * seeded with the copy the screen showed, not the one that arrived last.
  */
-export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>) {
+export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>, source: 'saved' | 'interaction') {
   if (!uid || !papers || typeof papers !== 'object') return;
-  const known = listPapersCache.get(uid) ?? {};
-  const next = { ...known };
-  Object.entries(papers).forEach(([paperId, paper]) => {
-    next[paperId] = withRetractionOf(paper, known[paperId]);
-  });
-  listPapersCache.set(uid, next);
+  listPapersCache.set(uid, mergeListPaperCopies(listPapersCache.get(uid) ?? {}, papers, source));
+}
+
+/**
+ * The papers whose `savedPapers` read has answered this session, keyed by
+ * uid: the document came back, or the server confirmed there is none. Until
+ * it has, a paper the lists hold no field or date for is read again
+ * (`listPaperNeedsRead`), so a failed read stays retryable.
+ */
+const listSavedAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
+
+export function rememberSavedAnswers(uid: string, paperIds: string[]) {
+  if (!uid || paperIds.length === 0) return;
+  listSavedAnswers.set(uid, new Set([...(listSavedAnswers.get(uid) ?? []), ...paperIds]));
+}
+
+export function savedAnswered(uid: string | undefined, paperId: string) {
+  return Boolean(uid && listSavedAnswers.get(uid)?.has(paperId));
 }

@@ -22,12 +22,17 @@ function authorName(author: Paper['authors'][number] | undefined) {
 export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;
 export const STORED_AUTHOR_CAP = 20;
+/**
+ * How much of the text a `savedPapers` document keeps (the rules allow 1,000),
+ * and an interaction record without a copy kept (`paperAbstract`).
+ */
+export const SAVED_SUMMARY_CAP = 500;
 
 /**
  * The text a stored copy or an interaction keeps of a paper: its `summary`
  * where one was built, else its `abstract`, all a corpus paper carries.
  */
-export function abstractExcerpt(paper: Partial<Paper> = {}, chars = 500) {
+export function abstractExcerpt(paper: Partial<Paper> = {}, chars = SAVED_SUMMARY_CAP) {
   return (paper.summary || paper.abstract || '').substring(0, chars);
 }
 
@@ -53,6 +58,23 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     // an earlier copy stored.
     ...(paper.publicationStatus === 'retracted' && { publicationStatus: 'retracted' as const }),
   };
+}
+
+/**
+ * The copy an interaction record without a `paper` map yields. Saves before
+ * 2026-10-21 (PAP-60) kept only the title, three authors, the card's category
+ * and the start of its text. The category was often the one the feed asked
+ * for, so it gives no field, and the record's timestamp is when the paper was
+ * saved, so the publication date stays unknown. With neither, the lists read
+ * the paper's `savedPapers` document (`copyHoldsPaperMetadata`).
+ */
+export function copyOfRecordWithoutCopy(
+  id: string,
+  record: { paperTitle?: string; paperAuthors?: Paper['authors']; paperAbstract?: string },
+) {
+  return serializeLibraryPaper({
+    id, title: record.paperTitle || '', authors: record.paperAuthors || [], summary: record.paperAbstract || '',
+  });
 }
 
 function cleanBibValue(value: unknown) {

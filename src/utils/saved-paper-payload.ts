@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 import { storedAbstractSource, storedClassification } from '../models/paper.ts';
+import { SAVED_SUMMARY_CAP, STORED_AUTHOR_CAP } from './reading-library.ts';
 
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
@@ -25,8 +26,12 @@ import { storedAbstractSource, storedClassification } from '../models/paper.ts';
  * codebase; it just was not here.
  */
 
-/** How much of the abstract the document keeps. The rules cap it at 1000; the app has always stored 500. */
-export const SAVED_SUMMARY_CAP = 500;
+/**
+ * How many authors the document kept before it kept as many as an
+ * interaction's copy (`STORED_AUTHOR_CAP`, which the rules allow). A stored
+ * list of exactly this many may be cut.
+ */
+export const LEGACY_SAVED_AUTHOR_CAP = 5;
 
 /** Absent, empty and blank are all "we do not have this". */
 const text = (value: unknown, max: number|undefined) => {
@@ -59,8 +64,12 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
   const title = text(paper?.title, 1000);
   payload.title = title ?? String(paper?.id ?? '').trim();
 
+  // A card's authors are names or `{ name }` objects; the document keeps names.
   const authors = Array.isArray(paper?.authors)
-    ? paper.authors.filter(entry => typeof entry === 'string' && entry.trim()).slice(0, 5)
+    ? paper.authors
+      .map(entry => (typeof entry === 'string' ? entry : entry?.name))
+      .flatMap(name => (typeof name === 'string' && name.trim() ? [name.trim()] : []))
+      .slice(0, STORED_AUTHOR_CAP)
     : [];
   if (authors.length > 0) payload.authors = authors;
 

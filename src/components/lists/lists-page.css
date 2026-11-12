@@ -920,6 +920,12 @@
   margin-bottom: 10px;
 }
 
+/* In a row's head, the bar stands in the line a field and year take: the
+   head's line height is 1.4 times its font size. */
+.list-row-head > .lists-skeleton-bar--cat {
+  margin-block: calc((1.4em - 11px) / 2);
+}
+
 .lists-skeleton-bar--title {
   width: 62%;
   height: 25px;

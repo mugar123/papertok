@@ -123,7 +123,7 @@ import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
-import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
+import { abstractExcerpt, copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
@@ -581,12 +581,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // often the one the feed asked for, so it has no field (PAP-60).
         const paper = data.paper
           ? { ...data.paper, ...readStoredClassification({ ...data.paper, id }) }
-          : serializeLibraryPaper({
-            id,
-            title: data.paperTitle || '',
-            authors: data.paperAuthors || [],
-            published: (data.timestamp || '') as string,
-          });
+          : copyOfRecordWithoutCopy(id, data);
         // Only a real title: standing the id in for one used to paint
         // `openalex:W…` on Liked. An empty title stays empty so a later
         // fetch can fill it.

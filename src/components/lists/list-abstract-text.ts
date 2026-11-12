@@ -1,7 +1,6 @@
 import type { Paper } from '../../models/paper.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { summaryLooksCut } from '../../utils/paper-seed.ts';
-import { SAVED_SUMMARY_CAP } from '../../utils/saved-paper-payload.ts';
 
 /**
  * The abstract a list row shows, and whether the copy it comes from was cut.
@@ -20,5 +19,5 @@ export function listAbstractText(paper: Partial<Pick<Paper, 'abstract' | 'summar
     .reduce<string | null>((longest, value) => (!longest || value.length > longest.length ? value : longest), null);
   const text = stored?.trim();
   if (!stored || !text) return null;
-  return { text, cut: stored.length === SAVED_SUMMARY_CAP || summaryLooksCut(stored) };
+  return { text, cut: summaryLooksCut(stored) };
 }

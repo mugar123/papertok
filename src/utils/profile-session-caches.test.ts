@@ -9,7 +9,9 @@ import {
   readListPapers,
   rememberListPapers,
   rememberOwnLists,
+  rememberSavedAnswers,
   reviseOwnLists,
+  savedAnswered,
 } from './profile-session-caches.ts';
 
 /**
@@ -67,7 +69,33 @@ test('rubbish is refused rather than cached', () => {
 // savedPapers document, which keeps no status, must not wipe the retraction
 // the interaction's copy recorded.
 test('a newer copy of a list paper replaces the older one but keeps its retraction', () => {
-  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'Old', publicationStatus: 'retracted' } });
-  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'New', publicationStatus: 'preprint' } });
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'Old', publicationStatus: 'retracted' } }, 'interaction');
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'New', publicationStatus: 'preprint' } }, 'saved');
   assert.deepEqual(readListPapers('uid-g')?.['pmid:9500320'], { id: 'pmid:9500320', title: 'New', publicationStatus: 'retracted' });
+});
+
+// A list reopened in the same tab painted from whichever copy arrived last.
+// Both collections are read at once, and the interaction's record of a paper
+// saved before PAP-60 kept no field, date or abstract: landing after the
+// savedPapers document, it replaced it in the cache while the screen's own
+// state kept the document.
+test('the cache keeps a list paper\'s savedPapers document over a later interaction copy', () => {
+  const saved = { id: '2505.06123', title: 'Perfect absorption', categories: ['quant-ph'], year: 2025 };
+  const interaction = { id: '2505.06123', title: 'Perfect absorption', categories: [], year: null };
+  rememberListPapers('uid-h', { [saved.id]: saved }, 'saved');
+  rememberListPapers('uid-h', { [saved.id]: interaction }, 'interaction');
+  assert.deepEqual(readListPapers('uid-h')?.[saved.id], saved);
+
+  rememberListPapers('uid-i', { [saved.id]: interaction }, 'interaction');
+  rememberListPapers('uid-i', { [saved.id]: saved }, 'saved');
+  assert.deepEqual(readListPapers('uid-i')?.[saved.id], saved, 'in either order');
+});
+
+test('a savedPapers answer is kept for the account that read it', () => {
+  rememberSavedAnswers('uid-j', ['2505.06123']);
+  rememberSavedAnswers('uid-j', ['2501.00001']);
+  assert.equal(savedAnswered('uid-j', '2505.06123'), true);
+  assert.equal(savedAnswered('uid-j', '2501.00001'), true);
+  assert.equal(savedAnswered('uid-k', '2505.06123'), false, 'another account');
+  assert.equal(savedAnswered('uid-j', '2509.99999'), false, 'never asked');
 });

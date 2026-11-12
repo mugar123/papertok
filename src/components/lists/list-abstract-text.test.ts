@@ -4,10 +4,10 @@ import type { Paper } from '../../models/paper.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
 import { serializeLibraryPaper } from '../../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
-import { listPaperFromCopies } from './list-paper-copies.ts';
+import { listPaperFromCopies } from '../../utils/list-paper-copies.ts';
 import { listAbstractText } from './list-abstract-text.ts';
 
-// The copies as the lists page holds them (see list-paper-copies.test.ts).
+// The copies as the lists page holds them (see utils/list-paper-copies.test.ts).
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const interactionCopy = (paper: Partial<Paper>): Partial<Paper> => throughFirestore(serializeLibraryPaper(paper));
 const savedDocument = (paper: Partial<Paper>) => paperLegacyAdapter({ id: paper.id, ...throughFirestore(buildSavedPaperPayload(paper, '2026-11-12T12:00:00.000Z')) });
