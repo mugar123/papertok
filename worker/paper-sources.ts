@@ -29,7 +29,7 @@ import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, LATE_ARRIVAL_DAYS, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
@@ -199,7 +199,10 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
  * One OAI-PMH page of an arXiv set, filed under its categories. Only papers
  * first submitted within CORPUS_DAYS are kept: the set also lists revisions of
  * old papers, and a new paper is announced days after its v1 date, so `from`
- * alone would drop it.
+ * alone would drop it. arXiv announces a paper within about four days of its
+ * v1, so a record first submitted more than LATE_ARRIVAL_DAYS before is a
+ * revision: it is filed with no arrival in any lane, and a lane that had
+ * trimmed it does not put it on top of its day-by-day feed.
  */
 export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
   const url = new URL(OAI_ENDPOINT);
@@ -221,8 +224,11 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
   const since = daysFromNow(-CORPUS_DAYS);
+  const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
   const recent = page.papers.filter(paper => paper.published >= since);
-  const stored = await ingestPapers(env, recent.map(record => ({ paper: arxivRecordPaper(record), lanes: [] })));
+  const filed = (records: typeof recent) => records.map(record => ({ paper: arxivRecordPaper(record), lanes: [] }));
+  const stored = await ingestPapers(env, filed(recent.filter(paper => paper.published >= announced)))
+    + await ingestPapers(env, filed(recent.filter(paper => paper.published < announced)), { firstLoad: true });
   return { stored, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
 }
 
@@ -889,7 +895,7 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
-    stored += await ingestPapers(env, result.items, { keepUntil, now });
+    stored += await ingestPapers(env, result.items, { keepUntil, now, firstLoad: reached ? undefined : lane });
     if (!spec.separateListings && (!result.full || (spec.dated && result.newest && result.newest < since))) break;
   }
   // Only the papers this run's pages filed in the lane carry OpenAlex's counts
@@ -964,7 +970,7 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       break;
     }
     try {
-      stored += await ingestPapers(env, result.items, { now });
+      stored += await ingestPapers(env, result.items, { now, firstLoad: lane });
     } catch (error) {
       throw new Error(`Backfill ${source} ${lane} page ${page} could not store ${result.items.length} records: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
@@ -1014,7 +1020,8 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), deadlineMs));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
-  const stored = await ingestPapers(env, found, { keepUntil, now });
+  // One reader's like must not put an older paper on top of every reader's day-by-day feed.
+  const stored = await ingestPapers(env, found, { keepUntil, now, firstLoad: true });
   if (found.length) {
     const db = database(env);
     await keepLiked(db, [...new Set((await findWorks(db, paperIds)).values())], now);

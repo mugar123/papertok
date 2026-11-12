@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
   notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -303,6 +303,183 @@ test('a fold of two rows of one notable lane keeps the later listing date', asyn
   // Another source's record of both folds the journal's row into the arXiv one.
   await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: NOW });
   assert.deepEqual(rows(db, "SELECT listed_until FROM work_lanes WHERE lane = 'notable:cs.LG'").map(row => row.listed_until), [later]);
+});
+
+test('a paper filed after its lane was first loaded arrives the day it is filed; the first load keeps its publication date', async () => {
+  const { env, db } = corpus();
+  // Titles of their own: one title and author would make them one paper.
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [{ paper: paper('2610.00001', '2026-10-01T00:00:00.000Z'), lanes: ['author:A1'] }], { now: NOW, firstLoad: true });
+  const later = NOW + 3 * 86_400_000;
+  await ingestPapers(env, [
+    { paper: paper('2610.00002', '2026-10-02T00:00:00.000Z'), lanes: ['author:A1'] },
+    { paper: paper('2610.00001', '2026-10-01T00:00:00.000Z'), lanes: ['author:A1'] },
+  ], { now: later });
+  const arrived = Object.fromEntries(rows(db, `SELECT k.key, l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id WHERE k.key LIKE 'arxiv:2610.0000_'`).map(row => [row.key, row.arrived]));
+  assert.equal(arrived['arxiv:2610.00001'], null);
+  assert.equal(arrived['arxiv:2610.00002'], new Date(later).toISOString());
+});
+
+// An author's first load can bring a paper new to the corpus, which its
+// categories file too: those lanes are not loading, and get it as news when
+// it is this week's. One from further back is those lanes' past.
+test("a lane's first load files its papers with no arrival, and the paper's other lanes get this week's papers as arrivals", async () => {
+  const arrivals = async (published: string) => {
+    const { env, db } = corpus();
+    await ingestPapers(env, [{ paper: { ...arxivRecord, published }, lanes: ['author:A1'] }], { now: NOW, firstLoad: 'author:A1' });
+    return Object.fromEntries(rows(db, 'SELECT lane, arrived FROM work_lanes ORDER BY lane').map(row => [row.lane, row.arrived]));
+  };
+  assert.deepEqual(await arrivals(new Date(NOW - 2 * 86_400_000).toISOString()), {
+    'author:A1': null,
+    'cs.CL': new Date(NOW).toISOString(),
+    'cs.LG': new Date(NOW).toISOString(),
+  });
+  assert.deepEqual(await arrivals(new Date(NOW - 30 * 86_400_000).toISOString()), { 'author:A1': null, 'cs.CL': null, 'cs.LG': null });
+});
+
+// No arrival means the paper was already in the lane: a fold with such a row
+// is not news, whichever of the two rows it is.
+test('a fold of two rows of one lane keeps the earlier arrival, or none when either has none', async () => {
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  const later = NOW + 86_400_000;
+  for (const [journalLoad, arxivLoad, arrived] of [
+    [undefined, undefined, new Date(NOW).toISOString()],
+    [true, undefined, null],
+    [undefined, true, null],
+  ] as const) {
+    const { env, db } = corpus();
+    await ingestPapers(env, [{ paper: journal, lanes: ['bio.comp'] }], { now: NOW, firstLoad: journalLoad });
+    await ingestPapers(env, [{ paper: arxivRecord, lanes: ['bio.comp'] }], { now: later, firstLoad: arxivLoad });
+    // Another source's record of both folds the journal's row into the arXiv one.
+    await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: later });
+    assert.deepEqual(rows(db, "SELECT arrived FROM work_lanes WHERE lane = 'bio.comp'").map(row => row.arrived), [arrived], `journal ${journalLoad}, arXiv ${arxivLoad}`);
+  }
+});
+
+test('a daily page goes day by day by arrival, the closest to the likes first within a day', async () => {
+  const { env, db } = corpus();
+  // Titles of their own: one title and author would make them one paper.
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  // Liked, and two papers of the lane's first load.
+  await ingestPapers(env, [
+    { paper: paper('2610.00001', '2026-09-01T00:00:00.000Z'), lanes: [] },
+    { paper: paper('2610.00002', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00003', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  // Published weeks ago, filed today.
+  await ingestPapers(env, [{ paper: paper('2610.00004', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00001'), vector([1, 0]));
+  insert.run(idOf('2610.00002'), vector([1, 0.05]));
+  insert.run(idOf('2610.00003'), vector([0, 1]));
+  insert.run(idOf('2610.00004'), vector([0, 1]));
+  const ask = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', positiveIds, pageSize: 5 }), { now: NOW });
+  // Today's arrival first though it is the oldest by date and far from the like.
+  assert.deepEqual((await ask(['arxiv:2610.00001'])).map(item => item.id), ['2610.00004', '2610.00003', '2610.00002']);
+  assert.deepEqual((await ask([])).map(item => item.id), ['2610.00004', '2610.00003', '2610.00002']);
+});
+
+test('within a day of a daily page, the paper closest to the likes comes first', async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [{ paper: paper('2610.00001', '2026-09-01T00:00:00.000Z'), lanes: [] }], { now: NOW, firstLoad: true });
+  // Both arrive today: the one near the like was published before the other.
+  await ingestPapers(env, [
+    { paper: paper('2610.00002', '2026-10-05T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00003', '2026-10-15T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00001'), vector([1, 0]));
+  insert.run(idOf('2610.00002'), vector([1, 0.05]));
+  insert.run(idOf('2610.00003'), vector([0, 1]));
+  const ask = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', positiveIds, pageSize: 5 }), { now: NOW });
+  assert.deepEqual((await ask(['arxiv:2610.00001'])).map(item => item.id), ['2610.00002', '2610.00003']);
+  assert.deepEqual((await ask([])).map(item => item.id), ['2610.00003', '2610.00002'], 'without likes, the later publication first');
+});
+
+test("a daily page reads its candidates by arrival: today's arrival is one past a lane's newest by publication", async () => {
+  const { env, db } = corpus();
+  // A lane full of papers published after the one that arrives today.
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(NOW - 86_400_000 - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: `2610.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('quant-ph', id, published);
+  }
+  db.exec('COMMIT');
+  await ingestPapers(env, [{ paper: { ...arxivRecord, id: '2609.99999', arxivId: '2609.99999', title: 'Filed today', published: '2026-09-01T00:00:00.000Z' }, lanes: ['quant-ph'] }], { now: NOW });
+  const first = async (order: string) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order, pageSize: 1 }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await first('daily'), ['2609.99999']);
+  assert.deepEqual(await first('recent'), ['2610.00001']);
+});
+
+// A full lane that stays past its limit with nothing to trim: `evictAll`
+// returns rather than going round it again.
+test("a full lane keeps a paper filed late for two weeks past its limit, and trims one filed on time or with the lane's first load", async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const add = (id: number, published: string) => {
+    insertWork.run(id, JSON.stringify({ id: `2610.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('quant-ph', id, published);
+  };
+  db.exec('BEGIN');
+  // The limit's papers, all published the day before: inside a day, a daily
+  // page orders by publication date.
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) add(id, new Date(NOW - 4 * 3_600_000 - id * 10_000).toISOString());
+  // Past the limit, with the lane's first load: no arrival.
+  add(FEED_CANDIDATE_LIMIT + 1, '2026-08-30T00:00:00.000Z');
+  db.exec('COMMIT');
+  // Filed today, past the limit: one published weeks before, one two days before.
+  await ingestPapers(env, [
+    { paper: { ...arxivRecord, id: '2609.99999', arxivId: '2609.99999', title: 'Filed late', published: '2026-09-01T00:00:00.000Z' }, lanes: ['quant-ph'] },
+    { paper: { ...arxivRecord, id: '2610.99998', arxivId: '2610.99998', title: 'Filed on time', published: new Date(NOW - 2 * 86_400_000).toISOString() }, lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const inLane = () => rows(db, "SELECT w.paper ->> '$.id' AS id FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'quant-ph' AND l.published < '2026-10-21'").map(row => row.id);
+  await evictAll(env, NOW);
+  assert.deepEqual(inLane(), ['2609.99999'], 'the paper filed late stays; the one filed on time and the one of the first load go');
+  assert.equal(rows(db, "SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'quant-ph'")[0].n, FEED_CANDIDATE_LIMIT + 1);
+  const daily = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], order: 'daily', pageSize: 1 }), { now: NOW });
+  assert.deepEqual(daily.map(item => item.id), ['2609.99999']);
+  await evictAll(env, NOW + 15 * 86_400_000);
+  assert.deepEqual(inLane(), [], 'two weeks on, the lane is back to its limit');
+  assert.equal(rows(db, "SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'quant-ph'")[0].n, FEED_CANDIDATE_LIMIT);
+});
+
+// A walk is kept by follows alone (`readFeedPage`), so another order's walk
+// could go on from a daily one's: a page past the first would start at the
+// other order's ranks.
+test("a daily walk and another order's walk over the same lanes go on from their own pages", async () => {
+  const { env } = corpus();
+  const paper = (id: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title: `Sparse attention, part ${id}`, published });
+  await ingestPapers(env, [
+    { paper: paper('2610.00001', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: paper('2610.00002', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  await ingestPapers(env, [{ paper: paper('2610.00003', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const orders = new Map<string, KeptRanking>();
+  const keep = async (key: string, ranking: KeptRanking) => { orders.set(key, ranking); };
+  const cache: RankingCache = { get: async key => orders.get(key) ?? null, put: keep, update: keep };
+  // Each feed's own seen papers and page numbers.
+  const seen = { recent: new Set<string>(), daily: new Set<string>() };
+  const pages = { recent: 0, daily: 0 };
+  const page = async (order: 'recent' | 'daily') => {
+    const answer = (await readFeedPage(env, parseFeedRequest({
+      categories: ['quant-ph'], order, page: pages[order]++, pageSize: 1, seen: feedSeenFilter(feedSeenIds(seen[order], true)), skipsSeen: true,
+    }), { now: NOW, cache })).map(item => item.id);
+    answer.forEach(id => seen[order].add(id));
+    return answer;
+  };
+  assert.deepEqual(await page('recent'), ['2610.00001']);
+  assert.deepEqual(await page('daily'), ['2610.00003']);
+  assert.deepEqual(await page('recent'), ['2610.00002']);
+  assert.deepEqual(await page('daily'), ['2610.00001']);
 });
 
 test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
@@ -605,6 +782,161 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
   await evictAll(env, NOW);
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'area:physics'").length, 1);
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
+});
+
+// A paper filed only under the lanes given, by its own title.
+const lanePaper = (id: string, title: string, published = '2026-10-15T00:00:00.000Z') => ({ ...arxivRecord, id, arxivId: id, title, published, allCategories: [], categories: [] });
+
+// A feed shows a paper on the first day any of its lanes held it: a followed
+// author's lane listing it days after the category did does not bring it back on top.
+test('a daily page places a paper several of its lanes hold on the earliest day they got it', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00071', 'A surface code decoder', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph', 'author:A1'] },
+    { paper: lanePaper('2610.00072', 'A bosonic code', '2026-10-02T00:00:00.000Z'), lanes: ['quant-ph', 'author:A1'] },
+  ], { now: NOW });
+  const setArrival = (paperId: string, lane: string, daysBefore: number) => db.prepare(`UPDATE work_lanes SET arrived = ? WHERE lane = ?
+    AND work_id = (SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}')`).run(new Date(NOW - daysBefore * 86_400_000).toISOString(), lane);
+  setArrival('2610.00071', 'quant-ph', 5);
+  setArrival('2610.00071', 'author:A1', 0);
+  setArrival('2610.00072', 'quant-ph', 2);
+  setArrival('2610.00072', 'author:A1', 2);
+  const author = { type: 'author', canonicalId: 'https://openalex.org/A1', displayName: 'Ana Pérez' };
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(env, parseFeedRequest({ ...body, order: 'daily' }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await served({ categories: ['quant-ph'], follows: [author] }), ['2610.00072', '2610.00071'], 'the category had it five days ago');
+  assert.deepEqual(await served({ categories: [], follows: [author] }), ['2610.00071', '2610.00072'], 'the author lane alone got it today');
+});
+
+// Each lane's harvest stamps its own instant: inside a day, a reader without
+// likes gets the day's papers newest publication first, not a lane's block.
+test('inside a day of a daily page, papers of several lanes come by publication date, not by the instant each lane was harvested', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00081', 'A quantum walk', '2026-10-10T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00082', 'A quantum channel', '2026-10-12T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00083', 'A string vacuum', '2026-10-11T00:00:00.000Z'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00084', 'A holographic dual', '2026-10-13T00:00:00.000Z'), lanes: ['hep-th'] },
+  ], { now: NOW + 3_600_000 });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph', 'hep-th'], order: 'daily' }), { now: NOW + 7_200_000 });
+  assert.deepEqual(page.map(item => item.id), ['2610.00084', '2610.00082', '2610.00083', '2610.00081']);
+});
+
+test('an exact request reads the lanes it names and nothing beside them', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00031', 'An econometrics preprint'), lanes: ['econ.EM'] },
+    { paper: lanePaper('2610.00032', 'A working paper of a series'), lanes: ['series:working-papers'] },
+    { paper: lanePaper('2610.00033', 'An economics journal article'), lanes: ['area:econ'] },
+  ], { now: NOW });
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(env, parseFeedRequest(body), { now: NOW })).map(item => item.id).sort();
+  assert.deepEqual(await served({ categories: ['econ.EM'], exact: true }), ['2610.00031']);
+  assert.deepEqual(await served({ categories: ['econ.EM'] }), ['2610.00031', '2610.00032', '2610.00033'], "today's request");
+});
+
+test('an exact request for an area reads every leaf of it and the area lane, and no other area', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00041', 'A quantum error-correcting code'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00042', 'A string compactification'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00043', 'A physics journal article'), lanes: ['area:physics'] },
+    { paper: lanePaper('2610.00044', 'A learning-rate schedule'), lanes: ['cs.LG'] },
+  ], { now: NOW });
+  const page = await readFeedPage(env, parseFeedRequest({ areas: ['physics'], exact: true }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id).sort(), ['2610.00041', '2610.00042', '2610.00043']);
+});
+
+test('an exact request keeps on the page the papers the reader liked', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00051', 'The liked paper', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00052', 'Another paper of the lane', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  insert.run(idOf('2610.00051'), vector([1, 0]));
+  insert.run(idOf('2610.00052'), vector([0, 1]));
+  const served = async (excludedIds: string[]) => (await readFeedPage(env, parseFeedRequest({
+    categories: ['quant-ph'], exact: true, positiveIds: ['2610.00051'], excludedIds, order: 'relevance',
+  }), { now: NOW })).map(item => item.id);
+  assert.deepEqual(await served([]), ['2610.00051', '2610.00052']);
+  assert.deepEqual(await served(['2610.00051']), ['2610.00052']);
+});
+
+// The request a custom feed sends.
+test('an exact daily request goes day by day by arrival and keeps the liked paper on its day', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00091', 'The liked paper', '2026-10-01T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00092', 'A paper of the first load', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, firstLoad: true });
+  await ingestPapers(env, [{ paper: lanePaper('2610.00093', 'A paper that arrived today', '2026-10-05T00:00:00.000Z'), lanes: ['quant-ph'] }], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id as number;
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  insert.run(idOf('2610.00091'), vector([1, 0]));
+  insert.run(idOf('2610.00092'), vector([1, 0.05]));
+  insert.run(idOf('2610.00093'), vector([0, 1]));
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], exact: true, order: 'daily', positiveIds: ['2610.00091'] }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id), ['2610.00093', '2610.00092', '2610.00091']);
+});
+
+// One ingest files its papers at one instant. An exact request for every area
+// reads 27 of a leaf's rows, and a read in arrival order alone would keep 27
+// of the tied rows in work id order, a hash of the paper id.
+test("an exact daily request for every area opens with the newest publications of a harvest that filed more than a leaf's share", async () => {
+  const { env } = corpus();
+  // Paper n is published n minutes before 23:00.
+  const papers = Array.from({ length: 80 }, (_, index) => lanePaper(`2610.${String(index + 1).padStart(5, '0')}`, `Harvested paper number ${index + 1} on a distinct subject`,
+    new Date(Date.parse('2026-10-21T23:00:00Z') - (index + 1) * 60_000).toISOString()));
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
+  const areas = [...new Set(getAllLeafCategories().map(leaf => leaf.area))];
+  const page = await readFeedPage(env, parseFeedRequest({ areas, exact: true, order: 'daily' }), { now: NOW });
+  assert.deepEqual(page.map(item => item.id), papers.slice(0, 15).map(paper => paper.id));
+});
+
+// A walk is kept by follows alone, which two exact feeds made only of
+// categories share: each would go on from the other's pages.
+test('two exact walks that differ only in their categories go on from their own pages', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00061', 'A quantum error-correcting code', '2026-10-21T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00062', 'A quantum walk on a graph', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00063', 'A string compactification', '2026-10-21T00:00:00.000Z'), lanes: ['hep-th'] },
+    { paper: lanePaper('2610.00064', 'A holographic dual', '2026-10-20T00:00:00.000Z'), lanes: ['hep-th'] },
+  ], { now: NOW });
+  const orders = new Map<string, KeptRanking>();
+  const keep = async (key: string, ranking: KeptRanking) => { orders.set(key, ranking); };
+  const cache: RankingCache = { get: async key => orders.get(key) ?? null, put: keep, update: keep };
+  // Each feed's own seen papers and page numbers.
+  const seen = { 'quant-ph': new Set<string>(), 'hep-th': new Set<string>() };
+  const pages = { 'quant-ph': 0, 'hep-th': 0 };
+  const page = async (category: 'quant-ph' | 'hep-th') => {
+    const answer = (await readFeedPage(env, parseFeedRequest({
+      categories: [category], exact: true, page: pages[category]++, pageSize: 1, seen: feedSeenFilter(feedSeenIds(seen[category], true)), skipsSeen: true,
+    }), { now: NOW, cache })).map(item => item.id);
+    answer.forEach(id => seen[category].add(id));
+    return answer;
+  };
+  assert.deepEqual(await page('quant-ph'), ['2610.00061']);
+  assert.deepEqual(await page('hep-th'), ['2610.00063']);
+  assert.deepEqual(await page('quant-ph'), ['2610.00062']);
+  assert.deepEqual(await page('hep-th'), ['2610.00064']);
+});
+
+// An exact request can name every leaf of its areas: their notable lanes would
+// be up to 149 reads of about 1,000 rows.
+test('an exact request asks for no notable papers', () => {
+  const body = { categories: ['quant-ph'], seen: feedSeenFilter([]), notable: 3 };
+  assert.deepEqual([parseFeedRequest({ ...body, exact: true }).notable, parseFeedRequest(body).notable], [0, 3]);
+});
+
+test('an exact request reads up to twenty categories; any other request still reads twelve', () => {
+  const thirteen = getAllLeafCategories().slice(0, 13).map(leaf => leaf.id);
+  assert.equal(parseFeedRequest({ categories: thirteen, exact: true }).categories.length, 13);
+  assert.equal(parseFeedRequest({ categories: thirteen }).categories.length, 12);
 });
 
 test("a Chemistry reader is served Chemistry's journal articles, which keep OpenAlex's classification, and a Chemical Engineering reader is not", async () => {
@@ -2142,6 +2474,21 @@ test("an enrichment that names an old paper's topic does not file it under that 
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
+test("a lane an enrichment adds takes the paper's earliest arrival, or none when a lane holds it with none", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  const [earlier, later] = [new Date(NOW - 86_400_000).toISOString(), new Date(NOW).toISOString()];
+  db.prepare("UPDATE work_lanes SET arrived = CASE lane WHEN 'cs.CL' THEN ? ELSE ? END").run(earlier, later);
+  const enrich = async (topicId: string) => {
+    const [stored] = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) }));
+    await rewriteWorks(env, [{ ...stored, after: { ...stored.before, primaryTopic: { id: `https://openalex.org/${topicId}`, display_name: `Topic ${topicId}` } } }], NOW);
+    return rows(db, `SELECT arrived FROM work_lanes WHERE lane = 'topic:${topicId}'`).map(row => row.arrived);
+  };
+  assert.deepEqual(await enrich('T10604'), [earlier]);
+  db.prepare("UPDATE work_lanes SET arrived = NULL WHERE lane = 'cs.LG'").run();
+  assert.deepEqual(await enrich('T10605'), [null], 'a lane that holds it with no arrival dates it by its publication');
+});
+
 test('an erratum the enrichment reveals leaves every lane; a letter stays', async () => {
   const { env, db } = corpus();
   const record = { ...arxivRecord, allCategories: [], categories: [] };
@@ -2950,6 +3297,20 @@ test('the ranks a page without likes decides are the ones a read of every vector
       }
     }
   }
+});
+
+// A daily page puts each day's ranks together, so the ranks the vectors of the
+// newest candidates decide by score are not its first ranks.
+test('a daily page without likes ranks what a read of every vector gives', async () => {
+  const { env, rejections } = coldPageCorpus();
+  const keptBy = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+    const kept: KeptRanking[] = [];
+    await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache: { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } } });
+    return kept[0].ranks.map(rank => rank && [rank.workId, rank.semanticScore]);
+  };
+  const body = { categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, order: 'daily', pageSize: 30 };
+  const everyVector = await keptBy({ ...body, seen: feedSeenFilter([]), skipsSeen: true });
+  for (const page of [0, 3, 20]) assert.deepEqual(await keptBy({ ...body, page }), everyVector, `page ${page}`);
 });
 
 // A like ranks every candidate by its closeness, and a page that skips seen
