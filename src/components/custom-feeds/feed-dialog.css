@@ -96,6 +96,12 @@
   list-style: none;
 }
 
+/* Kept mounted so the last chip can leave (ingredient-picker.tsx); with
+   nothing in it, it takes no place in the field's gap. */
+.feed-chips:empty {
+  display: none;
+}
+
 .feed-chip {
   display: inline-flex;
   align-items: center;
@@ -150,11 +156,13 @@
   outline-offset: 2px;
 }
 
-/* The search's results and the suggestions: ruled rows, one button each. */
+/* The search's results and the suggestions: ruled rows, one button each.
+   The results arrive together, once the search has answered. */
 .feed-results {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  animation: appear var(--motion-base) var(--ease-out) both;
 }
 
 .feed-results-group {
@@ -226,6 +234,65 @@
   color: var(--text-secondary);
 }
 
+/* The wait for them: rows of a result's size, each a ruled row with the
+   mark's box, a name over a hint, and the kind, swept like the palette's. */
+.feed-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.feed-skeleton-mark,
+.feed-skeleton-label,
+.feed-skeleton-hint,
+.feed-skeleton-kind {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 0%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.feed-skeleton-mark {
+  flex: 0 0 24px;
+  height: 24px;
+}
+
+.feed-skeleton-text {
+  display: flex;
+  flex: 0 1 64%;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.feed-skeleton-label {
+  height: 10px;
+}
+
+.feed-skeleton-hint {
+  width: 48%;
+  height: 8px;
+}
+
+.feed-skeleton-row:nth-child(2) .feed-skeleton-text { flex-basis: 48%; }
+.feed-skeleton-row:nth-child(3) .feed-skeleton-text { flex-basis: 72%; }
+.feed-skeleton-row:nth-child(4) .feed-skeleton-text { flex-basis: 56%; }
+
+.feed-skeleton-kind {
+  flex: 0 0 44px;
+  height: 8px;
+  margin-left: auto;
+}
+
 /* The two orders: card-shaped radios, the choice marked by an ink frame and
    a sunken ground. */
 .feed-orders {
@@ -288,5 +355,13 @@
   .feed-result,
   .feed-order {
     transition: none;
+  }
+
+  /* The bars keep their ground and stop sweeping. */
+  .feed-skeleton-mark,
+  .feed-skeleton-label,
+  .feed-skeleton-hint,
+  .feed-skeleton-kind {
+    animation: none;
   }
 }

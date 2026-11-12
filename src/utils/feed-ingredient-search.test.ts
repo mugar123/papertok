@@ -32,9 +32,27 @@ test('the results are grouped as topics, authors and the keyword, without repeat
     authors: Array.from({ length: 7 }, (_, n) => ({ id: `https://openalex.org/A${n}`, display_name: `Author ${n}` })),
   });
   assert.deepEqual(results.topics, [{ kind: 'category', id: 'quant-ph' }, { kind: 'topic', id: 'T10020', label: 'Quantum error correction' }]);
-  assert.deepEqual(results.authors.map(author => author.kind === 'author' && author.id), ['A0', 'A1', 'A2', 'A3', 'A4']);
+  assert.deepEqual(results.authors.map(({ ingredient }) => ingredient.kind === 'author' && ingredient.id), ['A0', 'A1', 'A2', 'A3', 'A4']);
   assert.deepEqual(results.keyword, { kind: 'keyword', query: 'quantum' });
   assert.equal(ingredientResults({ text: '?', topics: [], authors: [] }).keyword, null);
+});
+
+test('an author result carries the institution OpenAlex gave, and none when it gave none', () => {
+  const { authors } = ingredientResults({
+    text: 'aiko sato',
+    topics: [],
+    authors: [
+      { id: 'https://openalex.org/A1', display_name: 'Aiko Sato', institution: '慶應義塾大学', institutionData: { display_name: '慶應義塾大学', localized_names: { en: 'Keio University' } } },
+      { id: 'https://openalex.org/A1', display_name: 'Aiko Sato', institution: 'Another University' },
+      { id: 'https://openalex.org/A2', display_name: 'Aiko Sato', institution: 'University of Tokyo' },
+      { id: 'https://openalex.org/A3', display_name: 'Aiko Sato', institution: null },
+    ],
+  });
+  assert.deepEqual(authors, [
+    { ingredient: { kind: 'author', id: 'A1', label: 'Aiko Sato' }, institution: 'Keio University' },
+    { ingredient: { kind: 'author', id: 'A2', label: 'Aiko Sato' }, institution: 'University of Tokyo' },
+    { ingredient: { kind: 'author', id: 'A3', label: 'Aiko Sato' }, institution: null },
+  ]);
 });
 
 test('a search source that failed is named; none failing says nothing', () => {

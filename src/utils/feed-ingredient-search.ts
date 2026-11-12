@@ -1,5 +1,6 @@
 import type { OpenAlexAuthor, OpenAlexTopic } from '../services/adapters/open-alex-types.ts';
 import { ingredientKey, parseFeedIngredient, type FeedIngredient } from './custom-feeds.ts';
+import { getLocalizedInstitutionName } from './institution-localization.ts';
 
 // What the feed window's search finds, as ingredients. Each one comes out of
 // `parseFeedIngredient`, the one validator the store holds a feed to.
@@ -36,13 +37,32 @@ export function suggestedIngredients(preferences: string[], chosen: FeedIngredie
 }
 
 /**
- * The search's groups: every topic once, in the order the sources gave them,
- * the first authors, and the typed text as a keyword when it makes one.
+ * An author found by the search, with the institution OpenAlex gave for
+ * them, or null when it gave none. The institution is only shown to tell
+ * namesakes apart; the feed keeps the ingredient alone.
  */
-export function ingredientResults({ text, topics, authors }: { text: string; topics: OpenAlexTopic[]; authors: OpenAlexAuthor[] }): { topics: FeedIngredient[]; authors: FeedIngredient[]; keyword: FeedIngredient | null } {
+export type AuthorResult = { ingredient: FeedIngredient; institution: string | null };
+
+function authorResults(authors: OpenAlexAuthor[]): AuthorResult[] {
+  const kept = new Map<string, AuthorResult>();
+  for (const author of authors) {
+    const ingredient = ingredientOfAuthor(author);
+    if (!ingredient || kept.has(ingredientKey(ingredient))) continue;
+    const institution = getLocalizedInstitutionName(author.institutionData || { display_name: author.institution }) || null;
+    kept.set(ingredientKey(ingredient), { ingredient, institution });
+  }
+  return [...kept.values()].slice(0, MAX_AUTHOR_RESULTS);
+}
+
+/**
+ * The search's groups: every topic once, in the order the sources gave them,
+ * the first authors with their institutions, and the typed text as a keyword
+ * when it makes one.
+ */
+export function ingredientResults({ text, topics, authors }: { text: string; topics: OpenAlexTopic[]; authors: OpenAlexAuthor[] }): { topics: FeedIngredient[]; authors: AuthorResult[]; keyword: FeedIngredient | null } {
   return {
     topics: distinct(topics.map(ingredientOfTopic)),
-    authors: distinct(authors.map(ingredientOfAuthor)).slice(0, MAX_AUTHOR_RESULTS),
+    authors: authorResults(authors),
     keyword: keywordIngredient(text),
   };
 }
