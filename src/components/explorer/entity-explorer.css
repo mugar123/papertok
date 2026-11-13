@@ -2448,6 +2448,14 @@
   color: var(--text-secondary);
 }
 
+.orcid-biography.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
+}
+
 /* ─── Mobile ─── */
 @media (max-width: 768px) {
   .explorer-hero {

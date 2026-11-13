@@ -23,7 +23,7 @@ interface VisitRecord {
   settledWikiRequestKey: string; loadedWikiImageUrl: string;
   recentImpact: RecentImpact | null;
 }
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -87,6 +87,7 @@ import OrcidStamp from './orcid-stamp.tsx';
 import CareerTimeline from './career-timeline.tsx';
 import OrcidLinks from './orcid-links.tsx';
 import { foldMotion } from './explorer-fold.ts';
+import OrcidBiography from './orcid-biography.tsx';
 import { careerStops } from './career-stops.ts';
 import ExplorerHeroTop from './explorer-hero-top.tsx';
 import { Button } from '../ui/button.tsx';
@@ -471,6 +472,7 @@ export default function EntityExplorer({
   // repeat it.
   const [authorsOpened, setAuthorsOpened] = useState(() => Boolean(resumed?.authorsOpened));
   const [expandedSummary, setExpandedSummary] = useState(false);
+  const [expandedBiography, setExpandedBiography] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
@@ -658,10 +660,11 @@ export default function EntityExplorer({
   // loads, and a ref would be read once as null and never again.
 
   const heroBodyRef = useRef<HTMLDivElement | null>(null);
+  const [, remeasureHero] = useReducer((count: number) => count + 1, 0);
   useHeightSettle(
     heroBodyRef,
     // Everything that changes this box's height and is worth a movement.
-    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage],
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, expandedBiography],
     // A gentle ease-in-out rather than the hook's expo-out default. What
     // travels here is everything under the hero — the tab strip, the list —
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
@@ -811,6 +814,7 @@ export default function EntityExplorer({
       setActiveTab('papers');
       setAuthorsOpened(false);
       setExpandedSummary(false);
+      setExpandedBiography(false);
       setParticipantsExpanded(false);
     }, 0);
     return () => clearTimeout(timer);
@@ -862,6 +866,7 @@ export default function EntityExplorer({
       setOrcidInfo(null);
       setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
       setExpandedSummary(false);
+      setExpandedBiography(false);
       setIsProjectSummaryExpandable(false);
       setResolvingParticipant(null);
       if (!resuming) setRecentImpact(null);
@@ -2465,6 +2470,7 @@ export default function EntityExplorer({
               {career.length > 0 && (
                 <CareerTimeline
                   career={career}
+                  onHeightChange={remeasureHero}
                   onOrganization={(stop) => {
                     void findInstitution({ rorUrl: stop.ror, name: stop.organization }).then((inst) => {
                       if (inst) navigateToEntity('institution', inst.id);
@@ -2475,7 +2481,7 @@ export default function EntityExplorer({
               {orcidInfo.biography && (
                 <section>
                   <h2 className="project-section-title">About</h2>
-                  <p className="orcid-biography">{orcidInfo.biography}</p>
+                  <OrcidBiography text={orcidInfo.biography} expanded={expandedBiography} onToggle={() => setExpandedBiography((value) => !value)} />
                 </section>
               )}
               {orcidLinks.length > 0 && (
