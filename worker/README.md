@@ -24,14 +24,144 @@ Set the Cloudflare secret `POSTHOG_PROJECT_TOKEN` to PostHog's public project
 token, the same one the frontend uses. An absent token disables reporting, so
 local runs report nothing unless `.dev.vars` sets it.
 
-`npm run worker:deploy` requires `POSTHOG_CLI_API_KEY` (a personal API key with
-error tracking write access) and `POSTHOG_CLI_PROJECT_ID`, supplied by the
-environment or the ignored `.env.posthog-cli`. It bundles the Worker, writes a
-PostHog chunk ID into the bundle and its source map, uploads the map under the
-current Git commit as release, then deploys that bundle without rebundling. An
-upload failure stops the command before deploying. If PostHog is unavailable
-and a fix cannot wait, `npx wrangler deploy` deploys without uploading maps;
-reports from that release then show bundle locations only.
+`npm run worker:deploy` uploads the Worker's source maps to PostHog EU project
+306340 (PaperTok, Default), then deploys. It takes PostHog credentials from one
+of two places:
+
+- The environment, for CI and for the ignored `.env.posthog-cli`:
+  `POSTHOG_CLI_API_KEY` (a personal API key with error tracking write access)
+  and `POSTHOG_CLI_PROJECT_ID=306340`. Once either variable is set, even to an
+  empty value, or `CI` holds any value other than empty or `false`, the login
+  is not used: both must be non-empty, with the project ID 306340, or the
+  command stops before it runs anything.
+- The login, on a maintainer's machine with neither variable set: the session
+  `npx posthog-cli login` stored after you choose EU. On the authorization
+  page, choose the "Error tracking" preset, not the default "Agent CLI" one.
+  The script never reads the stored file; posthog-cli does.
+
+For `POSTHOG_CLI_DRY_RUN`, only unset, empty or `false` is accepted; the
+command refuses to start with any other value. It also refuses when
+`POSTHOG_CLI_TOKEN`, `POSTHOG_CLI_ENV_ID`, `POSTHOG_CLI_DOTENV_FILE` or
+`POSTHOG_HOME` is set, even to an empty value, because posthog-cli can take
+credentials from each of them.
+An empty `POSTHOG_CLI_DRY_RUN`, `POSTHOG_CLIENT_RATE_LIMIT`,
+`POSTHOG_RELEASE_MODE` or `POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY` is left out
+of the posthog-cli calls, because posthog-cli rejects an empty value and exits
+before running its command. When `POSTHOG_CLIENT_RATE_LIMIT`,
+`POSTHOG_RELEASE_MODE` or `POSTHOG_CLI_SOURCEMAP_UPLOAD_CONCURRENCY` holds
+another value posthog-cli rejects, the credential check in step 2 fails and
+names which of the four variables above are set, without their values.
+`POSTHOG_CLI_HOST` has no effect: every call that reaches PostHog passes
+`--host https://eu.i.posthog.com`.
+
+The command then runs these steps. A failed step or check stops it, and no
+later step runs:
+
+1. `posthog-cli --version` must print `posthog-cli 0.18.12`. The checks below
+   read the log lines and file markers of that version. After a CLI upgrade the
+   command stops here until `scripts/deploy-worker.ts` has been checked against
+   the new version and its `posthogCliVersion` updated.
+2. The credential check runs `posthog-cli sourcemap upload --stdin` with its
+   input closed from the start, so it gets no folder, and with only the CLI's
+   authentication log enabled. It is not the upload of the Worker's maps in
+   step 5, and it uploads nothing: with no folder, the CLI loads its
+   credentials, reports "nothing to upload" and returns before it resolves a
+   release or calls the PostHog API. The script prints none of its output and
+   goes on only if the run exits 0 and its log names the expected source and
+   project 306340. A missing line, or a line in another format, stops the
+   command.
+   When posthog-cli succeeds here, it sends nothing. When it fails after reading
+   its options, for example because no login session exists, it sends one error
+   event to PostHog's own telemetry for the CLI, hosted at `us.i.posthog.com`
+   whatever `--host` says, not to project 306340. Among other fields, the event
+   holds the command, an error category, its fingerprint and the depth of the
+   error chain, the CLI and client library versions, the operating system with
+   its version and the architecture, whether `CI` is set, whether the CLI's
+   output is a terminal, an ID made for that run, the project ID if one was
+   already loaded, and the CLI's stack trace. The stack trace includes the file
+   paths of the posthog-cli binary under this checkout's `node_modules` and of
+   the system libraries on that trace. PostHog also records the location it
+   derives from the machine's IP address, as it does for the events posthog-cli
+   sends during inject and upload. The event never holds the key or the path of
+   the credentials file.
+3. It bundles the Worker into a new, empty folder of its own,
+   `.wrangler/posthog-worker-` followed by random characters, so another
+   deploy from the same checkout cannot replace or delete this run's bundle.
+   posthog-cli then resolves the release in PostHog and writes a PostHog chunk
+   ID into each script and its source map. This run goes through the gate
+   described below. The command removes that folder when it ends, whether it
+   deployed or stopped; a command killed before then leaves it behind, and it
+   can be deleted. If the removal fails, as when another program on Windows
+   holds one of its files open, the command names the folder and keeps the
+   exit code of its steps.
+4. Every script in that folder must have its source map with the same chunk ID,
+   every map must belong to a script, and `instrumentation.js` must be one of
+   them.
+5. The upload of the bundle's maps, under the current Git commit as release,
+   also through the gate. Its log is printed as written, except the credential
+   line. posthog-cli exits 0 even when it finds nothing to upload, so the upload
+   must also report `Found N chunks to upload` with N equal to the scripts
+   checked in step 4, and no "nothing to upload" warning. It must then log
+   `Upload summary: X chunk(s) uploaded, Y skipped (Z already present, W too
+   large)` where X + Z equals that count: a chunk too large or with an empty map
+   is not uploaded, and the npm launcher exits 0 when a signal kills the
+   posthog-cli binary before the summary.
+6. It deploys that bundle without rebundling.
+
+Arguments given after `npm run worker:deploy --`, such as `--tag`, are passed
+to wrangler in steps 3 and 6, ahead of the command's own `--dry-run --outdir`
+and `--no-bundle --config wrangler.toml`. Wrangler keeps the last value given
+for `--dry-run` or `--bundle`, however it is spelled, so no argument can make
+step 3 publish or step 6 bundle again. It refuses a second `--outdir` in step
+3; a `--config` is refused only in step 6, after the upload, because step 3
+passes none of its own. The command refuses a further `--` among those
+arguments before step 1, because wrangler reads nothing after it as an option,
+the command's own flags included.
+
+Each posthog-cli process reads the login once, when it starts, so a login to
+another project after step 2 would reach steps 3 and 5. The gate keeps such a
+run from sending anything to that project. The command starts posthog-cli with
+`--stdin` and no folder. posthog-cli 0.18.12 loads its credentials, logs their
+source and project, then reads folder paths from its input until the input
+ends; it makes no request to the project its credentials name before that. The
+command writes the bundle folder to that input only after the log line names
+the expected source (the login, or the two variables) and project 306340. In
+every other case it closes the input without a folder and stops: another source
+or project, a line in another format, two credential lines at once, no line
+within 20 seconds, or a process that exits first. A credential line logged
+after the folder was given stops the command once that run ends. With no
+folder, inject exits 1 with "no source files found" and upload exits 0 with
+"nothing to upload", and neither makes a request to that project. The command
+does not kill posthog-cli for a mismatch. A run that logs no line within 20
+seconds and has not exited 15 seconds after its input was closed is killed. The
+login's credential line holds the path of its file, so no credential line is
+printed.
+
+For these two runs the command sets `RUST_LOG` to
+`info,posthog_cli::utils::auth=debug`, whatever value you set, so the gate gets
+its line and step 5 gets the info lines it checks. Both runs also pass
+`--release-mode event`, so `POSTHOG_RELEASE_MODE` cannot change the mode.
+
+The gate has limits:
+
+- It relies on the order posthog-cli 0.18.12 follows internally, read from its
+  source code, not on a guarantee from PostHog. That order has to be checked
+  again before `posthogCliVersion` changes.
+- posthog-cli sends its own telemetry to PostHog's CLI project, described in
+  step 2, not to 306340. Inject queues a usage event before it reads its input,
+  and a refused inject reports its error. Both carry the project ID that run
+  loaded and can leave even when the gate refuses. Once the gate gives it the
+  folder, the upload in step 5 sends a start event with the file count and
+  total bytes, and a finish event that adds the duration, the uploaded and
+  skipped counts and whether it succeeded. When the upload fails, the finish
+  event holds the CLI's full error text, and the upload also reports its error
+  as in step 2. A switch to the standard S3 upload endpoint sends one more
+  event.
+- Killing the command or the npm launcher can leave the posthog-cli binary
+  running. Its input then closes, so if it had not received the folder yet, it
+  exits without a request to a project.
+
+Source maps are required; this procedure cannot deploy without them.
 `npm run worker:deploy:dry-run` packages only and uploads nothing.
 
 Reporting captures exceptions that escape a request, schedule, Durable Object
@@ -400,7 +530,7 @@ that it no longer lists), then read the schedules again.
 Placement is set in `wrangler.toml` (`[placement]`, see the paper store's
 placement above); a change made in the dashboard is undone by the next deploy.
 
-The deployment script bundles into `.wrangler/posthog-worker`, injects and uploads
+The deployment script bundles into a folder of its own under `.wrangler`, injects and uploads
 PostHog source maps, then uploads that bundle with `--no-bundle`. The `Data`
 rules in `wrangler.toml` match `.ttf` and `.png` files in both their source
 folders and the emitted directory, where filenames carry a hash prefix.
