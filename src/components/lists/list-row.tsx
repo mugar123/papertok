@@ -5,7 +5,7 @@ import { useId, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils.ts';
-import { getCategoryLabel } from '../../data/categories.ts';
+import { getPaperFieldClassification } from '../../utils/paper-topic-tags.ts';
 import { areaAccentForPaper } from '../../utils/area-accent.ts';
 import { authorExplorerPath } from '../../utils/explorer-paths.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
@@ -68,7 +68,7 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
       {...props}
       style={{ ...style, '--area-accent': areaAccentForPaper(paper) }}
       meta={[
-        (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
+        getPaperFieldClassification(paper)?.label,
         paper.year ? String(paper.year) : null,
       ]}
       title={<ScientificText>{paper.title}</ScientificText>}

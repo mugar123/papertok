@@ -9,7 +9,7 @@ import type { ComponentProps, ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { db } from '../../services/firebase.ts';
+import { auth, db } from '../../services/firebase.ts';
 import {
   collection,
   getDocs,
@@ -29,7 +29,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { getCategoryLabel } from '../../data/categories.ts';
+import { getPaperFieldClassification } from '../../utils/paper-topic-tags.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
@@ -498,6 +498,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     return listPaper(personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
+  useEffect(() => {
+    if (!user?.uid || auth.currentUser?.uid !== user.uid) return;
+    let copies = mergeListPaperCopies({}, libraryPapers, 'interaction');
+    for (const [id, entry] of Object.entries(personalLibrary)) {
+      if (entry.paper) copies = mergeListPaperCopies(copies, { [id]: entry.paper }, 'interaction');
+    }
+    rememberListPapers(user.uid, copies, 'interaction');
+  }, [libraryPapers, personalLibrary, user?.uid]);
+
   /**
    * The papers of the open list that no copy gives a field, which a provider
    * can be asked (`fieldRequestFor`): one round per opening of the list. Only
@@ -530,6 +539,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       || pendingPaperIds.size > 0 || awaitingSavedIds.size > 0) return;
     fieldRoundList.current = expandedList;
     void readPaperFields(fieldRound).catch(() => ({ fields: {}, failed: askedIds })).then(({ fields, failed }) => {
+      if (activeUid.current !== uid || auth.currentUser?.uid !== uid) return;
       rememberFieldAnswers(uid, askedIds.filter(paperId => !failed.includes(paperId)));
       // The field alone, over the copy held by now. A document that landed
       // since with a field of its own keeps it.
@@ -730,7 +740,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         const snapshot = await patientRead(() => getDocs(documents), {
           attempts: 1, ms: PAPER_METADATA_LOAD_DEADLINE_MS, label: 'list field documents', isAnswer: queryIsAuthoritative,
         });
-        if (metadataRequestId.current !== requestId) return;
+        if (metadataRequestId.current !== requestId || auth.currentUser?.uid !== uid) return;
         const loaded: Record<string, Partial<Paper>> = {};
         snapshot.forEach((item) => {
           const paperId = decodeFirestoreDocId(item.id);
@@ -931,6 +941,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         dropPending(Object.keys(loadedPapers));
         // Kept for the rest of the session, so leaving this list to read a
         // paper and coming back costs nothing.
+        if (auth.currentUser?.uid !== user.uid) return;
         rememberListPapers(user.uid, loadedPapers, source);
         // savedPapers contains the canonical document and must win even if
         // the lighter interaction record finishes later; the record's
@@ -1087,6 +1098,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           const named: Record<string, Partial<Paper>> = {};
           records.forEach(({ id, data }) => { named[id] = { ...data.paper, id }; });
           if (Object.keys(named).length > 0) {
+            if (auth.currentUser?.uid !== user.uid) return;
             rememberListPapers(user.uid, named, 'interaction');
             setSavedPapers((current) => mergeListPaperCopies(current, named, 'interaction'));
           }
@@ -1166,6 +1178,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               .filter((paperId) => loaded[paperId] || !returned.has(paperId)));
           }
           if (Object.keys(loaded).length === 0) return;
+          if (auth.currentUser?.uid !== userId) return;
           rememberListPapers(userId, loaded, request.source);
           setSavedPapers((current) => mergeListPaperCopies(current, loaded, request.source));
         }, (error) => {
@@ -1232,7 +1245,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // `stored`: this copy is what the list saved, not the paper — the page
     // shows its skeleton until the providers answer and keeps the copy only
     // as the fallback (PublicPaperPage).
-    void navigate(path, { state: { paper, stored: true, pageMotion: 'still' } });
+    void navigate(path, { state: { paper, stored: true, storedBy: user?.uid, pageMotion: 'still' } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current!), []);
@@ -2238,10 +2251,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                   <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>
                   {behindIds.map((paperId, index) => {
                     const paper = getPaper(paperId);
-                    const category = paper?.categories?.[0];
+                    const category = paper && getPaperFieldClassification(paper)?.label;
                     return (
                       <div key={paperId} className="list-card-sheet" data-pos={index + 2 - behindIds.length} aria-hidden="true">
-                        {category && <span className="list-card-sheet-cat">{getCategoryLabel(category)}</span>}
+                        {category && <span className="list-card-sheet-cat">{category}</span>}
                         {paper?.title && <span className="list-card-sheet-title"><ScientificText>{paper.title}</ScientificText></span>}
                       </div>
                     );

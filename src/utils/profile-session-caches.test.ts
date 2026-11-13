@@ -111,3 +111,56 @@ test('a savedPapers document read is recorded for its account, an interaction co
   assert.equal(savedDocumentRead('uid-l', '2505.06123'), false, 'another account');
   assert.equal(savedDocumentRead(undefined, '2505.06123'), false);
 });
+
+test('list and favorite fields survive reload and thin responses without another metadata read', async () => {
+  const { listPapersCache } = await import('./profile-session-caches.ts');
+  const { listPaper, listPaperNeedsRead, listPaperNeedsFieldRead } = await import('./list-paper-copies.ts');
+  const { getPaperFieldClassification } = await import('./paper-topic-tags.ts');
+  const { clearUserScopedStorage } = await import('./user-scoped-storage.ts');
+  const data = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, value); },
+    removeItem: (key: string) => { data.delete(key); },
+    key: (index: number) => [...data.keys()][index] ?? null,
+    get length() { return data.size; },
+  };
+  const papers = {
+    '2608.19175': { id: '2608.19175', title: 'State–Generator Geometry', primaryCategory: 'quant-ph', categories: [], classificationVersion: 1, year: 2026 },
+    'openalex:W1': { id: 'openalex:W1', title: 'Biology paper', primaryTopic: { id: 'T1', field: { id: '11', display_name: 'Biology' } }, classificationVersion: 1 },
+  };
+  rememberListPapers('reload-account', papers, 'saved', storage);
+  listPapersCache.delete('reload-account');
+  const restored = readListPapers('reload-account', storage)!;
+  assert.equal(getPaperFieldClassification(restored['2608.19175'])?.label, 'Quantum Physics');
+  assert.equal(restored['2608.19175'].year, 2026);
+  assert.equal(getPaperFieldClassification(restored['openalex:W1'])?.label, 'Biology');
+  assert.deepEqual(readListPapers('other-account', storage), {});
+  const thin = { id: '2608.19175', title: 'State–Generator Geometry', categories: [], year: null };
+  for (const source of ['saved', 'interaction'] as const) {
+    rememberListPapers('reload-account', { [thin.id]: thin }, source, storage);
+    const cached = readListPapers('reload-account', storage)![thin.id];
+    const row = listPaper(thin, cached, undefined)!;
+    assert.equal(getPaperFieldClassification(row)?.label, 'Quantum Physics', source);
+    assert.equal(row.year, 2026, source);
+    assert.equal(listPaperNeedsRead([thin, cached], false), false);
+    assert.equal(listPaperNeedsFieldRead([thin, cached], false), false);
+  }
+  clearUserScopedStorage('reload-account', storage);
+  listPapersCache.delete('reload-account');
+  assert.deepEqual(readListPapers('reload-account', storage), {});
+});
+
+test('ending an account session permits category recovery on signing in again', async () => {
+  const { forgetListPapers, rememberFieldAnswers, fieldAnswered } = await import('./profile-session-caches.ts');
+  const { listPaperNeedsFieldRead } = await import('./list-paper-copies.ts');
+  const paper = { id: '2608.19175', title: 'Paper', year: 2026 };
+  rememberListPapers('repeat-session', { [paper.id]: paper }, 'saved');
+  rememberSavedAnswers('repeat-session', [paper.id]);
+  rememberFieldAnswers('repeat-session', [paper.id]);
+  forgetListPapers('repeat-session');
+  assert.equal(savedDocumentRead('repeat-session', paper.id), false);
+  assert.equal(savedAnswered('repeat-session', paper.id), false);
+  assert.equal(fieldAnswered('repeat-session', paper.id), false);
+  assert.equal(listPaperNeedsFieldRead([paper], savedAnswered('repeat-session', paper.id)), true);
+});

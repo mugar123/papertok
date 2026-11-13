@@ -72,6 +72,12 @@ flowchart TD
   [AuthContext](src/context/auth-context.tsx) owns frontend identity and profile
   lifecycle. User data reaches Firestore through the browser SDK and REST
   services, with authorization enforced by [firestore.rules](firestore.rules).
+  List and favorite paper metadata is cached per Firebase UID in localStorage,
+  bounded to 1 MiB and removed at sign-out. The lists screen reads it synchronously
+  through `readListPapers`; new metadata uses the existing copy merge rules before
+  persisting. Classification versions are checked on restore. List membership,
+  notes and reading state are not part of this cache. Missing classifications
+  still use the existing saved-document and provider recovery flow.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.

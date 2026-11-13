@@ -439,7 +439,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     doi = doi.replace('https://doi.org/', '');
   }
 
-  const journal = legacyPaper.journalRef || openAlexData.journal || '';
+  const journal = legacyPaper.journal || legacyPaper.journalRef || openAlexData.journal || '';
 
   // arXiv links are derived only for an arXiv paper; anything else keeps the
   // links it was stored with, or the DOI resolver, or nothing.
