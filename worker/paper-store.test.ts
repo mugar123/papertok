@@ -2062,8 +2062,9 @@ test('a fresh load that excludes the notable cards shown before continues the ye
   assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
 });
 
-// The app asks for the reader's established interests in its ranking of them
-// (selected ones and the affinities it learned), then the ones added since.
+// The app asks for the reader's established interests area by area, each in
+// its ranking of them (selected ones and the affinities it learned), then the
+// ones added since.
 test('the notable leaves take their turns in the order the request asks them in', async () => {
   const { env } = await notableLeavesCorpus();
   for (const categories of [LEAVES, [...LEAVES].reverse()]) {
@@ -2145,6 +2146,33 @@ test('with a like, the diversity pass orders near copies of the notable papers a
   insert.run(idOf('openalex:W201610'), vector([0.85, 0, 0, 0.527, 0, 0]));
   const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
   assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
+});
+
+// Pablo's ruling of 2026-11-13: with a like, the notable cards follow the
+// interest groups, as the page does.
+test("with a like, each interest group ranks its own notable papers by its own likes, a group without likes takes its years in turns, and the groups take turns by weight", async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // cs.LG's notable papers closest to the like first; cs.CV's 2025 paper is
+  // closer still, but cs.CV's group has no like to rank it by.
+  [['W201811', 0.8], ['W202410', 0.65], ['W201610', 0.5]].forEach(([id, share], index) => {
+    const values = [Number(share), 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - Number(share) ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  insert.run(idOf('openalex:W202520'), vector([0.95, 0, 0, 0, 0, 0.312]));
+  const notable = async (weights: number[]) => (await readFeedPage(env, parseFeedRequest({
+    groups: [
+      { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: weights[0] },
+      { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: [], weight: weights[1] },
+    ],
+    pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW })).filter(paper => paper._notable).map(paper => paper.id);
+  assert.deepEqual(await notable([1, 1]), ['W201811', 'W202521', 'W202410', 'W202421', 'W201610'].map(id => `openalex:${id}`));
+  assert.deepEqual(await notable([2, 1]), ['W201811', 'W202521', 'W202410', 'W201610', 'W202421'].map(id => `openalex:${id}`));
 });
 
 // A rejection says nothing about the years the reader wants: "Not interested"
@@ -3038,10 +3066,12 @@ test('a first page serves the papers, scores and kept order it did before the he
     ids: [
       '2610.01454', '2610.00013', '2610.01462', '2610.01478', '2610.00268', '2610.01482', '2610.01430', '2610.00424',
       '2610.01466', '2610.01450', '2610.00073', '2610.01410', '2610.01654', '2610.00037', '2610.01402',
-      // The notable cards.
-      '2610.01713', '2610.01755', '2610.01740',
+      // The notable cards. Since 2026-11-13 only the cs.LG group's likes rank
+      // cs.LG's notable lane; ranked by all three likes, they were 01713,
+      // 01755 and 01740, and the digest 70caa410…
+      '2610.01713', '2610.01740', '2610.01752',
     ],
-    digest: '70caa410ab647533619e96048ccae4516c6fe79eec95bb9e2396ffa801ea6f45',
+    digest: '1c5484289b126c8740bc3e40385fe7f8d7375cec467572cfdc57f781fd1d48a0',
   });
 });
 

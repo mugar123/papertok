@@ -1390,6 +1390,9 @@ export interface FeedQuery {
   // Every group's and the likes no group names, for exclusion, lookups and notable papers.
   positiveIds: string[];
   groups: FeedGroup[];
+  // Whether the request sends its interest groups (`groups`): For You's main
+  // page and Most recent's. Without them it is one group of its categories.
+  sendsGroups: boolean;
   negativeIds: string[];
   excludedIds: string[];
   page: number;
@@ -1456,15 +1459,16 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * 2,000 most recent papers, so a walk from the top would send again the ones
  * seen before those; one that a page sent and the app never got is sent again.
  * `notable` is the asked categories' notable papers, which no rank holds,
- * walked the same way from `notableWalked`: closest first with a liked
- * vector, otherwise the years in turns (`notableYearsInTurns`), near copies of
- * rejected papers last.
+ * walked the same way from `notableWalked`: with a liked vector, each interest
+ * group's closest first (a group without one, its years in turns) and the
+ * groups in turns by weight, otherwise the years in turns
+ * (`notableYearsInTurns`), near copies of rejected papers last.
  *
  * A `final` order ranked less than 15 minutes ago (`rankedAt`) by the same
- * lanes in the same order, `order`, likes, rejections and interest groups
- * (`rankedBy`, a digest, so the entry holds no liked paper's id) serves the
- * next pages as it is. Otherwise a next page keeps the ranks served and the
- * ones walked past, less the papers liked or rejected since (an exact
+ * lanes in the same order, `order`, likes, rejections, interest groups and
+ * version of their ranking (`rankedBy`, a digest, so the entry holds no liked
+ * paper's id) serves the next pages as it is. Otherwise a next page keeps the
+ * ranks served and the ones walked past, less the papers liked or rejected since (an exact
  * request's: excluded since), and the notable
  * papers walked past, and ranks the rest again; a page that skips seen papers
  * keeps of those the ones `keptPassed` keeps. With the ids the walks read
@@ -1510,9 +1514,17 @@ const RANKING_KEPT_MS = 15 * 60_000;
 // minutes (ENG-103); privacy.html states this lifetime.
 const WALK_KEPT_MS = 2 * 60 * 60_000;
 
+// How a page that sends interest groups, other than a daily one, is ranked
+// from the same inputs: since 2026-11-13 its notable papers go by group. A
+// Worker that ranks such a page otherwise names another version, so neither
+// serves an order the other kept as its own: the next page ranks again after
+// the ranks served and walked past.
+const GROUPS_RANKING = '2026-11-13';
+
 /**
  * The lanes in their order, `order`, the likes, the rejections and the
- * interest groups an order is ranked by, as a digest (`rankedBy`).
+ * interest groups an order is ranked by, and for a page that sends groups the
+ * version of their ranking, as a digest (`rankedBy`).
  */
 async function rankingInputs(lanes: string[], query: FeedQuery) {
   // The groups in their order, which decides the group an area's article goes to.
@@ -1523,10 +1535,12 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
     weight: Math.round(group.weight * 100) / 100,
   }));
   // An exact request ranks the liked and rejected papers among its own; any
-  // other request's inputs are as before it existed.
+  // other request's inputs are as before it existed, but for the version of
+  // the groups' ranking.
   const inputs = JSON.stringify({
     lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups,
     ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
+    ...(query.sendsGroups && query.order !== 'daily' ? { groupsRanking: GROUPS_RANKING } : {}),
   });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -2031,24 +2045,36 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     const dayOf = new Map(offered.map(candidate => [candidate.workId, candidate.arrival!.slice(0, 10)]));
     ranks.sort((a, b) => dayOf.get(b.workId)!.localeCompare(dayOf.get(a.workId)!));
   }
-  // The closest notable papers first, without recency: they are years old by
-  // design. A reader without likes gets them with the years in turns; a
+  // A reader without likes gets the notable papers with the years in turns; a
   // rejection says nothing about the years they want, so it only moves near
   // copies of the rejected papers after the others, the nearest last. The
   // turns are taken before the excluded papers leave, as turns already passed:
   // on every fresh load the app excludes the latest cards it showed, notable
   // ones included, which would otherwise start the turns again from the first
   // year; the seen filter holds the ones before (ENG-166).
+  const yearsInTurns = (rows: Candidate[], rowLanes: string[]) => notableYearsInTurns(rows, rowLanes)
+    .filter(candidate => !excluded.has(candidate.workId))
+    .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
+    .sort((a, b) => b.semanticScore - a.semanticScore);
+  const notableRank = ({ row, semanticScore }: { row: Candidate; semanticScore: number }): RankedCandidate =>
+    ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore });
+  // With a like, as the page: each group ranks the notable papers of its
+  // categories by its own likes, the closest first and without recency, since
+  // they are years old by design, or with the years in turns when it has none
+  // (2026-11-13), and the groups take turns by weight.
   const notable = likes.length
-    ? rankByUnitVectors(offeredNotable, unitOf, likes, negatives, { now, order: 'relevance' })
-    : notableYearsInTurns(notableRead.candidates, notableLanes)
-      .filter(candidate => !excluded.has(candidate.workId))
-      .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
-      .sort((a, b) => b.semanticScore - a.semanticScore);
+    ? interleaveByWeight(query.groups.map((group, index) => {
+      const groupLanes = group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`);
+      const ofGroup = (candidate: Candidate) => candidate.lanes.some(lane => groupLanes.includes(lane));
+      return (groupLikes[index].length
+        ? rankByUnitVectors(offeredNotable.filter(ofGroup), unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
+        : yearsInTurns(notableRead.candidates.filter(ofGroup), groupLanes)).map(notableRank);
+    }), query.groups.map(group => group.weight))
+    : yearsInTurns(notableRead.candidates, notableLanes).map(notableRank);
   timings?.since('rankCpu', step);
   return {
     ranks,
-    notable: notable.map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+    notable,
     excluded: unranked,
     ...(everyRank ? {} : { decided: decidedRanks }),
   };
@@ -2138,10 +2164,11 @@ function unitVectors(vectors: Map<number, Int8Array>) {
  * lanes in turns within each year, each lane's rows newest first. A reader
  * without likes has nothing to rank them by and gets them in this order: one
  * paper of each year in turn, rather than every paper of the newest year first
- * (ENG-166). The lanes take their turns in the order the request asks them
- * in: the app sends the reader's established interests in its ranking of
- * them, then the areas they added since and the app has not learned yet,
- * whatever their weight. The years start their turns from
+ * (ENG-166); so does a group without likes beside one with likes, over its
+ * own lanes. The lanes take their turns in the order the request asks them
+ * in: the app sends the reader's established interests area by area, each in
+ * its ranking of them, then the areas they added since and the app has not
+ * learned yet, whatever their weight. The years start their turns from
  * successive lanes, so consecutive papers often come from different lanes
  * too. Not with one lane;
  * not from the last year of a round to the first of the next when the lane
@@ -2253,6 +2280,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     follows,
     positiveIds,
     groups,
+    sendsGroups: asked.length > 0,
     negativeIds,
     excludedIds,
     // A page that skips seen papers walks on whatever its number, which the
