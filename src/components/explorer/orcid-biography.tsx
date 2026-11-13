@@ -9,11 +9,16 @@ export default function OrcidBiography({ text, expanded, onToggle }: { text: str
     const el = textRef.current;
     const button = buttonRef.current;
     if (!el || !button || expanded) return undefined;
-    const measure = () => { button.hidden = el.scrollHeight <= el.clientHeight + 1; };
+    let live = true;
+    const measure = () => { if (live) button.hidden = el.scrollHeight <= el.clientHeight + 1; };
     measure();
+    void document.fonts.ready.then(measure);
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
   }, [expanded]);
 
   return (
