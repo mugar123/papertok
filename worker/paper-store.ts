@@ -1515,10 +1515,11 @@ const RANKING_KEPT_MS = 15 * 60_000;
 const WALK_KEPT_MS = 2 * 60 * 60_000;
 
 // How a page that sends interest groups, other than a daily one, is ranked
-// from the same inputs: since 2026-11-13 its notable papers go by group. A
-// Worker that ranks such a page otherwise names another version, so neither
-// serves an order the other kept as its own: the next page ranks again after
-// the ranks served and walked past.
+// from the same inputs: since 2026-11-13 its notable papers go by group, and
+// a group without likes takes its categories in turns. A Worker that ranks
+// such a page otherwise names another version, so neither serves an order the
+// other kept as its own: the next page ranks again after the ranks served and
+// walked past.
 const GROUPS_RANKING = '2026-11-13';
 
 /**
@@ -2005,6 +2006,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const members: Candidate[][] = query.groups.map(() => []);
   const groupsOf = groupsOfCandidate(query.groups);
   for (const candidate of offered) groupsOf(candidate).forEach(index => members[index].push(candidate));
+  // A page that sends groups, other than a daily one, ranks a group without
+  // likes with its categories in turns (`categoriesInTurns`).
+  const turnsWithoutLikes = query.sendsGroups && query.order !== 'daily';
   const vectors = new Map<number, Int8Array>();
   const candidateUnit = unitVectors(vectors);
   const unitOf = (candidate: Candidate) => candidateUnit(candidate.workId);
@@ -2025,7 +2029,11 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // so can a daily page, whose days reorder the ranks the scores decide.
     !likes.length && !negatives.length ? true
       : !likes.length && !query.skipsSeen && !offeredNotable.length && query.order !== 'daily'
-        ? readDecidingVectors(readRound, offered, members, unitOf, scorer([], negatives, { now, order: query.order }), decidedRanks)
+        // With the categories in turns, a group's first ranks hold the first
+        // ranks of each of its categories too.
+        ? readDecidingVectors(readRound, offered, turnsWithoutLikes
+          ? [...members, ...members.flatMap((rows, index) => byCategory(rows, query.groups[index].categories, row => row.lanes))]
+          : members, unitOf, scorer([], negatives, { now, order: query.order }), decidedRanks)
         : readRound([...offered, ...offeredNotable].map(candidate => candidate.workId)).then(() => true),
     keepLiked(db, positiveIds, now),
   ]);
@@ -2036,8 +2044,11 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   if (vectorRounds) timings?.count('vectorRounds', vectorRounds);
   step = Date.now();
   // Each group ranked by its own likes, then the page shared by weight.
-  const ranks = interleaveByWeight(members.map((rows, index) => rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order })
-    .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }))), query.groups.map(group => group.weight));
+  const ranks = interleaveByWeight(members.map((rows, index) => {
+    const ranked = rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order });
+    return (turnsWithoutLikes && !groupLikes[index].length ? categoriesInTurns(ranked, query.groups[index].categories) : ranked)
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }));
+  }), query.groups.map(group => group.weight));
   // A daily page goes day by day, the newest arrival's day first (UTC, by the
   // candidate's `arrival`); within a day, the ranks keep the order above (a
   // stable sort): with no recency, by score, then by publication date.
@@ -2086,13 +2097,14 @@ const DECIDING_MARGIN = 100;
 
 /**
  * Reads, a round trip each `readRound`, the vectors of a ranking without likes,
- * `offered` newest first, until the first `ranks` of each group's ranking are decided,
- * and returns whether it read every candidate's. Without likes a candidate
- * scores at most its recency, what it scores without a vector (`scorer`): once
- * `ranks` candidates read come before the first unread one of their group
- * even at that one's most, no unread candidate can reach those ranks, which
- * hold the diversity pool. The ranks past them place the unread candidates
- * as if no rejection were near them.
+ * `offered` newest first, until the first `ranks` of each of `members` are
+ * decided (each group's candidates and, when a group takes its categories in
+ * turns, each of its categories'), and returns whether it read every
+ * candidate's. Without likes a candidate scores at most its recency, what it
+ * scores without a vector (`scorer`): once `ranks` candidates read come before
+ * the first unread one of their list even at that one's most, no unread
+ * candidate can reach those ranks, which hold the diversity pool. The ranks
+ * past them place the unread candidates as if no rejection were near them.
  */
 async function readDecidingVectors(
   readRound: (workIds: number[]) => Promise<unknown>,
@@ -2198,6 +2210,32 @@ function notableYearsInTurns(candidates: Candidate[], lanes: string[]): Candidat
     return inTurns(perLane.map((_, lane) => perLane[(lane + index) % perLane.length]));
   });
   return inTurns(years);
+}
+
+// The rows found under these categories, each under the first of them that
+// lists it, in their order; the others are left out.
+function byCategory<T>(rows: T[], categories: string[], lanesOf: (row: T) => string[]) {
+  const lists = categories.map((): T[] => []);
+  for (const row of rows) {
+    const index = categories.findIndex(category => lanesOf(row).includes(category));
+    if (index >= 0) lists[index].push(row);
+  }
+  return lists;
+}
+
+/**
+ * A group's ranking without likes with its categories in turns (2026-11-13):
+ * the places its papers found under its categories hold go to them in turns,
+ * each category's in the ranking's order (newest first, near copies of a
+ * rejected paper lower), the first category of the group first; a paper
+ * several of them list counts for the first. So a thin category beside busy
+ * ones comes early instead of after their newer papers. A paper found only in
+ * an area's journal lane, the working-paper series or a follow keeps its place.
+ */
+function categoriesInTurns<T extends { row: Candidate }>(ranked: T[], categories: string[]): T[] {
+  const turns = inTurns(byCategory(ranked, categories, rank => rank.row.lanes));
+  let next = 0;
+  return ranked.map(rank => (categories.some(category => rank.row.lanes.includes(category)) ? turns[next++] : rank));
 }
 
 // The lists' items in turns: the first of each list, then the second of each.

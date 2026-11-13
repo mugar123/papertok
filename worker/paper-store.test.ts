@@ -1524,6 +1524,49 @@ test('a group without candidates leaves the page to the other groups, which fill
   assert.equal(served.physics.length + served.economics.length, 15);
 });
 
+// Pablo's ruling of 2026-11-13: a thin leaf beside busy ones in a group
+// without likes is not buried under their newer papers.
+const leafPreprint = (id: string, category: string, hoursAgo: number) => ({
+  ...arxivRecord, id, arxivId: id, title: `A ${category} preprint, ${id}`, allCategories: [category], categories: [category], primaryCategory: category,
+  published: new Date(NOW - hoursAgo * 3_600_000).toISOString(),
+});
+
+test('a group without likes takes its categories in turns, each newest first, and near copies of a rejected paper last within theirs', async () => {
+  const store = corpus();
+  const learning = [1, 2, 3, 4, 5, 6].map(hours => leafPreprint(`2610.7000${hours}`, 'cs.LG', hours));
+  const language = [1.5, 2.5, 3.5].map((hours, index) => leafPreprint(`2610.7100${index + 1}`, 'cs.CL', hours));
+  const neural = [240, 480].map((hours, index) => leafPreprint(`2609.7200${index + 1}`, 'cs.NE', hours));
+  const rejected = leafPreprint('2609.79999', 'cs.RO', 900);
+  await ingestPapers(store.env, [...learning, ...language, ...neural, rejected].map(paper => ({ paper, lanes: [] })), { now: NOW });
+  const embed = (id: string) => store.db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+    .run(Buffer.from(quantize([1, 0, 0]).buffer), `id:${id.toLowerCase()}`);
+  embed(rejected.id);
+  embed(learning[0].id);
+  const [lg1, lg2, lg3, lg4, lg5, lg6] = learning.map(paper => paper.id);
+  const [cl1, cl2, cl3] = language.map(paper => paper.id);
+  const [ne1, ne2] = neural.map(paper => paper.id);
+  const categories = ['cs.LG', 'cs.CL', 'cs.NE'];
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(store.env, parseFeedRequest({ pageSize: 15, ...body }), { now: NOW })).map(paper => paper.id);
+  const groups = [{ categories, exampleCategories: categories, positiveIds: [], weight: 1 }];
+  assert.deepEqual(await served({ groups }), [lg1, cl1, ne1, lg2, cl2, ne2, lg3, cl3, lg4, lg5, lg6]);
+  assert.deepEqual(await served({ groups, negativeIds: [rejected.id] }), [lg2, cl1, ne1, lg3, cl2, ne2, lg4, cl3, lg5, lg6, lg1]);
+  const newestFirst = [lg1, cl1, lg2, cl2, lg3, cl3, lg4, lg5, lg6, ne1, ne2];
+  assert.deepEqual(await served({ categories }), newestFirst, 'a request without groups stays newest first');
+  assert.deepEqual(await served({ groups, order: 'daily' }), newestFirst, 'and so does a daily page');
+});
+
+test("a paper found only in an area's journal lane keeps the place its date gives it among a group's categories taking turns", async () => {
+  const store = corpus();
+  const learning = [1, 2, 30, 31].map((hours, index) => leafPreprint(`2610.7300${index + 1}`, 'cs.LG', hours));
+  const neural = leafPreprint('2609.74001', 'cs.NE', 240);
+  // Published on 21 October, 27 hours before NOW.
+  const article = mapOpenAlexWork({ ...physicsWork, id: 'https://openalex.org/W8300001', doi: 'https://doi.org/10.1000/ai.1', title: 'A journal article of the ai area', publication_date: '2026-10-21' })!;
+  await ingestPapers(store.env, [...[...learning, neural].map(paper => ({ paper, lanes: [] })), { paper: article, lanes: ['area:ai'] }], { now: NOW });
+  const categories = ['cs.LG', 'cs.NE'];
+  const page = await readFeedPage(store.env, parseFeedRequest({ groups: [{ categories, exampleCategories: categories, positiveIds: [], weight: 1 }] }), { now: NOW });
+  assert.deepEqual(page.map(paper => paper.id), [learning[0].id, neural.id, article.id, learning[1].id, learning[2].id, learning[3].id]);
+});
+
 test("a later page with the same interest groups reads the first page's order, and one with another weight ranks again", async () => {
   const { env, db, liked } = await physicsAndEconomics();
   const stored = new Map<string, KeptRanking>();
@@ -3204,7 +3247,10 @@ const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value
 
 // Pages of 30 through the diversity pool's 500 ranks and two far past it,
 // and exploration's own: pages of 2 within its first 30 ranks. The digests are
-// what 65a9b5c5 served, reading every candidate's vector.
+// what 65a9b5c5 served, reading every candidate's vector, but for the pages of
+// groups: since 2026-11-13 a group without likes takes its categories in
+// turns (before, 4ccc5914… and 2fc3b6bd…), and the ranks a page decides are
+// still the ones a read of every vector gives (below).
 test('pages without likes serve what a read of every vector did, across lanes, interest groups, orders and pages', async () => {
   const { env, rejections } = coldPageCorpus();
   const groups = [
@@ -3224,8 +3270,8 @@ test('pages without likes serve what a read of every vector did, across lanes, i
   assert.deepEqual(Object.fromEntries(Object.entries(served).map(([name, pages]) => [name, sha(pages)])), {
     rejections: '3d86ed5c8b122616d27fdc80e15f136f5e3bca7c7842805e6d7f1904140b15c3',
     byRelevance: 'a12ef1b863a294127f79295311f2df64c2c0b29dc6a4e23fb6c527e013b1c0f8',
-    groups: '4ccc59148db408ad5a5e2c3592c3cbab441e630ffa35b92d2fd7e04a4331cc2e',
-    noSignal: '2fc3b6bde0726b46d0a6c38e1f544993cd079582037b89d66ebbc57461c73f22',
+    groups: '1a7cbb1e8ae01c0438666ff27c83214434dfb8fe37f2bc2d198d029bc339dd4a',
+    noSignal: 'a143f974c9052330cf1b7876b6b2d418210898db046e724955ee09391dca8c8f',
     exploration: '7eced58ca13cfc196f5570b9b9c2274980a925d40acb32deb197ebc0998302fe',
   });
 });
