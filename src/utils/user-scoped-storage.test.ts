@@ -298,3 +298,63 @@ test('a corrupt old list is swept and starts nothing', () => {
   assert.equal(storage.getItem('papertok_seenIds:user-a'), null);
   assert.deepEqual([...readSeenPaperIds('user-a', storage)], []);
 });
+
+test('paper cache is bounded, account-scoped and cleared on sign-out', async () => {
+  const { saveStoredListPapers, readStoredListPapers } = await import('./user-scoped-storage.ts');
+  const storage = createStorage();
+  const papers = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`p${i}`, {
+    id: `p${i}`, title: `Paper ${i}`, summary: 'Abstract '.repeat(50), categories: ['quant-ph'], primaryCategory: 'quant-ph',
+  }]));
+  saveStoredListPapers('papers-a', papers, storage, 3000);
+  saveStoredListPapers('papers-b', { p: papers.p0 }, storage);
+  const restored = readStoredListPapers('papers-a', storage);
+  assert.ok(Object.keys(restored).length > 0 && Object.keys(restored).length < 10);
+  assert.equal(restored.p9.title, 'Paper 9', 'the most recent paper fits first');
+  assert.ok((storage.getItem('papertok_listPapers:papers-a')?.length || 0) * 2 <= 3000);
+  clearUserScopedStorage('papers-a', storage);
+  assert.deepEqual(readStoredListPapers('papers-a', storage), {});
+  assert.equal(readStoredListPapers('papers-b', storage).p.title, 'Paper 0');
+});
+
+test('malformed or unavailable paper storage cannot break lists', async () => {
+  const { saveStoredListPapers, readStoredListPapers } = await import('./user-scoped-storage.ts');
+  const storage = createStorage();
+  const key = 'papertok_listPapers:corrupt';
+  for (const raw of ['{', '{}', JSON.stringify({ version: 1, papers: [{ id: 'p', title: 'T', categories: {}, authors: [] }] })]) {
+    storage.setItem(key, raw);
+    assert.deepEqual(readStoredListPapers('corrupt', storage), {});
+  }
+  const blocked = { getItem() { throw new Error('Blocked'); }, setItem() { throw new Error('Full'); }, removeItem() {} };
+  assert.deepEqual(readStoredListPapers('corrupt', blocked), {});
+  assert.doesNotThrow(() => saveStoredListPapers('corrupt', { p: { title: 'T' } }, blocked));
+});
+
+test('an old cached classification is checked before receiving a current version stamp', async () => {
+  const { saveStoredListPapers, readStoredListPapers } = await import('./user-scoped-storage.ts');
+  const storage = createStorage();
+  saveStoredListPapers('legacy-cache', { p: { id: 'openalex:W1', title: 'Old requested category', primaryCategory: 'quant-ph', categories: ['quant-ph'] } }, storage);
+  const key = 'papertok_listPapers:legacy-cache';
+  const data = JSON.parse(storage.getItem(key)!);
+  data.papers[0].classificationVersion = 0;
+  storage.setItem(key, JSON.stringify(data));
+  const copy = readStoredListPapers('legacy-cache', storage).p;
+  assert.equal(copy.primaryCategory, undefined);
+  assert.deepEqual(copy.categories, []);
+});
+
+test('paper metadata keeps its journal across device storage', async () => {
+  const { saveStoredListPapers, readStoredListPapers } = await import('./user-scoped-storage.ts');
+  const storage = createStorage();
+  saveStoredListPapers('journal-cache', { p: { title: 'Paper', journal: 'Nature' } }, storage);
+  assert.equal(readStoredListPapers('journal-cache', storage).p.journal, 'Nature');
+});
+
+test('paper cache preserves canonical author identities across reload', async () => {
+  const { saveStoredListPapers, readStoredListPapers } = await import('./user-scoped-storage.ts');
+  const { authorExplorerPath } = await import('./explorer-paths.ts');
+  const storage = createStorage();
+  saveStoredListPapers('author-cache', { p: { id: 'openalex:W123', title: 'Paper', authors: [{ name: 'John Smith', id: 'https://openalex.org/A123', orcid: '0000-0002-1825-0097' }] } }, storage);
+  const restored = readStoredListPapers('author-cache', storage).p;
+  assert.deepEqual(restored.authors, [{ name: 'John Smith', id: 'https://openalex.org/A123', orcid: '0000-0002-1825-0097' }]);
+  assert.equal(authorExplorerPath(restored.authors[0], restored), '/explorer/author/A123?name=John%20Smith');
+});

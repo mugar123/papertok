@@ -409,7 +409,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={openPdf} onEditPaper={(paper, finalFocus) => setSaveModal({ paper, finalFocus })} />
+                  <ListsPage key={user?.uid} onOpenPdf={openPdf} onEditPaper={(paper, finalFocus) => setSaveModal({ paper, finalFocus })} />
                 </PageTransition>
               </ProtectedRoute>
             }

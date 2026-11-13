@@ -2,6 +2,7 @@ import type { OwnList } from './own-lists.ts';
 import type { Paper } from '../models/paper.ts';
 
 import { mergeListPaperCopies } from './list-paper-copies.ts';
+import { readStoredListPapers, saveStoredListPapers } from './user-scoped-storage.ts';
 import { createSessionCache } from './session-cache.ts';
 
 /**
@@ -13,7 +14,7 @@ import { createSessionCache } from './session-cache.ts';
  * spinner while it happened.
  *
  * Keys carry the uid so no account can ever be served another account's entry.
- * Nothing here survives a reload.
+ * Paper metadata also survives reloads in bounded, account-scoped device storage.
  */
 export const ownListsCache = createSessionCache<OwnList[]>({ maxEntries: 4 });
 /**
@@ -79,8 +80,14 @@ export function forgetOwnLists(uid: string | undefined) {
 }
 
 /** The papers this account's lists screen has already resolved. */
-export function readListPapers(uid: string) {
-  return uid ? listPapersCache.get(uid) : undefined;
+export function readListPapers(uid: string, storage?: Parameters<typeof readStoredListPapers>[1]) {
+  if (!uid) return undefined;
+  let papers = listPapersCache.get(uid);
+  if (!papers) {
+    papers = readStoredListPapers(uid, storage);
+    listPapersCache.set(uid, papers);
+  }
+  return papers;
 }
 
 /**
@@ -103,9 +110,17 @@ export function savedDocumentRead(uid: string | undefined, paperId: string) {
  * screen's own state uses (`mergeListPaperCopies`), so the next visit is
  * seeded with the copy the screen showed, not the one that arrived last.
  */
-export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>, source: 'saved' | 'interaction') {
+export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>, source: 'saved' | 'interaction', storage?: Parameters<typeof saveStoredListPapers>[2]) {
   if (!uid || !papers || typeof papers !== 'object') return;
-  listPapersCache.set(uid, mergeListPaperCopies(listPapersCache.get(uid) ?? {}, papers, source));
+  const merged = mergeListPaperCopies(readListPapers(uid, storage) ?? {}, papers, source);
+  // Move received entries to the end so the bounded device copy keeps them first.
+  const next = { ...merged };
+  for (const id of Object.keys(papers)) {
+    delete next[id];
+    next[id] = merged[id];
+  }
+  listPapersCache.set(uid, next);
+  saveStoredListPapers(uid, next, storage);
   if (source === 'saved') listSavedDocuments.set(uid, new Set([...(listSavedDocuments.get(uid) ?? []), ...Object.keys(papers)]));
 }
 
@@ -141,4 +156,13 @@ export function rememberFieldAnswers(uid: string, paperIds: string[]) {
 
 export function fieldAnswered(uid: string | undefined, paperId: string) {
   return Boolean(uid && listFieldAnswers.get(uid)?.has(paperId));
+}
+
+/** End the account's paper session, including the answers that suppress reads. */
+export function forgetListPapers(uid: string | undefined) {
+  if (!uid) return;
+  listPapersCache.delete(uid);
+  listSavedDocuments.delete(uid);
+  listSavedAnswers.delete(uid);
+  listFieldAnswers.delete(uid);
 }

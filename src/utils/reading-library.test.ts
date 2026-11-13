@@ -297,3 +297,8 @@ test('exports valid-looking BibTeX and RIS records', () => {
   assert.match(ris, /DO {2}- 10\.1234\/example/);
   assert.match(ris, /ER {2}-/);
 });
+
+test('a stored library journal survives adapter normalization', () => {
+  const restored = paperLegacyAdapter(serializeLibraryPaper({ id: 'openalex:W1', title: 'Paper', journal: 'Nature' }));
+  assert.equal(restored.journal, 'Nature');
+});
