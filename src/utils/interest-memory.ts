@@ -5,10 +5,15 @@ import type { CategoryExposure, PositiveExample } from './interaction-profile.ts
 import { rankPreferences } from './preference-ranking.ts';
 
 /**
- * The interest groups the feed asks the Worker for (ENG-137). The interests
- * the reader picked at onboarding, and the ones the app has learned, are one
- * established group of weight 1, ranked by the reader's examples across its
- * lanes as the feed always was.
+ * The interest groups the feed asks the Worker for (ENG-137). Each area the
+ * reader picked at onboarding, or that the app has learned, is an established
+ * group of its own (2026-11-13), ranked by the reader's examples of that area
+ * and of every area they never picked, and weighing the square root of one
+ * plus its own examples: all alike before any example, about 60/40 against an
+ * area without examples after one, 75/25 after eight. No area's examples take
+ * another picked area's places away entirely. The profile keeps at most 24
+ * examples an area (MAX_POSITIVE_EXAMPLES_PER_AREA), so a group weighs at most
+ * 5, within the Worker's 10. Examples count however old they are.
  *
  * Only what the reader adds by editing their interests starts with priority
  * while the app learns it. An added area (every selected subarea of it added)
@@ -18,9 +23,9 @@ import { rankPreferences } from './preference-ranking.ts';
  * area that holds a selected subarea the reader did not add (or a retired
  * one) is a group of its own, weighing from 1 down to 0 against
  * SUBAREA_LEARNED_EXAMPLES and SUBAREA_LEARNED_SHOWN. An added area with no
- * such subarea joins the established group whole once the area is learned,
- * however it learned and even if one of its subareas learned first. Once
- * learned, either joins the established group, so no group ever weighs 0.
+ * such subarea becomes an established group whole once the area is learned,
+ * however it learned and even if one of its subareas learned first; an added
+ * subarea joins its area's group once it learns. So no group ever weighs 0.
  */
 export const NEW_AREA_WEIGHT = 2;
 export const AREA_LEARNED_EXAMPLES = 8;
@@ -142,14 +147,16 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
   const awake = examples.filter(example => !isDormantCategory(example.category, sleeping));
   const examplesOf = (areas: (area: string) => boolean) =>
     awake.filter(example => areas(areaKeyForCategory(example.category) ?? '')).map(example => example.id);
+  const retiredIn = (area: string) => chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
+  const activeLeavesOf = (area: string) =>
+    [...getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id), ...retiredIn(area)];
 
   const progress: Record<string, number> = {};
   const established = new Set<string>();
-  const coldAreas = new Set<string>();
   const cold: PlannedGroup[] = [];
   for (const area of areaKeys) {
-    const retired = chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
-    const activeLeaves = [...getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id), ...retired];
+    const retired = retiredIn(area);
+    const activeLeaves = activeLeavesOf(area);
     // A retired id has no exposure of its own; its examples count for the area.
     // A card that names no subarea (an area lane's article) is shown under the area itself.
     const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), shownIn(area));
@@ -160,7 +167,6 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
 
     if (areaProgress < 1 && subareas.every(subarea => addedIds.has(subarea))) {
       cold.push(coldGroup(subareas, NEW_AREA_WEIGHT - (NEW_AREA_WEIGHT - 1) * areaProgress, false));
-      coldAreas.add(area);
       for (const subarea of subareas) progress[subarea] = areaProgress;
       continue;
     }
@@ -181,17 +187,21 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
     }
   }
 
-  // The established group ranks by every area but the cold-added ones, as the
-  // feed did before groups: an area the reader never picked included, and
-  // nothing they removed.
-  const groups: PlannedGroup[] = established.size === 0 ? cold : [{
-    categories: rankPreferences(chosen.filter(id => established.has(id)), affinities),
-    exampleCategories: getAllLeafCategories().map(leaf => leaf.id).filter(leaf => !dormant.has(leaf)),
-    positiveIds: examplesOf(area => area !== '' && !coldAreas.has(area)),
-    weight: 1,
+  // An established area ranks by its own examples and, as the feed did before
+  // groups, by those of every area the reader never picked, but by nothing
+  // they removed and no other area they picked. Its weight counts its own.
+  // The areas come in the order of their first subarea in the reader's ranking.
+  const neverPicked = (area: string) => area !== '' && !areaKeys.includes(area);
+  const neverPickedLeaves = getAllLeafCategories().filter(leaf => neverPicked(leaf.area) && !dormant.has(leaf.id)).map(leaf => leaf.id);
+  const ranked = rankPreferences(chosen.filter(id => established.has(id)), affinities);
+  const establishedGroups = [...new Set(ranked.map(id => areaKeyForCategory(id)!))].map((area): PlannedGroup => ({
+    categories: ranked.filter(id => areaKeyForCategory(id) === area),
+    exampleCategories: [...activeLeavesOf(area), ...neverPickedLeaves],
+    positiveIds: examplesOf(key => key === area || neverPicked(key)),
+    weight: Math.sqrt(1 + examplesOf(key => key === area).length),
     ownSubarea: false,
-  }, ...cold];
-  return { groups, progress, coldAdded: cold.flatMap(group => group.categories) };
+  }));
+  return { groups: [...establishedGroups, ...cold], progress, coldAdded: cold.flatMap(group => group.categories) };
 }
 
 /**
@@ -235,17 +245,17 @@ function shareLanes(groups: PlannedGroup[], maxLanes: number) {
 
 /**
  * The groups of one feed request. With more groups than lanes the heaviest
- * stay, ties going to the order of the selection. The established group comes
+ * stay, ties going to the order of the selection. The established groups come
  * first, since the Worker gives an area's article to the first on a tie.
  *
  * Each group takes its weight's share of `maxPositives` (at least one when it
- * has any) from its newest examples: a cold group's from its own area, the
- * established group's from every area but the cold-added ones. Neither takes
- * an example of a removed subarea, nor one filed under the key of an area
- * the reader left (no subarea selected, one removed) or under an arXiv
- * category of it with no leaf (isDormantCategory); a like of a subarea of
- * that area the reader never picked still ranks. Examples of no area fill
- * whatever room the groups leave.
+ * has any) from its newest examples: a cold group's from its own area, an
+ * established group's from its own area and every area the reader never
+ * picked. Neither takes an example of a removed subarea, nor one filed under
+ * the key of an area the reader left (no subarea selected, one removed) or
+ * under an arXiv category of it with no leaf (isDormantCategory); a like of a
+ * subarea of that area the reader never picked still ranks. Examples of no
+ * area fill whatever room the groups leave.
  */
 export function planInterestGroups(
   input: InterestMemoryInput,
