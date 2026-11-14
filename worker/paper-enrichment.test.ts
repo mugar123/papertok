@@ -490,7 +490,7 @@ test('a failure at the last scheduled retry leaves the paper to be asked again t
   assert.equal(stored(db)['openalex:W4500000005'].paper.abstract, LATE_ABSTRACT);
 });
 
-test('one Crossref call that times out loses only its own papers, which are asked again the next night', async t => {
+test('a Crossref call that times out keeps what the calls before it brought, and its papers are asked again the next night', async t => {
   let calls = 0;
   const asked = recoveryProviders(t, {
     crossref: () => {
@@ -509,6 +509,42 @@ test('one Crossref call that times out loses only its own papers, which are aske
   assert.equal(workIds.length, 1);
   assert.equal(fromCrossref(), 21);
 });
+
+// In an outage every call waits out its deadline, so a step that went on
+// asking would run past its time limit.
+const timedOut = () => {
+  throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+};
+const OUTAGES = [
+  {
+    source: 'Crossref', hostname: 'api.crossref.org', papers: 41,
+    fields: (n: number) => ({ doi: `https://doi.org/10.5555/outage-${n}` }),
+    idsAsked: (request: Asked) => request.url.searchParams.get('filter')?.split(',') ?? [],
+  },
+  {
+    source: 'Europe PMC', hostname: 'www.ebi.ac.uk', papers: 101,
+    fields: (n: number) => ({ ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43000000 + n}` } }),
+    idsAsked: (request: Asked) => request.url.searchParams.get('query')?.match(/EXT_ID:\d+/g) ?? [],
+  },
+];
+for (const { source, hostname, papers, fields, idsAsked } of OUTAGES) {
+  test(`a ${source} that times out is asked once in a step, and every paper it did not answer is asked again the next night`, async t => {
+    let down = true;
+    const asked = recoveryProviders(t, {
+      crossref: () => (down ? timedOut() : Response.json({ message: { items: [] } })),
+      europePmc: () => (down ? timedOut() : Response.json({ resultList: { result: [] } })),
+    });
+    // Nine days old: without the outage, the next ask would come at 16 days.
+    const { env } = await listedCorpus(Array.from({ length: papers }, (_, n) => listedWork(100 + n, '2026-10-23', fields(n))));
+    await enrichPending(env, 500, NIGHT);
+    assert.equal(askedOf(asked, hostname).length, 1);
+    down = false;
+    asked.length = 0;
+    const { workIds } = await enrichPending(env, 500, NIGHT + DAY_MS);
+    assert.equal(workIds.length, papers);
+    assert.equal(new Set(askedOf(asked, hostname).flatMap(idsAsked)).size, papers);
+  });
+}
 
 test('the PubMed id OpenAlex gives a paper brings its Europe PMC abstract in the same pass', async t => {
   const asked = recoveryProviders(t, {

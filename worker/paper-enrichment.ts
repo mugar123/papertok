@@ -154,11 +154,12 @@ async function iCiteMetrics(env: EnrichEnv, pmids: string[]) {
   return byPmid;
 }
 
-/** Europe PMC's record of each PubMed id, and the ids whose search failed. */
+/** Europe PMC's record of each PubMed id, and the ids it did not answer. */
 async function europePmcRecords(pmids: string[]) {
   const records = new Map<string, NonNullable<ReturnType<typeof mapEuropePmcResult>>>();
   const failed = new Set<string>();
-  for (const chunk of chunks(pmids, EUROPE_PMC_CHUNK)) {
+  const searches = chunks(pmids, EUROPE_PMC_CHUNK);
+  for (const [index, chunk] of searches.entries()) {
     const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
     url.searchParams.set('query', `SRC:MED AND (${chunk.map(pmid => `EXT_ID:${pmid}`).join(' OR ')})`);
     url.searchParams.set('resultType', 'core');
@@ -166,12 +167,20 @@ async function europePmcRecords(pmids: string[]) {
     url.searchParams.set('pageSize', String(chunk.length));
     try {
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
-      if (!response.ok) throw new Error(`Europe PMC answered ${response.status}`);
+      if (!response.ok) {
+        // A refusal costs only its own ids.
+        for (const pmid of chunk) failed.add(pmid);
+        continue;
+      }
       const payload = await response.json<{ resultList?: { result?: EuropePmcRecord[] } }>();
       for (const record of (payload?.resultList?.result || []).map(mapEuropePmcResult)) if (record) records.set(record.pmid, record);
     } catch {
-      // A search that fails or times out costs only its own ids.
-      for (const pmid of chunk) failed.add(pmid);
+      // A search that fails or times out ends Europe PMC for the step: in an
+      // outage each later search would wait out its own deadline too. The
+      // records already found are kept; its ids and those of the searches not
+      // sent count as unanswered.
+      for (const pmid of searches.slice(index).flat()) failed.add(pmid);
+      break;
     }
   }
   return { records, failed };
@@ -208,11 +217,12 @@ function crossrefAbstractText(jats: unknown) {
     .replace(/<\/(?:[a-z][\w.-]*:)?(?:p|sec)\s*>/gi, ' '));
 }
 
-/** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI, and the DOIs whose call failed. */
+/** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI, and the DOIs it did not answer. */
 async function crossrefRecords(dois: string[]) {
   const records = new Map<string, CrossrefRecord>();
   const failed = new Set<string>();
-  for (const chunk of chunks(dois, CROSSREF_CHUNK)) {
+  const calls = chunks(dois, CROSSREF_CHUNK);
+  for (const [index, chunk] of calls.entries()) {
     const url = new URL('https://api.crossref.org/works');
     url.search = new URLSearchParams({
       filter: chunk.map(doi => `doi:${doi}`).join(','),
@@ -222,7 +232,11 @@ async function crossrefRecords(dois: string[]) {
     }).toString();
     try {
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
-      if (!response.ok) throw new Error(`Crossref answered ${response.status}`);
+      if (!response.ok) {
+        // A refusal costs only its own DOIs.
+        for (const doi of chunk) failed.add(doi);
+        continue;
+      }
       const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown; abstract?: unknown }> } }>();
       for (const work of payload?.message?.items || []) {
         const doi = normalizeDoi(work?.DOI);
@@ -232,9 +246,12 @@ async function crossrefRecords(dois: string[]) {
         records.set(doi, { type, abstract: hasUsableAIAbstract(abstract) ? abstract : undefined });
       }
     } catch {
-      // A call that fails or times out costs only its own DOIs, not the
-      // answers the calls before it brought.
-      for (const doi of chunk) failed.add(doi);
+      // A call that fails or times out ends Crossref for the step: in an
+      // outage each later call would wait out its own deadline too. The
+      // answers the calls before it brought are kept; its DOIs and those of
+      // the calls not sent count as unanswered.
+      for (const doi of calls.slice(index).flat()) failed.add(doi);
+      break;
     }
   }
   return { records, failed };
