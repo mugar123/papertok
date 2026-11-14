@@ -19,8 +19,8 @@ import './page-transition.css';
  * institution left at 600px: the page mounted at 0, and from 58ms to 294ms
  * the browser slid it down 2, 11, 29 … 557, 600 — a vertical travel laid
  * over the reveal's own horizontal one, with the content it was sliding
- * towards only half there. So restoration is ours: instant, in the mount's
- * layout effect, from this map. `manual` is what stops the browser from
+ * towards only half there. So restoration is ours: instant, before the first
+ * frame after mount layout updates, from this map. `manual` stops the browser from
  * doing its own on top. A reload now starts at the top like a new tab does
  * (the feed keeps its own place in sessionStorage regardless).
  */
@@ -142,7 +142,10 @@ export default function PageTransition({ children }: PropsWithChildren) {
   useLayoutEffect(() => {
     if (arrival.current.direction === 0) return;
     const top = arrival.current.direction! < 0 ? (scrollMemory.get(arrival.current.key) ?? 0) : 0;
-    window.scrollTo({ top, behavior: 'instant' });
+    // Child layout effects can add controls such as Read more. Restore after
+    // those commits, before paint, so browser anchoring cannot shift the target.
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top, behavior: 'instant' }));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   // Track the scroll only while present. A layout effect so the listener is
