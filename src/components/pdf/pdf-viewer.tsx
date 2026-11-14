@@ -18,6 +18,7 @@ import FullTextArticle from './full-text-article.tsx';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
 import { PaperDock } from './paper-info.tsx';
+import ZoteroButton from './zotero-button.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -282,6 +283,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                     {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
                   </Button>
                 )}
+                {uid && paper.id && <ZoteroButton key={`${uid}:${paper.id}`} paper={paper} uid={uid} />}
                 {dockUrl && (
                   <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={dockUrl} target="_blank" rel="noopener noreferrer" />}>
                     <ArrowSquareOut size={18} aria-hidden="true" />

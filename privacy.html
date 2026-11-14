@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 12 November 2026.</p>
+      <p class="lp-updated">Last updated 14 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -122,6 +122,11 @@
               <td>Feeds you create: each feed's name and the areas, topics, authors, journals and keywords you put in it</td>
               <td>You choose them</td>
               <td>Showing each feed as a tab after For you, Most recent and Following, and fetching each feed's papers. They are kept with your account and deleted with it</td>
+            </tr>
+            <tr>
+              <td>If you connect Zotero: an encrypted access key to your Zotero library, your Zotero user number and username, and, for each paper you send, the keys and versions of its Zotero item and note</td>
+              <td>Zotero, when you connect it</td>
+              <td>Sending a paper and your highlights to your Zotero library when you ask, and updating them instead of adding copies</td>
             </tr>
             <tr>
               <td>Comments and content reports from earlier versions of PaperTok</td>
@@ -240,6 +245,19 @@
         you to email updates.
       </p>
 
+      <h2>Zotero</h2>
+      <p>
+        Connecting Zotero takes you to zotero.org, where you allow PaperTok to read and write
+        your personal Zotero library, including its notes. Group libraries are not included. Zotero then gives
+        PaperTok an access key, which is stored encrypted and is only used when you press
+        <strong>Send to Zotero</strong> while reading a paper. Each send gives Zotero the paper's
+        citation (title, authors, date, identifiers, abstract and link) and the highlights and
+        notes you made on that paper, as one note. Highlights made by the AI are not sent.
+        The quotes come from PaperTok's plain-words version, and the note says so. Disconnecting
+        in <strong>Settings → Profile</strong> deletes the key, and you can also revoke it at
+        zotero.org. What you already sent stays in your Zotero library.
+      </p>
+
       <h2>Email updates</h2>
       <p>
         If you turn them on, PaperTok emails you what is new from the authors, topics,
@@ -287,6 +305,7 @@
         paper. Creating or opening one of your feeds records the order it uses; creating
         one also records how many areas or topics, authors and keywords it holds. Deleting
         one records only that it happened. No event records a feed's name or what is in it.
+        Sending a paper to Zotero records only whether it was sent, not which paper.
         Feed diagnostics record load starts, duration, result, initial loads versus
         refreshes or additional pages, automatic retries, and the web and server versions.
         They contain no paper identifiers or interests.
@@ -438,6 +457,7 @@
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
+        <li><strong>Zotero</strong> — only if you connect it: the papers and highlights you send to your library.</li>
         <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
       </ul>
 
@@ -447,7 +467,7 @@
         <strong>Settings → Account → Delete account</strong>. That deletes your lists, your
         highlights, your plain-words summaries, what you follow, your interactions with
         papers and the lists of papers you viewed, your preferences, the record of the latest
-        policy announcement you were shown, the email subscription and the sign-in account, along
+        policy announcement you were shown, the email subscription, your Zotero connection and the sign-in account, along
         with what earlier versions of PaperTok kept for you: your
         public profile, the photo you uploaded, the people you followed, your comments, the
         content reports you filed and those filed about your comments. The feed order the

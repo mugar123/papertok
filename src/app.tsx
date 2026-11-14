@@ -40,6 +40,8 @@ import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
+// Loaded eagerly: it removes the OAuth verifier from the address before routing or analytics read it.
+import './services/zotero-service.ts'
 import './app.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -60,6 +62,7 @@ import './app.css'
 // never suspend at all.
 
 const InstitutionVerification = lazyWithPreload(() => import('./components/institution/institution-verification.tsx'))
+const ZoteroCallback = lazyWithPreload(() => import('./components/zotero/zotero-callback.tsx'))
 const OnboardingFlow = lazyWithPreload(() => import('./components/onboarding/onboarding-flow.tsx'))
 const ListsPage = lazyWithPreload(() => import('./components/lists/lists-page.tsx'))
 const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'))
@@ -369,6 +372,7 @@ function AppContent() {
               ProtectedRoute sends a visitor on from there. */}
           <Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />
           <Route path="/institution/verify" element={<InstitutionVerification />} />
+          <Route path="/zotero/callback" element={<ZoteroCallback />} />
           <Route path="/login" element={<LoginRedirect />} />
           {/* Signed out, the onboarding is the welcome, and it ends in a
               sign-up: there is no guest feed. Signed in, it is the account's

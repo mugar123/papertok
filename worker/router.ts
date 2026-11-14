@@ -25,6 +25,7 @@ import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.ts';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
+import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
 import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
@@ -309,6 +310,24 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       return json({ code: known ? error.code : 'INSTITUTION_LINK_FAILED' }, known ? error.status : 502, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
+      });
+    }
+  }
+  if (ZOTERO_PATHS.has(url.pathname)) {
+    // The OAuth callback is derived from this Origin, so it must be one of ours.
+    if (!origin || !allowedOrigins(env).has(origin)) {
+      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+    }
+    try {
+      return json(await handleZoteroRequest(request, env, origin), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
+    } catch (error) {
+      captureWorkerException(error);
+      const known = error instanceof ZoteroError || error instanceof WorkerAuthError;
+      if (!known) console.error('Zotero request failed', error);
+      return json({ code: known ? error.code : 'ZOTERO_FAILED' }, known ? error.status : 502, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        ...(error instanceof ZoteroError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
       });
     }
   }

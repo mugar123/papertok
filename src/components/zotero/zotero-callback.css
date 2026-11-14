@@ -1,0 +1,13 @@
+.zotero-callback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-primary);
+}
+
+.zotero-callback-state {
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}

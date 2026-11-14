@@ -40,6 +40,8 @@ const USER_SUBCOLLECTIONS = Object.freeze([
   'settings',
   'profileStash',
   'aggregates',
+  'zotero',
+  'zoteroItems',
   'rateLimits',
   'summaries',
   'summaryHistory',

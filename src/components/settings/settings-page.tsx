@@ -46,6 +46,7 @@ import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
+import ZoteroSettings from './zotero-settings.tsx';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
@@ -342,6 +343,8 @@ function ProfileAccountPage() {
           <InstitutionDialog open={institutionOpen} onOpenChange={setInstitutionOpen} />
         </div>
       </section>
+
+      {user && <ZoteroSettings key={user.uid} uid={user.uid} />}
 
       <section className="settings-section" aria-labelledby="settings-danger-heading">
         <SectionHeading id="settings-danger-heading" title={copy.dangerZone} description={copy.dangerZoneDescription} />
