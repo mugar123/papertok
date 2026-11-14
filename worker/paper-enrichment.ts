@@ -8,6 +8,7 @@ import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichme
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
 import { normalizeScientificMarkup } from '../src/utils/latex.ts';
+import { typeHasAbstract } from '../src/utils/open-alex-abstract.ts';
 import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
@@ -22,8 +23,8 @@ import { fetchArxivPapers } from './paper-sources.ts';
 // What the feed used to add to every page it showed, added once to each stored
 // paper instead: OpenAlex's citations, topics, authors and access; iCite's and
 // Europe PMC's for PubMed papers; Crossref's type for OpenAlex's own records,
-// which drops books; the abstracts OpenAlex's and PubMed's records lack. The
-// same mappers and merges the browser ran.
+// which drops books; the abstracts the sources' records lack, asked again
+// while a paper is young. The same mappers and merges the browser ran.
 
 const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
 const DAY_MS = 86_400_000;
@@ -33,6 +34,16 @@ const RETRY_DAYS_PER_MISS = 3;
 const MAX_MISSES = 3;
 // A paper enriched this long ago is asked again for its counts, after the rest.
 const REFRESH_DAYS = 14;
+// A paper stored without an abstract is asked again each time it passes one of
+// these ages, in days from its date, after its last enrichment: about five
+// asks in its first two and a half weeks, while OpenAlex, PubMed and Semantic
+// Scholar can still add an abstract their first records lacked. After the
+// last, only the refresh asks again.
+const ABSTRACT_RETRY_DAYS = [1, 2, 4, 8, 16];
+// The OpenAlex calls a night's abstract retries may make, out of the run's
+// share (paper-harvest.ts): about 15,000 papers asked by their OpenAlex ids.
+// Each step's retries are counted as if they were asked apart.
+const ABSTRACT_RETRY_UNITS = 300;
 // 25 arXiv ids are 50 landing-page values, the most one OpenAlex filter takes.
 const ARXIV_CHUNK = 25;
 const ID_CHUNK = 50;
@@ -43,7 +54,7 @@ const CROSSREF_CHUNK = 20;
 const S2_RECOVERY_BATCH = 500;
 
 type EnrichEnv = StoreEnv & WorkerEnv;
-interface Row { id: number; paper: string; enrich_misses: number }
+interface Row { id: number; paper: string; enrich_misses: number; published: string; enriched_at: string | null }
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 
@@ -98,18 +109,22 @@ async function openAlexChunk(env: EnrichEnv, filter: string) {
   }
 }
 
-/** OpenAlex's enrichment of each paper, keyed as `getOpenAlexEnrichmentId` names it. */
-async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
+/** The filters OpenAlex is asked for these ids, as `getOpenAlexEnrichmentId` names them: one call each. */
+function openAlexRequests(ids: string[]) {
   const arxivIds = ids.filter(id => !id.startsWith('doi:') && !id.startsWith('openalex:'));
   const dois = ids.filter(id => id.startsWith('doi:')).map(id => id.slice(4));
   const openAlexIds = ids.filter(id => id.startsWith('openalex:')).map(id => id.slice('openalex:'.length));
-  const filters = [
+  return [
     ...openAlexFilters('locations.landing_page_url', arxivIds.map(id => `http://arxiv.org/abs/${id}|https://arxiv.org/abs/${id}`), ARXIV_CHUNK),
     ...openAlexFilters('doi', dois, ID_CHUNK),
     ...openAlexFilters('openalex', openAlexIds, ID_CHUNK),
   ];
+}
+
+/** OpenAlex's enrichment of each paper, keyed as `getOpenAlexEnrichmentId` names it. */
+async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
   const byId: Record<string, Partial<Paper>> = {};
-  for (const filter of filters) {
+  for (const filter of openAlexRequests(ids)) {
     for (const work of await openAlexChunk(env, filter)) {
       const mapped = mapOpenAlexEnrichmentWork(work);
       if (!mapped) continue;
@@ -139,20 +154,27 @@ async function iCiteMetrics(env: EnrichEnv, pmids: string[]) {
   return byPmid;
 }
 
+/** Europe PMC's record of each PubMed id, and the ids whose search failed. */
 async function europePmcRecords(pmids: string[]) {
-  const byPmid = new Map<string, NonNullable<ReturnType<typeof mapEuropePmcResult>>>();
+  const records = new Map<string, NonNullable<ReturnType<typeof mapEuropePmcResult>>>();
+  const failed = new Set<string>();
   for (const chunk of chunks(pmids, EUROPE_PMC_CHUNK)) {
     const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
     url.searchParams.set('query', `SRC:MED AND (${chunk.map(pmid => `EXT_ID:${pmid}`).join(' OR ')})`);
     url.searchParams.set('resultType', 'core');
     url.searchParams.set('format', 'json');
     url.searchParams.set('pageSize', String(chunk.length));
-    const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
-    if (!response.ok) continue;
-    const payload = await response.json<{ resultList?: { result?: EuropePmcRecord[] } }>();
-    for (const record of (payload?.resultList?.result || []).map(mapEuropePmcResult)) if (record) byPmid.set(record.pmid, record);
+    try {
+      const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
+      if (!response.ok) throw new Error(`Europe PMC answered ${response.status}`);
+      const payload = await response.json<{ resultList?: { result?: EuropePmcRecord[] } }>();
+      for (const record of (payload?.resultList?.result || []).map(mapEuropePmcResult)) if (record) records.set(record.pmid, record);
+    } catch {
+      // A search that fails or times out costs only its own ids.
+      for (const pmid of chunk) failed.add(pmid);
+    }
   }
-  return byPmid;
+  return { records, failed };
 }
 
 interface CrossrefRecord { type?: string; abstract?: string }
@@ -186,9 +208,10 @@ function crossrefAbstractText(jats: unknown) {
     .replace(/<\/(?:[a-z][\w.-]*:)?(?:p|sec)\s*>/gi, ' '));
 }
 
-/** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */
+/** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI, and the DOIs whose call failed. */
 async function crossrefRecords(dois: string[]) {
   const records = new Map<string, CrossrefRecord>();
+  const failed = new Set<string>();
   for (const chunk of chunks(dois, CROSSREF_CHUNK)) {
     const url = new URL('https://api.crossref.org/works');
     url.search = new URLSearchParams({
@@ -197,28 +220,33 @@ async function crossrefRecords(dois: string[]) {
       rows: String(chunk.length),
       mailto: 'app@papertok.io',
     }).toString();
-    const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
-    if (!response.ok) continue;
-    const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown; abstract?: unknown }> } }>();
-    for (const work of payload?.message?.items || []) {
-      const doi = normalizeDoi(work?.DOI);
-      if (!chunk.includes(doi)) continue;
-      const type = typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type) ? work.type : undefined;
-      const abstract = crossrefAbstractText(work?.abstract);
-      records.set(doi, { type, abstract: hasUsableAIAbstract(abstract) ? abstract : undefined });
+    try {
+      const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
+      if (!response.ok) throw new Error(`Crossref answered ${response.status}`);
+      const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown; abstract?: unknown }> } }>();
+      for (const work of payload?.message?.items || []) {
+        const doi = normalizeDoi(work?.DOI);
+        if (!chunk.includes(doi)) continue;
+        const type = typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type) ? work.type : undefined;
+        const abstract = crossrefAbstractText(work?.abstract);
+        records.set(doi, { type, abstract: hasUsableAIAbstract(abstract) ? abstract : undefined });
+      }
+    } catch {
+      // A call that fails or times out costs only its own DOIs, not the
+      // answers the calls before it brought.
+      for (const doi of chunk) failed.add(doi);
     }
   }
-  return records;
+  return { records, failed };
 }
 
 /**
  * Semantic Scholar's abstracts for up to S2_RECOVERY_BATCH DOIs, in one batch
- * call within the `s2` allowance readers' related papers spend. A refused
- * reservation sends nothing; a refused or failed call recovers nothing.
+ * call within the `s2` allowance readers' related papers spend, or null when
+ * it did not answer. A refused reservation sends nothing.
  */
-async function semanticScholarAbstracts(env: EnrichEnv, dois: string[]): Promise<Partial<Paper>[]> {
-  const asked = dois.slice(0, S2_RECOVERY_BATCH);
-  if (!(await reserveInternalCall('/enrich/s2', env))) return [];
+async function semanticScholarAbstracts(env: EnrichEnv, asked: string[]): Promise<Partial<Paper>[] | null> {
+  if (!(await reserveInternalCall('/enrich/s2', env))) return null;
   const response = await fetchWithDeadline('https://api.semanticscholar.org/graph/v1/paper/batch?fields=externalIds,abstract', {
     method: 'POST',
     headers: {
@@ -229,7 +257,7 @@ async function semanticScholarAbstracts(env: EnrichEnv, dois: string[]): Promise
     },
     body: JSON.stringify({ ids: asked.map(doi => `DOI:${doi}`) }),
   }, 15_000);
-  if (!response.ok) return [];
+  if (!response.ok) return null;
   const payload = await response.json<Array<{ externalIds?: { DOI?: unknown }; abstract?: unknown } | null>>();
   // An unknown id answers null; a record names the DOI it is for.
   return (Array.isArray(payload) ? payload : []).flatMap(record => {
@@ -239,50 +267,137 @@ async function semanticScholarAbstracts(env: EnrichEnv, dois: string[]): Promise
   });
 }
 
-interface PendingRow extends Row { refresh: boolean }
+// A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
+// can hold the journal's article as a work of its own, without the arXiv
+// location, and only that work then says it is retracted. Only the
+// retraction is taken from it. Up to 50 such papers a call, fewer when their
+// DOIs are long (`openAlexFilters`), in the same budget.
+const journalDoiOf = (paper: Paper) => (getOpenAlexEnrichmentId(paper).includes(':') ? '' : normalizeEnrichmentDoi(paper.doi));
+const openAlexIdsOf = (paper: Paper) => {
+  const journalDoi = journalDoiOf(paper);
+  return [getOpenAlexEnrichmentId(paper), journalDoi ? `doi:${journalDoi}` : ''].filter(Boolean);
+};
 
-async function pendingRows(db: D1Database, limit: number, now: number): Promise<PendingRow[]> {
-  const { results: fresh } = await db.prepare(`SELECT id, paper, enrich_misses FROM works
+/**
+ * What a night's abstract retries may still do: the OpenAlex calls left to
+ * them, none once every paper due has been asked, and the last paper asked
+ * (its `published` and id), after which a later step of the night goes on, so
+ * a paper whose sources failed is not asked twice in one night.
+ */
+export interface AbstractRetries { units: number; after: { published: string; id: number } | null }
+
+// new: never enriched; missed: an OpenAlex miss whose wait is over; retry:
+// still without an abstract at one of ABSTRACT_RETRY_DAYS; refresh: counts
+// older than REFRESH_DAYS.
+interface PendingRow extends Row { kind: 'new' | 'missed' | 'retry' | 'refresh' }
+
+// Whether an enrichment of the paper has been counted: a first enrichment that
+// a failed source cut short leaves the paper's own date as its enrichment date
+// (`enrichPending`). Both are ISO 8601 strings in UTC.
+const counted = (row: Row) => Boolean(row.enriched_at && row.enriched_at > row.published);
+
+/**
+ * The papers due an abstract retry, newest first after `retries.after`, and as
+ * many as the night's OpenAlex units allow. Due: no abstract, by the SQL test
+ * of `harvestLane`'s renewal (paper-sources.ts), since the mappers'
+ * placeholder is shorter than the 40 characters of `isPlausibleAbstract`; an
+ * enrichment counted in the last REFRESH_DAYS, since an older one is the
+ * refresh's; and one of ABSTRACT_RETRY_DAYS passed since then. A paper whose
+ * type has no abstract (`typeHasAbstract`) is passed over.
+ */
+async function abstractRetries(db: D1Database, limit: number, now: number, { units, after }: AbstractRetries) {
+  const daysAgo = (days: number) => new Date(now - days * DAY_MS).toISOString();
+  const [before, beforeId] = after ? [after.published, after.id] : [daysAgo(ABSTRACT_RETRY_DAYS[0]), Number.MAX_SAFE_INTEGER];
+  const { results } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
+    WHERE published > ? AND published <= ? AND (published < ? OR id < ?)
+      AND enrich_misses = 0 AND enriched_at > ?
+      AND LENGTH(COALESCE(paper ->> '$.abstract', '')) < 40
+      AND EXISTS (SELECT 1 FROM json_each(?) age WHERE julianday(enriched_at) < julianday(published) + age.value
+        AND julianday(published) + age.value <= julianday(?))
+    ORDER BY published DESC, id DESC LIMIT ?`)
+    .bind(daysAgo(REFRESH_DAYS + ABSTRACT_RETRY_DAYS.at(-1)!), before, before, beforeId, daysAgo(REFRESH_DAYS),
+      JSON.stringify(ABSTRACT_RETRY_DAYS), new Date(now).toISOString(), limit).all<Row>();
+  const due = results.filter(row => typeHasAbstract((JSON.parse(row.paper) as Paper).publicationType));
+  const ids = due.map(row => openAlexIdsOf(JSON.parse(row.paper) as Paper));
+  const calls = (count: number) => openAlexRequests([...new Set(ids.slice(0, count).flat())]).length;
+  // The most papers whose calls fit in the units left: a paper more never takes fewer calls.
+  let taken = due.length;
+  if (calls(taken) > units) {
+    let low = 0;
+    let high = taken - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (calls(middle) <= units) low = middle;
+      else high = middle - 1;
+    }
+    taken = low;
+  }
+  const spent = calls(taken);
+  const last = results.at(-1);
+  return {
+    rows: due.slice(0, taken).map((row): PendingRow => ({ ...row, kind: 'retry' })),
+    spent,
+    retries: {
+      units: results.length < limit || taken < due.length ? 0 : units - spent,
+      after: last ? { published: last.published, id: last.id } : after,
+    },
+  };
+}
+
+async function pendingRows(db: D1Database, limit: number, now: number, retries: AbstractRetries) {
+  const { results: fresh } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
     WHERE enriched_at IS NULL ORDER BY published DESC LIMIT ?`).bind(limit).all<Row>();
-  const rows: PendingRow[] = fresh.map(row => ({ ...row, refresh: false }));
-  if (rows.length >= limit) return rows;
+  const rows: PendingRow[] = fresh.map(row => ({ ...row, kind: 'new' }));
+  if (rows.length >= limit) return { rows, retries, spent: 0 };
   // Each miss waits RETRY_DAYS_PER_MISS days longer than the one before.
-  const { results: retries } = await db.prepare(`SELECT id, paper, enrich_misses, enriched_at FROM works
+  const { results: misses } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
     WHERE enrich_misses BETWEEN 1 AND ? AND enriched_at < ? ORDER BY enriched_at LIMIT ?`)
     .bind(MAX_MISSES, new Date(now - RETRY_DAYS_PER_MISS * DAY_MS).toISOString(), limit * 4).all<Row & { enriched_at: string }>();
-  rows.push(...retries
+  rows.push(...misses
     .filter(row => Date.parse(row.enriched_at) <= now - row.enrich_misses * RETRY_DAYS_PER_MISS * DAY_MS)
     .slice(0, limit - rows.length)
-    .map(({ id, paper, enrich_misses }) => ({ id, paper, enrich_misses, refresh: false })));
-  if (rows.length >= limit) return rows;
+    .map((row): PendingRow => ({ ...row, kind: 'missed' })));
+  if (rows.length >= limit) return { rows, retries, spent: 0 };
+  // Then the papers still without an abstract, within the night's units.
+  let next = retries;
+  let spent = 0;
+  if (retries.units > 0) {
+    const due = await abstractRetries(db, limit - rows.length, now, retries);
+    rows.push(...due.rows);
+    ({ retries: next, spent } = due);
+  }
+  if (rows.length >= limit) return { rows, retries: next, spent };
   // Last, the counts that have aged: a paper's citations grow in its first months.
-  const { results: stale } = await db.prepare(`SELECT id, paper, enrich_misses FROM works
+  const { results: stale } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
     WHERE enrich_misses = 0 AND enriched_at < ? ORDER BY enriched_at LIMIT ?`)
     .bind(new Date(now - REFRESH_DAYS * DAY_MS).toISOString(), limit - rows.length).all<Row>();
-  rows.push(...stale.map(row => ({ ...row, refresh: true })));
-  return rows;
+  rows.push(...stale.map((row): PendingRow => ({ ...row, kind: 'refresh' })));
+  return { rows, retries: next, spent };
 }
 
 /**
  * Enriches up to `limit` stored papers, newest first: the ones never enriched,
- * then OpenAlex's misses whose wait is over, then counts older than
- * REFRESH_DAYS. Returns the processed works for immediate embedding, and
- * whether OpenAlex stopped the pass. A source that fails leaves its fields
- * unknown; a paper waiting for OpenAlex is not marked done without it.
+ * then OpenAlex's misses whose wait is over, then the papers still without an
+ * abstract that are due a retry, within the night's `retries`, then counts
+ * older than REFRESH_DAYS. Returns the processed works for immediate
+ * embedding, whether OpenAlex stopped the pass, and what the night's retries
+ * may still do. A source that fails leaves its fields unknown; a paper waiting
+ * for OpenAlex is not marked done without it, and a young paper whose abstract
+ * a failed source may hold is asked again the next night.
  */
-export async function enrichPending(env: EnrichEnv, limit: number, now = Date.now()) {
+export async function enrichPending(env: EnrichEnv, limit: number, now = Date.now(), retries: AbstractRetries = { units: ABSTRACT_RETRY_UNITS, after: null }) {
   const db = database(env);
-  const rows = await pendingRows(db, limit, now);
-  if (rows.length === 0) return { workIds: [], stop: true };
+  const pending = await pendingRows(db, limit, now, retries);
+  const { rows } = pending;
+  if (rows.length === 0) return { workIds: [], stop: true, retries: pending.retries };
+  const retried = rows.filter(row => row.kind === 'retry').length;
+  if (retried) console.log('Abstract retries', JSON.stringify({ papers: retried, openAlexCalls: pending.spent }));
   const papers = rows.map(row => JSON.parse(row.paper) as Paper);
-  const asksOpenAlex = rows.map((row, index) => (row.refresh || needsOpenAlexEnrichment(papers[index])) && Boolean(getOpenAlexEnrichmentId(papers[index])));
-  // A paper asked by its arXiv id is also asked by its journal's DOI: OpenAlex
-  // can hold the journal's article as a work of its own, without the arXiv
-  // location, and only that work then says it is retracted. Only the
-  // retraction is taken from it. Up to 50 such papers a call, fewer when their
-  // DOIs are long (`openAlexFilters`), in the same budget.
-  const journalDois = papers.map((paper, index) => (asksOpenAlex[index] && !getOpenAlexEnrichmentId(paper).includes(':')
-    ? normalizeEnrichmentDoi(paper.doi) : ''));
+  // A retry asks OpenAlex as the refresh does, for OpenAlex's own records too:
+  // OpenAlex can add an abstract after it first lists a paper.
+  const asksOpenAlex = rows.map((row, index) => (row.kind === 'retry' || row.kind === 'refresh' || needsOpenAlexEnrichment(papers[index]))
+    && Boolean(getOpenAlexEnrichmentId(papers[index])));
+  const journalDois = papers.map((paper, index) => (asksOpenAlex[index] ? journalDoiOf(paper) : ''));
 
   let openAlex: Record<string, Partial<Paper>> = {};
   let openAlexAnswered = true;
@@ -296,26 +411,29 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     console.warn('OpenAlex enrichment stopped for this run', error.message);
     openAlexAnswered = false;
   }
-  const pmids = [...new Set(papers.map(paper => paper.pmid).filter(Boolean) as string[])];
-  const [iCite, europePmc] = await Promise.all([
-    pmids.length ? iCiteMetrics(env, pmids).catch(() => ({})) : {},
-    pmids.length ? europePmcRecords(pmids).catch(() => new Map()) : new Map(),
-  ]);
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
   // Set after the merge rather than merged as OpenAlex's record: a paper
   // OpenAlex does not know by its arXiv id has had no OpenAlex enrichment, so
   // it does not list OpenAlex in `sources.enrichedBy`, and it counts a miss.
   enriched = enriched.map((paper, index): Paper => (journalDois[index] && paper.publicationStatus !== 'retracted'
     && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' ? { ...paper, publicationStatus: 'retracted' } : paper));
+  // iCite is asked by the PubMed ids the papers were stored with; Europe PMC
+  // also by the ones OpenAlex has just given, so their abstracts come in this pass.
+  const pmids = [...new Set(papers.map(paper => paper.pmid).filter(Boolean) as string[])];
+  const europePmcIds = [...new Set(enriched.map(paper => paper.pmid).filter(Boolean) as string[])];
+  const [iCite, europePmc] = await Promise.all([
+    pmids.length ? iCiteMetrics(env, pmids).catch(() => ({})) : {},
+    europePmcRecords(europePmcIds),
+  ]);
   enriched = mergeICiteEnrichment(enriched, iCite);
-  enriched = mergeEuropePmcEnrichment(enriched, europePmc);
-  // The abstract of an OpenAlex or PubMed paper listed without one, from the
-  // first source that has it: arXiv's own text for an OpenAlex paper on arXiv,
-  // INSPIRE's by DOI for an OpenAlex physics paper, then Crossref's publisher
-  // record, which the type call below brings, and last Semantic Scholar's. Semantic Scholar is one
-  // batch call a step: it shares a one-a-second allowance with readers'
-  // related papers. A source that fails recovers nothing; the paper keeps no
-  // abstract and the refresh asks again.
+  enriched = mergeEuropePmcEnrichment(enriched, europePmc.records);
+  // The abstract of a paper listed without one, from the first source that
+  // has it: arXiv's own text for an OpenAlex paper on arXiv, INSPIRE's by DOI
+  // for an OpenAlex physics paper, then Crossref's publisher record, which the
+  // type call below brings, and last Semantic Scholar's. Semantic Scholar is
+  // one batch call a step: it shares a one-a-second allowance with readers'
+  // related papers. A source that fails recovers nothing, and the paper keeps
+  // no abstract (`interrupted` below).
   const missingArxiv = getMissingArxivAbstractIds(enriched);
   const missingDois = getMissingAbstractDois(enriched);
   const recovered = [
@@ -325,28 +443,45 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   if (recovered.length) enriched = mergeFeedAbstracts(enriched, recovered);
   // Crossref is asked for every OpenAlex paper's type, and for the abstract of
   // any other paper that awaits one (a PubMed paper's); only an OpenAlex
-  // paper takes the type.
+  // paper takes the type. A retry after a counted enrichment asks it for
+  // neither: that enrichment brought Crossref's type and abstract.
+  const asksCrossref = rows.map(row => row.kind !== 'retry' || !counted(row));
   const crossrefDois = [...new Set([...enriched
-    .filter(paper => paper.sources?.primary === 'openalex')
-    .map(paper => normalizeDoi(paper.doi)), ...recoverableAbstractDois(enriched)]
+    .filter((paper, index) => asksCrossref[index] && paper.sources?.primary === 'openalex')
+    .map(paper => normalizeDoi(paper.doi)), ...recoverableAbstractDois(enriched.filter((_, index) => asksCrossref[index]))]
     .filter(doi => doi && !doi.includes(',') && doi.length <= 240))];
-  const crossref = crossrefDois.length ? await crossrefRecords(crossrefDois).catch(() => new Map<string, CrossrefRecord>()) : new Map<string, CrossrefRecord>();
-  enriched = enriched.map(paper => withCrossrefType(paper, paper.sources?.primary === 'openalex' ? crossref.get(normalizeDoi(paper.doi))?.type : undefined));
-  enriched = mergeFeedAbstracts(enriched, [...crossref].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
-  const stillMissing = recoverableAbstractDois(enriched);
-  if (stillMissing.length) enriched = mergeFeedAbstracts(enriched, await semanticScholarAbstracts(env, stillMissing).catch(() => []));
+  const crossref = await crossrefRecords(crossrefDois);
+  enriched = enriched.map(paper => withCrossrefType(paper, paper.sources?.primary === 'openalex' ? crossref.records.get(normalizeDoi(paper.doi))?.type : undefined));
+  enriched = mergeFeedAbstracts(enriched, [...crossref.records].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
+  const semanticScholarDois = recoverableAbstractDois(enriched).slice(0, S2_RECOVERY_BATCH);
+  const semanticScholar = semanticScholarDois.length ? await semanticScholarAbstracts(env, semanticScholarDois).catch(() => null) : [];
+  if (semanticScholar?.length) enriched = mergeFeedAbstracts(enriched, semanticScholar);
+  // A paper still without an abstract that a source which failed was asked for.
+  const failedDois = new Set([...crossref.failed, ...(semanticScholar ? [] : semanticScholarDois)]);
+  const interrupted = enriched.map(paper => !hasUsableAIAbstract(paper.abstract) && typeHasAbstract(paper.publicationType)
+    && (failedDois.has(normalizeDoi(paper.doi)) || europePmc.failed.has(paper.pmid || '')));
 
   await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })), now);
   // A paper OpenAlex should have known but did not counts a miss. One waiting
-  // for an OpenAlex that did not answer is left for the next run.
+  // for an OpenAlex that did not answer is left for the next run. An
+  // enrichment that a failed source interrupted is not counted, so the next
+  // night's retries ask the paper again: a retry keeps the date of the
+  // enrichment counted before it, and a paper younger than REFRESH_DAYS takes
+  // its own date, so its retry also asks Crossref again (`counted`). An older
+  // one's enrichment is counted, and it waits for its next age or its refresh.
+  const at = new Date(now).toISOString();
+  const young = new Date(now - REFRESH_DAYS * DAY_MS).toISOString();
   const marks = rows.flatMap((row, index) => {
     if (asksOpenAlex[index] && !openAlexAnswered) return [];
-    const missed = !row.refresh && asksOpenAlex[index] && needsOpenAlexEnrichment(enriched[index]);
-    return [{ id: row.id, misses: missed ? row.enrich_misses + 1 : 0 }];
+    if ((row.kind === 'new' || row.kind === 'missed') && asksOpenAlex[index] && needsOpenAlexEnrichment(enriched[index])) {
+      return [{ id: row.id, misses: row.enrich_misses + 1, at }];
+    }
+    if (interrupted[index] && row.kind === 'retry') return [];
+    return [{ id: row.id, misses: 0, at: interrupted[index] && row.published > young ? row.published : at }];
   });
   if (marks.length) {
-    await db.batch(chunks(marks, 200).map(chunk => db.prepare(`UPDATE works SET enriched_at = ?, enrich_misses = j.value ->> 'misses'
-      FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(new Date(now).toISOString(), JSON.stringify(chunk))));
+    await db.batch(chunks(marks, 200).map(chunk => db.prepare(`UPDATE works SET enriched_at = j.value ->> 'at', enrich_misses = j.value ->> 'misses'
+      FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(JSON.stringify(chunk))));
   }
-  return { workIds: rows.map(row => row.id), stop: !openAlexAnswered };
+  return { workIds: rows.map(row => row.id), stop: !openAlexAnswered, retries: pending.retries };
 }

@@ -1,4 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import type { AbstractRetries } from './paper-enrichment.ts';
 import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -16,7 +17,10 @@ const EMBED_STEP_PAPERS = 256;
 // 25 to 50 papers per OpenAlex call: a step of 500 is about 20 calls, and a
 // run's ENRICH_STEPS about 3,000 units of the nightly run's 3,700 of the
 // harvest's share of the day (provider-runtime.ts). A larger backlog drains
-// over the next runs.
+// over the next runs. Each step takes the new papers first, then OpenAlex's
+// misses, then the retries of young papers still without an abstract, which
+// spend at most ABSTRACT_RETRY_UNITS (300) of those units a run, then the
+// 14-day refresh (paper-enrichment.ts).
 //
 // The steps of a run execute in one Worker invocation until a wait longer than
 // the Workflows engine's 5-minute grace period, so every step's subrequests
@@ -268,8 +272,13 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
 
   await phase('enrich', async () => {
+    // What the night's abstract retries may still do, from one batch to the
+    // next; the first batch starts them with their whole allowance.
+    let retries: AbstractRetries | undefined;
     for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
-      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
+      const allowed = retries;
+      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS, Date.now(), allowed));
+      retries = enriched.retries;
       for (let start = 0; start < enriched.workIds.length; start += EMBED_STEP_PAPERS) {
         const ids = enriched.workIds.slice(start, start + EMBED_STEP_PAPERS);
         await step.do(`embed enriched ${batch}:${start}`, PAGE_STEP, () => embedWorks(env, ids, undefined));
