@@ -82,6 +82,11 @@ flowchart TD
   recover by its provider identifier and persist the result without creating a save.
   Recovery continues in rounds of at most 60 papers until the open list is covered;
   each paper is attempted at most once per opening, including failed requests.
+  Public-list visits keep their successful response in a tab-local cache of
+  at most 32 history entries. Back renders the cached rows before route scroll
+  restoration and revalidates in the background. A confirmed missing list clears
+  that entry; a failed refresh leaves the already-read list visible. Reloads
+  and new history entries read afresh.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.

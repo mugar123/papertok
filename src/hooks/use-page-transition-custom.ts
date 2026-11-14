@@ -71,8 +71,8 @@ export function usePageTransitionCustom() {
   const feedTabs = useFeedTabs();
   const tabOrder = useMemo(() => feedTabs.map(tab => tab.path), [feedTabs]);
   const lateral = lateralTabDirection(useLocation().pathname, undefined, tabOrder);
-  // A navigation can ask for no transition at all: between a list and a
-  // paper opened from it, one page simply replaces the other.
+  // An explicit still navigation suppresses motion without losing the
+  // history direction used for scroll restoration.
   if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true, historyDirection };
   return { direction: lateral ?? historyDirection, lateral: lateral !== null, historyDirection };
 }

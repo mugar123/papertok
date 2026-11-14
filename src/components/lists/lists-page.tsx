@@ -1241,7 +1241,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // `stored`: this copy is what the list saved, not the paper — the page
     // shows its skeleton until the providers answer and keeps the copy only
     // as the fallback (PublicPaperPage).
-    void navigate(path, { state: { paper, stored: true, storedBy: user?.uid, pageMotion: 'still' } });
+    void navigate(path, { state: { paper, stored: true, storedBy: user?.uid } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current!), []);
@@ -1278,7 +1278,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // that navigation would discard the key used to remember its scroll.
     void navigate(location.pathname, {
       replace: true,
-      state: { openListId: list.id, indexTop: indexReturn.top(), pageMotion: 'still' },
+      state: { openListId: list.id, indexTop: indexReturn.top() },
     });
     void openList(list);
   };
