@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import {
   FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport,
+  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport, unitVector,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { FeedTimings } from './feed-timings.ts';
@@ -2959,6 +2959,21 @@ test('the ranking orders, scores and diversifies every candidate as main did, ti
     }
   }
   assert.equal(compared, 80);
+});
+
+// The orders and digests in this file were served with each stored vector
+// divided by the norm Math.hypot gives over its components. The square root
+// of the sum of squares differs from it in the last bit for some vectors,
+// which can swap two candidates that tie.
+test('a unit vector divides each component by the norm Math.hypot gives, bit for bit, on random int8 vectors', () => {
+  const random = seeded(171);
+  const vectors = Array.from({ length: 2_000 }, () => Int8Array.from({ length: 256 }, () => Math.floor(random() * 256) - 128));
+  const squareRoot = (vector: Int8Array) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  assert.ok(vectors.some(vector => squareRoot(vector) !== Math.hypot(...vector)), 'the two norms differ for some of these vectors');
+  for (const vector of vectors) {
+    const norm = Math.hypot(...vector);
+    assert.deepEqual([...unitVector(vector)], [...vector].map(value => value / norm));
+  }
 });
 
 // A corpus of 1,700 candidates in three categories, 60 notable papers, likes

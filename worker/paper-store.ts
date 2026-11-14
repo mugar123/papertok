@@ -166,9 +166,14 @@ export function readVector(value: unknown) {
 // Normalize once per ranking: MMR compares each candidate many times, and a
 // vector cut by migration 0004 is no longer a unit vector. A loop gives the
 // same quotients as `Float64Array.from` with a callback for about half the
-// CPU, the largest part of ranking 4,000 candidates.
+// CPU, the largest part of ranking 4,000 candidates. The norm is Math.hypot's
+// over the components given as an array-like (`Reflect.apply`, which
+// TypeScript types for a typed array where `Math.hypot.apply` wants a
+// number[]): the same norm, bit for bit, as spreading them, for about a third
+// of the CPU. The square root of the sum of squares differs in the last bit
+// for some vectors, which can swap two candidates that tie.
 export function unitVector(vector: Int8Array) {
-  const norm = Math.hypot(...vector) || 1;
+  const norm: number = Reflect.apply(Math.hypot, null, vector) || 1;
   const unit = new Float64Array(vector.length);
   for (let index = 0; index < vector.length; index += 1) unit[index] = vector[index] / norm;
   return unit;
