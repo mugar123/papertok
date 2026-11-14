@@ -1708,7 +1708,7 @@ const LISTED_UNTIL = '2027-01-15T03:00:00.000Z';
 // The notable candidates of `lanes` at `now`, by paper id.
 async function notableRead({ env, db }: ReturnType<typeof corpus>, lanes: string[], now: number) {
   const paperIds = new Map(rows(db, "SELECT id, paper ->> '$.id' AS paper_id FROM works").map(row => [row.id, String(row.paper_id)]));
-  return (await readNotableCandidates(env.PAPER_STORE!, lanes, now)).candidates.map(({ workId, ...candidate }) => ({ id: paperIds.get(workId)!, ...candidate }));
+  return (await (await readNotableCandidates(env.PAPER_STORE!, lanes, now)).offered()).map(({ workId, ...candidate }) => ({ id: paperIds.get(workId)!, ...candidate }));
 }
 const yearOf = (id: string) => id.slice('openalex:W'.length, 'openalex:W'.length + 4);
 const DAY = 86_400_000;
@@ -1905,7 +1905,7 @@ test('a notable lane read in index order offers the same candidates, in the same
       const expected = asked.map(lane => oracle(lane, now));
       const read = await readNotableCandidates(env.PAPER_STORE!, asked, now);
       const label = `${asked.join(', ')} on ${new Date(now).toISOString().slice(0, 10)}`;
-      assert.deepEqual(read.candidates, inTurns(asked, expected.map(rows => rows.filter(row => row.offered))), label);
+      assert.deepEqual(await read.offered(), inTurns(asked, expected.map(rows => rows.filter(row => row.offered))), label);
       assert.deepEqual([...read.inLanes].sort((a, b) => a - b), [...new Set(expected.flat().map(row => row.work_id))].sort((a, b) => a - b), label);
     }
   }
@@ -2801,6 +2801,64 @@ test("a page reads vectors only to rank by a like, and the candidates' in one ro
   assert.equal(vectorReads(), 1, "a like without a vector: only its own is looked for");
   assert.deepEqual((await page(['2610.02201'])).map(paper => paper.id), ['2610.02200']);
   assert.equal(vectorReads(), 3, "the like's vector, then every candidate's in one round trip");
+});
+
+// Every D1 call a request makes, held until the test lets all the pending ones
+// go at once. Each release is a round trip the request had to wait for before
+// it could go on, so `rounds` counts its round trips one after another.
+function sequentialRoundTrips(t: TestContext, binding: D1Database) {
+  const pending: Array<() => void> = [];
+  const held = <A extends unknown[], R>(send: (...args: A) => Promise<R>) => function (this: unknown, ...args: A) {
+    return new Promise<void>(resolve => { pending.push(resolve); }).then(() => send.apply(this, args));
+  };
+  const statement = Object.getPrototypeOf(binding.prepare('SELECT 1')) as Record<'all' | 'first' | 'run', (...args: unknown[]) => Promise<unknown>>;
+  for (const name of ['all', 'first', 'run'] as const) t.mock.method(statement, name, held(statement[name]));
+  t.mock.method(binding, 'batch', held(binding.batch.bind(binding)));
+  const turn = () => new Promise(resolve => { setImmediate(resolve); });
+  return async <T>(request: Promise<T>) => {
+    let settled = false;
+    const answer = request.finally(() => { settled = true; });
+    let rounds = 0;
+    for (;;) {
+      // The request runs on until it waits on D1 or answers. A digest
+      // (`rankingInputs`) settles some turns later.
+      for (let turns = 0; !settled && pending.length === 0; turns += 1) {
+        if (turns === 10_000) throw new Error('the request neither answered nor called D1');
+        await turn();
+      }
+      if (pending.length === 0) break;
+      rounds += 1;
+      for (const release of pending.splice(0)) release();
+    }
+    return { rounds, answer: await answer };
+  };
+}
+
+// A main feed page reads, in one round trip, the works its ids name with the
+// vectors of its likes and rejections, its candidates and its notable lanes;
+// in the next, the candidates' vectors beside the notable check; then it walks
+// past the seen papers and reads its own rows.
+test('a main feed page, with likes or without, waits on four D1 round trips one after another', async t => {
+  const { env, likes, rejections } = coldPageCorpus();
+  const body = { categories: ['cs.LG', 'cs.CL'], excludedIds: ['2610.00001'], seen: feedSeenFilter(['2610.00002']), skipsSeen: true, notable: 3, pageSize: 15 };
+  const requests = {
+    liked: { ...body, positiveIds: likes, negativeIds: rejections },
+    rejections: { ...body, negativeIds: rejections },
+    cold: body,
+  };
+  const ids = (papers: Paper[]) => papers.map(paper => paper.id);
+  const unheld = {
+    liked: ids(await readFeedPage(env, parseFeedRequest(requests.liked), { now: NOW })),
+    rejections: ids(await readFeedPage(env, parseFeedRequest(requests.rejections), { now: NOW })),
+    cold: ids(await readFeedPage(env, parseFeedRequest(requests.cold), { now: NOW })),
+  };
+  const rounds = sequentialRoundTrips(t, env.PAPER_STORE!);
+  for (const name of ['liked', 'rejections', 'cold'] as const) {
+    const held = await rounds(readFeedPage(env, parseFeedRequest(requests[name]), { now: NOW }));
+    assert.equal(held.answer.length, 18, `${name}: 15 papers and 3 notable ones`);
+    assert.deepEqual(ids(held.answer), unheld[name], `${name}: the same papers as a page whose calls nothing holds`);
+    assert.equal(held.rounds, 4, name);
+  }
 });
 
 test("an enrichment step's papers are written back however long their text, within what one D1 call carries", async () => {

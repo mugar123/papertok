@@ -5,7 +5,9 @@ changed how the page request reads notable lanes and looks up ids
 ([After ENG-150](#after-eng-150)). The feed serves the same papers. The
 notable lookup then gained one row read an id
 ([After the lane re-check](#after-the-lane-re-check)); the tables of After
-ENG-150 are the run before it.
+ENG-150 are the run before it. A ranking's reads later moved into two round
+trips with nearly the same rows read
+([After the ranking's two round trips](#after-the-rankings-two-round-trips)).
 
 ## Context
 
@@ -392,6 +394,28 @@ one listing) has the same 250 ids in its slice and reads 250 more too. A paper
 ADS listed and not yet enriched is not probed, so the figures are an upper
 bound. `measure-lane-reads.test.ts` checks three rows an id on its small
 corpus.
+
+## After the ranking's two round trips
+
+A ranking now reads, in its first D1 round trip, the works its ids name with
+the likes' and rejections' vectors (a key of theirs is read with its work's
+vector, in the batch of the key lookup), its candidates and the notable lanes'
+window; in its second, the candidates' vectors beside the notable lookup and
+the rows of the likes no group names. The script counts that key lookup under
+Keys, so a like's vector rows moved from Vectors to Keys. Full runs on
+2026-11-13, main at `945538f9` and the change on it, with the corpus, readers,
+request and method above:
+
+- the same rows read in 29 of the 30 rows, and one fewer in the sixth reader's
+  page after a dismissal (37,394 to 37,393), whose dismissed paper is an
+  article with one key;
+- with 24 likes, Vectors 48 rows lower and Keys 48 higher (9,700 to 9,652 and
+  718 to 766 for one category), and Vectors returned 24 lower;
+- one D1 call fewer for every page that ranks with likes or a dismissal (11 to
+  10 for one category's first page with likes), and the same papers.
+
+The vectors of the day's notable slice that the lookup then drops are read
+too. Every slice row here is offered, so these runs read none of them.
 
 ## Method
 

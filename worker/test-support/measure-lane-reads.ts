@@ -197,12 +197,14 @@ async function seed(db: D1Database, corpus: Corpus, readers: string[][], now: nu
 }
 
 // What the store's statements read, told apart by their SQL. The notable scan
-// is a lane's window (`published >= ?`) and the lookup of its day's slice.
+// is a lane's window (`published >= ?`) and the lookup of its day's slice. The
+// keys are the lookup of the request's ids, which reads the likes' and
+// rejections' vectors with their keys; the vectors, the candidates'.
 const KINDS = [
   ['notable', /\bwork_lanes WHERE lane = \? AND published >= \?|\badsBibcode\b/],
   ['lanes', /\bFROM work_lanes WHERE lane = \?/],
-  ['vectors', /\bwork_vectors\b/],
   ['keys', /\bwork_keys\b/],
+  ['vectors', /\bwork_vectors\b/],
   ['works', /\b(?:FROM|JOIN|UPDATE) works\b/],
 ] as const;
 type Kind = typeof KINDS[number][0] | 'other';
