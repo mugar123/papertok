@@ -258,8 +258,9 @@ function AppContent() {
   // Only with a session. A guest has none of the taps these chunks are for:
   // the avatar and the gear live in the Navbar, which renders only
   // for a signed-in user (`showNavbar` above), and the overlays open from
-  // cards a guest does not see. The 2.5 s count from the session arriving,
-  // which on a cold load is a few hundred ms after mount; a session that ends
+  // cards a guest does not see, except the shared paper page's reader (warmed
+  // below). The 2.5 s count from the session arriving, which on a cold load
+  // is a few hundred ms after mount; a session that ends
   // before the timer fires cancels it. Keyed on the uid, not the user object:
   // AuthContext calls setUser on every auth event, and a fresh object with
   // the same uid must not re-arm the timer.
@@ -305,6 +306,14 @@ function AppContent() {
     const timer = setTimeout(() => schedule(prefetch), 2500)
     return () => clearTimeout(timer)
   }, [sessionUid])
+
+  // Read article is the shared paper page's main action, for guests too. Warmed
+  // once the paper is on screen, so it does not compete with the page's own load.
+  const preloadReader = useCallback(() => {
+    if (connectionIsFrugal()) return
+    const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
+    schedule(() => { PDFViewer.preload().catch(() => {}) })
+  }, [])
 
   // Not held for the idle prefetch above: a reader opened in the first seconds
   // would still grow its uses pill late. One small request per session.
@@ -580,6 +589,7 @@ function AppContent() {
                   isAuthenticated={Boolean(user)}
                   onAuthRequired={requestAuthentication}
                   onOpenPdf={openPdf}
+                  onPaperShown={preloadReader}
                   onSaveToList={user ? openSaveModal : requestAuthentication}
                 />
               </PageTransition>
