@@ -48,7 +48,9 @@ export interface InterestMemoryInput {
 
 export interface InterestGroup { categories: string[]; exampleCategories: string[]; positiveIds: string[]; weight: number }
 
-interface PlannedGroup extends InterestGroup { ownSubarea: boolean }
+// `neverPickedLeaves`: what an established group adds to its
+// `exampleCategories` when the request sends a like of no area.
+interface PlannedGroup extends InterestGroup { ownSubarea: boolean; neverPickedLeaves: string[] }
 
 // The deselected ids that sleep. An old bundle or the onboarding can leave an
 // id both selected and deselected; the selection is the later intent and wins.
@@ -163,7 +165,7 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
     const areaProgress = progressOf(examplesOf(key => key === area).length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
     const subareas = rankPreferences(chosen.filter(id => areaKeyForCategory(id) === area), affinities);
     const coldGroup = (categories: string[], weight: number, ownSubarea: boolean): PlannedGroup =>
-      ({ categories, exampleCategories: activeLeaves, positiveIds: examplesOf(key => key === area), weight, ownSubarea });
+      ({ categories, exampleCategories: activeLeaves, neverPickedLeaves: [], positiveIds: examplesOf(key => key === area), weight, ownSubarea });
 
     if (areaProgress < 1 && subareas.every(subarea => addedIds.has(subarea))) {
       cold.push(coldGroup(subareas, NEW_AREA_WEIGHT - (NEW_AREA_WEIGHT - 1) * areaProgress, false));
@@ -196,7 +198,8 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
   const ranked = rankPreferences(chosen.filter(id => established.has(id)), affinities);
   const establishedGroups = [...new Set(ranked.map(id => areaKeyForCategory(id)!))].map((area): PlannedGroup => ({
     categories: ranked.filter(id => areaKeyForCategory(id) === area),
-    exampleCategories: [...activeLeavesOf(area), ...neverPickedLeaves],
+    exampleCategories: activeLeavesOf(area),
+    neverPickedLeaves,
     positiveIds: examplesOf(key => key === area || neverPicked(key)),
     weight: Math.sqrt(1 + examplesOf(key => key === area).length),
     ownSubarea: false,
@@ -287,10 +290,14 @@ export function planInterestGroups(
     .map(example => example.id)
     .filter(admit);
 
+  // The Worker places only a like no group names by `exampleCategories`, so
+  // an established group lists the leaves of the areas the reader never
+  // picked only beside one: with eight areas, their copies in every group
+  // pushed the reader's rejections out of the request (2026-11-14).
   return {
     groups: groups.map((group, index): InterestGroup => ({
       categories: group.categories.slice(0, lanes[index]),
-      exampleCategories: [...group.exampleCategories],
+      exampleCategories: [...group.exampleCategories, ...(unassignedPositiveIds.length ? group.neverPickedLeaves : [])],
       positiveIds: positiveIds[index],
       weight: group.weight,
     })),

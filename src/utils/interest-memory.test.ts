@@ -297,8 +297,15 @@ test("an established group draws its examples from its own area and the areas th
     { categories: ['econ.EM'], positiveIds: ['econ.EM-0', 'chem.org-0'] },
     { categories: ['cs.RO'], positiveIds: [] },
   ]);
+  assert.deepEqual([...plan.groups[0].exampleCategories].sort(), [...leaves('physics')].sort());
+});
+
+test('beside a like of no area, an established group also lists the leaves of every area the reader never picked', () => {
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'econ.EM', 'cs.RO'], added: ['cs.RO'], examples: examples('', 1, 'article') }));
   const neverPicked = Object.keys(CATEGORIES).filter(area => !['physics', 'econ', 'cs'].includes(area)).flatMap(leaves);
+  assert.deepEqual(plan.unassignedPositiveIds, ['article-0']);
   assert.deepEqual([...plan.groups[0].exampleCategories].sort(), [...leaves('physics'), ...neverPicked].sort());
+  assert.deepEqual([...plan.groups[2].exampleCategories].sort(), [...leaves('cs')].sort());
 });
 
 test('the cold-added interests are the added ones still learning', () => {
@@ -415,7 +422,8 @@ test('the established group ranks by every area but what the reader removed', ()
   const plan = planInterestGroups(memory({
     selected: ['cs.LG'],
     deselected: ['quant-ph', 'hep-th'],
-    examples: [...examples('chem.org', 2), ...examples('hep-th', 2), ...examples('physics', 2), ...examples('cs.LG', 2)],
+    // The like of no area is the one the Worker places by `exampleCategories`.
+    examples: [...examples('chem.org', 2), ...examples('hep-th', 2), ...examples('physics', 2), ...examples('cs.LG', 2), ...examples('', 1, 'article')],
   }));
   assert.equal(plan.groups.length, 1);
   const [established] = plan.groups;

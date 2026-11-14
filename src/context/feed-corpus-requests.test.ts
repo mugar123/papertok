@@ -364,3 +364,27 @@ test('a full plan leaves room for every rejection and exclusion a request carrie
   assert.equal(body.negativeIds?.length, 24);
   assert.equal(body.excludedIds?.length, 130);
 });
+
+// One area each: eight areas send eight groups.
+const eightAreas = [['quant-ph', 'cond-mat.str-el'], ['cs.RO', 'cs.CR'], ['cs.AI', 'cs.LG'], ['math.AG', 'math.CO'], ['stat.ML', 'stat.ME'], ['econ.EM', 'econ.GN'], ['q-fin.ST', 'q-fin.CP'], ['eess.SP', 'eess.SY']];
+
+// The For You main request of a first page, with every rejection, exclusion
+// and seen paper a reader can carry.
+async function fullMainBody(plan: ReturnType<typeof feedPlanFor>) {
+  const negativeIds = Array.from({ length: 24 }, (_, index) => `openalex:W99${String(index).padStart(8, '0')}`);
+  const excludedIds = Array.from({ length: 200 }, (_, index) => `arxiv:2511.${10000 + index}`);
+  const seen = new Set(Array.from({ length: 2000 }, (_, index) => `arxiv:2510.${10000 + index}`));
+  const [body] = await bodiesOf({ ...mainCorpusRequest(plan, { page: 0, order: 'recent', negativeIds, excludedIds, seen }), notable: 5 });
+  return body;
+}
+
+test('a reader of eight areas with likes in each keeps every rejection and exclusion in the request', async () => {
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: eightAreas.flat(),
+    examples: eightAreas.flatMap(([leaf], area) => [0, 1].map(index => ({ id: `openalex:W4${area}${index}0000000`, category: leaf }))),
+  })));
+  assert.equal(body.groups?.length, 8);
+  assert.equal(body.positiveIds.length, 16);
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});
