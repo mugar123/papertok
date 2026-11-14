@@ -2116,6 +2116,34 @@ test('with a like, the notable cards follow the closest papers, whatever their y
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
 });
 
+// A page with likes ranks its notable papers by closeness, not by the years in
+// turns, so it leaves out the liked, rejected and excluded ones on its own path.
+test('with a like, a notable paper the reader liked or rejected, or the app excludes, is not offered, and the next closest ones are', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // The five closest to the like, closest first. The reader likes the first,
+  // rejects the second and the app excludes the third: three of 2025's, which
+  // would lead the papers that tie even if their vectors were not read.
+  const closest = ['W202511', 'W202521', 'W202510', 'W201811', 'W201610'];
+  closest.forEach((id, index) => {
+    const values = [0.8 - index * 0.15, 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - values[0] ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  const answer = await readFeedPage(env, parseFeedRequest({
+    categories: LEAVES, positiveIds: ['2610.00059', 'openalex:W202511'], negativeIds: ['openalex:W202521'], excludedIds: ['openalex:W202510'],
+    pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW });
+  const notable = answer.filter(paper => paper._notable).map(paper => paper.id);
+  assert.equal(notable.length, 5, 'the five asked for');
+  // The two closest left, then the newest without a vector: 2025's last one.
+  assert.deepEqual(notable.slice(0, 3), ['openalex:W201811', 'openalex:W201610', 'openalex:W202520']);
+  assert.deepEqual(notable.filter(id => ['openalex:W202511', 'openalex:W202521', 'openalex:W202510'].includes(id)), []);
+});
+
 test('with a like, the notable papers it cannot tell apart stay newest first rather than taking the years in turns', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;

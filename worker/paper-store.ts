@@ -1981,10 +1981,13 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
 // Two D1 round trips, one after the other. The first reads the works the
 // request's ids name with the likes' and rejections' vectors, the candidates
 // and the notable lanes' window; the second, the candidates' vectors beside
-// the notable check and the rows of the likes no group names. A page asked
-// by number with rejections alone and notable papers waits for the check
-// before its vectors (`readDecidingVectors`). `decided`: how many first ranks
-// are the ones a read of every vector gives, when the others may not be.
+// the notable check and the rows of the likes no group names. Of the pages
+// that read vectors, those with likes, with `skipsSeen` or with order `daily`
+// read every one beside the check. A page asked by number with rejections
+// alone, notable papers and an order other than `daily` waits for the check,
+// and reads only the vectors that decide its ranks when it offers no notable
+// paper (`readDecidingVectors`). `decided`: how many first ranks are the ones
+// a read of every vector gives, when the others may not be.
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number, timings?: FeedTimings): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number>; decided?: number }> {
   const started = Date.now();
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
@@ -2073,7 +2076,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const groupedLikes = query.groups.map(group => workIdsOf(group.positiveIds));
   const likeGroups = groupsOfLike(query.groups);
   for (const id of ungrouped) {
-    // A row evicted since `findWorks` gives no evidence of its area.
+    // A row evicted since `findWorksWithVectors` gives no evidence of its area.
     const row = ungroupedWorks.get(id);
     const paper = row ? JSON.parse(row.paper) as Partial<Paper> : undefined;
     likeGroups(paper, ungroupedAreaLanes.get(id) ?? []).forEach(index => groupedLikes[index].push(id));
