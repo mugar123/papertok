@@ -1222,8 +1222,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * paper (abstract, actions, related work) and carries a "Read article"
    * button of its own, so nothing is lost and everything else is gained.
    *
-   * Before leaving, the current history entry is re-stamped with the open
-   * list, so coming back restores the papers rather than the list index.
    */
   const openPaperCard = (paper: Partial<Paper>) => {
     // The public paper page when the paper has an address there — a DOI, an
@@ -1239,12 +1237,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (!path) {
       setOverlayPaper(paper as Paper);
       return;
-    }
-    if (expandedList) {
-      void navigate(location.pathname, {
-        replace: true,
-        state: { openListId: expandedList, indexTop: indexReturn.top(), pageMotion: 'still' },
-      });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
     // shows its skeleton until the providers answer and keeps the copy only
@@ -1281,6 +1273,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
 
   const enterList = (list: OwnList) => {
     indexReturn.leave(list.id);
+    autoOpenedListId.current = list.id;
+    // Establish the return entry before a paper opens: replacing it during
+    // that navigation would discard the key used to remember its scroll.
+    void navigate(location.pathname, {
+      replace: true,
+      state: { openListId: list.id, indexTop: indexReturn.top(), pageMotion: 'still' },
+    });
     void openList(list);
   };
 
@@ -2174,9 +2173,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <ListRowAuthors
                               byline
                               paper={paper}
-                              onNavigate={() => {
-                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
-                              }}
                             />
                           )}
                           <ListAbstract paper={paper} />

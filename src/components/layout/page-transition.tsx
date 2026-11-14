@@ -66,14 +66,12 @@ export default function PageTransition({ children }: PropsWithChildren) {
   // asking there answered for the wrong one (see use-page-transition-custom.ts).
   const presenceCustom = usePresenceData() as ReturnType<typeof usePageTransitionCustomValue> | undefined;
   const providerCustom = usePageTransitionCustomValue();
-  const { direction, lateral, still } = presenceCustom ?? providerCustom;
+  const { direction, lateral, still, historyDirection } = presenceCustom ?? providerCustom;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
-  // The history entry this page belongs to, frozen at mount: a replace can
-  // change the key under a mounted page, and the scroll it remembers on the
-  // way out has to be filed under the entry the reader will come back to.
+  // Routes retains the outgoing location during exit. A replace while this
+  // page is present must use its new key when saving the scroll position.
   const { key: locationKey } = useLocation();
-  const locationKeyRef = useRef(locationKey);
   // The window scroll this page had, kept while it is present. Read at the
   // moment it leaves it would already be the value the browser restored on a
   // popstate, and a page that left at 800px would jump to its top for its
@@ -81,7 +79,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
   const scrollYRef = useRef(0);
   // The direction this page ARRIVED with: the reset below runs once, and
   // must not re-run when the context changes to the navigation that ejects it.
-  const arrivalDirection = useRef(direction);
+  const arrival = useRef({ direction: historyDirection, key: locationKey });
   // True once the arrival animation has ended: the page drops its motion
   // attribute, and with it the stacking context it needed while animating.
   const [settled, setSettled] = useState(false);
@@ -142,8 +140,8 @@ export default function PageTransition({ children }: PropsWithChildren) {
   // the entry's key. `instant`, because `html { scroll-behavior: smooth }`
   // would turn either into a visible glide.
   useLayoutEffect(() => {
-    if (arrivalDirection.current === 0) return;
-    const top = arrivalDirection.current! < 0 ? (scrollMemory.get(locationKeyRef.current) ?? 0) : 0;
+    if (arrival.current.direction === 0) return;
+    const top = arrival.current.direction! < 0 ? (scrollMemory.get(arrival.current.key) ?? 0) : 0;
     window.scrollTo({ top, behavior: 'instant' });
   }, []);
 
@@ -167,8 +165,8 @@ export default function PageTransition({ children }: PropsWithChildren) {
     root.style.top = present ? '' : `${-scrollYRef.current}px`;
     if (present) root.style.visibility = '';
     // Filed under the entry the reader may step back to (`scrollMemory`).
-    else rememberScroll(locationKeyRef.current, scrollYRef.current);
-  }, [present]);
+    else rememberScroll(locationKey, scrollYRef.current);
+  }, [present, locationKey]);
 
   // `safeToRemove` is a new function on every AnimatePresence render, so an
   // effect keyed on it would restart the clock on any app state change during
