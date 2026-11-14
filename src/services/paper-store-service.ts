@@ -217,7 +217,13 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // of the group holding the most, so each group keeps its newest longest.
   // An example leaves the flat list and every group together, so both rank by
   // the same ones.
-  while (new TextEncoder().encode(JSON.stringify(body)).byteLength > 16_000) {
+  // The fields the pages of one list differ in count at their longest, so
+  // every page trims the same signals and a later page, or a first page that
+  // `continues`, is served from the order the first one kept instead of
+  // ranking again. Trimmed to the byte, a first page that continued the walk
+  // could send one copy fewer than the page before it (2026-11-14).
+  const pageFields = { page: Number.MAX_SAFE_INTEGER, ...(seen ? { notable: 99, continues: true } : {}) };
+  while (new TextEncoder().encode(JSON.stringify({ ...body, ...pageFields })).byteLength > 16_000) {
     const copy = body.groups ? sharedCopy(body.groups) : null;
     if (copy) copy.group.positiveIds = copy.group.positiveIds.filter(id => id !== copy.id);
     else if (body.negativeIds?.length) body.negativeIds.pop();

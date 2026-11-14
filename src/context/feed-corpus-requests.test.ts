@@ -21,7 +21,7 @@ const shown = (counts: Record<string, number>) =>
 
 // The bodies the feed's requests send to /store/papers.
 async function bodiesOf(...requests: Parameters<typeof fetchCorpusPage>[0][]) {
-  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Array<{ categories: string[] }> }> = [];
+  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Array<{ categories: string[]; positiveIds: string[] }> }> = [];
   for (const request of requests) {
     await fetchCorpusPage(request, {
       apiBase: 'https://papertok-report-api.example',
@@ -417,4 +417,25 @@ test('a reader of ten areas sends every like of an area they never picked, and k
   assert.deepEqual([...body.positiveIds].sort(), [...likes].sort());
   assert.equal(body.negativeIds?.length, 24);
   assert.equal(body.excludedIds?.length, 200);
+});
+
+test('every page of one list ranks by the same likes and rejections when the request is trimmed', async () => {
+  const tenAreas = [...eightAreas, ['bio.gen', 'bio.mol'], ['med.gen', 'med.onco']];
+  const likes = Array.from({ length: 24 }, (_, index) => `10.1000/like.${index}.`.padEnd(40, 'x'));
+  const plan = feedPlanFor(null, 0, memory({ selected: tenAreas.flat(), examples: likes.map(id => ({ id, category: 'chem.anal' })) }));
+  const negativeIds = Array.from({ length: 24 }, (_, index) => `openalex:W99${String(index).padStart(8, '0')}`);
+  const seen = new Set(Array.from({ length: 2000 }, (_, index) => `arxiv:2510.${10000 + index}`));
+  const inputs = (body: Awaited<ReturnType<typeof bodiesOf>>[number]) =>
+    ({ positiveIds: body.positiveIds, negativeIds: body.negativeIds, groups: body.groups?.map(group => group.positiveIds) });
+  // One exclusion three characters longer at a time moves the request across
+  // the 43 bytes of a like's copy, which is what the trim drops first.
+  for (let extra = 0; extra < 45; extra += 3) {
+    const excludedIds = Array.from({ length: 200 }, (_, index) => `arxiv:2511.${10000 + index}${index === 0 ? 'v'.repeat(extra) : ''}`);
+    const request = (page: number, notable: number, continues: boolean) =>
+      ({ ...mainCorpusRequest(plan, { page, order: 'recent', negativeIds, excludedIds, seen }), notable, continues });
+    const [first, resumed, next] = await bodiesOf(request(0, 5, false), request(0, 5, true), request(1, 12, false));
+    assert.ok(first.groups!.every(group => group.positiveIds.length < 24), 'the request is trimmed');
+    assert.deepEqual(inputs(resumed), inputs(first), `a first page that continues the walk, ${extra} characters longer`);
+    assert.deepEqual(inputs(next), inputs(first), `the second page, ${extra} characters longer`);
+  }
 });
