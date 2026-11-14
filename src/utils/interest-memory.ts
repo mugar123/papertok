@@ -252,13 +252,14 @@ function shareLanes(groups: PlannedGroup[], maxLanes: number) {
  * first, since the Worker gives an area's article to the first on a tie.
  *
  * Each group takes its weight's share of `maxPositives` (at least one when it
- * has any) from its newest examples: a cold group's from its own area, an
- * established group's from its own area and every area the reader never
- * picked. Neither takes an example of a removed subarea, nor one filed under
- * the key of an area the reader left (no subarea selected, one removed) or
- * under an arXiv category of it with no leaf (isDormantCategory); a like of a
- * subarea of that area the reader never picked still ranks. Examples of no
- * area fill whatever room the groups leave.
+ * has any) from its newest examples, then the heaviest groups their next ones
+ * in the room left, and each group sends every one of its own the request
+ * holds: a cold group's from its own area, an established group's from its own
+ * area and every area the reader never picked. Neither takes an example of a
+ * removed subarea, nor one filed under the key of an area the reader left (no
+ * subarea selected, one removed) or under an arXiv category of it with no leaf
+ * (isDormantCategory); a like of a subarea of that area the reader never
+ * picked still ranks. Examples of no area fill whatever room the groups leave.
  */
 export function planInterestGroups(
   input: InterestMemoryInput,
@@ -285,6 +286,13 @@ export function planInterestGroups(
   groups.forEach((group, index) => {
     positiveIds[index].push(...group.positiveIds.slice(1, quotas[index]).filter(admit));
   });
+  // Then the heaviest groups fill the room left with their next examples, and
+  // each group takes every one of its own the request holds. Unused, that room
+  // left the reader's main area ranking by 13 of its 24 likes beside four areas
+  // without any, and every group by the same 4 of 24 likes of an area the
+  // reader never picked, since each group's share counted them (2026-11-14).
+  [...groups.keys()].sort((a, b) => groups[b].weight - groups[a].weight || a - b)
+    .forEach(index => positiveIds[index].push(...groups[index].positiveIds.slice(quotas[index]).filter(admit)));
   const unassignedPositiveIds = input.examples
     .filter(example => !areaKeyForCategory(example.category))
     .map(example => example.id)

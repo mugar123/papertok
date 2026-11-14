@@ -132,6 +132,19 @@ export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]
   return [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])].slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
 }
 
+// The copy a request too long drops first: the oldest example the group
+// holding the most shares with another group, which keeps it; none when no
+// two groups share one.
+function sharedCopy(groups: Array<{ positiveIds: string[] }>) {
+  const holders = new Map<string, number>();
+  for (const group of groups) for (const id of new Set(group.positiveIds)) holders.set(id, (holders.get(id) ?? 0) + 1);
+  const shared = (id: string) => holders.get(id)! > 1;
+  const holding = groups.filter(group => group.positiveIds.some(shared));
+  if (holding.length === 0) return null;
+  const group = holding.reduce((most, next) => (next.positiveIds.length > most.positiveIds.length ? next : most));
+  return { group, id: group.positiveIds.findLast(shared)! };
+}
+
 /**
  * A follow's string as the Worker reads it (`text` in src/utils/follow-lanes.ts:
  * whitespace collapsed, trimmed), cut to `max`. The Worker then cuts a query to
@@ -194,14 +207,20 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   };
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
   // Trim new signals before they can push the existing request over 16 KiB.
-  // Trim rejections first so the exclusion snapshot stays stable as they change.
+  // First the copies of an example several groups hold, while one group keeps
+  // it (`sharedCopy`): every established group holds the likes of the areas
+  // the reader never picked (planInterestGroups), and with ten areas and long
+  // ids their copies pushed out every rejection and exclusion.
+  // Then rejections, so the exclusion snapshot stays stable as they change.
   // A grouped request carries each example twice, so with long ids it can
   // still be over. Then examples go: first those of no group, then the oldest
   // of the group holding the most, so each group keeps its newest longest.
   // An example leaves the flat list and every group together, so both rank by
   // the same ones.
   while (new TextEncoder().encode(JSON.stringify(body)).byteLength > 16_000) {
-    if (body.negativeIds?.length) body.negativeIds.pop();
+    const copy = body.groups ? sharedCopy(body.groups) : null;
+    if (copy) copy.group.positiveIds = copy.group.positiveIds.filter(id => id !== copy.id);
+    else if (body.negativeIds?.length) body.negativeIds.pop();
     else if (body.excludedIds.length) body.excludedIds.pop();
     else if (body.groups && body.positiveIds.length) {
       const grouped = new Set(body.groups.flatMap(group => group.positiveIds));

@@ -388,3 +388,17 @@ test('a reader of eight areas with likes in each keeps every rejection and exclu
   assert.equal(body.negativeIds?.length, 24);
   assert.equal(body.excludedIds?.length, 200);
 });
+
+test('a reader of ten areas sends every like of an area they never picked, and keeps every rejection and exclusion', async () => {
+  const tenAreas = [...eightAreas, ['bio.gen', 'bio.mol'], ['med.gen', 'med.onco']];
+  // DOI-length ids, twice as long as arXiv and OpenAlex ones.
+  const likes = Array.from({ length: 24 }, (_, index) => `10.1000/like.${index}.`.padEnd(40, 'x'));
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: tenAreas.flat(),
+    examples: likes.map(id => ({ id, category: 'chem.anal' })),
+  })));
+  assert.equal(body.groups?.length, 10);
+  assert.deepEqual([...body.positiveIds].sort(), [...likes].sort());
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});

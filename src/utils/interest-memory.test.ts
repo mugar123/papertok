@@ -31,11 +31,22 @@ test('an added area keeps its weight of 2 beside an established area its example
   assert.deepEqual(weightsByArea(input), { physics: Math.sqrt(5), econ: 2 });
 });
 
-test('an established group takes its share of the examples and the rest go unused', () => {
-  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 20) }));
-  const physics = plan.groups.find(group => group.categories.includes('quant-ph'))!;
-  // 24 × √21 / (√21 + 2) is 16.7: the sixteen newest.
-  assert.deepEqual(physics.positiveIds, examples('quant-ph', 16).map(example => example.id));
+test('each group takes its share of the examples first, and the heaviest the room the others leave', () => {
+  const econ = examples('econ.EM', 4);
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: [...examples('quant-ph', 24), ...econ] }));
+  // Weights 5 and 1.5: shares of 18 and 5. Econ has 4, so physics takes 20.
+  assert.deepEqual(plan.groups.map(group => group.positiveIds), [examples('quant-ph', 20).map(example => example.id), econ.map(example => example.id)]);
+});
+
+test('an area with every like ranks by all 24 beside areas without any', () => {
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'cs.LG', 'econ.GN', 'math.AG', 'stat.ML'], examples: examples('quant-ph', 24) }));
+  assert.deepEqual(plan.groups.map(group => group.positiveIds.length), [24, 0, 0, 0, 0]);
+});
+
+test("every area's group ranks by all 24 likes of an area the reader never picked", () => {
+  const likes = examples('chem.anal', 24).map(example => example.id);
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'cs.LG', 'econ.GN', 'math.AG', 'stat.ML'], examples: examples('chem.anal', 24) }));
+  assert.deepEqual(plan.groups.map(group => group.positiveIds), Array.from({ length: 5 }, () => likes));
 });
 
 test("an added area's weight falls from 2 to 1 with its examples or the cards it showed, then follows its examples", () => {
