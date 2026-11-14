@@ -78,6 +78,15 @@ function providers(t: import('node:test').TestContext, answer: (url: URL) => Res
   return asked;
 }
 
+// The keyword an OpenAlex request searches titles and abstracts for, as a
+// keyword lane asks it: as a phrase or as loose words, in its weekly listing
+// and in the night's novelties.
+const KEYWORD_SEARCH = 'title_and_abstract.search:';
+const keywordOf = (url: URL) => (url.hostname === 'api.openalex.org' ? url.searchParams.get('filter') : null)?.split(',')
+  .find(clause => clause.startsWith(KEYWORD_SEARCH))?.slice(KEYWORD_SEARCH.length).replaceAll('"', '');
+// The keywords each night asks OpenAlex for, in the order it first asks each.
+const searchesAsked = (asked: URL[]) => [...new Set(asked.flatMap(url => keywordOf(url) ?? []))];
+
 function corpus() {
   const { binding, db } = testD1();
   const texts: string[] = [];
@@ -245,8 +254,8 @@ test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, an
   const { env, db } = corpus();
   // The relay's own ceilings, out of the way: the harvest's shares are under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  const searches = () => asked.filter(url => url.hostname === 'api.openalex.org' && url.searchParams.has('search')).length;
-  // A followed search is ten units, and an empty answer ends its lane after one.
+  const searches = () => asked.filter(url => keywordOf(url) !== undefined).length;
+  // Each search of a keyword lane is ten units; its first harvest makes two or three.
   const lanes = Array.from({ length: 80 }, (_, index) => `query:search ${index}`);
   for (let run = 0; run < 4; run += 1) {
     await runPaperHarvest(env, followRun(lanes.slice(run * 10, run * 10 + 10)), workflowStep().step);
@@ -267,16 +276,18 @@ test('the nightly refresh starts with the followed lanes due longest ago, howeve
   providers(t);
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  // One account's 70 searches, ten units each: harvested last night, asked again a minute ago.
+  // One account's 70 searches, harvested last night and asked again a minute
+  // ago: ten units each, the night's novelties, with the weekly listing not due.
   const searches = Array.from({ length: 70 }, (_, index) => `query:search ${index}`);
   // Other readers' authors, one unit each, asked yesterday: five followed
   // before last night's run, which did not reach them, five harvested two nights ago.
   const authors = Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`);
   const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
   const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', ?, ?)");
+  const listed = db.prepare("INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES ('openalex-follows', ?, ?, 'words', ?)");
   for (const lane of searches) {
     follow.run(lane, '2026-10-23T02:29:00.000Z', '2026-10-20T12:00:00.000Z');
-    harvested.run(lane, '2026-10-22T02:40:00.000Z');
+    listed.run(lane, '2026-10-22T02:40:00.000Z', '2026-10-22T02:40:00.000Z');
   }
   for (const lane of authors.slice(0, 5)) follow.run(lane, '2026-10-22T15:00:00.000Z', '2026-10-22T01:00:00.000Z');
   for (const lane of authors.slice(5)) {
@@ -308,15 +319,16 @@ const openAlexWork = (index: number) => ({
   cited_by_count: 0,
 });
 
-// A followed search's first harvest reads a second page when the first is
-// full: 20 of the nightly refresh's 700 units, so one account's 40 new
-// searches a day ask for 800. With no run for new follows (their 300 spent),
-// all of them wait for the nightly refresh.
-test("one account registering 40 broad followed searches a day does not keep another reader's lane from its nightly refresh", async t => {
+// A keyword's first harvest is two searches, its weekly listing and the
+// night's novelties: 20 of the nightly refresh's 700 units, so 40 new
+// searches a day ask for 800. A reader's 50 lanes a day are 16 keywords, so
+// four accounts register them. With no run for new follows (their 300
+// spent), all of them wait for the nightly refresh.
+test("accounts registering 40 broad followed searches a day between them do not keep another reader's lane from its nightly refresh", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-19T12:00:00Z') });
   const fullPage = Array.from({ length: 50 }, (_, index) => openAlexWork(index));
-  providers(t, url => (url.hostname === 'api.openalex.org' && url.searchParams.get('search')?.startsWith('broad ')
-    ? Response.json({ results: fullPage })
+  providers(t, url => (keywordOf(url)?.startsWith('broad ')
+    ? Response.json({ meta: { count: 500 }, results: fullPage })
     : undefined));
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
@@ -337,8 +349,7 @@ test("one account registering 40 broad followed searches a day does not keep ano
   for (const [day, night] of ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24'].entries()) {
     t.mock.timers.setTime(Date.parse(`${night}T12:00:00Z`) - 86_400_000);
     const searches = Array.from({ length: 40 }, (_, index) => `broad ${day}-${index}`);
-    await follow('reader-a', searches.slice(0, 20));
-    await follow('reader-a', searches.slice(20));
+    for (let account = 0; account < 4; account += 1) await follow(`reader-a${account}`, searches.slice(account * 10, account * 10 + 10));
     refreshed.push(await refreshedTonight(night));
   }
   // The searches registered since the lane's last refresh wait behind it.
@@ -352,7 +363,8 @@ test("one account registering 40 broad followed searches a day does not keep ano
 // reader's, without end.
 test("one account following 40 new searches a day and asking again daily for all of them still leaves another reader's lane refreshed at least once a week", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-19T12:00:00Z') });
-  // Every search answers empty: ten units each, 70 of the nightly 700.
+  // Every search answers empty: ten units each, one a night for a lane whose
+  // weekly listing is not due and three when it is.
   providers(t);
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
@@ -393,16 +405,12 @@ test("one account following 40 new searches a day and asking again daily for all
   assert.ok(Math.max(...nightsWithout) < 7, `refreshed on nights ${refreshed.map(done => (done ? 'Y' : '.')).join('')}`);
 });
 
-// The OpenAlex searches each night asks for, from the providers' requests.
-const searchesAsked = (asked: URL[]) => asked.filter(url => url.hostname === 'api.openalex.org' && url.searchParams.has('search'))
-  .map(url => url.searchParams.get('search')!);
-
 // A search OpenAlex answers with a 400 spends its ten units each time it is
 // asked and never records a harvest. 70 of them, followed before another
 // reader's lane, took the whole 700 every night, and that lane got none of it.
 test('followed lanes that fail every night take their turn and are asked less and less often, so a later lane is refreshed', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
-  const asked = providers(t, url => (url.searchParams.get('search')?.startsWith('broken ')
+  const asked = providers(t, url => (keywordOf(url)?.startsWith('broken ')
     ? Response.json({ error: 'Invalid query' }, { status: 400 })
     : undefined));
   const { env, db } = corpus();
@@ -444,17 +452,36 @@ test('a followed lane the budget refuses keeps its turn: the next night it comes
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
-  // 70 searches due before it spend the 700 the first night.
-  for (let index = 0; index < 70; index += 1) follow.run(`query:search ${index}`, '2026-10-20T12:00:00.000Z', '2026-10-19T12:00:00.000Z');
+  // 70 searches due before it, their weekly listing not due, spend the 700 the first night.
+  const listed = db.prepare("INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES ('openalex-follows', ?, ?, 'words', ?)");
+  for (let index = 0; index < 70; index += 1) {
+    follow.run(`query:search ${index}`, '2026-10-20T12:00:00.000Z', '2026-10-19T12:00:00.000Z');
+    listed.run(`query:search ${index}`, '2026-10-20T02:30:00.000Z', '2026-10-20T02:30:00.000Z');
+  }
   follow.run('query:followed first', '2026-10-20T12:00:00.000Z', '2026-10-20T10:00:00.000Z');
   follow.run('query:followed second', '2026-10-20T12:00:00.000Z', '2026-10-20T11:00:00.000Z');
   await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
   assert.ok(!searchesAsked(asked).includes('followed first'), 'refused the first night');
-  // The 72 lanes ask for 720 units: the two the 700 leave out are the ones harvested last night.
+  // The 72 lanes ask for more than 700 units: the ones it leaves out are among those harvested last night.
   t.mock.timers.setTime(Date.parse('2026-10-22T02:30:00Z'));
   const before = asked.length;
   await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
   assert.deepEqual(searchesAsked(asked.slice(before)).slice(0, 2), ['followed first', 'followed second']);
+});
+
+// A keyword lane records its weekly listing before it asks for the night's
+// papers: when that request is refused, the lane has a state row and no harvest.
+test("a keyword lane whose first harvest stopped after its weekly listing is due from when it was followed, behind a lane followed before it", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
+  const asked = providers(t);
+  const { env, db } = corpus();
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+  follow.run('author:A1', '2026-10-20T12:00:00.000Z', '2026-10-20T10:00:00.000Z');
+  follow.run('query:kagome', '2026-10-20T12:00:00.000Z', '2026-10-20T11:00:00.000Z');
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES ('openalex-follows', 'query:kagome', '', 'words', '2026-10-20T11:05:00.000Z')").run();
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  const order = asked.filter(url => url.hostname === 'api.openalex.org').map(url => keywordOf(url) ?? url.searchParams.get('filter')!.split(':')[0]);
+  assert.deepEqual(order.slice(0, 2), ['author.id', 'kagome']);
 });
 
 // The quota ledger as the relay finds it when its Durable Object answers with
@@ -556,7 +583,7 @@ test('a followed lane harvested while the quota ledger cannot answer keeps its t
 // them, due before another reader's lane, do not keep it from its refresh.
 test('followed lanes OpenAlex fails every night with a 500 take their turn without a longer wait, and a later lane is refreshed', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
-  const asked = providers(t, url => (url.searchParams.get('search')?.startsWith('failing ')
+  const asked = providers(t, url => (keywordOf(url)?.startsWith('failing ')
     ? new Response('Internal server error', { status: 500 })
     : undefined));
   const { env, db } = corpus();
@@ -593,7 +620,7 @@ test('followed lanes OpenAlex fails every night with a 500 take their turn witho
 test('a followed lane harvested after rejected nights is asked again the night after its next rejection', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
   let failing = true;
-  const asked = providers(t, url => (failing && url.searchParams.get('search') === 'a flaky search'
+  const asked = providers(t, url => (failing && keywordOf(url) === 'a flaky search'
     ? Response.json({ error: 'Invalid query' }, { status: 400 })
     : undefined));
   const { env, db } = corpus();
@@ -627,7 +654,7 @@ test('a followed lane harvested after rejected nights is asked again the night a
 // error handling.
 test("a followed lane that stops its step exhausts bounded retries, then the other lanes are harvested", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
-  const asked = providers(t, url => (url.searchParams.get('search') === 'a search that hangs' ? new Promise<Response>(() => {}) : undefined));
+  const asked = providers(t, url => (keywordOf(url) === 'a search that hangs' ? new Promise<Response>(() => {}) : undefined));
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');

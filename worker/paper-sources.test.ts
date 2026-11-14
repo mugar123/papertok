@@ -300,6 +300,8 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   return { urls, env };
 }
 const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+// What a keyword lane's request searches titles and abstracts for.
+const keywordSearchOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('title_and_abstract.search:'));
 
 test('the working-paper series lane asks OpenAlex for the series in the window and files unreviewed Economics cards', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
@@ -1951,9 +1953,12 @@ test("followed searches stop at their part of the nightly run's OpenAlex share, 
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
+  const { binding } = testD1();
+  const followedSearch = (newFollow = false) => harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-follows', lane: 'query:graphs', newFollow });
   // A search is ten list calls: the nightly refresh of followed lanes may spend 700 of the harvest's 4,000.
-  for (let call = 0; call < 70; call += 1) await followedSearch();
+  // A keyword's first harvest is two searches, its weekly listing and the
+  // night's novelties; a later one that day is the novelties alone.
+  for (let harvest = 0; harvest < 69; harvest += 1) await followedSearch();
   await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
   await assert.rejects(SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), SourceRefused);
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 70);
@@ -2001,8 +2006,10 @@ test("category and notable lanes stop at 3,000 of the harvest's OpenAlex units, 
   assert.equal(openAlexCalls(), 3_000);
 
   // The nightly refresh's 700 and the new follows' 300, ten units a search.
-  const followedSearch = (newFollow: boolean) => SOURCES['openalex-follows'].fetchPage(env, { ...request, lane: 'query:graph neural networks', newFollow });
-  for (let call = 0; call < 70; call += 1) await followedSearch(false);
+  // A keyword's first harvest is two searches, and a later one that day is one.
+  const { binding } = testD1();
+  const followedSearch = (newFollow: boolean) => harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-follows', lane: 'query:graphs', newFollow });
+  for (let harvest = 0; harvest < 69; harvest += 1) await followedSearch(false);
   for (let call = 0; call < 30; call += 1) await followedSearch(true);
   assert.equal(openAlexCalls(), 3_100);
 
@@ -2056,16 +2063,16 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   const readers = share('enrichment') + 50;
   await spendElsewhere(readers);
   await follows('author:A5023888391');
-  await follows('query:graph neural networks');
+  await harvestLane({ ...env, PAPER_STORE: testD1().binding }, { source: 'openalex-follows', lane: 'query:graphs' });
   await SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(
-    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (url.searchParams.has('search') ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
-    ['author.id', 'search', 'doi'],
+    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (keywordSearchOf(url) ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
+    ['author.id', 'search', 'search', 'doi'],
   );
 
-  // An author page, a search and a DOI list: 12 units. The rest of the
-  // harvest's tier goes elsewhere.
-  await spendElsewhere(share('feed') - readers - 12);
+  // An author page, a keyword's two searches and a DOI list: 22 units. The
+  // rest of the harvest's tier goes elsewhere.
+  await spendElsewhere(share('feed') - readers - 22);
   await assert.rejects(follows('author:A5000000001'), SourceRefused);
   Object.assign(env, { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes' });
   const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1', {
@@ -2115,6 +2122,219 @@ test("a followed journal's lane asks OpenAlex for the journal's articles and rev
   assert.deepEqual(items.map(item => [item.paper.title, item.lanes]), [['Macroeconomic models of inequality: a review', ['source:S2764697018']]]);
   assert.equal(url.searchParams.get('per-page'), '100');
   assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+});
+
+// ─── Keyword lanes: a followed search, and a custom feed's keyword ───
+
+// A keyword lane has two listings in titles and abstracts: the 50 best matches
+// of any year, once a week, whose order the lane keeps as each paper's rank,
+// and the 20 best matches of the last 90 days, every night (Nicolás,
+// 2026-11-14). A weekly listing has no publication window.
+const KEYWORD_NIGHT = Date.parse('2026-11-10T03:00:00Z');
+const NIGHT_MS = 86_400_000;
+const isCatalogue = (url: URL) => !filtersOf(url).some(filter => filter.startsWith('from_publication_date:'));
+const keywordWork = (id: string, date: string) => ({
+  ...journalArticle(`W${id}`, `10.1000/keyword.${id}`, `Study ${id} of a charge density wave in a kagome superconductor`, date, JBES,
+    `Study ${id} reports a charge density wave in a kagome superconductor and how it competes with the superconducting state.`),
+  publication_year: Number(date.slice(0, 4)),
+});
+const keywordId = (id: string) => `openalex:W${id}`;
+// What each of the lane's listings returns tonight; a phrase names 30 papers unless `count` says otherwise.
+function keywordLane(t: import('node:test').TestContext, listings: { catalogue?: () => unknown[]; novelties?: () => unknown[]; count?: (url: URL) => number }) {
+  t.mock.timers.enable({ apis: ['Date'], now: KEYWORD_NIGHT });
+  const { urls, env } = relay(t, url => ({
+    meta: { count: listings.count?.(url) ?? 30 },
+    results: (isCatalogue(url) ? listings.catalogue?.() : listings.novelties?.()) ?? [],
+  }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  return {
+    urls,
+    db,
+    harvest: (lane: string) => harvestLane(store, { source: 'openalex-follows', lane }),
+    onNight: (night: number) => t.mock.timers.setTime(KEYWORD_NIGHT + (night - 1) * NIGHT_MS),
+    rows: (lane: string) => (db.prepare("SELECT w.paper ->> '$.id' AS id, l.rank, l.arrived FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = ? ORDER BY id").all(lane) as Array<{ id: string; rank: number | null; arrived: string | null }>)
+      .map(row => ({ ...row })),
+    state: (lane: string) => db.prepare("SELECT harvested_through, reading, catalogued_at FROM lane_state WHERE source = 'openalex-follows' AND lane = ?").get(lane) as
+      { harvested_through: string; reading: string | null; catalogued_at: string | null } | undefined,
+  };
+}
+
+test('a keyword lane asks titles and abstracts for the phrase, and keeps the phrase when it fills a screen', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: () => 22 });
+  await harvest('query:quadratic funding');
+  const [catalogue, novelties] = urls;
+  assert.deepEqual(filtersOf(catalogue), ['title_and_abstract.search:"quadratic funding"', 'is_retracted:false', 'type:article|review|conference-paper|preprint']);
+  assert.equal(catalogue.searchParams.get('sort'), 'relevance_score:desc');
+  assert.equal(catalogue.searchParams.get('per-page'), '50');
+  assert.equal(catalogue.searchParams.has('search'), false);
+  assert.equal(novelties.searchParams.get('per-page'), '20');
+  assert.equal(novelties.searchParams.get('sort'), 'relevance_score:desc');
+  assert.ok(filtersOf(novelties).includes('title_and_abstract.search:"quadratic funding"'));
+  assert.ok(filtersOf(novelties).includes('from_publication_date:2026-08-12'), 'the last 90 days');
+  assert.equal(urls.length, 2);
+  assert.equal(state('query:quadratic funding')?.reading, 'phrase');
+});
+
+test('a phrase with fewer than 20 papers falls back to loose words, for both listings', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: url => (keywordSearchOf(url)!.includes('"') ? 2 : 38) });
+  await harvest('query:lmsr prediction markets');
+  assert.deepEqual(urls.map(keywordSearchOf), [
+    'title_and_abstract.search:"lmsr prediction markets"',
+    'title_and_abstract.search:lmsr prediction markets',
+    'title_and_abstract.search:lmsr prediction markets',
+  ]);
+  assert.deepEqual(urls.map(isCatalogue), [true, true, false]);
+  assert.equal(state('query:lmsr prediction markets')?.reading, 'words');
+});
+
+test('a one-word keyword is not asked as a phrase', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  await harvest('query:kagome');
+  assert.equal(urls.length, 2);
+  assert.ok(urls.every(url => filtersOf(url).includes('title_and_abstract.search:kagome')));
+});
+
+test('the any-age listing ranks its papers and none of them arrives as news, on the first night or a later week', async t => {
+  let catalogue = [keywordWork('2015', '2015-03-02'), keywordWork('2019', '2019-06-11')];
+  const { harvest, onNight, rows } = keywordLane(t, { catalogue: () => catalogue });
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2015'), rank: 1, arrived: null },
+    { id: keywordId('2019'), rank: 2, arrived: null },
+  ]);
+  onNight(8);
+  catalogue = [keywordWork('2012', '2012-09-20'), keywordWork('2015', '2015-03-02')];
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2012'), rank: 1, arrived: null },
+    { id: keywordId('2015'), rank: 2, arrived: null },
+    { id: keywordId('2019'), rank: null, arrived: null },
+  ]);
+});
+
+test('the catalogue is listed once a week and the novelties every night', async t => {
+  const { urls, harvest, onNight } = keywordLane(t, {});
+  const callsPerNight: number[] = [];
+  for (const night of [1, 2, 8]) {
+    onNight(night);
+    const before = urls.length;
+    await harvest('query:kagome superconductors');
+    callsPerNight.push(urls.length - before);
+  }
+  assert.deepEqual(callsPerNight, [2, 1, 2]);
+});
+
+// The nightly run reaches a lane a few minutes earlier or later each night.
+test('a catalogue listed late one night is due again a week on, though the run reaches it earlier that night', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  t.mock.timers.setTime(KEYWORD_NIGHT + 40 * 60_000);
+  await harvest('query:kagome superconductors');
+  t.mock.timers.setTime(KEYWORD_NIGHT + 7 * NIGHT_MS);
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(urls.map(isCatalogue), [true, false, true, false]);
+});
+
+test('a novelty published this week arrives today; one that enters the list late, or with the first load, keeps its publication date', async t => {
+  const published = (daysBefore: number, night: number) => new Date(KEYWORD_NIGHT + (night - 1 - daysBefore) * NIGHT_MS).toISOString().slice(0, 10);
+  let novelties = [keywordWork('7001', published(1, 1))];
+  const { harvest, onNight, rows } = keywordLane(t, { novelties: () => novelties });
+  await harvest('query:kagome superconductors');
+  onNight(2);
+  novelties = [keywordWork('7002', published(1, 2)), keywordWork('7003', published(40, 2)), ...novelties];
+  await harvest('query:kagome superconductors');
+  const tonight = new Date(KEYWORD_NIGHT + NIGHT_MS).toISOString();
+  assert.deepEqual(rows('query:kagome superconductors').map(row => [row.id, row.arrived]), [
+    [keywordId('7001'), null],
+    [keywordId('7002'), tonight],
+    [keywordId('7003'), null],
+  ]);
+});
+
+// For a niche keyword the 50 best matches of any year hold nearly every new paper.
+test('a paper published this week that is also among the best matches of any year arrives on the night both list it', async t => {
+  let listed: unknown[] = [];
+  const { harvest, onNight, rows } = keywordLane(t, { catalogue: () => [...listed, keywordWork('2015', '2015-03-02')], novelties: () => listed });
+  await harvest('query:kagome superconductors');
+  onNight(8);
+  listed = [keywordWork('7008', '2026-11-16')];
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2015'), rank: 2, arrived: null },
+    { id: keywordId('7008'), rank: 1, arrived: new Date(KEYWORD_NIGHT + 7 * NIGHT_MS).toISOString() },
+  ]);
+});
+
+test('a keyword nothing can be searched for finishes its turn without asking OpenAlex', async t => {
+  const { urls, harvest, state } = keywordLane(t, {});
+  await harvest('query:+++');
+  assert.equal(urls.length, 0);
+  assert.ok(state('query:+++')?.harvested_through);
+});
+
+test('a keyword with filter syntax in it is asked as plain words', async t => {
+  const { urls, harvest } = keywordLane(t, { count: () => 0 });
+  await harvest('query:p|q, tcp:ip');
+  assert.deepEqual(urls.map(keywordSearchOf), ['title_and_abstract.search:"p q tcp ip"', 'title_and_abstract.search:p q tcp ip', 'title_and_abstract.search:p q tcp ip']);
+  assert.ok(urls.every(url => filtersOf(url).filter(filter => filter.startsWith('type:')).length === 1));
+  assert.ok(urls.every(url => filtersOf(url).length === (isCatalogue(url) ? 3 : 5)), 'no clause beside the search, the retraction, the types and the window');
+});
+
+test('an empty catalogue still lists the novelties and ends the first harvest', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: () => 0 });
+  await harvest('query:lsmr prediction markets');
+  assert.deepEqual(urls.map(isCatalogue), [true, true, false]);
+  assert.ok(state('query:lsmr prediction markets')?.harvested_through);
+});
+
+test("a weekly listing that fails leaves the ranks and still files the night's novelties", async t => {
+  let failing = false;
+  let novelties: unknown[] = [];
+  const { harvest, onNight, rows, state } = keywordLane(t, {
+    catalogue: () => { if (failing) throw new Error('OpenAlex is down'); return [keywordWork('2015', '2015-03-02')]; },
+    novelties: () => novelties,
+  });
+  await harvest('query:kagome superconductors');
+  const night1 = new Date(KEYWORD_NIGHT).toISOString();
+  onNight(8);
+  failing = true;
+  novelties = [keywordWork('7008', '2026-11-16')];
+  const warned = t.mock.method(console, 'warn', () => undefined);
+  await harvest('query:kagome superconductors');
+  assert.equal(warned.mock.callCount(), 1);
+  assert.deepEqual(rows('query:kagome superconductors').map(row => [row.id, row.rank]), [[keywordId('2015'), 1], [keywordId('7008'), null]]);
+  assert.equal(state('query:kagome superconductors')?.catalogued_at, night1, 'due again the next night');
+  assert.equal(state('query:kagome superconductors')?.harvested_through, new Date(KEYWORD_NIGHT + 7 * NIGHT_MS).toISOString());
+});
+
+test("a first harvest whose night's request fails keeps its weekly listing, which the next harvest does not ask again", async t => {
+  let failing = true;
+  const { urls, harvest, rows, state } = keywordLane(t, {
+    catalogue: () => [keywordWork('2015', '2015-03-02')],
+    novelties: () => { if (failing) throw new Error('OpenAlex is down'); return []; },
+  });
+  await assert.rejects(harvest('query:kagome superconductors'));
+  assert.deepEqual(rows('query:kagome superconductors'), [{ id: keywordId('2015'), rank: 1, arrived: null }]);
+  assert.deepEqual({ ...state('query:kagome superconductors') }, { harvested_through: '', reading: 'phrase', catalogued_at: new Date(KEYWORD_NIGHT).toISOString() });
+  failing = false;
+  const before = urls.length;
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(urls.slice(before).map(isCatalogue), [false]);
+  assert.ok(state('query:kagome superconductors')?.harvested_through);
+});
+
+test("a keyword's first weekly listing that fails leaves the lane unharvested", async t => {
+  const { harvest, state } = keywordLane(t, { catalogue: () => { throw new Error('OpenAlex is down'); } });
+  await assert.rejects(harvest('query:kagome superconductors'));
+  assert.equal(state('query:kagome superconductors'), undefined);
+});
+
+test('a followed author is still harvested by date, 50 a page', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  await harvest('author:A1');
+  assert.equal(urls[0].searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(urls[0].searchParams.get('per-page'), '50');
+  assert.equal(keywordSearchOf(urls[0]), undefined);
 });
 
 // ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───

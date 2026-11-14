@@ -217,6 +217,12 @@ feeds, at most 8, in one document, `users/{uid}/settings/customFeeds`, which
 [corpusRequestOf](src/utils/custom-feeds.ts) turns a feed into its categories,
 whole `areas` and follows (research topics, authors, journals and keywords), with
 `order: 'daily'` for Newest first and `'relevance'` for Best match.
+A keyword brings the papers that have it in the title or abstract. Newest first
+places them by the day they reached the feed, and a paper from the keyword's
+weekly list of best matches of any year by its publication date. Best match
+follows that list's order, which is OpenAlex's relevance: the reader's likes
+reorder only each ten of it, and the keyword takes turns with the feed's other
+ingredients ([keyword lanes](worker/README.md#paper-store)).
 [custom-feed-pages.ts](src/utils/custom-feed-pages.ts) builds it into an `exact`
 request and
 [useCustomFeedPapers](src/components/custom-feeds/use-custom-feed-papers.ts)
