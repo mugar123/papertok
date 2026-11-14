@@ -91,17 +91,6 @@ export function readListPapers(uid: string, storage?: Parameters<typeof readStor
 }
 
 /**
- * The papers whose `savedPapers` document the lists screen has read this
- * session, keyed by uid. Only such a paper is asked of a provider when it has
- * no field: the document is where the answer is kept.
- */
-const listSavedDocuments = createSessionCache<Set<string>>({ maxEntries: 2 });
-
-export function savedDocumentRead(uid: string | undefined, paperId: string) {
-  return Boolean(uid && listSavedDocuments.get(uid)?.has(paperId));
-}
-
-/**
  * Folds newly resolved papers into what the account already had.
  *
  * Merged rather than replaced: a list is opened one at a time, and replacing
@@ -121,7 +110,6 @@ export function rememberListPapers(uid: string, papers: Record<string, Partial<P
   }
   listPapersCache.set(uid, next);
   saveStoredListPapers(uid, next, storage);
-  if (source === 'saved') listSavedDocuments.set(uid, new Set([...(listSavedDocuments.get(uid) ?? []), ...Object.keys(papers)]));
 }
 
 /**
@@ -162,7 +150,6 @@ export function fieldAnswered(uid: string | undefined, paperId: string) {
 export function forgetListPapers(uid: string | undefined) {
   if (!uid) return;
   listPapersCache.delete(uid);
-  listSavedDocuments.delete(uid);
   listSavedAnswers.delete(uid);
   listFieldAnswers.delete(uid);
 }

@@ -77,7 +77,11 @@ flowchart TD
   through `readListPapers`; new metadata uses the existing copy merge rules before
   persisting. Classification versions are checked on restore. List membership,
   notes and reading state are not part of this cache. Missing classifications
-  still use the existing saved-document and provider recovery flow.
+  use provider recovery after the saved-document read settles, including when
+  no saved document exists. A favorite with only an old interaction record can
+  recover by its provider identifier and persist the result without creating a save.
+  Recovery continues in rounds of at most 60 papers until the open list is covered;
+  each paper is attempted at most once per opening, including failed requests.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
