@@ -1468,8 +1468,8 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * lanes in the same order, `order`, likes, rejections, interest groups and
  * version of their ranking (`rankedBy`, a digest, so the entry holds no liked
  * paper's id) serves the next pages as it is. Otherwise a next page keeps the
- * ranks served and the ones walked past, less the papers liked or rejected since (an exact
- * request's: excluded since), and the notable
+ * ranks served and the ones walked past, less the papers liked or rejected
+ * since (an exact request's: excluded since), and the notable
  * papers walked past, and ranks the rest again; a page that skips seen papers
  * keeps of those the ones `keptPassed` keeps. With the ids the walks read
  * (`paperId`), the entry tells which ranks at the top of the reader's
