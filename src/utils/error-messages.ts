@@ -51,6 +51,14 @@ const ERROR_MESSAGES = {
     INSTITUTION_LINK_FAILED: 'Your institution could not be linked. Try again.',
     INSTITUTION_LINK_UNREACHABLE: 'Your institution could not be linked because the server could not be reached.',
     INSTITUTION_LINK_NOT_CONFIGURED: 'Institution linking is not available right now.',
+    ZOTERO_NOT_CONNECTED: 'Your Zotero account is no longer connected. Reconnect it to send papers.',
+    ZOTERO_CONNECTION_EXPIRED: 'This Zotero connection has expired. Start again from the reader.',
+    ZOTERO_AUTHORIZATION_REFUSED: 'Zotero did not authorize PaperTok. Nothing was connected.',
+    ZOTERO_RATE_LIMITED: 'Zotero is busy right now. Try again in a minute.',
+    ZOTERO_UNAVAILABLE: 'Zotero could not be reached. Nothing was sent.',
+    ZOTERO_WRITE_FAILED: 'Zotero did not save the paper. Try again.',
+    ZOTERO_NOT_CONFIGURED: 'Sending to Zotero is not available right now.',
+    ZOTERO_FAILED: 'The paper could not be sent to Zotero. Try again.',
   },
 };
 

@@ -238,6 +238,18 @@
    fill: a filled button reads as hovered. */
 .pdf-dock-toggle[data-pressed] { background: transparent; color: var(--text-primary); box-shadow: none; }
 .pdf-dock-toggle:not([data-pressed]) { color: var(--text-tertiary); }
+/* Sent before: a dot beside the Z, seen without hovering for the date. */
+.pdf-dock-zotero[data-sent] { position: relative; }
+.pdf-dock-zotero[data-sent]::after {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
 
 .pdf-info-positioner { z-index: 0; }
 .pdf-info {

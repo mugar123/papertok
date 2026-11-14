@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-12';
+export const PRIVACY_POLICY_VERSION = '2026-11-14';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -68,8 +68,13 @@ export const PRIVACY_POLICY_VERSION = '2026-11-12';
  * merge falls after it, move the page's "Last updated" date,
  * PRIVACY_POLICY_VERSION and this instant to the merge day before merging; once
  * Vercel reports the merge live, lower this instant to that success time.
+ *
+ * Version 2026-11-14 adds Zotero: the encrypted key and the item and note keys
+ * kept while a reader has Zotero connected, what a send gives Zotero, and the
+ * usage event that records only whether a send worked. This instant follows
+ * the rule above for a text that ships with its own pull request.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-12T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-14T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -85,9 +90,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "Feeds you create are kept with your account, and their topics, authors, journals and keywords are sent to the server to fetch their papers.",
-  "Papers you remove from a feed are kept in your browser and sent with that feed's requests, so it leaves them out.",
-  "Usage analytics also records when you create, open or delete a feed, never its name or what is in it. Its events also name your browser and system versions.",
+  "If you connect Zotero, an encrypted key to your Zotero library is kept with your account until you disconnect.",
+  "Sending a paper gives Zotero its citation and the highlights and notes you made on it, never the AI's highlights.",
+  "Usage analytics records only whether a send to Zotero worked, not which paper.",
 ];
 
 /**
@@ -100,28 +105,21 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 7 November: custom feeds (ENG-197, Worker half #476), that
-  // is what a feed keeps in the account, what its requests send, the removed
-  // papers the browser keeps and sends, and the usage events about feeds; and
-  // the browser and system versions analytics events name (#457). #464 only
-  // added the page's text about this notice and its record, which this
-  // notice does not announce.
-  lead: 'Feeds you create',
+  // The changes since 12 November: connecting Zotero, what a send gives it,
+  // and the usage event about sends.
+  lead: 'If you connect Zotero',
   clauses: [
-    ['Feeds you create', /<td>Feeds you create: each feed's name and the areas, topics, authors, journals and keywords you put in it<\/td>/],
-    ['kept with your account', /They are kept with your account and deleted with it/],
-    ['their topics, authors, journals and keywords are sent to the server', /A request for a page of one of your own feeds sends instead that feed's areas, categories, research topics, authors, journals and keywords/],
-    ['Papers you remove from a feed are kept in your browser', /This browser also keeps, for each of your own feeds, the latest 200 papers you removed from it/],
-    ["sent with that feed's requests, so it leaves them out", /these are sent to the server with each request for that feed, so the feed leaves them out/],
+    ['If you connect Zotero', /<td>If you connect Zotero: an encrypted access key to your Zotero library/],
+    ['kept with your account until you disconnect', /Disconnecting in <strong>Settings → Profile<\/strong> deletes the key/],
+    ['Sending a paper gives Zotero its citation', /Each send gives Zotero the paper's citation/],
+    ['the highlights and notes you made on it', /the highlights and notes you made on that paper/],
+    ["never the AI's highlights", /Highlights made by the AI are not sent\./],
     ['Usage analytics', /Usage analytics is enabled by default/],
-    ['create, open or delete a feed', /Creating or opening one of your feeds records the order it uses; creating one also records how many areas or topics, authors and keywords it holds\. Deleting one records only that it happened\./],
-    ['never its name or what is in it', /No event records a feed's name or what is in it\./],
-    ['your browser and system versions', /Events include the browser and its version, the operating system and its version/],
+    ['only whether a send to Zotero worked, not which paper', /Sending a paper to Zotero records only whether it was sent, not which paper\./],
   ],
   unsaid: [
-    [/(?<!never )\b(its|a feed's|the feed's) name\b/i, "no event records a feed's name; only the account keeps it"],
-    [/remove\w*[^.]*(kept|stored) (in|with) your account/i, 'the papers removed from a feed stay in the browser, not the account'],
-    [/full user agent/i, 'the browser label never holds the full user agent'],
+    [/group/i, 'only the personal library is reached'],
+    [/\bPDF\b|full text/i, "Zotero receives the citation and the reader's own highlights, never the paper's file"],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
   ],
 };

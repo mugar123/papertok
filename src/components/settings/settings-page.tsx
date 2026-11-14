@@ -13,6 +13,7 @@ import {
   Flask,
   GearSix,
   GraduationCap,
+  LinkBreak,
   LinkSimple,
   PencilSimple,
   ShieldCheck,
@@ -46,6 +47,8 @@ import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
+import { ZoteroMark } from '../pdf/zotero-button.tsx';
+import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
@@ -174,6 +177,64 @@ function RowAction({ label, text = label, Icon, variant = 'outline', ...props }:
       <Icon size={15} aria-hidden="true" />
       {text}
     </Button>
+  );
+}
+
+/** Keyed by the account where it is used, so a new account starts from an unchecked state. */
+function ZoteroSection({ uid }: { uid: string }) {
+  const [status, setStatus] = useState<ZoteroStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    zoteroStatus().then(next => { if (live) setStatus(next); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, []);
+
+  async function connectOrDisconnect() {
+    setBusy(true);
+    try {
+      if (status?.connected) {
+        await disconnectZotero();
+        setStatus({ connected: false, username: null, sentAt: null });
+        toast.success('Zotero is disconnected.');
+        setBusy(false);
+      } else {
+        await connectZotero(uid, null);
+      }
+    } catch (error) {
+      setBusy(false);
+      toastError(getUiErrorMessage(error, 'ZOTERO_FAILED'));
+    }
+  }
+
+  const description = failed ? 'The Zotero connection could not be checked. You can still connect it.'
+    : !status ? 'Checking your Zotero connection…'
+      : status.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
+        : 'Send the papers you read, with your highlights, to your Zotero library.';
+
+  return (
+    <section className="settings-section" aria-labelledby="settings-zotero-heading">
+      <SectionHeading id="settings-zotero-heading" title="Zotero" description={description} />
+      <div className="settings-list">
+        <div className="settings-row settings-row-side">
+          <div className="settings-row-content">
+            <h3 className="settings-method-name"><ZoteroMark size={16} />Zotero</h3>
+          </div>
+          {(status || failed) && (
+            <RowAction
+              Icon={status?.connected ? LinkBreak : LinkSimple}
+              label={status?.connected ? 'Disconnect Zotero' : 'Connect Zotero'}
+              text={status?.connected ? 'Disconnect' : 'Connect'}
+              onClick={() => { void connectOrDisconnect(); }}
+              disabled={busy}
+              focusableWhenDisabled
+            />
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -342,6 +403,8 @@ function ProfileAccountPage() {
           <InstitutionDialog open={institutionOpen} onOpenChange={setInstitutionOpen} />
         </div>
       </section>
+
+      {user && <ZoteroSection key={user.uid} uid={user.uid} />}
 
       <section className="settings-section" aria-labelledby="settings-danger-heading">
         <SectionHeading id="settings-danger-heading" title={copy.dangerZone} description={copy.dangerZoneDescription} />

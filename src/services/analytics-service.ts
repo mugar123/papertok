@@ -66,6 +66,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/settings/privacy',
   '/settings/profile',
   '/settings/reading',
+  '/zotero/callback',
 ]);
 const EXPLORER_TYPES = new Set(['author', 'institution', 'project', 'topic']);
 const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
@@ -163,6 +164,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
   // A custom feed's order as the reader chose it: Newest first or Best match.
   feed_order: new Set(['newest', 'best']),
+  zotero_result: new Set(['sent', 'failed']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -258,6 +260,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   custom_feed_create: { topic_count: 'boundedNumber', author_count: 'boundedNumber', keyword_count: 'boundedNumber', feed_order: 'feed_order' },
   custom_feed_delete: {},
   custom_feed_open: { feed_order: 'feed_order' },
+  zotero_send: { result: 'zotero_result' },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
