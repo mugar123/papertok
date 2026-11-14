@@ -67,29 +67,18 @@ Worker, the app still loads and Google/GitHub sign-in still works — Firebase
 is direct — and in development arXiv falls back to the Vite dev proxy, but
 the Worker-backed features above fail, and so do OpenAlex requests: with
 `.env.local` in place they are routed to the Worker, and only a setup with
-`VITE_PAPER_API_BASE_URL` unset sends them direct to OpenAlex on the
-anonymous allowance. Reading a shared public list needs no Worker — it reads
+`VITE_PAPER_API_BASE_URL` unset sends them direct to OpenAlex. Reading a shared public list needs no Worker — it reads
 the document from Firestore directly — but publishing one does. A production
 build without `VITE_PAPER_API_BASE_URL` aborts: `vite build` refuses to ship
 a bundle that reaches no backend.
 
 ### A feature answers 503
 
-Optional provider secrets live in Cloudflare Worker secrets (or the ignored
-`.dev.vars` file for local runs), never in `VITE_*` variables. Some missing
-secrets gate their route: it answers 503 with a code naming the missing
-piece, for example `AI_NOT_CONFIGURED`, `SCOPUS_NOT_CONFIGURED` or
-`OPENREVIEW_NOT_CONFIGURED` (OpenReview lookup by id; its search is
-unaffected). Others only degrade the feature: without `OPENALEX_API_KEY`,
-OpenAlex runs on the anonymous budget; without `CORE_API_KEY` or
-`NCBI_API_KEY`, rate limits are lower; without `UNPAYWALL_EMAIL`, Unpaywall
-is asked with a default contact address. The Worker itself keeps running
-either way. Add the secret to `.dev.vars` for a local Worker, or with
-`wrangler secret put` for a deployed one. What each secret does, and which
-ones are effectively required, is listed under
-[Deployment](worker/README.md#deployment); [`worker/env.ts`](worker/env.ts)
-enumerates them as types. An absent `POSTHOG_PROJECT_TOKEN` only disables
-Worker error reporting.
+A feature that needs a provider secret it does not have answers 503 with a
+code naming the missing piece, for example `AI_NOT_CONFIGURED`,
+`SCOPUS_NOT_CONFIGURED` or `OPENREVIEW_NOT_CONFIGURED`. The Worker itself
+keeps running. For which secret each feature needs and how to set it, see
+[Deployment](worker/README.md#deployment).
 
 ### The build warns about a large bundle
 
