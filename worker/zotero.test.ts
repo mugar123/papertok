@@ -125,26 +125,31 @@ test('connects only the account that started the exchange, and keeps the key sea
   assert.ok(typeof link.key === 'string' && !link.key.includes('api-key'));
 });
 
+/** Zotero's answer to a create: the object under the key the client chose. */
+function created(init: RequestInit, version: number) {
+  const [object] = JSON.parse(String(init.body));
+  return Response.json({ successful: { 0: { key: object.key, version } } });
+}
+
+const record = (admin: ReturnType<typeof memoryAdmin>) => admin.documents[`users/${UID}/zoteroItems/${PAPER.id}`];
+
 test('sends the paper with the reader\'s own highlights, then updates the same item and note', async () => {
   const admin = memoryAdmin({
     [`users/${UID}/highlights/h1`]: { paperId: PAPER.id, kind: 'user', quote: 'A plain quote', note: 'My note', level: 'university', sectionId: 's1', paragraphIndex: 0 },
     [`users/${UID}/highlights/h2`]: { paperId: PAPER.id, kind: 'ai', quote: 'AI finding', note: 'Generated', level: 'university', sectionId: 's1', paragraphIndex: 1 },
   });
   await connected(admin);
-  const upstream = stubFetch((url, init) => {
-    if (init.method === 'POST') {
-      const [object] = JSON.parse(String(init.body));
-      return Response.json({ successful: { 0: { key: object.itemType === 'note' ? 'NOTEKEY1' : 'ITEMKEY1', version: 7 } } });
-    }
-    return new Response(null, { status: 204, headers: { 'last-modified-version': '8' } });
-  });
+  const upstream = stubFetch((_url, init) => (init.method === 'POST'
+    ? created(init, 7)
+    : new Response(null, { status: 204, headers: { 'last-modified-version': '8' } })));
   try {
     const first = await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
     assert.equal((first as { highlights: number }).highlights, 1);
     const [item, note] = upstream.calls.map(call => JSON.parse(String(call.init.body))[0]);
     assert.equal(item.itemType, 'preprint');
     assert.equal(item.archiveID, 'arXiv:2501.00001');
-    assert.equal(note.parentItem, 'ITEMKEY1');
+    assert.match(item.key, /^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/);
+    assert.equal(note.parentItem, item.key);
     assert.match(note.note, /not from the original text/);
     assert.match(note.note, /My note/);
     assert.doesNotMatch(note.note, /AI finding/);
@@ -153,8 +158,8 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
     upstream.calls.length = 0;
     await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
     assert.deepEqual(upstream.calls.map(call => [call.init.method, new URL(call.url).pathname]), [
-      ['PATCH', '/users/12345/items/ITEMKEY1'],
-      ['PATCH', '/users/12345/items/NOTEKEY1'],
+      ['PATCH', `/users/12345/items/${item.key}`],
+      ['PATCH', `/users/12345/items/${note.key}`],
     ]);
     assert.equal((upstream.calls[1].init.headers as Record<string, string>)['if-unmodified-since-version'], '7');
   } finally {
@@ -165,12 +170,12 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
 test('adds a new note instead of overwriting one edited in Zotero', async () => {
   const admin = memoryAdmin({
     [`users/${UID}/highlights/h1`]: { paperId: PAPER.id, kind: 'user', quote: 'A plain quote', level: 'beginner', sectionId: 's1', paragraphIndex: 0 },
-    [`users/${UID}/zoteroItems/${PAPER.id}`]: { zoteroUserId: '12345', itemKey: 'ITEMKEY1', itemVersion: 7, itemType: 'preprint', noteKey: 'NOTEKEY1', noteVersion: 7 },
+    [`users/${UID}/zoteroItems/${PAPER.id}`]: { zoteroUserId: '12345', itemKey: 'ITEMKEY2', itemVersion: 7, itemType: 'preprint', noteKey: 'NTEKEY23', noteVersion: 7 },
   });
   await connected(admin);
   const upstream = stubFetch((url, init) => {
-    if (init.method === 'PATCH') return new Response(null, { status: url.endsWith('NOTEKEY1') ? 412 : 204, headers: { 'last-modified-version': '9' } });
-    return Response.json({ successful: { 0: { key: 'NOTEKEY2', version: 9 } } });
+    if (init.method === 'PATCH') return new Response(null, { status: url.endsWith('NTEKEY23') ? 412 : 204, headers: { 'last-modified-version': '9' } });
+    return created(init, 9);
   });
   try {
     await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
@@ -178,34 +183,71 @@ test('adds a new note instead of overwriting one edited in Zotero', async () => 
   } finally {
     upstream.restore();
   }
-  assert.equal(admin.documents[`users/${UID}/zoteroItems/${PAPER.id}`].noteKey, 'NOTEKEY2');
+  assert.notEqual(record(admin).noteKey, 'NTEKEY23');
+  assert.equal(record(admin).noteVersion, 9);
 });
 
-test('a send that fails after creating the item resumes with that item instead of adding a second one', async () => {
-  const admin = memoryAdmin({
-    [`users/${UID}/highlights/h1`]: { paperId: PAPER.id, kind: 'user', quote: 'A plain quote', level: 'beginner', sectionId: 's1', paragraphIndex: 0 },
-  });
+test('a create whose answer was lost is looked up by its key, not made a second time', async () => {
+  const admin = memoryAdmin();
   await connected(admin);
-  let upstream = stubFetch((_url, init) => (JSON.parse(String(init.body))[0].itemType === 'note'
-    ? new Response(null, { status: 429, headers: { 'retry-after': '5' } })
-    : Response.json({ successful: { 0: { key: 'ITEMKEY1', version: 7 } } })));
+  let itemKey = '';
+  let upstream = stubFetch((_url, init) => {
+    itemKey = JSON.parse(String(init.body))[0].key;
+    throw new TypeError('connection reset');
+  });
   try {
     await assert.rejects(handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin }),
-      (error: ZoteroError) => error.code === 'ZOTERO_RATE_LIMITED');
+      (error: ZoteroError) => error.code === 'ZOTERO_UNAVAILABLE');
   } finally {
     upstream.restore();
   }
-  upstream = stubFetch((_url, init) => (init.method === 'PATCH'
-    ? new Response(null, { status: 204, headers: { 'last-modified-version': '8' } })
-    : Response.json({ successful: { 0: { key: 'NOTEKEY1', version: 8 } } })));
+  assert.equal(record(admin).itemKey, itemKey);
+  assert.equal(record(admin).itemVersion, 0);
+
+  upstream = stubFetch(url => Response.json({ [itemKey]: 7 }, { status: new URL(url).searchParams.get('format') === 'versions' ? 200 : 500 }));
   try {
     await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
-    assert.deepEqual(upstream.calls.map(call => [call.init.method, new URL(call.url).pathname]), [
-      ['PATCH', '/users/12345/items/ITEMKEY1'],
-      ['POST', '/users/12345/items'],
-    ]);
+    assert.deepEqual(upstream.calls.map(call => call.init.method), ['GET']);
   } finally {
     upstream.restore();
+  }
+  assert.equal(record(admin).itemKey, itemKey);
+  assert.equal(record(admin).itemVersion, 7);
+});
+
+test('a failing lookup is an error, not a missing item to create again', async () => {
+  const admin = memoryAdmin({
+    [`users/${UID}/zoteroItems/${PAPER.id}`]: { zoteroUserId: '12345', itemKey: 'ITEMKEY2', itemVersion: null, itemType: 'preprint' },
+  });
+  await connected(admin);
+  const upstream = stubFetch(() => new Response('Server error', { status: 500 }));
+  try {
+    await assert.rejects(handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin }),
+      (error: ZoteroError) => error.code === 'ZOTERO_UNAVAILABLE');
+    assert.deepEqual(upstream.calls.map(call => call.init.method), ['GET']);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('removing every highlight removes the note PaperTok wrote, but not one edited in Zotero', async () => {
+  for (const [status, removed] of [[204, true], [412, false]] as const) {
+    const admin = memoryAdmin({
+      [`users/${UID}/zoteroItems/${PAPER.id}`]: { zoteroUserId: '12345', itemKey: 'ITEMKEY2', itemVersion: 7, itemType: 'preprint', noteKey: 'NTEKEY23', noteVersion: 7 },
+    });
+    await connected(admin);
+    const upstream = stubFetch((_url, init) => (init.method === 'DELETE'
+      ? new Response(null, { status })
+      : new Response(null, { status: 204, headers: { 'last-modified-version': '8' } })));
+    try {
+      await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
+      const deleted = upstream.calls.find(call => call.init.method === 'DELETE');
+      assert.equal(new URL(deleted!.url).pathname, '/users/12345/items/NTEKEY23');
+      assert.equal((deleted!.init.headers as Record<string, string>)['if-unmodified-since-version'], '7');
+    } finally {
+      upstream.restore();
+    }
+    assert.equal(record(admin).noteKey, null, removed ? 'a removed note is forgotten' : 'an edited note is left in Zotero and forgotten here');
   }
 });
 

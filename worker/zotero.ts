@@ -178,22 +178,41 @@ function writeToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function createObject(key: string, userId: string, fetchImpl: typeof fetch, budget: AbortSignal, object: Record<string, unknown>) {
-  const response = await apiRequest(key, fetchImpl, budget, 'POST', `/users/${userId}/items`, [object], { 'zotero-write-token': writeToken() });
-  const payload = await response.json().catch(() => null) as { successful?: Record<string, { key?: string; version?: number }> } | null;
-  const saved = payload?.successful?.['0'];
-  if (!response.ok || typeof saved?.key !== 'string') throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
-  return { key: saved.key, version: Number(saved.version) || 0 };
+interface Zotero { key: string; userId: string; fetchImpl: typeof fetch; budget: AbortSignal }
+
+const OBJECT_KEY_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTUVWXYZ';
+
+/** A key in Zotero's own format, chosen here so a create whose answer is lost can be looked up instead of repeated. */
+export function newObjectKey() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => OBJECT_KEY_ALPHABET[b % OBJECT_KEY_ALPHABET.length]).join('');
 }
 
-/** The new version, or null when the object is gone or changed in Zotero since `version`. */
-async function patchObject(key: string, userId: string, fetchImpl: typeof fetch, budget: AbortSignal, objectKey: string, version: number, fields: Record<string, unknown>) {
-  const response = await apiRequest(key, fetchImpl, budget, 'PATCH', `/users/${userId}/items/${encodeURIComponent(objectKey)}`, fields, {
+async function createObject(z: Zotero, object: Record<string, unknown>) {
+  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'POST', `/users/${z.userId}/items`, [object], { 'zotero-write-token': writeToken() });
+  const payload = await response.json().catch(() => null) as { successful?: Record<string, { key?: string; version?: number }> } | null;
+  const saved = payload?.successful?.['0'];
+  if (!response.ok || !saved || saved.key !== object.key) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
+  return Number(saved.version) || 0;
+}
+
+/** The new version, 'missing' when the object is gone, or 'changed' when it was edited in Zotero since `version`. */
+async function patchObject(z: Zotero, objectKey: string, version: number, fields: Record<string, unknown>) {
+  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'PATCH', `/users/${z.userId}/items/${encodeURIComponent(objectKey)}`, fields, {
     'if-unmodified-since-version': String(version),
   });
-  if (response.status === 404 || response.status === 412) return null;
+  if (response.status === 404) return 'missing' as const;
+  if (response.status === 412) return 'changed' as const;
   if (!response.ok) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
   return Number(response.headers.get('last-modified-version')) || version;
+}
+
+/** The object's version, or null only when Zotero answers that it does not have it. */
+async function versionOf(z: Zotero, objectKey: string) {
+  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'GET', `/users/${z.userId}/items?format=versions&itemKey=${encodeURIComponent(objectKey)}`);
+  if (!response.ok) throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
+  const versions = await response.json().catch(() => null) as Record<string, number> | null;
+  if (!versions || typeof versions !== 'object') throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
+  return typeof versions[objectKey] === 'number' ? versions[objectKey] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,34 +414,44 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
     readHighlights(admin, identity.uid, paper.id),
   ]);
   const record: ItemRecord = stored?.zoteroUserId === userId ? { ...stored } : { zoteroUserId: userId };
-  // Saved after each object Zotero creates, so a send that fails halfway is resumed, not repeated.
   const save = (fields: ItemRecord) => {
     Object.assign(record, fields);
     return admin.commit([mergeWrite(admin.name(recordSegments), { ...record, zoteroUserId: userId }, { mustExist: false })]);
   };
+  const z: Zotero = { key, userId, fetchImpl, budget };
   try {
     const item = zoteroItem(paper);
-    // An item edited in Zotero, or filed there under another type, keeps the reader's version; only a deleted one is sent again.
-    const patched = record.itemKey && typeof record.itemVersion === 'number' && record.itemType === item.itemType
-      ? await patchObject(key, userId, fetchImpl, budget, record.itemKey, record.itemVersion, item)
-      : null;
-    if (patched !== null) record.itemVersion = patched;
-    else if (record.itemKey && await itemExists(key, userId, fetchImpl, budget, record.itemKey)) record.itemVersion = null;
-    else {
-      const created = await createObject(key, userId, fetchImpl, budget, { ...item, tags: [], collections: [], relations: {} });
-      await save({ itemKey: created.key, itemVersion: created.version, itemType: item.itemType, noteKey: null, noteVersion: null });
+    const itemState = await settle(z, record.itemKey, record.itemType === item.itemType ? record.itemVersion : null, item);
+    if (itemState === 'missing') {
+      // A new item gets a new note: the old note, if any, hangs under the item that is gone.
+      const itemKey = record.itemKey && record.itemVersion === 0 ? record.itemKey : newObjectKey();
+      await save({ itemKey, itemVersion: 0, itemType: item.itemType, noteKey: null, noteVersion: null });
+      await save({ itemVersion: await createObject(z, { ...item, key: itemKey, tags: [], collections: [], relations: {} }) });
+    } else {
+      record.itemVersion = itemState;
     }
 
     if (highlights.length) {
-      const note = highlightsNote(paper.title, highlights);
-      const updated = record.noteKey && typeof record.noteVersion === 'number'
-        ? await patchObject(key, userId, fetchImpl, budget, record.noteKey, record.noteVersion, { note })
-        : null;
-      if (updated !== null) record.noteVersion = updated;
-      else {
-        const created = await createObject(key, userId, fetchImpl, budget, { itemType: 'note', note, parentItem: record.itemKey, tags: [], collections: [], relations: {} });
-        Object.assign(record, { noteKey: created.key, noteVersion: created.version });
+      const note = { note: highlightsNote(paper.title, highlights) };
+      const noteState = await settle(z, record.noteKey ?? undefined, record.noteVersion, note);
+      if (noteState === 'missing' || noteState === null) {
+        // Missing, or edited in Zotero since: a new note goes beside it rather than over it.
+        const noteKey = record.noteKey && record.noteVersion === 0 && noteState === 'missing' ? record.noteKey : newObjectKey();
+        await save({ noteKey, noteVersion: 0 });
+        await save({ noteVersion: await createObject(z, { itemType: 'note', ...note, key: noteKey, parentItem: record.itemKey, tags: [], collections: [], relations: {} }) });
+      } else {
+        record.noteVersion = noteState;
       }
+    } else if (record.noteKey) {
+      // Every highlight was removed: the note PaperTok wrote goes too, unless the reader edited it in Zotero.
+      const noteVersion = record.noteVersion === 0 ? await versionOf(z, record.noteKey) : record.noteVersion;
+      if (typeof noteVersion === 'number') {
+        const response = await apiRequest(key, fetchImpl, budget, 'DELETE', `/users/${userId}/items/${encodeURIComponent(record.noteKey)}`, undefined, {
+          'if-unmodified-since-version': String(noteVersion),
+        });
+        if (!response.ok && response.status !== 404 && response.status !== 412) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
+      }
+      Object.assign(record, { noteKey: null, noteVersion: null });
     }
 
     const sentAt = new Date(now).toISOString();
@@ -434,14 +463,26 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
   }
 }
 
+/**
+ * Where one object PaperTok wrote stands, updated to `fields` when it is
+ * still PaperTok's: its new version, null when it was edited in Zotero (it
+ * is left as the reader made it), or 'missing' when it has to be created.
+ * A stored version of 0 marks a create whose answer never came back.
+ */
+async function settle(z: Zotero, objectKey: string | undefined, version: number | null | undefined, fields: Record<string, unknown>) {
+  if (!objectKey) return 'missing' as const;
+  if (typeof version === 'number' && version > 0) {
+    const outcome = await patchObject(z, objectKey, version, fields);
+    return outcome === 'changed' ? null : outcome;
+  }
+  const current = await versionOf(z, objectKey);
+  if (current === null) return 'missing' as const;
+  return version === 0 ? current : null;
+}
+
 /** Best effort: the key is already forgotten here whether or not Zotero hears of it. */
 async function revokeKey(env: WorkerEnv, sealed: string, fetchImpl: typeof fetch, budget: AbortSignal) {
   await unseal(env, sealed)
     .then(key => apiRequest(key, fetchImpl, budget, 'DELETE', `/keys/${encodeURIComponent(key)}`))
     .catch(() => {});
-}
-
-async function itemExists(key: string, userId: string, fetchImpl: typeof fetch, budget: AbortSignal, itemKey: string) {
-  const response = await apiRequest(key, fetchImpl, budget, 'GET', `/users/${userId}/items/${encodeURIComponent(itemKey)}?format=keys`);
-  return response.ok;
 }
