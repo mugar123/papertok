@@ -25,7 +25,7 @@ import {
   arrayRemove,
   limit,
 } from 'firebase/firestore';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
@@ -467,6 +467,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const metadataBudgetTimer = useRef<number | null>(null);
   const failedMetadataRequests = useRef(new Map<string, MetadataRequest[]>());
   const prefersReducedMotion = useReducedMotion();
+  // False while the route leaves this page and it stays mounted underneath.
+  const present = useIsPresent();
 
   const displayLists = useMemo<OwnList[]>(() => {
     const favoriteIds = Array.from(likedPaperIds || []);
@@ -1725,13 +1727,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // One motion vocabulary for the two views of this page: the index and an
   // open list cross-fade with a small vertical step instead of swapping DOM in
   // a single frame.
+  //
+  // Layout animation stops when the route leaves. The page underneath becomes
+  // fixed and the window scrolls to the top for the page arriving, so framer
+  // measures every row as having moved by the old scroll. Measured on a phone
+  // with the list scrolled 600px: the tapped row jumped 600px down and slid
+  // back over 200ms while the paper page covered it.
   const rowMotion = {
-    layout: true,
+    layout: present,
     exit: { opacity: 0, transform: 'translateX(18px)' },
     transition: { duration: 0.2, ease: EASE_OUT },
   };
   const cardMotion = {
-    layout: true,
+    layout: present,
     exit: { opacity: 0, transform: 'scale(0.97)' },
     transition: { duration: 0.2, ease: EASE_OUT },
   };
