@@ -23,10 +23,12 @@ export function getMissingAbstractDois(papers: Paper[]) {
     .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
 }
 
-// A paper whose abstract a recovered record may fill: an OpenAlex or PubMed
-// paper without one, unless its type has none (`typeHasAbstract`). Europe PMC
-// mirrors PubMed, so for a PubMed paper the publisher's record is the next source.
-const RECOVERED_PRIMARIES = new Set(['openalex', 'pubmed']);
+// A paper whose abstract a recovered record may fill: one without an abstract
+// from a source that lists such papers (OpenAlex, PubMed, NASA ADS, Europe
+// PMC, CORE, OSTI, NASA's report server), unless its type has none
+// (`typeHasAbstract`). Europe PMC mirrors PubMed, so for a PubMed paper the
+// publisher's record is the next source.
+const RECOVERED_PRIMARIES = new Set(['openalex', 'pubmed', 'nasa-ads', 'europepmc', 'core', 'osti', 'nasa-ntrs']);
 const awaitsAbstract = (paper: Paper) => RECOVERED_PRIMARIES.has(paper.sources.primary)
   && !hasUsableAIAbstract(paper.abstract) && typeHasAbstract(paper.publicationType);
 

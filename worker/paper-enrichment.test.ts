@@ -526,6 +526,20 @@ test('the PubMed id OpenAlex gives a paper brings its Europe PMC abstract in the
   assert.equal(paper.abstract, LATE_ABSTRACT);
 });
 
+test("a NASA ADS paper without an abstract gets Crossref's by its DOI", async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/ads', type: 'journal-article', abstract: `<jats:p>${FROM_CROSSREF}</jats:p>` }] } }),
+  });
+  const ads = { ...mapAdsPaper({ bibcode: '2026SynJ..002....1A', title: ['A synthetic ADS record without an abstract'], author: ['Doe, J.'], doi: ['10.5555/ads'], doctype: 'article', pubdate: '2026-10-00', year: '2026' })!, abstract: NO_ABSTRACT };
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: ads, lanes: [] }], { now: NIGHT });
+  await enrichPending(env, 50, NIGHT);
+  const { paper } = stored(db)['ads:2026SynJ..002....1A'];
+  assert.equal(paper.abstract, FROM_CROSSREF);
+  assert.equal(paper.abstractSource, 'crossref');
+});
+
 test("a night's retries spend no more OpenAlex calls than they are given, after the new papers and before the refresh", async t => {
   const asked = recoveryProviders(t, {});
   // 120 papers 3 days old at their first enrichment, two nights ago: due
