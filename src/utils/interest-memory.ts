@@ -288,10 +288,10 @@ export function planInterestGroups(
     positiveIds[index].push(...group.positiveIds.slice(1, quotas[index]).filter(admit));
   });
   // Then the heaviest groups fill the room left with their next examples, and
-  // each group takes every one of its own the request holds. Unused, that room
-  // left the reader's main area ranking by 13 of its 24 likes beside four areas
-  // without any, and every group by the same 4 of 24 likes of an area the
-  // reader never picked, since each group's share counted them (2026-11-14).
+  // each group takes every one of its own the request holds: an area with
+  // most of the likes ranks by all of them beside areas without any, and
+  // every established group by every like of the areas the reader never
+  // picked that the request holds.
   [...groups.keys()].sort((a, b) => groups[b].weight - groups[a].weight || a - b)
     .forEach(index => positiveIds[index].push(...groups[index].positiveIds.slice(quotas[index]).filter(admit)));
   const unassignedPositiveIds = input.examples
@@ -302,8 +302,8 @@ export function planInterestGroups(
   // The Worker places only a like no group names by `exampleCategories`, so
   // only beside one, and only in the first established group, are the leaves
   // of the areas the reader never picked listed: such a like of one of those
-  // areas ranks that group alone. Copied into every group, they pushed
-  // rejections out of the request of a reader of six to eight areas (2026-11-14).
+  // areas ranks that group alone. Listed in every group, they would crowd the
+  // rejections of a reader of six to eight areas out of the request.
   const listsNeverPicked = unassignedPositiveIds.length ? groups.findIndex(group => group.neverPickedLeaves.length > 0) : -1;
   return {
     groups: groups.map((group, index): InterestGroup => ({

@@ -1580,6 +1580,39 @@ test("a later page with the same interest groups reads the first page's order, a
   assert.deepEqual(await readFeedPage(env, request(1, [1, 3]), { now: NOW, cache }), [], 'another weight is another order');
 });
 
+// The `rankedBy` the Worker before the groups' ranking (945538f9) kept for the
+// first pages of the requests below. It digests the request, not the papers,
+// so it is the same on any corpus.
+const RANKED_BY_BEFORE_GROUPS_RANKING = {
+  exact: '79efdc8a4436f0ffaa14575867ac1c2e647279ccdfda0b78f338677a9e64fc6b',
+  withoutGroups: '039851e02169c778da48705374eaa4dfa6ad3029b238316d6eaa961ba7372005',
+  daily: 'bca8648302b158fc9b2323501d95dd3008e10282c56e4988fca589b25a08c818',
+  groups: '1a1dfa177d67c2b4f446a96ab2ed9223f19fe6ac9c80e44ee2401abc610abba7',
+};
+
+test("after the groups' ranking is deployed, a page of groups that is not daily ranks again, and a custom feed, a page without groups and a daily page go on with the order the Worker before kept", async () => {
+  const categories = ['quant-ph', 'econ.GN'];
+  const served: Record<string, number> = {};
+  for (const name of ['exact', 'withoutGroups', 'daily', 'groups'] as const) {
+    const { env, db, liked } = await physicsAndEconomics();
+    const body = {
+      exact: { categories, exact: true },
+      withoutGroups: { categories },
+      daily: { groups: interestGroups([liked]), order: 'daily' },
+      groups: { groups: interestGroups([liked]) },
+    }[name];
+    const stored = new Map<string, KeptRanking>();
+    const cache: RankingCache = { get: async key => stored.get(key) ?? null, put: async (key, ranking) => { stored.set(key, ranking); } };
+    const request = (page: number) => parseFeedRequest({ ...body, positiveIds: [liked], page, pageSize: 4 });
+    await readFeedPage(env, request(0), { now: NOW, cache });
+    // The first page's order as the Worker before kept it.
+    for (const ranking of stored.values()) ranking.rankedBy = RANKED_BY_BEFORE_GROUPS_RANKING[name];
+    db.exec('DELETE FROM work_lanes');
+    served[name] = (await readFeedPage(env, request(1), { now: NOW, cache })).length;
+  }
+  assert.deepEqual(served, { exact: 4, withoutGroups: 4, daily: 4, groups: 0 });
+});
+
 test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
   const { env } = corpus();
   await ingestPapers(env, Array.from({ length: 7 }, (_, index) => ({
@@ -2216,6 +2249,32 @@ test("with a like, each interest group ranks its own notable papers by its own l
   }), { now: NOW })).filter(paper => paper._notable).map(paper => paper.id);
   assert.deepEqual(await notable([1, 1]), ['W201811', 'W202521', 'W202410', 'W202421', 'W201610'].map(id => `openalex:${id}`));
   assert.deepEqual(await notable([2, 1]), ['W201811', 'W202521', 'W202410', 'W201610', 'W202421'].map(id => `openalex:${id}`));
+});
+
+test("each liked group's notable papers are ranked by that group's likes alone, not by another group's", async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('2610.00058'), vector([0, 0, 0, 0, 0, 1]));
+  // cs.LG's 2024 paper is closer to cs.CV's like (0.85) than its 2018 paper
+  // is to cs.LG's (0.8), and cs.CV's 2024 paper is close to cs.LG's like
+  // alone (0.9): ranked by every like, each would lead its group.
+  insert.run(idOf('openalex:W201811'), vector([0.8, 0.6, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202410'), vector([0.5, 0, 0.166, 0, 0, 0.85]));
+  insert.run(idOf('openalex:W202420'), vector([0.9, 0, 0, 0.436, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({
+    groups: [
+      { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: 1 },
+      { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: ['2610.00058'], weight: 1 },
+    ],
+    pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW });
+  // cs.LG's by its like, then the ones without a vector newest first; cs.CV's
+  // like is near none of cs.CV's papers, so they go newest first. The groups
+  // take turns.
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W201811', 'W202521', 'W202410', 'W202520', 'W202511'].map(id => `openalex:${id}`));
 });
 
 // A rejection says nothing about the years the reader wants: "Not interested"

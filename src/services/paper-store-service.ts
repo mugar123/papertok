@@ -209,8 +209,8 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // Trim new signals before they can push the existing request over 16 KiB.
   // First the copies of an example several groups hold, while one group keeps
   // it (`sharedCopy`): every established group holds the likes of the areas
-  // the reader never picked (planInterestGroups), and with ten areas and long
-  // ids their copies pushed out every rejection and exclusion.
+  // the reader never picked (planInterestGroups), so with ten areas and long
+  // ids their copies alone would leave no room for rejections or exclusions.
   // Then rejections, so the exclusion snapshot stays stable as they change.
   // A grouped request carries each example twice, so with long ids it can
   // still be over. Then examples go: first those of no group, then the oldest
@@ -220,8 +220,8 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // The fields the pages of one list differ in count at their longest, so
   // every page trims the same signals and a later page, or a first page that
   // `continues`, is served from the order the first one kept instead of
-  // ranking again. Trimmed to the byte, a first page that continued the walk
-  // could send one copy fewer than the page before it (2026-11-14).
+  // ranking again: a page whose fields are a few bytes longer would otherwise
+  // drop one more signal than the first.
   const pageFields = { page: Number.MAX_SAFE_INTEGER, ...(seen ? { notable: 99, continues: true } : {}) };
   while (new TextEncoder().encode(JSON.stringify({ ...body, ...pageFields })).byteLength > 16_000) {
     const copy = body.groups ? sharedCopy(body.groups) : null;

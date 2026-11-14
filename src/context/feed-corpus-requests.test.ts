@@ -427,15 +427,18 @@ test('every page of one list ranks by the same likes and rejections when the req
   const seen = new Set(Array.from({ length: 2000 }, (_, index) => `arxiv:2510.${10000 + index}`));
   const inputs = (body: Awaited<ReturnType<typeof bodiesOf>>[number]) =>
     ({ positiveIds: body.positiveIds, negativeIds: body.negativeIds, groups: body.groups?.map(group => group.positiveIds) });
-  // One exclusion three characters longer at a time moves the request across
-  // the 43 bytes of a like's copy, which is what the trim drops first.
-  for (let extra = 0; extra < 45; extra += 3) {
+  // One exclusion a character longer at a time moves the request across the
+  // 43 bytes of a like's copy, which is what the trim drops first, so at some
+  // length the bytes of `continues`, or the one byte of a two-digit page or
+  // `notable`, would drop one more copy.
+  for (let extra = 0; extra < 45; extra += 1) {
     const excludedIds = Array.from({ length: 200 }, (_, index) => `arxiv:2511.${10000 + index}${index === 0 ? 'v'.repeat(extra) : ''}`);
     const request = (page: number, notable: number, continues: boolean) =>
       ({ ...mainCorpusRequest(plan, { page, order: 'recent', negativeIds, excludedIds, seen }), notable, continues });
-    const [first, resumed, next] = await bodiesOf(request(0, 5, false), request(0, 5, true), request(1, 12, false));
+    const [first, resumed, next, tenth] = await bodiesOf(request(0, 5, false), request(0, 5, true), request(1, 12, false), request(10, 5, false));
     assert.ok(first.groups!.every(group => group.positiveIds.length < 24), 'the request is trimmed');
     assert.deepEqual(inputs(resumed), inputs(first), `a first page that continues the walk, ${extra} characters longer`);
-    assert.deepEqual(inputs(next), inputs(first), `the second page, ${extra} characters longer`);
+    assert.deepEqual(inputs(next), inputs(first), `the second page, with a two-digit notable, ${extra} characters longer`);
+    assert.deepEqual(inputs(tenth), inputs(first), `the eleventh page, ${extra} characters longer`);
   }
 });

@@ -430,8 +430,10 @@ test('an added area learns from the cards and examples recorded under its own ke
   assert.equal(interestProgress(eightExamples)['chem.org'], 1);
 });
 
-// ENG-137, ruling R18: only what the reader deselected sleeps. The established
-// group ranks by examples from every area, as on main, but none removed.
+// ENG-137, ruling R18: only what the reader deselected sleeps. A reader of one
+// area has one established group. It ranks by the examples of its own area and
+// of every area the reader never picked, beside a like of no area it also
+// lists those areas' leaves, and it holds nothing the reader removed.
 test('the established group ranks by every area but what the reader removed', () => {
   const plan = planInterestGroups(memory({
     selected: ['cs.LG'],
