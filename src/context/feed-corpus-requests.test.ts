@@ -389,6 +389,22 @@ test('a reader of eight areas with likes in each keeps every rejection and exclu
   assert.equal(body.excludedIds?.length, 200);
 });
 
+test('a reader of seven areas with a like of no area keeps every rejection and exclusion in the request', async () => {
+  const sevenAreas = [['quant-ph', 'cond-mat.str-el'], ['cs.AI', 'cs.LG'], ['math.AG', 'math.CO'], ['stat.ML', 'stat.ME'], ['econ.EM', 'econ.GN'], ['q-fin.ST', 'q-fin.CP'], ['eess.SP', 'eess.SY']];
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: sevenAreas.flat(),
+    examples: [
+      ...sevenAreas.flatMap(([leaf], area) => [0, 1].map(index => ({ id: `openalex:W4${area}${index}0000000`, category: leaf }))),
+      // Stored before examples had a category (profiles from before October 17).
+      { id: 'openalex:W4900000000', category: '' },
+    ],
+  })));
+  assert.equal(body.groups?.length, 7);
+  assert.equal(body.positiveIds.length, 15);
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});
+
 test('a reader of ten areas sends every like of an area they never picked, and keeps every rejection and exclusion', async () => {
   const tenAreas = [...eightAreas, ['bio.gen', 'bio.mol'], ['med.gen', 'med.onco']];
   // DOI-length ids, twice as long as arXiv and OpenAlex ones.

@@ -1917,10 +1917,12 @@ function groupsOfCandidate(groups: FeedGroup[]) {
  * names, or else the areas whose journal lanes list it, matched
  * against the areas of those categories. A like of a known area no group
  * holds ranks none. In a request with such a like, the app's established
- * groups each hold their area's leaves and those of every area the reader
- * never picked, less the ones the reader removed, so that is a like of a
- * removed subarea, or of an area the reader never picked when every group is
- * an added one. Only a like with no evidence ranks every group.
+ * groups each hold their area's leaves, and the first of them those of every
+ * area the reader never picked too, less the ones the reader removed: so a
+ * like of an area the reader never picked ranks that group alone, and one no
+ * group holds is a like of a removed subarea, or of an area the reader never
+ * picked when every group is an added one. Only a like with no evidence ranks
+ * every group.
  */
 function groupsOfLike(groups: FeedGroup[]) {
   const exampleAreas = groups.map(group => areasOfLeaves(group.exampleCategories));

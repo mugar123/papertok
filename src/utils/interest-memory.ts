@@ -48,8 +48,9 @@ export interface InterestMemoryInput {
 
 export interface InterestGroup { categories: string[]; exampleCategories: string[]; positiveIds: string[]; weight: number }
 
-// `neverPickedLeaves`: what an established group adds to its
-// `exampleCategories` when the request sends a like of no area.
+// `neverPickedLeaves`: an established group's leaves of the areas the reader
+// never picked, which the first one adds to its `exampleCategories` when the
+// request sends a like of no area.
 interface PlannedGroup extends InterestGroup { ownSubarea: boolean; neverPickedLeaves: string[] }
 
 // The deselected ids that sleep. An old bundle or the onboarding can leave an
@@ -299,13 +300,15 @@ export function planInterestGroups(
     .filter(admit);
 
   // The Worker places only a like no group names by `exampleCategories`, so
-  // an established group lists the leaves of the areas the reader never
-  // picked only beside one: with eight areas, their copies in every group
-  // pushed the reader's rejections out of the request (2026-11-14).
+  // only beside one, and only in the first established group, are the leaves
+  // of the areas the reader never picked listed: such a like of one of those
+  // areas ranks that group alone. Copied into every group, they pushed
+  // rejections out of the request of a reader of six to eight areas (2026-11-14).
+  const listsNeverPicked = unassignedPositiveIds.length ? groups.findIndex(group => group.neverPickedLeaves.length > 0) : -1;
   return {
     groups: groups.map((group, index): InterestGroup => ({
       categories: group.categories.slice(0, lanes[index]),
-      exampleCategories: [...group.exampleCategories, ...(unassignedPositiveIds.length ? group.neverPickedLeaves : [])],
+      exampleCategories: [...group.exampleCategories, ...(index === listsNeverPicked ? group.neverPickedLeaves : [])],
       positiveIds: positiveIds[index],
       weight: group.weight,
     })),
