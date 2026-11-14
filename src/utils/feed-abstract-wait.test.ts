@@ -85,14 +85,14 @@ const settledOffScreen = { awaiting: false, visible: false };
 
 test('the card on screen says its abstract is loading, then whether it arrived', () => {
   assert.deepEqual(spoken([loading, loaded, loaded]), ['Loading abstract', 'Abstract loaded', 'Abstract loaded']);
-  assert.deepEqual(spoken([loading, none, none]), ['Loading abstract', 'No abstract available', 'No abstract available']);
+  assert.deepEqual(spoken([loading, none, none]), ['Loading abstract', 'No abstract to show', 'No abstract to show']);
   assert.deepEqual(spoken([offScreen, loading]), ['', 'Loading abstract']);
 });
 
 test('a wait that ends off screen is not spoken, and a return after the end says nothing', () => {
   assert.deepEqual(spoken([offScreen, settledOffScreen, none]), ['', '', '']);
   assert.deepEqual(spoken([loading, none, settledOffScreen, none, settledOffScreen, none]),
-    ['Loading abstract', 'No abstract available', '', '', '', '']);
+    ['Loading abstract', 'No abstract to show', '', '', '', '']);
 });
 
 test('a card shown without a wait says nothing until a later wait starts, then announces its end', () => {

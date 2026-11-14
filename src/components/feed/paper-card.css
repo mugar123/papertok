@@ -947,6 +947,14 @@ button.pc-topics-pop-item:focus-visible {
   animation: none;
 }
 
+/* The publisher's page in the no-abstract sentence, underlined like the
+   abstract's source credit: beside the body text, colour alone would not mark
+   it as a link. */
+.pc-abstract-empty .empty-state-body a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Expanded, it takes the space the rest of the card is not using and scrolls
    inside it, rather than growing to a fixed 62vh and taking the sheet with it.
    `overscroll-behavior: contain` stops a flick that reaches the end of the
@@ -2739,12 +2747,14 @@ button.pc-topics-pop-item:focus-visible {
       gap: var(--space-2);
     }
 
-    /* Petri is decoration; on a card this short the state is its words. */
+    /* Petri is decoration; on a card this short the state is its words. Its
+       box goes too: hiding only the drawing left the box's 16px margin, which
+       pushed the publisher link under the panel's edge at 740x360. */
     .pc-abstract-empty .empty-state {
       padding-block: var(--space-2);
     }
 
-    .pc-abstract-empty .petri {
+    .pc-abstract-empty .empty-state-art {
       display: none;
     }
   }

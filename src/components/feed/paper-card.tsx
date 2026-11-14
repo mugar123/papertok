@@ -140,6 +140,7 @@ import type { StatusTagKey } from '../../utils/paper-status.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
+import { missingAbstractNotice } from '../../utils/missing-abstract.ts';
 import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
 /**
@@ -936,6 +937,7 @@ const PaperCard = memo(function PaperCard({
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
   const abstractAttribution = sourceAttribution(paper);
+  const missingAbstract = missingAbstractNotice(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -2190,7 +2192,7 @@ const PaperCard = memo(function PaperCard({
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.
               // Saying so means the words that arrive replace a stated wait,
-              // not a "No abstract available" the reader has already read.
+              // not a "No abstract to show" the reader has already read.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2208,7 +2210,10 @@ const PaperCard = memo(function PaperCard({
             ) : (
               // No abstract in the record: the shared empty state, centred in
               // the abstract's place like every other one, not set as the first
-              // line of an article (drop cap and all).
+              // line of an article (drop cap and all). The publisher's page is
+              // a link in the sentence, like the abstract's source credit, not
+              // a button under it: a button row adds 52px, and at 360x640 the
+              // panel clipped most of the button.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2218,9 +2223,18 @@ const PaperCard = memo(function PaperCard({
                 <EmptyState
                   as="p"
                   art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
-                  title={'No abstract available'}
+                  title={missingAbstract.title}
                 >
-                  {"This paper's record has no abstract."}
+                  {missingAbstract.body}
+                  {missingAbstract.publisherUrl && (
+                    <>
+                      {' Try the '}
+                      <a href={missingAbstract.publisherUrl} target="_blank" rel="noopener noreferrer" onClick={swallowClick}>
+                        {"publisher's page"}<span className="visually-hidden"> (opens in a new tab)</span>
+                      </a>
+                      {'.'}
+                    </>
+                  )}
                 </EmptyState>
               </motion.div>
             )}

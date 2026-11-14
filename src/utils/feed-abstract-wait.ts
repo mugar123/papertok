@@ -1,4 +1,5 @@
 import { awaitWithinGate } from './feed-citation-gate.ts';
+import { MISSING_ABSTRACT_TITLE } from './missing-abstract.ts';
 
 // The slowest abstract source's own deadline: Europe PMC aborts at 7 s,
 // OpenAlex enrichment at 6.5 s and recovery at 6 s.
@@ -29,7 +30,7 @@ export function nextAbstractAnnouncement(
 ): AbstractAnnouncement {
   if (!previous) return { awaiting, ended: '' };
   if (previous.awaiting !== awaiting) {
-    return { awaiting, ended: !awaiting && visible ? (hasText ? 'Abstract loaded' : 'No abstract available') : '' };
+    return { awaiting, ended: !awaiting && visible ? (hasText ? 'Abstract loaded' : MISSING_ABSTRACT_TITLE) : '' };
   }
   return previous.ended && !visible ? { awaiting, ended: '' } : previous;
 }
