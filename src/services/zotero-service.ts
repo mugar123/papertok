@@ -10,13 +10,11 @@ interface PendingSend { uid: string; citation: ZoteroCitation; returnTo: string;
 
 export class ZoteroRequestError extends Error {
   declare code: string;
-  declare status: number;
   declare retryAfter: number | null;
-  constructor(code: string, status: number, retryAfter: number | null = null) {
+  constructor(code: string, retryAfter: number | null = null) {
     super(code);
     this.name = 'ZoteroRequestError';
     this.code = code;
-    this.status = status;
     this.retryAfter = retryAfter;
   }
 }
@@ -56,18 +54,18 @@ export function zoteroCitation(paper: Paper) {
 
 async function request<T>(path: string, init: RequestInit = {}, params: Record<string, unknown> = {}): Promise<T> {
   const url = workerSourceUrl(path, params);
-  if (!url) throw new ZoteroRequestError('ZOTERO_NOT_CONFIGURED', 503);
+  if (!url) throw new ZoteroRequestError('ZOTERO_NOT_CONFIGURED');
   let response: Response;
   try {
     response = await authenticatedWorkerFetch(url, init, 20_000);
   } catch (error) {
     const code = (error as { code?: string } | null)?.code;
-    throw new ZoteroRequestError(code === 'WORKER_AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'ZOTERO_UNAVAILABLE', 0);
+    throw new ZoteroRequestError(code === 'WORKER_AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'ZOTERO_UNAVAILABLE');
   }
   const payload = await response.json().catch(() => ({})) as T & { code?: string };
   if (!response.ok) {
     const wait = Number(response.headers.get('retry-after'));
-    throw new ZoteroRequestError(payload.code || 'ZOTERO_FAILED', response.status, Number.isFinite(wait) && wait > 0 ? wait : null);
+    throw new ZoteroRequestError(payload.code || 'ZOTERO_FAILED', Number.isFinite(wait) && wait > 0 ? wait : null);
   }
   return payload;
 }
@@ -91,7 +89,7 @@ export function disconnectZotero() {
 /** Leaves for Zotero's authorization page; the send waits in this tab until the callback. */
 export async function connectZotero(uid: string, citation: ZoteroCitation | null) {
   const { authorizeUrl } = await post<{ authorizeUrl: string }>('/zotero/connect');
-  if (!/^https:\/\/www\.zotero\.org\/oauth\/authorize\?/.test(authorizeUrl)) throw new ZoteroRequestError('ZOTERO_FAILED', 502);
+  if (!/^https:\/\/www\.zotero\.org\/oauth\/authorize\?/.test(authorizeUrl)) throw new ZoteroRequestError('ZOTERO_FAILED');
   const pending: PendingSend | null = citation
     ? { uid, citation, returnTo: `${location.pathname}${location.search}`, createdAt: Date.now() }
     : null;

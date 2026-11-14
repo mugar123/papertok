@@ -25,6 +25,7 @@ import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { createFirestoreAdmin, deleteWrite, encodeFields, mergeWrite } from './firestore-admin.ts';
 import { encodeFirestoreDocId } from '../src/utils/firestore-doc-id.ts';
+import { escapeHtml } from './share-pages.ts';
 
 export const ZOTERO_PATHS = new Set(['/zotero/connect', '/zotero/complete', '/zotero/status', '/zotero/send', '/zotero/disconnect']);
 
@@ -57,23 +58,23 @@ interface Admin {
   runQuery(options: QueryOptions): Promise<Array<{ data: Record<string, unknown> }>>;
   commit(writes: FirestoreWrite[]): Promise<unknown>;
 }
-interface ZoteroOptions { admin?: Admin; fetchImpl?: typeof fetch; now?: () => number; nonce?: () => string }
+interface ZoteroOptions { admin?: Admin }
 interface LinkDocument {
   pendingToken?: string; pendingSecret?: string; pendingAt?: number;
   key?: string; zoteroUserId?: string; username?: string; connectedAt?: string;
 }
 interface ItemRecord { zoteroUserId?: string; itemKey?: string; itemVersion?: number | null; itemType?: string; noteKey?: string | null; noteVersion?: number | null; sentAt?: string }
-export interface ZoteroPaper {
+interface ZoteroPaper {
   id: string; title: string; authors: string[]; date: string; doi: string; arxivId: string; pmid: string; pmcid: string;
   abstract: string; journal: string; url: string; preprint: boolean;
 }
-export interface ZoteroHighlight { quote: string; note: string; level: string }
+interface ZoteroHighlight { quote: string; note: string; level: string }
 
 // ---------------------------------------------------------------------------
 // OAuth 1.0a (HMAC-SHA1), as Zotero's own example signs it.
 // ---------------------------------------------------------------------------
 
-export function percentEncode(value: string) {
+function percentEncode(value: string) {
   return encodeURIComponent(value).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
@@ -105,13 +106,13 @@ async function sealingKey(env: WorkerEnv) {
   return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
-export async function seal(env: WorkerEnv, text: string) {
+async function seal(env: WorkerEnv, text: string) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const sealed = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await sealingKey(env), new TextEncoder().encode(text));
   return `${toBase64(iv)}.${toBase64(sealed)}`;
 }
 
-export async function unseal(env: WorkerEnv, text: string) {
+async function unseal(env: WorkerEnv, text: string) {
   const [iv, sealed] = text.split('.');
   const opened = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(iv) }, await sealingKey(env), fromBase64(sealed));
   return new TextDecoder().decode(opened);
@@ -125,10 +126,10 @@ function waitHeader(response: Response) {
   return response.headers.get('retry-after') || response.headers.get('backoff') || undefined;
 }
 
-async function zoteroFetch(fetchImpl: typeof fetch, url: string, init: RequestInit, budget: AbortSignal) {
+async function zoteroFetch(url: string, init: RequestInit, budget: AbortSignal) {
   let response: Response;
   try {
-    response = await fetchImpl(url, { ...init, signal: AbortSignal.any([budget, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+    response = await fetch(url, { ...init, signal: AbortSignal.any([budget, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
   } catch {
     throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
   }
@@ -136,17 +137,17 @@ async function zoteroFetch(fetchImpl: typeof fetch, url: string, init: RequestIn
   return response;
 }
 
-async function oauthStep(env: WorkerEnv, fetchImpl: typeof fetch, budget: AbortSignal, step: 'request' | 'access', extra: Record<string, string>, tokenSecret = '', options: ZoteroOptions = {}) {
+async function oauthStep(env: WorkerEnv, budget: AbortSignal, step: 'request' | 'access', extra: Record<string, string>, tokenSecret = '') {
   const url = `${ZOTERO_OAUTH}/${step}`;
   const params = {
     oauth_consumer_key: String(env.ZOTERO_CLIENT_KEY),
-    oauth_nonce: options.nonce?.() ?? crypto.randomUUID().replace(/-/g, ''),
+    oauth_nonce: crypto.randomUUID().replace(/-/g, ''),
     oauth_signature_method: 'HMAC-SHA1',
-    oauth_timestamp: String(Math.floor((options.now?.() ?? Date.now()) / 1000)),
+    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
     oauth_version: '1.0',
     ...extra,
   };
-  const response = await zoteroFetch(fetchImpl, url, {
+  const response = await zoteroFetch(url, {
     method: 'POST',
     headers: { authorization: await oauthHeader('POST', url, params, String(env.ZOTERO_CLIENT_SECRET), tokenSecret) },
   }, budget);
@@ -158,17 +159,19 @@ async function oauthStep(env: WorkerEnv, fetchImpl: typeof fetch, budget: AbortS
   return new URLSearchParams(text);
 }
 
-async function apiRequest(key: string, fetchImpl: typeof fetch, budget: AbortSignal, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-  const response = await zoteroFetch(fetchImpl, `${ZOTERO_API}${path}`, {
+interface Zotero { key: string; userId: string; budget: AbortSignal }
+
+async function apiRequest(z: Pick<Zotero, 'key' | 'budget'>, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+  const response = await zoteroFetch(`${ZOTERO_API}${path}`, {
     method,
     headers: {
-      'zotero-api-key': key,
+      'zotero-api-key': z.key,
       'zotero-api-version': '3',
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       ...headers,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }, budget);
+  }, z.budget);
   // Zotero answers 403 for a revoked key as for one that lacks the right.
   if (response.status === 403) throw new ZoteroError('ZOTERO_NOT_CONNECTED', 409);
   return response;
@@ -178,17 +181,15 @@ function writeToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-interface Zotero { key: string; userId: string; fetchImpl: typeof fetch; budget: AbortSignal }
-
 const OBJECT_KEY_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTUVWXYZ';
 
 /** A key in Zotero's own format, chosen here so a create whose answer is lost can be looked up instead of repeated. */
-export function newObjectKey() {
+function newObjectKey() {
   return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => OBJECT_KEY_ALPHABET[b % OBJECT_KEY_ALPHABET.length]).join('');
 }
 
 async function createObject(z: Zotero, object: Record<string, unknown>) {
-  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'POST', `/users/${z.userId}/items`, [object], { 'zotero-write-token': writeToken() });
+  const response = await apiRequest(z, 'POST', `/users/${z.userId}/items`, [object], { 'zotero-write-token': writeToken() });
   const payload = await response.json().catch(() => null) as { successful?: Record<string, { key?: string; version?: number }> } | null;
   const saved = payload?.successful?.['0'];
   if (!response.ok || !saved || saved.key !== object.key) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
@@ -197,7 +198,7 @@ async function createObject(z: Zotero, object: Record<string, unknown>) {
 
 /** The new version, 'missing' when the object is gone, or 'changed' when it was edited in Zotero since `version`. */
 async function patchObject(z: Zotero, objectKey: string, version: number, fields: Record<string, unknown>) {
-  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'PATCH', `/users/${z.userId}/items/${encodeURIComponent(objectKey)}`, fields, {
+  const response = await apiRequest(z, 'PATCH', `/users/${z.userId}/items/${encodeURIComponent(objectKey)}`, fields, {
     'if-unmodified-since-version': String(version),
   });
   if (response.status === 404) return 'missing' as const;
@@ -208,7 +209,7 @@ async function patchObject(z: Zotero, objectKey: string, version: number, fields
 
 /** The object's version, or null only when Zotero answers that it does not have it. */
 async function versionOf(z: Zotero, objectKey: string) {
-  const response = await apiRequest(z.key, z.fetchImpl, z.budget, 'GET', `/users/${z.userId}/items?format=versions&itemKey=${encodeURIComponent(objectKey)}`);
+  const response = await apiRequest(z, 'GET', `/users/${z.userId}/items?format=versions&itemKey=${encodeURIComponent(objectKey)}`);
   if (!response.ok) throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
   const versions = await response.json().catch(() => null) as Record<string, number> | null;
   if (!versions || typeof versions !== 'object') throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
@@ -219,7 +220,8 @@ async function versionOf(z: Zotero, objectKey: string) {
 // What is sent.
 // ---------------------------------------------------------------------------
 
-function cleanText(value: unknown, cap: number) {
+/** Text on one line, whitespace collapsed, at most `cap` characters. */
+function singleLine(value: unknown, cap: number) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, cap) : '';
 }
 
@@ -227,21 +229,21 @@ function cleanText(value: unknown, cap: number) {
 export function normalizeZoteroPaper(input: unknown): ZoteroPaper | null {
   if (!input || typeof input !== 'object') return null;
   const value = input as Record<string, unknown>;
-  const id = cleanText(value.id, 300);
-  const title = cleanText(value.title, 1000);
+  const id = singleLine(value.id, 300);
+  const title = singleLine(value.title, 1000);
   if (!id || !title) return null;
-  const url = cleanText(value.url, 2000);
+  const url = singleLine(value.url, 2000);
   return {
     id,
     title,
-    authors: (Array.isArray(value.authors) ? value.authors : []).map(name => cleanText(name, 300)).filter(Boolean).slice(0, 200),
-    date: /^\d{4}(-\d{2}(-\d{2})?)?$/.test(cleanText(value.date, 10)) ? cleanText(value.date, 10) : '',
-    doi: cleanText(value.doi, 300),
-    arxivId: cleanText(value.arxivId, 100),
-    pmid: /^\d{1,12}$/.test(cleanText(value.pmid, 12)) ? cleanText(value.pmid, 12) : '',
-    pmcid: cleanText(value.pmcid, 20),
+    authors: (Array.isArray(value.authors) ? value.authors : []).map(name => singleLine(name, 300)).filter(Boolean).slice(0, 200),
+    date: /^\d{4}(-\d{2}(-\d{2})?)?$/.test(singleLine(value.date, 10)) ? singleLine(value.date, 10) : '',
+    doi: singleLine(value.doi, 300),
+    arxivId: singleLine(value.arxivId, 100),
+    pmid: /^\d{1,12}$/.test(singleLine(value.pmid, 12)) ? singleLine(value.pmid, 12) : '',
+    pmcid: singleLine(value.pmcid, 20),
     abstract: typeof value.abstract === 'string' ? value.abstract.trim().slice(0, 20_000) : '',
-    journal: cleanText(value.journal, 500),
+    journal: singleLine(value.journal, 500),
     url: /^https?:\/\//i.test(url) ? url : '',
     preprint: value.preprint === true,
   };
@@ -262,15 +264,13 @@ export function zoteroItem(paper: ZoteroPaper) {
     url: paper.url || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : ''),
     libraryCatalog: 'PaperTok',
   };
+  // Zotero reads an `arXiv:` line in Extra as the paper's arXiv id on types without an archive field.
+  const arxivExtra = paper.arxivId ? `arXiv: ${paper.arxivId}` : '';
   return paper.preprint
     ? { itemType: 'preprint', ...common, repository: paper.arxivId ? 'arXiv' : '', archiveID: paper.arxivId ? `arXiv:${paper.arxivId}` : '' }
     : paper.journal
-      ? { itemType: 'journalArticle', ...common, publicationTitle: paper.journal, PMID: paper.pmid, PMCID: paper.pmcid }
-      : { itemType: 'document', ...common };
-}
-
-function escapeHtml(text: string) {
-  return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+      ? { itemType: 'journalArticle', ...common, publicationTitle: paper.journal, PMID: paper.pmid, PMCID: paper.pmcid, extra: arxivExtra }
+      : { itemType: 'document', ...common, extra: arxivExtra };
 }
 
 const LEVEL_LABELS: Record<string, string> = { beginner: 'Beginner', university: 'University', researcher: 'Researcher' };
@@ -335,7 +335,7 @@ async function connectedKey(admin: Admin, env: WorkerEnv, uid: string) {
   }
 }
 
-export function isZoteroConfigured(env: WorkerEnv) {
+function isZoteroConfigured(env: WorkerEnv) {
   return Boolean(env.ZOTERO_CLIENT_KEY && env.ZOTERO_CLIENT_SECRET && env.ZOTERO_TOKEN_KEY && isServiceAccountConfigured(env));
 }
 
@@ -346,13 +346,12 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
   if (!isZoteroConfigured(env)) throw new ZoteroError('ZOTERO_NOT_CONFIGURED', 503);
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: method === 'GET' });
   const admin: Admin = options.admin || createFirestoreAdmin(env);
-  const fetchImpl = options.fetchImpl || fetch;
   const budget = AbortSignal.timeout(ROUTE_BUDGET_MS);
-  const now = options.now?.() ?? Date.now();
+  const now = Date.now();
   const link = admin.name(linkSegments(identity.uid));
 
   if (pathname === '/zotero/status') {
-    const paperId = cleanText(new URL(request.url).searchParams.get('paperId'), 300);
+    const paperId = singleLine(new URL(request.url).searchParams.get('paperId'), 300);
     const [current, sent] = await Promise.all([
       admin.getDocument<LinkDocument>(linkSegments(identity.uid)),
       paperId ? admin.getDocument<ItemRecord>(['users', identity.uid, 'zoteroItems', encodeFirestoreDocId(paperId)]) : null,
@@ -366,7 +365,7 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
   }
 
   if (pathname === '/zotero/connect') {
-    const answer = await oauthStep(env, fetchImpl, budget, 'request', { oauth_callback: `${origin}/zotero/callback` }, '', options);
+    const answer = await oauthStep(env, budget, 'request', { oauth_callback: `${origin}/zotero/callback` });
     const token = answer.get('oauth_token');
     const secret = answer.get('oauth_token_secret');
     if (!token || !secret) throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
@@ -376,14 +375,14 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
 
   if (pathname === '/zotero/complete') {
     const body = await readBody(request);
-    const token = cleanText(body.oauthToken, 200);
-    const verifier = cleanText(body.oauthVerifier, 200);
+    const token = singleLine(body.oauthToken, 200);
+    const verifier = singleLine(body.oauthVerifier, 200);
     const pending = await admin.getDocument<LinkDocument>(linkSegments(identity.uid));
     if (!token || !verifier || !pending?.pendingToken || !pending.pendingSecret || pending.pendingToken !== token
       || now - Number(pending.pendingAt) > PENDING_LIFETIME_MS) {
       throw new ZoteroError('ZOTERO_CONNECTION_EXPIRED', 400);
     }
-    const answer = await oauthStep(env, fetchImpl, budget, 'access', { oauth_token: token, oauth_verifier: verifier }, await unseal(env, pending.pendingSecret), options);
+    const answer = await oauthStep(env, budget, 'access', { oauth_token: token, oauth_verifier: verifier }, await unseal(env, pending.pendingSecret));
     const key = answer.get('oauth_token_secret');
     const zoteroUserId = answer.get('userID');
     if (!key || !zoteroUserId || !/^\d+$/.test(zoteroUserId)) throw new ZoteroError('ZOTERO_UNAVAILABLE', 502);
@@ -392,71 +391,23 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
     await admin.commit([{ update: { name: link, fields: encodeFields({
       key: await seal(env, key), zoteroUserId, username, connectedAt: new Date(now).toISOString(),
     }) } }]);
-    if (pending.key) await revokeKey(env, pending.key, fetchImpl, budget);
+    if (pending.key) await revokeKey(env, pending.key, budget);
     return { connected: true, username };
   }
 
   if (pathname === '/zotero/disconnect') {
     const current = await admin.getDocument<LinkDocument>(linkSegments(identity.uid));
     await admin.commit([deleteWrite(link)]);
-    if (current?.key) await revokeKey(env, current.key, fetchImpl, budget);
+    if (current?.key) await revokeKey(env, current.key, budget);
     return { connected: false };
   }
 
-  // /zotero/send
   const body = await readBody(request);
   const paper = normalizeZoteroPaper(body.paper);
   if (!paper) throw new ZoteroError('INVALID_PAPER', 400);
   const { key, userId } = await connectedKey(admin, env, identity.uid);
-  const recordSegments = ['users', identity.uid, 'zoteroItems', encodeFirestoreDocId(paper.id)];
-  const [stored, highlights] = await Promise.all([
-    admin.getDocument<ItemRecord>(recordSegments),
-    readHighlights(admin, identity.uid, paper.id),
-  ]);
-  const record: ItemRecord = stored?.zoteroUserId === userId ? { ...stored } : { zoteroUserId: userId };
-  const save = (fields: ItemRecord) => {
-    Object.assign(record, fields);
-    return admin.commit([mergeWrite(admin.name(recordSegments), { ...record, zoteroUserId: userId }, { mustExist: false })]);
-  };
-  const z: Zotero = { key, userId, fetchImpl, budget };
   try {
-    const item = zoteroItem(paper);
-    const itemState = await settle(z, record.itemKey, record.itemType === item.itemType ? record.itemVersion : null, item);
-    if (itemState === 'missing') {
-      // A new item gets a new note: the old note, if any, hangs under the item that is gone.
-      const itemKey = record.itemKey && record.itemVersion === 0 ? record.itemKey : newObjectKey();
-      await save({ itemKey, itemVersion: 0, itemType: item.itemType, noteKey: null, noteVersion: null });
-      await save({ itemVersion: await createObject(z, { ...item, key: itemKey, tags: [], collections: [], relations: {} }) });
-    } else {
-      record.itemVersion = itemState;
-    }
-
-    if (highlights.length) {
-      const note = { note: highlightsNote(paper.title, highlights) };
-      const noteState = await settle(z, record.noteKey ?? undefined, record.noteVersion, note);
-      if (noteState === 'missing' || noteState === null) {
-        // Missing, or edited in Zotero since: a new note goes beside it rather than over it.
-        const noteKey = record.noteKey && record.noteVersion === 0 && noteState === 'missing' ? record.noteKey : newObjectKey();
-        await save({ noteKey, noteVersion: 0 });
-        await save({ noteVersion: await createObject(z, { itemType: 'note', ...note, key: noteKey, parentItem: record.itemKey, tags: [], collections: [], relations: {} }) });
-      } else {
-        record.noteVersion = noteState;
-      }
-    } else if (record.noteKey) {
-      // Every highlight was removed: the note PaperTok wrote goes too, unless the reader edited it in Zotero.
-      const noteVersion = record.noteVersion === 0 ? await versionOf(z, record.noteKey) : record.noteVersion;
-      if (typeof noteVersion === 'number') {
-        const response = await apiRequest(key, fetchImpl, budget, 'DELETE', `/users/${userId}/items/${encodeURIComponent(record.noteKey)}`, undefined, {
-          'if-unmodified-since-version': String(noteVersion),
-        });
-        if (!response.ok && response.status !== 404 && response.status !== 412) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
-      }
-      Object.assign(record, { noteKey: null, noteVersion: null });
-    }
-
-    const sentAt = new Date(now).toISOString();
-    await save({ sentAt });
-    return { sentAt, highlights: highlights.length };
+    return await sendPaper(admin, identity.uid, { key, userId, budget }, paper, now);
   } catch (error) {
     if (error instanceof ZoteroError && error.code === 'ZOTERO_NOT_CONNECTED') await admin.commit([deleteWrite(link)]).catch(() => {});
     throw error;
@@ -464,25 +415,97 @@ export async function handleZoteroRequest(request: Request, env: WorkerEnv, orig
 }
 
 /**
+ * Brings the paper's Zotero item and note up to date. Each object's key is
+ * chosen and recorded before Zotero is asked to create it, with version 0
+ * until Zotero confirms it, so a create whose answer was lost is looked up
+ * on the next send instead of made twice.
+ */
+async function sendPaper(admin: Admin, uid: string, z: Zotero, paper: ZoteroPaper, now: number) {
+  const recordSegments = ['users', uid, 'zoteroItems', encodeFirestoreDocId(paper.id)];
+  const [stored, highlights] = await Promise.all([
+    admin.getDocument<ItemRecord>(recordSegments),
+    readHighlights(admin, uid, paper.id),
+  ]);
+  const record: ItemRecord = stored?.zoteroUserId === z.userId ? { ...stored } : { zoteroUserId: z.userId };
+  const save = (fields: ItemRecord) => {
+    Object.assign(record, fields);
+    return admin.commit([mergeWrite(admin.name(recordSegments), { ...record, zoteroUserId: z.userId }, { mustExist: false })]);
+  };
+
+  const item = zoteroItem(paper);
+  // An item filed in Zotero under another type keeps it; PaperTok does not change a type under the reader.
+  const itemState = record.itemKey && record.itemType !== item.itemType
+    ? ((await versionOf(z, record.itemKey)) === null ? 'missing' : 'kept')
+    : await updateItem(z, record.itemKey, record.itemVersion, item);
+  if (itemState === 'missing') {
+    // A new item gets a new note: the old note, if any, hangs under the item that is gone.
+    const itemKey = record.itemKey && record.itemVersion === 0 ? record.itemKey : newObjectKey();
+    await save({ itemKey, itemVersion: 0, itemType: item.itemType, noteKey: null, noteVersion: null });
+    await save({ itemVersion: await createObject(z, { ...item, key: itemKey, tags: [], collections: [], relations: {} }) });
+  } else if (itemState !== 'kept') {
+    record.itemVersion = itemState;
+  }
+
+  if (highlights.length) {
+    const note = { note: highlightsNote(paper.title, highlights) };
+    const noteState = await settle(z, record.noteKey ?? undefined, record.noteVersion, note);
+    if (typeof noteState === 'number') {
+      record.noteVersion = noteState;
+    } else {
+      // Missing, or edited in Zotero since: a new note goes beside it rather than over it.
+      const noteKey = record.noteKey && record.noteVersion === 0 && noteState === 'missing' ? record.noteKey : newObjectKey();
+      await save({ noteKey, noteVersion: 0 });
+      await save({ noteVersion: await createObject(z, { itemType: 'note', ...note, key: noteKey, parentItem: record.itemKey, tags: [], collections: [], relations: {} }) });
+    }
+  } else if (record.noteKey) {
+    // Every highlight was removed: the note PaperTok wrote goes too, unless the reader edited it in Zotero.
+    const noteVersion = record.noteVersion === 0 ? await versionOf(z, record.noteKey) : record.noteVersion;
+    if (typeof noteVersion === 'number') {
+      const response = await apiRequest(z, 'DELETE', `/users/${z.userId}/items/${encodeURIComponent(record.noteKey)}`, undefined, {
+        'if-unmodified-since-version': String(noteVersion),
+      });
+      if (!response.ok && response.status !== 404 && response.status !== 412) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);
+    }
+    Object.assign(record, { noteKey: null, noteVersion: null });
+  }
+
+  const sentAt = new Date(now).toISOString();
+  await save({ sentAt });
+  return { sentAt, highlights: highlights.length };
+}
+
+/**
  * Where one object PaperTok wrote stands, updated to `fields` when it is
- * still PaperTok's: its new version, null when it was edited in Zotero (it
- * is left as the reader made it), or 'missing' when it has to be created.
- * A stored version of 0 marks a create whose answer never came back.
+ * still as PaperTok left it: its new version, 'changed' when it was edited
+ * in Zotero since, or 'missing' when it has to be created. A stored version
+ * of 0 marks a create whose answer never came back; null, an object edited
+ * in Zotero on an earlier send.
  */
 async function settle(z: Zotero, objectKey: string | undefined, version: number | null | undefined, fields: Record<string, unknown>) {
   if (!objectKey) return 'missing' as const;
-  if (typeof version === 'number' && version > 0) {
-    const outcome = await patchObject(z, objectKey, version, fields);
-    return outcome === 'changed' ? null : outcome;
-  }
+  if (typeof version === 'number' && version > 0) return patchObject(z, objectKey, version, fields);
   const current = await versionOf(z, objectKey);
   if (current === null) return 'missing' as const;
-  return version === 0 ? current : null;
+  return version === 0 ? current : 'changed' as const;
+}
+
+/**
+ * The item is updated even after the reader edited it in Zotero: a PATCH
+ * sends only the citation fields, so their tags, collections and notes stay.
+ */
+async function updateItem(z: Zotero, itemKey: string | undefined, version: number | null | undefined, item: Record<string, unknown>) {
+  if (!itemKey) return 'missing' as const;
+  const state = await settle(z, itemKey, version, item);
+  if (state !== 'changed') return state;
+  const current = await versionOf(z, itemKey);
+  if (current === null) return 'missing' as const;
+  const retried = await patchObject(z, itemKey, current, item);
+  return retried === 'changed' ? 'kept' as const : retried;
 }
 
 /** Best effort: the key is already forgotten here whether or not Zotero hears of it. */
-async function revokeKey(env: WorkerEnv, sealed: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+async function revokeKey(env: WorkerEnv, sealed: string, budget: AbortSignal) {
   await unseal(env, sealed)
-    .then(key => apiRequest(key, fetchImpl, budget, 'DELETE', `/keys/${encodeURIComponent(key)}`))
+    .then(key => apiRequest({ key, budget }, 'DELETE', `/keys/${encodeURIComponent(key)}`))
     .catch(() => {});
 }

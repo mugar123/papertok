@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { toastError } from '../ui/toast.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { completeZotero, sendToZotero, takePendingZoteroSend, zoteroCallbackParams } from '../../services/zotero-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
@@ -40,7 +41,7 @@ export default function ZoteroCallback() {
         await sendToZotero(pending.citation);
         toast.success('Sent to Zotero.');
       } catch (error) {
-        toast.error(`Zotero is connected, but the paper was not sent. ${getUiErrorMessage(error, 'ZOTERO_FAILED')}`);
+        toastError(`Zotero is connected, but the paper was not sent. ${getUiErrorMessage(error, 'ZOTERO_FAILED')}`);
       }
       void navigate(pending.returnTo, { replace: true });
     })();

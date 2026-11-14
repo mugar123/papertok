@@ -187,6 +187,26 @@ test('adds a new note instead of overwriting one edited in Zotero', async () => 
   assert.equal(record(admin).noteVersion, 9);
 });
 
+test('an item edited in Zotero still gets the citation, written over its new version', async () => {
+  const admin = memoryAdmin({
+    [`users/${UID}/zoteroItems/${PAPER.id}`]: { zoteroUserId: '12345', itemKey: 'ITEMKEY2', itemVersion: 7, itemType: 'preprint' },
+  });
+  await connected(admin);
+  const upstream = stubFetch((_url, init) => {
+    if (init.method === 'GET') return Response.json({ ITEMKEY2: 9 });
+    const since = (init.headers as Record<string, string>)['if-unmodified-since-version'];
+    return new Response(null, { status: since === '7' ? 412 : 204, headers: { 'last-modified-version': '10' } });
+  });
+  try {
+    await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
+    assert.deepEqual(upstream.calls.map(call => call.init.method), ['PATCH', 'GET', 'PATCH']);
+    assert.equal((upstream.calls[2].init.headers as Record<string, string>)['if-unmodified-since-version'], '9');
+  } finally {
+    upstream.restore();
+  }
+  assert.equal(record(admin).itemVersion, 10);
+});
+
 test('a create whose answer was lost is looked up by its key, not made a second time', async () => {
   const admin = memoryAdmin();
   await connected(admin);
@@ -290,7 +310,9 @@ test('files a paper with a known journal as an article, one with none as a docum
   const article = zoteroItem(normalizeZoteroPaper({ ...PAPER, preprint: false, journal: 'Nature', pmid: '123' })!);
   assert.equal(article.itemType, 'journalArticle');
   assert.equal((article as { publicationTitle: string }).publicationTitle, 'Nature');
-  assert.equal(zoteroItem(normalizeZoteroPaper({ ...PAPER, preprint: false })!).itemType, 'document');
+  const document = zoteroItem(normalizeZoteroPaper({ ...PAPER, preprint: false })!);
+  assert.equal(document.itemType, 'document');
+  assert.equal((document as { extra: string }).extra, 'arXiv: 2501.00001');
   assert.equal(normalizeZoteroPaper({ id: 'x', title: '  ' }), null);
   assert.match(highlightsNote('<b>', [{ quote: '<script>', note: '', level: 'researcher' }]), /&lt;script&gt;/);
 });
