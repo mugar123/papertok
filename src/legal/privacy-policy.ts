@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-12';
+export const PRIVACY_POLICY_VERSION = '2026-11-14';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -68,8 +68,23 @@ export const PRIVACY_POLICY_VERSION = '2026-11-12';
  * merge falls after it, move the page's "Last updated" date,
  * PRIVACY_POLICY_VERSION and this instant to the merge day before merging; once
  * Vercel reports the merge live, lower this instant to that success time.
+ *
+ * Version 2026-11-14 withdraws a sentence of 2026-11-12: a request for one of
+ * the reader's own feeds sent no filter of the papers they viewed, and a
+ * refresh of the feed now sends one, so the feed starts with the papers they
+ * have not seen (Nicolás chose the announcement on 2026-11-14). It also
+ * announces the metadata of the papers in the reader's lists and favorites
+ * that the browser keeps since #502. The page's mentions of journals in a
+ * feed (#493) and of the Most recent tab (#478) joined the 2026-11-12 text
+ * without a version and are not announced. The text ships with the pull
+ * request that makes a custom feed's refresh skip seen papers. This instant
+ * follows the rule above: it stands after that merge, at the last moment the
+ * version's day allows. If the merge falls after it, move the page's "Last
+ * updated" date, PRIVACY_POLICY_VERSION and this instant to the merge day
+ * before merging; once Vercel reports the merge live, lower this instant to
+ * that success time.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-12T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-14T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -85,9 +100,8 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "Feeds you create are kept with your account, and their topics, authors, journals and keywords are sent to the server to fetch their papers.",
-  "Papers you remove from a feed are kept in your browser and sent with that feed's requests, so it leaves them out.",
-  "Usage analytics also records when you create, open or delete a feed, never its name or what is in it. Its events also name your browser and system versions.",
+  "Refreshing one of your feeds also sends a compact filter of the papers you viewed and of the papers that feed had already shown you, so the feed starts with the papers you have not seen.",
+  "This browser also keeps metadata for papers in your lists and favorites, so their categories can appear without waiting for the network after a reload.",
 ];
 
 /**
@@ -100,28 +114,22 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 7 November: custom feeds (ENG-197, Worker half #476), that
-  // is what a feed keeps in the account, what its requests send, the removed
-  // papers the browser keeps and sends, and the usage events about feeds; and
-  // the browser and system versions analytics events name (#457). #464 only
-  // added the page's text about this notice and its record, which this
-  // notice does not announce.
-  lead: 'Feeds you create',
+  // The changes since 12 November: a refresh of one of the reader's own feeds
+  // sends the filter of the papers they viewed, which the page said a feed's
+  // request did not send; and the metadata of the papers in lists and
+  // favorites that the browser keeps (#502). Journals in a feed (#493) and
+  // the Most recent tab (#478) only name what the 12 November text covered.
+  lead: 'Refreshing one of your feeds',
   clauses: [
-    ['Feeds you create', /<td>Feeds you create: each feed's name and the areas, topics, authors, journals and keywords you put in it<\/td>/],
-    ['kept with your account', /They are kept with your account and deleted with it/],
-    ['their topics, authors, journals and keywords are sent to the server', /A request for a page of one of your own feeds sends instead that feed's areas, categories, research topics, authors, journals and keywords/],
-    ['Papers you remove from a feed are kept in your browser', /This browser also keeps, for each of your own feeds, the latest 200 papers you removed from it/],
-    ["sent with that feed's requests, so it leaves them out", /these are sent to the server with each request for that feed, so the feed leaves them out/],
-    ['Usage analytics', /Usage analytics is enabled by default/],
-    ['create, open or delete a feed', /Creating or opening one of your feeds records the order it uses; creating one also records how many areas or topics, authors and keywords it holds\. Deleting one records only that it happened\./],
-    ['never its name or what is in it', /No event records a feed's name or what is in it\./],
-    ['your browser and system versions', /Events include the browser and its version, the operating system and its version/],
+    ['Refreshing one of your feeds', /Once you refresh it, its pages also send/],
+    ['a compact filter of the papers you viewed and of the papers that feed had already shown you', /also send a compact filter of the papers you viewed and of the papers that feed had already shown you/],
+    ['so the feed starts with the papers you have not seen', /so the feed starts with the papers you have not seen/],
+    ['This browser also keeps metadata for papers in your lists and favorites', /metadata for papers in your lists and favorites/],
+    ['so their categories can appear without waiting for the network after a reload', /so their categories can appear without waiting for the network after a reload/],
   ],
   unsaid: [
-    [/(?<!never )\b(its|a feed's|the feed's) name\b/i, "no event records a feed's name; only the account keeps it"],
-    [/remove\w*[^.]*(kept|stored) (in|with) your account/i, 'the papers removed from a feed stay in the browser, not the account'],
-    [/full user agent/i, 'the browser label never holds the full user agent'],
+    [/open(s|ing)? (a|the|one of your|your) feeds?[^.]*filter/i, 'opening a feed sends no filter; a refresh does'],
+    [/(keeps|stores|stored)[^.]*filter/i, 'the server does not store the filter'],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
   ],
 };

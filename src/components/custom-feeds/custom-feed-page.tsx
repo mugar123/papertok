@@ -10,10 +10,12 @@ import { FeedRetryRefContext } from '../feed/feed-retry-context.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
+import { customFeedScrollKey } from '../../utils/custom-feed-pages.ts';
 import { ingredientLabel } from '../../utils/custom-feeds.ts';
+import { feedResumeMemory } from '../../utils/feed-resume-memory.ts';
 import { customFeedPath } from '../../utils/feed-tabs.ts';
 import { useCustomFeedPapers } from './use-custom-feed-papers.ts';
-import { customFeedPageState, feedFirstLoadPending, gatheringSentence, nextFeedOpen, nextLoadingNotice } from './custom-feed-page-state.ts';
+import { NOTHING_UNSEEN_NOTICE, customFeedPageState, feedFirstLoadPending, gatheringSentence, nextFeedOpen, nextLoadingNotice, nextRefreshEnd, placeAfterRefresh } from './custom-feed-page-state.ts';
 
 // Before the feed is known (the account's feeds not yet answered, or failed),
 // the page still needs its landmark and heading.
@@ -46,7 +48,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
   const pageState = customFeedPageState(status, feeds, feedId);
   const feed = pageState.kind === 'feed' ? pageState.feed : null;
   const {
-    papers, loading, error, hasMore, loadMore, refresh, isRefreshing, emptyKind, loadingIngredients, dismiss, restore,
+    papers, loading, error, hasMore, loadMore, refresh, isRefreshing, walksUnseen, emptyKind, loadingIngredients, dismiss, restore,
   } = useCustomFeedPapers(feed);
 
   const loadingNames = useMemo(() => loadingIngredients.map(ingredientLabel), [loadingIngredients]);
@@ -61,6 +63,31 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
     notifiedForRef.current = notifiedFor;
     if (notice) toastForAccount(uid, notice, { id: `custom-feed-loading:${shownFeedId}` });
   }, [shownFeedId, loadingNames, uid]);
+
+  // As a refresh ends: the card remembered for the list it replaced is moved
+  // to the new list (the next refresh and a return visit read it), and one
+  // that found no unseen paper shows the feed as it was, and says why.
+  const refreshWatchRef = useRef<string | null>(null);
+  const hasPapers = papers.length > 0;
+  const refreshFailed = Boolean(error);
+  useEffect(() => {
+    if (!shownFeedId || !uid) {
+      // The feed went away: a refresh under way is no longer watched.
+      refreshWatchRef.current = null;
+      return;
+    }
+    const { watchedFeed, replaced, notice } = nextRefreshEnd(refreshWatchRef.current, shownFeedId, { isRefreshing, failed: refreshFailed, hasPapers, walksUnseen });
+    refreshWatchRef.current = watchedFeed;
+    if (replaced) {
+      const scrollKey = customFeedScrollKey(shownFeedId, uid);
+      const place = placeAfterRefresh(papers, feedResumeMemory.get(scrollKey));
+      if (place) {
+        feedResumeMemory.remember(scrollKey, place);
+        feedResumeMemory.persist(scrollKey);
+      }
+    }
+    if (notice) toastForAccount(uid, NOTHING_UNSEEN_NOTICE.title, { id: `custom-feed-nothing-unseen:${shownFeedId}`, description: NOTHING_UNSEEN_NOTICE.description });
+  }, [shownFeedId, uid, isRefreshing, refreshFailed, hasPapers, walksUnseen, papers]);
 
   // Once per visit to a feed: not again as its papers reload or after an
   // edit, and again for another feed or when the reader comes back.
@@ -185,7 +212,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
       onOpenPdf={onOpenPdf}
       onSaveToList={onSaveToList}
       source={source}
-      scrollKey={`feed:${feedId}:${user?.uid ?? ''}`}
+      scrollKey={customFeedScrollKey(feedId, user?.uid)}
       tabPath={feed ? customFeedPath(feed.id) : undefined}
     />
   );
