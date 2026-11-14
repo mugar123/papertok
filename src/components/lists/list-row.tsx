@@ -96,7 +96,7 @@ function BylineLabel({ names }: { names: string[] }) {
  * A paper's authors, opening the full list: overlapping initials by default,
  * or, with `byline`, the first names written out as a line of text.
  */
-export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: Partial<Paper>; onNavigate?: () => void; byline?: boolean }) {
+export function ListRowAuthors({ paper, byline = false }: { paper: Partial<Paper>; byline?: boolean }) {
   const isPhone = useIsPhone();
   const [open, setOpen] = useState(false);
   const listId = useId();
@@ -136,7 +136,7 @@ export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: P
               return (
                 <li key={index}>
                   {path
-                    ? <Link to={path} className="pc-share-row list-row-authors-sheet-row" onClick={onNavigate}>{inner}</Link>
+                    ? <Link to={path} className="pc-share-row list-row-authors-sheet-row">{inner}</Link>
                     : <span className="list-row-authors-sheet-row">{inner}</span>}
                 </li>
               );
@@ -177,7 +177,7 @@ export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: P
                     <Link
                       to={path}
                       className="pc-authors-list-item pc-author-link"
-                      onClick={(event) => { event.stopPropagation(); onNavigate?.(); }}
+                      onClick={(event) => { event.stopPropagation(); }}
                     >
                       {inner}
                     </Link>

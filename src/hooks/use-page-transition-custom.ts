@@ -19,7 +19,7 @@ import { useFeedTabs } from './use-feed-tabs.ts';
  * leaving and mis-reporting `data-nav-direction` for the rest of the run. One
  * caller, one answer, handed down.
  */
-const PageTransitionCustomContext = createContext<ReturnType<typeof usePageTransitionCustom>>({ direction: 0, lateral: false });
+const PageTransitionCustomContext = createContext<ReturnType<typeof usePageTransitionCustom>>({ direction: 0, lateral: false, historyDirection: 0 });
 
 export const PageTransitionCustomProvider = PageTransitionCustomContext.Provider;
 
@@ -73,6 +73,6 @@ export function usePageTransitionCustom() {
   const lateral = lateralTabDirection(useLocation().pathname, undefined, tabOrder);
   // A navigation can ask for no transition at all: between a list and a
   // paper opened from it, one page simply replaces the other.
-  if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true };
-  return { direction: lateral ?? historyDirection, lateral: lateral !== null };
+  if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true, historyDirection };
+  return { direction: lateral ?? historyDirection, lateral: lateral !== null, historyDirection };
 }
