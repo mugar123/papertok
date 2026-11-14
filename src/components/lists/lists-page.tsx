@@ -364,7 +364,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [savedPapers, setSavedPapers] = useState(
     () => (user?.uid ? readListPapers(user.uid) : null) ?? {},
   );
-  const [expandedList, setExpandedList] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Placeholder tiles for the cold case, and only for it. Seeding from the
   // session cache covers a revisit and the IndexedDB read covers this device,
@@ -396,8 +395,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * collection's answer.
    */
   const [awaitingSavedIds, setAwaitingSavedIds] = useState(() => new Set<string>());
-  // Failed papers wait until the next opening, while later batches can proceed.
-  const [fieldAttempted, setFieldAttempted] = useState<ReadonlySet<string>>(() => new Set());
+  // Null until openList prepares the document reads, including on a restored view.
+  const [fieldAttempted, setFieldAttempted] = useState<ReadonlySet<string> | null>(null);
   const fieldRoundList = useRef<string | null>(null);
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -492,6 +491,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     return listPaper(personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
+  // A warm return can paint before the opening effect. Cold membership or
+  // missing titles still need that effect to establish the loading state.
+  const [expandedList, setExpandedList] = useState<string | null>(() => {
+    const target = displayLists.find(list => list.id === location.state?.openListId);
+    if (!target || (PRIVATE_LIST_IDS.has(target.id) && !personalLibraryReady)) return null;
+    const titlesReady = (target.paperIds ?? []).every(id => {
+      const paper = getPaper(id);
+      return paper?.title && paper.title !== id;
+    });
+    return titlesReady ? target.id : null;
+  });
+
   useEffect(() => {
     if (!user?.uid || auth.currentUser?.uid !== user.uid) return;
     let copies = mergeListPaperCopies({}, libraryPapers, 'interaction');
@@ -512,7 +523,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const uid = user?.uid;
     const list = displayLists.find(entry => entry.id === expandedList);
     const asked: Record<string, Partial<Paper>> = {};
-    if (!uid || !list) return asked;
+    if (!uid || !list || !fieldAttempted) return asked;
     for (const paperId of list.paperIds || []) {
       if (pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
       const paper = getPaper(paperId);
@@ -552,7 +563,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // Another opening owns its own queue, even when it opens this list again.
       if (metadataRequestId.current !== opening) return;
       fieldRoundList.current = null;
-      setFieldAttempted(current => new Set([...current, ...askedIds]));
+      setFieldAttempted(current => new Set([...(current ?? []), ...askedIds]));
     });
   }, [awaitingSavedIds, expandedList, fieldRound, pendingPaperIds, user?.uid]);
 
@@ -1655,7 +1666,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    */
   const queuedSyncs = useRef(new Map<string, string>());
   useEffect(() => {
-    if (!user || !expandedList) return;
+    // A restored view can paint before openList establishes pending reads.
+    if (!user || !expandedList || fieldAttempted === null) return;
     // Never from a seed. A list read back from this device's storage carries
     // the name it had when the tab last closed, and republishing THAT would
     // push a stale title onto the page strangers read — the seed is for
@@ -1705,7 +1717,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       papers: papers as PublicPaperInput[],
     });
   }, [
-    expandedList, getPaper, language, lists, metadataError, pendingPaperIds,
+    expandedList, fieldAttempted, getPaper, language, lists, metadataError, pendingPaperIds,
     publicSnapshots, user,
   ]);
 
@@ -1726,10 +1738,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   };
 
 
-  // Returning from a paper with { openListId }: until the effect above opens
-  // it, hold a skeleton instead of flashing the index. Falls through to the
-  // index if the list never shows up; closing the list clears the state, so
-  // this cannot re-trap a closed list.
   // Derived, never stored: the placeholders must vanish the instant real cards
   // exist, and a stale `true` left over from a failed load is harmless — by
   // then the wait is already known to be long.
@@ -1778,6 +1786,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   }, [afterPageArrival]);
 
   const targetOpenId = location.state?.openListId;
+  // A restore target absent from the initial cache still needs its first read.
   const pendingOpen = Boolean(
     targetOpenId
     && !expandedList
