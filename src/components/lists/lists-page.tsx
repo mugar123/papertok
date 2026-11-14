@@ -84,7 +84,7 @@ import { timeAgo } from '../../utils/time-ago.ts';
 import { copyOfRecordWithoutCopy, downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
-import { fieldRequestFor, readPaperFields } from '../../services/list-paper-fields.ts';
+import { nextListFieldRound, readPaperFields } from '../../services/list-paper-fields.ts';
 import { storePaperField } from '../../services/stored-paper-field.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -110,7 +110,6 @@ import PaperCard from '../feed/paper-card.tsx';
 import PaperOverlay from '../feed/paper-overlay.tsx';
 import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
 import {
-  fieldAnswered,
   ownListsCache,
   readListPapers,
   rememberFieldAnswers,
@@ -118,7 +117,6 @@ import {
   rememberOwnLists,
   rememberSavedAnswers,
   savedAnswered,
-  savedDocumentRead,
 } from '../../utils/profile-session-caches.ts';
 import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
@@ -268,9 +266,6 @@ function publicBadgeState(status: string | undefined) {
 }
 
 
-// The most papers one opening of a list asks a provider the field of: at most
-// two arXiv requests and three OpenAlex ones. The rest wait for the next.
-const FIELD_REQUEST_LIMIT = 60;
 
 /** A paper in one list: what the row's remove dialog and phone sheet act on. */
 type RowTarget = { listId: string; listName?: string; paperId: string; paper: Partial<Paper> };
@@ -401,9 +396,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * collection's answer.
    */
   const [awaitingSavedIds, setAwaitingSavedIds] = useState(() => new Set<string>());
-  // The list whose round of field requests (`fieldRound`) has ended, and the
-  // one whose round was sent, on this opening of it.
-  const [fieldRoundDone, setFieldRoundDone] = useState<string | null>(null);
+  // Failed papers wait until the next opening, while later batches can proceed.
+  const [fieldAttempted, setFieldAttempted] = useState<ReadonlySet<string>>(() => new Set());
   const fieldRoundList = useRef<string | null>(null);
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -509,35 +503,32 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
 
   /**
    * The papers of the open list that no copy gives a field, which a provider
-   * can be asked (`fieldRequestFor`): one round per opening of the list. Only
-   * a paper whose `savedPapers` document was read is asked: the document may
-   * hold the field already, and it keeps the answer (`storePaperField`), so a
-   * later visit reads it there. Their rows hold the field's line until the
-   * round ends.
+   * can be asked in bounded rounds, after the saved-document read has
+   * answered, including confirmed absence. Old favorites may only have an
+   * interaction record. Recovered fields enter the device cache and any
+   * existing saved document; no saved document is created for a favorite.
    */
   const fieldRound = useMemo(() => {
     const uid = user?.uid;
     const list = displayLists.find(entry => entry.id === expandedList);
     const asked: Record<string, Partial<Paper>> = {};
-    if (!uid || !list || fieldRoundDone === list.id) return asked;
+    if (!uid || !list) return asked;
     for (const paperId of list.paperIds || []) {
-      if (!savedDocumentRead(uid, paperId) || fieldAnswered(uid, paperId)
-        || pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
+      if (pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
       const paper = getPaper(paperId);
-      if (!paper || copyHoldsField(paper) || !fieldRequestFor(paperId, paper)) continue;
-      asked[paperId] = paper;
-      if (Object.keys(asked).length === FIELD_REQUEST_LIMIT) break;
+      if (paper) asked[paperId] = paper;
     }
-    return asked;
-  }, [awaitingSavedIds, displayLists, expandedList, fieldRoundDone, getPaper, pendingPaperIds, user?.uid]);
+    return nextListFieldRound(uid, asked, fieldAttempted);
+  }, [awaitingSavedIds, displayLists, expandedList, fieldAttempted, getPaper, pendingPaperIds, user?.uid]);
 
-  // Sent once the list's own reads have settled, so one request covers it.
+  // One bounded round at a time, once the list's own reads have settled.
   useEffect(() => {
     const uid = user?.uid;
     const askedIds = Object.keys(fieldRound);
     if (!uid || !expandedList || askedIds.length === 0 || fieldRoundList.current === expandedList
       || pendingPaperIds.size > 0 || awaitingSavedIds.size > 0) return;
     fieldRoundList.current = expandedList;
+    const opening = metadataRequestId.current;
     void readPaperFields(fieldRound).catch(() => ({ fields: {}, failed: askedIds })).then(({ fields, failed }) => {
       if (activeUid.current !== uid || auth.currentUser?.uid !== uid) return;
       rememberFieldAnswers(uid, askedIds.filter(paperId => !failed.includes(paperId)));
@@ -558,8 +549,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         const papers = filled(current);
         return Object.keys(papers).length > 0 ? { ...current, ...papers } : current;
       });
-      // A list opened since has a round of its own.
-      if (fieldRoundList.current === expandedList) setFieldRoundDone(expandedList);
+      // Another opening owns its own queue, even when it opens this list again.
+      if (metadataRequestId.current !== opening) return;
+      fieldRoundList.current = null;
+      setFieldAttempted(current => new Set([...current, ...askedIds]));
     });
   }, [awaitingSavedIds, expandedList, fieldRound, pendingPaperIds, user?.uid]);
 
@@ -789,7 +782,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     setPendingPaperIds(new Set());
     setAwaitingSavedIds(new Set(fieldReadIds));
     fieldRoundList.current = null;
-    setFieldRoundDone(null);
+    setFieldAttempted(new Set());
     if (user) void readFieldDocuments(user.uid, fieldReadIds, requestId);
 
     if (missingIds.length === 0) {

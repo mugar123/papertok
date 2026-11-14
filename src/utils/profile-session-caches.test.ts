@@ -12,7 +12,6 @@ import {
   rememberSavedAnswers,
   reviseOwnLists,
   savedAnswered,
-  savedDocumentRead,
 } from './profile-session-caches.ts';
 
 /**
@@ -101,17 +100,6 @@ test('a savedPapers answer is kept for the account that read it', () => {
   assert.equal(savedAnswered('uid-j', '2509.99999'), false, 'never asked');
 });
 
-// Only a paper whose savedPapers document was read is asked of a provider
-// for its field: the document is where the answer is kept.
-test('a savedPapers document read is recorded for its account, an interaction copy is not', () => {
-  rememberListPapers('uid-k', { '2505.06123': { id: '2505.06123', title: 'Saved' } }, 'saved');
-  rememberListPapers('uid-k', { '2505.06124': { id: '2505.06124', title: 'Liked' } }, 'interaction');
-  assert.equal(savedDocumentRead('uid-k', '2505.06123'), true);
-  assert.equal(savedDocumentRead('uid-k', '2505.06124'), false);
-  assert.equal(savedDocumentRead('uid-l', '2505.06123'), false, 'another account');
-  assert.equal(savedDocumentRead(undefined, '2505.06123'), false);
-});
-
 test('list and favorite fields survive reload and thin responses without another metadata read', async () => {
   const { listPapersCache } = await import('./profile-session-caches.ts');
   const { listPaper, listPaperNeedsRead, listPaperNeedsFieldRead } = await import('./list-paper-copies.ts');
@@ -159,7 +147,6 @@ test('ending an account session permits category recovery on signing in again', 
   rememberSavedAnswers('repeat-session', [paper.id]);
   rememberFieldAnswers('repeat-session', [paper.id]);
   forgetListPapers('repeat-session');
-  assert.equal(savedDocumentRead('repeat-session', paper.id), false);
   assert.equal(savedAnswered('repeat-session', paper.id), false);
   assert.equal(fieldAnswered('repeat-session', paper.id), false);
   assert.equal(listPaperNeedsFieldRead([paper], savedAnswered('repeat-session', paper.id)), true);
