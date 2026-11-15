@@ -461,7 +461,50 @@ for (const { source, failing, answering } of FAILURES) {
   });
 }
 
-test('a failure at the last scheduled retry leaves the paper to be asked again the next night, not again that night', async t => {
+// A source that fails every night: 2 days old at its first retry, the paper is
+// asked as it turns 2, 4, 8 and 16 days old and at its refresh, 14 days after
+// the last, rather than every night in between.
+const SCHEDULED_NIGHTS = [1, 3, 7, 15, 30];
+async function nightsAsked(env: WorkerEnv, asked: Asked[]) {
+  const nights: number[] = [];
+  const crossrefNights: number[] = [];
+  let openAlexCalls = 0;
+  for (let night = 1; night <= 32; night += 1) {
+    asked.length = 0;
+    const { workIds } = await enrichPending(env, 50, NIGHT + night * DAY_MS);
+    if (workIds.length) nights.push(night);
+    if (askedOf(asked, 'api.crossref.org').length) crossrefNights.push(night);
+    openAlexCalls += askedOf(asked, 'api.openalex.org').length;
+  }
+  return { nights, crossrefNights, openAlexCalls };
+}
+const persistWork = () => listedWork(6, '2026-10-31', { doi: 'https://doi.org/10.5555/persist', ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999995' } });
+const PERSISTENT_FAILURES = [
+  { source: 'Semantic Scholar', failing: { semanticScholar: () => new Response('{}', { status: 429 }) } },
+  { source: 'Europe PMC', failing: { europePmc: () => new Response('{}', { status: 503 }) } },
+  { source: 'Crossref', failing: { crossref: () => new Response('{}', { status: 500 }) } },
+];
+for (const { source, failing } of PERSISTENT_FAILURES) {
+  test(`while ${source} fails every night, a young paper without an abstract is asked at its ages and its refresh, each time with Crossref`, async t => {
+    const asked = recoveryProviders(t, failing);
+    const { env } = await listedCorpus([persistWork()]);
+    // Its first enrichment is interrupted too, so none is counted.
+    await enrichPending(env, 50, NIGHT);
+    assert.deepEqual(await nightsAsked(env, asked), { nights: SCHEDULED_NIGHTS, crossrefNights: SCHEDULED_NIGHTS, openAlexCalls: 5 });
+  });
+}
+
+test('a source that starts failing after a counted enrichment leaves the retries at their ages, and they still do not ask Crossref', async t => {
+  let semanticScholarAnswers: () => Response = () => Response.json([]);
+  const asked = recoveryProviders(t, { semanticScholar: () => semanticScholarAnswers() });
+  const { env } = await listedCorpus([persistWork()]);
+  await enrichPending(env, 50, NIGHT);
+  semanticScholarAnswers = () => new Response('{}', { status: 429 });
+  // Only the refresh asks Crossref again.
+  assert.deepEqual(await nightsAsked(env, asked), { nights: SCHEDULED_NIGHTS, crossrefNights: [30], openAlexCalls: 5 });
+});
+
+test('a failure at the last scheduled retry leaves the paper for its refresh, 14 days later', async t => {
   let europePmcAnswers: () => Response = () => Response.json({ resultList: { result: [] } });
   const asked = recoveryProviders(t, { europePmc: () => europePmcAnswers() });
   // PubMed ids and no DOI: Europe PMC and OpenAlex are their sources.
@@ -483,8 +526,9 @@ test('a failure at the last scheduled retry leaves the paper to be asked again t
   }
   assert.deepEqual(steps, [[ids['openalex:W4500000004']], [ids['openalex:W4500000005']], []]);
   europePmcAnswers = () => Response.json({ resultList: { result: ['42999998', '42999996'].map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+  assert.deepEqual((await enrichPending(env, 50, NIGHT + DAY_MS)).workIds, [], 'no age is left to ask at');
   asked.length = 0;
-  assert.equal((await enrichPending(env, 50, NIGHT + DAY_MS)).workIds.length, 2);
+  assert.equal((await enrichPending(env, 50, NIGHT + 15 * DAY_MS)).workIds.length, 2);
   assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 1);
   assert.equal(stored(db)['openalex:W4500000004'].paper.abstract, LATE_ABSTRACT);
   assert.equal(stored(db)['openalex:W4500000005'].paper.abstract, LATE_ABSTRACT);
@@ -576,6 +620,23 @@ test('a Crossref call the source refuses loses only its own DOIs, and the calls 
   await enrichPending(env, 500, NIGHT);
   assert.equal(askedOf(asked, 'api.crossref.org').length, 3, 'three calls of 20, 20 and 1 DOIs');
   assert.equal(Object.values(stored(db)).filter(work => work.paper.abstractSource === 'crossref').length, 21);
+});
+
+test('a Europe PMC search the source refuses loses only its own ids, and the searches after it are still sent', async t => {
+  let searches = 0;
+  const asked = recoveryProviders(t, {
+    europePmc: () => {
+      searches += 1;
+      if (searches === 1) return new Response('{}', { status: 503 });
+      // A record with an abstract for each id the search names.
+      const pmids = asked.at(-1)?.url.searchParams.get('query')?.match(/(?<=EXT_ID:)\d+/g) ?? [];
+      return Response.json({ resultList: { result: pmids.map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 101 }, (_, n) => listedWork(500 + n, '2026-10-23', { ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43200000 + n}` } })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 2, 'two searches of 100 and 1 ids');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstract === LATE_ABSTRACT).length, 1);
 });
 
 test('the PubMed id OpenAlex gives a paper brings its Europe PMC abstract in the same pass', async t => {

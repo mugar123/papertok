@@ -40,6 +40,11 @@ const REFRESH_DAYS = 14;
 // Scholar can still add an abstract their first records lacked. After the
 // last, only the refresh asks again.
 const ABSTRACT_RETRY_DAYS = [1, 2, 4, 8, 16];
+// `enrich_misses` of a paper no enrichment of which has been counted: a failed
+// source cut short its first enrichment, and every one since. It is no miss of
+// OpenAlex's; the column holds it so that the paper's enrichment date can say
+// when it was last asked. The next enrichment no source interrupts sets 0.
+const UNCOUNTED = -1;
 // The OpenAlex calls a night's abstract retries may make, out of the run's
 // share (paper-harvest.ts): about 15,000 papers asked by their OpenAlex ids.
 // Each step's retries are counted as if they were asked apart.
@@ -301,9 +306,10 @@ const openAlexIdsOf = (paper: Paper) => {
  * (its `published` and id), after which a later step of the night goes on, so
  * no paper is retried twice in one night. A young paper whose first
  * enrichment a failed source interrupted can still be asked twice that night,
- * within the night's units: it records its own date as its enrichment date
- * (`counted`), so from a day old it is due at once, and a later step's
- * retries take it.
+ * within the night's units: it records its own date as its enrichment date,
+ * so from a day old it is due at once, and a later step's retries take it.
+ * A retry that a failed source interrupts records the time it asked, as any
+ * retry does, so the paper waits for its next age.
  */
 export interface AbstractRetries { units: number; after: { published: string; id: number } | null }
 
@@ -312,10 +318,8 @@ export interface AbstractRetries { units: number; after: { published: string; id
 // older than REFRESH_DAYS.
 interface PendingRow extends Row { kind: 'new' | 'missed' | 'retry' | 'refresh' }
 
-// Whether an enrichment of the paper has been counted: a first enrichment that
-// a failed source cut short leaves the paper's own date as its enrichment date
-// (`enrichPending`). Both are ISO 8601 strings in UTC.
-const counted = (row: Row) => Boolean(row.enriched_at && row.enriched_at > row.published);
+// Whether an enrichment of the paper has been counted (`enrichPending`).
+const counted = (row: Row) => row.enrich_misses !== UNCOUNTED;
 
 /**
  * The papers due an abstract retry, newest first after `retries.after`, and as
@@ -331,7 +335,7 @@ async function abstractRetries(db: D1Database, limit: number, now: number, { uni
   const [before, beforeId] = after ? [after.published, after.id] : [daysAgo(ABSTRACT_RETRY_DAYS[0]), Number.MAX_SAFE_INTEGER];
   const { results } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
     WHERE published > ? AND published <= ? AND (published < ? OR id < ?)
-      AND enrich_misses = 0 AND enriched_at > ?
+      AND enrich_misses <= 0 AND enriched_at > ?
       AND LENGTH(COALESCE(paper ->> '$.abstract', '')) < 40
       AND EXISTS (SELECT 1 FROM json_each(?) age WHERE julianday(enriched_at) < julianday(published) + age.value
         AND julianday(published) + age.value <= julianday(?))
@@ -390,7 +394,7 @@ async function pendingRows(db: D1Database, limit: number, now: number, retries: 
   if (rows.length >= limit) return { rows, retries: next, spent };
   // Last, the counts that have aged: a paper's citations grow in its first months.
   const { results: stale } = await db.prepare(`SELECT id, paper, enrich_misses, published, enriched_at FROM works
-    WHERE enrich_misses = 0 AND enriched_at < ? ORDER BY enriched_at LIMIT ?`)
+    WHERE enrich_misses <= 0 AND enriched_at < ? ORDER BY enriched_at LIMIT ?`)
     .bind(new Date(now - REFRESH_DAYS * DAY_MS).toISOString(), limit - rows.length).all<Row>();
   rows.push(...stale.map((row): PendingRow => ({ ...row, kind: 'refresh' })));
   return { rows, retries: next, spent };
@@ -403,9 +407,10 @@ async function pendingRows(db: D1Database, limit: number, now: number, retries: 
  * older than REFRESH_DAYS. Returns the processed works for immediate
  * embedding, whether OpenAlex stopped the pass, and what the night's retries
  * may still do. A source that fails leaves its fields unknown; a paper waiting
- * for OpenAlex is not marked done without it, and a young paper whose abstract
- * a failed source may hold is asked again the next night, or by a later step
- * of the same night (`AbstractRetries`), rather than at its next age.
+ * for OpenAlex is not marked done without it. A young paper whose first
+ * enrichment a failed source interrupted is asked again the next night, or by
+ * a later step of the same night (`AbstractRetries`); a retry a failed source
+ * interrupts waits for the paper's next age, so an outage adds no asks.
  */
 export async function enrichPending(env: EnrichEnv, limit: number, now = Date.now(), retries: AbstractRetries = { units: ABSTRACT_RETRY_UNITS, after: null }) {
   const db = database(env);
@@ -485,14 +490,16 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
 
   await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })), now);
   // A paper OpenAlex should have known but did not counts a miss. One waiting
-  // for an OpenAlex that did not answer is left for the next run. An
-  // enrichment that a failed source interrupted is not counted, so the
-  // retries ask the paper again before its next age: a retry keeps the date
-  // of the enrichment counted before it and is due again the next night, and
-  // a paper younger than REFRESH_DAYS takes its own date, so a later step of
-  // the same night can retry it, and its retry also asks Crossref again
-  // (`counted`). An older one's enrichment is counted, and it waits for its
-  // next age or its refresh.
+  // for an OpenAlex that did not answer is left for the next run. A first
+  // enrichment that a failed source interrupted is not counted when the paper
+  // is younger than REFRESH_DAYS: the paper takes its own date as its
+  // enrichment date, so the retries ask it again from a day old, a later step
+  // of the same night included, and UNCOUNTED, so its retries ask Crossref
+  // too. An older one's enrichment is counted, and it waits for its next age
+  // or its refresh. A retry that a failed source interrupted is dated like any
+  // other, so the paper waits for its next age, and after the last age for
+  // its refresh: a source that keeps failing gets no more asks than the
+  // schedule's. Such a retry counts nothing, so an uncounted paper stays so.
   const at = new Date(now).toISOString();
   const young = new Date(now - REFRESH_DAYS * DAY_MS).toISOString();
   const marks = rows.flatMap((row, index) => {
@@ -500,8 +507,9 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     if ((row.kind === 'new' || row.kind === 'missed') && asksOpenAlex[index] && needsOpenAlexEnrichment(enriched[index])) {
       return [{ id: row.id, misses: row.enrich_misses + 1, at }];
     }
-    if (interrupted[index] && row.kind === 'retry') return [];
-    return [{ id: row.id, misses: 0, at: interrupted[index] && row.published > young ? row.published : at }];
+    if (!interrupted[index]) return [{ id: row.id, misses: 0, at }];
+    if (row.kind === 'retry') return [{ id: row.id, misses: row.enrich_misses, at }];
+    return [row.published > young ? { id: row.id, misses: UNCOUNTED, at: row.published } : { id: row.id, misses: 0, at }];
   });
   if (marks.length) {
     await db.batch(chunks(marks, 200).map(chunk => db.prepare(`UPDATE works SET enriched_at = j.value ->> 'at', enrich_misses = j.value ->> 'misses'
