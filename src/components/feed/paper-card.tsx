@@ -2232,7 +2232,7 @@ const PaperCard = memo(function PaperCard({
                       <a href={missingAbstract.publisher.url} target="_blank" rel="noopener noreferrer" onClick={swallowClick}>
                         {missingAbstract.publisher.label}<span className="visually-hidden"> (opens in a new tab)</span>
                       </a>
-                      {'.'}
+                      {missingAbstract.publisher.end}
                     </>
                   )}
                 </EmptyState>

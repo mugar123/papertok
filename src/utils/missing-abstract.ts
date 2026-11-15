@@ -16,14 +16,14 @@ export const MISSING_ABSTRACT_TITLE = 'No abstract to show';
  * The link is the DOI's, which resolves to the publisher's page.
  * `landingPageUrl` is not used: for many records it is an index's page
  * (PubMed, ADS, an OpenAlex work), and calling it the publisher's would be
- * false. Without a DOI the card links nothing. The card renders `lead`, the
- * link labeled `label`, then a full stop.
+ * false. Without a DOI the card links nothing. After `body` the card renders
+ * `lead`, the link labeled `label`, then `end`.
  */
 export function missingAbstractNotice(paper: Pick<Paper, 'doi'>) {
   const url = safeDoiUrl(paper.doi);
   return {
     title: MISSING_ABSTRACT_TITLE,
     body: 'PaperTok found none in open sources.',
-    publisher: url ? { lead: ' Try the ', label: "publisher's page", url } : null,
+    publisher: url ? { lead: ' Try the ', label: "publisher's page", end: '.', url } : null,
   };
 }
