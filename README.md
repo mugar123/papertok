@@ -104,6 +104,10 @@ explanation. AI adaptations are labeled and do not replace the original article.
 full text cannot be retrieved or a usage limit is reached, an explanation may be unavailable;
 PaperTok does not present an abstract-only response as a rewrite of the full paper.
 
+In the paper's own text, select a passage to highlight it, with an optional note. **Notes**
+in the bottom bar opens your highlights for that paper beside the text. On a touch screen,
+select with the handles, then tap **Highlight**. Highlights need an account.
+
 ### Save, organize and share
 
 Keep **Favorites**, **Read later** and your **Reading history** together in **My lists**.

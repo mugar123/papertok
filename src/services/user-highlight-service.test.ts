@@ -120,6 +120,19 @@ const SPAN = {
   paperTitle: 'A paper',
 };
 
+test('a full-text highlight keeps the words the page shows', () => {
+  const stored = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b12', paragraphIndex: 0, quote: '  errors fell by 5%\n  in {all} runs ' });
+  assert.equal(stored?.level, 'full-text');
+  assert.equal(stored?.quote, 'errors fell by 5% in {all} runs');
+});
+
+test('a highlight keeps a colour it can be painted in, and yellow stays the unstored default', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 };
+  assert.equal(normalizeUserHighlight({ ...base, color: 'teal' })?.color, 'teal');
+  assert.equal(normalizeUserHighlight({ ...base, color: 'yellow' })?.color, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, color: 'red' })?.color, undefined);
+});
+
 test('a passage across paragraphs keeps where it ends', () => {
   const stored = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' });
   assert.equal(stored?.endParagraphIndex, 3);

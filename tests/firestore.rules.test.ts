@@ -930,7 +930,7 @@ test('P19: paragraphIndex is a whole number from zero to one hundred', async () 
   }
 });
 
-test('P19: level and language accept only the values the reader can pick', async () => {
+test('P19: level and language accept only the values the reader and the viewer can pick', async () => {
   await reset();
   const db = asAlice();
   await assertFails(setDoc(highlightRef(db), highlightBody({ level: 'expert' })));
@@ -940,7 +940,7 @@ test('P19: level and language accept only the values the reader can pick', async
   // Absent, not merely wrong: dereferencing a missing key denies the write.
   await assertFails(setDoc(highlightRef(db), highlightWithout('level')));
   await assertFails(setDoc(highlightRef(db), highlightWithout('language')));
-  for (const level of ['beginner', 'university', 'researcher']) {
+  for (const level of ['beginner', 'university', 'researcher', 'full-text']) {
     await assertSucceeds(setDoc(highlightRef(db), highlightBody({ level })));
   }
   for (const language of ['es', 'en']) {
@@ -1053,7 +1053,19 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     endParagraphIndex: 100,
     endQuote: 'a'.repeat(400),
     kind: 'caveat',
+    color: 'violet',
   })));
+});
+
+test('P19: a highlight colour is one the viewer paints, or absent', async () => {
+  await reset();
+  const db = asAlice();
+  for (const color of ['teal', 'sky', 'violet', 'rose']) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ color })));
+  }
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'yellow' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'red' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 3 })));
 });
 
 test('P19: a passage across paragraphs ends later in the same section, with its end quote', async () => {

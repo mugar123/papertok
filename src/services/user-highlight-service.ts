@@ -10,6 +10,7 @@ export interface UserHighlight {
   endQuote?: string;
   kind: 'ai' | 'user';
   note?: string;
+  color?: string;
   paperTitle: string;
   createdAt?: unknown;
 }
@@ -121,14 +122,28 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
+/**
+ * A highlight in the paper's own text rather than in a plain-words rewrite. Its
+ * `sectionId` names one block of that text (`a3` in the abstract, `b12` in the
+ * body) and `paragraphIndex` is always 0. Its quote is the words as the page
+ * shows them, not rewrite markup, so only its whitespace is normalized.
+ */
+export const FULL_TEXT_LEVEL = 'full-text';
+const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
+/** The marks a reader can pick in the full text. Yellow is the default and is not stored. */
+export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;
+export type HighlightColor = typeof HIGHLIGHT_COLORS[number];
+
 export function normalizeUserHighlight(input: HighlightInput | null | undefined): Omit<UserHighlight, 'id'> | null {
-  const quote = normalizeHighlightQuote(input?.quote);
+  const level = LEVELS.includes(input?.level as string)
+    ? input!.level as string
+    : 'university';
+  const quote = level === FULL_TEXT_LEVEL
+    ? String(input?.quote ?? '').replace(/\s+/g, ' ').trim()
+    : normalizeHighlightQuote(input?.quote);
   if (quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return null;
   const paragraphIndex = Number.parseInt(input?.paragraphIndex as string, 10);
   if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 100) return null;
-  const level = ['beginner', 'university', 'researcher'].includes(input?.level as string)
-    ? input!.level as string
-    : 'university';
   const language = 'en';
   const sectionId = cleanText(input?.sectionId, 40);
   const paperId = cleanText(input?.paperId, 400);
@@ -148,6 +163,9 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   // highlight that acquired words — and only the third is `ai`.
   const kind = input?.kind === 'ai' ? 'ai' : 'user';
   const note = cleanText(input?.note, MAX_NOTE_LENGTH);
+  const color = HIGHLIGHT_COLORS.includes(input?.color as HighlightColor) && input?.color !== 'yellow'
+    ? input!.color as string
+    : null;
   // An AI annotation with no text is not an annotation: it is a mark claiming an
   // answer that does not exist, and it would render as an empty card.
   if (kind === 'ai' && !note) return null;
@@ -162,6 +180,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, 400) } : {}),
     kind,
     ...(note ? { note } : {}),
+    ...(color ? { color } : {}),
     paperTitle: cleanText(input?.paperTitle, 1_000),
   };
 }

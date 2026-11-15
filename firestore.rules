@@ -468,7 +468,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
             'quote', 'endParagraphIndex', 'endQuote', 'kind', 'note',
-            'paperTitle', 'createdAt'
+            'color', 'paperTitle', 'createdAt'
           ])
           && validNonEmptyString(request.resource.data.paperId, 400)
           && validString(request.resource.data.quote, 400)
@@ -487,7 +487,7 @@ service cloud.firestore {
           && request.resource.data.paragraphIndex is int
           && request.resource.data.paragraphIndex >= 0
           && request.resource.data.paragraphIndex <= 100
-          && request.resource.data.level in ['beginner', 'university', 'researcher']
+          && request.resource.data.level in ['beginner', 'university', 'researcher', 'full-text']
           && request.resource.data.language in ['es', 'en']
           // 'ai' joins the list rather than arriving as a second `origin`
           // field: `kind` already answers "what sort of mark is this", the mark
@@ -498,6 +498,9 @@ service cloud.firestore {
             || request.resource.data.kind in ['user', 'ai', 'finding', 'method', 'caveat', 'number'])
           && (!('note' in request.resource.data)
             || validString(request.resource.data.note, 2000))
+          // The mark's colour in the full text (HIGHLIGHT_COLORS); yellow is the default and is not stored.
+          && (!('color' in request.resource.data)
+            || request.resource.data.color in ['teal', 'sky', 'violet', 'rose'])
           && (!('paperTitle' in request.resource.data)
             || validString(request.resource.data.paperTitle, 1000))
           // A passage across paragraphs ends later in the same section.

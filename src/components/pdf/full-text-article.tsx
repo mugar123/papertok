@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { getTemml, loadTemml, temmlMarkup } from '../../utils/temml-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
-import { getPublicPaperPath } from '../../utils/public-navigation.ts';
+import { getPaperKey, getPublicPaperPath } from '../../utils/public-navigation.ts';
+import { useLanguage } from '../../context/language-context.tsx';
+import { useReferencePaper } from './use-reference-paper.ts';
 import { copyText } from '../../utils/clipboard.ts';
 import { ArrowRight, ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
@@ -176,25 +178,52 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
   );
 }
 
+/** What a citation's PaperTok page knows that its reference line does not: year, venue, citations and the abstract's opening. */
+function ReferenceDetails({ paperKey }: { paperKey: string }) {
+  const { paper, loading } = useReferencePaper(paperKey);
+  const { locale } = useLanguage();
+  if (loading) return <p className="ft-peek-loading">Loading details…</p>;
+  if (!paper) return null;
+  const facts = [
+    paper.year ? String(paper.year) : null,
+    paper.journal || null,
+    paper.citationCountKnown ? `${new Intl.NumberFormat(locale).format(paper.citationCount ?? 0)} citations` : null,
+  ].filter(Boolean);
+  const abstract = paper.abstract?.trim();
+  if (!facts.length && !abstract) return null;
+  return (
+    <div className="ft-peek-details">
+      {facts.length > 0 && <p className="ft-peek-facts">{facts.join(' · ')}</p>}
+      {abstract && <p className="ft-peek-abstract">{abstract}</p>}
+    </div>
+  );
+}
+
 // What a citation's card says, as a popover beside the citation or a sheet on a phone.
-function ReferenceCard({ reference, lang, title, close }: { reference: Reference; lang?: string; title: ReactNode; close: ReactNode }) {
-  const path = reference.arxiv || reference.doi || reference.pmid
-    ? getPublicPaperPath({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
+// The title opens the cited paper's PaperTok page when the citation carries an identifier.
+function ReferenceCard({ reference, lang, title, close }: { reference: Reference; lang?: string; title: (content: ReactNode) => ReactNode; close: ReactNode }) {
+  const paperKey = reference.arxiv || reference.doi || reference.pmid
+    ? getPaperKey({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
+  const path = paperKey ? getPublicPaperPath(paperKey) : null;
   return (
     <div className="ft-peek-card" lang={lang}>
       <div className="ft-peek-head">
         <span className="ft-ref-meta">{referenceMeta(reference)}</span>
         {close}
       </div>
-      {title}
+      {title(path
+        ? <a className="ft-peek-title-link" href={path} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a>
+        : referenceTitle(reference))}
       <ReferenceSource reference={reference} />
-      <ul className="ft-peek-links">
-        {path && <li><a href={path} target="_blank" rel="noopener noreferrer"><span>PaperTok</span><ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a></li>}
-        {referenceLinks(reference).map(link => (
-          <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
-        ))}
-      </ul>
+      {paperKey && <ReferenceDetails paperKey={paperKey} />}
+      {referenceLinks(reference).length > 0 && (
+        <ul className="ft-peek-links">
+          {referenceLinks(reference).map(link => (
+            <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -223,7 +252,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
             <ReferenceCard
               reference={reference}
               lang={lang}
-              title={<DrawerTitle render={<h2 />} className="ft-ref-title">{referenceTitle(reference)}</DrawerTitle>}
+              title={content => <DrawerTitle render={<h2 />} className="ft-ref-title">{content}</DrawerTitle>}
               close={<DrawerClose render={closeButton}><X size={14} aria-hidden="true" /></DrawerClose>}
             />
           )}
@@ -240,7 +269,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
               <ReferenceCard
                 reference={reference}
                 lang={lang}
-                title={<PopoverTitle className="ft-ref-title">{referenceTitle(reference)}</PopoverTitle>}
+                title={content => <PopoverTitle className="ft-ref-title">{content}</PopoverTitle>}
                 close={<PopoverClose render={closeButton}><X size={14} aria-hidden="true" /></PopoverClose>}
               />
             )}
@@ -256,15 +285,17 @@ type FigureBlock = Extract<Block, { t: 'figure' }>;
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
 
-function BlockView({ block, figureWidth }: { block: Block; figureWidth: number }): ReactNode {
+function BlockView({ block, figureWidth, passage, passageHint }: { block: Block; figureWidth: number; passage: string; passageHint?: string }): ReactNode {
   const id = 'id' in block && block.id ? anchor(block.id) : undefined;
+  // With notes on, a paragraph is a stop the keyboard can annotate from (Enter), as in the reader.
+  const annotatable = passageHint ? { tabIndex: 0, 'aria-describedby': passageHint } : {};
   switch (block.t) {
     case 'heading': {
       const Tag = `h${Math.min(Math.max(block.level, 2), 4)}` as 'h2' | 'h3' | 'h4';
       return <Tag id={id} tabIndex={-1} className={block.level <= 2 ? 'ft-section' : 'ft-subsection'}><Label text={block.label} /><Inlines content={block.children} /></Tag>;
     }
     case 'p':
-      return <p className="ft-p"><Inlines content={block.children} /></p>;
+      return <p className="ft-p" data-passage={passage} {...annotatable}><Inlines content={block.children} /></p>;
     case 'equation':
       return (
         <div id={id} tabIndex={-1} className="ft-equation">
@@ -275,7 +306,7 @@ function BlockView({ block, figureWidth }: { block: Block; figureWidth: number }
       );
     case 'list': {
       const List = block.ordered ? 'ol' : 'ul';
-      return <List className="ft-list">{block.items.map((item, index) => <li key={index}><Inlines content={item} /></li>)}</List>;
+      return <List className="ft-list" data-passage={passage} {...annotatable}>{block.items.map((item, index) => <li key={index}><Inlines content={item} /></li>)}</List>;
     }
     case 'figure':
       return (
@@ -321,7 +352,7 @@ function needsMath(doc: FullText) {
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
-export default function FullTextArticle({ doc, paper, showAbstract = true }: { doc: FullText; paper: Paper; showAbstract?: boolean }) {
+export default function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
   const wantsMath = useMemo(() => needsMath(doc), [doc]);
   useEffect(() => {
     if (!wantsMath || mathReady()) return undefined;
@@ -365,13 +396,13 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
   const abstract = useMemo(() => showAbstract && doc.abstract.length > 0 && (
     <section className="ft-abstract" aria-labelledby="ft-abstract-title">
       <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} />)}</div>
+      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} passage={`a${index}`} passageHint={passageHint} />)}</div>
     </section>
-  ), [doc, showAbstract, figureWidth]);
+  ), [doc, showAbstract, figureWidth, passageHint]);
   const body = useMemo(() => (
     <>
         {/* The paper's language marks its own text, not the reader's labels. */}
-        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} />)}</div>
+        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} passage={`b${index}`} passageHint={passageHint} />)}</div>
         {doc.notes.length > 0 && (
           <section className="ft-notes" aria-labelledby="ft-notes-title">
             <h2 id="ft-notes-title" className="ft-section" tabIndex={-1}>Notes</h2>
@@ -398,7 +429,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true }: { d
           </section>
         )}
     </>
-  ), [doc, figureWidth]);
+  ), [doc, figureWidth, passageHint]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>

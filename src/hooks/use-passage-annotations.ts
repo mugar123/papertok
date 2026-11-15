@@ -136,7 +136,7 @@ export function usePassageAnnotations({
     };
   }, []);
 
-  const store = useCallback(async ({ kind, note }: { kind: UserHighlight['kind']; note?: string }) => {
+  const store = useCallback(async ({ kind, note, color }: { kind: UserHighlight['kind']; note?: string; color?: string }) => {
     if (!uid || !pending) return null;
     const saved = await saveUserHighlight(uid, {
       paperId,
@@ -150,6 +150,7 @@ export function usePassageAnnotations({
       endQuote: pending.endQuote,
       kind,
       note,
+      color,
     });
     if (!saved) return null;
     setLoaded(current => [
@@ -162,19 +163,19 @@ export function usePassageAnnotations({
     return saved;
   }, [language, level, paper?.title, paperId, pending, scheduleSettle, uid]);
 
-  const highlight = useCallback(async () => {
-    const saved = await store({ kind: 'user' });
+  const highlight = useCallback(async (color?: string) => {
+    const saved = await store({ kind: 'user', color });
     if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId });
     setPending(null);
     return saved;
   }, [level, paper?.title, paperId, store, trackEvent]);
 
-  const saveNote = useCallback(async (text: string) => {
+  const saveNote = useCallback(async (text: string, color?: string) => {
     const note = String(text || '').trim();
     if (!note) return null;
     setBusy('saving');
     try {
-      const saved = await store({ kind: 'user', note });
+      const saved = await store({ kind: 'user', note, color });
       if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId });
       setPending(null);
       return saved;

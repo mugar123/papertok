@@ -3,9 +3,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-padding-bottom: 6rem;
+  container-type: inline-size;
   background: var(--bg-primary);
 }
 .ft-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+@media (min-width: 768px) { .ft-scroll { padding-inline: var(--space-8); } }
 
 .ft-article {
   max-width: clamp(680px, 38vw, 820px);
@@ -213,7 +215,7 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-table-scroll {
   width: max-content;
   min-width: 100%;
-  max-width: min(1040px, calc(100vw - 2 * var(--space-4)));
+  max-width: min(1040px, calc(100cqi - 2 * var(--space-4)));
   max-height: 70vh;
   overflow: auto;
   border: 1px solid var(--border-subtle);
@@ -286,7 +288,9 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-rail { display: none; }
 @media (min-width: 1024px) {
   .ft-outline-button { display: none; }
-  .ft-table-scroll { max-width: min(1040px, calc(100vw - 2 * var(--space-16))); }
+  /* Clear of the outline ticks, with the same margin on the right, however narrow the notes leave the text. */
+  .ft-scroll { padding-inline: var(--space-16); }
+  .ft-table-scroll { max-width: min(1040px, 100cqi); }
   .ft-rail { position: absolute; inset-block: 0; left: var(--space-3); z-index: 2; display: flex; align-items: center; }
   /* The rail spans the stage to centre its panel, but only the ticks and the
      open panel answer the pointer. */
@@ -387,6 +391,14 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-peek-card { display: grid; gap: var(--space-1); }
 .ft-peek-head { display: flex; align-items: center; justify-content: space-between; }
 .ft-peek-card .ft-ref-title { margin: 0; font-size: 1rem; }
+.ft-peek-title-link { color: inherit; text-decoration: underline; text-decoration-color: var(--border-default); text-underline-offset: 3px; }
+.ft-peek-title-link svg { display: inline; margin-left: var(--space-1); vertical-align: -2px; color: var(--text-tertiary); }
+@media (hover: hover) { .ft-peek-title-link:hover { text-decoration-color: currentColor; } }
+.ft-peek-title-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+.ft-peek-loading { margin: var(--space-2) 0 0; font-size: var(--fs-sm); color: var(--text-tertiary); }
+.ft-peek-details { display: grid; gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.ft-peek-facts { margin: 0; font: var(--mono-label); color: var(--text-secondary); }
+.ft-peek-abstract { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .ft-peek-card :is(.ft-ref-authors, .ft-ref-venue) { display: block; }
 .ft-peek-card .ft-peek-links { margin: var(--space-2) calc(-1 * var(--space-2)) 0; padding: 0; list-style: none; }
 .ft-peek-links li + li { border-top: 1px solid var(--border-subtle); }
