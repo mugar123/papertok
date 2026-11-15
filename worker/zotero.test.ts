@@ -133,10 +133,30 @@ function created(init: RequestInit, version: number) {
 
 const record = (admin: ReturnType<typeof memoryAdmin>) => admin.documents[`users/${UID}/zoteroItems/${PAPER.id}`];
 
+test('labels original-text highlights without attributing them to a rewrite', () => {
+  assert.equal(highlightsNote('A Paper', [{ quote: 'Original quote', note: 'My note', level: 'full-text' }]),
+    '<h1>PaperTok highlights: A Paper</h1>\n<p><em>Quoted from the paper&#39;s original text.</em></p>\n<blockquote><p>Original quote</p></blockquote><p>My note</p>');
+});
+
+test('labels each plain-words highlight with its reading level', () => {
+  for (const [level, label] of [['beginner', 'Beginner'], ['university', 'University'], ['researcher', 'Researcher']]) {
+    assert.equal(highlightsNote('A Paper', [{ quote: 'Rewritten quote', note: '', level }]),
+      `<h1>PaperTok highlights: A Paper</h1>\n<p><em>Quoted from PaperTok&#39;s plain-words version (${label}), not from the original text.</em></p>\n<blockquote><p>Rewritten quote</p></blockquote>`);
+  }
+});
+
+test('does not invent provenance for a missing or unrecognized reading level', () => {
+  for (const level of ['', 'unknown', '__proto__']) {
+    assert.equal(highlightsNote('A Paper', [{ quote: 'A quote', note: '', level }]),
+      '<h1>PaperTok highlights: A Paper</h1>\n<p><em>Quote source not recorded.</em></p>\n<blockquote><p>A quote</p></blockquote>');
+  }
+});
+
 test('sends the paper with the reader\'s own highlights, then updates the same item and note', async () => {
   const admin = memoryAdmin({
     [`users/${UID}/highlights/h1`]: { paperId: PAPER.id, kind: 'user', quote: 'A plain quote', note: 'My note', level: 'university', sectionId: 's1', paragraphIndex: 0 },
     [`users/${UID}/highlights/h2`]: { paperId: PAPER.id, kind: 'ai', quote: 'AI finding', note: 'Generated', level: 'university', sectionId: 's1', paragraphIndex: 1 },
+    [`users/${UID}/highlights/h3`]: { paperId: PAPER.id, kind: 'user', quote: 'An original quote', note: 'Original note', level: 'full-text', sectionId: 's1', paragraphIndex: 2 },
   });
   await connected(admin);
   const upstream = stubFetch((_url, init) => (init.method === 'POST'
@@ -144,14 +164,17 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
     : new Response(null, { status: 204, headers: { 'last-modified-version': '8' } })));
   try {
     const first = await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
-    assert.equal((first as { highlights: number }).highlights, 1);
+    assert.equal((first as { highlights: number }).highlights, 2);
     const [item, note] = upstream.calls.map(call => JSON.parse(String(call.init.body))[0]);
     assert.equal(item.itemType, 'preprint');
     assert.equal(item.archiveID, 'arXiv:2501.00001');
     assert.match(item.key, /^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/);
     assert.equal(note.parentItem, item.key);
-    assert.match(note.note, /not from the original text/);
-    assert.match(note.note, /My note/);
+    assert.equal(note.note, '<h1>PaperTok highlights: A Paper</h1>\n'
+      + '<p><em>Quoted from PaperTok&#39;s plain-words version (University), not from the original text.</em></p>\n'
+      + '<blockquote><p>A plain quote</p></blockquote><p>My note</p>\n'
+      + '<p><em>Quoted from the paper&#39;s original text.</em></p>\n'
+      + '<blockquote><p>An original quote</p></blockquote><p>Original note</p>');
     assert.doesNotMatch(note.note, /AI finding/);
     assert.equal((upstream.calls[0].init.headers as Record<string, string>)['zotero-api-key'], 'api-key');
 
@@ -162,6 +185,7 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
       ['PATCH', `/users/12345/items/${note.key}`],
     ]);
     assert.equal((upstream.calls[1].init.headers as Record<string, string>)['if-unmodified-since-version'], '7');
+    assert.equal(JSON.parse(String(upstream.calls[1].init.body)).note, note.note);
   } finally {
     upstream.restore();
   }

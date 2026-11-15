@@ -275,16 +275,17 @@ export function zoteroItem(paper: ZoteroPaper) {
 
 const LEVEL_LABELS: Record<string, string> = { beginner: 'Beginner', university: 'University', researcher: 'Researcher' };
 
-/**
- * The quotes come from PaperTok's plain-words versions, not from the paper,
- * and the note says so before any of them.
- */
 export function highlightsNote(title: string, highlights: ZoteroHighlight[]) {
-  const levels = [...new Set(highlights.map(h => LEVEL_LABELS[h.level] || h.level))].join(', ');
   return [
     `<h1>PaperTok highlights: ${escapeHtml(title)}</h1>`,
-    `<p><em>Quoted from PaperTok's plain-words version (${escapeHtml(levels)}), not from the original text.</em></p>`,
-    ...highlights.map(h => `<blockquote><p>${escapeHtml(h.quote)}</p></blockquote>${h.note ? `<p>${escapeHtml(h.note)}</p>` : ''}`),
+    ...highlights.map(h => {
+      let source = 'Quote source not recorded.';
+      if (h.level === 'full-text') source = "Quoted from the paper's original text.";
+      else if (Object.hasOwn(LEVEL_LABELS, h.level)) {
+        source = `Quoted from PaperTok's plain-words version (${LEVEL_LABELS[h.level]}), not from the original text.`;
+      }
+      return `<p><em>${escapeHtml(source)}</em></p>\n<blockquote><p>${escapeHtml(h.quote)}</p></blockquote>${h.note ? `<p>${escapeHtml(h.note)}</p>` : ''}`;
+    }),
   ].join('\n');
 }
 
