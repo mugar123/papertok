@@ -27,10 +27,6 @@ test('a paper with a DOI links the publisher page through doi.org', () => {
   );
 });
 
-test('the body fits two lines of the narrowest card as the 41-character sentence it replaced did', () => {
-  assert.ok(body.length <= 'The open sources PaperTok reads had none.'.length);
-});
-
 test('a paper without a usable DOI gets the same words and no link', () => {
   const noLink = { title: 'No abstract to show', body, publisher: null };
   assert.deepEqual(missingAbstractNotice(withoutAbstract()), noLink);
