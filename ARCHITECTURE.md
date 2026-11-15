@@ -82,6 +82,11 @@ flowchart TD
   recover by its provider identifier and persist the result without creating a save.
   Recovery continues in rounds of at most 60 papers until the open list is covered;
   each paper is attempted at most once per opening, including failed requests.
+  Public-list visits keep their successful response in a tab-local cache of
+  at most 32 history entries. Back renders the cached rows before route scroll
+  restoration and revalidates in the background. A confirmed missing list clears
+  that entry; a failed refresh leaves the already-read list visible. Reloads
+  and new history entries read afresh.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
@@ -212,6 +217,12 @@ feeds, at most 8, in one document, `users/{uid}/settings/customFeeds`, which
 [corpusRequestOf](src/utils/custom-feeds.ts) turns a feed into its categories,
 whole `areas` and follows (research topics, authors, journals and keywords), with
 `order: 'daily'` for Newest first and `'relevance'` for Best match.
+A keyword brings the papers that have it in the title or abstract. Newest first
+places them by the day they reached the feed, and a paper from the keyword's
+weekly list of best matches of any year by its publication date. Best match
+follows that list's order, which is OpenAlex's relevance: the reader's likes
+reorder only each ten of it, and the keyword takes turns with the feed's other
+ingredients ([keyword lanes](worker/README.md#paper-store)).
 [custom-feed-pages.ts](src/utils/custom-feed-pages.ts) builds it into an `exact`
 request and
 [useCustomFeedPapers](src/components/custom-feeds/use-custom-feed-papers.ts)
@@ -219,12 +230,28 @@ sends it: the Worker serves only those lanes and says which follows are still
 loading. The list goes on while the answer's `more` is true, also past an empty
 page, and ends when it is false; from a Worker that does not send `more`, a
 page of fewer than 15 papers ends it
-([feedPageOf](src/utils/custom-feed-pages.ts)). Like For you, the feed leaves out
+([feedPageOf](src/utils/custom-feed-pages.ts)). A feed opens on its top and
+pages by number. A refresh, from the pill, the pull, the tab pressed again or
+`Check again`, starts with the papers the reader has not seen, in the feed's
+order. Seen are the papers viewed on a card in any feed that the account or
+this browser still lists ([viewedPaperIds](src/context/feed-viewed-papers.ts);
+the account keeps the last 500), and the ones gone through in the list being
+refreshed, down to the card on screen (`passedPapers`); a paper viewed before
+those counts as unseen again. Its
+requests add `seen`, the filter Most recent sends, with those papers and what
+the run already received. When the Worker has no unseen paper
+left, the run goes on by number from the feed's top and lists no paper twice,
+so the papers already seen follow the unseen ones. Those pages repeat the
+unseen papers already listed, so the list asks for them one after another
+until one adds a paper or the feed ends, about one request for every 15 papers
+the walk listed. A refresh that finds none
+unseen shows the feed from its top with one request, and a toast says so
+([askFeedPage](src/utils/custom-feed-pages.ts)). Like For you, the feed leaves out
 retracted papers and the types `isFeedPublication` rejects, and they still
 count toward their page. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
 hands the papers from useCustomFeedPapers to the shared
-[FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples and Not interested
-papers; it does not score the feed's papers.
+[FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples, Not interested
+papers and, for a refresh, the papers they viewed; it does not score the feed's papers.
 Most recent, at `/recent`, sends For You's main request with `order: 'daily'`
 and no notable papers, follows or exploration
 ([recent-feed-pages.ts](src/utils/recent-feed-pages.ts)).

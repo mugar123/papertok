@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-14';
+export const PRIVACY_POLICY_VERSION = '2026-11-15';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -69,12 +69,29 @@ export const PRIVACY_POLICY_VERSION = '2026-11-14';
  * PRIVACY_POLICY_VERSION and this instant to the merge day before merging; once
  * Vercel reports the merge live, lower this instant to that success time.
  *
- * Version 2026-11-14 adds Zotero: the encrypted key and the item and note keys
+ * Version 2026-11-14 withdraws a sentence of 2026-11-12: a request for one of
+ * the reader's own feeds sent no filter of the papers they viewed, and a
+ * refresh of the feed now sends one, so the feed starts with the papers they
+ * have not seen (Nicolás chose the announcement on 2026-11-14). It also
+ * announces the metadata of the papers in the reader's lists and favorites
+ * that the browser keeps since #502. The page's mentions of journals in a
+ * feed (#493) and of the Most recent tab (#478) joined the 2026-11-12 text
+ * without a version and are not announced. The text ships with the pull
+ * request that makes a custom feed's refresh skip seen papers. This instant
+ * follows the rule above: it stands after that merge, at the last moment the
+ * version's day allows. If the merge falls after it, move the page's "Last
+ * updated" date, PRIVACY_POLICY_VERSION and this instant to the merge day
+ * before merging; once Vercel reports the merge live, lower this instant to
+ * that success time.
+ *
+ * Version 2026-11-15 adds Zotero: the encrypted key and the item and note keys
  * kept while a reader has Zotero connected, what a send gives Zotero, and the
- * usage event that records only whether a send worked. This instant follows
- * the rule above for a text that ships with its own pull request.
+ * usage event that records only whether a send worked. It takes its own
+ * version because 2026-11-14 went live with the feed refresh notice. This
+ * instant follows the rule above for a text that ships with its own pull
+ * request.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-14T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-15T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -105,7 +122,7 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 12 November: connecting Zotero, what a send gives it,
+  // The changes since 14 November: connecting Zotero, what a send gives it,
   // and the usage event about sends.
   lead: 'If you connect Zotero',
   clauses: [

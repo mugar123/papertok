@@ -53,7 +53,8 @@ const seeded = <Run>(caches: Caches<Run>, key: string | null, press: number | nu
  * itself, a few times in a row at most; then `loadMore` goes on with the same
  * run, and the list asks by itself as many times again. A press on its tab
  * starts a new run; so does `refresh`, which waits for the profile when it is
- * not ready yet.
+ * not ready yet. `runFor` is given the pages a new run replaces (a refresh),
+ * or none when it is the list's first.
  * An answer that arrives after a newer request, a new key or the unmount is
  * dropped. `caches` must keep its two caches' identities across renders.
  */
@@ -66,15 +67,19 @@ export function useCorpusFeedPages<Run>(options: {
   press: number | null;
   /** True when the list has nothing to ask the corpus for: it is empty and asks nothing. */
   asksNothing: boolean;
-  /** The run page `page` belongs to: `current` after a run's first page, a new one otherwise. */
-  runFor: (current: Run | null, page: number) => Run;
+  /**
+   * The run page `page` belongs to: `current` after a run's first page, a new
+   * one otherwise. `replaced`: the pages the list holds that a new run
+   * replaces, null when it holds none.
+   */
+  runFor: (current: Run | null, page: number, replaced: CustomFeedPages | null) => Run;
   /** Asks the corpus for the page. `run`, when returned, replaces the run kept with the pages. */
   ask: (run: Run, page: number) => Promise<{ papers: Paper[]; hasMore: boolean; loading?: LoadingFollow[]; run?: Run }>;
   /** The papers of the merged list to show now. */
   shown: (papers: Paper[]) => Paper[];
   caches: Caches<Run>;
 }): {
-  pages: CustomFeedPages | null; papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
+  pages: CustomFeedPages | null; run: Run | null; papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
   emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null;
 } {
@@ -103,7 +108,7 @@ export function useCorpusFeedPages<Run>(options: {
    */
   const fetchPage = useCallback((purpose: string, page: number, settled: Partial<PagesState<Run>> = {}) => {
     if (!key || asksNothing) return false;
-    const run = runFor(view.run, page);
+    const run = runFor(view.run, page, page === 0 ? view.pages : null);
     tokenRef.current += 1;
     const token = tokenRef.current;
     inFlightRef.current = { token, purpose };
@@ -121,7 +126,7 @@ export function useCorpusFeedPages<Run>(options: {
       setState(current => (current.key === key ? { ...current, ...settled, error, pending: null } : current));
     });
     return true;
-  }, [ask, asksNothing, key, runFor, view.run]);
+  }, [ask, asksNothing, key, runFor, view.pages, view.run]);
 
   const pages = asksNothing ? NOTHING : view.pages;
   useEffect(() => {
@@ -185,6 +190,7 @@ export function useCorpusFeedPages<Run>(options: {
 
   return {
     pages,
+    run: view.run,
     papers,
     loading,
     error: view.error,

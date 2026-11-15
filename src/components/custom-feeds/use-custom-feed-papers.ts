@@ -8,15 +8,19 @@ import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
 import { fetchCorpusPage } from '../../services/paper-store-service.ts';
 import { changeDismissed, readDismissed, subscribeDismissed } from '../../utils/custom-feed-dismissed.ts';
 import {
+  askFeedPage,
   customFeedPagesCache,
   customFeedRunsCache,
-  feedPageOf,
+  customFeedScrollKey,
   feedPageRequest,
   feedPagesKey,
   feedRunSignals,
   loadingIngredientsOf,
+  passedPapers,
+  type CustomFeedPages,
   type FeedRunSignals,
 } from '../../utils/custom-feed-pages.ts';
+import { feedResumeMemory } from '../../utils/feed-resume-memory.ts';
 import { customFeedTabKey } from '../../utils/feed-tabs.ts';
 import { withoutNotInterested } from '../../utils/following-feed.ts';
 
@@ -35,16 +39,23 @@ const storedDismissed = (uid: string | null, feedId: string | undefined) => (uid
  * examples and the feed's removed papers when it starts, and every later page
  * of it asks with the same ones; a like or a removal reaches the ranking at the
  * next refresh, and a removal leaves the screen at once.
+ *
+ * The run a feed opens with lists it from its top. A refresh's run starts with
+ * the papers the reader has not seen, in the feed's order, then goes on with
+ * the feed from its top (`askFeedPage`). Seen are the papers viewed on a card
+ * in any feed and the ones the reader went through in the list the refresh
+ * replaces. `walksUnseen` says the run is still on the unseen ones, so a
+ * refresh that ends without it found none.
  */
 export function useCustomFeedPapers(feed: CustomFeed | null): {
   papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
-  loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
+  loadMore: () => boolean; refresh: () => void; isRefreshing: boolean; walksUnseen: boolean;
   emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
   dismiss: (paper: Paper) => void; restore: (paper: Paper) => void;
 } {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
-  const { notInterestedIds, getPositiveExampleIds, getRecommendationProfileSnapshot } = useFeed();
+  const { notInterestedIds, getPositiveExampleIds, getInterestRunSignals, getRecommendationProfileSnapshot } = useFeed();
   const { refreshRequest } = useCustomFeeds();
   // The reader's latest press on this feed's tab while on it.
   const press = refreshRequest && feed && refreshRequest.tab === customFeedTabKey(feed.id) ? refreshRequest.n : null;
@@ -74,26 +85,33 @@ export function useCustomFeedPapers(feed: CustomFeed | null): {
   const readRemoved = useCallback(() => storedDismissed(uid, feedId), [feedId, uid]);
   const dismissed = useSyncExternalStore(subscribe, readRemoved);
 
-  // A run's signals are taken from the reader's newest examples and the
-  // feed's removed papers when its first page is asked for.
-  const runFor = useCallback(
-    (run: FeedRunSignals | null, page: number) => feedRunSignals(run, page, { positiveIds: getPositiveExampleIds(), dismissed: storedDismissed(uid, feedId) }),
-    [feedId, getPositiveExampleIds, uid],
-  );
+  // What the reader viewed is read when the page is asked for, as Most recent reads it.
   const ask = useCallback((signals: FeedRunSignals, page: number) => {
-    const request = feed && feedPageRequest(feed, signals, page);
-    // Not reached: the pages hook asks for nothing without a key (no feed) or when the feed asks for nothing.
-    if (!request) return Promise.reject(new Error('The feed names nothing the corpus can serve.'));
-    return fetchCorpusPage(request).then(feedPageOf);
-  }, [feed]);
+    // Not reached: the pages hook asks for nothing without a key (no feed).
+    if (!feed) return Promise.reject(new Error('The feed names nothing the corpus can serve.'));
+    return askFeedPage(feed, signals, page, getInterestRunSignals().viewedIds, request => fetchCorpusPage(request));
+  }, [feed, getInterestRunSignals]);
   const shown = useCallback((papers: Paper[]) => {
     const kept = withoutNotInterested(papers, notInterestedIds);
     if (!dismissed.length) return kept;
     const gone = new Set(dismissed);
     return kept.filter(paper => !gone.has(paper.id));
   }, [notInterestedIds, dismissed]);
+  // A run's signals are taken from the reader's newest examples and the
+  // feed's removed papers when its first page is asked for. A refresh also
+  // takes the papers the reader went through in the list it replaces, down
+  // to the card FeedContainer remembers them on.
+  const runFor = useCallback(
+    (run: FeedRunSignals | null, page: number, replaced: CustomFeedPages | null) => feedRunSignals(
+      run,
+      page,
+      { positiveIds: getPositiveExampleIds(), dismissed: storedDismissed(uid, feedId) },
+      replaced && passedPapers(shown(replaced.papers), feedResumeMemory.get(customFeedScrollKey(feedId, uid))),
+    ),
+    [feedId, getPositiveExampleIds, shown, uid],
+  );
 
-  const { pages, ...list } = useCorpusFeedPages({ key, ready: profileReady, press, asksNothing, runFor, ask, shown, caches: CACHES });
+  const { pages, run, ...list } = useCorpusFeedPages({ key, ready: profileReady, press, asksNothing, runFor, ask, shown, caches: CACHES });
 
   const dismiss = useCallback((paper: Paper) => {
     if (uid && feedId) changeDismissed(uid, feedId, ids => [...ids.filter(id => id !== paper.id), paper.id]);
@@ -105,5 +123,5 @@ export function useCustomFeedPapers(feed: CustomFeed | null): {
 
   const loadingIngredients = useMemo(() => (feed && pages ? loadingIngredientsOf(feed, pages.loading) : []), [feed, pages]);
 
-  return { ...list, loadingIngredients, dismiss, restore };
+  return { ...list, walksUnseen: run?.received !== undefined, loadingIngredients, dismiss, restore };
 }
