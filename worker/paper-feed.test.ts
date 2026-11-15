@@ -1992,20 +1992,21 @@ test('a slow page the client gives up on writes one aborted line with the steps 
   const waited: Array<Promise<unknown>> = [];
   const lines = await timedPage(t, 0, {
     waited,
-    slow: [[/JOIN work_keys k/, 1_000], [/FROM work_lanes WHERE lane = \?/, 2_600]],
-    abortAfter: /FROM work_lanes WHERE lane = \?/,
+    slow: [[/JOIN work_keys k/, 1_000], [/JOIN work_vectors v ON v\.work_id = j\.value/, 2_600]],
+    abortAfter: /JOIN work_vectors v ON v\.work_id = j\.value/,
   });
   // Only the page's follow-up (follows to register, a like to look up) is handed over, as on main.
   assert.equal((await Promise.all(waited)).filter(work => work instanceof Response).length, 0, 'the answer is not handed to waitUntil');
   assert.equal(lines.length, 1, 'the answer the Node test still reads writes no second line');
-  // Left while the first wave was still reading: that step is not finished.
+  // Left while the candidates' vectors were still being read: that step is
+  // not finished, and the first wave, which looked up the ids, is.
   assert.deepEqual(JSON.parse(lines[0]), {
     event: 'slow_feed_request',
     route: '/store/papers',
     aborted: true,
     totalMs: 3_600,
-    steps: { auth: 0, body: 0, quota: 0, keys: 1_000 },
-    counts: { lanes: 2, groups: 1 },
+    steps: { auth: 0, body: 0, quota: 0, keys: 1_000, wave1: 1_000 },
+    counts: { lanes: 2, groups: 1, candidates: 3 },
   });
 });
 
@@ -2054,15 +2055,18 @@ test("a follows page's slow read of its followed lanes is the follows step", asy
   assert.equal(JSON.parse(line).steps.follows, 1_600);
 });
 
-test('each D1 read of a slow first page is counted in its own step', async t => {
+// The ids are looked up beside the candidates, so `keys` is within `wave1`.
+// The clock here moves by each slow read in turn, where reads beside each
+// other overlap on Workers: one read is slow in each round trip.
+test('each D1 round trip of a slow first page is counted in its own step', async t => {
   const [line] = await timedPage(t, 0, {
     slow: [
       [/JOIN work_keys k/, 300],
-      [/FROM work_lanes WHERE lane = \?/, 400],
+      [/JOIN work_vectors v ON v\.work_id = j\.value/, 500],
       [/w\.paper, w\.kept_until/, 900],
     ],
   });
-  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 400, vectors: 0, rankCpu: 0, works: 900, cacheWrite: 0 });
+  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 300, vectors: 500, rankCpu: 0, works: 900, cacheWrite: 0 });
 });
 
 // The first page keeps its order; the second reads it from the cache.

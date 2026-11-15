@@ -542,7 +542,7 @@ for (const [found, arxivAnswer, enrichedByOpenAlex] of [['an unretracted eprint'
     assert.equal(paper.sources.enrichedBy.includes('openalex'), enrichedByOpenAlex);
     assert.equal(misses, enrichedByOpenAlex ? 0 : 1);
     assert.deepEqual(laneRows(db), []);
-    assert.deepEqual((await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).candidates, []);
+    assert.deepEqual(await (await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).offered(), []);
   });
 }
 
