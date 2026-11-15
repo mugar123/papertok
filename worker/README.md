@@ -1284,7 +1284,7 @@ Each step is in milliseconds and appears only if the request ran it:
 | `likesWait` | More like this waiting for the liked paper's lookup, at most 1.5 s |
 | `cacheRead` | a later page reading its kept order |
 | `keys` | the works the likes, rejections and exclusions name, with the likes' and rejections' vectors, in one batch. It is read in the first wave and also counted inside `wave1` |
-| `wave1` | the first D1 round trip of a ranking: `keys`, the candidates, the notable window and a keyword feed's ranks, read together |
+| `wave1` | the first D1 round trip of a ranking: `keys`, the candidates, the notable window and a "Best match" keyword feed's ranks, read together |
 | `notableCheck` | the notable "still offered" batch: read beside the candidates' vectors, or before them on a page that waits for it (above); counted inside `vectors` |
 | `vectors` | the second round trip, plus the vector rounds after the check on a page that waits for it: the candidates' vectors, the notable check, the ungrouped likes' rows and `keepLiked`; every round, for a page without likes |
 | `rankCpu` | similarity and the diversity pass |
