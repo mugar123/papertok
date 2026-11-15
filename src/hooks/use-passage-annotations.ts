@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { HighlightColor, UserHighlight } from '../services/user-highlight-service.ts';
 import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
@@ -153,6 +153,7 @@ export function usePassageAnnotations({
       quote: pending.quote,
       endParagraphIndex: pending.endParagraphIndex,
       endQuote: pending.endQuote,
+      occurrence: pending.occurrence,
       kind,
       note,
       color,

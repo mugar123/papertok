@@ -1054,6 +1054,7 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     endQuote: 'a'.repeat(400),
     kind: 'caveat',
     color: 'violet',
+    occurrence: 100,
   })));
 });
 
@@ -1066,6 +1067,17 @@ test('P19: a highlight colour is one the viewer paints, or absent', async () => 
   await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'yellow' })));
   await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'red' })));
   await assertFails(setDoc(highlightRef(db), highlightBody({ color: 3 })));
+});
+
+test('P19: a later occurrence of the same words is a whole number from 1 to 100, or absent', async () => {
+  await reset();
+  const db = asAlice();
+  for (const occurrence of [1, 100]) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ occurrence })));
+  }
+  for (const occurrence of [0, -1, 101, 1.5, '2']) {
+    await assertFails(setDoc(highlightRef(db), highlightBody({ occurrence })));
+  }
 });
 
 test('P19: a passage across paragraphs ends later in the same section, with its end quote', async () => {

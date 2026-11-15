@@ -11,6 +11,7 @@ export interface UserHighlight {
   kind: 'ai' | 'user';
   note?: string;
   color?: HighlightColor;
+  occurrence?: number;
   paperTitle: string;
   createdAt?: unknown;
 }
@@ -94,7 +95,7 @@ export function buildHighlightsQuery(uid: string, paperId: string, overrides?: H
  * highlight of it would land as a second document. Leaving `user` out keeps
  * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind }: HighlightInput) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind, occurrence }: HighlightInput) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -104,7 +105,8 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     normalizeHighlightQuote(quote),
   ]
     .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex, normalizeHighlightQuote(endQuote)])
-    .concat(kind === 'ai' ? ['ai'] : []).join('|');
+    .concat(kind === 'ai' ? ['ai'] : [])
+    .concat(occurrence ? [`#${occurrence}`] : []).join('|');
 
   // FNV-1a: short, stable, and enough to separate selections within one paper.
   let hash = 0x811c9dc5;
@@ -158,6 +160,8 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   // highlight that acquired words — and only the third is `ai`.
   const kind = input?.kind === 'ai' ? 'ai' : 'user';
   const note = cleanText(input?.note, MAX_NOTE_LENGTH);
+  const occurrence = Number.parseInt(input?.occurrence as string, 10);
+  const later = Number.isInteger(occurrence) && occurrence >= 1 && occurrence <= 100;
   const picked: unknown = input?.color;
   const color = HIGHLIGHT_COLORS.some(option => option === picked) && picked !== 'yellow' ? picked as HighlightColor : null;
   // An AI annotation with no text is not an annotation: it is a mark claiming an
@@ -175,6 +179,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     kind,
     ...(note ? { note } : {}),
     ...(color ? { color } : {}),
+    ...(later ? { occurrence } : {}),
     paperTitle: cleanText(input?.paperTitle, 1_000),
   };
 }

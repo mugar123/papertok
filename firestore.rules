@@ -468,7 +468,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
             'quote', 'endParagraphIndex', 'endQuote', 'kind', 'note',
-            'color', 'paperTitle', 'createdAt'
+            'color', 'occurrence', 'paperTitle', 'createdAt'
           ])
           && validNonEmptyString(request.resource.data.paperId, 400)
           && validString(request.resource.data.quote, 400)
@@ -500,6 +500,10 @@ service cloud.firestore {
             || validString(request.resource.data.note, 2000))
           && (!('color' in request.resource.data)
             || request.resource.data.color in ['teal', 'sky', 'violet', 'rose'])
+          && (!('occurrence' in request.resource.data)
+            || (request.resource.data.occurrence is int
+              && request.resource.data.occurrence >= 1
+              && request.resource.data.occurrence <= 100))
           && (!('paperTitle' in request.resource.data)
             || validString(request.resource.data.paperTitle, 1000))
           // A passage across paragraphs ends later in the same section.

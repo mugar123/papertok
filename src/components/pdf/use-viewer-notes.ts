@@ -32,7 +32,7 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
-    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), anchor: passage.anchor });
+    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor });
   };
   const pick = (root: HTMLElement | null) => {
     if (root) pickPassage(selectedPassage(root), root);
@@ -87,12 +87,12 @@ export function useTouchSelection(root: HTMLElement | null) {
   return root ? passage : null;
 }
 
-export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'color'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote'> | null) {
+export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null) {
   useEffect(() => {
     if (!root || typeof CSS === 'undefined' || !('highlights' in CSS)) return undefined;
-    const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote'>[]) => list.flatMap((passage) => {
+    const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'>[]) => list.flatMap((passage) => {
       const block = root.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-      const range = block && passageRange(block, passage.quote);
+      const range = block && passageRange(block, passage.quote, passage.occurrence);
       return range ? [range] : [];
     });
     const paint = () => {
