@@ -274,7 +274,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
 
   await phase('enrich', async () => {
-    // What the night's abstract retries may still do, from one batch to the
+    // What the run's abstract retries may still do, from one batch to the
     // next; the first batch starts them with their whole allowance.
     let retries: AbstractRetries | undefined;
     for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
