@@ -189,7 +189,7 @@ function newObjectKey() {
 }
 
 async function createObject(z: Zotero, object: Record<string, unknown>) {
-  const response = await apiRequest(z, 'POST', `/users/${z.userId}/items`, [object], { 'zotero-write-token': writeToken() });
+  const response = await apiRequest(z, 'POST', `/users/${z.userId}/items`, [{ ...object, version: 0 }], { 'zotero-write-token': writeToken() });
   const payload = await response.json().catch(() => null) as { successful?: Record<string, { key?: string; version?: number }> } | null;
   const saved = payload?.successful?.['0'];
   if (!response.ok || !saved || saved.key !== object.key) throw new ZoteroError('ZOTERO_WRITE_FAILED', 502);

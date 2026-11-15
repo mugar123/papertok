@@ -166,6 +166,8 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
     const first = await handleZoteroRequest(request('/zotero/send', { paper: PAPER }), ENV, ORIGIN, { admin });
     assert.equal((first as { highlights: number }).highlights, 2);
     const [item, note] = upstream.calls.map(call => JSON.parse(String(call.init.body))[0]);
+    assert.equal(item.version, 0);
+    assert.equal(note.version, 0);
     assert.equal(item.itemType, 'preprint');
     assert.equal(item.archiveID, 'arXiv:2501.00001');
     assert.match(item.key, /^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/);
