@@ -128,6 +128,8 @@ export const MAX_NOTE_LENGTH = 1_200;
  * body) and `paragraphIndex` is always 0. Its quote is the words as the page
  * shows them, not rewrite markup, so only its whitespace is normalized.
  */
+/** A stored quote is cut here; the rest of a longer selection is not kept. */
+export const MAX_QUOTE_LENGTH = 400;
 export const FULL_TEXT_LEVEL = 'full-text';
 const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
 /** The marks a reader can pick in the full text. Yellow is the default and is not stored. */
@@ -176,8 +178,8 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     language,
     sectionId,
     paragraphIndex,
-    quote: quote.slice(0, 400),
-    ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, 400) } : {}),
+    quote: quote.slice(0, MAX_QUOTE_LENGTH),
+    ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, MAX_QUOTE_LENGTH) } : {}),
     kind,
     ...(note ? { note } : {}),
     ...(color ? { color } : {}),

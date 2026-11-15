@@ -256,15 +256,16 @@ export function usePassageAnnotations({
   }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId: string) => {
-    if (!annotationId) return;
+    if (!annotationId) return false;
     // Removed from the rail first: the write is the slow part, and a card that
     // lingers after the click reads as a click that did not land. A failure
     // puts it back.
     const removed = annotations.find(item => item.id === annotationId);
     setLoaded(current => current.filter(item => item.id !== annotationId));
-    if (!uid || removed?.unsaved) return;
+    if (!uid || removed?.unsaved) return true;
     const ok = await removeUserHighlight(uid, annotationId);
     if (!ok && removed) setLoaded(current => [...current, removed]);
+    return ok;
   }, [annotations, uid]);
 
   return {

@@ -2,7 +2,7 @@ import type { Paper } from '../../models/paper.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { usePassageAnnotations } from '../../hooks/use-passage-annotations.ts';
-import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS } from '../../services/user-highlight-service.ts';
+import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH } from '../../services/user-highlight-service.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import { blockPassage, passageRange, selectedPassage } from './passage-range.ts';
@@ -38,7 +38,8 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
-    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote, anchor: passage.anchor });
+    // Cut as it will be stored, so the passage painted while the editor is open is the one saved.
+    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), anchor: passage.anchor });
   };
   const pick = (root: HTMLElement | null) => {
     if (root) open(selectedPassage(root), root);
@@ -65,9 +66,8 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     notes.dismiss();
   };
 
-  const remove = (id: string) => {
-    void notes.remove(id);
-    setStatus('Highlight deleted');
+  const remove = async (id: string) => {
+    setStatus(await notes.remove(id) ? 'Highlight deleted' : 'Could not delete. Check your connection and try again.');
   };
 
   return { ...notes, passages, status, origin, failed, pick, pickBlock, pickPassage: open, save, dismiss, remove };

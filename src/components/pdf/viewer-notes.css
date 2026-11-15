@@ -47,6 +47,8 @@
 @media (max-width: 719px) {
   .pdf-stage { --notes-w: 100%; }
   .pdf-stage[data-notes-open] { padding-right: 0; }
+  /* Covered by the sidebar, so out of the tab order and the accessibility tree too. */
+  .pdf-stage[data-notes-open] .ft-scroll { visibility: hidden; }
   /* The sidebar covers the text here, so the bar stays above it and its last rows scroll clear of the bar. */
   .pdf-stage[data-notes-open] .pdf-dock-root { left: 50%; z-index: 4; }
   .vn-side { padding-bottom: calc(var(--space-16) + var(--space-8)); }

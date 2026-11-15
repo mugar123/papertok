@@ -281,7 +281,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
               </div>
             )}
             {fullText && showsText && <OutlineRail {...outline} />}
-            {notesOn && <NotesSidebar id="viewer-notes" open={notesOpen} passages={notes.passages} onRemove={notes.remove} onClose={() => setNotesOpen(false)} />}
+            {notesOn && <NotesSidebar id="viewer-notes" open={notesOpen} passages={notes.passages} onRemove={(id) => { void notes.remove(id); }} onClose={() => setNotesOpen(false)} />}
             {notesOn && notes.pending?.anchor && (
               <PassageEditor
                 sheet={coarsePointer}
