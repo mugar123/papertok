@@ -289,9 +289,9 @@ export function planInterestGroups(
   });
   // Then the heaviest groups fill the room left with their next examples, and
   // each group takes every one of its own the request holds: an area with
-  // most of the likes ranks by all of them beside areas without any, and
-  // every established group by every like of the areas the reader never
-  // picked that the request holds.
+  // most of the likes ranks by as many of them as `maxPositives` holds, not
+  // only its weight's share, and every established group by every like of
+  // the areas the reader never picked that the request holds.
   [...groups.keys()].sort((a, b) => groups[b].weight - groups[a].weight || a - b)
     .forEach(index => positiveIds[index].push(...groups[index].positiveIds.slice(quotas[index]).filter(admit)));
   const unassignedPositiveIds = input.examples
