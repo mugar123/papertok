@@ -65,6 +65,9 @@ export function usePassageAnnotations({
   trackEvent,
 }: AnnotationOptions) {
   const [loaded, setLoaded] = useState<PassageAnnotation[]>([]);
+  // Whose list `loaded` is: after an account or paper change, the previous one stays hidden until the new one arrives.
+  const [loadedFor, setLoadedFor] = useState('');
+  const owner = `${uid}:${paperId}`;
   const [pending, setPending] = useState<PassageSelection | null>(null);
   const [busy, setBusy] = useState(IDLE);
   const [error, setError] = useState<string | null | undefined>(null);
@@ -77,16 +80,18 @@ export function usePassageAnnotations({
   // Derived rather than cleared: without a reader or a paper there is nothing to
   // show, and writing that emptiness into state from an effect would cost a
   // cascading render — and leave whatever was there on screen until it landed.
-  const annotations = uid && paperId ? loaded : EMPTY;
+  const annotations = uid && paperId && loadedFor === owner ? loaded : EMPTY;
 
   useEffect(() => {
     if (!uid || !paperId) return undefined;
     let active = true;
     void listUserHighlights(uid, paperId).then(stored => {
-      if (active) setLoaded(stored);
+      if (!active) return;
+      setLoaded(stored);
+      setLoadedFor(owner);
     });
     return () => { active = false; };
-  }, [paperId, uid]);
+  }, [owner, paperId, uid]);
 
   // An answer in flight when the reader closes is an answer nobody will read,
   // and its use has already been spent either way.

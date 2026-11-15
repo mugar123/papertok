@@ -33,21 +33,37 @@ function textNodes(block: Element) {
   return nodes;
 }
 
+/** Items of a list are read apart: a space between them, where the DOM has no text at all. */
+const newItem = (before: Text | undefined, node: Text) =>
+  before !== undefined && before.parentElement?.closest('li') !== node.parentElement?.closest('li');
+
+/** Pieces of the block's text joined as it reads, with where each node's own text starts. */
+function joinText(nodes: Text[], piece: (node: Text) => string = node => node.data) {
+  let text = '';
+  const starts: number[] = [];
+  nodes.forEach((node, index) => {
+    if (newItem(nodes[index - 1], node)) text += ' ';
+    starts.push(text.length);
+    text += piece(node);
+  });
+  return { text, starts };
+}
+
 /** The range of `quote` inside `block`, or null when the words are no longer there. */
 export function passageRange(block: Element, quote: string) {
   const nodes = textNodes(block);
-  const offsets = quoteOffsets(nodes.map(node => node.data).join(''), quote);
+  const { text, starts } = joinText(nodes);
+  const offsets = quoteOffsets(text, quote);
   if (!offsets) return null;
   const range = document.createRange();
-  let seen = 0;
-  for (const node of nodes) {
+  for (const [index, node] of nodes.entries()) {
+    const seen = starts[index];
     const end = seen + node.data.length;
     if (offsets[0] >= seen && offsets[0] < end) range.setStart(node, offsets[0] - seen);
     if (offsets[1] > seen && offsets[1] <= end) {
       range.setEnd(node, offsets[1] - seen);
       return range;
     }
-    seen = end;
   }
   return null;
 }
@@ -66,22 +82,17 @@ export function selectedPassage(root: Element): PassageSelection | null {
   if (!block || !root.contains(block)) return null;
   const clipped = range.cloneRange();
   if (!block.contains(range.endContainer)) clipped.setEnd(block, block.childNodes.length);
-  const quote = textNodes(block)
-    .filter(node => clipped.intersectsNode(node))
-    .map(node => node.data.slice(
-      node === clipped.startContainer ? clipped.startOffset : 0,
-      node === clipped.endContainer ? clipped.endOffset : undefined,
-    ))
-    .join('')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const quote = joinText(textNodes(block).filter(node => clipped.intersectsNode(node)), node => node.data.slice(
+    node === clipped.startContainer ? clipped.startOffset : 0,
+    node === clipped.endContainer ? clipped.endOffset : undefined,
+  )).text.replace(/\s+/g, ' ').trim();
   if (!quote) return null;
   return { sectionId: block.dataset.passage!, quote, anchor: clipped.getBoundingClientRect() };
 }
 
 /** A whole block as a passage: the keyboard's unit, since plain text gives a keyboard no caret to select with. */
 export function blockPassage(block: HTMLElement): PassageSelection | null {
-  const quote = textNodes(block).map(node => node.data).join('').replace(/\s+/g, ' ').trim();
+  const quote = joinText(textNodes(block)).text.replace(/\s+/g, ' ').trim();
   if (!quote || !block.dataset.passage) return null;
   return { sectionId: block.dataset.passage, quote, anchor: block.getBoundingClientRect() };
 }
