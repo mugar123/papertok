@@ -924,7 +924,9 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // type from Europe PMC. Nearly every paper of the 26 medicine and biology
   // notable lanes has one, about 26,000 papers: about 260 OpenAlex refresh
   // calls and 650 Crossref type calls a week, with their iCite and Europe PMC
-  // calls.
+  // calls. `enrich_misses = 0` also passes over a row whose enrichment is
+  // uncounted (-1, `UNCOUNTED` in paper-enrichment.ts), so the listing does
+  // not put off its refresh.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
       AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40 AND paper ->> '$.pmid' IS NULL
