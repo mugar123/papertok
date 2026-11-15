@@ -2,13 +2,15 @@ import type { Paper } from '../../models/paper.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { usePassageAnnotations } from '../../hooks/use-passage-annotations.ts';
-import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH } from '../../services/user-highlight-service.ts';
+import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } from '../../services/user-highlight-service.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
+import type { HighlightColor } from '../../services/user-highlight-service.ts';
 import { blockPassage, passageRange, selectedPassage } from './passage-range.ts';
 
 const PAINT = 'viewer-passage';
 const PENDING = 'viewer-passage-pending';
+export const SAVE_ERROR = 'Could not save. Check your connection and try again.';
 
 const readingOrder = (passage: PassageAnnotation) => [passage.sectionId[0] === 'a' ? 0 : 1, Number(passage.sectionId.slice(1)) || 0];
 
@@ -26,18 +28,18 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const open = (passage: PassageSelection | null, from: HTMLElement | null) => {
+  const pickPassage = (passage: PassageSelection | null, from: HTMLElement | null) => {
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
     notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), anchor: passage.anchor });
   };
   const pick = (root: HTMLElement | null) => {
-    if (root) open(selectedPassage(root), root);
+    if (root) pickPassage(selectedPassage(root), root);
   };
-  const pickBlock = (block: HTMLElement) => open(blockPassage(block), block);
+  const pickBlock = (block: HTMLElement) => pickPassage(blockPassage(block), block);
 
-  const save = async (note: string, color?: string) => {
+  const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
     const saved = note ? await notes.saveNote(note, color) : await notes.highlight(color);
     if (saved) {
@@ -48,7 +50,7 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     }
     if (passage) notes.begin(passage);
     setFailed(note);
-    setStatus('Could not save. Check your connection and try again.');
+    setStatus(SAVE_ERROR);
   };
 
   const dismiss = () => {
@@ -60,7 +62,7 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     setStatus(await notes.remove(id) ? 'Highlight deleted' : 'Could not delete. Check your connection and try again.');
   };
 
-  return { ...notes, passages, status, origin, failed, pick, pickBlock, pickPassage: open, save, dismiss, remove };
+  return { ...notes, passages, status, origin, failed, pick, pickBlock, pickPassage, save, dismiss, remove };
 }
 
 export function useTouchSelection(root: HTMLElement | null) {
@@ -95,7 +97,7 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
     });
     const paint = () => {
       for (const color of HIGHLIGHT_COLORS) {
-        CSS.highlights.set(`${PAINT}-${color}`, new Highlight(...ranges(passages.filter(passage => (passage.color ?? 'yellow') === color))));
+        CSS.highlights.set(`${PAINT}-${color}`, new Highlight(...ranges(passages.filter(passage => highlightColor(passage) === color))));
       }
       CSS.highlights.set(PENDING, new Highlight(...ranges(pending ? [pending] : [])));
     };

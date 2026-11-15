@@ -403,7 +403,7 @@
   padding-left: var(--space-3);
   border-left: 1px dashed var(--brand-yellow);
   font-family: var(--font-serif);
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   font-style: italic;
   color: var(--text-secondary);
@@ -416,7 +416,7 @@
 .rd-note-body {
   margin: 0;
   padding-left: calc(1px + var(--space-3));
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-primary);
 }

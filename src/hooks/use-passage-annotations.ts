@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import type { UserHighlight } from '../services/user-highlight-service.ts';
+import type { HighlightColor, UserHighlight } from '../services/user-highlight-service.ts';
 import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
 export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
@@ -64,9 +64,11 @@ export function usePassageAnnotations({
   onQuota,
   trackEvent,
 }: AnnotationOptions) {
-  const [loaded, setLoaded] = useState<PassageAnnotation[]>([]);
-  const [loadedFor, setLoadedFor] = useState('');
   const owner = `${uid}:${paperId}`;
+  const [loaded, setLoadedState] = useState<{ owner: string; items: PassageAnnotation[] }>({ owner: '', items: [] });
+  const setLoaded = useCallback((update: (items: PassageAnnotation[]) => PassageAnnotation[]) => {
+    setLoadedState(state => ({ owner, items: update(state.owner === owner ? state.items : []) }));
+  }, [owner]);
   const [pending, setPending] = useState<PassageSelection | null>(null);
   const [busy, setBusy] = useState(IDLE);
   const [error, setError] = useState<string | null | undefined>(null);
@@ -79,18 +81,17 @@ export function usePassageAnnotations({
   // Derived rather than cleared: without a reader or a paper there is nothing to
   // show, and writing that emptiness into state from an effect would cost a
   // cascading render — and leave whatever was there on screen until it landed.
-  const annotations = uid && paperId && loadedFor === owner ? loaded : EMPTY;
+  const annotations = uid && paperId && loaded.owner === owner ? loaded.items : EMPTY;
 
   useEffect(() => {
     if (!uid || !paperId) return undefined;
     let active = true;
     void listUserHighlights(uid, paperId).then(stored => {
       if (!active) return;
-      setLoaded(stored);
-      setLoadedFor(owner);
+      setLoaded(current => [...stored, ...current.filter(item => !stored.some(entry => entry.id === item.id))]);
     });
     return () => { active = false; };
-  }, [owner, paperId, uid]);
+  }, [paperId, setLoaded, uid]);
 
   // An answer in flight when the reader closes is an answer nobody will read,
   // and its use has already been spent either way.
@@ -116,7 +117,7 @@ export function usePassageAnnotations({
     setLoaded(current => current.map(item => (
       item.id === annotationId && item.fresh ? { ...item, fresh: false } : item
     )));
-  }, []);
+  }, [setLoaded]);
 
   /* One timer per annotation, because two can be created inside the same
      window — ask for an explanation, mark another passage while it writes —
@@ -140,7 +141,7 @@ export function usePassageAnnotations({
     };
   }, []);
 
-  const store = useCallback(async ({ kind, note, color }: { kind: UserHighlight['kind']; note?: string; color?: string }) => {
+  const store = useCallback(async ({ kind, note, color }: { kind: UserHighlight['kind']; note?: string; color?: HighlightColor }) => {
     if (!uid || !pending) return null;
     const saved = await saveUserHighlight(uid, {
       paperId,
@@ -165,16 +166,16 @@ export function usePassageAnnotations({
     ]);
     scheduleSettle(saved.id);
     return saved;
-  }, [language, level, paper?.title, paperId, pending, scheduleSettle, uid]);
+  }, [language, level, paper?.title, paperId, pending, scheduleSettle, setLoaded, uid]);
 
-  const highlight = useCallback(async (color?: string) => {
+  const highlight = useCallback(async (color?: HighlightColor) => {
     const saved = await store({ kind: 'user', color });
     if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId });
     setPending(null);
     return saved;
   }, [level, paper?.title, paperId, store, trackEvent]);
 
-  const saveNote = useCallback(async (text: string, color?: string) => {
+  const saveNote = useCallback(async (text: string, color?: HighlightColor) => {
     const note = String(text || '').trim();
     if (!note) return null;
     setBusy('saving');
@@ -257,7 +258,7 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, trackEvent, uid]);
+  }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId: string) => {
     if (!annotationId) return false;
@@ -270,7 +271,7 @@ export function usePassageAnnotations({
     const ok = await removeUserHighlight(uid, annotationId);
     if (!ok && removed) setLoaded(current => [...current, removed]);
     return ok;
-  }, [annotations, uid]);
+  }, [annotations, setLoaded, uid]);
 
   return {
     annotations,

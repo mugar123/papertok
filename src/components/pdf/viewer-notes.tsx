@@ -8,11 +8,11 @@ import { Button } from '../ui/button.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
+import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH, highlightColor } from '../../services/user-highlight-service.ts';
+import { SAVE_ERROR } from './use-viewer-notes.ts';
 import './viewer-notes.css';
 
 const COLOR_NAMES: Record<HighlightColor, string> = { yellow: 'Yellow', teal: 'Teal', sky: 'Blue', violet: 'Violet', rose: 'Rose' };
-const ERROR = 'Could not save. Check your connection and try again.';
 
 type PassageEditorProps = {
   quote: string;
@@ -63,7 +63,7 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
         onChange={event => setDraft(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !sheet) submit(event); }}
       />
-      {error && <p id={errorId} className="vn-pop-error">{ERROR}</p>}
+      {error && <p id={errorId} className="vn-pop-error">{SAVE_ERROR}</p>}
       <div className="vn-pop-bar">
         <fieldset className="vn-swatches">
           <legend className="visually-hidden">Highlight colour</legend>
@@ -138,7 +138,7 @@ export function NotesSidebar({ id, open, passages, onRemove, onClose }: {
             {passages.map((passage, index) => (
               <li key={passage.id} className="vn-item">
                 <div className="vn-entry">
-                  <blockquote className="vn-quote" data-color={passage.color ?? 'yellow'}>{passage.quote}</blockquote>
+                  <blockquote className="vn-quote" data-color={highlightColor(passage)}>{passage.quote}</blockquote>
                   <Button variant="ghost" size="icon-sm" className="vn-delete" aria-label={`Delete highlight “${passage.quote}”`} title="Delete" onClick={() => remove(index)}>
                     <Trash size={15} aria-hidden="true" />
                   </Button>

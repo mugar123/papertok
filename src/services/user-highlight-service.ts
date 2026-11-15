@@ -10,7 +10,7 @@ export interface UserHighlight {
   endQuote?: string;
   kind: 'ai' | 'user';
   note?: string;
-  color?: string;
+  color?: HighlightColor;
   paperTitle: string;
   createdAt?: unknown;
 }
@@ -127,6 +127,7 @@ export const FULL_TEXT_LEVEL = 'full-text';
 const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
 export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;
 export type HighlightColor = typeof HIGHLIGHT_COLORS[number];
+export const highlightColor = (highlight: { color?: HighlightColor }): HighlightColor => highlight.color ?? 'yellow';
 
 export function normalizeUserHighlight(input: HighlightInput | null | undefined): Omit<UserHighlight, 'id'> | null {
   const level = LEVELS.includes(input?.level as string)
@@ -157,9 +158,8 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   // highlight that acquired words — and only the third is `ai`.
   const kind = input?.kind === 'ai' ? 'ai' : 'user';
   const note = cleanText(input?.note, MAX_NOTE_LENGTH);
-  const color = HIGHLIGHT_COLORS.includes(input?.color as HighlightColor) && input?.color !== 'yellow'
-    ? input!.color as string
-    : null;
+  const picked: unknown = input?.color;
+  const color = HIGHLIGHT_COLORS.some(option => option === picked) && picked !== 'yellow' ? picked as HighlightColor : null;
   // An AI annotation with no text is not an annotation: it is a mark claiming an
   // answer that does not exist, and it would render as an empty card.
   if (kind === 'ai' && !note) return null;

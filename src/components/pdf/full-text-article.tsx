@@ -179,9 +179,10 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
 }
 
 function ReferenceDetails({ paperKey }: { paperKey: string }) {
-  const { paper, loading } = useReferencePaper(paperKey);
+  const { paper, loading, failed } = useReferencePaper(paperKey);
   const { locale } = useLanguage();
   if (loading) return <p className="ft-peek-loading">Loading details…</p>;
+  if (failed) return <p className="ft-peek-loading">Could not load the details. Open the citation again to retry.</p>;
   if (!paper) return null;
   const facts = [
     paper.year ? String(paper.year) : null,
