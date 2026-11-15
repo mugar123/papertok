@@ -577,6 +577,12 @@ with `Go to For you` and an `outline` `Show older papers` that loads the next
 pages of the same list, busy in the same way, with "Loading older papers…",
 then "Those were not new to you either." if they brought none.
 
+A custom feed's refresh starts with the papers the reader has not seen
+(ARCHITECTURE.md says which count as seen). When
+it finds none it shows the feed from its top again and says why in a toast,
+"No unseen papers in this feed" with "Showing it from the top.", shown for the
+account like the notice of sources still loading.
+
 When a custom feed (`custom-feeds/custom-feed-page.tsx`) stopped asking for
 pages by itself while it has more, it shows "Nothing to show yet" under a
 `Tray` glyph with `Show more papers` and an `outline` `Edit feed`. Its load runs

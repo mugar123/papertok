@@ -20,7 +20,7 @@ const COPY = {
   authors: 'Authors',
   journals: 'Journals',
   keyword: 'Keyword',
-  keywordHint: 'Any paper that mentions it',
+  keywordHint: 'Papers with these words in the title or abstract',
   remove: (label: string) => `Remove ${label}`,
   searching: 'Searching',
   count: (n: number) => (n === 0 ? 'No results' : `${n} ${n === 1 ? 'result' : 'results'}`),

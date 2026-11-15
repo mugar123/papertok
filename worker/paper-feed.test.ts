@@ -74,29 +74,55 @@ test("a reader's new follows are harvested at once up to 20 a day, however many 
 test('a reader writes at most 50 followed lanes a day, new or asked for again; past them a new follow is served from what the corpus has and is not registered', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
   const { db, ask } = store();
-  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
-    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  // Authors known by name: each counts as one lane (a keyword counts as three, below).
+  const authors = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'author', canonicalId: `name-${from + index}`, displayName: `Author ${from + index}`,
   }));
   const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1_000 + index}`, displayName: `Journal ${index}` }));
   const registered = () => (db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n;
   // A request brings up to 20 follows and 10 journals.
-  await ask({ follows: [...searches(0, 20), ...journals] });
+  await ask({ follows: [...authors(0, 20), ...journals] });
   assert.equal(registered(), 30);
-  await ask({ follows: searches(30, 20) });
+  await ask({ follows: authors(30, 20) });
   assert.equal(registered(), 50);
-  assert.deepEqual(await ask({ follows: searches(50, 1) }), { papers: [] });
+  assert.deepEqual(await ask({ follows: authors(50, 1) }), { papers: [] });
   assert.equal(registered(), 50);
   // Another reader's new follow is still registered.
-  await ask({ follows: searches(50, 1) }, 'reader-2');
+  await ask({ follows: authors(50, 1) }, 'reader-2');
   assert.equal(registered(), 51);
 
   // A week later, the 30 lanes the reader asks for again are written again and leave them 20 new ones.
   t.mock.timers.setTime(Date.parse('2026-10-29T12:00:01Z'));
-  await ask({ follows: [...searches(0, 20), ...journals] });
-  await ask({ follows: searches(51, 20) });
-  assert.deepEqual(await ask({ follows: searches(71, 1) }), { papers: [] });
+  await ask({ follows: [...authors(0, 20), ...journals] });
+  await ask({ follows: authors(51, 20) });
+  assert.deepEqual(await ask({ follows: authors(71, 1) }), { papers: [] });
   assert.equal(registered(), 71);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-29T12:00:01.000Z'").get() as { n: number }).n, 50);
+});
+
+// A keyword's harvest asks OpenAlex for two or three searches on its first night
+// and each week, where another lane's asks one request. Counted as one lane,
+// 40 new keywords a day from one account kept another reader's lane 13 nights
+// from its nightly refresh; counted as three, 5 (measured 2026-11-14).
+test("a keyword counts as three of a reader's 50 lanes a day, so 16 new ones fit and a follow of another kind still fits beside them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
+  const { db, ask } = store();
+  const keywords = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Keyword ${from + index}`, metadata: { query: `keyword ${from + index}` },
+  }));
+  const author = (index: number) => ({ type: 'author', canonicalId: `name-${index}`, displayName: `Author ${index}` });
+  const registered = () => db.prepare('SELECT lane FROM followed_lanes ORDER BY lane').all().map(row => (row as { lane: string }).lane);
+  await ask({ follows: keywords(0, 16) });
+  assert.equal(registered().length, 16);
+  // Two of the 50 are left: a seventeenth keyword does not fit, and the author sent after it does.
+  await ask({ follows: [...keywords(16, 1), author(0)] });
+  assert.equal(registered().includes('query:keyword 16'), false);
+  assert.ok(registered().includes('author-name:author 0'));
+  await ask({ follows: [author(1), author(2)] });
+  assert.equal(registered().length, 18, 'one lane was left');
+  // Another reader's keywords are still registered.
+  await ask({ follows: keywords(16, 1) }, 'reader-2');
+  assert.ok(registered().includes('query:keyword 16'));
 });
 
 // Every write of a lane, new or asked for again, counts in the app's 4,000 a
@@ -160,12 +186,12 @@ test('two follows that name one lane count once against the allowances and are h
   ] });
   assert.deepEqual((runs[0] as { params: { lanes: string[] } }).params.lanes, ['author-name:author g']);
   // 49 more new lanes fit the reader's 50.
-  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
-    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  const authors = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'author', canonicalId: `name-${from + index}`, displayName: `Author ${from + index}`,
   }));
-  await ask({ follows: searches(0, 20) });
-  await ask({ follows: searches(20, 20) });
-  await ask({ follows: searches(40, 9) });
+  await ask({ follows: authors(0, 20) });
+  await ask({ follows: authors(20, 20) });
+  await ask({ follows: authors(40, 9) });
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n, 50);
 });
 
@@ -1445,6 +1471,19 @@ test('a follow whose lane has not finished its first harvest is named as loading
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A123', '2026-10-22')").run();
   const second = await ask({ categories: ['cs.CL'], follows: [follow], exact: true });
   assert.equal(second.loading, undefined);
+});
+
+// A keyword lane records its weekly listing before it asks for the night's papers.
+test("a keyword whose first harvest has filed its weekly listing and not yet the night's papers is still loading", async () => {
+  const { db, ask } = store();
+  const follow = { type: 'topic', canonicalId: 'query-kagome', displayName: 'kagome superconductors', metadata: { query: 'kagome superconductors' } };
+  const at = new Date().toISOString();
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES ('query:kagome superconductors', ?, ?)").run(at, at);
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES ('openalex-follows', 'query:kagome superconductors', '', 'phrase', ?)").run(at);
+  const first = await ask({ follows: [follow], exact: true });
+  assert.deepEqual(first.loading, [{ type: 'topic', canonicalId: 'query-kagome' }]);
+  db.prepare("UPDATE lane_state SET harvested_through = ? WHERE lane = 'query:kagome superconductors'").run(at);
+  assert.equal((await ask({ follows: [follow], exact: true })).loading, undefined);
 });
 
 test('an exact request that names only an area is a request', async () => {

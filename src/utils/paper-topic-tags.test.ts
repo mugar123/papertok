@@ -223,3 +223,11 @@ test('secondary tags exclude the classification actually printed in the masthead
     concepts: [{ id: 'T11130', display_name: 'Coding theory and cryptography' }] };
   assert.deepEqual(buildPaperTopicTags(external), []);
 });
+
+test('list fields use the card classification without journal or unknown placeholders', async () => {
+  const { getPaperFieldClassification } = await import('./paper-topic-tags.ts');
+  assert.equal(getPaperFieldClassification({ primaryCategory: 'quant-ph', categories: [] })?.label, 'Quantum Physics');
+  assert.equal(getPaperFieldClassification({ primaryCategory: 'hep-th' })?.label, 'High Energy Physics - Theory');
+  assert.equal(getPaperFieldClassification({ primaryTopic: { id: 'T1', display_name: 'Quantum information' } })?.label, 'Quantum information');
+  assert.equal(getPaperFieldClassification({ journal: 'Nature', categories: ['Unknown concept'] }), null);
+});
