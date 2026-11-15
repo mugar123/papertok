@@ -1,9 +1,9 @@
-import { normalizeSearchText } from '../utils/search-relevance.ts';
-
 /** One request carries literal, typo and unfinished-word candidates. */
 export function openAlexTypeaheadExpression(query: string): string | null {
-  if (!/^[a-zA-Z0-9\s:(),.!?'"–—-]+$/.test(query.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) return null;
-  const words = normalizeSearchText(query).split(' ').filter(Boolean);
+  const normalized = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[‘’]/g, "'");
+  if (!/^[a-zA-Z0-9\s:(),.!?'"–—-]+$/.test(normalized)) return null;
+  // OpenAlex indexes contractions as words: splitting "you'll" loses the title.
+  const words = normalized.toLowerCase().split(/[^a-z0-9']+/).filter(Boolean);
   if (!words.length) return null;
   const phrase = `"${words.join(' ')}"`;
   if (words.length > 24 || query.length > 400) return phrase;
