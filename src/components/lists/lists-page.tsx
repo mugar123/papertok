@@ -9,7 +9,7 @@ import type { ComponentProps, ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { db } from '../../services/firebase.ts';
+import { auth, db } from '../../services/firebase.ts';
 import {
   collection,
   getDocs,
@@ -25,11 +25,11 @@ import {
   arrayRemove,
   limit,
 } from 'firebase/firestore';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { getCategoryLabel } from '../../data/categories.ts';
+import { getPaperFieldClassification } from '../../utils/paper-topic-tags.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './create-list-dialog.tsx';
 import { removePaperFromList } from './remove-paper-from-list.ts';
@@ -84,7 +84,7 @@ import { timeAgo } from '../../utils/time-ago.ts';
 import { copyOfRecordWithoutCopy, downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
-import { fieldRequestFor, readPaperFields } from '../../services/list-paper-fields.ts';
+import { nextListFieldRound, readPaperFields } from '../../services/list-paper-fields.ts';
 import { storePaperField } from '../../services/stored-paper-field.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -110,7 +110,6 @@ import PaperCard from '../feed/paper-card.tsx';
 import PaperOverlay from '../feed/paper-overlay.tsx';
 import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
 import {
-  fieldAnswered,
   ownListsCache,
   readListPapers,
   rememberFieldAnswers,
@@ -118,7 +117,6 @@ import {
   rememberOwnLists,
   rememberSavedAnswers,
   savedAnswered,
-  savedDocumentRead,
 } from '../../utils/profile-session-caches.ts';
 import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
@@ -268,9 +266,6 @@ function publicBadgeState(status: string | undefined) {
 }
 
 
-// The most papers one opening of a list asks a provider the field of: at most
-// two arXiv requests and three OpenAlex ones. The rest wait for the next.
-const FIELD_REQUEST_LIMIT = 60;
 
 /** A paper in one list: what the row's remove dialog and phone sheet act on. */
 type RowTarget = { listId: string; listName?: string; paperId: string; paper: Partial<Paper> };
@@ -369,7 +364,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [savedPapers, setSavedPapers] = useState(
     () => (user?.uid ? readListPapers(user.uid) : null) ?? {},
   );
-  const [expandedList, setExpandedList] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Placeholder tiles for the cold case, and only for it. Seeding from the
   // session cache covers a revisit and the IndexedDB read covers this device,
@@ -401,9 +395,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * collection's answer.
    */
   const [awaitingSavedIds, setAwaitingSavedIds] = useState(() => new Set<string>());
-  // The list whose round of field requests (`fieldRound`) has ended, and the
-  // one whose round was sent, on this opening of it.
-  const [fieldRoundDone, setFieldRoundDone] = useState<string | null>(null);
+  // Null until openList prepares the document reads, including on a restored view.
+  const [fieldAttempted, setFieldAttempted] = useState<ReadonlySet<string> | null>(null);
   const fieldRoundList = useRef<string | null>(null);
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -474,6 +467,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const metadataBudgetTimer = useRef<number | null>(null);
   const failedMetadataRequests = useRef(new Map<string, MetadataRequest[]>());
   const prefersReducedMotion = useReducedMotion();
+  // False while the route leaves this page and it stays mounted underneath.
+  const present = useIsPresent();
 
   const displayLists = useMemo<OwnList[]>(() => {
     const favoriteIds = Array.from(likedPaperIds || []);
@@ -498,38 +493,57 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     return listPaper(personalLibrary[paperId]?.paper, savedPapers[paperId], libraryPapers[paperId]);
   }, [libraryPapers, personalLibrary, savedPapers]);
 
+  // A warm return can paint before the opening effect. Cold membership or
+  // missing titles still need that effect to establish the loading state.
+  const [expandedList, setExpandedList] = useState<string | null>(() => {
+    const target = displayLists.find(list => list.id === location.state?.openListId);
+    if (!target || (PRIVATE_LIST_IDS.has(target.id) && !personalLibraryReady)) return null;
+    const titlesReady = (target.paperIds ?? []).every(id => {
+      const paper = getPaper(id);
+      return paper?.title && paper.title !== id;
+    });
+    return titlesReady ? target.id : null;
+  });
+
+  useEffect(() => {
+    if (!user?.uid || auth.currentUser?.uid !== user.uid) return;
+    let copies = mergeListPaperCopies({}, libraryPapers, 'interaction');
+    for (const [id, entry] of Object.entries(personalLibrary)) {
+      if (entry.paper) copies = mergeListPaperCopies(copies, { [id]: entry.paper }, 'interaction');
+    }
+    rememberListPapers(user.uid, copies, 'interaction');
+  }, [libraryPapers, personalLibrary, user?.uid]);
+
   /**
    * The papers of the open list that no copy gives a field, which a provider
-   * can be asked (`fieldRequestFor`): one round per opening of the list. Only
-   * a paper whose `savedPapers` document was read is asked: the document may
-   * hold the field already, and it keeps the answer (`storePaperField`), so a
-   * later visit reads it there. Their rows hold the field's line until the
-   * round ends.
+   * can be asked in bounded rounds, after the saved-document read has
+   * answered, including confirmed absence. Old favorites may only have an
+   * interaction record. Recovered fields enter the device cache and any
+   * existing saved document; no saved document is created for a favorite.
    */
   const fieldRound = useMemo(() => {
     const uid = user?.uid;
     const list = displayLists.find(entry => entry.id === expandedList);
     const asked: Record<string, Partial<Paper>> = {};
-    if (!uid || !list || fieldRoundDone === list.id) return asked;
+    if (!uid || !list || !fieldAttempted) return asked;
     for (const paperId of list.paperIds || []) {
-      if (!savedDocumentRead(uid, paperId) || fieldAnswered(uid, paperId)
-        || pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
+      if (pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
       const paper = getPaper(paperId);
-      if (!paper || copyHoldsField(paper) || !fieldRequestFor(paperId, paper)) continue;
-      asked[paperId] = paper;
-      if (Object.keys(asked).length === FIELD_REQUEST_LIMIT) break;
+      if (paper) asked[paperId] = paper;
     }
-    return asked;
-  }, [awaitingSavedIds, displayLists, expandedList, fieldRoundDone, getPaper, pendingPaperIds, user?.uid]);
+    return nextListFieldRound(uid, asked, fieldAttempted);
+  }, [awaitingSavedIds, displayLists, expandedList, fieldAttempted, getPaper, pendingPaperIds, user?.uid]);
 
-  // Sent once the list's own reads have settled, so one request covers it.
+  // One bounded round at a time, once the list's own reads have settled.
   useEffect(() => {
     const uid = user?.uid;
     const askedIds = Object.keys(fieldRound);
     if (!uid || !expandedList || askedIds.length === 0 || fieldRoundList.current === expandedList
       || pendingPaperIds.size > 0 || awaitingSavedIds.size > 0) return;
     fieldRoundList.current = expandedList;
+    const opening = metadataRequestId.current;
     void readPaperFields(fieldRound).catch(() => ({ fields: {}, failed: askedIds })).then(({ fields, failed }) => {
+      if (activeUid.current !== uid || auth.currentUser?.uid !== uid) return;
       rememberFieldAnswers(uid, askedIds.filter(paperId => !failed.includes(paperId)));
       // The field alone, over the copy held by now. A document that landed
       // since with a field of its own keeps it.
@@ -548,8 +562,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         const papers = filled(current);
         return Object.keys(papers).length > 0 ? { ...current, ...papers } : current;
       });
-      // A list opened since has a round of its own.
-      if (fieldRoundList.current === expandedList) setFieldRoundDone(expandedList);
+      // Another opening owns its own queue, even when it opens this list again.
+      if (metadataRequestId.current !== opening) return;
+      fieldRoundList.current = null;
+      setFieldAttempted(current => new Set([...(current ?? []), ...askedIds]));
     });
   }, [awaitingSavedIds, expandedList, fieldRound, pendingPaperIds, user?.uid]);
 
@@ -730,7 +746,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         const snapshot = await patientRead(() => getDocs(documents), {
           attempts: 1, ms: PAPER_METADATA_LOAD_DEADLINE_MS, label: 'list field documents', isAnswer: queryIsAuthoritative,
         });
-        if (metadataRequestId.current !== requestId) return;
+        if (metadataRequestId.current !== requestId || auth.currentUser?.uid !== uid) return;
         const loaded: Record<string, Partial<Paper>> = {};
         snapshot.forEach((item) => {
           const paperId = decodeFirestoreDocId(item.id);
@@ -779,7 +795,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     setPendingPaperIds(new Set());
     setAwaitingSavedIds(new Set(fieldReadIds));
     fieldRoundList.current = null;
-    setFieldRoundDone(null);
+    setFieldAttempted(new Set());
     if (user) void readFieldDocuments(user.uid, fieldReadIds, requestId);
 
     if (missingIds.length === 0) {
@@ -931,6 +947,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         dropPending(Object.keys(loadedPapers));
         // Kept for the rest of the session, so leaving this list to read a
         // paper and coming back costs nothing.
+        if (auth.currentUser?.uid !== user.uid) return;
         rememberListPapers(user.uid, loadedPapers, source);
         // savedPapers contains the canonical document and must win even if
         // the lighter interaction record finishes later; the record's
@@ -1087,6 +1104,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           const named: Record<string, Partial<Paper>> = {};
           records.forEach(({ id, data }) => { named[id] = { ...data.paper, id }; });
           if (Object.keys(named).length > 0) {
+            if (auth.currentUser?.uid !== user.uid) return;
             rememberListPapers(user.uid, named, 'interaction');
             setSavedPapers((current) => mergeListPaperCopies(current, named, 'interaction'));
           }
@@ -1166,6 +1184,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               .filter((paperId) => loaded[paperId] || !returned.has(paperId)));
           }
           if (Object.keys(loaded).length === 0) return;
+          if (auth.currentUser?.uid !== userId) return;
           rememberListPapers(userId, loaded, request.source);
           setSavedPapers((current) => mergeListPaperCopies(current, loaded, request.source));
         }, (error) => {
@@ -1205,8 +1224,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * paper (abstract, actions, related work) and carries a "Read article"
    * button of its own, so nothing is lost and everything else is gained.
    *
-   * Before leaving, the current history entry is re-stamped with the open
-   * list, so coming back restores the papers rather than the list index.
    */
   const openPaperCard = (paper: Partial<Paper>) => {
     // The public paper page when the paper has an address there — a DOI, an
@@ -1223,16 +1240,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       setOverlayPaper(paper as Paper);
       return;
     }
-    if (expandedList) {
-      void navigate(location.pathname, {
-        replace: true,
-        state: { openListId: expandedList, indexTop: indexReturn.top(), pageMotion: 'still' },
-      });
-    }
     // `stored`: this copy is what the list saved, not the paper — the page
     // shows its skeleton until the providers answer and keeps the copy only
     // as the fallback (PublicPaperPage).
-    void navigate(path, { state: { paper, stored: true, pageMotion: 'still' } });
+    void navigate(path, { state: { paper, stored: true, storedBy: user?.uid } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current!), []);
@@ -1264,6 +1275,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
 
   const enterList = (list: OwnList) => {
     indexReturn.leave(list.id);
+    autoOpenedListId.current = list.id;
+    // Establish the return entry before a paper opens: replacing it during
+    // that navigation would discard the key used to remember its scroll.
+    void navigate(location.pathname, {
+      replace: true,
+      state: { openListId: list.id, indexTop: indexReturn.top() },
+    });
     void openList(list);
   };
 
@@ -1649,7 +1667,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    */
   const queuedSyncs = useRef(new Map<string, string>());
   useEffect(() => {
-    if (!user || !expandedList) return;
+    // A restored view can paint before openList establishes pending reads.
+    if (!user || !expandedList || fieldAttempted === null) return;
     // Never from a seed. A list read back from this device's storage carries
     // the name it had when the tab last closed, and republishing THAT would
     // push a stale title onto the page strangers read — the seed is for
@@ -1699,7 +1718,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       papers: papers as PublicPaperInput[],
     });
   }, [
-    expandedList, getPaper, language, lists, metadataError, pendingPaperIds,
+    expandedList, fieldAttempted, getPaper, language, lists, metadataError, pendingPaperIds,
     publicSnapshots, user,
   ]);
 
@@ -1708,22 +1727,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // One motion vocabulary for the two views of this page: the index and an
   // open list cross-fade with a small vertical step instead of swapping DOM in
   // a single frame.
+  //
+  // Layout animation stops when the route leaves. The page underneath becomes
+  // fixed and the window scrolls to the top for the page arriving, so framer
+  // measures every row as having moved by the old scroll. Measured on a phone
+  // with the list scrolled 600px: the tapped row jumped 600px down and slid
+  // back over 200ms while the paper page covered it.
   const rowMotion = {
-    layout: true,
+    layout: present,
     exit: { opacity: 0, transform: 'translateX(18px)' },
     transition: { duration: 0.2, ease: EASE_OUT },
   };
   const cardMotion = {
-    layout: true,
+    layout: present,
     exit: { opacity: 0, transform: 'scale(0.97)' },
     transition: { duration: 0.2, ease: EASE_OUT },
   };
 
 
-  // Returning from a paper with { openListId }: until the effect above opens
-  // it, hold a skeleton instead of flashing the index. Falls through to the
-  // index if the list never shows up; closing the list clears the state, so
-  // this cannot re-trap a closed list.
   // Derived, never stored: the placeholders must vanish the instant real cards
   // exist, and a stale `true` left over from a failed load is harmless — by
   // then the wait is already known to be long.
@@ -1772,6 +1793,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   }, [afterPageArrival]);
 
   const targetOpenId = location.state?.openListId;
+  // A restore target absent from the initial cache still needs its first read.
   const pendingOpen = Boolean(
     targetOpenId
     && !expandedList
@@ -2159,9 +2181,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <ListRowAuthors
                               byline
                               paper={paper}
-                              onNavigate={() => {
-                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
-                              }}
                             />
                           )}
                           <ListAbstract paper={paper} />
@@ -2238,10 +2257,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                   <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>
                   {behindIds.map((paperId, index) => {
                     const paper = getPaper(paperId);
-                    const category = paper?.categories?.[0];
+                    const category = paper && getPaperFieldClassification(paper)?.label;
                     return (
                       <div key={paperId} className="list-card-sheet" data-pos={index + 2 - behindIds.length} aria-hidden="true">
-                        {category && <span className="list-card-sheet-cat">{getCategoryLabel(category)}</span>}
+                        {category && <span className="list-card-sheet-cat">{category}</span>}
                         {paper?.title && <span className="list-card-sheet-title"><ScientificText>{paper.title}</ScientificText></span>}
                       </div>
                     );

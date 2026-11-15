@@ -35,7 +35,8 @@ export const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
 // its last harvest or, never harvested, from when it was first followed, and
 // the most recently written comes first among lanes due from the same time. A
-// followed search costs ten units, an entity one, of the 700 a day the
+// keyword lane costs ten units a night and twenty or thirty on the nights of
+// its first and weekly listings, an entity one, of the 700 a day the
 // nightly refresh of followed lanes may spend (paper-sources.ts); once they
 // are spent, the run's other OpenAlex followed lanes wait and keep their turn.
 // A harvest that fails otherwise is the lane's turn too (`harvestFollowedLane`).
@@ -161,11 +162,12 @@ async function followedJobs(db: D1Database, now: number) {
   // lane_state's key starts with the source: naming the followed lanes'
   // sources lets each lane's row be read by key. A lane whose last turn
   // failed is due from when it may be asked again, behind the lanes
-  // harvested before then.
+  // harvested before then. A keyword lane that filed its weekly listing and
+  // not yet a night's papers has a row with no harvest ('').
   const { results } = await db.prepare(`SELECT f.lane FROM followed_lanes f
     LEFT JOIN lane_state s ON s.source IN (SELECT value FROM json_each(?)) AND s.lane = f.lane
     WHERE f.requested_at >= ? AND (f.retry_at IS NULL OR f.retry_at <= ?)
-    ORDER BY COALESCE(f.retry_at, s.harvested_through, f.registered_at), f.requested_at DESC LIMIT ?`)
+    ORDER BY COALESCE(f.retry_at, NULLIF(s.harvested_through, ''), f.registered_at), f.requested_at DESC LIMIT ?`)
     .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), new Date(now).toISOString(), FOLLOWED_LANES_PER_RUN)
     .all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];

@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "privacy.html"
+        ],
+        "createdAt": "2026-11-13T23:09:07.795Z",
+        "reason": "Agent review: src/legal/privacy.css .lp-hl is an intentional inline text highlight, not a card border; its dark-theme underline preserves contrast."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/components/lists/lists-page.css"
+        ],
+        "createdAt": "2026-11-13T23:09:07.873Z",
+        "reason": "Agent review: lines 114 and 618 are existing semantic error and public-sync status messages, using the status tints and action colors specified in design.md; they are not decorative card accents."
+      }
+    ]
+  }
+}

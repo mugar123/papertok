@@ -76,3 +76,63 @@ test('arXiv is asked fifty papers at a time', async () => {
   await readPaperFields(papers, { fetchArxivPapers: async (ids) => { asked.push(ids.length); return []; } });
   assert.deepEqual(asked, [50, 50, 20]);
 });
+
+test('an old list or favorite without a saved document recovers its field on a cold cache', async () => {
+  const { nextListFieldRound } = await import('./list-paper-fields.ts');
+  const needsRecovery = (uid: string, id: string, paper: Partial<Paper>) => id in nextListFieldRound(uid, { [id]: paper }, new Set());
+  const { copyOfRecordWithoutCopy } = await import('../utils/reading-library.ts');
+  const { forgetListPapers, rememberSavedAnswers, rememberListPapers, readListPapers } = await import('../utils/profile-session-caches.ts');
+  const { getPaperFieldClassification } = await import('../utils/paper-topic-tags.ts');
+  const data = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, value); },
+    removeItem: (key: string) => { data.delete(key); },
+  };
+  const uid = 'missing-saved-document';
+  const id = '2608.19175';
+  const old = copyOfRecordWithoutCopy(id, { paperTitle: 'State--Generator Geometry of Open Quantum Systems', paperAuthors: ['Eric R. Bittner', 'Carlos Silva-Acuna'] });
+  forgetListPapers(uid);
+  rememberListPapers(uid, { [id]: old }, 'interaction', storage);
+  assert.equal(needsRecovery(uid, id, old), false, 'wait for the saved-document read');
+  // The server answered: there is no savedPapers document. A favorite can have only an interaction.
+  rememberSavedAnswers(uid, [id]);
+  assert.equal(needsRecovery(uid, id, old), true, 'a missing document must not block recovery');
+  const answer = await readPaperFields({ [id]: old }, { fetchArxivPapers: async () => [arxivPaper(id, ['quant-ph'])] });
+  rememberListPapers(uid, { [id]: { ...old, ...answer.fields[id] } }, 'saved', storage);
+  const recovered = readListPapers(uid)![id];
+  assert.equal(getPaperFieldClassification(recovered)?.label, 'Quantum Physics');
+  assert.equal(needsRecovery(uid, id, recovered), false);
+  forgetListPapers(uid);
+  const afterReload = readListPapers(uid, storage)![id];
+  assert.equal(getPaperFieldClassification(afterReload)?.label, 'Quantum Physics');
+  assert.equal(needsRecovery(uid, id, afterReload), false);
+  assert.deepEqual(readListPapers('another-reader', storage), {});
+  forgetListPapers(uid);
+});
+
+test('a provider primary category is sufficient even with an empty category list', async () => {
+  const result = await readPaperFields({ '2608.19175': {} }, {
+    fetchArxivPapers: async () => [{ ...arxivPaper('2608.19175', []), primaryCategory: 'quant-ph' }],
+  });
+  assert.equal(result.fields['2608.19175']?.primaryCategory, 'quant-ph');
+});
+
+test('all 102 legacy favorites get a turn without retrying failed papers in the same opening', async () => {
+  const { nextListFieldRound } = await import('./list-paper-fields.ts');
+  const { forgetListPapers, rememberSavedAnswers } = await import('../utils/profile-session-caches.ts');
+  const uid = 'large-old-favorites';
+  const papers = Object.fromEntries(Array.from({ length: 102 }, (_, i) => [`2505.${String(10000 + i)}`, { title: 'Synthetic old favorite' }]));
+  rememberSavedAnswers(uid, Object.keys(papers));
+  const first = nextListFieldRound(uid, papers, new Set());
+  assert.equal(Object.keys(first).length, 60);
+  // Even a whole failed round is attempted for this opening; later papers get their turn.
+  const attempted = new Set(Object.keys(first));
+  const second = nextListFieldRound(uid, papers, attempted);
+  assert.equal(Object.keys(second).length, 42);
+  assert.equal(Object.keys(second).some(id => attempted.has(id)), false);
+  Object.keys(second).forEach(id => attempted.add(id));
+  assert.deepEqual(nextListFieldRound(uid, papers, attempted), {});
+  assert.equal(Object.keys(nextListFieldRound(uid, papers, new Set())).length, 60, 'reopening allows retry');
+  forgetListPapers(uid);
+});

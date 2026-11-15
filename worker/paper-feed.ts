@@ -10,6 +10,7 @@ import {
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
 import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
+import { isKeywordLane } from './keyword-lanes.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -54,14 +55,25 @@ const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // and the wait they add, to about 14 days' worth. A request reads at most 20
 // follows and 10 journals (`servedFollows` in src/utils/follow-lanes.ts) and a
 // lane asked for again is written once in FOLLOW_REFRESH_MS at most, so the
-// follows a reader asks for again take at most 30 of their 50 on any day, and
-// none on most days, leaving 20 for new ones. Past it a new
+// follows a reader asks for again take at most 30 of their 50 on any day
+// (more when they are keywords, below), and none on most days, leaving 20 for
+// new ones. Past it a new
 // follow is not added: of the lanes nobody follows, only an OpenAlex topic's
 // holds papers (paper-store.ts `recordLanes`), so any other new follow has an
 // empty lane until a later request writes it. A lane asked for again keeps its
 // last write.
 const LANES_WRITTEN_PER_READER = 50;
 const LANES_WRITTEN_PER_DAY = 4_000;
+// What a keyword lane counts of both, new or asked for again: its harvest asks
+// OpenAlex for two or three searches on its first night and each week
+// (paper-sources.ts `harvestKeywordLane`), where another lane's asks one
+// request. Counted as one lane, an account following 40 new keywords a day
+// kept another reader's lane 13 nights from its nightly refresh; counted as
+// three, 5, where a followed search's one request a night had kept it 6
+// (measured 2026-11-14). A reader's 50 are 16 keywords a day, and following
+// 20 of them takes 60 on the day all fall due, so four are written a day late.
+const KEYWORD_LANE_WRITES = 3;
+const lanesWritten = (lane: string) => (isKeywordLane(lane) ? KEYWORD_LANE_WRITES : 1);
 
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded: only
@@ -96,11 +108,13 @@ interface FollowedLane { lane: string; requested_at: string; harvested: number }
 /**
  * The asked lanes some reader already follows, and whether each has finished
  * its first harvest: a lane's harvest records how far it got (`lane_state`)
- * once it has filed its papers.
+ * once it has filed its papers. A keyword lane's row exists from its weekly
+ * listing on, with no harvest (`harvested_through` '') until the night's
+ * papers are filed too.
  */
 async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<FollowedLane[]> {
   if (lanes.length === 0) return [];
-  const { results } = await database(env).prepare(`SELECT f.lane, f.requested_at, s.lane IS NOT NULL AS harvested FROM json_each(?) j
+  const { results } = await database(env).prepare(`SELECT f.lane, f.requested_at, COALESCE(s.harvested_through, '') != '' AS harvested FROM json_each(?) j
     JOIN followed_lanes f ON f.lane = json_extract(j.value, '$[0]')
     LEFT JOIN lane_state s ON s.source = json_extract(j.value, '$[1]') AND s.lane = f.lane`)
     .bind(JSON.stringify(lanes.map(lane => [lane, followedLaneJob(lane)?.source ?? null])))
@@ -109,20 +123,28 @@ async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<Followe
 }
 
 /**
- * Reserves a unit a lane for as many of `lanes`, in order, as the allowance
- * has left. All of them in one reservation, or, when that is refused, the
- * number the refusal says is left, in a second one. The app sends every follow
- * with each page, so lanes refused together would come back with every request
+ * Reserves each lane's units (`unitsOf`, one unless told otherwise) for as
+ * many of `lanes`, in order, as the allowance has left. All of them in one
+ * reservation, or, when that is refused, the lanes that fit in what the
+ * refusal says is left, in a second one: a lane that does not fit is passed
+ * over, and a later one that does is taken. The app sends every follow with
+ * each page, so lanes refused together would come back with every request
  * that day and keep the reader's last units from being used.
  */
-async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'>, lanes: string[]) {
+async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'>, lanes: string[], unitsOf: (lane: string) => number = () => 1) {
   const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
-  const whole = await reserveRequestQuota(ledger, { ...allowance, amount: lanes.length });
+  const unitsFor = (taken: string[]) => taken.reduce((units, lane) => units + unitsOf(lane), 0);
+  const whole = await reserveRequestQuota(ledger, { ...allowance, amount: unitsFor(lanes) });
   if (whole.accepted) return lanes;
   if (whole.subjectUsage === undefined || whole.globalUsage === undefined) return [];
-  const left = Math.min(allowance.subjectLimit - whole.subjectUsage, allowance.globalLimit - whole.globalUsage);
-  if (left <= 0) return [];
-  return (await reserveRequestQuota(ledger, { ...allowance, amount: left })).accepted ? lanes.slice(0, left) : [];
+  let left = Math.min(allowance.subjectLimit - whole.subjectUsage, allowance.globalLimit - whole.globalUsage);
+  const fitting = lanes.filter(lane => {
+    if (unitsOf(lane) > left) return false;
+    left -= unitsOf(lane);
+    return true;
+  });
+  if (fitting.length === 0) return [];
+  return (await reserveRequestQuota(ledger, { ...allowance, amount: unitsFor(fitting) })).accepted ? fitting : [];
 }
 
 /**
@@ -154,7 +176,7 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
     subject: `uid:${uid}`,
     subjectLimit: LANES_WRITTEN_PER_READER,
     globalLimit: LANES_WRITTEN_PER_DAY,
-  }, unwritten);
+  }, unwritten, lanesWritten);
   if (written.length === 0) return waiting;
   const at = new Date(now).toISOString();
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at, registered_at) SELECT value, ?, ? FROM json_each(?) WHERE true

@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withRetractionOf } from '../models/paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withRetractionOf } from '../models/paper.ts';
 
 /**
  * `copy` with `other`'s authors when `other`, a copy of the same paper, lists
@@ -36,8 +36,18 @@ const withFieldOf = (copy: Partial<Paper>, other: Partial<Paper> | undefined): P
   other && !copyHoldsField(copy) && copyHoldsField(other) ? { ...copy, ...fieldOf(other) } : copy
 );
 
-/** `copy` with what `other`, a copy of the same paper, knows and it does not: more authors, a field. */
-const filledFrom = (copy: Partial<Paper>, other: Partial<Paper> | undefined) => withFieldOf(withAuthorsOf(copy, other), other);
+/** Fill absent row metadata without letting a thin answer erase the device copy. */
+const filledFrom = (copy: Partial<Paper>, other: Partial<Paper> | undefined) => {
+  const filled = withFieldOf(withAuthorsOf(copy, other), other);
+  return {
+    ...filled,
+    ...(!filled.year && other?.year ? { year: other.year } : {}),
+    ...(!filled.published && other?.published ? { published: other.published } : {}),
+    ...(!filled.journal && other?.journal ? { journal: other.journal } : {}),
+    ...(other && knownCitationCount(filled) === null && knownCitationCount(other) !== null
+      ? { citationCount: other.citationCount, citationCountKnown: other.citationCountKnown } : {}),
+  };
+};
 
 /**
  * A list's paper when the library holds two copies of it: the interaction's
@@ -54,7 +64,7 @@ const filledFrom = (copy: Partial<Paper>, other: Partial<Paper> | undefined) => 
 export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Partial<Paper>): Partial<Paper> {
   const merged = {
     ...libraryCopy,
-    ...withFieldOf(otherCopy, libraryCopy),
+    ...filledFrom(otherCopy, libraryCopy),
     doi: libraryCopy.doi || otherCopy.doi,
     arxivId: libraryCopy.arxivId || otherCopy.arxivId,
     openUrl: libraryCopy.openUrl || otherCopy.openUrl,
