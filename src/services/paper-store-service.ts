@@ -217,11 +217,15 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // of the group holding the most, so each group keeps its newest longest.
   // An example leaves the flat list and every group together, so both rank by
   // the same ones.
-  // The fields the pages of one list differ in count at their longest, so
-  // every page trims the same signals and a later page, or a first page that
-  // `continues`, is served from the order the first one kept instead of
-  // ranking again: a page whose fields are a few bytes longer would otherwise
-  // drop one more signal than the first.
+  // `page`, and with `seen` also `notable` and `continues`, can change
+  // between the pages reading one kept order, so they count at their longest:
+  // pages that differ only in them trim the same signals, and a later page,
+  // or a first page that `continues`, is served from the order the first one
+  // kept instead of ranking again. A page whose fields are a few bytes longer
+  // would otherwise drop one more signal than the first. A custom feed's
+  // refresh walks with `seen` and, once none is left unseen, asks by number
+  // without it (ENG-197); the two keep their orders under different keys, so
+  // they may trim different signals.
   const pageFields = { page: Number.MAX_SAFE_INTEGER, ...(seen ? { notable: 99, continues: true } : {}) };
   while (new TextEncoder().encode(JSON.stringify({ ...body, ...pageFields })).byteLength > 16_000) {
     const copy = body.groups ? sharedCopy(body.groups) : null;
