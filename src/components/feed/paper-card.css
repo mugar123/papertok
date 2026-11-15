@@ -30,7 +30,6 @@
   padding: clamp(16px, 3dvh, 40px);
   background: var(--bg-secondary);
   overflow: hidden;
-  -webkit-tap-highlight-color: transparent;
   /* `translate`, not `transform`: `cardSlideUp` animates transform on
      the sheet inside, and the two compose instead of one
      replacing the other. The only thing that moves a card from out here is
@@ -1333,7 +1332,6 @@ button.pc-topics-pop-item:focus-visible {
   box-shadow: var(--shadow-xl);
   transition: transform var(--motion-sheet) var(--ease-drawer), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
-  -webkit-tap-highlight-color: transparent;
 }
 
 /* Wider than a phone it is a centred dialog (related-papers-sheet.tsx): no

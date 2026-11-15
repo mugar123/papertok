@@ -552,7 +552,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab.
+new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
+Contents, the reading level, Annotations, AI highlights and the original
+paper, and without the card's options, which it has no card to take from. Its
+notes are the full-text reader's notes panel and its selection opens the same
+highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
 institution, project, topic or journal can be followed: the Explorer header, beside a

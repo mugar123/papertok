@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react';
 import type { Outline } from './use-outline.ts';
 import { useEffect, useRef, useState } from 'react';
 import { landOn } from './article-places.ts';
+import './full-text-outline.css';
 
 function useActiveInView(list: HTMLElement | null, active: number) {
   useEffect(() => {

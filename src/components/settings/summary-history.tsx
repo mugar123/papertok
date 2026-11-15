@@ -3,7 +3,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ArrowClockwise, CircleNotch } from '@phosphor-icons/react';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
-import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
 import { listSummaryHistory, summaryHistoryPaper } from '../../services/saved-summary-service.ts';
 import { isReadTimeout } from '../../utils/bounded-read.ts';
 import { ListRow } from '../lists/list-row.tsx';
@@ -11,6 +10,7 @@ import ScientificText from '../scientific-text.ts';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
+import { LEVEL_DETAILS } from './reading-levels.ts';
 
 const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
@@ -29,8 +29,6 @@ const COPY = {
   loaded: (count: number) => `${count} more ${count === 1 ? 'summary' : 'summaries'} listed.`,
   rowDetail: (level: string, date: string) => ` (${level} level${date ? `, ${date}` : ''})`,
 };
-
-const levelLabel = (level: string) => PAPER_REWRITE_LEVELS.find(option => option.id === level)?.label ?? level;
 
 /**
  * The reader's own summaries, a page at a time: title, level and date only.
@@ -184,13 +182,12 @@ export default function SummaryHistory({ uid }: { uid: string }) {
       {rows.length > 0 && (
         <div ref={listRef} className="settings-list settings-summaries" role="list" aria-labelledby="settings-summaries-heading">
           {rows.map((row) => {
-            const level = levelLabel(row.level);
+            const { label: level, Icon: LevelIcon } = LEVEL_DETAILS[row.level];
             const date = formatDate(row.updatedAt);
             return (
               <ListRow
                 key={row.id}
                 role="listitem"
-                meta={[level, date]}
                 titleLang="en"
                 title={(
                   <>
@@ -199,8 +196,14 @@ export default function SummaryHistory({ uid }: { uid: string }) {
                     <span className="visually-hidden">{COPY.rowDetail(level, date)}</span>
                   </>
                 )}
+                actions={date && <span className="settings-summaries-date" aria-hidden="true">{date}</span>}
                 onOpen={() => setOpenRow(row)}
-              />
+              >
+                <span className="settings-summaries-level" aria-hidden="true">
+                  <LevelIcon size={13} />
+                  {level}
+                </span>
+              </ListRow>
             );
           })}
         </div>

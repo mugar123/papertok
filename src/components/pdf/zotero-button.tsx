@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
 import type { Paper } from '../../models/paper.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
+import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { connectZotero, sendToZotero, zoteroCitation, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { Button } from '../ui/button.tsx';
@@ -35,6 +36,11 @@ export default function ZoteroButton({ paper, uid }: { paper: Paper; uid: string
     zoteroStatus(paper.id).then(next => { if (live) setStatus(next); }, () => {});
     return () => { live = false; };
   }, [paper.id]);
+
+  usePageRestored(() => {
+    working.current = false;
+    setBusy(false);
+  });
 
   async function connect() {
     working.current = true;

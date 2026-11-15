@@ -5,12 +5,10 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
-  BookOpen,
   CaretDown,
   Check,
   CircleNotch,
   Compass,
-  Flask,
   GearSix,
   GraduationCap,
   LinkBreak,
@@ -27,6 +25,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
+import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
@@ -42,6 +41,7 @@ import InstitutionPill from '../institution/institution-pill.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
+import { LEVEL_DETAILS } from './reading-levels.ts';
 import { FollowingSheet } from './following-settings-page.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
@@ -69,24 +69,6 @@ const SETTINGS_PAGES = [
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
 ];
-
-const LEVEL_DETAILS = {
-  beginner: {
-    label: 'Beginner',
-    description: 'Clear language and context from first principles',
-    Icon: BookOpen,
-  },
-  university: {
-    label: 'University',
-    description: 'Academic rigor without assuming specialization',
-    Icon: GraduationCap,
-  },
-  researcher: {
-    label: 'Researcher',
-    description: 'Methods, limitations, and technical detail',
-    Icon: Flask,
-  },
-};
 
 const SETTINGS_COPY = {
   title: 'Settings',
@@ -191,6 +173,8 @@ function ZoteroSection({ uid }: { uid: string }) {
     zoteroStatus().then(next => { if (live) setStatus(next); }, () => { if (live) setFailed(true); });
     return () => { live = false; };
   }, []);
+
+  usePageRestored(() => setBusy(false));
 
   async function connectOrDisconnect() {
     setBusy(true);

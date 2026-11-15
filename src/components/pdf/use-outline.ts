@@ -4,7 +4,7 @@ import { useScrollFrame } from './use-scroll-frame.ts';
 import { plainText } from '../../utils/full-text.ts';
 import { anchor } from './article-places.ts';
 
-type OutlineItem = { target: string; depth: number; title: string; label?: string };
+export type OutlineItem = { target: string; depth: number; title: string; label?: string };
 export type Outline = { items: OutlineItem[]; active: number };
 
 // Sections, subsections and subsubsections; a paragraph's own title
@@ -24,6 +24,10 @@ function outlineOf(doc: FullText, withAbstract: boolean): OutlineItem[] {
 // The section being read is the last whose heading has passed a quarter of the way down.
 export function useOutline(doc: FullText | null | undefined, scroll: HTMLElement | null, withAbstract: boolean): Outline {
   const items = useMemo(() => (doc ? outlineOf(doc, withAbstract) : []), [doc, withAbstract]);
+  return useOutlineActive(items, scroll);
+}
+
+export function useOutlineActive(items: OutlineItem[], scroll: HTMLElement | null): Outline {
   const [active, setActive] = useState(-1);
   const update = () => {
     if (!scroll) return;

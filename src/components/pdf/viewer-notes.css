@@ -16,11 +16,11 @@
   .pdf-stage { transition: padding-right 180ms var(--ease-out); }
   .pdf-stage[data-notes-open] { transition: padding-right 240ms var(--ease-drawer); }
 }
-@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+@media (min-width: 768px) and (min-height: 501px) and (prefers-reduced-motion: no-preference) {
   .pdf-stage .pdf-dock-root { transition: left 180ms var(--ease-out); }
   .pdf-stage[data-notes-open] .pdf-dock-root { transition: left 240ms var(--ease-drawer); }
 }
-@media (min-width: 720px) and (max-width: 767px) and (prefers-reduced-motion: no-preference) {
+@media (min-width: 720px) and (max-width: 767px) and (prefers-reduced-motion: no-preference), (min-width: 720px) and (max-height: 500px) and (prefers-reduced-motion: no-preference) {
   .pdf-stage .pdf-dock-root { transition: left 180ms var(--ease-out), translate 220ms var(--ease-out-expo), opacity 150ms linear; }
   .pdf-stage[data-notes-open] .pdf-dock-root { transition: left 240ms var(--ease-drawer), translate 220ms var(--ease-out-expo), opacity 150ms linear; }
 }
@@ -56,6 +56,9 @@
 
 .vn-side-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
 .vn-side-title { font: var(--mono-label); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 0; }
+.vn-tabs { flex-direction: column; gap: 0; }
+.vn-views { padding: 2px; }
+.vn-view.vn-view { height: 24px; padding-inline: var(--space-2); font: var(--mono-label); text-transform: uppercase; letter-spacing: 0.06em; }
 .vn-count { color: var(--text-tertiary); margin-left: var(--space-1); }
 .vn-empty { font-size: var(--fs-sm); color: var(--text-secondary); margin: 0; }
 
@@ -78,6 +81,13 @@
 .vn-quote[data-color="sky"] { --vn-mark: var(--accent-sky); }
 .vn-quote[data-color="violet"] { --vn-mark: var(--accent-violet); }
 .vn-quote[data-color="rose"] { --vn-mark: var(--accent-rose); }
+.vn-goto { all: unset; cursor: pointer; border-radius: var(--radius-sm); }
+.vn-goto:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .vn-goto:hover { color: var(--text-primary); }
+}
+.vn-origin { display: inline-flex; margin-right: var(--space-1); vertical-align: -2px; color: var(--tint-violet-fg); }
+.vn-thinking { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); color: var(--text-secondary); }
 .vn-note { margin: var(--space-2) 0 0; padding-left: calc(1px + var(--space-3)); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; }
 
 .vn-pop-positioner { z-index: 12110; }
@@ -100,6 +110,9 @@
 .vn-pop-error { margin: var(--space-2) 0 0; font-size: var(--fs-sm); color: var(--tint-red-fg); }
 .vn-pop-input { min-height: 0; max-height: min(16rem, 40dvh); overflow-y: auto; font-size: var(--fs-sm); }
 .vn-pop-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
+.vn-pop-more { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.vn-pop-ask { width: 100%; justify-content: flex-start; padding-inline: var(--space-2); }
+.vn-pop-price { margin-inline-start: auto; font: var(--mono-label); color: var(--text-tertiary); }
 .vn-swatches { display: flex; gap: var(--space-1); margin: 0; padding: 0; border: 0; }
 .vn-swatch { position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); cursor: pointer; }
 .vn-swatch::before { content: ''; width: 16px; height: 16px; border-radius: var(--radius-sm); background: var(--swatch); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 25%, transparent); }
@@ -127,9 +140,8 @@
 }
 .ui-drawer-backdrop.vn-sheet-backdrop { z-index: 12110; }
 .ui-drawer-viewport.vn-sheet-viewport { z-index: 12111; }
-.vn-sheet { padding: 0 var(--space-4); padding-bottom: calc(var(--inset-bottom) + var(--space-4) + var(--bleed)); }
-.vn-sheet-title { margin: var(--space-2) 0 var(--space-3); font: var(--mono-label); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
-.vn-sheet-quote { flex: none; max-height: 7.5em; overflow-y: auto; margin-bottom: var(--space-3); }
+.ui-drawer-popup.vn-sheet { padding: 0 var(--space-4); padding-bottom: calc(var(--inset-bottom) + var(--space-4) + var(--bleed)); }
+.vn-sheet-quote { flex: none; max-height: 7.5em; overflow-y: auto; margin: var(--space-2) 0 var(--space-3); }
 .vn-sheet .vn-pop-input { font-size: 1rem; }
 @media (pointer: coarse) {
   .vn-swatch { width: 40px; height: 40px; }

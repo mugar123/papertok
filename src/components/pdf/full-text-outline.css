@@ -1,0 +1,23 @@
+.ft-outline-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; font-family: var(--font-body); }
+.ft-outline-list a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.ft-outline-list [data-depth="1"] a { padding-left: 28px; font-size: 13.5px; }
+.ft-outline-list [data-depth="2"] a { padding-left: 44px; font-size: 13.5px; }
+.ft-outline-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-outline-list a[aria-current="location"] { color: var(--accent-primary); font-weight: 500; background: var(--bg-sunken); }
+.ft-outline-list a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .ft-outline-list a:hover { color: var(--text-primary); background: var(--bg-sunken); }
+}
+@media (pointer: coarse) {
+  .ft-outline-list a { display: flex; align-items: center; min-height: 44px; }
+  .ft-outline-list .ft-outline-title { flex: 1; min-width: 0; }
+}

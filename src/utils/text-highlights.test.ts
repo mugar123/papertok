@@ -408,3 +408,8 @@ test('a plan with overlapping marks still concatenates back to the text and carr
   assert.deepEqual(math!.under, ['ai']);
   assert.ok(plan.every(item => item.type === 'text' || Array.isArray(item.under)));
 });
+
+test('a mark carries the colour of the highlight that drew it', () => {
+  const plan = buildHighlightPlan('Small errors pile up by the fifth turn.', [{ quote: 'errors pile up', source: 'user', kind: 'user', id: 'h1', color: 'violet' }]);
+  assert.deepEqual(plan.filter(item => item.type === 'mark').map(item => [item.id, item.color]), [['h1', 'violet']]);
+});

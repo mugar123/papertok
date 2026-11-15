@@ -1,14 +1,17 @@
-import type { SyntheticEvent } from 'react';
+import type { ReactNode, SyntheticEvent } from 'react';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
-import { Highlighter, Trash, X } from '@phosphor-icons/react';
+import { Highlighter, Sparkle, Trash, X } from '@phosphor-icons/react';
 import { Popover } from '../ui/popover.tsx';
 import { Button } from '../ui/button.tsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH, highlightColor } from '../../services/user-highlight-service.ts';
+import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH, highlightColor, passageQuote } from '../../services/user-highlight-service.ts';
+import ScientificText from '../scientific-text.ts';
+import ThinkingDots from '../reader/thinking-dots.tsx';
 import { SAVE_ERROR } from './use-viewer-notes.ts';
 import './viewer-notes.css';
 
@@ -22,11 +25,12 @@ type PassageEditorProps = {
   anchor: { top: number; bottom: number; left: number; right: number };
   busy: boolean;
   sheet: boolean;
+  ask?: { label: string; price: ReactNode; disabled: boolean; title?: string; onAsk: () => void };
   onSave: (note: string, color: HighlightColor) => void;
   onCancel: () => void;
 };
 
-export function PassageEditor({ quote, anchor, busy, error, initialNote, returnFocus, sheet, onSave, onCancel }: PassageEditorProps) {
+export function PassageEditor({ quote, anchor, busy, error, initialNote, returnFocus, sheet, ask, onSave, onCancel }: PassageEditorProps) {
   const [draft, setDraft] = useState(initialNote);
   const [color, setColor] = useState<HighlightColor>('yellow');
   const noteId = useId();
@@ -82,6 +86,15 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
             </Button>
           )}
       </div>
+      {ask && (
+        <div className="vn-pop-more">
+          <Button type="button" variant="ghost" className="vn-pop-ask" disabled={ask.disabled || busy} focusableWhenDisabled title={ask.title} onClick={ask.onAsk}>
+            <Sparkle size={15} aria-hidden="true" />
+            {ask.label}
+            {ask.price && <small className="vn-pop-price">{ask.price}</small>}
+          </Button>
+        </div>
+      )}
     </form>
   );
   if (sheet) {
@@ -89,7 +102,7 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
       <Drawer open onOpenChange={(next) => { if (!next) onCancel(); }}>
         <DrawerContent className="vn-sheet" overlayClassName="vn-sheet-backdrop" forceOverlay viewportClassName="vn-sheet-viewport" finalFocus={() => returnFocus ?? true}>
           <DrawerHandle />
-          <DrawerTitle render={<h2 />} className="vn-sheet-title">Highlight this passage</DrawerTitle>
+          <DrawerTitle render={<h2 />} className="visually-hidden">Highlight this passage</DrawerTitle>
           <DrawerDescription render={<blockquote />} className="vn-quote vn-sheet-quote" data-color={color}>{quote}</DrawerDescription>
           {form}
         </DrawerContent>
@@ -110,44 +123,95 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
   );
 }
 
-export function NotesSidebar({ id, open, passages, onRemove, onClose }: {
+export function NotesSidebar({ id, open, passages, withAi = false, thinking = null, onGoTo, onRemove, onClose }: {
   id: string;
   open: boolean;
   passages: PassageAnnotation[];
+  withAi?: boolean;
+  thinking?: { at: number; label: string } | null;
+  onGoTo?: (passage: PassageAnnotation) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
 }) {
   const list = useRef<HTMLElement | null>(null);
+  const [view, setView] = useState<'all' | 'ai'>('all');
+  const aiOnly = withAi && view === 'ai';
+  const shown = aiOnly ? passages.filter(passage => passage.kind === 'ai') : passages;
+  const aiCount = withAi ? passages.filter(passage => passage.kind === 'ai').length : 0;
   const remove = (index: number) => {
     const rows = list.current?.querySelectorAll<HTMLElement>('.vn-delete');
     (rows?.[index + 1] ?? rows?.[index - 1] ?? list.current?.querySelector<HTMLElement>('.vn-side-title'))?.focus();
-    onRemove(passages[index].id);
+    onRemove(shown[index].id);
   };
-  return (
-    <aside id={id} className="vn-side" data-hidden={open ? undefined : ''} inert={!open} aria-labelledby={`${id}-title`} ref={list}>
-      <div className="vn-side-head">
-        <h2 id={`${id}-title`} className="vn-side-title" tabIndex={-1}>Notes <span className="vn-count">{passages.length}</span></h2>
-        <Button variant="ghost" size="icon-sm" aria-label="Close notes" title="Close" onClick={onClose}>
-          <X size={16} aria-hidden="true" />
+  const waiting = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (thinking) waiting.current?.scrollIntoView({ block: 'nearest' });
+  }, [thinking]);
+  const items = shown.map((passage, index) => (
+    <li key={passage.id} className="vn-item">
+      <div className="vn-entry">
+        <blockquote className="vn-quote" data-color={highlightColor(passage)} lang={passage.language}>
+          {onGoTo
+            ? <button type="button" className="vn-goto" title="Go to the passage" onClick={() => onGoTo(passage)}><ScientificText>{passageQuote(passage)}</ScientificText></button>
+            : <ScientificText>{passageQuote(passage)}</ScientificText>}
+        </blockquote>
+        <Button variant="ghost" size="icon-sm" className="vn-delete" aria-label={`Delete highlight “${passage.quote}”`} title="Delete" onClick={() => remove(index)}>
+          <Trash size={15} aria-hidden="true" />
         </Button>
       </div>
-      {passages.length === 0
-        ? <p className="vn-empty">Select text in the paper to highlight it or add a note.</p>
-        : (
-          <ul className="vn-list">
-            {passages.map((passage, index) => (
-              <li key={passage.id} className="vn-item">
-                <div className="vn-entry">
-                  <blockquote className="vn-quote" data-color={highlightColor(passage)}>{passage.quote}</blockquote>
-                  <Button variant="ghost" size="icon-sm" className="vn-delete" aria-label={`Delete highlight “${passage.quote}”`} title="Delete" onClick={() => remove(index)}>
-                    <Trash size={15} aria-hidden="true" />
-                  </Button>
-                </div>
-                {passage.note && <p className="vn-note">{passage.note}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
+      {passage.note && (
+        <p className="vn-note" lang={passage.kind === 'ai' ? passage.language : undefined}>
+          {passage.kind === 'ai' && (
+            <span className="vn-origin" title="Written by the AI">
+              <Sparkle size={13} aria-hidden="true" />
+              <span className="visually-hidden">AI: </span>
+            </span>
+          )}
+          {passage.note}
+        </p>
+      )}
+    </li>
+  ));
+  if (thinking) {
+    const at = aiOnly ? passages.slice(0, thinking.at).filter(passage => passage.kind === 'ai').length : thinking.at;
+    items.splice(Math.max(0, Math.min(at, items.length)), 0, (
+      <li key="thinking" ref={waiting} className="vn-item vn-thinking" role="status">
+        <ThinkingDots />
+        {thinking.label}
+      </li>
+    ));
+  }
+  const close = (
+    <Button variant="ghost" size="icon-sm" aria-label="Close notes" title="Close" onClick={onClose}>
+      <X size={16} aria-hidden="true" />
+    </Button>
+  );
+  const body = items.length > 0 ? <ul className="vn-list">{items}</ul>
+    : !aiOnly && <p className="vn-empty">Select text in the paper to highlight it or add a note.</p>;
+  return (
+    <aside id={id} className="vn-side" data-hidden={open ? undefined : ''} inert={!open} aria-labelledby={`${id}-title`} ref={list}>
+      {withAi ? (
+        <Tabs value={view} onValueChange={next => setView(next === 'ai' ? 'ai' : 'all')} className="vn-tabs">
+          <div className="vn-side-head">
+            <h2 id={`${id}-title`} className="vn-side-title visually-hidden" tabIndex={-1}>Notes</h2>
+            <TabsList variant="pill" className="vn-views" aria-label="Note views">
+              <TabsTrigger value="all" className="vn-view">Notes <span className="vn-count">{passages.length}</span></TabsTrigger>
+              <TabsTrigger value="ai" className="vn-view"><Sparkle size={13} aria-hidden="true" />AI <span className="vn-count">{aiCount}</span></TabsTrigger>
+            </TabsList>
+            {close}
+          </div>
+          <TabsContent value="all">{body}</TabsContent>
+          <TabsContent value="ai">{body}</TabsContent>
+        </Tabs>
+      ) : (
+        <>
+          <div className="vn-side-head">
+            <h2 id={`${id}-title`} className="vn-side-title" tabIndex={-1}>Notes <span className="vn-count">{passages.length}</span></h2>
+            {close}
+          </div>
+          {body}
+        </>
+      )}
     </aside>
   );
 }

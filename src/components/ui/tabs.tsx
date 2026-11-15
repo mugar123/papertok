@@ -39,6 +39,15 @@ function TabsList({ className, variant = 'line', children, ...props }: StyledPro
       {...props}
     >
       {children}
+      {variant === 'pill' && (
+        <TabsPrimitive.Indicator
+          data-slot="tabs-indicator"
+          className={cn(
+            'absolute left-0 top-(--active-tab-top) z-0 h-(--active-tab-height) w-(--active-tab-width) translate-x-(--active-tab-left) rounded-sm bg-card shadow-[var(--shadow-sm)]',
+            'motion-safe:transition-[translate,width,top,height] motion-safe:duration-200 motion-safe:ease-[var(--ease-out-expo)]',
+          )}
+        />
+      )}
       {variant === 'line' && (
         <TabsPrimitive.Indicator
           data-slot="tabs-indicator"
@@ -64,8 +73,7 @@ function TabsTrigger({ className, ...props }: StyledProps<typeof TabsPrimitive.T
         // line: a text tab with breathing room above the rule
         'in-data-[variant=line]:min-h-10 in-data-[variant=line]:px-2 in-data-[variant=line]:text-[0.8125rem] in-data-[variant=line]:data-active:font-semibold',
         // pill: the raised chip
-        'in-data-[variant=pill]:h-7 in-data-[variant=pill]:rounded-sm in-data-[variant=pill]:px-3 in-data-[variant=pill]:text-[0.75rem]',
-        'in-data-[variant=pill]:data-active:bg-card in-data-[variant=pill]:data-active:font-semibold in-data-[variant=pill]:data-active:shadow-[var(--shadow-sm)]',
+        'in-data-[variant=pill]:z-1 in-data-[variant=pill]:h-7 in-data-[variant=pill]:rounded-sm in-data-[variant=pill]:px-3 in-data-[variant=pill]:text-[0.75rem]',
         className,
       )}
       {...props}

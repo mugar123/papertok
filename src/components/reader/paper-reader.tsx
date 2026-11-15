@@ -15,14 +15,14 @@ import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, use
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowClockwise,
-  ArrowLeft,
   ArrowSquareOut,
   Flask,
   GraduationCap,
   Highlighter,
-  PencilLine,
+  NotePencil,
   Plant,
   Sparkle,
+  X,
 } from '@phosphor-icons/react';
 import {
   canRewritePaper,
@@ -35,18 +35,17 @@ import {
   rememberAIUses,
   rewritePaper,
 } from '../../services/paper-rewrite-service.ts';
-import { FULL_TEXT_LEVEL, indexHighlightsByParagraph, passageSegments } from '../../services/user-highlight-service.ts';
+import type { HighlightColor } from '../../services/user-highlight-service.ts';
+import { FULL_TEXT_LEVEL, indexHighlightsByParagraph, passageQuote, passageSegments } from '../../services/user-highlight-service.ts';
 import ScientificText from '../scientific-text.ts';
 import { usePassageAnnotations } from '../../hooks/use-passage-annotations.ts';
 import {
   answerSlot,
   buildSectionOrder,
-  countAnnotations,
-  filterAnnotations,
   sortAnnotations,
 } from '../../utils/annotation-order.ts';
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
-import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
+import { HIGHLIGHT_MIN_QUOTE_LENGTH, buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
@@ -62,16 +61,26 @@ import { Dialog, DialogContent } from '../ui/dialog.tsx';
 import { Toggle } from '../ui/toggle.ts';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
-import AnnotationRail from './annotation-rail.tsx';
+import { NotesSidebar, PassageEditor } from '../pdf/viewer-notes.tsx';
+import { PaperDock } from '../pdf/paper-info.tsx';
+import { OutlineList } from '../pdf/full-text-outline.tsx';
+import { useOutlineActive } from '../pdf/use-outline.ts';
 import { ListRowAuthors } from '../lists/list-row.tsx';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
-import SelectionMenu from './selection-menu.tsx';
 import UsesCount from './uses-count.tsx';
 import ThinkingDots from './thinking-dots.tsx';
 import './paper-reader.css';
 import './annotations.css';
-import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
+import { EASE_OUT, EASE_OUT_EXPO, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover.tsx';
+
+const outlineTarget = (sectionIndex: number) => `rd-section-${sectionIndex}`;
+const SELECTION_SETTLE_MS = 200;
+
+const paragraphAround = (node: Node | null) => {
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
+  return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
+};
 
 const LEVEL_ICONS = { beginner: Plant, university: GraduationCap, researcher: Flask } as const;
 
@@ -79,7 +88,6 @@ const COPY = {
   en: {
     title: 'Read in plain words',
     close: 'Close reader',
-    back: 'Back',
     level: 'Level',
     writing: 'Rewriting the paper',
     writingHint: 'Sections appear as they are written.',
@@ -104,17 +112,12 @@ const COPY = {
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
     toggleAiMarks: 'Show AI highlights',
+    aiMarks: 'AI highlights',
+    highlight: 'Highlight',
     settings: 'Settings',
-    selectionTitle: 'What to do with the selection',
     annotateParagraphInstructions: 'Press Enter to open annotation options for this paragraph: highlight it, write a note on it, or ask the AI to explain it.',
     annotateParagraphBadge: 'Enter: annotate',
-    justHighlight: 'Highlight',
-    writeNote: 'Write a note',
     explainThis: 'Explain this to me',
-    yourNote: 'Your note',
-    notePlaceholder: 'Whatever you want to remember about this passage…',
-    save: 'Save',
-    cancel: 'Cancel',
     oneUse: '1 use',
     noUsesLeftShort: 'no uses',
     noUsesLeft: 'Today’s AI uses have run out.',
@@ -124,16 +127,7 @@ const COPY = {
     reading: 'Reading the passage',
     originMine: 'Yours',
     originAi: 'AI',
-    goToPassage: 'Go to the passage',
-    removeAnnotation: 'Remove annotation',
-    noteActions: 'Note actions',
     noteLabel: (number: number) => `Note ${number}`,
-    copyNote: 'Copy as Markdown',
-    noteCopied: 'Copied as Markdown',
-    noteCopyFailed: 'Could not copy the note',
-    emptyAllTitle: 'No notes yet',
-    emptyAll: 'Select a sentence in the text to write a note on it, or to have the AI explain it.',
-    filters: { all: 'All', mine: 'Yours', ai: 'AI' },
   },
 };
 
@@ -392,19 +386,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<Pick<PaperRewriteError, 'code' | 'quota'> | null>(null);
-  const [railOpen, setRailOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [showAiMarks, setShowAiMarks] = useState(true);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [annotationFilter, setAnnotationFilter] = useState('all');
-  /**
-   * Under this width the paper wants the whole page, so the margin becomes a
-   * sheet. Tracked in state rather than left to CSS because the two surfaces do
-   * not have the same open/closed idea: a rail is shown or hidden, a sheet
-   * peeks or is pulled up.
-   */
-  const [isNarrow, setIsNarrow] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1100px)').matches,
-  );
   /**
    * The day's AI allowance, read without spending any of it. `meta.remainingUses`
    * only exists once a rewrite is under way — after it has already cost a use,
@@ -419,6 +402,11 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // in a dialog rendered elsewhere in the tree) is never mistaken for one of
   // its paragraphs.
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const scrollRefCallback = useCallback((element: HTMLDivElement | null) => {
+    scrollRef.current = element;
+    setScrollElement(element);
+  }, []);
   /**
    * The rewrite this reader has already asked for, keyed the way the rewrite
    * cache keys itself. The object arriving as `paper` is rebuilt upstream when
@@ -667,13 +655,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     return () => document.body.removeAttribute('data-reader-open');
   }, [coversFeed]);
 
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 1100px)');
-    const sync = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  }, []);
-
   /**
    * Takes the reveal flag back off once the wipe has finished. The mask that
    * draws it stays on the paragraph for as long as the flag does, and a mask is
@@ -709,12 +690,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
   }, []);
 
-  const annotating = useMemo(() => {
-    try { return !window.matchMedia('(pointer: coarse)').matches; } catch { return true; }
+  const touch = useMemo(() => {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
 
   const annotations = usePassageAnnotations({
-    uid: annotating ? uid : null,
+    uid,
     paper,
     paperId,
     level,
@@ -724,20 +705,23 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   });
 
   const { begin: beginAnnotation } = annotations;
+  const [annotationOrigin, setAnnotationOrigin] = useState<HTMLElement | null>(null);
+  const [failedNote, setFailedNote] = useState<string | null>(null);
 
-  const railIsSheet = isNarrow;
-
+  const outlineItems = useMemo(() => sections.map((section, index) => ({
+    target: outlineTarget(index),
+    depth: 0,
+    title: section.heading || section.originalHeading?.trim() || kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other,
+  })), [sections, kindLabels]);
+  const outline = useOutlineActive(outlineItems, scrollElement);
+  const [titleInView, setTitleInView] = useState(true);
   useEffect(() => {
-    if (!railIsSheet || !sheetOpen) return undefined;
-    const closeOnPaper = (event: MouseEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest('.rd-scroll') || target.closest('.rd-rail, .rd-pin')) return;
-      if (window.getSelection()?.isCollapsed === false) return;
-      setSheetOpen(false);
-    };
-    document.addEventListener('click', closeOnPaper);
-    return () => document.removeEventListener('click', closeOnPaper);
-  }, [railIsSheet, sheetOpen]);
+    const title = titleRef.current;
+    if (!scrollElement || !title) return;
+    const observer = new IntersectionObserver(([entry]) => setTitleInView(entry.intersectionRatio >= 0.99), { root: scrollElement, threshold: [0, 0.99] });
+    observer.observe(title);
+    return () => observer.disconnect();
+  }, [scrollElement]);
 
   /**
    * A selection stops being a selection and becomes a decision.
@@ -750,8 +734,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * the menu off. Capturing it all up front is what lets the browser's own
    * selection be cleared immediately — the reader paints its own provisional
    * mark instead, so the highlight you are deciding about is one you can
-   * already see. Notes, highlights and explanations are for a mouse or
-   * trackpad only; touch screens read the paper without them.
+   * already see.
    */
   const handleSelection = useCallback((
     sectionId: string,
@@ -814,6 +797,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     const anchor = buildRangeAnchor(paragraphText, 0, normalized.length);
     if (!anchor) return;
     const rect = event.currentTarget.getBoundingClientRect();
+    setFailedNote(null);
+    setAnnotationOrigin(event.currentTarget);
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -852,57 +837,73 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * ENDS. Releases over the menu, the rail or a text field find no
    * paragraph and do nothing, as before.
    */
+  const pickSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    setFailedNote(null);
+    setAnnotationOrigin(null);
+    const range = selection.getRangeAt(0);
+    const start = range.startContainer;
+    const paragraph = paragraphAround(start) || paragraphAround(range.endContainer);
+    if (!paragraph || !scrollRef.current?.contains(paragraph)) return;
+    const sectionId = paragraph.dataset.section!;
+    const paragraphIndex = Number(paragraph.dataset.paragraph);
+    const text = paragraphTextFor(sectionId, paragraphIndex);
+    if (text === null) return;
+    // A selection that runs into later paragraphs of the same section is one
+    // passage; one that crosses into another section stops where it started.
+    const last = paragraphAround(range.endContainer);
+    const lastIndex = Number(last?.dataset.paragraph);
+    const lastText = last && last.dataset.section === sectionId && lastIndex > paragraphIndex
+      ? paragraphTextFor(sectionId, lastIndex)
+      : null;
+    const between = [];
+    for (let index = paragraphIndex + 1; index < lastIndex; index += 1) between.push(paragraphTextFor(sectionId, index) ?? '');
+    handleSelection(sectionId, paragraphIndex, text, paragraph, last && lastText !== null
+      ? { paragraphIndex: lastIndex, text: lastText, node: last, between }
+      : undefined);
+  }, [handleSelection, paragraphTextFor]);
   useEffect(() => {
-    if (!annotating) return undefined;
-    const paragraphAround = (node: Node | null) => {
-      const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
-      return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
-    };
-    const handleDocumentMouseUp = () => {
+    if (touch) return undefined;
+    document.addEventListener('mouseup', pickSelection);
+    return () => document.removeEventListener('mouseup', pickSelection);
+  }, [pickSelection, touch]);
+
+  const [touchRange, setTouchRange] = useState<Range | null>(null);
+  const waitsForTouch = touch && Boolean(uid) && !annotations.pending;
+  useEffect(() => {
+    if (!waitsForTouch) return undefined;
+    const read = () => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      const start = range.startContainer;
-      const paragraph = paragraphAround(start) || paragraphAround(range.endContainer);
-      if (!paragraph || !scrollRef.current?.contains(paragraph)) return;
-      const sectionId = paragraph.dataset.section!;
-      const paragraphIndex = Number(paragraph.dataset.paragraph);
-      const text = paragraphTextFor(sectionId, paragraphIndex);
-      if (text === null) return;
-      // A selection that runs into later paragraphs of the same section is one
-      // passage; one that crosses into another section stops where it started.
-      const last = paragraphAround(range.endContainer);
-      const lastIndex = Number(last?.dataset.paragraph);
-      const lastText = last && last.dataset.section === sectionId && lastIndex > paragraphIndex
-        ? paragraphTextFor(sectionId, lastIndex)
-        : null;
-      const between = [];
-      for (let index = paragraphIndex + 1; index < lastIndex; index += 1) between.push(paragraphTextFor(sectionId, index) ?? '');
-      handleSelection(sectionId, paragraphIndex, text, paragraph, last && lastText !== null
-        ? { paragraphIndex: lastIndex, text: lastText, node: last, between }
-        : undefined);
+      const range = selection && !selection.isCollapsed && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      const inText = range && scrollRef.current?.contains(range.commonAncestorContainer)
+        && (paragraphAround(range.startContainer) || paragraphAround(range.endContainer))
+        && selection!.toString().trim().length >= HIGHLIGHT_MIN_QUOTE_LENGTH;
+      setTouchRange(inText ? range.cloneRange() : null);
     };
-    document.addEventListener('mouseup', handleDocumentMouseUp);
-    return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
-  }, [annotating, handleSelection, paragraphTextFor]);
+    let timer = 0;
+    const later = () => { clearTimeout(timer); timer = window.setTimeout(read, SELECTION_SETTLE_MS); };
+    document.addEventListener('selectionchange', later);
+    return () => { clearTimeout(timer); document.removeEventListener('selectionchange', later); };
+  }, [waitsForTouch]);
+  const highlightTouchSelection = () => {
+    if (!touchRange) return;
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(touchRange);
+    setTouchRange(null);
+    pickSelection();
+  };
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
     () => sortAnnotations(annotations.annotations.filter(item => item.level !== FULL_TEXT_LEVEL), sectionOrder),
     [annotations.annotations, sectionOrder],
   );
-  const visibleAnnotations = useMemo(
-    () => filterAnnotations(orderedAnnotations, annotationFilter),
-    [annotationFilter, orderedAnnotations],
-  );
-  const annotationCounts = useMemo(
-    () => countAnnotations(orderedAnnotations),
-    [orderedAnnotations],
-  );
   // The place in the margin where the answer being written will be filed.
   const answerAt = useMemo(
-    () => answerSlot(visibleAnnotations, annotations.askedAt, sectionOrder),
-    [annotations.askedAt, sectionOrder, visibleAnnotations],
+    () => answerSlot(orderedAnnotations, annotations.askedAt, sectionOrder),
+    [annotations.askedAt, sectionOrder, orderedAnnotations],
   );
 
   /**
@@ -912,13 +913,23 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * steps back to all of them. Left alone, each of those hid the answer the
    * reader had just spent a use on.
    */
+  const saveAnnotation = async (note: string, color: HighlightColor) => {
+    const passage = annotations.pending;
+    const saved = note ? await annotations.saveNote(note, color) : await annotations.highlight(color);
+    if (saved) {
+      setFailedNote(null);
+      annotationOrigin?.focus({ preventScroll: true });
+      return;
+    }
+    if (passage) beginAnnotation(passage);
+    setFailedNote(note);
+  };
+
   const { ask: askAnnotation } = annotations;
   const askAboutPassage = useCallback(() => {
-    setAnnotationFilter(current => (current === 'mine' ? 'all' : current));
-    if (railIsSheet) setSheetOpen(true);
-    else setRailOpen(true);
+    setNotesOpen(true);
     return askAnnotation();
-  }, [askAnnotation, railIsSheet]);
+  }, [askAnnotation]);
 
   const userHighlightIndex = useMemo(() => {
     const index = indexHighlightsByParagraph(annotations.annotations, {
@@ -977,11 +988,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     ])),
     [annotationLabel, copy, orderedAnnotations],
   );
-  const pendingNoteNumber = useMemo(() => {
-    const pending = annotations.pending;
-    if (!pending) return undefined;
-    return 1 + orderedAnnotations.filter(item => item.note && sortAnnotations([item, pending], sectionOrder)[0] === item).length;
-  }, [annotations.pending, orderedAnnotations, sectionOrder]);
   const pinsByParagraph = useMemo(() => {
     const byParagraph = new Map<string, typeof notePins>();
     for (const annotation of orderedAnnotations) {
@@ -1129,88 +1135,35 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             <Button
               ref={closeButtonRef}
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               onClick={requestClose}
               aria-label={copy.close}
-              title={copy.back}
+              title={copy.close}
             >
-              <ArrowLeft size={18} />
+              <X size={18} aria-hidden="true" />
             </Button>
-            <div className="rd-panel rd-topbar-controls" role="group" aria-label={copy.title}>
-              <Select
-                items={PAPER_REWRITE_LEVELS.map(option => ({ value: option.id, label: option.label }))}
-                value={level}
-                onValueChange={(next) => { if (next) setLevel(next); }}
-              >
-                <SelectTrigger size="sm" className="rd-level-select" aria-label={copy.level}>
-                  {(() => {
-                    const LevelIcon = LEVEL_ICONS[level];
-                    return LevelIcon && <LevelIcon size={15} aria-hidden="true" />;
-                  })()}
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end" alignItemWithTrigger={false}>
-                  {PAPER_REWRITE_LEVELS.map(option => {
-                    const LevelIcon = LEVEL_ICONS[option.id as keyof typeof LEVEL_ICONS];
-                    return (
-                      <SelectItem key={option.id} value={option.id} disabled={isStreaming && level !== option.id}>
-                        <LevelIcon size={15} aria-hidden="true" />
-                        {option.label}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {annotating && (
-              <>
-              <div className="rd-panel-group">
-                <span className="rd-panel-label">{copy.annotations}</span>
-                <Toggle
-                  variant="brand"
-                  size="icon"
-                  className="rd-topbar-switch"
-                  pressed={isNarrow ? sheetOpen : railOpen}
-                  onPressedChange={() => (isNarrow ? setSheetOpen(v => !v) : setRailOpen(v => !v))}
-                  title={copy.toggleAnnotations}
-                  aria-label={copy.toggleAnnotations}
+            {/* The bar names the paper once the document's own title has scrolled
+                away, rising in from below; it leaves the way it came. */}
+            <AnimatePresence initial={false}>
+              {!titleInView && (
+                <motion.p
+                  key="title"
+                  className="rd-topbar-title"
+                  initial={{ opacity: 0, transform: 'translateY(40%)' }}
+                  animate={{ opacity: 1, transform: 'translateY(0%)' }}
+                  exit={{ opacity: 0, transform: 'translateY(40%)' }}
+                  transition={{ duration: MOTION_BASE_S, ease: EASE_OUT }}
                 >
-                  <PencilLine size={15} />
-                </Toggle>
-              </div>
-              <div className="rd-panel-group">
-                <Toggle
-                  variant="brand"
-                  size="icon"
-                  className="rd-topbar-switch"
-                  pressed={showAiMarks}
-                  onPressedChange={setShowAiMarks}
-                  title={copy.toggleAiMarks}
-                  aria-label={copy.toggleAiMarks}
-                >
-                  <Highlighter size={15} />
-                </Toggle>
-              </div>
-              </>
+                  <ScientificText>{paper?.title}</ScientificText>
+                </motion.p>
               )}
-              {annotating && originalUrl && <div className="rd-panel-divider" />}
-              {originalUrl && (
-                <div className="rd-panel-group">
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}
-                    aria-label={copy.original}
-                    title={copy.original}
-                  >
-                    <ArrowSquareOut size={15} />
-                  </Button>
-                </div>
-              )}
-            </div>
+            </AnimatePresence>
           </header>
 
+        {/* The viewer's stage: the notes take the right of it, and the paper and its dock move over. */}
+        <div className="pdf-stage rd-stage" data-notes-open={notesOpen || undefined}>
         <div
-          ref={scrollRef}
+          ref={scrollRefCallback}
           className="rd-scroll"
           onScroll={() => annotations.dismiss()}
         >
@@ -1267,7 +1220,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 never read on its own: the keyboard route's instructions, for
                 the one audience that cannot see a hint that only paints on
                 focus. */}
-            {annotating && <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>}
+            <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
 
             {shownStatus === 'error' ? (
               <EmptyState
@@ -1300,6 +1253,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {sections.map((section, sectionIndex) => (
                   <section
                     key={section.id || sectionIndex}
+                    id={outlineTarget(sectionIndex)}
                     className="rd-section"
                     data-reveal={section.reveal ? '' : undefined}
                   >
@@ -1315,7 +1269,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                          paragraph, which set the text a pixel over on every
                          switch and gave the colour nothing to fade out of; now
                          the switch is a colour, and the words never move. */
-                      const aiHighlights = (annotating ? section.highlights || [] : [])
+                      const aiHighlights = (section.highlights || [])
                         .filter(item => item.paragraphIndex === paragraphIndex)
                         .map(item => ({ ...item, source: 'ai', proposed: true }));
                       const stored = userHighlightIndex.get(`${section.id}:${paragraphIndex}`) || [];
@@ -1325,14 +1279,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           className="rd-p"
                           data-section={section.id}
                           data-paragraph={paragraphIndex}
-                          data-annotatable={annotating ? '' : undefined}
-                          data-hint={annotating ? copy.annotateParagraphBadge : undefined}
+                          data-annotatable={uid ? '' : undefined}
+                          data-hint={uid ? copy.annotateParagraphBadge : undefined}
                           style={{ '--i': Math.min(paragraphIndex, MAX_STAGGER_STEPS) }}
                           // Keyboard route into the same menu the mouse opens on
                           // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
-                          tabIndex={annotating ? 0 : undefined}
-                          aria-describedby={annotating ? paragraphHintId : undefined}
-                          onKeyDown={annotating ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph) : undefined}
+                          tabIndex={uid ? 0 : undefined}
+                          aria-describedby={uid ? paragraphHintId : undefined}
+                          onKeyDown={uid ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph) : undefined}
                         >
                           <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={pinsByParagraph.get(`${section.id}:${paragraphIndex}`)}>
                             {paragraph}
@@ -1430,47 +1384,106 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
           </article>
 
-          {annotating && (
-          <AnnotationRail
-            surface={railIsSheet ? 'sheet' : 'rail'}
-            hidden={railIsSheet ? !sheetOpen : !railOpen}
-            expanded={sheetOpen}
-            onToggle={() => setSheetOpen(value => !value)}
-            annotations={visibleAnnotations}
-            pins={notePins}
-            answerAt={answerAt}
-            counts={annotationCounts}
-            filter={annotationFilter}
-            onFilter={setAnnotationFilter}
-            thinking={annotations.busy === 'asking'}
-            onFocus={goToPassage}
-            onRemove={(id) => { void annotations.remove(id); }}
-            copy={copy}
-          />
-          )}
         </div>
 
-        {/* Over the selection, not in a corner: what it acts on is the passage
-            under it, and a menu that drifts away from its subject stops being
-            about it. A popover anchored to the selection's rectangle; it stays
-            mounted and follows `pending` with `open`, so its leave can play
-            over the passage it was about. */}
-        {annotating && (
-        <SelectionMenu
-            open={Boolean(annotations.pending)}
-            anchor={annotations.pending?.anchor}
-            copy={copy}
-            noteNumber={pendingNoteNumber}
-            notePlace={annotations.pending ? annotationLabel(annotations.pending) : undefined}
-            usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
-            usesLimit={quota?.dailyLimit ?? null}
-            unlimited={Boolean(quota?.unlimited)}
-            canAsk={canSpendUse}
+        <NotesSidebar
+          id="reader-notes"
+          open={notesOpen}
+          passages={orderedAnnotations}
+          withAi
+          thinking={annotations.busy === 'asking' ? { at: answerAt ?? 0, label: copy.reading } : null}
+          onGoTo={(passage) => {
+            if (scrollElement && getComputedStyle(scrollElement).visibility === 'hidden') setNotesOpen(false);
+            goToPassage(passage);
+          }}
+          onRemove={(id) => { void annotations.remove(id); }}
+          onClose={() => setNotesOpen(false)}
+        />
+
+        {waitsForTouch && touchRange && (
+          <Button className="vn-touch-highlight" onClick={highlightTouchSelection}>
+            <Highlighter size={18} aria-hidden="true" />
+            {copy.highlight}
+          </Button>
+        )}
+
+        <PaperDock scroll={scrollElement} contents={outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
+          <Select
+            items={PAPER_REWRITE_LEVELS.map(option => ({ value: option.id, label: option.label }))}
+            value={level}
+            onValueChange={(next) => { if (next) setLevel(next); }}
+          >
+            <SelectTrigger size="sm" className="rd-dock-level" aria-label={copy.level} title={copy.level}>
+              {(() => {
+                const LevelIcon = LEVEL_ICONS[level];
+                return LevelIcon && <LevelIcon size={18} aria-hidden="true" />;
+              })()}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent side="top" align="center" alignItemWithTrigger={false}>
+              {PAPER_REWRITE_LEVELS.map(option => {
+                const LevelIcon = LEVEL_ICONS[option.id as keyof typeof LEVEL_ICONS];
+                return (
+                  <SelectItem key={option.id} value={option.id} disabled={isStreaming && level !== option.id}>
+                    <LevelIcon size={15} aria-hidden="true" />
+                    {option.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <Toggle
+            className="pdf-dock-toggle pdf-dock-notes"
+            pressed={notesOpen}
+            onPressedChange={setNotesOpen}
+            aria-label={copy.annotations}
+            aria-controls="reader-notes"
+            title={copy.toggleAnnotations}
+          >
+            <NotePencil size={18} aria-hidden="true" />
+            <span className="pdf-dock-label">{copy.annotations}</span>
+          </Toggle>
+          <Toggle
+            className="pdf-dock-toggle"
+            pressed={showAiMarks}
+            onPressedChange={setShowAiMarks}
+            aria-label={copy.aiMarks}
+            title={copy.toggleAiMarks}
+          >
+            <Highlighter size={18} aria-hidden="true" />
+            <span className="pdf-dock-label">{copy.aiMarks}</span>
+          </Toggle>
+          {originalUrl && (
+            <Button variant="ghost" size="icon" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />} aria-label={copy.original} title={copy.original}>
+              <ArrowSquareOut size={18} aria-hidden="true" />
+            </Button>
+          )}
+        </PaperDock>
+        </div>
+
+        {/* Over the selection, as in the paper viewer: highlight it, with a note
+            and a colour if wanted, or have the AI explain it. */}
+        {annotations.pending?.anchor && (
+          <PassageEditor
+            key={`${annotations.pending.sectionId}:${annotations.pending.paragraphIndex}:${annotations.pending.quote}`}
+            quote={passageQuote(annotations.pending)}
+            anchor={annotations.pending.anchor}
             busy={annotations.busy === 'saving'}
-            onHighlight={() => { void annotations.highlight(); }}
-            onSaveNote={(note) => { void annotations.saveNote(note); }}
-            onAsk={() => { void askAboutPassage(); }}
-            onClose={annotations.dismiss}
+            error={failedNote !== null}
+            initialNote={failedNote ?? ''}
+            returnFocus={annotationOrigin}
+            sheet={touch}
+            ask={{
+              label: copy.explainThis,
+              price: quota?.unlimited ? null
+                : quota?.dailyLimit ? <UsesCount left={quota.remainingUses} limit={quota.dailyLimit} copy={copy} />
+                  : canSpendUse ? copy.oneUse : copy.noUsesLeftShort,
+              disabled: !canSpendUse,
+              title: canSpendUse ? undefined : copy.noUsesLeft,
+              onAsk: () => { void askAboutPassage(); },
+            }}
+            onSave={(note, color) => { void saveAnnotation(note, color); }}
+            onCancel={() => { setFailedNote(null); annotations.dismiss(); }}
           />
         )}
       </DialogContent>
