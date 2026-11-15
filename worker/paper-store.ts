@@ -2061,10 +2061,10 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
 // request's ids name with the likes' and rejections' vectors, the candidates,
 // the notable lanes' window and the keyword lanes' ranks; the second, the
 // candidates' vectors beside the notable check and the rows of the likes no
-// group names. Of the pages that read vectors, those with likes, with
-// `skipsSeen` or with order `daily` read every one beside the check; one with
-// papers a keyword ranks, an exact page that reads no notable lane, reads
-// every one too. A page asked by number with rejections alone, notable papers
+// group names. Of the pages that read vectors, those with a like with a
+// vector, with `skipsSeen` or with order `daily` read every one beside the
+// check; one with papers a keyword ranks, an exact page that reads no notable
+// lane, reads every one too. A page asked by number with rejections alone, notable papers
 // and an order other than `daily` waits for the check, and reads only the
 // vectors that decide its ranks when it offers no notable paper
 // (`readDecidingVectors`). `decided`: how many first ranks are the ones a read
