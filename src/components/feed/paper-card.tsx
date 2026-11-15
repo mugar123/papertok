@@ -2226,11 +2226,11 @@ const PaperCard = memo(function PaperCard({
                   title={missingAbstract.title}
                 >
                   {missingAbstract.body}
-                  {missingAbstract.publisherUrl && (
+                  {missingAbstract.publisher && (
                     <>
-                      {' Try the '}
-                      <a href={missingAbstract.publisherUrl} target="_blank" rel="noopener noreferrer" onClick={swallowClick}>
-                        {"publisher's page"}<span className="visually-hidden"> (opens in a new tab)</span>
+                      {missingAbstract.publisher.lead}
+                      <a href={missingAbstract.publisher.url} target="_blank" rel="noopener noreferrer" onClick={swallowClick}>
+                        {missingAbstract.publisher.label}<span className="visually-hidden"> (opens in a new tab)</span>
                       </a>
                       {'.'}
                     </>

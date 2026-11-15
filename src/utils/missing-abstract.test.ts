@@ -6,24 +6,35 @@ import { missingAbstractNotice } from './missing-abstract.ts';
 // Synthetic records shaped like the corpus rows that reach the empty state:
 // a journal article OpenAlex listed without an abstract.
 const withoutAbstract = (fields: Partial<Paper> = {}): Partial<Paper> => ({ abstract: 'No abstract available.', ...fields });
-const explanation = 'The open sources PaperTok reads had none.';
+const body = 'PaperTok found none in open sources.';
+
+// The sentence the card renders: the body, then the continuation when a link exists.
+const sentence = (notice: ReturnType<typeof missingAbstractNotice>) =>
+  notice.body + (notice.publisher ? `${notice.publisher.lead}${notice.publisher.label}.` : '');
 
 test('a paper with a DOI links the publisher page through doi.org', () => {
-  assert.deepEqual(missingAbstractNotice(withoutAbstract({ doi: '10.1016/j.synthetic.2026.101234' })), {
+  const notice = missingAbstractNotice(withoutAbstract({ doi: '10.1016/j.synthetic.2026.101234' }));
+  assert.deepEqual(notice, {
     title: 'No abstract to show',
-    body: explanation,
-    publisherUrl: 'https://doi.org/10.1016/j.synthetic.2026.101234',
+    body,
+    publisher: { lead: ' Try the ', label: "publisher's page", url: 'https://doi.org/10.1016/j.synthetic.2026.101234' },
   });
+  assert.equal(sentence(notice), "PaperTok found none in open sources. Try the publisher's page.");
   // OpenAlex writes the DOI as a resolver URL; the link is the same.
   assert.equal(
-    missingAbstractNotice(withoutAbstract({ doi: 'https://doi.org/10.1007/s00000-026-0001-x' })).publisherUrl,
+    missingAbstractNotice(withoutAbstract({ doi: 'https://doi.org/10.1007/s00000-026-0001-x' })).publisher?.url,
     'https://doi.org/10.1007/s00000-026-0001-x',
   );
 });
 
+test('the body fits two lines of the narrowest card as the 41-character sentence it replaced did', () => {
+  assert.ok(body.length <= 'The open sources PaperTok reads had none.'.length);
+});
+
 test('a paper without a usable DOI gets the same words and no link', () => {
-  const noLink = { title: 'No abstract to show', body: explanation, publisherUrl: null };
+  const noLink = { title: 'No abstract to show', body, publisher: null };
   assert.deepEqual(missingAbstractNotice(withoutAbstract()), noLink);
+  assert.equal(sentence(missingAbstractNotice(withoutAbstract())), 'PaperTok found none in open sources.');
   assert.deepEqual(missingAbstractNotice(withoutAbstract({ doi: null })), noLink);
   assert.deepEqual(missingAbstractNotice(withoutAbstract({ doi: 'not a doi' })), noLink);
   // A landing page is not taken for the publisher's: for these records it is
