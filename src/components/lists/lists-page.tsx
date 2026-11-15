@@ -7,7 +7,7 @@ import type { SyncState } from '../../services/public-list-sync.ts';
 import type { PublicPaperInput } from '../../services/public-list-payload.ts';
 import type { ComponentProps, ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
-import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../services/firebase.ts';
 import {
@@ -84,7 +84,7 @@ import { timeAgo } from '../../utils/time-ago.ts';
 import { copyOfRecordWithoutCopy, downloadCitationFile } from '../../utils/reading-library.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestore-doc-id.ts';
 import { hydrateLegacyArxivPapers } from '../../services/liked-paper-records.ts';
-import { nextListFieldRound, readPaperFields } from '../../services/list-paper-fields.ts';
+import { listPapersAwaitingField, nextListFieldRound, readPaperFields, settleFieldRound } from '../../services/list-paper-fields.ts';
 import { storePaperField } from '../../services/stored-paper-field.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -117,6 +117,8 @@ import {
   rememberOwnLists,
   rememberSavedAnswers,
   savedAnswered,
+  savedAnswersOf,
+  subscribeSavedAnswers,
 } from '../../utils/profile-session-caches.ts';
 import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
@@ -395,9 +397,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * collection's answer.
    */
   const [awaitingSavedIds, setAwaitingSavedIds] = useState(() => new Set<string>());
-  // Null until openList prepares the document reads, including on a restored view.
-  const [fieldAttempted, setFieldAttempted] = useState<ReadonlySet<string> | null>(null);
+  // The provider requests each paper has cost this opening. Null until
+  // openList prepares the document reads, including on a restored view.
+  const [fieldAttempts, setFieldAttempts] = useState<ReadonlyMap<string, number> | null>(null);
   const fieldRoundList = useRef<string | null>(null);
+  // True while the round after a failure waits; the timer belongs to one opening.
+  const [fieldRetryWaiting, setFieldRetryWaiting] = useState(false);
+  const fieldRetryTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => clearTimeout(fieldRetryTimer.current), []);
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -521,30 +528,40 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * interaction record. Recovered fields enter the device cache and any
    * existing saved document; no saved document is created for a favorite.
    */
-  const fieldRound = useMemo(() => {
+  // The session cache owns which saved reads have answered. Subscribing lets
+  // the round see an answer that changes no other state: a confirmed absence
+  // that lands after the budget stopped its row waiting.
+  const savedAnswers = useSyncExternalStore(subscribeSavedAnswers, () => savedAnswersOf(user?.uid));
+  // Every row still waiting for a field this opening, which keeps its
+  // placeholder, and the round of them asked next.
+  const fieldAwaiting = useMemo(() => {
     const uid = user?.uid;
     const list = displayLists.find(entry => entry.id === expandedList);
-    const asked: Record<string, Partial<Paper>> = {};
-    if (!uid || !list || !fieldAttempted) return asked;
+    const papers: Record<string, Partial<Paper>> = {};
+    if (!uid || !list || !fieldAttempts) return papers;
     for (const paperId of list.paperIds || []) {
       if (pendingPaperIds.has(paperId) || awaitingSavedIds.has(paperId)) continue;
       const paper = getPaper(paperId);
-      if (paper) asked[paperId] = paper;
+      if (paper) papers[paperId] = paper;
     }
-    return nextListFieldRound(uid, asked, fieldAttempted);
-  }, [awaitingSavedIds, displayLists, expandedList, fieldAttempted, getPaper, pendingPaperIds, user?.uid]);
+    return listPapersAwaitingField(uid, papers, { savedAnswers, attempts: fieldAttempts });
+  }, [awaitingSavedIds, displayLists, expandedList, fieldAttempts, getPaper, pendingPaperIds, savedAnswers, user?.uid]);
+  const fieldRound = useMemo(() => nextListFieldRound(fieldAwaiting), [fieldAwaiting]);
 
   // One bounded round at a time, once the list's own reads have settled.
   useEffect(() => {
     const uid = user?.uid;
     const askedIds = Object.keys(fieldRound);
-    if (!uid || !expandedList || askedIds.length === 0 || fieldRoundList.current === expandedList
-      || pendingPaperIds.size > 0 || awaitingSavedIds.size > 0) return;
+    if (!uid || !expandedList || !fieldAttempts || askedIds.length === 0 || fieldRoundList.current === expandedList
+      || fieldRetryWaiting || pendingPaperIds.size > 0 || awaitingSavedIds.size > 0) return;
     fieldRoundList.current = expandedList;
     const opening = metadataRequestId.current;
-    void readPaperFields(fieldRound).catch(() => ({ fields: {}, failed: askedIds })).then(({ fields, failed }) => {
+    // A rejection is a programming error; it still spends the round's requests.
+    void readPaperFields(fieldRound).catch(() => ({ fields: {}, failed: askedIds, retryAfterMs: null })).then((answer) => {
       if (activeUid.current !== uid || auth.currentUser?.uid !== uid) return;
-      rememberFieldAnswers(uid, askedIds.filter(paperId => !failed.includes(paperId)));
+      const { fields } = answer;
+      const settled = settleFieldRound(fieldAttempts, fieldRound, answer);
+      rememberFieldAnswers(uid, settled.answered);
       // The field alone, over the copy held by now. A document that landed
       // since with a field of its own keeps it.
       const filled = (held: Record<string, Partial<Paper>>) => Object.fromEntries(Object.entries(fields).flatMap(([paperId, field]) => {
@@ -565,9 +582,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // Another opening owns its own queue, even when it opens this list again.
       if (metadataRequestId.current !== opening) return;
       fieldRoundList.current = null;
-      setFieldAttempted(current => new Set([...(current ?? []), ...askedIds]));
+      setFieldAttempts(settled.attempts);
+      if (settled.waitMs === 0) return;
+      setFieldRetryWaiting(true);
+      // A newer opening or closing the list clears this timer.
+      fieldRetryTimer.current = setTimeout(() => setFieldRetryWaiting(false), settled.waitMs);
     });
-  }, [awaitingSavedIds, expandedList, fieldRound, pendingPaperIds, user?.uid]);
+  }, [awaitingSavedIds, expandedList, fieldAttempts, fieldRetryWaiting, fieldRound, pendingPaperIds, user?.uid]);
 
   useEffect(() => subscribeToPublicListSync((key, state) => {
     setSyncStates((current) => {
@@ -732,43 +753,60 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   /**
    * Reads the `savedPapers` documents of papers the open list already shows
    * with no field. Apart from the list's own reads: these rows are painted,
-   * and the document can only add a field, so a read that fails or runs past
-   * its deadline raises nothing and is made again on the next opening.
+   * and the document can only add a field, so a read that fails raises
+   * nothing and is made again on the next opening. A read past its deadline
+   * is still running, and its rows keep waiting until it lands or the
+   * opening's total budget releases them; an answer that lands after the
+   * budget still counts (`savedAnswers`).
    */
-  const readFieldDocuments = useCallback(async (uid: string, paperIds: string[], requestId: number) => {
-    const { requests } = planMetadataRequests({ missingIds: paperIds, batchSize: PAPER_METADATA_BATCH_SIZE });
-    try {
-      await Promise.all(requests.filter(request => request.source === 'saved').map(async (request) => {
-        const documents = query(
-          collection(db, 'users', uid, 'savedPapers'),
-          where(documentId(), 'in', request.paperIds.map(encodeFirestoreDocId)),
-        );
-        const snapshot = await patientRead(() => getDocs(documents), {
-          attempts: 1, ms: PAPER_METADATA_LOAD_DEADLINE_MS, label: 'list field documents', isAnswer: queryIsAuthoritative,
-        });
-        if (metadataRequestId.current !== requestId || auth.currentUser?.uid !== uid) return;
-        const loaded: Record<string, Partial<Paper>> = {};
-        snapshot.forEach((item) => {
-          const paperId = decodeFirestoreDocId(item.id);
-          loaded[paperId] = paperFromMetadataDoc('saved', paperId, item.data());
-        });
-        rememberSavedAnswers(uid, answeredIds(request.paperIds, Object.keys(loaded), snapshot.metadata.fromCache));
-        rememberListPapers(uid, loaded, 'saved');
-        setSavedPapers(current => (Object.keys(loaded).length > 0 ? mergeListPaperCopies(current, loaded, 'saved') : current));
-      }));
-    } catch (error) {
-      // A slow read is only made again; a refusal would repeat unseen.
-      if (!isReadTimeout(error)) console.warn('List field documents could not be read:', error);
-    } finally {
-      // Every id, read or not: the field round waits for this set to empty.
-      if (metadataRequestId.current === requestId) {
-        setAwaitingSavedIds((current) => {
-          const next = new Set(current);
-          paperIds.forEach(paperId => next.delete(paperId));
-          return next;
-        });
-      }
-    }
+  const readFieldDocuments = useCallback((uid: string, paperIds: string[], requestId: number, signal: AbortSignal) => {
+    // The field round waits for this set to empty.
+    const release = (ids: string[]) => {
+      if (metadataRequestId.current !== requestId || ids.length === 0) return;
+      setAwaitingSavedIds((current) => {
+        if (!ids.some(paperId => current.has(paperId))) return current;
+        const next = new Set(current);
+        ids.forEach(paperId => next.delete(paperId));
+        return next;
+      });
+    };
+    const { requests, unfetchable } = planMetadataRequests({ missingIds: paperIds, batchSize: PAPER_METADATA_BATCH_SIZE });
+    release(unfetchable);
+    requests.filter(request => request.source === 'saved').forEach((request) => {
+      const settle = (snapshot: QuerySnapshot) => {
+        // A newer opening, a closed list or a left screen owns no answer.
+        if (signal.aborted || metadataRequestId.current !== requestId) return;
+        if (auth.currentUser?.uid === uid) {
+          const loaded: Record<string, Partial<Paper>> = {};
+          snapshot.forEach((item) => {
+            const paperId = decodeFirestoreDocId(item.id);
+            loaded[paperId] = paperFromMetadataDoc('saved', paperId, item.data());
+          });
+          rememberSavedAnswers(uid, answeredIds(request.paperIds, Object.keys(loaded), snapshot.metadata.fromCache));
+          rememberListPapers(uid, loaded, 'saved');
+          setSavedPapers(current => (Object.keys(loaded).length > 0 ? mergeListPaperCopies(current, loaded, 'saved') : current));
+        }
+        release(request.paperIds);
+      };
+      const documents = query(
+        collection(db, 'users', uid, 'savedPapers'),
+        where(documentId(), 'in', request.paperIds.map(encodeFirestoreDocId)),
+      );
+      patientRead(() => getDocs(documents), {
+        attempts: 1,
+        ms: PAPER_METADATA_LOAD_DEADLINE_MS,
+        label: 'list field documents',
+        isAnswer: queryIsAuthoritative,
+        signal,
+        onLateResult: settle,
+      }).then(settle, (error: unknown) => {
+        // Past its deadline the read is still running: `onLateResult` settles it.
+        if (isReadTimeout(error)) return;
+        // A refusal would repeat unseen.
+        console.warn('List field documents could not be read:', error);
+        release(request.paperIds);
+      });
+    });
   }, []);
 
   const openList = useCallback(async (list: OwnList, retryFailedOnly = false) => {
@@ -795,18 +833,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     setPendingPaperIds(new Set());
     setAwaitingSavedIds(new Set(fieldReadIds));
     fieldRoundList.current = null;
-    setFieldAttempted(new Set());
-    if (user) void readFieldDocuments(user.uid, fieldReadIds, requestId);
+    setFieldAttempts(new Map());
+    clearTimeout(fieldRetryTimer.current);
+    setFieldRetryWaiting(false);
 
-    if (missingIds.length === 0) {
-      failedMetadataRequests.current.delete(list.id);
-      return;
-    }
-
-    if (!user) return;
-    setPendingPaperIds(new Set(missingIds));
-    // The retry loops behind the reads below outlive their promises; a newer
-    // open, or leaving the screen, must end the previous one's.
+    // The retry loops behind this opening's reads, the field documents' and
+    // the fan-out's below, outlive their promises; a newer open, closing the
+    // list or leaving the screen must end the previous one's.
     metadataAbortRef.current?.abort();
     const metadataAbort = new AbortController();
     metadataAbortRef.current = metadataAbort;
@@ -824,17 +857,29 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
 
     // Deliberately NOT cleared when openList returns: a request past its own
     // deadline is still running and can still paint its rows, and this is the
-    // ceiling on that window too. A previous open's timer is cancelled by the
-    // ref below, and a fire that finds nothing waiting does nothing.
+    // ceiling on that window too, for the field documents as well. A previous
+    // open's timer is cancelled by the ref below, and a fire that finds
+    // nothing waiting does nothing.
     clearTimeout(metadataBudgetTimer.current!);
-    metadataBudgetTimer.current = setTimeout(() => {
-      if (metadataRequestId.current !== requestId) return;
-      setAwaitingSavedIds(new Set());
-      if (stillPending.size === 0) return;
-      stillPending.clear();
-      setPendingPaperIds(new Set());
-      setMetadataError('LIST_METADATA_LOAD_FAILED');
-    }, PAPER_METADATA_TOTAL_BUDGET_MS);
+    if (user) {
+      metadataBudgetTimer.current = setTimeout(() => {
+        if (metadataRequestId.current !== requestId) return;
+        setAwaitingSavedIds(current => (current.size === 0 ? current : new Set()));
+        if (stillPending.size === 0) return;
+        stillPending.clear();
+        setPendingPaperIds(new Set());
+        setMetadataError('LIST_METADATA_LOAD_FAILED');
+      }, PAPER_METADATA_TOTAL_BUDGET_MS);
+      readFieldDocuments(user.uid, fieldReadIds, requestId, metadataAbort.signal);
+    }
+
+    if (missingIds.length === 0) {
+      failedMetadataRequests.current.delete(list.id);
+      return;
+    }
+
+    if (!user) return;
+    setPendingPaperIds(new Set(missingIds));
 
     /** Stops a superseded open from clearing the rows of the current one. */
     const dropPending = (ids: string[]) => {
@@ -894,7 +939,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // does not cover has nothing left coming for it. Without this those rows
       // would wait on a request that is never going to be made.
       dropPending(missingIds.filter((paperId) => !outstanding.has(paperId)));
-      setAwaitingSavedIds(new Set([...fieldReadIds, ...requestDefinitions
+      // Added to the field documents' rows, some of which may be released already.
+      setAwaitingSavedIds((current) => new Set([...current, ...requestDefinitions
         .filter((requestDefinition) => requestDefinition.source === 'saved')
         .flatMap((requestDefinition) => requestDefinition.paperIds)]));
 
@@ -1295,6 +1341,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
 
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
+    metadataAbortRef.current?.abort();
+    clearTimeout(fieldRetryTimer.current);
+    setFieldRetryWaiting(false);
     setExpandedList(null);
     // Drop the restore marker, or a later visit would reopen a list the user
     // has explicitly closed.
@@ -1668,7 +1717,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const queuedSyncs = useRef(new Map<string, string>());
   useEffect(() => {
     // A restored view can paint before openList establishes pending reads.
-    if (!user || !expandedList || fieldAttempted === null) return;
+    if (!user || !expandedList || fieldAttempts === null) return;
     // Never from a seed. A list read back from this device's storage carries
     // the name it had when the tab last closed, and republishing THAT would
     // push a stale title onto the page strangers read — the seed is for
@@ -1718,7 +1767,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       papers: papers as PublicPaperInput[],
     });
   }, [
-    expandedList, fieldAttempted, getPaper, language, lists, metadataError, pendingPaperIds,
+    expandedList, fieldAttempts, getPaper, language, lists, metadataError, pendingPaperIds,
     publicSnapshots, user,
   ]);
 
@@ -2097,7 +2146,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                         aria-busy={removalPending || undefined}
                         paper={paper}
                         // A paper with no field or date after all loses the line.
-                        metaPlaceholder={awaitingSavedIds.has(paperId) || paperId in fieldRound
+                        metaPlaceholder={awaitingSavedIds.has(paperId) || paperId in fieldAwaiting
                           ? <span className="lists-skeleton-bar lists-skeleton-bar--cat" aria-hidden="true" />
                           : undefined}
                         onOpen={() => {

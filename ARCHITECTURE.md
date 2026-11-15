@@ -77,11 +77,21 @@ flowchart TD
   through `readListPapers`; new metadata uses the existing copy merge rules before
   persisting. Classification versions are checked on restore. List membership,
   notes and reading state are not part of this cache. Missing classifications
-  use provider recovery after the saved-document read settles, including when
-  no saved document exists. A favorite with only an old interaction record can
+  use provider recovery after the saved-document read answers, including when
+  no saved document exists and when the answer lands after the read's deadline.
+  A favorite with only an old interaction record can
   recover by its provider identifier and persist the result without creating a save.
-  Recovery continues in rounds of at most 60 papers until the open list is covered;
-  each paper is attempted at most once per opening, including failed requests.
+  Recovery continues in rounds of at most 60 papers, one at a time, until the open
+  list is covered. A paper the provider answers, with or without a field, is not
+  asked again this session. A paper whose request failed is asked again in a
+  later opening; within one opening an arXiv paper costs at most 3 requests and
+  an OpenAlex paper 1, because each OpenAlex call is billed. Any round with a
+  failure holds the next round for the failure's `retry-after`, a minute at most,
+  or about 5 s and then 10 s when it gave none. A `retry-after` over a minute leaves the failed
+  papers for the next opening. Closing or reopening the list cancels a pending
+  retry. A row with an otherwise empty meta line shows a category placeholder
+  while its saved-document read is out or its paper is still waiting for a
+  provider in this opening.
   Public-list visits keep their successful response in a tab-local cache of
   at most 32 history entries. Back renders the cached rows before route scroll
   restoration and revalidates in the background. A confirmed missing list clears
