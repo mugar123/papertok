@@ -23,6 +23,7 @@ const LABELS: Record<string, string> = {
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
   '/institution/verify': 'Verify your university email',
+  '/zotero/callback': 'Connect Zotero',
 }
 
 // These set document.title on their own (the SettingsPage pages); the

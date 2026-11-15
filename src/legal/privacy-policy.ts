@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-14';
+export const PRIVACY_POLICY_VERSION = '2026-11-15';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -83,8 +83,15 @@ export const PRIVACY_POLICY_VERSION = '2026-11-14';
  * updated" date, PRIVACY_POLICY_VERSION and this instant to the merge day
  * before merging; once Vercel reports the merge live, lower this instant to
  * that success time.
+ *
+ * Version 2026-11-15 adds Zotero: the encrypted key and the item and note keys
+ * kept while a reader has Zotero connected, what a send gives Zotero, and the
+ * usage event that records only whether a send worked. It takes its own
+ * version because 2026-11-14 went live with the feed refresh notice. This
+ * instant follows the rule above for a text that ships with its own pull
+ * request.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-14T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-15T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -100,8 +107,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "Refreshing one of your feeds also sends a compact filter of the papers you viewed and of the papers that feed had already shown you, so the feed starts with the papers you have not seen.",
-  "This browser also keeps metadata for papers in your lists and favorites, so their categories can appear without waiting for the network after a reload.",
+  "If you connect Zotero, an encrypted key to your Zotero library is kept with your account until you disconnect.",
+  "Sending a paper gives Zotero its citation and the highlights and notes you made on it, never the AI's highlights.",
+  "Usage analytics records only whether a send to Zotero worked, not which paper.",
 ];
 
 /**
@@ -114,22 +122,21 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 12 November: a refresh of one of the reader's own feeds
-  // sends the filter of the papers they viewed, which the page said a feed's
-  // request did not send; and the metadata of the papers in lists and
-  // favorites that the browser keeps (#502). Journals in a feed (#493) and
-  // the Most recent tab (#478) only name what the 12 November text covered.
-  lead: 'Refreshing one of your feeds',
+  // The changes since 14 November: connecting Zotero, what a send gives it,
+  // and the usage event about sends.
+  lead: 'If you connect Zotero',
   clauses: [
-    ['Refreshing one of your feeds', /Once you refresh it, its pages also send/],
-    ['a compact filter of the papers you viewed and of the papers that feed had already shown you', /also send a compact filter of the papers you viewed and of the papers that feed had already shown you/],
-    ['so the feed starts with the papers you have not seen', /so the feed starts with the papers you have not seen/],
-    ['This browser also keeps metadata for papers in your lists and favorites', /metadata for papers in your lists and favorites/],
-    ['so their categories can appear without waiting for the network after a reload', /so their categories can appear without waiting for the network after a reload/],
+    ['If you connect Zotero', /<td>If you connect Zotero: an encrypted access key to your Zotero library/],
+    ['kept with your account until you disconnect', /Disconnecting in <strong>Settings → Profile<\/strong> deletes the key/],
+    ['Sending a paper gives Zotero its citation', /Each send gives Zotero the paper's citation/],
+    ['the highlights and notes you made on it', /the highlights and notes you made on that paper/],
+    ["never the AI's highlights", /Highlights made by the AI are not sent\./],
+    ['Usage analytics', /Usage analytics is enabled by default/],
+    ['only whether a send to Zotero worked, not which paper', /Sending a paper to Zotero records only whether it was sent, not which paper\./],
   ],
   unsaid: [
-    [/open(s|ing)? (a|the|one of your|your) feeds?[^.]*filter/i, 'opening a feed sends no filter; a refresh does'],
-    [/(keeps|stores|stored)[^.]*filter/i, 'the server does not store the filter'],
+    [/group/i, 'only the personal library is reached'],
+    [/\bPDF\b|full text/i, "Zotero receives the citation and the reader's own highlights, never the paper's file"],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
   ],
 };
