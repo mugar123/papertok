@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../../context/auth-context.tsx';
+import { auth } from '../../services/firebase.ts';
+import { rememberListPapers } from '../../utils/profile-session-caches.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
@@ -67,6 +70,7 @@ export default function PublicPaperPage({
   const { paperKey = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const {
     likedPaperIds,
     savedPaperIds,
@@ -145,6 +149,13 @@ export default function PublicPaperPage({
     const id = interactionIdFor(loadedPaper);
     return id === loadedPaper.id ? loadedPaper : { ...loadedPaper, id };
   }, [loadedPaper, seededPaper, libraryCopyFor, interactionIdFor]);
+  useEffect(() => {
+    if (!hasCurrentResult || !paper?.id || !user?.uid || auth.currentUser?.uid !== user.uid) return;
+    if ((location.state?.stored && location.state?.storedBy === user.uid)
+      || likedPaperIds.has(paper.id) || savedPaperIds.has(paper.id) || readPaperIds.has(paper.id)) {
+      rememberListPapers(user.uid, { [paper.id]: paper }, 'interaction');
+    }
+  }, [hasCurrentResult, paper, user?.uid, location.state, likedPaperIds, savedPaperIds, readPaperIds]);
   // The library is what the alias table is built from; a signed-in reader
   // arriving by link has not opened a list yet, so it is asked for here.
   useEffect(() => {

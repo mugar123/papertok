@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 12 November 2026.</p>
+      <p class="lp-updated">Last updated 14 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -408,8 +408,11 @@
         the filter. A request for a page of one of your own feeds sends instead that feed's
         areas, categories, research topics, authors, journals and keywords, the identifiers of up to 24
         of the papers you most recently liked, saved or read at length, and the identifiers of
-        the papers you removed from that feed, so the page leaves them out. It sends no filter
-        of the papers you viewed; papers you marked Not interested are left out by your browser.
+        the papers you removed from that feed, so the page leaves them out. Until you refresh
+        the feed, it sends no filter of the papers you viewed. Once you refresh it, its pages
+        also send a compact filter of the papers you viewed and of the papers that feed had
+        already shown you, so the feed starts with the papers you have not seen. Papers you
+        marked Not interested are left out by your browser.
         A paper you liked, saved or opened that the catalogue does not have yet
         is added to it without any link to you. An author, institution, topic, journal, search or
         project you follow or put in one of your feeds is added to the list of things the
@@ -476,10 +479,11 @@
         application does not reload from scratch when you come back, the last 500 papers your
         account viewed in this browser, or highly cited papers the feed passed over because
         you had already liked, saved, read or dismissed them, so a reload skips them, and the
-        marks analytics
+        metadata for papers in your lists and favorites so their categories can appear
+        without waiting for the network after a reload, and the marks analytics
         uses to count a first visit per session, a first real use and a return a week later
         once each. They are cleared when you clear the site's
-        data, the viewed papers also when you sign out, and the analytics marks also when
+        data, the viewed papers and list metadata also when you sign out, and the analytics marks also when
         you turn analytics off. This browser also keeps, for each of your own feeds, the
         latest 200 papers you removed from it, under your account identifier. Unlike the
         things above, these are sent to the server with each request for that feed, so the

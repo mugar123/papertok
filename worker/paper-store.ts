@@ -18,6 +18,7 @@ import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
 import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
 import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
+import { isKeywordLane } from './keyword-lanes.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
 // (paper-harvest.ts), merged into one row per paper, enriched and embedded
@@ -1239,6 +1240,32 @@ export async function keepLiked(db: D1Database, workIds: number[], now = Date.no
     .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
 }
 
+/**
+ * Records a keyword lane's weekly listing (paper-sources.ts
+ * `harvestKeywordLane`): `paperIds` in the listing's order, the best match
+ * first. Each of the lane's rows a listed paper names takes the paper's place
+ * in the listing, from 1; a record the ingest turned away leaves a gap. The
+ * lane's other rows lose their rank: the listing no longer returns them. A
+ * paper the listing names twice, by two records of one work, keeps the better
+ * place.
+ */
+export async function writeLaneRanks(env: StoreEnv, lane: string, paperIds: string[]) {
+  const db = database(env);
+  const works = await findWorks(db, paperIds);
+  const ranks = new Map<number, number>();
+  paperIds.forEach((paperId, index) => {
+    const workId = works.get(paperId);
+    if (workId !== undefined && !ranks.has(workId)) ranks.set(workId, index + 1);
+  });
+  await db.batch([
+    // Named: without statistics the planner reads the whole lane by its primary key.
+    db.prepare('UPDATE work_lanes INDEXED BY work_lanes_rank SET rank = NULL WHERE lane = ? AND rank IS NOT NULL').bind(lane),
+    db.prepare(`UPDATE work_lanes SET rank = j.value ->> 'rank' FROM json_each(?) j
+      WHERE work_lanes.lane = ? AND work_lanes.work_id = j.value ->> 'id'`)
+      .bind(JSON.stringify([...ranks].map(([id, rank]) => ({ id, rank }))), lane),
+  ]);
+}
+
 // `arrival`, read only for a daily page: the earliest of the candidate's
 // arrivals in the asked lanes (`readCandidates`).
 interface Candidate { workId: number; published: string; lanes: string[]; arrival?: string }
@@ -1254,25 +1281,45 @@ interface Candidate { workId: number; published: string; lanes: string[]; arriva
 // the candidate's `arrival` is when it entered the lane, or its publication
 // date when it came with the lane's first load, and `published` stays its
 // publication date.
-async function readCandidates(db: D1Database, lanes: string[], byArrival: boolean): Promise<Candidate[]> {
+// `keywordSince`: of a keyword lane, only the papers published since then. The
+// lane also keeps its keyword's best matches of any year, which are a custom
+// feed's to read and not Following's.
+async function readCandidates(db: D1Database, lanes: string[], byArrival: boolean, keywordSince?: string): Promise<Candidate[]> {
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
   const share = (lane: string) => (AREA_LANES.has(lane)
     ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
     : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
-  if (!byArrival) {
-    const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
-      'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
-    ).bind(lane, share(lane))));
-    return mergeLaneRows(lanes, perLane);
-  }
+  const read = (columns: string, order: string) => db.batch<{ work_id: number; published: string; arrival?: string }>(lanes.map(lane => (keywordSince && isKeywordLane(lane)
+    ? db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY ${order} LIMIT ?`).bind(lane, keywordSince, share(lane))
+    : db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? ORDER BY ${order} LIMIT ?`).bind(lane, share(lane)))));
+  if (!byArrival) return mergeLaneRows(lanes, await read('work_id, published', 'published DESC'));
   // In the order of `work_lanes_arrival`, which reads only the share. One
   // ingest files its papers at one instant (a page of arXiv's harvest, or
   // every page of another source's harvest of a lane), and the share keeps
   // the later publications of papers that arrived at once.
-  const perLane = await db.batch<{ work_id: number; arrival: string; published: string }>(lanes.map(lane => db.prepare(
-    'SELECT work_id, COALESCE(arrived, published) AS arrival, published FROM work_lanes WHERE lane = ? ORDER BY COALESCE(arrived, published) DESC, published DESC LIMIT ?',
-  ).bind(lane, share(lane))));
-  return mergeLaneRows(lanes, perLane);
+  return mergeLaneRows(lanes, await read('work_id, COALESCE(arrived, published) AS arrival, published', 'COALESCE(arrived, published) DESC, published DESC'));
+}
+
+/**
+ * The papers these keyword lanes rank, each with its rank in the lane's last
+ * weekly listing (`writeLaneRanks`), read through `work_lanes_rank`, which
+ * the statement names (without statistics the planner reads the whole lane):
+ * at most the listing's 50 rows a lane. A paper several of the lanes rank takes its
+ * best rank, in the first of those lanes on a tie.
+ */
+async function readKeywordRanks(db: D1Database, lanes: string[]) {
+  const placed = new Map<number, { lane: string; rank: number; published: string }>();
+  if (lanes.length === 0) return placed;
+  const perLane = await db.batch<{ work_id: number; rank: number; published: string }>(lanes.map(lane => db.prepare(
+    'SELECT work_id, rank, published FROM work_lanes INDEXED BY work_lanes_rank WHERE lane = ? AND rank IS NOT NULL',
+  ).bind(lane)));
+  perLane.forEach(({ results }, index) => {
+    for (const row of results) {
+      const held = placed.get(row.work_id);
+      if (!held || row.rank < held.rank) placed.set(row.work_id, { lane: lanes[index], rank: row.rank, published: row.published });
+    }
+  });
+  return placed;
 }
 
 /**
@@ -1881,6 +1928,38 @@ export function interleaveByWeight(lists: RankedCandidate[][], weights: number[]
   }
 }
 
+// The reader's likes reorder a keyword's papers only among each ten of its
+// ranks, a page of the weekly listing as OpenAlex pages it: in "Best match"
+// the keyword decides the order and the likes break its near-ties.
+const KEYWORD_TIER = 10;
+
+/**
+ * "Best match" for a feed with keywords: `ranks`, with the papers a keyword
+ * lane ranks (`placed`, `readKeywordRanks`) taken out into a queue for each
+ * lane of `keywordLanes`, by rank. Within each ten ranks, the paper closest to
+ * the reader's likes comes first (`semanticScore`); without likes the rank
+ * alone decides, whatever the reader rejected (a rejection takes the score
+ * below zero, which counts as zero). The other papers keep the order they came in. The keywords' queues
+ * take turns with each other, and with those other papers when the feed has
+ * another ingredient (`turnsWithRest`); a feed of keywords alone puts them
+ * after every ranked paper. A queue that runs out gives up its turns.
+ */
+export function inKeywordTurns(ranks: RankedCandidate[], placed: ReadonlyMap<number, { lane: string; rank: number }>, keywordLanes: string[], turnsWithRest: boolean): RankedCandidate[] {
+  const queues: RankedCandidate[][] = keywordLanes.map(() => []);
+  const rest: RankedCandidate[] = [];
+  for (const candidate of ranks) {
+    const place = placed.get(candidate.workId);
+    (queues[place ? keywordLanes.indexOf(place.lane) : -1] ?? rest).push(candidate);
+  }
+  const rankOf = (candidate: RankedCandidate) => placed.get(candidate.workId)!.rank;
+  const tierOf = (candidate: RankedCandidate) => Math.floor((rankOf(candidate) - 1) / KEYWORD_TIER);
+  const closeness = (candidate: RankedCandidate) => Math.max(0, candidate.semanticScore ?? 0);
+  for (const queue of queues) {
+    queue.sort((a, b) => tierOf(a) - tierOf(b) || closeness(b) - closeness(a) || rankOf(a) - rankOf(b));
+  }
+  return turnsWithRest ? inTurns([...queues, rest]) : [...inTurns(queues), ...rest];
+}
+
 const AREAS = new Set(LEAVES.map(leaf => leaf.area));
 const areasOfLeaves = (categories: readonly string[]) => new Set(LEAVES.filter(leaf => categories.includes(leaf.id)).map(leaf => leaf.area));
 
@@ -1962,19 +2041,28 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const grouped = new Set(workIdsOf(query.groups.flatMap(group => group.positiveIds)));
   const ungrouped = positiveIds.filter(id => !grouped.has(id));
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
-  const [candidates, notableRead, signals, ungroupedWorks, ungroupedAreaLanes] = await Promise.all([
+  // "Best match" of a custom feed follows its keywords' ranks (`inKeywordTurns`).
+  const keywordLanes = query.exact && query.order === 'relevance' ? lanes.filter(isKeywordLane) : [];
+  const [dated, notableRead, signals, ungroupedWorks, ungroupedAreaLanes, placed] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
     // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
     // The window is the corpus's own: what is past it has been evicted.
-    readCandidates(db, lanes, query.order === 'daily'),
+    // Only an exact request, a custom feed's, reads a keyword lane's older papers.
+    readCandidates(db, lanes, query.order === 'daily', query.exact ? undefined : daysFromNow(-CORPUS_DAYS, now)),
     notableLanes.length ? readNotableCandidates(db, notableLanes, now, timings) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
     readWorks(db, ungrouped),
     readAreaLanes(db, ungrouped),
+    readKeywordRanks(db, keywordLanes),
   ]);
+  // A lane's share of the candidates is its newest papers, and a keyword's
+  // best matches are of any year: a ranked paper the share left out is
+  // offered all the same.
+  const read = new Set(dated.map(candidate => candidate.workId));
+  const candidates: Candidate[] = [...dated, ...[...placed].flatMap(([workId, { lane, published }]) => (read.has(workId) ? [] : [{ workId, published, lanes: [lane] }]))];
   // The notable check runs inside this wave, and is counted in both.
   timings?.since('wave1', step);
   timings?.count('candidates', candidates.length);
@@ -2028,9 +2116,10 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // Without a positive or negative vector, recency needs no candidate vectors.
     // With rejections alone, a page asked by number needs only the vectors
     // that decide its ranks; a walk past seen papers can reach any rank, and
-    // so can a daily page, whose days reorder the ranks the scores decide.
+    // so can a daily page, whose days reorder the ranks the scores decide, and
+    // a feed's keywords, whose turns do.
     !likes.length && !negatives.length ? true
-      : !likes.length && !query.skipsSeen && !offeredNotable.length && query.order !== 'daily'
+      : !likes.length && !query.skipsSeen && !offeredNotable.length && query.order !== 'daily' && !placed.size
         // With the categories in turns, a group's first ranks hold the first
         // ranks of each of its categories too.
         ? readDecidingVectors(readRound, offered, turnsWithoutLikes
@@ -2046,11 +2135,12 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   if (vectorRounds) timings?.count('vectorRounds', vectorRounds);
   step = Date.now();
   // Each group ranked by its own likes, then the page shared by weight.
-  const ranks = interleaveByWeight(members.map((rows, index) => {
+  const scored = interleaveByWeight(members.map((rows, index) => {
     const ranked = rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order });
     return (turnsWithoutLikes && !groupLikes[index].length ? categoriesInTurns(ranked, query.groups[index].categories) : ranked)
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }));
   }), query.groups.map(group => group.weight));
+  const ranks = placed.size ? inKeywordTurns(scored, placed, keywordLanes, lanes.some(lane => !isKeywordLane(lane))) : scored;
   // A daily page goes day by day, the newest arrival's day first (UTC, by the
   // candidate's `arrival`); within a day, the ranks keep the order above (a
   // stable sort): with no recency, by score, then by publication date.

@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
-  FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport,
+  FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, inKeywordTurns, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport, writeLaneRanks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { FeedTimings } from './feed-timings.ts';
@@ -19,6 +19,7 @@ import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
+import { createQueryTopic } from '../src/utils/topic-navigation.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { mergeFeedAbstracts, notablePlaces, placeNotableCards } from '../src/utils/feed-enrichment.ts';
 import { sourceAttribution } from '../src/utils/source-attribution.ts';
@@ -3482,4 +3483,180 @@ test('a page with likes, or one that skips seen papers, reads every candidate ve
   assert.equal(rows(), 1_273 + 1 + 3);
   await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'cs.CL'], negativeIds: rejections, seen: feedSeenFilter([]), skipsSeen: true, pageSize: 5 }), { now: NOW });
   assert.equal(rows(), 2 * (1_273 + 3) + 1);
+});
+
+// ─── Keyword lanes (`query:<text>`) ───
+
+const KAGOME = 'query:kagome superconductors';
+// The rank each paper of a lane holds, by the id readers hold.
+const ranksOf = (db: ReturnType<typeof testD1>['db'], lane: string) => Object.fromEntries((db.prepare(
+  "SELECT w.paper ->> '$.id' AS id, l.rank FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = ?",
+).all(lane) as Array<{ id: string; rank: number | null }>).map(row => [row.id, row.rank]));
+
+test('a weekly listing ranks the papers it names and unranks the ones it dropped', async () => {
+  const { env, db } = corpus();
+  const [idA, idB, idC] = ['2610.00301', '2610.00302', '2610.00303'];
+  await ingestPapers(env, [idA, idB, idC].map(id => ({ paper: lanePaper(id, `A kagome superconductor ${id}`), lanes: [KAGOME] })), { now: NOW });
+  await writeLaneRanks(env, KAGOME, [idB, idA]);
+  assert.deepEqual(ranksOf(db, KAGOME), { [idB]: 1, [idA]: 2, [idC]: null });
+  // A record the ingest turned away keeps its place in the listing: the ranks have a gap.
+  await writeLaneRanks(env, KAGOME, [idC, 'W-not-stored', idB]);
+  assert.deepEqual(ranksOf(db, KAGOME), { [idC]: 1, [idB]: 3, [idA]: null });
+});
+
+test('ranking one keyword lane leaves the other lanes of its papers alone', async () => {
+  const { env, db } = corpus();
+  const idA = '2610.00311';
+  await ingestPapers(env, [{ paper: lanePaper(idA, 'A kagome superconductor'), lanes: [KAGOME, 'cs.LG'] }], { now: NOW });
+  await writeLaneRanks(env, KAGOME, [idA]);
+  await writeLaneRanks(env, 'query:other keyword', [idA]);
+  assert.equal(ranksOf(db, KAGOME)[idA], 1);
+  assert.equal(ranksOf(db, 'cs.LG')[idA], null);
+});
+
+test('a listing that names one paper twice, by two of its ids, gives it the better rank', async () => {
+  const { env, db } = corpus();
+  const [idA, idB] = ['2610.00321', '2610.00322'];
+  await ingestPapers(env, [
+    { paper: { ...lanePaper(idA, 'A kagome superconductor'), doi: '10.1000/kagome.321' }, lanes: [KAGOME] },
+    { paper: lanePaper(idB, 'Another kagome superconductor'), lanes: [KAGOME] },
+  ], { now: NOW });
+  await writeLaneRanks(env, KAGOME, ['doi:10.1000/kagome.321', idB, idA]);
+  assert.deepEqual(ranksOf(db, KAGOME), { [idA]: 1, [idB]: 2 });
+});
+
+// A custom feed's keyword and a followed search share the lane; the follow is
+// built as the app builds a keyword ingredient's (`corpusRequestOf`).
+const keywordFollow = (query: string) => ({ type: 'topic', canonicalId: createQueryTopic(query)!.id, displayName: query, metadata: { query } });
+// Papers of a keyword lane's listings, filed as its harvest files them: old ones kept, none as news.
+const fileKeywordPapers = (env: Parameters<typeof ingestPapers>[0], lane: string, papers: Array<[id: string, published: string]>) => ingestPapers(env,
+  papers.map(([id, published]) => ({ paper: lanePaper(id, `A study ${id} of ${lane.slice('query:'.length)}`, `${published}T00:00:00.000Z`), lanes: [lane] })),
+  { now: NOW, keepUntil: daysFromNow(28, NOW), firstLoad: lane });
+
+test('a keyword lane gives Following its last 90 days and a custom feed all of it', async () => {
+  const { env } = corpus();
+  const [from2019, lastWeek] = ['1906.00401', '2610.00402'];
+  await fileKeywordPapers(env, KAGOME, [[from2019, '2019-06-11'], [lastWeek, '2026-10-16']]);
+  await writeLaneRanks(env, KAGOME, [from2019]);
+  const follows = [keywordFollow('kagome superconductors')];
+  for (const order of ['recent', 'daily']) {
+    const following = await readFeedPage(env, parseFeedRequest({ follows, order }), { now: NOW });
+    assert.deepEqual(following.map(item => item.id), [lastWeek], order);
+  }
+  const feed = await readFeedPage(env, parseFeedRequest({ follows, exact: true, order: 'daily' }), { now: NOW });
+  assert.deepEqual(feed.map(item => item.id), [lastWeek, from2019]);
+});
+
+// "Best match" of a custom feed (`exact`, `order: 'relevance'`): the keyword
+// decides the order and the reader's likes only reorder each ten of its ranks
+// (Nicolás, 2026-11-14).
+const ranked = (workId: number, semanticScore = 0) => ({ workId, lanes: [], semanticScore });
+
+test('keyword papers come in their rank order, the likes only reordering inside each ten', () => {
+  const placed = new Map(Array.from({ length: 12 }, (_, index) => [index + 1, { lane: 'query:a', rank: index + 1 }]));
+  const ranks = [ranked(12, 0.9), ranked(7, 0.8), ranked(3, 0.5), ...[1, 2, 4, 5, 6, 8, 9, 10, 11].map(id => ranked(id))];
+  assert.deepEqual(inKeywordTurns(ranks, placed, ['query:a'], false).map(rank => rank.workId), [7, 3, 1, 2, 4, 5, 6, 8, 9, 10, 12, 11]);
+});
+
+test('without likes the order is the rank, then the unranked papers as they came', () => {
+  const placed = new Map([[1, { lane: 'query:a', rank: 2 }], [2, { lane: 'query:a', rank: 1 }]]);
+  assert.deepEqual(inKeywordTurns([ranked(9), ranked(1), ranked(8), ranked(2)], placed, ['query:a'], false).map(rank => rank.workId), [2, 1, 9, 8]);
+});
+
+test('a keyword takes turns with the rest of a mixed feed, and two keywords with each other', () => {
+  const placed = new Map([[1, { lane: 'query:a', rank: 1 }], [2, { lane: 'query:a', rank: 2 }], [3, { lane: 'query:b', rank: 1 }]]);
+  const ranks = [ranked(7), ranked(8), ranked(9), ranked(1), ranked(2), ranked(3)];
+  assert.deepEqual(inKeywordTurns(ranks, placed, ['query:a', 'query:b'], true).map(rank => rank.workId), [1, 3, 7, 2, 8, 9]);
+  assert.deepEqual(inKeywordTurns(ranks, placed, ['query:a', 'query:b'], false).map(rank => rank.workId), [1, 3, 2, 7, 8, 9]);
+});
+
+const KAGOME_FOLLOW = keywordFollow('kagome superconductors');
+const [FROM_2015, FROM_2021, LAST_WEEK] = ['1503.00411', '2104.00412', '2610.00413'];
+// The lane a week into its life: two papers of its any-age listing and a novelty outside it.
+async function kagomeFeed() {
+  const { env, db } = corpus();
+  await fileKeywordPapers(env, KAGOME, [[FROM_2015, '2015-03-02'], [LAST_WEEK, '2026-10-16'], [FROM_2021, '2021-04-19']]);
+  await writeLaneRanks(env, KAGOME, [FROM_2015, FROM_2021]);
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(env, parseFeedRequest({ exact: true, ...body }), { now: NOW })).map(item => item.id);
+  return { env, db, served };
+}
+
+test('Best match of a keyword feed is the catalogue in its rank order, whatever the dates', async () => {
+  const { served } = await kagomeFeed();
+  assert.deepEqual(await served({ follows: [KAGOME_FOLLOW], order: 'relevance' }), [FROM_2015, FROM_2021, LAST_WEEK]);
+});
+
+test('a paper two keywords rank comes once, at its better rank', async () => {
+  const { env } = corpus();
+  const WAVES = 'query:charge density waves';
+  const [onlyKagome, shared, onlyWaves] = ['1503.00421', '1704.00422', '1905.00423'];
+  await fileKeywordPapers(env, KAGOME, [[onlyKagome, '2015-03-02'], [shared, '2017-04-03']]);
+  await fileKeywordPapers(env, WAVES, [[shared, '2017-04-03'], [onlyWaves, '2019-05-06']]);
+  // Third of the first keyword's listing, behind a record the ingest turned away; first of the second's.
+  await writeLaneRanks(env, KAGOME, [onlyKagome, 'W-not-stored', shared]);
+  await writeLaneRanks(env, WAVES, [shared, onlyWaves]);
+  const page = await readFeedPage(env, parseFeedRequest({ follows: [KAGOME_FOLLOW, keywordFollow('charge density waves')], exact: true, order: 'relevance' }), { now: NOW });
+  // In the second keyword's turn, ahead of that keyword's second paper: at its third place in the first's it would come last.
+  assert.deepEqual(page.map(item => item.id), [onlyKagome, shared, onlyWaves]);
+});
+
+test("a keyword's paper that one of the feed's categories also holds comes once, in the keyword's turn", async () => {
+  const { env, served } = await kagomeFeed();
+  await ingestPapers(env, [
+    { paper: lanePaper(FROM_2021, `A study ${FROM_2021} of kagome superconductors`, '2021-04-19T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00431', 'A quantum walk', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00432', 'A quantum channel', '2026-10-19T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW, keepUntil: daysFromNow(28, NOW), firstLoad: true });
+  assert.deepEqual(await served({ categories: ['quant-ph'], follows: [KAGOME_FOLLOW], order: 'relevance' }), [FROM_2015, '2610.00431', FROM_2021, '2610.00432', LAST_WEEK]);
+});
+
+test("a ranked paper older than the lane's share of candidates is still offered", async () => {
+  const { db, served } = await kagomeFeed();
+  // More unranked papers of the last weeks than a page reads of one lane.
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(NOW - id * 600_000).toISOString();
+    insertWork.run(1_000_000 + id, JSON.stringify({ id: `2610.9${String(id).padStart(4, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run(KAGOME, 1_000_000 + id, published);
+  }
+  db.exec('COMMIT');
+  assert.deepEqual((await served({ follows: [KAGOME_FOLLOW], order: 'relevance' })).slice(0, 3), [FROM_2015, FROM_2021, '2610.90001']);
+});
+
+test('a rejection alone does not move a keyword feed off its rank order', async () => {
+  const { db, served } = await kagomeFeed();
+  // The best match is a near copy of the rejected paper: without likes it stays first.
+  const insert = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?");
+  insert.run(Buffer.from(quantize([1, 0]).buffer), `arxiv:${LAST_WEEK}`);
+  insert.run(Buffer.from(quantize([1, 0]).buffer), `arxiv:${FROM_2015}`);
+  insert.run(Buffer.from(quantize([0, 1]).buffer), `arxiv:${FROM_2021}`);
+  assert.deepEqual(await served({ follows: [KAGOME_FOLLOW], order: 'relevance', negativeIds: [LAST_WEEK] }), [FROM_2015, FROM_2021, LAST_WEEK]);
+});
+
+// Without likes a page reads only the vectors that decide its first ranks by
+// score (`readDecidingVectors`); the keyword's turns reorder them.
+test('a keyword feed with rejections and no likes ranks what a read of every vector gives', async () => {
+  const { env, rejections } = coldPageCorpus();
+  await fileKeywordPapers(env, KAGOME, [[FROM_2015, '2015-03-02']]);
+  await writeLaneRanks(env, KAGOME, [FROM_2015]);
+  const keptBy = async (body: Parameters<typeof parseFeedRequest>[0]) => {
+    const kept: KeptRanking[] = [];
+    await readFeedPage(env, parseFeedRequest(body), { now: NOW, cache: { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } } });
+    return { decided: kept[0].decided, ranks: kept[0].ranks.map(rank => rank && [rank.workId, rank.semanticScore]) };
+  };
+  const body = { categories: ['cs.LG', 'cs.CL'], follows: [KAGOME_FOLLOW], exact: true, order: 'relevance', negativeIds: rejections, pageSize: 30 };
+  const everyVector = await keptBy({ ...body, seen: feedSeenFilter([]), skipsSeen: true });
+  for (const page of [0, 3, 20]) assert.deepEqual(await keptBy({ ...body, page }), everyVector, `page ${page}`);
+});
+
+test('Newest first of a keyword feed, and Best match of a feed without keywords, are unchanged', async () => {
+  const { env, served } = await kagomeFeed();
+  assert.deepEqual(await served({ follows: [KAGOME_FOLLOW], order: 'daily' }), [LAST_WEEK, FROM_2021, FROM_2015]);
+  await ingestPapers(env, [
+    { paper: lanePaper('2610.00441', 'A quantum walk', '2026-10-18T00:00:00.000Z'), lanes: ['quant-ph'] },
+    { paper: lanePaper('2610.00442', 'A quantum channel', '2026-10-20T00:00:00.000Z'), lanes: ['quant-ph'] },
+  ], { now: NOW });
+  assert.deepEqual(await served({ categories: ['quant-ph'], order: 'relevance' }), ['2610.00442', '2610.00441']);
 });
