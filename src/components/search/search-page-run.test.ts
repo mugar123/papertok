@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { SearchProviders, SearchScope, SearchSnapshot } from '../../services/entity-search-service.ts';
 import { searchEntities } from '../../services/entity-search-service.ts';
 import { OpenAlexRequestError } from '../../services/open-alex-client.ts';
+import { searchPapersAcrossSources } from '../../services/paper-search-service.ts';
 import type { SearchRun } from './search-page-run.ts';
 import { openSearchScope, scopeAnswerPaints, searchPageIssue } from './search-page-run.ts';
 import { outageAffectsFilter } from '../../utils/search-outage.ts';
@@ -10,6 +11,42 @@ import { outageAffectsFilter } from '../../utils/search-outage.ts';
 const author = { id: 'https://openalex.org/A1', display_name: 'Someone' };
 const institution = { id: 'https://ror.org/02f40zc51', display_name: 'University of Salamanca' };
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('an arXiv failure reaches the search notice with its source and clears on retry', async () => {
+  const title = "The Last Harness You'll Ever Build";
+  let failing = true;
+  const run = () => searchEntities(title, {
+    signal: new AbortController().signal,
+    onUpdate() {},
+    sources: {
+      papers: (query, signal) => searchPapersAcrossSources(query, {
+        signal,
+        providers: {
+          searchOpenAlex: async () => ({ papers: [] }),
+          searchArxiv: async () => {
+            if (failing) throw Object.assign(new Error('arXiv rate limited'), { status: 429 });
+            return [{ id: '2604.21003', arxivId: '2604.21003', title, abstract: '', authors: [{ name: 'Haebin Seong' }], sources: { primary: 'arxiv', enrichedBy: [] } }];
+          },
+        },
+      }),
+      authors: async () => [], topics: async () => [], institutions: async () => [], projects: async () => [],
+    },
+  }).ask('papers');
+  const failed = await run();
+  assert.deepEqual(failed.results.papers, []);
+  assert.deepEqual(failed.issues.map(issue => [issue.section, issue.reason]), [['papers', 'error']]);
+  const notice = searchPageIssue(failed.issues, { rateLimited: false, retryAfterMs: 0 }, Date.now());
+  assert.deepEqual(notice?.sources, ['arxiv']);
+  assert.deepEqual(notice?.sectionsBySource, { arxiv: ['papers'] });
+  assert.equal(notice?.involvesOpenAlex, false);
+  assert.equal(notice?.rateLimited, false);
+  assert.equal(outageAffectsFilter(notice, 'papers'), true);
+  assert.equal(outageAffectsFilter(notice, 'authors'), false);
+  failing = false;
+  const retried = await run();
+  assert.deepEqual(retried.results.papers.map(paper => paper.arxivId), ['2604.21003']);
+  assert.deepEqual(retried.issues, []);
+});
 
 /** A run of the real search over stubbed providers, started for `scope` as the page starts one. */
 function startRun(scope: SearchScope, sources: Partial<SearchProviders>): SearchRun {

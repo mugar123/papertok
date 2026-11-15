@@ -33,7 +33,7 @@ export const SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Stable order, so a banner naming two providers never reshuffles them. */
-const SOURCE_ORDER = ['openalex', 'openreview', 'ror', 'openaire'];
+const SOURCE_ORDER = ['openalex', 'arxiv', 'openreview', 'ror', 'openaire'];
 
 /**
  * What the banner has to say, as facts rather than sentences. Returns null when

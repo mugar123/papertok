@@ -442,3 +442,12 @@ test('suggestion expansion preserves acronym phrases, numbers and default feed q
   assert.doesNotMatch(filter('C++'), /[~*]/);
   assert.match(filter('atte'), /atte\*/);
 });
+
+test('title suggestions preserve contractions in literal searches', () => {
+  const adapter = new OpenAlexAdapter();
+  for (const title of ["The Last Harness You'll Ever Build", 'The Last Harness You’ll Ever Build']) {
+    const filter = new URL(adapter.buildSearchUrl(title, 1, { typeahead: true })).searchParams.get('filter');
+    assert.ok(filter?.startsWith('title.search.exact:"the last harness you\'ll ever build"'));
+    assert.ok(!filter?.includes('you ll'));
+  }
+});
