@@ -1,15 +1,12 @@
 type AnnotationPosition = { sectionId?: string; paragraphIndex?: number };
 
 /**
- * Ordering and filtering for the annotation rail.
+ * Ordering for the reader's notes.
  *
- * Kept pure and apart from the reader because both rules are easy to state and
- * easy to get subtly wrong: the rail has to read top-to-bottom like a margin,
- * which means document order and not arrival order, and the filter has to
- * distinguish two kinds of thing that live in one collection.
+ * Kept pure and apart from the reader because the rule is easy to state and
+ * easy to get subtly wrong: the notes read top to bottom like a margin, which
+ * means document order and not arrival order.
  */
-
-export const ANNOTATION_FILTERS = Object.freeze(['all', 'mine', 'ai']);
 
 /**
  * Where each section sits in the rewrite, by id. Annotations carry a
@@ -63,19 +60,4 @@ export function answerSlot(visible: AnnotationPosition[] = [], passage: Annotati
   if (!passage) return null;
   const standIn = { sectionId: passage.sectionId, paragraphIndex: passage.paragraphIndex };
   return sortAnnotations([...visible, standIn], sectionOrder).indexOf(standIn);
-}
-
-/**
- * `mine` is everything you made — a bare highlight and a highlight you wrote on
- * are both yours — and `ai` is only what the model answered.
- */
-export function filterAnnotations<T extends { kind?: string }>(annotations: readonly T[] = [], filter = 'all') {
-  if (filter === 'ai') return annotations.filter(item => item?.kind === 'ai');
-  if (filter === 'mine') return annotations.filter(item => item?.kind !== 'ai');
-  return annotations.slice();
-}
-
-export function countAnnotations(annotations: ReadonlyArray<{ kind?: string }> = []) {
-  const ai = filterAnnotations(annotations, 'ai').length;
-  return { all: annotations.length, mine: annotations.length - ai, ai };
 }

@@ -313,7 +313,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
             {/* The tools are the loaded paper's: none of them shows while it is asked for. */}
             {fullText !== undefined && (
-            <PaperDock paper={paper} doc={fullText} scroll={showsText ? textScroll : null} fromCard={menu} onLeave={leaveThen} contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
+            <PaperDock scroll={showsText ? textScroll : null} menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen }} contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}>
                 {showsText && (fullText?.abstract.length ?? 0) > 0 && (
                   <Toggle className="pdf-dock-toggle" pressed={abstractShown} onPressedChange={setAbstractShown} aria-label="Abstract" title={abstractShown ? 'Hide the abstract' : 'Show the abstract'}>
                     {abstractShown ? <Eye size={18} aria-hidden="true" /> : <EyeSlash size={18} aria-hidden="true" />}

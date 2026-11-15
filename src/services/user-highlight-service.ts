@@ -235,10 +235,10 @@ export async function removeUserHighlight(uid: string | null | undefined, highli
  * rendered with only the anchors that belong to it.
  */
 export function indexHighlightsByParagraph(
-  highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'endParagraphIndex' | 'endQuote' | 'kind'>> = [],
+  highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'endParagraphIndex' | 'endQuote' | 'kind' | 'color'>> = [],
   { level, language, paragraphText }: { level?: string; language?: string; paragraphText?: (sectionId: string, paragraphIndex: number) => string | null } = {},
 ) {
-  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; fresh?: boolean; pending?: boolean }>>();
+  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; color?: HighlightColor; fresh?: boolean; pending?: boolean }>>();
   for (const highlight of highlights) {
     if (level && highlight.level !== level) continue;
     if (language && highlight.language !== language) continue;
@@ -249,7 +249,7 @@ export function indexHighlightsByParagraph(
     const kind = highlight.kind === 'ai' ? 'ai' : 'user';
     for (const segment of passageSegments(highlight, paragraphText)) {
       const key = `${highlight.sectionId}:${segment.paragraphIndex}`;
-      index.set(key, [...(index.get(key) || []), { id: highlight.id, quote: segment.quote, kind, source: kind }]);
+      index.set(key, [...(index.get(key) || []), { id: highlight.id, quote: segment.quote, kind, source: kind, ...(kind === 'user' ? { color: highlightColor(highlight) } : {}) }]);
     }
   }
   return index;

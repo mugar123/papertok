@@ -1,6 +1,7 @@
-export interface HighlightInput { quote?: unknown; kind?: string; source?: string; id?: string | null; fresh?: boolean; pending?: boolean; proposed?: boolean }
-export interface HighlightRange { start: number; end: number; kind: string; source: string; id: string | null; fresh: boolean; pending: boolean; proposed: boolean }
-type TextSegment = { type: 'text'; value: string; start: number; end: number; kind?: never; id?: never; source?: never; under?: never }
+import type { HighlightColor } from '../services/user-highlight-service.ts';
+export interface HighlightInput { quote?: unknown; kind?: string; source?: string; id?: string | null; color?: HighlightColor | null; fresh?: boolean; pending?: boolean; proposed?: boolean }
+export interface HighlightRange { start: number; end: number; kind: string; source: string; id: string | null; color: HighlightColor | null; fresh: boolean; pending: boolean; proposed: boolean }
+type TextSegment = { type: 'text'; value: string; start: number; end: number; kind?: never; id?: never; source?: never; color?: never; under?: never }
   | ({ type: 'mark'; value: string; under: string[] } & HighlightRange);
 export type HighlightMath = Omit<HighlightRange, 'kind' | 'source'> & { type: 'math'; value: string; raw: string; display: boolean; kind: string | null; source: string | null; under: string[] };
 export type HighlightChunk = TextSegment | HighlightMath;
@@ -153,6 +154,7 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
       kind: highlight?.kind || 'finding',
       source,
       id: highlight?.id || null,
+      color: highlight?.color || null,
       // Transient render states, carried rather than stored: the pen laying its
       // colour down on a mark that was just made, and the provisional wash on a
       // selection still deciding what it wants to become.
@@ -212,6 +214,7 @@ export function segmentTextChunk(chunkStart: number, value: string, ranges: High
       kind: top.kind,
       source: top.source,
       id: top.id,
+      color: top.color,
       fresh: top.fresh,
       pending: top.pending,
       proposed: top.proposed,
@@ -256,6 +259,7 @@ export function buildHighlightPlan(text: unknown, highlights: HighlightInput[] =
       kind: covering?.kind || null,
       source: covering?.source || null,
       id: covering?.id || null,
+      color: covering?.color || null,
       fresh: Boolean(covering?.fresh),
       pending: Boolean(covering?.pending),
       proposed: Boolean(covering?.proposed),

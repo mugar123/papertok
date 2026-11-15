@@ -15,23 +15,21 @@ import { paperActions, shareMethod } from '../feed/paper-actions.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { areaAccentForPaper } from '../../utils/area-accent.ts';
+import './paper-dock.css';
+
+type DockView = 'closed' | 'contents' | 'actions' | 'about';
+type DockMenuSource = { paper: Paper; doc: FullText | null | undefined; fromCard: ReaderMenu; onLeave: (then: () => void) => void };
 
 // The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
-export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, children }: {
-  paper: Paper;
-  doc: FullText | null | undefined;
+export function PaperDock({ scroll, contents, menu, children }: {
   scroll: HTMLElement | null;
   contents: ((close: () => void) => ReactNode) | null;
-  fromCard: ReaderMenu;
-  onLeave: (then: () => void) => void;
+  menu?: DockMenuSource;
   children: ReactNode;
 }) {
-  const card = useSyncExternalStore(fromCard.subscribe, fromCard.snapshot);
-  const [view, setView] = useState<'closed' | 'contents' | 'actions' | 'about'>('closed');
+  const [view, setView] = useState<DockView>('closed');
   const open = view !== 'closed';
   const [shows, setShows] = useState<'contents' | 'menu'>('menu');
-  const signedIn = Boolean(useAuth().user);
-  const { trackEvent } = useAnalyticsConsent();
   const [stowed, setStowed] = useState(false);
   const lastTop = useRef(0);
   useScrollFrame(scroll, () => {
@@ -98,7 +96,49 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
     if (!next) setView('closed');
   };
   const close = () => setView('closed');
-  const menu = (
+  return (
+    <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverPortal keepMounted container={root}>
+          <PopoverPositioner
+            anchor={dock}
+            side="top"
+            align="center"
+            sideOffset={({ anchor }) => -anchor.height}
+            collisionAvoidance={{ side: 'none', align: 'none' }}
+            className="pdf-info-positioner"
+          >
+            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : undefined}>
+              <div className="pdf-info-body">
+                {shows === 'contents' && contents ? contents(close) : menu && <DockMenu {...menu} view={view} setView={setView} />}
+              </div>
+            </PopoverPopup>
+          </PopoverPositioner>
+        </PopoverPortal>
+        <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock} data-info-open={open || undefined}>
+          {contents && (
+            <PopoverTrigger data-shows="contents" render={<Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" />}>
+              <ListBullets size={18} aria-hidden="true" />
+            </PopoverTrigger>
+          )}
+          {children}
+          {menu && (
+            <PopoverTrigger data-shows="menu" render={<Button variant="ghost" size="icon" aria-label="More actions" title="More actions" />}>
+              <DotsThree size={18} weight="bold" aria-hidden="true" />
+            </PopoverTrigger>
+          )}
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+function DockMenu({ paper, doc, fromCard, onLeave, view, setView }: DockMenuSource & { view: DockView; setView: (view: DockView) => void }) {
+  const card = useSyncExternalStore(fromCard.subscribe, fromCard.snapshot);
+  const signedIn = Boolean(useAuth().user);
+  const { trackEvent } = useAnalyticsConsent();
+  const close = () => setView('closed');
+  return (
     <PaperMenuBody
       title={paper.title}
       url={card.shareUrl}
@@ -126,38 +166,5 @@ export function PaperDock({ paper, doc, scroll, contents, fromCard, onLeave, chi
       } : null}
       renderTitle={heading => <PopoverTitle className="pc-share-sheet-title pdf-menu-title">{heading}</PopoverTitle>}
     />
-  );
-  return (
-    <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
-      <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverPortal keepMounted container={root}>
-          <PopoverPositioner
-            anchor={dock}
-            side="top"
-            align="center"
-            sideOffset={({ anchor }) => -anchor.height}
-            collisionAvoidance={{ side: 'none', align: 'none' }}
-            className="pdf-info-positioner"
-          >
-            <PopoverPopup ref={panel} className="pdf-info" data-shows={shows} aria-label={shows === 'contents' ? 'Contents' : undefined}>
-              <div className="pdf-info-body">
-                {shows === 'contents' && contents ? contents(close) : menu}
-              </div>
-            </PopoverPopup>
-          </PopoverPositioner>
-        </PopoverPortal>
-        <div className="pdf-dock" role="group" aria-label="Paper tools" ref={dock} data-info-open={open || undefined}>
-          {contents && (
-            <PopoverTrigger data-shows="contents" render={<Button variant="ghost" size="icon" className="ft-outline-button" aria-label="Contents" title="Contents" />}>
-              <ListBullets size={18} aria-hidden="true" />
-            </PopoverTrigger>
-          )}
-          {children}
-          <PopoverTrigger data-shows="menu" render={<Button variant="ghost" size="icon" aria-label="More actions" title="More actions" />}>
-            <DotsThree size={18} weight="bold" aria-hidden="true" />
-          </PopoverTrigger>
-        </div>
-      </Popover>
-    </div>
   );
 }
