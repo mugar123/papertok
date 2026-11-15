@@ -122,17 +122,9 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
-/**
- * A highlight in the paper's own text rather than in a plain-words rewrite. Its
- * `sectionId` names one block of that text (`a3` in the abstract, `b12` in the
- * body) and `paragraphIndex` is always 0. Its quote is the words as the page
- * shows them, not rewrite markup, so only its whitespace is normalized.
- */
-/** A stored quote is cut here; the rest of a longer selection is not kept. */
 export const MAX_QUOTE_LENGTH = 400;
 export const FULL_TEXT_LEVEL = 'full-text';
 const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
-/** The marks a reader can pick in the full text. Yellow is the default and is not stored. */
 export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;
 export type HighlightColor = typeof HIGHLIGHT_COLORS[number];
 

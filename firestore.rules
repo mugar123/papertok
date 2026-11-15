@@ -498,7 +498,6 @@ service cloud.firestore {
             || request.resource.data.kind in ['user', 'ai', 'finding', 'method', 'caveat', 'number'])
           && (!('note' in request.resource.data)
             || validString(request.resource.data.note, 2000))
-          // The mark's colour in the full text (HIGHLIGHT_COLORS); yellow is the default and is not stored.
           && (!('color' in request.resource.data)
             || request.resource.data.color in ['teal', 'sky', 'violet', 'rose'])
           && (!('paperTitle' in request.resource.data)

@@ -1,12 +1,5 @@
-/**
- * Where a highlight sits in the paper's own text. A block of that text carries
- * `data-passage` (`a3`, `b12`); a highlight is that key plus the words selected
- * in it, compared with runs of whitespace collapsed, so the line breaks a
- * selection picks up do not stop it from being found again.
- */
 export interface PassageSelection { sectionId: string; quote: string; anchor: DOMRect }
 
-/** Where `quote` starts and ends in `text`, ignoring differences in whitespace. */
 export function quoteOffsets(text: string, quote: string): [number, number] | null {
   const wanted = quote.replace(/\s+/g, ' ').trim();
   if (!wanted) return null;
@@ -23,7 +16,6 @@ export function quoteOffsets(text: string, quote: string): [number, number] | nu
   return [origin[at], origin[at + wanted.length - 1] + 1];
 }
 
-/** The text a reader sees: KaTeX keeps a hidden MathML copy of each formula beside the one it draws. */
 function textNodes(block: Element) {
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
     acceptNode: node => (node.parentElement?.closest('.katex-mathml') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -33,11 +25,9 @@ function textNodes(block: Element) {
   return nodes;
 }
 
-/** Items of a list are read apart: a space between them, where the DOM has no text at all. */
 const newItem = (before: Text | undefined, node: Text) =>
   before !== undefined && before.parentElement?.closest('li') !== node.parentElement?.closest('li');
 
-/** Pieces of the block's text joined as it reads, with where each node's own text starts. */
 function joinText(nodes: Text[], piece: (node: Text) => string = node => node.data) {
   let text = '';
   const starts: number[] = [];
@@ -49,7 +39,6 @@ function joinText(nodes: Text[], piece: (node: Text) => string = node => node.da
   return { text, starts };
 }
 
-/** The range of `quote` inside `block`, or null when the words are no longer there. */
 export function passageRange(block: Element, quote: string) {
   const nodes = textNodes(block);
   const { text, starts } = joinText(nodes);
@@ -68,11 +57,6 @@ export function passageRange(block: Element, quote: string) {
   return null;
 }
 
-/**
- * The current selection as a passage of one block. A selection that runs past
- * the block it started in is cut at that block's end: a highlight is stored
- * per block.
- */
 export function selectedPassage(root: Element): PassageSelection | null {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
@@ -90,7 +74,6 @@ export function selectedPassage(root: Element): PassageSelection | null {
   return { sectionId: block.dataset.passage!, quote, anchor: clipped.getBoundingClientRect() };
 }
 
-/** A whole block as a passage: the keyboard's unit, since plain text gives a keyboard no caret to select with. */
 export function blockPassage(block: HTMLElement): PassageSelection | null {
   const quote = joinText(textNodes(block)).text.replace(/\s+/g, ' ').trim();
   if (!quote || !block.dataset.passage) return null;

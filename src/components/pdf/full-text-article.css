@@ -288,7 +288,6 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-rail { display: none; }
 @media (min-width: 1024px) {
   .ft-outline-button { display: none; }
-  /* Clear of the outline ticks, with the same margin on the right, however narrow the notes leave the text. */
   .ft-scroll { padding-inline: var(--space-16); }
   .ft-table-scroll { max-width: min(1040px, 100cqi); }
   .ft-rail { position: absolute; inset-block: 0; left: var(--space-3); z-index: 2; display: flex; align-items: center; }

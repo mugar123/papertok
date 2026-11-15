@@ -887,7 +887,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   }, [annotating, handleSelection, paragraphTextFor]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
-  // The margin lists notes from every plain-words level; those made in the paper's own text belong to the viewer.
   const orderedAnnotations = useMemo(
     () => sortAnnotations(annotations.annotations.filter(item => item.level !== FULL_TEXT_LEVEL), sectionOrder),
     [annotations.annotations, sectionOrder],

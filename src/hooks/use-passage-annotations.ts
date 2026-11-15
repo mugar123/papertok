@@ -65,7 +65,6 @@ export function usePassageAnnotations({
   trackEvent,
 }: AnnotationOptions) {
   const [loaded, setLoaded] = useState<PassageAnnotation[]>([]);
-  // Whose list `loaded` is: after an account or paper change, the previous one stays hidden until the new one arrives.
   const [loadedFor, setLoadedFor] = useState('');
   const owner = `${uid}:${paperId}`;
   const [pending, setPending] = useState<PassageSelection | null>(null);

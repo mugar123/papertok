@@ -21,29 +21,21 @@ type PassageEditorProps = {
   returnFocus: HTMLElement | null;
   anchor: { top: number; bottom: number; left: number; right: number };
   busy: boolean;
-  /** A touch screen: a sheet from the bottom, clear of the system's own selection menu. */
   sheet: boolean;
   onSave: (note: string, color: HighlightColor) => void;
   onCancel: () => void;
 };
 
-/**
- * Opens on a selection, which stays painted in the text: an optional note, the mark's colour and Save.
- * Enter saves, with or without a note; Shift+Enter starts a new line.
- */
 export function PassageEditor({ quote, anchor, busy, error, initialNote, returnFocus, sheet, onSave, onCancel }: PassageEditorProps) {
   const [draft, setDraft] = useState(initialNote);
   const [color, setColor] = useState<HighlightColor>('yellow');
   const noteId = useId();
   const errorId = useId();
   const field = useRef<HTMLTextAreaElement | null>(null);
-  // The portal mounts the field a render after the popover, and the popup does not reliably move focus
-  // itself, so the field takes focus as it mounts: typing after a selection goes into the note.
   const mountField = useCallback((node: HTMLTextAreaElement | null) => {
     field.current = node;
     if (node && !sheet) setTimeout(() => node.focus());
   }, [sheet]);
-  // The selection being noted is painted in the colour it will be saved in.
   useEffect(() => {
     document.documentElement.dataset.passageColor = color;
     return () => { delete document.documentElement.dataset.passageColor; };
@@ -98,7 +90,6 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
         <DrawerContent className="vn-sheet" overlayClassName="vn-sheet-backdrop" forceOverlay viewportClassName="vn-sheet-viewport" finalFocus={() => returnFocus ?? true}>
           <DrawerHandle />
           <DrawerTitle render={<h2 />} className="vn-sheet-title">Highlight this passage</DrawerTitle>
-          {/* The passage is painted in the text behind the sheet; here it is quoted, since the sheet may cover it. */}
           <DrawerDescription render={<blockquote />} className="vn-quote vn-sheet-quote" data-color={color}>{quote}</DrawerDescription>
           {form}
         </DrawerContent>
@@ -110,7 +101,6 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner anchor={virtual} side="bottom" align="start" sideOffset={8} collisionPadding={10} className="vn-pop-positioner">
           <PopoverPrimitive.Popup className="vn-pop" aria-label="Highlight this passage" initialFocus={field} finalFocus={() => returnFocus ?? true}>
-            {/* The passage is painted in the text; this says which one to a screen reader. */}
             <PopoverPrimitive.Description className="visually-hidden">{quote}</PopoverPrimitive.Description>
             {form}
           </PopoverPrimitive.Popup>
@@ -120,7 +110,6 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
   );
 }
 
-/** The paper's highlights and notes, beside the text rather than over it. */
 export function NotesSidebar({ id, open, passages, onRemove, onClose }: {
   id: string;
   open: boolean;
@@ -129,7 +118,6 @@ export function NotesSidebar({ id, open, passages, onRemove, onClose }: {
   onClose: () => void;
 }) {
   const list = useRef<HTMLElement | null>(null);
-  // The deleted row takes its button with it: focus moves first, to a neighbouring row or else the heading.
   const remove = (index: number) => {
     const rows = list.current?.querySelectorAll<HTMLElement>('.vn-delete');
     (rows?.[index + 1] ?? rows?.[index - 1] ?? list.current?.querySelector<HTMLElement>('.vn-side-title'))?.focus();
@@ -146,7 +134,6 @@ export function NotesSidebar({ id, open, passages, onRemove, onClose }: {
       {passages.length === 0
         ? <p className="vn-empty">Select text in the paper to highlight it or add a note.</p>
         : (
-          // Every mark shown whole: the marked words as a quote, then your note.
           <ul className="vn-list">
             {passages.map((passage, index) => (
               <li key={passage.id} className="vn-item">

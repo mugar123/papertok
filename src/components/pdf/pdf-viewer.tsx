@@ -210,7 +210,6 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     if (outcome) trackerRef.current?.settle(outcome);
   }, [outcome]);
 
-  // Notes need an account. A mouse opens the editor where the selection ends; touch, from a button and a sheet.
   const notesOn = Boolean(uid) && showsText;
   const notes = useViewerNotes(paper, uid);
   const touchPassage = useTouchSelection(notesOn && coarsePointer && !notes.pending ? textScroll : null);

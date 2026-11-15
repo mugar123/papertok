@@ -244,7 +244,6 @@ export default function AnnotationRail({
         ? { duration: 0.12 }
         : { duration: 0.2, ease: EASE_OUT, layout: { duration: 0.22, ease: EASE_IN_OUT } }}
     >
-      {/* Every note reads the same in the viewer and here: the marked words as a quote, then the note. */}
       <div className="rd-note-entry">
         {/* The passage as the paper sets it: a quote is stored as source text,
             so a highlight across a formula keeps its `$…$`, and printed as prose

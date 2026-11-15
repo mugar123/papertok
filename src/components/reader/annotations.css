@@ -363,7 +363,6 @@
   flex-shrink: 0;
 }
 
-/* The same entry as the viewer's notes (viewer-notes.css): the quote, its actions on its line, the note beneath. */
 .rd-note-entry {
   display: flex;
   align-items: flex-start;
@@ -397,7 +396,6 @@
   }
 }
 
-/* Text lifted from the paper: the reader's own marks rule in yellow, the model's in ink, as the marks in the text do. */
 .rd-note-quote {
   flex: 1;
   min-width: 0;
@@ -423,7 +421,6 @@
   color: var(--text-primary);
 }
 
-/* An answer says it is one before it speaks. */
 .rd-note-origin {
   display: inline-flex;
   vertical-align: -2px;

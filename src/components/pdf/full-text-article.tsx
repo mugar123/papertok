@@ -178,7 +178,6 @@ function ReferenceEntry({ reference }: { reference: Reference }) {
   );
 }
 
-/** What a citation's PaperTok page knows that its reference line does not: year, venue, citations and the abstract's opening. */
 function ReferenceDetails({ paperKey }: { paperKey: string }) {
   const { paper, loading } = useReferencePaper(paperKey);
   const { locale } = useLanguage();
@@ -200,7 +199,6 @@ function ReferenceDetails({ paperKey }: { paperKey: string }) {
 }
 
 // What a citation's card says, as a popover beside the citation or a sheet on a phone.
-// The title opens the cited paper's PaperTok page when the citation carries an identifier.
 function ReferenceCard({ reference, lang, title, close }: { reference: Reference; lang?: string; title: (content: ReactNode) => ReactNode; close: ReactNode }) {
   const paperKey = reference.arxiv || reference.doi || reference.pmid
     ? getPaperKey({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
@@ -287,7 +285,6 @@ const figureAlt = (figure: FigureBlock, index: number) =>
 
 function BlockView({ block, figureWidth, passage, passageHint }: { block: Block; figureWidth: number; passage: string; passageHint?: string }): ReactNode {
   const id = 'id' in block && block.id ? anchor(block.id) : undefined;
-  // With notes on, a paragraph is a stop the keyboard can annotate from (Enter), as in the reader.
   const annotatable = passageHint ? { tabIndex: 0, 'aria-describedby': passageHint } : {};
   switch (block.t) {
     case 'heading': {
