@@ -5,7 +5,7 @@ import { useId, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils.ts';
-import { getCategoryLabel } from '../../data/categories.ts';
+import { getPaperFieldClassification } from '../../utils/paper-topic-tags.ts';
 import { areaAccentForPaper } from '../../utils/area-accent.ts';
 import { authorExplorerPath } from '../../utils/explorer-paths.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
@@ -68,7 +68,7 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
       {...props}
       style={{ ...style, '--area-accent': areaAccentForPaper(paper) }}
       meta={[
-        (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
+        getPaperFieldClassification(paper)?.label,
         paper.year ? String(paper.year) : null,
       ]}
       title={<ScientificText>{paper.title}</ScientificText>}
@@ -96,7 +96,7 @@ function BylineLabel({ names }: { names: string[] }) {
  * A paper's authors, opening the full list: overlapping initials by default,
  * or, with `byline`, the first names written out as a line of text.
  */
-export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: Partial<Paper>; onNavigate?: () => void; byline?: boolean }) {
+export function ListRowAuthors({ paper, byline = false }: { paper: Partial<Paper>; byline?: boolean }) {
   const isPhone = useIsPhone();
   const [open, setOpen] = useState(false);
   const listId = useId();
@@ -136,7 +136,7 @@ export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: P
               return (
                 <li key={index}>
                   {path
-                    ? <Link to={path} className="pc-share-row list-row-authors-sheet-row" onClick={onNavigate}>{inner}</Link>
+                    ? <Link to={path} className="pc-share-row list-row-authors-sheet-row">{inner}</Link>
                     : <span className="list-row-authors-sheet-row">{inner}</span>}
                 </li>
               );
@@ -177,7 +177,7 @@ export function ListRowAuthors({ paper, onNavigate, byline = false }: { paper: P
                     <Link
                       to={path}
                       className="pc-authors-list-item pc-author-link"
-                      onClick={(event) => { event.stopPropagation(); onNavigate?.(); }}
+                      onClick={(event) => { event.stopPropagation(); }}
                     >
                       {inner}
                     </Link>

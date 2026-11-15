@@ -40,7 +40,7 @@ function chipText(topic: TopicTarget, providerLabel: string, translatedLabel: st
 }
 
 /** The masthead names a native category or an OpenAlex topic; source details are separate. */
-export function getPaperClassification(paper: Partial<Paper>) {
+export function getPaperFieldClassification(paper: Partial<Paper>) {
   const category = [paper.primaryCategory, ...(paper.categories || [])]
     .find(id => id && !isTechnicalClassification(id) && getCategoryLabel(id) !== id);
   if (category) {
@@ -55,7 +55,12 @@ export function getPaperClassification(paper: Partial<Paper>) {
     const topic = resolvePaperTopic(paper.primaryTopic);
     if (topic) return { label: paper.primaryTopic.display_name, sourceLabel: 'OpenAlex topic', topic };
   }
-  return { label: areaLabelForPaper(paper) || paper.journal || 'Research Paper', sourceLabel: '', topic: null };
+  const area = areaLabelForPaper(paper);
+  return area ? { label: area, sourceLabel: '', topic: null } : null;
+}
+
+export function getPaperClassification(paper: Partial<Paper>) {
+  return getPaperFieldClassification(paper) ?? { label: paper.journal || 'Research Paper', sourceLabel: '', topic: null };
 }
 
 export function buildPaperTopicTags(paper: Partial<Paper>, limit = 4) {

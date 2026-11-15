@@ -1,6 +1,8 @@
 import type { Paper } from '../models/paper.ts';
 
 import { readArxivId, storedClassification } from '../models/paper.ts';
+import { copyHoldsField } from '../utils/list-paper-copies.ts';
+import { savedAnswered, fieldAnswered } from '../utils/profile-session-caches.ts';
 import { getOpenAlexEnrichmentId } from '../utils/feed-enrichment.ts';
 import { arxivKey, readArxivPapers } from './liked-paper-records.ts';
 
@@ -27,6 +29,19 @@ export function fieldRequestFor(paperId: string, paper: Partial<Paper>) {
   // A paper stored under its DOI may keep it nowhere else.
   const openAlexId = getOpenAlexEnrichmentId({ ...paper, id: paperId, doi: paper.doi || paperId.replace(/^doi:/i, '') });
   return /^(?:openalex|doi):/.test(openAlexId) ? { provider: 'openalex' as const, id: openAlexId } : null;
+}
+
+/** A settled stored copy still needs a provider when it holds no classification. */
+function listPaperNeedsFieldRecovery(uid: string, paperId: string, paper: Partial<Paper> | undefined) {
+  return savedAnswered(uid, paperId) && !fieldAnswered(uid, paperId)
+    && Boolean(paper && !copyHoldsField(paper) && fieldRequestFor(paperId, paper));
+}
+
+/** Keep each round bounded; the caller carries attempts across rounds of one opening. */
+export function nextListFieldRound(uid: string, papers: Record<string, Partial<Paper>>, attempted: ReadonlySet<string>) {
+  return Object.fromEntries(Object.entries(papers)
+    .filter(([id, paper]) => !attempted.has(id) && listPaperNeedsFieldRecovery(uid, id, paper))
+    .slice(0, 60));
 }
 
 /**
@@ -65,7 +80,7 @@ export async function readPaperFields(
     try {
       (await fetchArxivPapers(batch)).forEach((paper) => {
         const field = storedClassification(paper);
-        if (field.categories.length === 0) return;
+        if (!copyHoldsField(field)) return;
         new Set([paper.arxivId, paper.id].map(arxivKey)).forEach((key) => {
           papersAsked('arxiv', key).forEach((paperId) => { fields[paperId] = field; });
         });

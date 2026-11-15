@@ -247,3 +247,12 @@ test('a category an old copy kept under another provider\'s id is still not a fi
   assert.equal(row(listPaper(liked, saved, undefined)).field, null);
   assert.equal(row(listPaper(undefined, saved, liked)).field, null);
 });
+
+test('a device copy with unknown citations does not replace a known library count', () => {
+  const cached = paperLegacyAdapter({ id: '2505.06123', title: 'Paper', year: 2025 });
+  const library = { ...cached, citationCount: 42, citationCountKnown: true };
+  assert.equal(listPaper(library, cached, undefined)?.citationCount, 42);
+  assert.equal(listPaper(undefined, cached, library)?.citationCount, 42);
+  assert.equal(mergeListPaperCopies({ [cached.id]: cached }, { [cached.id]: library }, 'interaction')[cached.id].citationCount, 42);
+  assert.equal(listPaper({ ...library, citationCount: 0 }, cached, undefined)?.citationCountKnown, true);
+});

@@ -2,7 +2,7 @@ import type { PropsWithChildren } from 'react';
 import type { AppUser } from '../../context/auth-context.tsx';
 import type { PublicListPaper } from '../../services/public-list-payload.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowsClockwise, BookOpen, Check, Quotes, ShareNetwork } from '@phosphor-icons/react';
 import { getCategoryLabel } from '../../data/categories.ts';
 import ScientificText from '../scientific-text.ts';
@@ -16,8 +16,13 @@ import { getPublicListPath, getPublicListUrl, getPublicPaperPath, getShareImage 
 import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/bounded-read.ts';
 import { shareOrCopyLink } from '../../utils/share-link.ts';
 import { copyText } from '../../utils/clipboard.ts';
+import { createSessionCache } from '../../utils/session-cache.ts';
 import PrivacyPopover from '../public/privacy-popover.tsx';
 import './public-list-page.css';
+
+// Keep the rendered list for each history entry so Back has its full height
+// before PageTransition restores scroll. Reloads and new visits read afresh.
+const publicListVisits = createSessionCache<NonNullable<Awaited<ReturnType<typeof readPublicList>>>>({ maxEntries: 32 });
 
 function arxivUrl(arxivId: unknown) {
   const normalized = String(arxivId || '').trim();
@@ -69,11 +74,13 @@ function AuthCta({ user, onAuthRequired, label }: { user: AppUser | null; onAuth
 export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }: { shareId?: string; buildPaperPath?: typeof getPublicPaperPath; onAuthRequired?: () => void }) {
   const params = useParams();
   const shareId = shareIdProp || params.shareId;
+  const { key: locationKey } = useLocation();
+  const visitKey = `${shareId}:${locationKey}`;
   const { locale } = useLanguage();
   const { user, onboardingComplete, profileLoadError } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
-  const [publicList, setPublicList] = useState<Awaited<ReturnType<typeof readPublicList>>>(null);
-  const [status, setStatus] = useState('loading');
+  const [publicList, setPublicList] = useState(() => publicListVisits.get(visitKey) ?? null);
+  const [status, setStatus] = useState(publicList ? 'ready' : 'loading');
   const [reloadToken, setReloadToken] = useState(0);
   const [shareState, setShareState] = useState<string | null>(null);
   const shareTimer = useRef<number | null>(null);
@@ -86,11 +93,14 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
 
   useEffect(() => {
     let active = true;
+    const cached = publicListVisits.get(visitKey);
     // The retry loop outlives the promise, so leaving the page must stop it.
     const controller = new AbortController();
 
     const apply = (result: Awaited<ReturnType<typeof readPublicList>>) => {
       if (!active) return;
+      if (result) publicListVisits.set(visitKey, result);
+      else publicListVisits.delete(visitKey);
       setPublicList(result);
       // `readPublicList` throws rather than returning null when the backend
       // never answered, so a null here really is the server saying "no such
@@ -115,7 +125,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
       onStall: null,
       onSlow: (attemptNumber, info) => {
         const notice = slowNoticeStatus(Date.now() - startedAt, info);
-        if (active && notice) setStatus(notice);
+        if (active && !cached && notice) setStatus(notice);
       },
       onLateResult: apply,
     })
@@ -124,17 +134,17 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
         if (isReadTimeout(error)) {
           // Budget spent, loop alive: `onLateResult` can still open the list.
           console.warn('The public list did not answer in time', error);
-          if (active) setStatus('stalled');
+          if (active && !cached) setStatus('stalled');
           return;
         }
         console.error('Error loading public list:', error);
-        if (active) setStatus('error');
+        if (active && !cached) setStatus('error');
       });
     return () => {
       active = false;
       controller.abort();
     };
-  }, [reloadToken, shareId]);
+  }, [reloadToken, shareId, visitKey]);
 
   const updatedAt = useMemo(
     () => formatDate(publicList?.updatedAt, locale),
