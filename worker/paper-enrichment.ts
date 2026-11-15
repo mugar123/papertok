@@ -299,7 +299,11 @@ const openAlexIdsOf = (paper: Paper) => {
  * What a night's abstract retries may still do: the OpenAlex calls left to
  * them, none once every paper due has been asked, and the last paper asked
  * (its `published` and id), after which a later step of the night goes on, so
- * a paper whose sources failed is not asked twice in one night.
+ * no paper is retried twice in one night. A young paper whose first
+ * enrichment a failed source interrupted can still be asked twice that night,
+ * within the night's units: it records its own date as its enrichment date
+ * (`counted`), so from a day old it is due at once, and a later step's
+ * retries take it.
  */
 export interface AbstractRetries { units: number; after: { published: string; id: number } | null }
 
@@ -400,7 +404,8 @@ async function pendingRows(db: D1Database, limit: number, now: number, retries: 
  * embedding, whether OpenAlex stopped the pass, and what the night's retries
  * may still do. A source that fails leaves its fields unknown; a paper waiting
  * for OpenAlex is not marked done without it, and a young paper whose abstract
- * a failed source may hold is asked again the next night.
+ * a failed source may hold is asked again the next night, or by a later step
+ * of the same night (`AbstractRetries`), rather than at its next age.
  */
 export async function enrichPending(env: EnrichEnv, limit: number, now = Date.now(), retries: AbstractRetries = { units: ABSTRACT_RETRY_UNITS, after: null }) {
   const db = database(env);
@@ -481,11 +486,13 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })), now);
   // A paper OpenAlex should have known but did not counts a miss. One waiting
   // for an OpenAlex that did not answer is left for the next run. An
-  // enrichment that a failed source interrupted is not counted, so the next
-  // night's retries ask the paper again: a retry keeps the date of the
-  // enrichment counted before it, and a paper younger than REFRESH_DAYS takes
-  // its own date, so its retry also asks Crossref again (`counted`). An older
-  // one's enrichment is counted, and it waits for its next age or its refresh.
+  // enrichment that a failed source interrupted is not counted, so the
+  // retries ask the paper again before its next age: a retry keeps the date
+  // of the enrichment counted before it and is due again the next night, and
+  // a paper younger than REFRESH_DAYS takes its own date, so a later step of
+  // the same night can retry it, and its retry also asks Crossref again
+  // (`counted`). An older one's enrichment is counted, and it waits for its
+  // next age or its refresh.
   const at = new Date(now).toISOString();
   const young = new Date(now - REFRESH_DAYS * DAY_MS).toISOString();
   const marks = rows.flatMap((row, index) => {

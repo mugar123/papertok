@@ -546,6 +546,38 @@ for (const { source, hostname, papers, fields, idsAsked } of OUTAGES) {
   });
 }
 
+test('a Europe PMC search that times out keeps the records the searches before it found', async t => {
+  let searches = 0;
+  const asked = recoveryProviders(t, {
+    europePmc: () => {
+      searches += 1;
+      if (searches === 2) timedOut();
+      // A record with an abstract for each id the search names.
+      const pmids = asked.at(-1)?.url.searchParams.get('query')?.match(/(?<=EXT_ID:)\d+/g) ?? [];
+      return Response.json({ resultList: { result: pmids.map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 101 }, (_, n) => listedWork(300 + n, '2026-10-23', { ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43100000 + n}` } })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 2, 'two searches of 100 and 1 ids');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstract === LATE_ABSTRACT).length, 100);
+});
+
+test('a Crossref call the source refuses loses only its own DOIs, and the calls after it are still sent', async t => {
+  let calls = 0;
+  const asked = recoveryProviders(t, {
+    crossref: () => {
+      calls += 1;
+      if (calls === 1) return new Response('{}', { status: 500 });
+      return Response.json({ message: { items: Array.from({ length: 41 }, (_, index) => ({ DOI: `10.5555/refused-${index}`, type: 'journal-article', abstract: `<jats:p>${LATE_ABSTRACT} (${index})</jats:p>` })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 41 }, (_, index) => listedWork(400 + index, '2026-10-23', { doi: `https://doi.org/10.5555/refused-${index}` })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'api.crossref.org').length, 3, 'three calls of 20, 20 and 1 DOIs');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstractSource === 'crossref').length, 21);
+});
+
 test('the PubMed id OpenAlex gives a paper brings its Europe PMC abstract in the same pass', async t => {
   const asked = recoveryProviders(t, {
     openAlex: () => Response.json({ results: [{ id: 'https://openalex.org/W4500000005', doi: 'https://doi.org/10.5555/ads-pmid', ids: { doi: 'https://doi.org/10.5555/ads-pmid', pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999997' }, type: 'article' }] }),
