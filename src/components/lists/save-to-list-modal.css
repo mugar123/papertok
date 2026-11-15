@@ -284,14 +284,6 @@
   color: var(--text-tertiary);
 }
 
-.save-modal-empty {
-  margin: 0;
-  padding: var(--space-5) var(--space-4);
-  text-align: center;
-  font-size: var(--fs-sm);
-  color: var(--text-tertiary);
-}
-
 /* ── Waiting, and giving up honestly ──────────────────────────────────── */
 
 .save-modal-skeleton {

@@ -637,7 +637,6 @@ export default function SaveToListModal({
     listsStalled: 'Your lists are taking unusually long. We are still trying — your papers are safe.',
     listsUnavailable: 'Your lists could not be loaded. They are still there.',
     retry: 'Try again',
-    noLists: 'No lists yet — create the first one right below.',
     newListCta: 'Create a new list',
     noteAndTags: 'Note and tags',
     private: 'Private',
@@ -831,7 +830,7 @@ export default function SaveToListModal({
                     {copy.retry}
                   </Button>
                 </div>
-              ) : (
+              ) : lists.length > 0 && (
                 <div className="save-modal-rows">
                   {readLaterRow}
                   {lists.map((list) => {
@@ -857,9 +856,6 @@ export default function SaveToListModal({
                       </label>
                     );
                   })}
-                  {lists.length === 0 && (
-                    <p className="save-modal-empty">{copy.noLists}</p>
-                  )}
                 </div>
               )}
               {/* The door to the create view: a list row in a box of its own. */}
