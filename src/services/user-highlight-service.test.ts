@@ -120,6 +120,34 @@ const SPAN = {
   paperTitle: 'A paper',
 };
 
+test('a full-text highlight keeps the words the page shows', () => {
+  const stored = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b12', paragraphIndex: 0, quote: '  errors fell by 5%\n  in {all} runs ' });
+  assert.equal(stored?.level, 'full-text');
+  assert.equal(stored?.quote, 'errors fell by 5% in {all} runs');
+});
+
+test('a highlight keeps a colour it can be painted in, and yellow stays the unstored default', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 };
+  assert.equal(normalizeUserHighlight({ ...base, color: 'teal' })?.color, 'teal');
+  assert.equal(normalizeUserHighlight({ ...base, color: 'yellow' })?.color, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, color: 'red' })?.color, undefined);
+});
+
+test('a later occurrence of the same words is kept, and the first stays unstored', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 };
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 2 })?.occurrence, 2);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 0 })?.occurrence, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: -1 })?.occurrence, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 101 })?.occurrence, undefined);
+});
+
+test('the same words marked at two places in a block are two highlights', () => {
+  const first = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 })!;
+  const second = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0, occurrence: 1 })!;
+  assert.notEqual(buildHighlightId(second), buildHighlightId(first));
+  assert.equal(buildHighlightId({ ...first, occurrence: 0 }), buildHighlightId(first));
+});
+
 test('a passage across paragraphs keeps where it ends', () => {
   const stored = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' });
   assert.equal(stored?.endParagraphIndex, 3);

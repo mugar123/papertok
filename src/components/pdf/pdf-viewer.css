@@ -234,6 +234,7 @@
 .pdf-dock[data-info-open] { border-color: transparent; background: transparent; }
 .pdf-dock > * { border-radius: var(--radius-sm); }
 .pdf-dock-toggle { height: 40px; padding-inline: var(--space-3); }
+@media (max-width: 439px) { .pdf-dock:has(.pdf-dock-notes) .pdf-dock-label { display: none; } }
 /* On and off read apart by ink and icon (an open or a struck eye), not by a
    fill: a filled button reads as hovered. */
 .pdf-dock-toggle[data-pressed] { background: transparent; color: var(--text-primary); box-shadow: none; }

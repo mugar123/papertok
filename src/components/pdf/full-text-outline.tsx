@@ -25,8 +25,8 @@ export function OutlineList({ items, active, onPick }: Outline & { onPick?: () =
     <ol className="ft-outline-list">
       {items.map((item, index) => (
         <li key={item.target} data-depth={item.depth}>
-          <a href={`#${item.target}`} title={item.title} aria-current={index === active ? 'location' : undefined} onClick={event => jump(event, item.target)}>
-            <span className="ft-outline-title">{item.title}</span>
+          <a href={`#${item.target}`} title={item.label ? `${item.label} ${item.title}` : item.title} aria-current={index === active ? 'location' : undefined} onClick={event => jump(event, item.target)}>
+            <span className="ft-outline-title">{item.label && <><span className="ft-label">{item.label}</span>{' '}</>}{item.title}</span>
           </a>
         </li>
       ))}

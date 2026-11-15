@@ -349,12 +349,9 @@
 .rd-note {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: var(--space-3);
-  margin-bottom: 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
   /* The exit collapses height; without this the content spills while it does. */
   overflow: hidden;
   /* Never squeezed to fit. The `overflow` above takes away a flex item's
@@ -366,49 +363,14 @@
   flex-shrink: 0;
 }
 
-.rd-note[data-kind='ai'],
-.rd-note--ai {
-  background: var(--bg-sunken);
-}
-
-
-.rd-note-head {
+.rd-note-entry {
   display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.rd-note-origin {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--accent-save);
-}
-
-.rd-note[data-kind='ai'] .rd-note-origin,
-.rd-note--ai .rd-note-origin {
-  color: var(--text-primary);
-}
-
-.rd-note-where {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: 400 0.6875rem/1.5 var(--font-mono);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  text-align: left;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rd-note-where:hover { color: var(--text-primary); }
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .rd-note-actions {
-  margin-left: auto;
+  flex: none;
   display: grid;
   place-items: center;
   width: 24px;
@@ -434,26 +396,38 @@
   }
 }
 
-/* Text lifted from the paper, set as the paper sets it. */
 .rd-note-quote {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 1px dashed var(--brand-yellow);
   font-family: var(--font-serif);
-  font-size: 0.8125rem;
-  line-height: 1.45;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
   font-style: italic;
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+
+.rd-note[data-kind='ai'] .rd-note-quote {
+  border-left-color: var(--border-ink);
 }
 
 .rd-note-body {
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
+  margin: 0;
+  padding-left: calc(1px + var(--space-3));
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
 }
 
-/* An answer arrives the way the rewrite's own sections do. */
+.rd-note-origin {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: var(--space-1);
+  color: var(--text-tertiary);
+}
+
 .rd-note-body[data-fresh] {
   -webkit-mask-image: var(--rd-write-mask);
   mask-image: var(--rd-write-mask);
@@ -468,6 +442,16 @@
 
 .rd-note--thinking {
   gap: 10px;
+}
+
+.rd-note--thinking .rd-note-origin {
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-primary);
 }
 
 .rd-note-bar {

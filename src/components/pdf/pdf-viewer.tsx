@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, Eye, EyeSlash, FilePdf, TextAlignLeft, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, Eye, EyeSlash, FilePdf, Highlighter, NotePencil, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { Toggle } from '../ui/toggle.ts';
@@ -24,6 +24,8 @@ import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer-outcome.ts';
+import { NotesSidebar, PassageEditor } from './viewer-notes.tsx';
+import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -208,6 +210,12 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     if (outcome) trackerRef.current?.settle(outcome);
   }, [outcome]);
 
+  const notesOn = Boolean(uid) && showsText;
+  const notes = useViewerNotes(paper, uid);
+  const touchPassage = useTouchSelection(notesOn && coarsePointer && !notes.pending ? textScroll : null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  usePaintedPassages(notesOn ? textScroll : null, notes.passages, notes.pending);
+
   return (
     <Dialog
       open={open}
@@ -250,7 +258,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             </AnimatePresence>
           </div>
 
-          <div className="pdf-stage">
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -262,11 +270,45 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef}>
-                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} />
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+                const block = event.target as HTMLElement;
+                if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
+                event.preventDefault();
+                notes.pickBlock(block);
+              } : undefined}>
+                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} passageHint={notesOn ? 'viewer-passage-hint' : undefined} />
               </div>
             )}
             {fullText && showsText && <OutlineRail {...outline} />}
+            {notesOn && <NotesSidebar id="viewer-notes" open={notesOpen} passages={notes.passages} onRemove={(id) => { void notes.remove(id); }} onClose={() => setNotesOpen(false)} />}
+            {notesOn && notes.pending?.anchor && (
+              <PassageEditor
+                sheet={coarsePointer}
+                key={`${notes.pending.sectionId}:${notes.pending.quote}`}
+                quote={notes.pending.quote}
+                anchor={notes.pending.anchor}
+                busy={notes.busy !== 'idle'}
+                error={notes.failed !== null}
+                initialNote={notes.failed ?? ''}
+                returnFocus={notes.origin ?? textScroll}
+                onSave={(note, color) => { void notes.save(note, color); }}
+                onCancel={notes.dismiss}
+              />
+            )}
+            {touchPassage && (
+              <Button
+                className="vn-touch-highlight"
+                onClick={() => {
+                  notes.pickPassage(touchPassage, textScroll);
+                  window.getSelection()?.removeAllRanges();
+                }}
+              >
+                <Highlighter size={18} aria-hidden="true" />
+                Highlight
+              </Button>
+            )}
+            {notesOn && <p className="visually-hidden" role="status">{notes.status}</p>}
+            {notesOn && <p id="viewer-passage-hint" className="visually-hidden">Press Enter to highlight this paragraph or add a note to it.</p>}
 
             {/* The tools are the loaded paper's: none of them shows while it is asked for. */}
             {fullText !== undefined && (
@@ -274,7 +316,14 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 {showsText && (fullText?.abstract.length ?? 0) > 0 && (
                   <Toggle className="pdf-dock-toggle" pressed={abstractShown} onPressedChange={setAbstractShown} aria-label="Abstract" title={abstractShown ? 'Hide the abstract' : 'Show the abstract'}>
                     {abstractShown ? <Eye size={18} aria-hidden="true" /> : <EyeSlash size={18} aria-hidden="true" />}
-                    Abstract
+                    <span className="pdf-dock-label">Abstract</span>
+                  </Toggle>
+                )}
+                {notesOn && (
+                  <Toggle className="pdf-dock-toggle pdf-dock-notes" pressed={notesOpen} onPressedChange={setNotesOpen} aria-label="Notes" aria-controls="viewer-notes" title={notesOpen ? 'Hide notes' : 'Show notes'}>
+                    <NotePencil size={18} aria-hidden="true" />
+                    <span className="pdf-dock-label">Notes</span>
+                    {notes.passages.length > 0 && <span className="pdf-dock-count">{notes.passages.length}</span>}
                   </Toggle>
                 )}
                 {fullText && (

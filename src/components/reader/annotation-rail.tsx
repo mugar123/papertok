@@ -8,11 +8,11 @@ interface AnnotationRailProps {
   counts: { all: number; mine: number; ai: number }; filter: string; onFilter: (filter: string) => void;
   thinking: boolean;
   onFocus: (annotation: RailAnnotation) => void; onRemove: (id: string) => void;
-  labelFor: (annotation: RailAnnotation) => string; copy: ReaderCopy;
+  copy: ReaderCopy;
 }
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Copy, DotsThree, Sparkle, Trash, User } from '@phosphor-icons/react';
+import { ArrowRight, Copy, DotsThree, Sparkle, Trash } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { annotationMarkdown } from '../../utils/annotation-markdown.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
@@ -55,7 +55,6 @@ export default function AnnotationRail({
   thinking,
   onFocus,
   onRemove,
-  labelFor,
   copy,
 }: AnnotationRailProps) {
   const prefersReducedMotion = useReducedMotion();
@@ -245,21 +244,16 @@ export default function AnnotationRail({
         ? { duration: 0.12 }
         : { duration: 0.2, ease: EASE_OUT, layout: { duration: 0.22, ease: EASE_IN_OUT } }}
     >
-      <div className="rd-note-head">
-        <span className="rd-note-origin" title={annotation.kind === 'ai' ? copy.originAi : copy.originMine}>
-          {annotation.kind === 'ai' ? <Sparkle size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
-          <span className="visually-hidden">{annotation.kind === 'ai' ? copy.originAi : copy.originMine}</span>
-        </span>
+      <div className="rd-note-entry">
+        {/* The passage as the paper sets it: a quote is stored as source text,
+            so a highlight across a formula keeps its `$…$`, and printed as prose
+            that LaTeX showed raw in the margin. It is in the language the
+            rewrite was in when it was marked, which is not always the page's —
+            the margin keeps notes from both. */}
+        <blockquote className="rd-note-quote" lang={annotation.language}>
+          <ScientificText>{passageQuote(annotation)}</ScientificText>
+        </blockquote>
         {pins?.has(annotation.id) && <span className="rd-note-pin">{pins.get(annotation.id)!.number}</span>}
-        {/* The anchor doubles as the way back to the passage. */}
-        <button
-          type="button"
-          className="rd-note-where"
-          onClick={() => onFocus(annotation)}
-          title={copy.goToPassage}
-        >
-          {labelFor(annotation)}
-        </button>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<button type="button" className="rd-note-actions" aria-label={copy.noteActions} title={copy.noteActions} />}
@@ -267,6 +261,10 @@ export default function AnnotationRail({
             <DotsThree size={16} weight="bold" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" aria-label={copy.noteActions}>
+            <DropdownMenuItem onClick={() => onFocus(annotation)}>
+              <ArrowRight size={15} aria-hidden="true" />
+              {copy.goToPassage}
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 navigator.clipboard.writeText(annotationMarkdown({ quote: passageQuote(annotation), note: annotation.note }))
@@ -284,22 +282,20 @@ export default function AnnotationRail({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {/* The passage as the paper sets it: a quote is stored as source text,
-          so a highlight across a formula keeps its `$…$`, and printed as prose
-          that LaTeX showed raw in the margin. It is in the language the
-          rewrite was in when it was marked, which is not always the page's —
-          the margin keeps notes from both. */}
-      <p className="rd-note-quote" lang={annotation.language}>
-        <ScientificText>{passageQuote(annotation)}</ScientificText>
-      </p>
       {annotation.note && (
         /* The model answers in the rewrite's language; your own note is in
-           whatever you typed, so it claims none. */
+           whatever you typed, so it claims none. An answer says it is one. */
         <p
           className="rd-note-body"
           data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}
           lang={annotation.kind === 'ai' ? annotation.language : undefined}
         >
+          {annotation.kind === 'ai' && (
+            <span className="rd-note-origin" title={copy.originAi}>
+              <Sparkle size={13} aria-hidden="true" />
+              <span className="visually-hidden">{copy.originAi}</span>
+            </span>
+          )}
           {annotation.note}
         </p>
       )}

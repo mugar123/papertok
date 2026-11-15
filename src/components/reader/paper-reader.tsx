@@ -35,7 +35,7 @@ import {
   rememberAIUses,
   rewritePaper,
 } from '../../services/paper-rewrite-service.ts';
-import { indexHighlightsByParagraph, passageSegments } from '../../services/user-highlight-service.ts';
+import { FULL_TEXT_LEVEL, indexHighlightsByParagraph, passageSegments } from '../../services/user-highlight-service.ts';
 import ScientificText from '../scientific-text.ts';
 import { usePassageAnnotations } from '../../hooks/use-passage-annotations.ts';
 import {
@@ -888,7 +888,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
-    () => sortAnnotations(annotations.annotations, sectionOrder),
+    () => sortAnnotations(annotations.annotations.filter(item => item.level !== FULL_TEXT_LEVEL), sectionOrder),
     [annotations.annotations, sectionOrder],
   );
   const visibleAnnotations = useMemo(
@@ -1445,7 +1445,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             thinking={annotations.busy === 'asking'}
             onFocus={goToPassage}
             onRemove={(id) => { void annotations.remove(id); }}
-            labelFor={annotationLabel}
             copy={copy}
           />
           )}
