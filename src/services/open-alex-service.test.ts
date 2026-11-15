@@ -1741,3 +1741,52 @@ test('a blank journal search asks nothing, and a failed or cancelled one is empt
     openAlexClient.fetchImpl = realFetch;
   }
 });
+
+// The lists ask OpenAlex for a saved paper's field and ask again when the
+// request failed (list-paper-fields.ts). The returned record cannot tell a
+// work OpenAlex does not have from one whose request never got an answer, so
+// the failures are reported beside it, under the id the record is keyed by.
+test('the ids of a failed enrichment request are reported, and not those OpenAlex answered or the cache held', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  // Synthetic, shaped like a `/works?filter=openalex:...&select=...` page.
+  const work = {
+    id: 'https://openalex.org/W7100000001',
+    doi: null,
+    cited_by_count: 4,
+    primary_topic: { id: 'https://openalex.org/T10020', display_name: 'Quantum Information', field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' } },
+  };
+  let answer: (url: string) => Response = () => Response.json({ results: [work] });
+  openAlexClient.fetchImpl = async url => answer(decodeURIComponent(String(url)));
+  try {
+    // Answered once, so the next call serves it from the cache.
+    await enrichPapersBatch(['openalex:W7100000001']);
+
+    answer = (url) => {
+      // The Worker keeping the day's budget for other requests (PAP-88).
+      if (url.includes('filter=doi:')) {
+        return new Response('{"error":"budget"}', { status: 429, headers: { 'retry-after': '30', 'x-papertok-budget-tier': 'cards' } });
+      }
+      // A 200 whose body is not JSON: an HTML error page from something in between.
+      if (url.includes('landing_page_url')) return new Response('<html>Bad gateway</html>', { status: 200 });
+      // Answered, naming none of the works asked.
+      return Response.json({ results: [] });
+    };
+    const failures: { ids: string[]; retryAfterMs: unknown }[] = [];
+    const result = await enrichPapersBatch(
+      ['openalex:W7100000001', 'openalex:W7100000002', 'doi:10.1103/PhysRevD.113.000001', 'arxiv:2611.00001v2'],
+      { onRequestFailed: (ids, error) => { failures.push({ ids, retryAfterMs: (error as { retryAfterMs?: number } | undefined)?.retryAfterMs }); } },
+    );
+
+    assert.deepEqual(Object.keys(result), ['openalex:W7100000001'], 'only the cached work has a record');
+    assert.deepEqual(
+      failures.sort((a, b) => a.ids[0].localeCompare(b.ids[0])),
+      [
+        { ids: ['2611.00001'], retryAfterMs: undefined },
+        { ids: ['doi:10.1103/physrevd.113.000001'], retryAfterMs: 30_000 },
+      ],
+      'keyed as the record is, with the wait a refusal asked for',
+    );
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});

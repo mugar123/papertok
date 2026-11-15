@@ -119,10 +119,12 @@ export function rememberListPapers(uid: string, papers: Record<string, Partial<P
  * (`listPaperNeedsRead`), so a failed read stays retryable.
  */
 const listSavedAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
+const savedAnswerListeners = new Set<() => void>();
 
 export function rememberSavedAnswers(uid: string, paperIds: string[]) {
   if (!uid || paperIds.length === 0) return;
   listSavedAnswers.set(uid, new Set([...(listSavedAnswers.get(uid) ?? []), ...paperIds]));
+  savedAnswerListeners.forEach(listener => listener());
 }
 
 export function savedAnswered(uid: string | undefined, paperId: string) {
@@ -130,10 +132,28 @@ export function savedAnswered(uid: string | undefined, paperId: string) {
 }
 
 /**
+ * The account's answered papers for `useSyncExternalStore`: a new set after
+ * each change and the same set otherwise. A screen that subscribes renders
+ * again when an answer changes nothing else it holds, such as a confirmed
+ * absence that arrives after its row stopped waiting.
+ */
+export function savedAnswersOf(uid: string | undefined): ReadonlySet<string> | undefined {
+  return uid ? listSavedAnswers.get(uid) : undefined;
+}
+
+/** Calls `listener` after the answered papers change; returns the unsubscribe. */
+export function subscribeSavedAnswers(listener: () => void) {
+  savedAnswerListeners.add(listener);
+  return () => {
+    savedAnswerListeners.delete(listener);
+  };
+}
+
+/**
  * The papers the lists asked a provider the field of this session
  * (`readPaperFields`) and got an answer for, keyed by uid, so a paper the
  * provider does not name is not asked on every visit to its list. A paper
- * whose arXiv request failed is left out and asked again.
+ * whose request failed is left out and asked again.
  */
 const listFieldAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
 
@@ -152,4 +172,5 @@ export function forgetListPapers(uid: string | undefined) {
   listPapersCache.delete(uid);
   listSavedAnswers.delete(uid);
   listFieldAnswers.delete(uid);
+  savedAnswerListeners.forEach(listener => listener());
 }
