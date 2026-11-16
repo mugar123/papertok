@@ -2194,8 +2194,9 @@ test('with a like, the notable cards follow the closest papers, whatever their y
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
 });
 
-// A page with likes ranks its notable papers by closeness, not by the years in
-// turns, so it leaves out the liked, rejected and excluded ones on its own path.
+// A group with likes ranks its notable papers by closeness, not by the years
+// in turns, so it leaves out the liked, rejected and excluded ones on its own
+// path.
 test('with a like, a notable paper the reader liked or rejected, or the app excludes, is not offered, and the next closest ones are', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
@@ -2304,6 +2305,32 @@ test("each liked group's notable papers are ranked by that group's likes alone, 
   // like is near none of cs.CV's papers, so they go newest first. The groups
   // take turns.
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W201811', 'W202521', 'W202410', 'W202520', 'W202511'].map(id => `openalex:${id}`));
+});
+
+// The cards a fresh load excludes count as turns already passed for a group
+// without likes too, though the group beside it leaves them out before ranking.
+test('a fresh load continues the years in turns of a group without likes beside a group with likes', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)').run(idOf('2610.00059'), Buffer.from(quantize([1, 0, 0, 0, 0, 0]).buffer));
+  const shown: string[] = [];
+  const excludedIds: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (let load = 0; load < 3; load += 1) {
+    const answer = await readFeedPage(env, parseFeedRequest({
+      groups: [
+        { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: 1 },
+        { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: [], weight: 1 },
+      ],
+      pageSize: 15, seen: feedSeenFilter(shown), excludedIds, notable: 4,
+    }), { now: NOW });
+    const cards = answer.filter(paper => paper._notable);
+    // Two cards a load from each group: cs.CV's are the ones without likes.
+    years.push(cards.filter(paper => paper._fetchedFor?.includes('cs.CV')).map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
+    excludedIds.push(...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
 });
 
 // A rejection says nothing about the years the reader wants: "Not interested"
