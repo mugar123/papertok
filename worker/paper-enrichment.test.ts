@@ -6,7 +6,7 @@ import type { AbstractRetries } from './paper-enrichment.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
-import { embedWorks, evictExpired, ingestPapers, readNotableCandidates } from './paper-store.ts';
+import { embedWorks, evictExpired, ingestPapers, keepLiked, readNotableCandidates } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { mapPubmedSummary, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -774,6 +774,69 @@ async function evictAll(env: WorkerEnv, now: number) {
   let after: number | null = 0;
   while (after !== null) after = await evictExpired(env, now, after);
 }
+
+// A work OpenAlex types an article and Crossref a book: Crossref's type takes
+// it out of every lane, and a reader's like keeps it in the store. OpenAlex
+// types it an article again at each retry.
+const LIKED_BOOK = listedWork(7, '2026-10-31', {
+  doi: 'https://doi.org/10.5555/liked-book',
+  primary_topic: { id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques' },
+  topics: [{ id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques' }],
+});
+const BOOK_RETRIES = [
+  { retry: 'that does not ask Crossref, after a counted enrichment', firstNight: {}, nextNight: {}, misses: 0, crossrefCalls: 0 },
+  {
+    retry: 'whose Crossref call fails, after an interrupted first enrichment',
+    firstNight: { semanticScholar: () => new Response('{}', { status: 429 }) },
+    nextNight: { crossref: () => new Response('{}', { status: 500 }) },
+    misses: -1,
+    crossrefCalls: 1,
+  },
+];
+for (const { retry, firstNight, nextNight, misses, crossrefCalls } of BOOK_RETRIES) {
+  test(`a retry ${retry} keeps the book type Crossref gave a liked work, which stays out of every lane`, async t => {
+    let answers: Parameters<typeof recoveryProviders>[1] = firstNight;
+    const asked = recoveryProviders(t, {
+      openAlex: () => Response.json({ results: [LIKED_BOOK] }),
+      crossref: () => (answers.crossref ?? (() => Response.json({ message: { items: [{ DOI: '10.5555/liked-book', type: 'book' }] } })))(),
+      semanticScholar: () => (answers.semanticScholar ?? (() => Response.json([])))(),
+    });
+    const { env, db } = await listedCorpus([LIKED_BOOK]);
+    const [{ id }] = db.prepare('SELECT id FROM works').all() as Array<{ id: number }>;
+    await keepLiked(env.PAPER_STORE!, [id], NIGHT);
+    assert.deepEqual(laneRows(db), ['econ.gen', 'topic:T10181']);
+
+    await enrichPending(env, 50, NIGHT);
+    // In no lane, the work stays in the store for the like.
+    await evictAll(env, NIGHT);
+    const first = stored(db)['openalex:W4500000007'];
+    assert.deepEqual([first.paper.publicationType, first.misses, laneRows(db)], ['book', misses, []]);
+
+    answers = nextNight;
+    asked.length = 0;
+    assert.deepEqual((await enrichPending(env, 50, NIGHT + DAY_MS)).workIds, [id]);
+    assert.equal(askedOf(asked, 'api.openalex.org').length, 1);
+    assert.equal(askedOf(asked, 'api.crossref.org').length, crossrefCalls);
+    assert.deepEqual([stored(db)['openalex:W4500000007'].paper.publicationType, laneRows(db)], ['book', []]);
+  });
+}
+
+test('a retry keeps no book type that OpenAlex gave: once OpenAlex types the work an article again, it is filed again', async t => {
+  let openAlexType = 'book';
+  recoveryProviders(t, {
+    openAlex: () => Response.json({ results: [{ ...LIKED_BOOK, type: openAlexType }] }),
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/liked-book', type: 'journal-article' }] } }),
+  });
+  const { env, db } = await listedCorpus([LIKED_BOOK]);
+  await enrichPending(env, 50, NIGHT);
+  await enrichPending(env, 50, NIGHT + DAY_MS);
+  assert.deepEqual([stored(db)['openalex:W4500000007'].paper.publicationType, laneRows(db)], ['book', []]);
+
+  openAlexType = 'article';
+  await enrichPending(env, 50, NIGHT + 3 * DAY_MS);
+  const { paper } = stored(db)['openalex:W4500000007'];
+  assert.deepEqual([paper.publicationType, paper.sources.enrichedBy.includes('crossref'), laneRows(db)], ['article', false, ['topic:T10181']]);
+});
 
 test('a paper OpenAlex marks retracted leaves its lanes, and no later listing of it files it again while the store keeps it', async t => {
   openAlexAnswers(t, [RETRACTED_WORK]);

@@ -486,7 +486,16 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     .map(paper => normalizeDoi(paper.doi)), ...recoverableAbstractDois(enriched.filter((_, index) => asksCrossref[index]))]
     .filter(doi => doi && !doi.includes(',') && doi.length <= 240))];
   const crossref = await crossrefRecords(crossrefDois);
-  enriched = enriched.map(paper => withCrossrefType(paper, paper.sources?.primary === 'openalex' ? crossref.records.get(normalizeDoi(paper.doi))?.type : undefined));
+  // A retry that gets no type from Crossref (Crossref is not asked after a
+  // counted enrichment, or its call fails) keeps the book type Crossref gave
+  // the stored paper, which then names Crossref in `sources.enrichedBy`.
+  // OpenAlex has just typed the work again, and with OpenAlex's type alone a
+  // book would go back to its lanes. A refresh takes only Crossref's answer.
+  enriched = enriched.map((paper, index) => {
+    if (paper.sources?.primary !== 'openalex') return withCrossrefType(paper, undefined);
+    const kept = rows[index].kind === 'retry' && papers[index].sources.enrichedBy.includes('crossref') ? papers[index].publicationType : undefined;
+    return withCrossrefType(paper, crossref.records.get(normalizeDoi(paper.doi))?.type ?? kept);
+  });
   enriched = mergeFeedAbstracts(enriched, [...crossref.records].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
   const semanticScholarDois = recoverableAbstractDois(enriched).slice(0, S2_RECOVERY_BATCH);
   const semanticScholar = semanticScholarDois.length ? await semanticScholarAbstracts(env, semanticScholarDois).catch(() => null) : [];
