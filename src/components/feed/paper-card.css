@@ -937,10 +937,65 @@ button.pc-topics-pop-item:focus-visible {
   background: var(--bg-card);
 }
 
+/* The panel is as tall as the rows around it leave it: 165px under a
+   four-line title on the signed-out paper page at 360x640, where Petri, the
+   heading and two lines take 194px. The state gives way before it is cut: its
+   padding goes down to 8px and Petri shrinks with the panel. The auto margins
+   center the state while it fits and fall to 0 when it does not, so what is
+   still too tall runs past the bottom and the heading stays.
+   `justify-content: center` cut the state at both ends, and its bottom end is
+   the publisher link. The panel can be a size container because its height
+   never comes from its content (`.pc-abstract`, `.pc-sheet`). */
 .pc-abstract:has(> .pc-abstract-empty) {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  container: abstract-panel / size;
+}
+
+.pc-abstract-empty {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-block: auto;
+}
+
+.pc-abstract-empty .empty-state {
+  min-height: 0;
+  padding-block: var(--space-2);
+}
+
+.pc-abstract-empty .empty-state-art {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pc-abstract-empty .petri {
+  min-height: 0;
+}
+
+/* Petri is decoration: in a panel under 10rem she would be less than 3rem
+   tall above two lines, so the state is its words, with no padding of its
+   own. */
+@container abstract-panel (max-height: 10rem) {
+  .pc-abstract-empty .empty-state {
+    padding-block: 0;
+  }
+
+  .pc-abstract-empty .empty-state-art {
+    display: none;
+  }
+}
+
+/* At 740x360 the same page leaves the panel 74px under a two-line title, and
+   the heading and two lines fit it only without the gap between them (68px).
+   Under a three-line title (48px) the second line, the publisher link, runs
+   past the bottom; under a four-line title (21px) the body does, with 4px of
+   the heading. */
+@container abstract-panel (max-height: 5rem) {
+  .pc-abstract-empty .empty-state-body {
+    margin-top: 0;
+  }
 }
 
 .petri.pc-abstract-empty-petri .onboarding-petri-body {
@@ -2745,17 +2800,6 @@ button.pc-topics-pop-item:focus-visible {
     /* Five 52px buttons at the usual step fill the ~310px card edge to edge. */
     .pc-side-actions {
       gap: var(--space-2);
-    }
-
-    /* Petri is decoration; on a card this short the state is its words. Its
-       box goes too: hiding only the drawing left the box's 16px margin, which
-       pushed the publisher link under the panel's edge at 740x360. */
-    .pc-abstract-empty .empty-state {
-      padding-block: var(--space-2);
-    }
-
-    .pc-abstract-empty .empty-state-art {
-      display: none;
     }
   }
 }
