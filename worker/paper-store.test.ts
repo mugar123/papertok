@@ -1584,10 +1584,12 @@ test("a later page with the same interest groups reads the first page's order, a
 // The `rankedBy` the Worker before the groups' ranking (945538f9) kept for the
 // first pages of the requests below. It digests the request, not the papers,
 // so it is the same on any corpus, and not whether the page asks for notable
-// papers, so a daily page's is the same with and without them.
+// papers, so a page's is the same with and without them.
 const RANKED_BY_BEFORE_GROUPS_RANKING = {
   exact: '79efdc8a4436f0ffaa14575867ac1c2e647279ccdfda0b78f338677a9e64fc6b',
   withoutGroups: '039851e02169c778da48705374eaa4dfa6ad3029b238316d6eaa961ba7372005',
+  withoutGroupsNotable: '039851e02169c778da48705374eaa4dfa6ad3029b238316d6eaa961ba7372005',
+  withoutGroupsDailyNotable: '21820a38a11bf894d9d03a66db4706efe81eb51a1802667726acbeb8d838bea2',
   daily: 'bca8648302b158fc9b2323501d95dd3008e10282c56e4988fca589b25a08c818',
   dailyNotable: 'bca8648302b158fc9b2323501d95dd3008e10282c56e4988fca589b25a08c818',
   groups: '1a1dfa177d67c2b4f446a96ab2ed9223f19fe6ac9c80e44ee2401abc610abba7',
@@ -1596,11 +1598,14 @@ const RANKED_BY_BEFORE_GROUPS_RANKING = {
 test("after the groups' ranking is deployed, a page of groups that is not daily or asks for notable papers ranks again, and a custom feed, a page without groups and a daily page without notable papers go on with the order the Worker before kept", async () => {
   const categories = ['quant-ph', 'econ.GN'];
   const served: Record<string, number> = {};
-  for (const name of ['exact', 'withoutGroups', 'daily', 'dailyNotable', 'groups'] as const) {
+  for (const name of ['exact', 'withoutGroups', 'withoutGroupsNotable', 'withoutGroupsDailyNotable', 'daily', 'dailyNotable', 'groups'] as const) {
     const { env, db, liked } = await physicsAndEconomics();
     const body = {
       exact: { categories, exact: true },
       withoutGroups: { categories },
+      // One group of every category ranks its notable papers by every like, as before.
+      withoutGroupsNotable: { categories, seen: feedSeenFilter([]), notable: 3 },
+      withoutGroupsDailyNotable: { categories, order: 'daily', seen: feedSeenFilter([]), notable: 3 },
       daily: { groups: interestGroups([liked]), order: 'daily' },
       // The Worker before ranked its notable papers by every like, not by group.
       dailyNotable: { groups: interestGroups([liked]), order: 'daily', seen: feedSeenFilter([]), notable: 3 },
@@ -1615,7 +1620,7 @@ test("after the groups' ranking is deployed, a page of groups that is not daily 
     db.exec('DELETE FROM work_lanes');
     served[name] = (await readFeedPage(env, request(1), { now: NOW, cache })).length;
   }
-  assert.deepEqual(served, { exact: 4, withoutGroups: 4, daily: 4, dailyNotable: 0, groups: 0 });
+  assert.deepEqual(served, { exact: 4, withoutGroups: 4, withoutGroupsNotable: 4, withoutGroupsDailyNotable: 4, daily: 4, dailyNotable: 0, groups: 0 });
 });
 
 test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
