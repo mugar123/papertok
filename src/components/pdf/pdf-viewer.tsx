@@ -256,8 +256,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     if (!block) return undefined;
     block.setAttribute('data-speaking', '');
     if (followsVoice.current) {
+      // Centred in what the top bar and the player leave visible, or from its start when it does not fit.
       const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      block.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+      const view = textScroll.getBoundingClientRect();
+      const top = Math.max(view.top, textScroll.closest('.pdf-viewer')?.querySelector('.pdf-topbar')?.getBoundingClientRect().bottom ?? view.top);
+      const bottom = Math.min(view.bottom, textScroll.parentElement?.querySelector('.pdf-dock')?.getBoundingClientRect().top ?? view.bottom);
+      const room = bottom - top;
+      const rect = block.getBoundingClientRect();
+      const offset = rect.height < room ? (room - rect.height) / 2 : 16;
+      textScroll.scrollTo({ top: textScroll.scrollTop + rect.top - top - offset, behavior: still ? 'auto' : 'smooth' });
     }
     return () => block.removeAttribute('data-speaking');
   }, [spokenPassage, textScroll]);
