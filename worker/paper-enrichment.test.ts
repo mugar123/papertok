@@ -698,6 +698,30 @@ test("a night's retries spend no more OpenAlex calls than they are given, after 
   assert.equal((await enrichPending(env, 500, NIGHT + DAY_MS)).workIds.length, 20, 'the next night asks the rest');
 });
 
+test("a step whose retries read only editorials and letters does not end the run's retries: the next step reaches the article after them", async t => {
+  const asked = recoveryProviders(t, {});
+  // Newest first: an editorial and a letter, which are asked for no abstract,
+  // then an article, 4 days old the next night. No DOI, so OpenAlex is the
+  // only source asked.
+  const { env, db } = await listedCorpus([
+    listedWork(40, '2026-10-31', { type: 'editorial' }),
+    listedWork(41, '2026-10-31', { type: 'letter' }),
+    listedWork(42, '2026-10-29'),
+  ]);
+  await enrichPending(env, 50, NIGHT);
+  const ids = Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [JSON.parse(row.paper).id, row.id]));
+
+  // Steps of two papers: the first reads the editorial and the letter.
+  asked.length = 0;
+  const first = await enrichPending(env, 2, NIGHT + DAY_MS, { units: 2, after: null });
+  assert.deepEqual([first.workIds, first.stop, first.retries.units], [[], false, 2]);
+  const second = await enrichPending(env, 2, NIGHT + DAY_MS + 600_000, first.retries);
+  assert.deepEqual(second.workIds, [ids['openalex:W4500000042']]);
+  assert.equal(askedOf(asked, 'api.openalex.org').length, 1);
+  const third = await enrichPending(env, 2, NIGHT + DAY_MS + 1_200_000, second.retries);
+  assert.deepEqual([third.workIds, third.stop], [[], true], 'the run ends once no paper is left to ask');
+});
+
 // Captured from OpenAlex on 2026-10-26 (`works/doi:10.1038/nature26142`,
 // keyless) and trimmed to fields the enrichment and the OpenAlex lanes
 // select: a Nature article of 2018, retracted in 2021, with its arXiv eprint

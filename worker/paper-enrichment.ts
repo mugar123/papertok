@@ -308,7 +308,7 @@ const openAlexIdsOf = (paper: Paper) => {
 
 /**
  * What a harvest run's abstract retries may still do: the OpenAlex calls left
- * to them, none once every paper due has been asked, and the last paper asked
+ * to them, none once every paper due has been asked, and the last paper read
  * (its `published` and id), after which a later step of the run goes on, so
  * no paper is retried twice in one run. A young paper whose first
  * enrichment a failed source interrupted can still be asked twice in that run,
@@ -334,7 +334,9 @@ const counted = (row: Row) => row.enrich_misses !== UNCOUNTED;
  * placeholder is shorter than the 40 characters of `isPlausibleAbstract`; an
  * enrichment dated in the last REFRESH_DAYS (counted or not), since an older
  * one is the refresh's; and one of ABSTRACT_RETRY_DAYS passed since then. A
- * paper whose type has no abstract (`typeHasAbstract`) is passed over.
+ * paper whose type has no abstract (`typeHasAbstract`) is read and passed
+ * over, after the query's limit: a page of `limit` such papers gives no rows
+ * and leaves the units as they were, and the next step reads on after it.
  */
 async function abstractRetries(db: D1Database, limit: number, now: number, { units, after }: AbstractRetries) {
   const daysAgo = (days: number) => new Date(now - days * DAY_MS).toISOString();
@@ -411,8 +413,13 @@ async function pendingRows(db: D1Database, limit: number, now: number, retries: 
  * then OpenAlex's misses whose wait is over, then the papers still without an
  * abstract that are due a retry, within the run's `retries`, then counts
  * older than REFRESH_DAYS. Returns the processed works for immediate
- * embedding, whether OpenAlex stopped the pass, and what the run's retries
- * may still do. A source that fails leaves its fields unknown; a paper waiting
+ * embedding, whether the run's enrichment ends with this step (OpenAlex
+ * stopped the pass, or nothing is left to ask), and what the run's retries
+ * may still do. A step that asks nothing does not end the run while its
+ * retries have calls left: the next step, given the returned `retries`, reads
+ * on after the papers this one passed over. A caller that does not pass them
+ * back would read the same page again.
+ * A source that fails leaves its fields unknown; a paper waiting
  * for OpenAlex is not marked done without it, a retry included, so the next
  * run asks it again. A young paper whose first enrichment a failure of
  * Crossref, Europe PMC or Semantic Scholar interrupted is asked again the next
@@ -424,7 +431,10 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   const db = database(env);
   const pending = await pendingRows(db, limit, now, retries);
   const { rows } = pending;
-  if (rows.length === 0) return { workIds: [], stop: true, retries: pending.retries };
+  // With no paper to ask, the retries still have calls only when the page
+  // they read was full of papers passed over (`abstractRetries`): more may
+  // follow it.
+  if (rows.length === 0) return { workIds: [], stop: pending.retries.units === 0, retries: pending.retries };
   const retried = rows.filter(row => row.kind === 'retry').length;
   if (retried) console.log('Abstract retries', JSON.stringify({ papers: retried, openAlexCalls: pending.spent }));
   const papers = rows.map(row => JSON.parse(row.paper) as Paper);
