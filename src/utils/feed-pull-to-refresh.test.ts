@@ -6,6 +6,7 @@ import {
   PULL_BAND_MIN_PX,
   pullBandDepth,
   PULL_BLOCKING_SCROLLERS,
+  PULL_YIELDING_SCROLLERS,
   pullStartFrom,
   pullTakesOver,
   pullProgress,
@@ -16,6 +17,7 @@ import {
 
 const plain = { closest: () => null };
 const insideAbstract = { closest: (sel: string) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
+const insideNoAbstractState = (scrollTop: number) => ({ closest: (sel: string) => (sel === PULL_YIELDING_SCROLLERS ? { scrollTop } : null) });
 // The scroller sits under the navbar, so its own top is the band's origin,
 // and it is as tall as the phone minus the bar.
 const TOP = 52;
@@ -45,6 +47,13 @@ test('the band is a third of the feed, and never less than the floor', () => {
 test('a drag that begins inside the open abstract is refused, wherever the feed is', () => {
   assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 0, clientY: 200, containerTop: TOP }), null);
   assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 812, clientY: TOP + 4, containerTop: TOP, containerHeight: H }), null);
+});
+
+test('a drag that begins inside the scrolled no-abstract state is refused until the state is back at its heading', () => {
+  assert.equal(pullStartFrom({ target: insideNoAbstractState(23), scrollTop: 0, clientY: 300, containerTop: TOP }), null, 'on the first card');
+  assert.equal(pullStartFrom({ target: insideNoAbstractState(23), scrollTop: 812, clientY: TOP + 4, containerTop: TOP, containerHeight: H }), null, 'in the band of a later card');
+  assert.equal(pullStartFrom({ target: insideNoAbstractState(0), scrollTop: 0, clientY: 300, containerTop: TOP }), 300, 'at its heading, or where it fits its panel and never scrolls');
+  assert.equal(pullStartFrom({ target: insideNoAbstractState(0), scrollTop: 812, clientY: 600, containerTop: TOP, containerHeight: H }), null, 'and below the band it is still the previous paper');
 });
 
 test('the first move decides: down is the pull, up is the feed, sideways is neither', () => {

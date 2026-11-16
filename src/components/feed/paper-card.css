@@ -940,27 +940,44 @@ button.pc-topics-pop-item:focus-visible {
 /* The panel is as tall as the rows around it leave it: 165px under a
    four-line title on the signed-out paper page at 360x640, where Petri, the
    heading and two lines take 194px. The state gives way before it is cut: its
-   padding goes down to 8px and Petri shrinks with the panel. The auto margins
-   center the state while it fits and fall to 0 when it does not, so what is
-   still too tall runs past the bottom and the heading stays.
-   `justify-content: center` cut the state at both ends, and its bottom end is
-   the publisher link. The panel can be a size container because its height
-   never comes from its content (`.pc-abstract`, `.pc-sheet`). */
+   padding goes down to 8px and Petri shrinks with the panel. The panel can be
+   a size container because its height never comes from its content
+   (`.pc-abstract`, `.pc-sheet`). */
 .pc-abstract:has(> .pc-abstract-empty) {
   display: flex;
   flex-direction: column;
   container: abstract-panel / size;
 }
 
+/* What is still too tall scrolls inside the panel, like the map's empty state
+   (`.graph-empty`). The scroller fills the panel, and the state's auto
+   margins center it while it fits and fall to 0 when it does not, so the
+   heading stays at the top and the publisher link is a drag or a Tab away. A
+   state that fits has no scroll range, and a drag that begins on it is the
+   feed's, as before. `position: relative` keeps the link's visually hidden
+   "(opens in a new tab)" inside the scroller: positioned against the panel,
+   it gave the clipped panel a 26px scroll range of its own under a four-line
+   title. */
 .pc-abstract-empty {
+  position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
   margin-block: auto;
+  overflow-y: auto;
+}
+
+/* A scrolling state with no link in it takes the keyboard's focus itself in
+   Chrome, so the arrow keys can move it. The panel would clip a ring drawn
+   around it, so the ring is drawn inside. */
+.pc-abstract-empty:focus-visible {
+  outline-offset: -2px;
 }
 
 .pc-abstract-empty .empty-state {
   min-height: 0;
+  margin-block: auto;
   padding-block: var(--space-2);
 }
 
@@ -976,8 +993,19 @@ button.pc-topics-pop-item:focus-visible {
 
 /* Petri is decoration: in a panel under 10rem she would be less than 3rem
    tall above two lines, so the state is its words, with no padding of its
-   own. */
+   own.
+   The words can be taller than a panel this short, and here the scroller is
+   a whole number of pixels tall, centered by its auto margins. At 32.578px
+   over a 68.375px state, Chrome scrolled the state 35px and then kept every
+   later drag up without moving anything, so a swipe that began on the panel
+   never reached the feed. At 32px the feed takes the drag once the state is
+   at its end. A taller panel is not rounded: the pixel would come off Petri
+   as she shrinks. */
 @container abstract-panel (max-height: 10rem) {
+  .pc-abstract-empty {
+    max-height: round(down, 100cqh, 1px);
+  }
+
   .pc-abstract-empty .empty-state {
     padding-block: 0;
   }
@@ -989,9 +1017,8 @@ button.pc-topics-pop-item:focus-visible {
 
 /* At 740x360 the same page leaves the panel 74px under a two-line title, and
    the heading and two lines fit it only without the gap between them (68px).
-   Under a three-line title (48px) the second line, the publisher link, runs
-   past the bottom; under a four-line title (21px) the body does, with 4px of
-   the heading. */
+   Under a three-line title (48px) the state scrolls 21px to show the
+   publisher link, and under a four-line title (21px) it scrolls 48px. */
 @container abstract-panel (max-height: 5rem) {
   .pc-abstract-empty .empty-state-body {
     margin-top: 0;
@@ -1004,10 +1031,41 @@ button.pc-topics-pop-item:focus-visible {
 
 /* The publisher's page in the no-abstract sentence, underlined like the
    abstract's source credit: beside the body text, colour alone would not mark
-   it as a link. */
+   it as a link. The scroll margin is its focus ring, 2px wide at 2px from the
+   words, and 1px clear: focus scrolls the state until the ring is whole. */
 .pc-abstract-empty .empty-state-body a {
   text-decoration: underline;
   text-underline-offset: 2px;
+  scroll-margin-block: 5px;
+}
+
+/* The ring ends 1.7px below the state's last line, which is where the scroll
+   ends. While the keyboard is on the link, the line has 3px more to scroll
+   into. At rest it has none, so a state that fits has nothing to scroll. */
+.pc-abstract-empty .empty-state-body:has(a:focus-visible) {
+  padding-bottom: 3px;
+  margin-bottom: -3px;
+}
+
+/* The link with that ring and margin is 27px tall. In a shorter panel the
+   ring starts 1px inside the link's box and the margin is 2px, 21px in all. */
+@container abstract-panel (max-height: 1.75rem) {
+  .pc-abstract-empty .empty-state-body a {
+    scroll-margin-block: 2px;
+  }
+
+  .pc-abstract-empty .empty-state-body a:focus-visible {
+    outline-offset: -1px;
+  }
+}
+
+/* A panel shorter than that has no room to scroll the link into: the
+   signed-in paper page at 740x360 leaves it 7.5px under a three-line title
+   and 0px under a four-line one. While the keyboard's focus is in the panel
+   it is 1.5rem tall, drawn over the top of the action row, so the focus is
+   never on a link out of sight. Touch has no way into a panel that short. */
+.pc-abstract:has(> .pc-abstract-empty):has(:focus-visible) {
+  min-height: 1.5rem;
 }
 
 /* Expanded, it takes the space the rest of the card is not using and scrolls
