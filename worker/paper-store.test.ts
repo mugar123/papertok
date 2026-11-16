@@ -2096,10 +2096,10 @@ test("with twelve categories asked, a notable lane holding more than its listing
 // The leaves are asked in this order, not in name order.
 const LEAVES = ['cs.LG', 'cs.CV'];
 const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
-async function notableLeavesCorpus() {
+async function notableLeavesCorpus(leaves = LEAVES) {
   const store = corpus();
   await ingestPapers(store.env, recentPapers(60), { now: NOW });
-  const listed = LEAVES.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
+  const listed = leaves.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
     paper: notableWork(`W${year}${leafIndex + 1}${rank}`, `Highly cited study ${rank} of ${year} in ${leaf}`, `${year}-0${3 + rank}-01`, 5000, true),
     lanes: [`notable:${leaf}`],
   }))));
@@ -2340,6 +2340,91 @@ test('a fresh load continues the years in turns of a group without likes beside 
     excludedIds.push(...cards.map(paper => paper.id));
   }
   assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
+// cs.LG's and economics' notable papers (`notableLeavesCorpus`), a group for
+// each, and a liked paper with a vector for each group. The notable papers
+// have no vector, so a group with likes ranks its own newest first.
+const AREA_LEAVES = ['cs.LG', 'econ.GN'];
+const AREA_LIKES = ['2610.00059', '2610.00058'];
+async function notableAreasCorpus() {
+  const { env, db } = await notableLeavesCorpus(AREA_LEAVES);
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  AREA_LIKES.forEach((id, index) => embed.run(Buffer.from(quantize(index === 0 ? [1, 0] : [0, 1]).buffer), id));
+  return env;
+}
+const areaGroups = (positiveIds: string[][], weights = [1, 1]) => AREA_LEAVES.map((category, index) => (
+  { categories: [category], exampleCategories: [category], positiveIds: positiveIds[index], weight: weights[index] }
+));
+
+// A page of fifteen has one notable place: the app asks for its card and two
+// spares, shows the first it gets and, on the next fresh load, holds the cards
+// it showed in the seen filter and names them in `excludedIds`. A card the
+// reader liked comes among its group's likes, and one they rejected in
+// `negativeIds`. The answer: the category and year of the card each load shows.
+async function notablePlaceByLoad(
+  loads: number,
+  { likes = AREA_LIKES.map(id => [id]), weights = [1, 1], shownAs = 'excludedIds' }: { likes?: string[][]; weights?: number[]; shownAs?: 'excludedIds' | 'positiveIds' | 'negativeIds' | 'seen' } = {},
+) {
+  const env = await notableAreasCorpus();
+  const shown: Array<{ id: string; category: string }> = [];
+  const places: Array<[category: string, year: number | null | undefined]> = [];
+  for (let load = 0; load < loads; load += 1) {
+    const named = shown.map(card => card.id);
+    const liked = AREA_LEAVES.map(category => (shownAs === 'positiveIds' ? shown.filter(card => card.category === category).map(card => card.id) : []));
+    const answer = await readFeedPage(env, parseFeedRequest({
+      groups: areaGroups(likes.map((ids, index) => [...ids, ...liked[index]]), weights),
+      ...(shownAs === 'excludedIds' ? { excludedIds: named } : {}),
+      ...(shownAs === 'negativeIds' ? { negativeIds: named } : {}),
+      pageSize: 15, seen: feedSeenFilter(named), skipsSeen: true, notable: 3,
+    }), { now: NOW });
+    const [card] = answer.filter(paper => paper._notable);
+    assert.equal(card._fetchedFor?.length, 1, `load ${load}: the card names its category`);
+    shown.push({ id: card.id, category: card._fetchedFor[0] });
+    places.push([card._fetchedFor[0], card.year]);
+  }
+  return places;
+}
+
+// The verifier's finding on PR #520 (2026-11-15): each group left out the
+// papers the request names before the groups took their turns, so every fresh
+// load gave its notable place to the first group again.
+test('successive fresh loads give their notable place to the interest groups in turns, whether the app excludes the cards shown, the reader liked or rejected them, or the filter alone holds them', async () => {
+  const categories: Record<string, string[]> = {};
+  for (const shownAs of ['excludedIds', 'positiveIds', 'negativeIds', 'seen'] as const) {
+    categories[shownAs] = (await notablePlaceByLoad(4, { shownAs })).map(([category]) => category);
+  }
+  const inTurns = ['cs.LG', 'econ.GN', 'cs.LG', 'econ.GN'];
+  assert.deepEqual(categories, { excludedIds: inTurns, positiveIds: inTurns, negativeIds: inTurns, seen: inTurns });
+});
+
+test("over successive fresh loads the notable place follows the groups' weights, a group of twice the weight taking two loads in three", async () => {
+  const categories = async (weights: number[]) => (await notablePlaceByLoad(6, { weights })).map(([category]) => category);
+  assert.deepEqual(await categories([2, 1]), ['cs.LG', 'econ.GN', 'cs.LG', 'cs.LG', 'econ.GN', 'cs.LG']);
+  assert.deepEqual(await categories([1, 2]), ['econ.GN', 'cs.LG', 'econ.GN', 'econ.GN', 'cs.LG', 'econ.GN']);
+});
+
+test('over successive fresh loads a group without likes takes the notable place in its turn, with its years in turns, beside a group with likes', async () => {
+  // cs.LG's group ranks by its like, newest first on a tie: 2025's two papers, then 2024's.
+  assert.deepEqual(await notablePlaceByLoad(6, { likes: [[AREA_LIKES[0]], []] }),
+    [['cs.LG', 2025], ['econ.GN', 2025], ['cs.LG', 2025], ['econ.GN', 2024], ['cs.LG', 2024], ['econ.GN', 2023]]);
+  // The group without likes first.
+  assert.deepEqual(await notablePlaceByLoad(4, { likes: [[], [AREA_LIKES[1]]] }),
+    [['cs.LG', 2025], ['econ.GN', 2025], ['cs.LG', 2024], ['econ.GN', 2025]]);
+});
+
+test("a group gives up one of its first turns for each of its own notable papers the request names, none for another group's, and a paper two groups hold costs one turn", async () => {
+  const env = await notableAreasCorpus();
+  const notableOf = async (excludedIds: string[]) => (await readFeedPage(env, parseFeedRequest({
+    groups: areaGroups(AREA_LIKES.map(id => [id])), excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW })).filter(paper => paper._notable).map(paper => paper._fetchedFor);
+  // The app showed cs.LG's two newest and none of economics'.
+  assert.deepEqual(await notableOf(['openalex:W202511', 'openalex:W202510']), [['econ.GN'], ['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG']]);
+  // The newest paper of both lanes: cs.LG's first turn showed it, so economics' group comes next.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025909', 'Highly cited study of 2025 in both areas', '2025-06-01', 5000, true), lanes: AREA_LEAVES.map(leaf => `notable:${leaf}`) },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  assert.deepEqual(await notableOf(['openalex:W2025909']), [['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG'], ['econ.GN']]);
 });
 
 // A rejection says nothing about the years the reader wants: "Not interested"

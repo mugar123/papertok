@@ -1615,7 +1615,9 @@ const WALK_KEPT_MS = 2 * 60 * 60_000;
 // notable papers, which is what Most recent sends, ranks as before and names
 // no version. A Worker that ranks the other pages otherwise names another
 // version, so neither serves an order the other kept as its own: the next page
-// ranks again after the ranks served and walked past.
+// ranks again after the ranks served and walked past. The groups' turns for
+// the notable papers a request names (PR #520's review) keep the version: no
+// deployed Worker had named it before them.
 const GROUPS_RANKING = '2026-11-13';
 
 /**
@@ -2200,7 +2202,6 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     likeGroups(paper, ungroupedAreaLanes.get(id) ?? []).forEach(index => groupedLikes[index].push(id));
   }
   const groupLikes = groupedLikes.map(vectorsOf);
-  const offeredNotable = offeredOf(notableCandidates);
   step = Date.now();
   // Each group ranked by its own likes, then the page shared by weight.
   const scored = interleaveByWeight(members.map((rows, index) => {
@@ -2231,15 +2232,24 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // With a like, as the page: each group ranks the notable papers of its
   // categories by its own likes, the closest first and without recency, since
   // they are years old by design, or with the years in turns when it has none
-  // (2026-11-13), and the groups take turns by weight.
+  // (2026-11-13), and the groups take turns by weight. A group's papers that
+  // the request names (liked, rejected or excluded) take the group's first
+  // turns before they leave the order, as turns already passed. Left out
+  // before the turns, the cards a fresh load names would give every load's
+  // first notable place to the same group (PR #520's review, 2026-11-15). A
+  // named paper two groups hold takes one turn, of the first of them to reach
+  // it. A paper the filter holds and the request does not name stays in the
+  // order, and the walk passes over it.
   const notable = likes.length
     ? interleaveByWeight(query.groups.map((group, index) => {
       const groupLanes = group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`);
-      const ofGroup = (candidate: Candidate) => candidate.lanes.some(lane => groupLanes.includes(lane));
-      return (groupLikes[index].length
-        ? rankByUnitVectors(offeredNotable.filter(ofGroup), unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
-        : yearsInTurns(notableCandidates.filter(ofGroup), groupLanes)).map(notableRank);
-    }), query.groups.map(group => group.weight))
+      const ofGroup = notableCandidates.filter(candidate => candidate.lanes.some(lane => groupLanes.includes(lane)));
+      const passed = ofGroup.filter(candidate => excluded.has(candidate.workId)).map(row => ({ row, semanticScore: 0 }));
+      const ranked = groupLikes[index].length
+        ? rankByUnitVectors(offeredOf(ofGroup), unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
+        : yearsInTurns(ofGroup, groupLanes);
+      return [...passed, ...ranked].map(notableRank);
+    }), query.groups.map(group => group.weight)).filter(candidate => !excluded.has(candidate.workId))
     : yearsInTurns(notableCandidates, notableLanes).map(notableRank);
   timings?.since('rankCpu', step);
   return {
