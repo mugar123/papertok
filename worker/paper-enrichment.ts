@@ -48,12 +48,19 @@ const ABSTRACT_RETRY_DAYS = [1, 2, 4, 8, 16];
 // An enrichment no source interrupts sets 0, and so does a refresh once the
 // paper is REFRESH_DAYS old.
 const UNCOUNTED = -1;
-// The OpenAlex calls one harvest run's abstract retries may make, out of the
-// run's share (paper-harvest.ts): about 15,000 papers asked by their OpenAlex
-// ids. Each step's retries are counted as if they were asked apart. Every full
-// run starts with them, a second one on the same UTC day too. A step the
-// Workflow runs again after a failure starts with the units it had, so the
-// failed attempt's calls are not counted.
+// The OpenAlex calls one harvest run's abstract retries are counted for, out
+// of the run's share (paper-harvest.ts): about 15,000 papers asked by their
+// OpenAlex ids. `abstractRetries` counts them before the calls, as the filters
+// `openAlexRequests` builds for a step's retries asked apart, each paper's
+// ids together. The calls sent can be more. The step's request lists every
+// paper's id before the journal DOIs, among the step's other papers, so DOIs
+// long enough to split a filter can take more filters than were counted. A
+// call OpenAlex answers with a 429 and a short wait is sent again and counted
+// once (`openAlexChunk`). Every full run starts with the units, a second one
+// on the same UTC day too. A step the Workflow runs again after a failure
+// starts with the units it had, so the failed attempt's calls are not
+// counted. The harvest's share of the day's ledger counts every call sent and
+// is the hard limit.
 const ABSTRACT_RETRY_UNITS = 300;
 // 25 arXiv ids are 50 landing-page values, the most one OpenAlex filter takes.
 const ARXIV_CHUNK = 25;

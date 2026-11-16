@@ -19,8 +19,8 @@ const EMBED_STEP_PAPERS = 256;
 // harvest's share of the day (provider-runtime.ts). A larger backlog drains
 // over the next runs. Each step takes the new papers first, then OpenAlex's
 // misses, then the retries of young papers still without an abstract, which
-// spend at most ABSTRACT_RETRY_UNITS (300) of those units a run, then the
-// 14-day refresh (paper-enrichment.ts).
+// are counted for at most ABSTRACT_RETRY_UNITS (300) of those units a run, a
+// count the calls sent can pass, then the 14-day refresh (paper-enrichment.ts).
 //
 // The steps of a run execute in one Worker invocation until a wait longer than
 // the Workflows engine's 5-minute grace period, so every step's subrequests
