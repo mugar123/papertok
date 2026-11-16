@@ -37,6 +37,8 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   openedFrom: { width: number; height: number } | null;
 }) {
   const [target, setTarget] = useState<number | null>(null);
+  // Where a mouse over the track points, before any press.
+  const [hover, setHover] = useState<number | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   const playButton = useRef<HTMLButtonElement | null>(null);
   const shown = target ?? position;
@@ -61,6 +63,12 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
     );
   }, [openedFrom]);
 
+  /** The moment under a pointer, over the full width of the line as drawn. */
+  const pointAt = (event: { clientX: number; currentTarget: Element }) => {
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (event.clientX - left) / width)) * timeline.duration;
+  };
+
   const commit = () => {
     if (target === null) return;
     onSeek(target);
@@ -74,6 +82,8 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
     onClose();
   };
 
+  const pointed = target ?? hover;
+  const pointedChapter = pointed === null ? null : chapterAt(timeline, pointed);
   const PlayIcon = playing ? Pause : Play;
   const preparing = !prepared.failed && prepared.ready < prepared.total;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
@@ -100,7 +110,32 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
           <progress className="rd-listen-progress" max={prepared.total} value={prepared.ready} aria-label="Preparing the paper's audio" />
         </div>
       ) : (
-      <div className="rd-listen-track">
+      <div
+        className="rd-listen-track"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setTarget(pointAt(event));
+        }}
+        onPointerMove={(event) => {
+          const at = pointAt(event);
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) setTarget(at);
+          // Kept up to date during a drag too, or letting go shows where the mouse was before the press.
+          setHover(event.pointerType === 'mouse' ? at : null);
+        }}
+        onPointerUp={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const at = pointAt(event);
+          onSeek(at);
+          setTarget(null);
+          setHover(event.pointerType === 'mouse' ? at : null);
+        }}
+        onPointerCancel={() => {
+          setTarget(null);
+          setHover(null);
+        }}
+        onPointerLeave={() => setHover(null)}
+      >
         <div className="rd-listen-line" aria-hidden="true">
           <span className="rd-listen-fill" style={{ width: `${timeline.duration ? (shown / timeline.duration) * 100 : 0}%` }} />
           {timeline.chapters.slice(1).map(part => (
@@ -116,7 +151,6 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
           aria-label="Position in the paper"
           aria-valuetext={`${spokenClock(shown)}, ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}
           onChange={event => setTarget(Number(event.target.value))}
-          onPointerUp={commit}
           onBlur={commit}
           onKeyUp={(event) => { if (event.key !== 'Escape') commit(); }}
           onKeyDown={(event) => {
@@ -125,6 +159,12 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
             setTarget(null);
           }}
         />
+        {pointed !== null && pointedChapter && (
+          <span className="rd-listen-tip" aria-hidden="true" style={{ '--at': `${timeline.duration ? (pointed / timeline.duration) * 100 : 0}%` }}>
+            {clock(pointed)}
+            {pointedChapter.number && <span>{pointedChapter.number}</span>}
+          </span>
+        )}
       </div>
       )}
       <div className="rd-listen-controls">

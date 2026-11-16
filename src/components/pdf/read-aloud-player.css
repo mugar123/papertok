@@ -91,6 +91,8 @@
 .rd-listen-progress::-webkit-progress-bar { background: var(--bg-secondary); }
 .rd-listen-progress::-webkit-progress-value { background: var(--accent-secondary); transition: width 200ms var(--ease-out); }
 .rd-listen-progress::-moz-progress-bar { background: var(--accent-secondary); }
+.rd-listen-track:not(:has(.rd-listen-progress)) { cursor: pointer; touch-action: none; }
+/* Keyboard only: the track reads the pointer itself, over the line's full width. */
 .rd-listen-track input {
   position: absolute;
   inset: 0;
@@ -98,8 +100,27 @@
   height: 100%;
   margin: 0;
   opacity: 0;
-  cursor: pointer;
+  pointer-events: none;
 }
+/* The minute (and section number) under the mouse, or where a drag would land. */
+.rd-listen-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: clamp(28px, var(--at, 50%), calc(100% - 28px));
+  display: flex;
+  gap: 6px;
+  padding: 3px 7px;
+  translate: -50% 0;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--bg-card);
+  font: 500 0.75rem/1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+.rd-listen-tip span { opacity: 0.7; }
 .rd-listen-track:has(input:focus-visible) { outline: 2px solid var(--accent-secondary); outline-offset: 2px; border-radius: var(--radius-sm); }
 
 .rd-listen-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
