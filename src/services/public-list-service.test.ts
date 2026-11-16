@@ -214,6 +214,23 @@ test('THE INVARIANT: sanitizing a paper twice is a fixed point', async () => {
   assert.equal(second!.doi, '10.1000/Example');
 });
 
+test('a public paper keeps its DOI character for character, on both passes', () => {
+  const dois = [
+    // A real Wiley DOI (Crossref, 2026-11-16) whose last character is `#`.
+    '10.1002/(sici)1097-0282(1996)40:1<1::aid-bip1>3.0.co;2-#',
+    '10.1234/odd?part#two',
+    '10.1234/a%3Fb',
+    '10.1234/50%off',
+  ];
+  for (const doi of dois) {
+    const first = sanitizePublicPaper({ title: 'A paper', doi });
+    assert.equal(first?.doi, doi);
+    assert.deepEqual(sanitizePublicPaper(first), first, doi);
+  }
+  // A resolver link names the DOI percent-encoded: this one is 10.1234/a?b.
+  assert.equal(sanitizePublicPaper({ title: 'A paper', doi: 'https://doi.org/10.1234/a%3Fb' })?.doi, '10.1234/a?b');
+});
+
 test('P25: papers record the id the private list files them under', async () => {
   // THE BUG this shape exists to avoid: sanitizePublicPaper rewrites ids to
   // their stable doi:/arxiv: spelling, and the Worker joins the membership

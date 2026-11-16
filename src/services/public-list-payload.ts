@@ -70,7 +70,8 @@ function normalizeDoi(value: unknown) {
   const url = safeDoiUrl(value);
   if (!url) return '';
   try {
-    return decodeURI(url.replace('https://doi.org/', ''));
+    // Not `decodeURI`, which leaves the link's `%23` and `%3F` encoded.
+    return decodeURIComponent(url.replace('https://doi.org/', ''));
   } catch {
     return '';
   }

@@ -56,12 +56,43 @@ export function safeCatalogUrl(value: unknown) {
   }
 }
 
+const DOI_RESOLVER = /^https?:\/\/(?:dx\.)?doi\.org\//i;
+
+/**
+ * The doi.org link of a DOI, or '' when the value is not DOI-shaped.
+ *
+ * A DOI may hold any printable character, and doi.org decodes the path of a
+ * link once, so each character that means something else in a URL travels
+ * percent-encoded, once. `encodeURI` does that for spaces, `<`, `>`, `"`, `%`
+ * and the rest, but leaves `#` and `?`, which end the path where they stand:
+ * doi.org would be asked for `…3.0.co;2-` in place of `…3.0.co;2-#`. A `.` or
+ * `..` segment is the exception no encoding covers: the URL parser resolves
+ * it, written as `%2E` too, before the request leaves.
+ *
+ * Whether a `%` is the DOI's own depends on how the DOI arrives, the rule
+ * `get_paper` follows (`paperIdentity` in worker/mcp-server.ts):
+ * - a DOI given as itself is read as written. `10.1234/a%3Fb` has `%3F` among
+ *   its characters and links to `…/a%253Fb`;
+ * - a resolver link carries the DOI percent-encoded, so it is decoded once.
+ *   `https://doi.org/10.1234/a%3Fb` is 10.1234/a?b and links to `…/a%3Fb`,
+ *   so this function's own link comes back unchanged. OpenAlex writes the
+ *   resolver before the DOI as it is, `<` and `#` unencoded. Such a link
+ *   reads the same, except that a `%XX` among the DOI's own characters is
+ *   taken for an escape: a link cannot tell the two apart.
+ */
 export function safeDoiUrl(doi: unknown) {
-  const normalized = String(doi || '')
-    .trim()
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+  const text = String(doi || '').trim();
+  let normalized = text.replace(DOI_RESOLVER, '');
+  if (normalized !== text) {
+    try {
+      normalized = decodeURIComponent(normalized);
+    } catch {
+      // A `%` that starts no escape is the DOI's own, so the whole link is
+      // read as written.
+    }
+  }
   return /^10\.\d{4,9}\/.+/.test(normalized)
-    ? `https://doi.org/${encodeURI(normalized)}`
+    ? `https://doi.org/${encodeURI(normalized).replace(/[#?]/g, character => encodeURIComponent(character))}`
     : '';
 }
 
