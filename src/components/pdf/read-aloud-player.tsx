@@ -101,7 +101,7 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
       ref={root}
       className="rd-listen"
       role="group"
-      aria-label="Read aloud"
+      aria-label="Voice"
       onKeyDown={onKeyDown}
       style={openedFrom ? { width: openedFrom.width } : undefined}
     >

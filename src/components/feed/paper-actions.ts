@@ -7,9 +7,13 @@ import { downloadCitationFile } from '../../utils/reading-library.ts';
 
 export const shareMethod = (method: string) => (method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other');
 
-/** `notInterestedHint` is the feed's (feed-dismissal.ts); without one, the account's. */
-export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotInterested, notInterestedHint = ACCOUNT_DISMISSAL_HINT }: {
+/**
+ * `notInterestedHint` is the feed's (feed-dismissal.ts); without one, the account's.
+ * `zotero` is the signed-in reader's Send to Zotero (use-zotero-action.ts), beside the citation exports.
+ */
+export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotInterested, notInterestedHint = ACCOUNT_DISMISSAL_HINT, zotero = null }: {
   paper: Paper; isRead: boolean; onAbout: () => void; onToggleRead: () => void; onNotInterested: (event: MouseEvent) => void; notInterestedHint?: string;
+  zotero?: PaperMenuAction | null;
 }): PaperMenuAction[] {
   return [
     { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: onAbout },
@@ -21,6 +25,7 @@ export function paperActions({ paper, isRead, onAbout, onToggleRead, onNotIntere
       onSelect: onToggleRead,
     },
     { id: 'skip', label: 'Not interested', hint: notInterestedHint, Icon: Prohibit, onSelect: onNotInterested },
+    ...(zotero ? [zotero] : []),
     { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
     { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
   ];

@@ -47,7 +47,7 @@ import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
-import { ZoteroMark } from '../pdf/zotero-button.tsx';
+import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';

@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, Eye, EyeSlash, FilePdf, Highlighter, NotePencil, SpeakerHigh, TextAlignLeft, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, Eye, EyeSlash, FilePdf, Highlighter, NotePencil, SpeakerHigh, TextAlignLeft, X } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
@@ -19,7 +19,6 @@ import FullTextArticle from './full-text-article.tsx';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
 import { PaperDock } from './paper-info.tsx';
-import ZoteroButton from './zotero-button.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -31,6 +30,8 @@ import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-vie
 import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { fullTextListen, readAloudStart } from './read-aloud.ts';
 import { useReadAloud } from './use-read-aloud.ts';
+import { useZoteroAction } from './use-zotero-action.ts';
+import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudPlayer from './read-aloud-player.tsx';
 import { ReadAloudError } from '../../services/read-aloud-service.ts';
 
@@ -184,6 +185,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid ?? '';
+  const zotero = useZoteroAction(paper, uid, true);
+  const zoteroName = zotero?.sent ? `${zotero.label} (${zotero.hint.charAt(0).toLowerCase()}${zotero.hint.slice(1)})` : zotero?.label;
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
   });
@@ -402,7 +405,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             <PaperDock
               scroll={showsText ? textScroll : null}
               pinned={playerOpen}
-              menu={playerOpen ? undefined : { paper, doc: fullText, fromCard: menu, onLeave: leaveThen }}
+              menu={playerOpen ? undefined : { paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText ? [showsText
+                ? { id: 'view', label: 'Show PDF', hint: 'The paper as published', Icon: FilePdf, onSelect: showPdf }
+                : { id: 'view', label: 'Show text', hint: 'The paper as text you can annotate and listen to', Icon: TextAlignLeft, onSelect: () => setView('text') }] : [] }}
               contents={!playerOpen && showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
             >
                 {playerOpen ? (
@@ -431,18 +436,28 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                     {notes.passages.length > 0 && <span className="pdf-dock-count">{notes.passages.length}</span>}
                   </Toggle>
                 )}
-                {fullText && (
-                  <Button variant="ghost" size="icon" aria-label={showsText ? 'Show PDF' : 'Show text'} title={showsText ? 'Show PDF' : 'Show text'} onClick={showsText ? showPdf : () => setView('text')}>
-                    {showsText ? <FilePdf size={18} aria-hidden="true" /> : <TextAlignLeft size={18} aria-hidden="true" />}
-                  </Button>
-                )}
                 {canListen && (
-                  <Toggle ref={readAloudButton} className="pdf-dock-toggle" pressed={readAloud.playing} onPressedChange={openPlayer} aria-label="Read aloud" title="Read aloud">
+                  <Toggle ref={readAloudButton} className="pdf-dock-toggle" pressed={readAloud.playing} onPressedChange={openPlayer} aria-label="Voice, read the paper aloud" title="Read the paper aloud">
                     <SpeakerHigh size={18} aria-hidden="true" />
-                    <span className="pdf-dock-label">Read aloud</span>
+                    <span className="pdf-dock-label">Voice</span>
                   </Toggle>
                 )}
-                {uid && paper.id && <ZoteroButton key={`${uid}:${paper.id}`} paper={paper} uid={uid} />}
+                {zotero && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="pdf-dock-zotero"
+                    onClick={zotero.onSelect}
+                    disabled={zotero.busy}
+                    focusableWhenDisabled
+                    aria-busy={zotero.busy || undefined}
+                    aria-label={zoteroName}
+                    title={zoteroName}
+                    data-sent={zotero.sent ? '' : undefined}
+                  >
+                    {zotero.busy ? <CircleNotch size={18} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ZoteroMark size={18} />}
+                  </Button>
+                )}
                 {dockUrl && (
                   <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={dockUrl} target="_blank" rel="noopener noreferrer" />}>
                     <ArrowSquareOut size={18} aria-hidden="true" />

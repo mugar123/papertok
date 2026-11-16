@@ -18,7 +18,10 @@ import { areaAccentForPaper } from '../../utils/area-accent.ts';
 import './paper-dock.css';
 
 type DockView = 'closed' | 'contents' | 'actions' | 'about';
-type DockMenuSource = { paper: Paper; doc: FullText | null | undefined; fromCard: ReaderMenu; onLeave: (then: () => void) => void };
+import type { PaperMenuAction } from '../feed/paper-menu.tsx';
+
+/** `viewActions` lead the options: the viewer's own, such as switching between the text and the PDF. */
+type DockMenuSource = { paper: Paper; doc: FullText | null | undefined; fromCard: ReaderMenu; onLeave: (then: () => void) => void; viewActions?: PaperMenuAction[] };
 
 // The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
 export function PaperDock({ scroll, contents, menu, pinned = false, children }: {
@@ -135,7 +138,7 @@ export function PaperDock({ scroll, contents, menu, pinned = false, children }: 
   );
 }
 
-function DockMenu({ paper, doc, fromCard, onLeave, view, setView }: DockMenuSource & { view: DockView; setView: (view: DockView) => void }) {
+function DockMenu({ paper, doc, fromCard, onLeave, viewActions = [], view, setView }: DockMenuSource & { view: DockView; setView: (view: DockView) => void }) {
   const card = useSyncExternalStore(fromCard.subscribe, fromCard.snapshot);
   const signedIn = Boolean(useAuth().user);
   const { trackEvent } = useAnalyticsConsent();
@@ -145,14 +148,14 @@ function DockMenu({ paper, doc, fromCard, onLeave, view, setView }: DockMenuSour
       title={paper.title}
       url={card.shareUrl}
       onShared={method => { void trackEvent('share', { method: shareMethod(method), content_type: 'paper', surface: 'reader' }); }}
-      actions={paperActions({
+      actions={[...viewActions, ...paperActions({
         paper,
         isRead: card.isRead,
         onAbout: () => setView('about'),
         onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
         onNotInterested: () => onLeave(card.notInterested),
         notInterestedHint: card.notInterestedHint,
-      })}
+      })]}
       open={view === 'actions' || view === 'about'}
       onClose={close}
       ShareHeading="h3"

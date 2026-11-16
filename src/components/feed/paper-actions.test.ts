@@ -19,3 +19,9 @@ test('the reader passes the card\'s hint on; a card without one keeps the accoun
   const custom: Pick<ReaderCard, 'notInterestedHint'> = { notInterestedHint: 'Remove it from this feed' };
   assert.equal(skipHint(paperActions({ ...handlers, notInterestedHint: custom.notInterestedHint })), 'Remove it from this feed');
 });
+
+test('Send to Zotero, when the reader has it, sits after Not interested and before the citation exports', () => {
+  const zotero = { id: 'zotero', label: 'Send to Zotero', hint: 'Adds it to your library', Icon: () => null, onSelect: () => {} };
+  assert.deepEqual(paperActions({ ...handlers, zotero }).map(action => action.id), ['about', 'read', 'skip', 'zotero', 'bibtex', 'ris']);
+  assert.deepEqual(paperActions(handlers).map(action => action.id), ['about', 'read', 'skip', 'bibtex', 'ris']);
+});
