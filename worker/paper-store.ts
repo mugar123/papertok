@@ -1609,18 +1609,20 @@ const RANKING_KEPT_MS = 15 * 60_000;
 // minutes (ENG-103); privacy.html states this lifetime.
 const WALK_KEPT_MS = 2 * 60 * 60_000;
 
-// How a page that sends interest groups, other than a daily one, is ranked
-// from the same inputs: since 2026-11-13 its notable papers go by group, and
-// a group without likes takes its categories in turns. A Worker that ranks
-// such a page otherwise names another version, so neither serves an order the
-// other kept as its own: the next page ranks again after the ranks served and
-// walked past.
+// How a page that sends interest groups is ranked from the same inputs: since
+// 2026-11-13 its notable papers go by group, and unless it is daily a group
+// without likes takes its categories in turns. A daily page that asks for no
+// notable papers, which is what Most recent sends, ranks as before and names
+// no version. A Worker that ranks the other pages otherwise names another
+// version, so neither serves an order the other kept as its own: the next page
+// ranks again after the ranks served and walked past.
 const GROUPS_RANKING = '2026-11-13';
 
 /**
  * The lanes in their order, `order`, the likes, the rejections and the
- * interest groups an order is ranked by, and for a page that sends groups the
- * version of their ranking, as a digest (`rankedBy`).
+ * interest groups an order is ranked by, and for a page that sends groups,
+ * other than a daily one without notable papers, the version of their
+ * ranking, as a digest (`rankedBy`).
  */
 async function rankingInputs(lanes: string[], query: FeedQuery) {
   // The groups in their order, which decides the group an area's article goes to.
@@ -1636,7 +1638,7 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
   const inputs = JSON.stringify({
     lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups,
     ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
-    ...(query.sendsGroups && query.order !== 'daily' ? { groupsRanking: GROUPS_RANKING } : {}),
+    ...(query.sendsGroups && (query.order !== 'daily' || query.notable > 0) ? { groupsRanking: GROUPS_RANKING } : {}),
   });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
