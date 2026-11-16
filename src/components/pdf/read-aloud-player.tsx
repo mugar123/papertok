@@ -7,6 +7,7 @@ import { chapterAt } from './read-aloud.ts';
 import './read-aloud-player.css';
 
 const SKIP_SECONDS = 15;
+const PREPARING_DELAY_MS = 1_200;
 
 function clock(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -39,6 +40,14 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   const [target, setTarget] = useState<number | null>(null);
   // Where a mouse over the track points, before any press.
   const [hover, setHover] = useState<number | null>(null);
+  // A paper already stored is all there within a moment; only a wait past that shows what is left.
+  const [slow, setSlow] = useState(false);
+  const missing = !prepared.failed && prepared.ready < prepared.total;
+  useEffect(() => {
+    if (!missing) return undefined;
+    const timer = setTimeout(() => setSlow(true), PREPARING_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [missing]);
   const root = useRef<HTMLDivElement | null>(null);
   const playButton = useRef<HTMLButtonElement | null>(null);
   const shown = target ?? position;
@@ -85,7 +94,7 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   const pointed = target ?? hover;
   const pointedChapter = pointed === null ? null : chapterAt(timeline, pointed);
   const PlayIcon = playing ? Pause : Play;
-  const preparing = !prepared.failed && prepared.ready < prepared.total;
+  const preparing = missing && slow;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
   return (
     <div
