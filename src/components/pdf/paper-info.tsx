@@ -21,8 +21,10 @@ type DockView = 'closed' | 'contents' | 'actions' | 'about';
 type DockMenuSource = { paper: Paper; doc: FullText | null | undefined; fromCard: ReaderMenu; onLeave: (then: () => void) => void };
 
 // The card is clipped to the bar's outline when closed (`--dock-w`, `--dock-h`, measured here).
-export function PaperDock({ scroll, contents, menu, children }: {
+export function PaperDock({ scroll, contents, menu, pinned = false, children }: {
   scroll: HTMLElement | null;
+  /** Kept on screen while scrolling, for controls that are in use, such as the read-aloud player. */
+  pinned?: boolean;
   contents: ((close: () => void) => ReactNode) | null;
   menu?: DockMenuSource;
   children: ReactNode;
@@ -97,7 +99,7 @@ export function PaperDock({ scroll, contents, menu, children }: {
   };
   const close = () => setView('closed');
   return (
-    <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open) || undefined}>
+    <div className="pdf-dock-root" ref={setRoot} data-stowed={(stowed && !open && !pinned) || undefined}>
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverPortal keepMounted container={root}>
           <PopoverPositioner

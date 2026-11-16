@@ -13,6 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
+import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
 import { isNanConfigured } from './nan-client.ts';
 import {
   EmailNotificationError,
@@ -399,6 +400,26 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       return json(payload, 200, {
         ...corsHeaders(origin, env),
         'cache-control': 'private, no-store',
+      });
+    } catch (error) {
+      captureWorkerException(error);
+      const knownError = error instanceof AIExplanationError;
+      return json(
+        {
+          code: knownError ? error.code : 'AI_UNAVAILABLE',
+          ...(knownError && error.quota ? { quota: error.quota } : {}),
+        },
+        knownError ? error.status : 502,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
+    }
+  }
+  if (url.pathname === READ_ALOUD_PATH) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    try {
+      return new Response(await handleReadAloud(request, env), {
+        headers: { ...corsHeaders(origin, env), 'content-type': 'audio/mpeg', 'cache-control': 'private, no-store' },
       });
     } catch (error) {
       captureWorkerException(error);

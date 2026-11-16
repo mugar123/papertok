@@ -94,6 +94,9 @@ const SETTINGS_COPY = {
   aiLevelLabel: 'Default AI level, preselected when you ask AI to explain a paper',
   levelSaved: (label: string) => ({ title: 'Explanation level set', description: `New AI explanations start at the ${label} level.` }),
   levelError: { title: 'Level not saved', description: 'Your previous level is still in use. Try again.' },
+  readAloudFromPosition: 'Start reading aloud from where I am',
+  readAloudFromPositionHint: 'When off, the voice starts at the top of the paper.',
+  readAloudError: { title: 'Setting not saved', description: 'Reading aloud still starts where it did. Try again.' },
   notifications: 'Notifications',
   notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
   emailUpdates: 'Email updates',
@@ -565,6 +568,22 @@ function ReadingPage() {
             );
           })}
         </RadioGroup>
+        <div className="profile-fields">
+          <Label className="profile-switch">
+            <span className="profile-switch-copy">
+              <span className="profile-switch-label">{copy.readAloudFromPosition}</span>
+              <span className="profile-switch-hint">{copy.readAloudFromPositionHint}</span>
+            </span>
+            <Switch
+              className="settings-toggle"
+              checked={readingPreferences.readAloudFromPosition}
+              aria-label={copy.readAloudFromPosition}
+              onCheckedChange={(checked) => {
+                updateReadingPreferences({ readAloudFromPosition: checked }).catch(() => notify('error', copy.readAloudError));
+              }}
+            />
+          </Label>
+        </div>
       </section>
       {/* Keyed by account: another account starts from an empty list, and a
           page still loading for the previous one is dropped with it. */}

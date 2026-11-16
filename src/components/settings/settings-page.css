@@ -388,6 +388,10 @@
 }
 
 /* ── Default AI level: three choices in the panel, the chosen one on paper ── */
+.settings-levels + .profile-fields {
+  margin-top: var(--space-4);
+}
+
 .settings-levels {
   display: grid;
   gap: var(--space-1);
