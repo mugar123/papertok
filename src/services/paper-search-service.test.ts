@@ -158,6 +158,43 @@ test('a dead arXiv leaves the OpenAlex answer whole', async () => {
   assert.equal(papers.length, 1);
 });
 
+test('an arXiv failure cannot become an empty successful search', async () => {
+  const failure = new Error('arXiv unavailable');
+  for (const openAlex of [[], [openAlexPaper('W1', 'Unrelated title')]]) {
+    await assert.rejects(searchPapersAcrossSources("The Last Harness You'll Ever Build", {
+      providers: {
+        searchOpenAlex: async () => ({ papers: openAlex }),
+        searchArxiv: async () => { throw failure; },
+      },
+    }), error => error instanceof Error && error.cause === failure);
+  }
+});
+
+test('an arXiv timeout cannot become an empty successful search', async () => {
+  await assert.rejects(searchPapersAcrossSources("The Last Harness You'll Ever Build", {
+    arxivTimeoutMs: 10,
+    providers: {
+      searchOpenAlex: async () => ({ papers: [] }),
+      searchArxiv: () => new Promise(() => {}),
+    },
+  }), { name: 'TimeoutError' });
+});
+
+test('two successful empty sources still return no results', async () => {
+  assert.deepEqual(await searchPapersAcrossSources('No matching paper', { providers: providersWith() }), []);
+});
+
+test('the complete Harness title survives merging and filtering', async () => {
+  const title = "The Last Harness You'll Ever Build";
+  const papers = await searchPapersAcrossSources(title, {
+    providers: providersWith({ openAlex: [openAlexPaper('W7155562078', title, {
+      doi: '10.48550/arxiv.2604.21003', authors: [{ name: 'Haebin Seong' }],
+    })] }),
+  });
+  assert.deepEqual(papers.map(paper => paper.title), [title]);
+  assert.equal(papers[0].doi, '10.48550/arxiv.2604.21003');
+});
+
 test('a dead OpenAlex still shows what arXiv found', async () => {
   const papers = await searchPapersAcrossSources('llama 2', {
     providers: {

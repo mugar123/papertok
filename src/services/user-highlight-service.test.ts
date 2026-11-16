@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ScientificText from '../components/scientific-text.ts';
-import { annotationMarkdown } from '../utils/annotation-markdown.ts';
 import {
   buildHighlightId,
   buildHighlightsQuery,
@@ -119,6 +118,34 @@ const SPAN = {
   quote: 'small errors pile up',
   paperTitle: 'A paper',
 };
+
+test('a full-text highlight keeps the words the page shows', () => {
+  const stored = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b12', paragraphIndex: 0, quote: '  errors fell by 5%\n  in {all} runs ' });
+  assert.equal(stored?.level, 'full-text');
+  assert.equal(stored?.quote, 'errors fell by 5% in {all} runs');
+});
+
+test('a highlight keeps a colour it can be painted in, and yellow stays the unstored default', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 };
+  assert.equal(normalizeUserHighlight({ ...base, color: 'teal' })?.color, 'teal');
+  assert.equal(normalizeUserHighlight({ ...base, color: 'yellow' })?.color, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, color: 'red' })?.color, undefined);
+});
+
+test('a later occurrence of the same words is kept, and the first stays unstored', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 };
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 2 })?.occurrence, 2);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 0 })?.occurrence, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: -1 })?.occurrence, undefined);
+  assert.equal(normalizeUserHighlight({ ...base, occurrence: 101 })?.occurrence, undefined);
+});
+
+test('the same words marked at two places in a block are two highlights', () => {
+  const first = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0 })!;
+  const second = normalizeUserHighlight({ ...SPAN, level: 'full-text', sectionId: 'b3', paragraphIndex: 0, occurrence: 1 })!;
+  assert.notEqual(buildHighlightId(second), buildHighlightId(first));
+  assert.equal(buildHighlightId({ ...first, occurrence: 0 }), buildHighlightId(first));
+});
 
 test('a passage across paragraphs keeps where it ends', () => {
   const stored = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' });
@@ -231,7 +258,16 @@ test('a passage across paragraphs marks the end of the first, every middle one w
   assert.equal(index.get('intro:3')?.[0].id, 'h1');
 });
 
-test('the card and the copied note show where a passage ends', () => {
+test('a reader mark keeps the pen it was saved with, yellow when it names none; the model\'s has none', () => {
+  const index = indexHighlightsByParagraph([
+    { ...SPAN, id: 'teal', kind: 'user', color: 'teal' },
+    { ...SPAN, id: 'plain', kind: 'user' },
+    { ...SPAN, id: 'answer', kind: 'ai', color: 'rose' },
+  ]);
+  assert.deepEqual(index.get('intro:1')?.map(entry => [entry.id, entry.color]), [['teal', 'teal'], ['plain', 'yellow'], ['answer', undefined]]);
+});
+
+test('the card and the notes show where a passage ends', () => {
   assert.equal(passageQuote({ quote: 'small errors pile up' }), 'small errors pile up');
   assert.equal(passageQuote({ quote: 'small errors pile up', endQuote: 'by the fifth turn' }), 'small errors pile up … by the fifth turn');
 });
@@ -244,9 +280,9 @@ function marginText(passage: Parameters<typeof passageQuote>[0]) {
 
 // The quote is the slice of the saved text a selection covers, so a selection
 // that starts or ends inside a font command is stored with the brace or the
-// command it cut. The card paints neither; the margin and the copied note
-// print the words the card paints, and what is stored stays as it is.
-test('the margin and the copied note print the words a selection cut across a font command paints', () => {
+// command it cut. The card paints neither; the notes print the words the
+// card paints, and what is stored stays as it is.
+test('the notes print the words a selection cut across a font command paints', () => {
   const paragraph = 'We call it a \\textbf{HERMES}, a harness for \\emph{nested \\textbf{agents}} and more, at 12% cost.';
   const painted = normalizeLatexText(paragraph);
   const cases: [string, string][] = [
@@ -271,7 +307,6 @@ test('the margin and the copied note print the words a selection cut across a fo
     );
     assert.equal(passageQuote(stored), words);
     assert.equal(marginText(stored), displayProse(words));
-    assert.equal(annotationMarkdown({ quote: passageQuote(stored) }), `> *${words}*`);
   }
 });
 
@@ -304,7 +339,6 @@ test('a passage across paragraphs prints each end as painted', () => {
   assert.ok(stored);
   assert.equal(passageQuote(stored), 'harness for tasks … We then test the');
   assert.equal(marginText(stored), 'harness for tasks … We then test the');
-  assert.equal(annotationMarkdown({ quote: passageQuote(stored), note: 'Why?' }), '> *harness for tasks … We then test the*\n\nWhy?');
 });
 
 // A quote is stored at 400 characters, which can end inside a font command:

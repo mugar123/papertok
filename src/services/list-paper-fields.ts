@@ -2,15 +2,30 @@ import type { Paper } from '../models/paper.ts';
 
 import { readArxivId, storedClassification } from '../models/paper.ts';
 import { copyHoldsField } from '../utils/list-paper-copies.ts';
-import { savedAnswered, fieldAnswered } from '../utils/profile-session-caches.ts';
+import { fieldAnswered } from '../utils/profile-session-caches.ts';
 import { getOpenAlexEnrichmentId } from '../utils/feed-enrichment.ts';
 import { arxivKey, readArxivPapers } from './liked-paper-records.ts';
 
-// Reached lazily, so a unit test of this module never loads the OpenAlex client.
-const readOpenAlexWorks = async (ids: string[]): Promise<Record<string, Pick<Paper, 'primaryTopic'>>> => {
-  const { enrichPapersBatch } = await import('./open-alex-service.ts');
-  return enrichPapersBatch(ids);
+/** OpenAlex's answer for some ids, and the requests that got none. */
+type OpenAlexWorksAnswer = {
+  works: Record<string, Pick<Paper, 'primaryTopic'>>;
+  failures: { ids: string[]; error: unknown }[];
 };
+
+// Reached lazily, so a unit test of this module never loads the OpenAlex client.
+const readOpenAlexWorks = async (ids: string[]): Promise<OpenAlexWorksAnswer> => {
+  const { enrichPapersBatch } = await import('./open-alex-service.ts');
+  const failures: OpenAlexWorksAnswer['failures'] = [];
+  const works = await enrichPapersBatch(ids, { onRequestFailed: (failedIds, error) => { failures.push({ ids: failedIds, error }); } });
+  return { works, failures };
+};
+
+// The wait a failure asked for: a 429's retry-after, or what is left of the
+// arXiv lane's cooldown.
+function retryAfterOf(error: unknown) {
+  const wait = (error as { retryAfterMs?: unknown } | null | undefined)?.retryAfterMs;
+  return typeof wait === 'number' && Number.isFinite(wait) && wait > 0 ? wait : null;
+}
 
 /** The field a provider gives a paper: arXiv's categories, or OpenAlex's topic. */
 export type PaperField = Partial<ReturnType<typeof storedClassification>>;
@@ -31,17 +46,85 @@ export function fieldRequestFor(paperId: string, paper: Partial<Paper>) {
   return /^(?:openalex|doi):/.test(openAlexId) ? { provider: 'openalex' as const, id: openAlexId } : null;
 }
 
-/** A settled stored copy still needs a provider when it holds no classification. */
-function listPaperNeedsFieldRecovery(uid: string, paperId: string, paper: Partial<Paper> | undefined) {
-  return savedAnswered(uid, paperId) && !fieldAnswered(uid, paperId)
-    && Boolean(paper && !copyHoldsField(paper) && fieldRequestFor(paperId, paper));
+// Requests one paper may cost in one opening of its list. arXiv is free and
+// its lane refuses locally during a cooldown: the first and two retries.
+// OpenAlex bills each call, and its client does not repeat a refused or
+// timed-out one (`open-alex-client.ts`), so the list does not either.
+const REQUESTS_PER_OPENING = { arxiv: 3, openalex: 1 } as const;
+// Papers asked in one round; rounds run one at a time.
+const ROUND_SIZE = 60;
+// The waits after a failure that did not say how long: about 5 s after a
+// paper's first request, outlasting the arXiv lane's default 4 s cooldown,
+// and about 10 s after any later one.
+const RETRY_BACKOFF_MS = [5_000, 10_000];
+// The longest the list keeps a row waiting for one retry. A failure that asks
+// for longer is left for the next opening rather than retried early.
+const MAX_RETRY_WAIT_MS = 60_000;
+
+/** Requests a paper may cost in one opening; zero when no provider can be asked. */
+function requestsAllowed(paperId: string, paper: Partial<Paper>) {
+  const request = fieldRequestFor(paperId, paper);
+  return request ? REQUESTS_PER_OPENING[request.provider] : 0;
 }
 
-/** Keep each round bounded; the caller carries attempts across rounds of one opening. */
-export function nextListFieldRound(uid: string, papers: Record<string, Partial<Paper>>, attempted: ReadonlySet<string>) {
-  return Object.fromEntries(Object.entries(papers)
-    .filter(([id, paper]) => !attempted.has(id) && listPaperNeedsFieldRecovery(uid, id, paper))
-    .slice(0, 60));
+/**
+ * The papers of the open list still waiting for a field in this opening, in
+ * list order and not capped: the saved-document read has answered
+ * (`savedAnswers`, including confirmed absence), no provider has answered
+ * this session, the copy holds no field, a provider can be asked, and the
+ * paper has requests left. `attempts` counts the requests of this opening.
+ */
+export function listPapersAwaitingField(
+  uid: string,
+  papers: Record<string, Partial<Paper>>,
+  { savedAnswers, attempts }: { savedAnswers: ReadonlySet<string> | undefined; attempts: ReadonlyMap<string, number> },
+) {
+  return Object.fromEntries(Object.entries(papers).filter(([id, paper]) => (
+    Boolean(savedAnswers?.has(id)) && !fieldAnswered(uid, id) && !copyHoldsField(paper)
+    && (attempts.get(id) ?? 0) < requestsAllowed(id, paper)
+  )));
+}
+
+/** The next round: the first papers still waiting, at most sixty. */
+export function nextListFieldRound(awaiting: Record<string, Partial<Paper>>) {
+  return Object.fromEntries(Object.entries(awaiting).slice(0, ROUND_SIZE));
+}
+
+/** The wait after a failed round: its `retry-after`, or a backoff by the requests made. */
+function retryDelayMs(attempt: number, retryAfterMs: number | null) {
+  const backoff = RETRY_BACKOFF_MS[Math.min(Math.max(attempt, 1), RETRY_BACKOFF_MS.length) - 1];
+  return Math.min(retryAfterMs ?? backoff, MAX_RETRY_WAIT_MS);
+}
+
+/**
+ * Counts one request for each paper of a round and says what its answer
+ * settled. A paper with a field is answered even if it is also among the
+ * failures, which happens when one work is saved under two ids.
+ *
+ * `waitMs` holds the next round after any failure, whatever that round asks,
+ * so the next papers are not sent into the same refusal; zero when nothing
+ * failed. A failure whose `retry-after` is longer than the list waits spends
+ * its papers' requests: asking sooner would only be refused again.
+ */
+export function settleFieldRound(
+  attempts: ReadonlyMap<string, number>,
+  round: Record<string, Partial<Paper>>,
+  { fields, failed, retryAfterMs }: { fields: Record<string, PaperField>; failed: string[]; retryAfterMs: number | null },
+) {
+  const askedIds = Object.keys(round);
+  const unanswered = askedIds.filter(paperId => failed.includes(paperId) && !(paperId in fields));
+  const next = new Map(attempts);
+  askedIds.forEach((paperId) => { next.set(paperId, (next.get(paperId) ?? 0) + 1); });
+  if (retryAfterMs !== null && retryAfterMs > MAX_RETRY_WAIT_MS) {
+    unanswered.forEach((paperId) => { next.set(paperId, requestsAllowed(paperId, round[paperId])); });
+  }
+  return {
+    answered: askedIds.filter(paperId => !unanswered.includes(paperId)),
+    attempts: next,
+    waitMs: unanswered.length > 0
+      ? retryDelayMs(Math.max(...unanswered.map(paperId => attempts.get(paperId) ?? 0)) + 1, retryAfterMs)
+      : 0,
+  };
 }
 
 /**
@@ -53,9 +136,10 @@ export function nextListFieldRound(uid: string, papers: Record<string, Partial<P
  * for, so it is not read as the paper's field and the row had no field's ink.
  * A paper the provider does not name stays without a field.
  *
- * `failed` lists the papers of an arXiv request that did not answer, so the
- * caller can ask again. OpenAlex's client reports a failed request as an
- * empty answer, so a paper it did not name may be one it could not be asked.
+ * `failed` lists the papers whose request did not answer, from arXiv or
+ * OpenAlex, so the caller can ask again; a paper a provider answered without
+ * naming is not among them. `retryAfterMs` is the longest wait any of those
+ * failures asked for, or null when none said.
  */
 export async function readPaperFields(
   papers: Record<string, Partial<Paper>>,
@@ -63,6 +147,12 @@ export async function readPaperFields(
 ) {
   const fields: Record<string, PaperField> = {};
   const failed: string[] = [];
+  const waits: number[] = [];
+  const fail = (paperIds: string[], error: unknown) => {
+    failed.push(...paperIds);
+    const wait = retryAfterOf(error);
+    if (wait !== null) waits.push(wait);
+  };
   // The papers asked by each id; an arXiv id is matched without its case.
   const asked = { arxiv: new Map<string, string[]>(), openalex: new Map<string, string[]>() };
   const arxivIds: string[] = [];
@@ -85,18 +175,25 @@ export async function readPaperFields(
           papersAsked('arxiv', key).forEach((paperId) => { fields[paperId] = field; });
         });
       });
-    } catch {
-      failed.push(...batch.flatMap(id => papersAsked('arxiv', arxivKey(id))));
+    } catch (error) {
+      fail(batch.flatMap(id => papersAsked('arxiv', arxivKey(id))), error);
     }
   }
 
   if (asked.openalex.size > 0) {
-    const works = await fetchOpenAlexWorks([...asked.openalex.keys()]);
+    const ids = [...asked.openalex.keys()];
+    let answer: OpenAlexWorksAnswer;
+    try {
+      answer = await fetchOpenAlexWorks(ids);
+    } catch (error) {
+      answer = { works: {}, failures: [{ ids, error }] };
+    }
+    answer.failures.forEach(({ ids: failedIds, error }) => fail(failedIds.flatMap(id => papersAsked('openalex', id)), error));
     asked.openalex.forEach((paperIds, id) => {
-      const { primaryTopic } = storedClassification({ primaryTopic: works[id]?.primaryTopic });
+      const { primaryTopic } = storedClassification({ primaryTopic: answer.works[id]?.primaryTopic });
       if (primaryTopic) paperIds.forEach((paperId) => { fields[paperId] = { primaryTopic }; });
     });
   }
 
-  return { fields, failed };
+  return { fields, failed, retryAfterMs: waits.length > 0 ? Math.max(...waits) : null };
 }

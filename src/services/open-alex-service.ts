@@ -5,6 +5,7 @@ import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
 type Enrichment = OpenAlexEnrichment;
 type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
 type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number; typeahead?: boolean };
+type EnrichmentOptions = RequestOptions & { onRequestFailed?: (ids: string[], error: unknown) => void };
 type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | 'cited_by_count' | 'summary_stats'>;
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
@@ -135,7 +136,15 @@ export function isOpenAlexEnrichmentId(id: unknown): boolean {
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
 }
 
-export async function enrichPapersBatch(arxivIds: string[], options: RequestOptions = {}) {
+/**
+ * A work missing from the result may be one OpenAlex does not have, or one
+ * whose request failed. `onRequestFailed` tells them apart: it is called once
+ * per failed request (network error, timeout, refusal, non-OK status or
+ * unreadable body) with the ids it asked, normalized as the result's keys are
+ * (a `doi:` id lowercased, an arXiv id without prefix or version), and the
+ * error when there was one.
+ */
+export async function enrichPapersBatch(arxivIds: string[], options: EnrichmentOptions = {}) {
   const validIds = [...new Set((Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
@@ -161,22 +170,24 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
   
   if (toFetch.length === 0) return result;
 
-  // Separate OpenAlex IDs and ArXiv IDs
+  // Separate OpenAlex IDs and ArXiv IDs, each kept as the caller's
+  // normalized id so a failed request can name the ids it asked.
   const openAlexIds: string[] = [];
   const arxivIdsOnly: string[] = [];
   const doisOnly: string[] = [];
   
   toFetch.forEach(id => {
     if (/^doi:/i.test(id)) {
-      doisOnly.push(id.slice(4));
+      doisOnly.push(id);
     } else if (id.startsWith('openalex:') || id.startsWith('https://openalex.org/') || /^W\d+$/.test(id)) {
-      openAlexIds.push(id.replace('openalex:', '').replace('https://openalex.org/', ''));
+      openAlexIds.push(id);
     } else {
       arxivIdsOnly.push(id);
     }
   });
 
-  const fetchChunk = async (filterParam: string) => {
+  const fetchChunk = async (filterParam: string, chunkIds: string[]) => {
+    const fail = (error?: unknown) => options.onRequestFailed?.(chunkIds, error);
     const url = `https://api.openalex.org/works?filter=${filterParam}&per_page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
     let response = null;
     let primaryFailed = false;
@@ -198,6 +209,7 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
       if (directError && !isOpenAlexRateLimitError(directError)) {
         console.warn('OpenAlex enrichment failed', directError);
       }
+      fail(directError ?? undefined);
       return;
     }
 
@@ -230,10 +242,13 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
              writeOpenAlexPersistent(`enrichment:openalex:${openAlexId}`, enrichment);
              result[`openalex:${openAlexId}`] = enrichment;
           });
+        } else {
+          fail();
         }
       }
     } catch (e) {
       console.error("Enrichment processing failed", e);
+      fail(e);
     }
   };
 
@@ -247,17 +262,18 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    chunkRequests.push(fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`));
+    chunkRequests.push(fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`, chunk));
   }
 
   for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
     const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
-    chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(chunk)));
+    const workIds = chunk.map(id => id.replace('openalex:', '').replace('https://openalex.org/', ''));
+    chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(workIds), chunk));
   }
 
   for (let i = 0; i < doisOnly.length; i += CHUNK_SIZE) {
     const chunk = doisOnly.slice(i, i + CHUNK_SIZE);
-    chunkRequests.push(fetchChunk(`doi:${encodeURIComponent(chunk.join('|'))}`));
+    chunkRequests.push(fetchChunk(`doi:${encodeURIComponent(chunk.map(id => id.slice(4)).join('|'))}`, chunk));
   }
 
   await Promise.all(chunkRequests);

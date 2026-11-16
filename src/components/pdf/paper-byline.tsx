@@ -41,7 +41,7 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
               <span className="visually-hidden" role="status">Loading profile</span>
             </>
           )}
-          {institution && <p className="ft-author-place">{institution}</p>}
+          {institution && <p className="ft-author-place" title={institution}>{institution}</p>}
           {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compactCount.format(entity.works_count)} works</p>}
         </div>
         {follow && (

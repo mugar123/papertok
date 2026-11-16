@@ -151,3 +151,34 @@ test('ending an account session permits category recovery on signing in again', 
   assert.equal(fieldAnswered('repeat-session', paper.id), false);
   assert.equal(listPaperNeedsFieldRead([paper], savedAnswered('repeat-session', paper.id)), true);
 });
+
+test('a subscriber hears each saved-read answer, and the answered set changes only then', async () => {
+  const { forgetListPapers, savedAnswersOf, subscribeSavedAnswers } = await import('./profile-session-caches.ts');
+  let heard = 0;
+  const unsubscribe = subscribeSavedAnswers(() => { heard += 1; });
+
+  assert.equal(savedAnswersOf('uid-sub'), undefined);
+  // A confirmed absence leaves no document anywhere: this answer is the only change.
+  rememberSavedAnswers('uid-sub', ['2601.00001']);
+  const first = savedAnswersOf('uid-sub');
+  assert.equal(heard, 1);
+  assert.deepEqual([...first!], ['2601.00001']);
+  assert.equal(savedAnswersOf('uid-sub'), first, 'the same set while nothing changes');
+
+  rememberSavedAnswers('uid-sub', []);
+  assert.equal(heard, 1, 'nothing answered, nothing to hear');
+  rememberSavedAnswers('uid-sub', ['2601.00002']);
+  assert.equal(heard, 2);
+  assert.notEqual(savedAnswersOf('uid-sub'), first);
+  assert.equal(savedAnswersOf('uid-sub')!.has('2601.00002'), true);
+  assert.equal(savedAnswersOf(undefined), undefined);
+
+  forgetListPapers('uid-sub');
+  assert.equal(heard, 3);
+  assert.equal(savedAnswersOf('uid-sub'), undefined);
+
+  unsubscribe();
+  rememberSavedAnswers('uid-sub', ['2601.00003']);
+  assert.equal(heard, 3, 'an unsubscribed listener hears nothing');
+  forgetListPapers('uid-sub');
+});

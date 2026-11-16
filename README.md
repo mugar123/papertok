@@ -99,10 +99,17 @@ PLOS Medicine (2005), distributed under a Creative Commons Attribution license.*
 
 *Set your default level in Settings → Reading & AI. Previously read plain-words summaries appear below it.*
 
-In the plain-words reader, select a passage to highlight it, add a note or ask for an
-explanation. AI adaptations are labeled and do not replace the original article. If the
-full text cannot be retrieved or a usage limit is reached, an explanation may be unavailable;
-PaperTok does not present an abstract-only response as a rewrite of the full paper.
+In the plain-words reader, select a passage to highlight it, with an optional note, or
+choose **Explain this to me**. **Annotations** in the bottom bar opens your notes beside
+the text; its **AI** tab shows only the explanations. On a touch screen, select with the
+handles, then tap **Highlight**. AI adaptations are labeled and do not replace the
+original article. If the full text cannot be retrieved or a usage limit is reached, an
+explanation may be unavailable; PaperTok does not present an abstract-only response as
+a rewrite of the full paper.
+
+In the paper's own text, select a passage to highlight it, with an optional note. **Notes**
+in the bottom bar opens your highlights for that paper beside the text. On a touch screen,
+select with the handles, then tap **Highlight**. Highlights need an account.
 
 ### Save, organize and share
 

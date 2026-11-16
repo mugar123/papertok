@@ -210,6 +210,9 @@ that only the data is allowed to pick.
   tied to a field. Each has a `-soft` surface and a `-line` border in
   `variables.css`. **Like** (`accent-like`) and **Save** (`accent-save`) colour
   the rail's own states.
+  The reader may also pick `accent-teal`, `accent-sky`, `accent-violet` or
+  `accent-rose` for a highlight in a paper's full text, as an alternative to
+  the default yellow; their `-soft` surfaces paint the mark.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
@@ -248,7 +251,8 @@ Set `--area-accent` from the field with the `getAreaGradient()` helper pattern
 
 **Rule 3 — The Yellow Thread Rule.** `--brand-yellow` marks only: the
 **engraved button's plate** (landing and onboarding only), the **active nav or
-tab item**, the **AI reading action** and **user highlights**. Nothing else. The
+tab item**, the **AI reading action** and **user highlights** (their default
+colour; the full-text viewer also offers four action accents). Nothing else. The
 focus ring is the ink.
 
 **The No New Hex Rule.** All tokens live in `src/styles/variables.css`. Do not
@@ -299,8 +303,10 @@ full-height cards; each card is a sheet of type with an action rail beside it.
 
 - **Breakpoints in use:** 1080px (figure clippings appear above it), 900px
   (the card becomes the whole screen and the rail overlays its right edge),
-  768px (navbar height steps down), 640px (phone type and sheet sizes), 600px
-  (`useIsPhone`: menus and popovers become bottom drawers).
+  768px (navbar height steps down), 720px (the full-text viewer's notes
+  sidebar covers the text instead of pushing it), 640px (phone type and sheet
+  sizes), 600px (`useIsPhone`: menus and popovers become bottom drawers), 440px
+  (the viewer's bottom bar shows its toggles as icons when it holds Notes).
 - **The navbar** is 64px on desktop and 52px on a phone (`--nav-height`,
   `--nav-height-mobile`); `--nav-total` adds the top safe-area inset in one
   place, and everything that offsets from the bar reads it.
@@ -546,7 +552,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab.
+new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
+Contents, the reading level, Annotations, AI highlights and the original
+paper, and without the card's options, which it has no card to take from. Its
+notes are the full-text reader's notes panel and its selection opens the same
+highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
 institution, project, topic or journal can be followed: the Explorer header, beside a

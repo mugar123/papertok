@@ -72,7 +72,7 @@ import { dismissalFor } from '../../utils/feed-dismissal.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
 import { createNextPageSentinel, type NextPageRetries } from './next-page-sentinel.ts';
 import './feed-container.css';
-import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
+import { EASE_OUT, EASE_OUT_EXPO, EASE_OUT_QUAD } from '../../utils/motion-curves.ts';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
 // shares this container with For You and must not clobber its place. The
@@ -137,7 +137,6 @@ const PILL_EXIT_MS = 300;
 // of the face's spring, which marked the same moment twice.
 const FACE_OUT_S = 0.14;
 const FACE_IN_DELAY_S = 0.08;
-const EASE_OUT_QUAD: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
 function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionProps, 'initial' | 'animate' | 'exit'> {
   if (reduced) {
     return {

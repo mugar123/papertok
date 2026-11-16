@@ -13,34 +13,36 @@ test('the measurement pages a seeded local D1 through readFeedPage: rows by stat
   );
   const returned = rows.map(row => [row.categories, row.likes, row.page, row.after, row.returned.lanes, row.returned.notable, row.returned.vectors, row.papers]);
   assert.deepEqual(returned, [
-    // cs.LG and area:ai; notable:cs.LG. With likes: the 4 likes' vectors, then
-    // the 126 candidates neither liked nor excluded and the 30 notable ones. The
-    // next page reads none of it from its kept order, but ranks again, as a first
-    // page does, 16 minutes later (RANKING_KEPT_MS) or after a dismissal, which is
-    // a negative: its vector is read even without likes. A lean that moved to
+    // cs.LG and area:ai; notable:cs.LG. With likes: the vectors of the 126
+    // candidates neither liked nor excluded and of the 30 notable ones; the 4
+    // likes' vectors come with the lookup of the request's ids (keys). The next
+    // page reads none of it from its kept order, but ranks again, as a first
+    // page does, 16 minutes later (RANKING_KEPT_MS) or after a dismissal, which
+    // is a negative: the candidates' vectors are read even without likes, less
+    // the dismissed paper's, which comes with the keys. A lean that moved to
     // `relevance` changes `rankedBy` too. The notable reads return the lane's
     // 30 rows, then the 30 of the day's slice that its lookup offers.
     [1, 0, 0, '', 140, 60, 0, 20],
     [1, 0, 1, '', 0, 0, 0, 20],
     [1, 0, 1, 'after 16 min', 140, 60, 0, 20],
-    [1, 0, 1, 'after a dismissal', 140, 60, 160, 20],
+    [1, 0, 1, 'after a dismissal', 140, 60, 129 + 30, 20],
     [1, 0, 1, 'after the lean moved', 140, 60, 0, 20],
-    [1, 4, 0, '', 140, 60, 160, 20],
+    [1, 4, 0, '', 140, 60, 126 + 30, 20],
     [1, 4, 1, '', 0, 0, 0, 20],
-    [1, 4, 1, 'after 16 min', 140, 60, 160, 20],
-    [1, 4, 1, 'after a dismissal', 140, 60, 160, 20],
-    [1, 4, 1, 'after the lean moved', 140, 60, 160, 20],
-    // cs.LG, cs.RO, area:cs and area:ai; two notable lanes: 4 + 266 + 60 vectors.
+    [1, 4, 1, 'after 16 min', 140, 60, 126 + 30, 20],
+    [1, 4, 1, 'after a dismissal', 140, 60, 125 + 30, 20],
+    [1, 4, 1, 'after the lean moved', 140, 60, 126 + 30, 20],
+    // cs.LG, cs.RO, area:cs and area:ai; two notable lanes: 266 + 60 vectors.
     [2, 0, 0, '', 280, 120, 0, 20],
     [2, 0, 1, '', 0, 0, 0, 20],
     [2, 0, 1, 'after 16 min', 280, 120, 0, 20],
-    [2, 0, 1, 'after a dismissal', 280, 120, 330, 20],
+    [2, 0, 1, 'after a dismissal', 280, 120, 269 + 60, 20],
     [2, 0, 1, 'after the lean moved', 280, 120, 0, 20],
-    [2, 4, 0, '', 280, 120, 330, 20],
+    [2, 4, 0, '', 280, 120, 266 + 60, 20],
     [2, 4, 1, '', 0, 0, 0, 20],
-    [2, 4, 1, 'after 16 min', 280, 120, 330, 20],
-    [2, 4, 1, 'after a dismissal', 280, 120, 330, 20],
-    [2, 4, 1, 'after the lean moved', 280, 120, 330, 20],
+    [2, 4, 1, 'after 16 min', 280, 120, 266 + 60, 20],
+    [2, 4, 1, 'after a dismissal', 280, 120, 265 + 60, 20],
+    [2, 4, 1, 'after the lean moved', 280, 120, 266 + 60, 20],
   ]);
   // The seen filter holds the newest papers of every asked lane, leaf and area,
   // as a feed without likes serves them: the leaf papers of one night come

@@ -30,10 +30,6 @@
      paper-reader.tsx as `--rd-origin` (viewport coordinates — `.rd` is
      `inset: 0`, so its box is the viewport). */
   transform-origin: var(--rd-origin, 50% 62%);
-  /* How much of the annotation sheet stays on screen once it is put away. */
-  --rd-sheet-peek: 32px;
-  /* The sheet's resting height with the home indicator folded in. */
-  --rd-sheet-peek-total: calc(var(--rd-sheet-peek) + var(--inset-bottom));
 }
 
 .rd-doc-byline .list-row-authors-list {
@@ -97,113 +93,61 @@ button.rd-tag {
   color: var(--tint-violet-fg);
 }
 
-/* ── The top bar ──
-   The controls sit in a bar above the document, always on screen; the paper
-   scrolls under it. */
+/* ── The top bar ── */
 .rd-topbar {
   position: relative;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, max-content) 1fr;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-default);
+  min-height: 60px;
+  padding: var(--space-2) var(--space-4);
   background: var(--bg-primary);
   z-index: 3;
 }
 
-.rd-topbar .rd-panel {
-  align-items: center;
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
+.rd-topbar > :first-child { justify-self: start; }
+
+@media (pointer: coarse) {
+  .rd-topbar button { min-width: 44px; min-height: 44px; }
+}
+
+.rd-topbar-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-heading);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.rd-dock-level {
+  height: 40px;
+  border-color: transparent;
+  background: transparent;
   box-shadow: none;
 }
 
-.rd-topbar .rd-panel-group {
-  flex-direction: row;
-  align-items: center;
-}
-
-.rd-topbar .rd-panel-label {
-  display: none;
-}
-
-.rd-level-select {
-  min-width: 8.5rem;
-}
-
-@media (min-width: 641px) {
-  .rd-topbar .rd-level-select {
-    position: absolute;
-    left: 50%;
-    translate: -50% 0;
-  }
-}
-
-.rd-panel .rd-topbar-switch[data-pressed] {
-  border-color: var(--tint-green-line);
-  background: var(--tint-green-bg);
-  color: var(--tint-green-fg);
-}
-
 @media (hover: hover) and (pointer: fine) {
-  .rd-topbar .rd-level-select:hover,
-  .rd-topbar [data-slot='toggle']:not([data-pressed]):hover {
-    background: var(--bg-secondary);
-  }
+  .rd-dock-level:hover { background: var(--bg-secondary); }
 }
 
-/* The panel: grouped and labelled, like a properties palette. */
-.rd-panel {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  /* Opaque enough to read against, without a `backdrop-filter`. The blur was
-     sampling and re-blurring the whole document behind it on every frame of
-     every scroll, and at 88% white over a white page it was buying almost
-     nothing: what showed through was a ghost of the text either way. This is
-     the one change here made on reasoning rather than on a measurement — the
-     cost of a backdrop filter lives in paint, which this harness cannot see. */
-  background: color-mix(in srgb, var(--bg-card) 95%, transparent);
-  box-shadow: var(--shadow-lg);
-  /* It rises out of the dock rather than out of thin air. */
-  transform-origin: bottom center;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.rd-panel::-webkit-scrollbar { display: none; }
-
-.rd-panel-group {
+.rd-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
 }
 
-.rd-panel-label {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.rd-panel-divider {
-  align-self: stretch;
-  width: 1px;
-  background: var(--border-default);
-}
-
-.rd-panel [data-pressed] {
-  background: var(--brand-yellow);
-  color: var(--text-on-brand);
+@media (max-width: 719px) {
+  .rd-stage[data-notes-open] .rd-scroll { visibility: hidden; }
 }
 
 /* ── Scroll region ── */
@@ -211,9 +155,8 @@ button.rd-tag {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* The margin slides out past this edge when it is put away. Left to itself
-     `overflow-x` would compute to `auto` alongside the `auto` above and answer
-     with a scrollbar instead of clipping it. */
+  /* Left to itself `overflow-x` would compute to `auto` alongside the `auto`
+     above and answer anything wider than the column with a scrollbar. */
   overflow-x: hidden;
   overscroll-behavior: contain;
   display: flex;
@@ -449,6 +392,11 @@ button.rd-tag {
 .rd-mark--user {
   background: var(--rd-pen);
 }
+
+.rd-mark[data-color="teal"] { --rd-pen: color-mix(in srgb, var(--accent-teal) 28%, transparent); }
+.rd-mark[data-color="sky"] { --rd-pen: color-mix(in srgb, var(--accent-sky) 28%, transparent); }
+.rd-mark[data-color="violet"] { --rd-pen: color-mix(in srgb, var(--accent-violet) 28%, transparent); }
+.rd-mark[data-color="rose"] { --rd-pen: color-mix(in srgb, var(--accent-rose) 28%, transparent); }
 
 .rd-mark--caveat {
   background: var(--tint-red-bg);
@@ -737,83 +685,8 @@ button.rd-tag {
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .rd-topbar {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .rd-topbar .rd-panel {
-    grid-row: 1;
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    margin-left: 0;
-    padding: 0;
-  }
-
-  .rd-topbar .rd-level-select {
-    margin-right: auto;
-  }
-
-  .rd-topbar .rd-panel-divider {
-    display: none;
-  }
-
-  /* Two rows, because one row of this never fitted. The level names, the three
-     actions and their dividers ask for about 420px and a phone offers 340; what
-     the row did with the difference was scroll, with the scrollbar hidden, so
-     the third level sat under the highlighter looking like a paint bug. In
-     Spanish — "Principiante", "Universitario", "Investigador" — it was 40px
-     worse. Grid rather than `flex-wrap` so the three actions land in even
-     columns instead of bunching at the start of the second line. */
-  .rd-panel {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-lg);
-    /* Nothing left to overflow, and `auto` here would still answer a grid one
-       pixel over budget with a scroll rather than letting it settle. */
-    overflow-x: visible;
-  }
-
-  .rd-panel .rd-panel-group {
-    align-items: center;
-  }
-
-  /* The level group takes the whole first row and rules off the actions below
-     it. The rule is drawn here, on the full-width child, because three separate
-     borders on the action groups would come out as three dashes with the grid's
-     column gaps showing through. */
-  .rd-panel .rd-panel-group:first-child {
-    grid-column: 1 / -1;
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  /* The toggle group's own root — the only child of the group that is not the
-     label — spans the row, and its three items divide it evenly, so the labels
-     read in full in both languages. */
-  .rd-panel .rd-panel-group:first-child > :not(.rd-panel-label) {
-    width: 100%;
-  }
-
-  .rd-panel .rd-panel-group:first-child button {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .rd-panel .rd-panel-label {
-    display: none;
-  }
-
-  /* Vertical rules between things that are now stacked. */
-  .rd-panel .rd-panel-divider {
-    display: none;
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
   }
 
   .rd-scroll {
@@ -842,12 +715,6 @@ button.rd-tag {
 
 .rd-scroll {
   padding-bottom: calc(var(--space-12) + var(--space-2));
-}
-
-@media (max-width: 1100px) {
-  .rd-scroll:has(.rd-rail[data-surface='sheet']:not([data-hidden])) {
-    padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-6));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

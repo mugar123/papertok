@@ -10,6 +10,8 @@ export interface UserHighlight {
   endQuote?: string;
   kind: 'ai' | 'user';
   note?: string;
+  color?: HighlightColor;
+  occurrence?: number;
   paperTitle: string;
   createdAt?: unknown;
 }
@@ -93,7 +95,7 @@ export function buildHighlightsQuery(uid: string, paperId: string, overrides?: H
  * highlight of it would land as a second document. Leaving `user` out keeps
  * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind }: HighlightInput) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind, occurrence }: HighlightInput) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -103,7 +105,8 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     normalizeHighlightQuote(quote),
   ]
     .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex, normalizeHighlightQuote(endQuote)])
-    .concat(kind === 'ai' ? ['ai'] : []).join('|');
+    .concat(kind === 'ai' ? ['ai'] : [])
+    .concat(occurrence ? [`#${occurrence}`] : []).join('|');
 
   // FNV-1a: short, stable, and enough to separate selections within one paper.
   let hash = 0x811c9dc5;
@@ -121,14 +124,23 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
+export const MAX_QUOTE_LENGTH = 400;
+export const FULL_TEXT_LEVEL = 'full-text';
+const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
+export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;
+export type HighlightColor = typeof HIGHLIGHT_COLORS[number];
+export const highlightColor = (highlight: { color?: HighlightColor }): HighlightColor => highlight.color ?? 'yellow';
+
 export function normalizeUserHighlight(input: HighlightInput | null | undefined): Omit<UserHighlight, 'id'> | null {
-  const quote = normalizeHighlightQuote(input?.quote);
+  const level = LEVELS.includes(input?.level as string)
+    ? input!.level as string
+    : 'university';
+  const quote = level === FULL_TEXT_LEVEL
+    ? String(input?.quote ?? '').replace(/\s+/g, ' ').trim()
+    : normalizeHighlightQuote(input?.quote);
   if (quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return null;
   const paragraphIndex = Number.parseInt(input?.paragraphIndex as string, 10);
   if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 100) return null;
-  const level = ['beginner', 'university', 'researcher'].includes(input?.level as string)
-    ? input!.level as string
-    : 'university';
   const language = 'en';
   const sectionId = cleanText(input?.sectionId, 40);
   const paperId = cleanText(input?.paperId, 400);
@@ -148,6 +160,10 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   // highlight that acquired words — and only the third is `ai`.
   const kind = input?.kind === 'ai' ? 'ai' : 'user';
   const note = cleanText(input?.note, MAX_NOTE_LENGTH);
+  const occurrence = Number.parseInt(input?.occurrence as string, 10);
+  const later = Number.isInteger(occurrence) && occurrence >= 1 && occurrence <= 100;
+  const picked: unknown = input?.color;
+  const color = HIGHLIGHT_COLORS.some(option => option === picked) && picked !== 'yellow' ? picked as HighlightColor : null;
   // An AI annotation with no text is not an annotation: it is a mark claiming an
   // answer that does not exist, and it would render as an empty card.
   if (kind === 'ai' && !note) return null;
@@ -158,10 +174,12 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     language,
     sectionId,
     paragraphIndex,
-    quote: quote.slice(0, 400),
-    ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, 400) } : {}),
+    quote: quote.slice(0, MAX_QUOTE_LENGTH),
+    ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, MAX_QUOTE_LENGTH) } : {}),
     kind,
     ...(note ? { note } : {}),
+    ...(color ? { color } : {}),
+    ...(later ? { occurrence } : {}),
     paperTitle: cleanText(input?.paperTitle, 1_000),
   };
 }
@@ -217,10 +235,10 @@ export async function removeUserHighlight(uid: string | null | undefined, highli
  * rendered with only the anchors that belong to it.
  */
 export function indexHighlightsByParagraph(
-  highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'endParagraphIndex' | 'endQuote' | 'kind'>> = [],
+  highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'endParagraphIndex' | 'endQuote' | 'kind' | 'color'>> = [],
   { level, language, paragraphText }: { level?: string; language?: string; paragraphText?: (sectionId: string, paragraphIndex: number) => string | null } = {},
 ) {
-  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; fresh?: boolean; pending?: boolean }>>();
+  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; color?: HighlightColor; fresh?: boolean; pending?: boolean }>>();
   for (const highlight of highlights) {
     if (level && highlight.level !== level) continue;
     if (language && highlight.language !== language) continue;
@@ -231,7 +249,7 @@ export function indexHighlightsByParagraph(
     const kind = highlight.kind === 'ai' ? 'ai' : 'user';
     for (const segment of passageSegments(highlight, paragraphText)) {
       const key = `${highlight.sectionId}:${segment.paragraphIndex}`;
-      index.set(key, [...(index.get(key) || []), { id: highlight.id, quote: segment.quote, kind, source: kind }]);
+      index.set(key, [...(index.get(key) || []), { id: highlight.id, quote: segment.quote, kind, source: kind, ...(kind === 'user' ? { color: highlightColor(highlight) } : {}) }]);
     }
   }
   return index;

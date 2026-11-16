@@ -58,6 +58,7 @@ test('every section of the Spanish policy survives the translation', () => {
     'What is collected if you create an account',
     'What is public and what is not',
     'University email verification',
+    'Zotero',
     'Email updates',
     'Analytics',
     'Scientific sources and AI features',

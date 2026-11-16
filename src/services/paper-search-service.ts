@@ -27,9 +27,9 @@ import { settleWithin } from '../utils/async-timing.ts';
  *
  * Failure stays graceful in both directions. arXiv is bounded by its own
  * deadline and never blocks the OpenAlex answer; a dead OpenAlex still leaves
- * whatever the others found. The call rejects only when OpenAlex failed AND
- * the others had nothing, and it rejects with OpenAlex's own error so the page
- * can still tell a rate limit from a timeout.
+ * whatever the others found. If no matching papers remain and OpenAlex or
+ * arXiv failed, the call rejects so readers can retry. OpenAlex errors retain
+ * their rate-limit and budget information.
  *
  * arXiv's cost is real -- the Worker keeps one request every three seconds for
  * the whole app -- and this adds at most one per debounced search, deduplicated
@@ -146,8 +146,16 @@ export async function searchPapersAcrossSources(query: unknown, {
     ...(arxiv.status === 'fulfilled' ? papersFrom(arxiv.value) : []),
     ...(openReview.status === 'fulfilled' ? papersFrom(openReview.value) : []),
   ];
-  if (openAlex.status === 'rejected' && otherPapers.length === 0) throw openAlex.reason;
-  if (openAlex.status === 'timed_out' && otherPapers.length === 0) throw new DOMException('Paper search timed out', 'TimeoutError');
-
-  return mergeRankedPapers(term, openAlexPapers, otherPapers, { limit, minimumTitleScore: comparableTitle ? 80 : 0 });
+  const results = mergeRankedPapers(term, openAlexPapers, otherPapers, { limit, minimumTitleScore: comparableTitle ? 80 : 0 });
+  if (results.length === 0) {
+    if (openAlex.status === 'rejected') throw openAlex.reason;
+    if (openAlex.status === 'timed_out') throw new DOMException('Paper search timed out', 'TimeoutError');
+    if (arxiv.status !== 'fulfilled') {
+      throw Object.assign(new Error('Could not complete the arXiv paper search', { cause: arxiv.reason }), {
+        name: arxiv.status === 'timed_out' ? 'TimeoutError' : 'Error',
+        searchSource: 'arxiv',
+      });
+    }
+  }
+  return results;
 }

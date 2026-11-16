@@ -27,7 +27,7 @@ import './paper-overlay.css';
  * `onExitComplete` is the end of that exit, and callers need it: dropping the
  * card the moment `open` goes false left the surface fading out over nothing
  * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
- * signal `PaperReader` and `SelectionMenu` already listen to.
+ * signal `PaperReader` already listens to.
  *
  * `arriving` is for a card that is open when its page mounts because the
  * reader came to the page for it: the frame is opaque from its first frame,
