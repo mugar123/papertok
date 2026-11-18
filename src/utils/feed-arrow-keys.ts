@@ -38,7 +38,9 @@ type KeyTarget<Feed> = { closest: (selectors: string) => PageNode<Feed> | null }
  * (`PULL_YIELDING_SCROLLERS`): left to the browser there, the key could stop
  * a pixel short of the end and then move nothing. A pixel is the rounding of
  * the scroller's heights. The key is also the feed's once the feed has left
- * the state's card, which is then out of sight.
+ * the state's card: the state is then out of sight, its middle outside the
+ * feed's box, even when an edge of it is still inside, as a few pixels can
+ * be behind the bar.
  */
 export function arrowKeyMovesFeed<Feed extends { getBoundingClientRect: () => Box }>({ target, key, feed }: {
   target: KeyTarget<Feed>;
@@ -53,7 +55,8 @@ export function arrowKeyMovesFeed<Feed extends { getBoundingClientRect: () => Bo
   if (!state) return true;
   const box = state.getBoundingClientRect();
   const view = feed.getBoundingClientRect();
-  if (box.bottom <= view.top || box.top >= view.bottom) return true;
+  const middle = (box.top + box.bottom) / 2;
+  if (middle <= view.top || middle >= view.bottom) return true;
   const room = key === 'ArrowDown' ? state.scrollHeight - state.clientHeight - state.scrollTop : state.scrollTop;
   return room <= 1;
 }

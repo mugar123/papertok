@@ -99,6 +99,10 @@ test('a state left on the card the feed moved away from does not keep the arrows
   // end; the state is now one card above the feed's box.
   assert.equal(press(state(48, { top: 250 - 308 }), 'ArrowUp'), true, 'one card above');
   assert.equal(press(state(0, { top: 250 + 308 }), 'ArrowDown'), true, 'one card below');
+  // At 360x640 with text at 200%, the state of the card just left ended 3px
+  // inside the feed's box, behind the bar, and took four ArrowUp presses.
+  const behindBar = state(174, { top: 9, scrollHeight: 220, clientHeight: 46 });
+  assert.equal(press(behindBar, 'ArrowUp'), true, 'an edge behind the bar');
 });
 
 test('a popup over the feed keeps its arrows, and the Similar layer gives them to the feed it holds', () => {
