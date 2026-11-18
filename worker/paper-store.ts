@@ -2247,7 +2247,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // in the request that asks for the category whose id sorts first among the
   // asked categories whose day's slice offers it. The ids decide, not the
   // order of the groups, which the app changes between loads as it learns the
-  // reader's affinities.
+  // reader's affinities; the order decides only between two groups that ask
+  // for one category, which the app does not send.
   const notableGroup = (candidate: Candidate) => {
     const category = candidate.lanes.reduce((first, lane) => (lane < first ? lane : first)).slice(NOTABLE_LANE_PREFIX.length);
     return query.groups.findIndex(group => group.categories.includes(category));
