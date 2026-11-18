@@ -1100,8 +1100,8 @@ button.pc-topics-pop-item:focus-visible {
    size, and covers nothing with it. When the rows above the action row are
    taller than the card (a four-line title on a phone on its side, text at
    200%), the row used to be pushed past the sheet's foot, which cut it; held
-   at the foot instead, it covered the authors and the title. Now three things
-   give way, in turn, and the row stays where it is:
+   at the foot instead, it covered the authors and the title. Now these give
+   way, in turn, and the row stays where it is:
    1. the panel, as on every card: the slot asks for no height of its own and
       takes what the other rows leave;
    2. the step under the authors' rule, which moves into the slot for that;
